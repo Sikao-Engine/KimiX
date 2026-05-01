@@ -87,7 +87,7 @@ async def _create_session_async(
     if resume:
         session = await Session.resume(
             session_id=session_id,
-            work_dir=work_dir if work_dir is not None else KaosPath(os.curdir),
+            work_dir=work_dir if work_dir is not None else KaosPath('.'),
             skills_dirs=skills_dirs,
             yolo=yolo if yolo is not None else base._default_yolo,
             plan_mode=plan_mode if plan_mode is not None else base._default_plan_mode,
@@ -105,7 +105,7 @@ async def _create_session_async(
     if not session:
         session = await Session.create(
             session_id=session_id,
-            work_dir=work_dir if work_dir is not None else KaosPath(os.curdir),
+            work_dir=work_dir if work_dir is not None else KaosPath('.'),
             skills_dirs=skills_dirs,
             yolo=yolo if yolo is not None else base._default_yolo,
             plan_mode=plan_mode if plan_mode is not None else base._default_plan_mode,

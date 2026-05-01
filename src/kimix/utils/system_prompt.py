@@ -59,18 +59,15 @@ def get_system_prompt(
                         '"large-context analysis or tasks needing different expertise", '
                         '"permission-graded operations like read-only analysis or sandboxed execution".'
                     )
-                items.append('Run: `python -c <code>` to execute Python code.')
-                if args.KIMI_OS == 'Windows':
-                    items.append('No Shell commands; use `Run` instead.')
-                else:
-                    items.append(f'Shell: {args.KIMI_SHELL}. use `Run`')
+                    items.append('Run Python: `python -c <code>`.')
+                if not args.KIMI_OS == 'Windows':
+                    items.append(f'Bash Shell: {args.KIMI_SHELL}. use `Run`')
                 if plan_mode:
-                    items.append('Plan mode: draft plan, run `ExitPlanMode`, then execute.')
+                    items.append('Plan mode: draft, ExitPlanMode, execute.')
                 start_index = 3
                 if yolo:
                     items.append(
-                        'Yolo mode: act decisively without asking. '
-                        'Never write outside working directory or change system settings(if not asked).'
+                        'Yolo mode: act without asking. Stay in workdir. No system changes unless asked.'
                     )
             case SystemPromptType.TodoMaker:
                 role_doc = '''You are a plan maker. Only make plan, never implement.
@@ -85,12 +82,11 @@ No multiple steps at once.
                 start_index = 1
             case SystemPromptType.SwarmCoordinator:
                 role_doc = (
-                    'You are a swarm coordinator. Decompose the task into sub-agent nodes '
-                    'using `AddNode` and `AddEdge` tools to build a dependency DAG.\n'
-                    '- AddNode: create a sub-task with a clear, actionable prompt\n'
-                    '- AddEdge: set execution order (upstream -> downstream)\n'
-                    'Rules: keep graph acyclic; add edges only when necessary to maximize parallelism.\n'
-                    'After building, report all nodes and edges.\n\n'
+                    'You are a swarm coordinator. Build a dependency DAG via `AddNode` and `AddEdge`.\n'
+                    '- AddNode: sub-task with a clear, actionable prompt\n'
+                    '- AddEdge: execution order (upstream -> downstream)\n'
+                    'Keep graph acyclic. Minimize edges to maximize parallelism.\n'
+                    'Report all nodes and edges when done.\n\n'
                 )
                 rules = (
                     'Rules: Direct output only. No chain-of-thought. No analysis. '
