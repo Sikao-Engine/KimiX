@@ -1,4 +1,6 @@
-"""Short-term memory: detailed current session records."""
+"""Short-term memory: detailed current session records with temporal validity."""
+
+from __future__ import annotations
 
 import heapq
 import time
@@ -9,7 +11,9 @@ from kimix.memory.embedding import EmbeddingProvider
 
 
 class ShortTermMemory:
-    """Short-term memory: detailed current session records."""
+    """Short-term memory: detailed current session records with temporal validity."""
+
+    __slots__ = ("max_size", "ttl", "buffer")
 
     def __init__(self, max_size: int = 100, ttl_seconds: float = 3600) -> None:
         self.max_size = max_size
@@ -20,8 +24,6 @@ class ShortTermMemory:
         """Add memory to short-term buffer."""
         entry.memory_type = MemoryType.EPISODIC
         self.buffer.append(entry)
-
-        # Capacity management: evict least important
         if len(self.buffer) > self.max_size:
             self._evict_least_valuable()
 
@@ -29,55 +31,71 @@ class ShortTermMemory:
         """Eviction policy: remove entry with lowest effective importance."""
         if not self.buffer:
             return
-
-        # O(n) scan instead of O(n log n) sort
-        idx, _ = min(
+        now = time.time()
+        min_idx, _ = min(
             enumerate(self.buffer),
-            key=lambda x: x[1].get_effective_importance(),
+            key=lambda x: x[1].get_effective_importance(now),
         )
-        # O(1) removal by swapping with the last element
-        self.buffer[idx] = self.buffer[-1]
+        self.buffer[min_idx] = self.buffer[-1]
         self.buffer.pop()
 
+    def _active_buffer(self, now: float | None = None) -> List[MemoryEntry]:
+        """Return only non-expired entries."""
+        if now is None:
+            now = time.time()
+        cutoff = now - self.ttl
+        return [
+            e
+            for e in self.buffer
+            if e.timestamp > cutoff and (e.expires_at is None or e.expires_at > now)
+        ]
+
     def search(
-        self, query: str, embedding_provider: EmbeddingProvider, top_k: int = 5
+        self,
+        query: str,
+        embedding_provider: EmbeddingProvider,
+        top_k: int = 5,
     ) -> List[MemoryEntry]:
-        """Semantic search in short-term memory."""
-        if not self.buffer:
+        """Semantic search in short-term memory (skips expired)."""
+        now = time.time()
+        active = self._active_buffer(now)
+        if not active:
             return []
 
         query_vec = embedding_provider.embed(query)
 
-        # Lazily compute missing embeddings
-        for entry in self.buffer:
-            if entry.embedding is None:
-                entry.embedding = embedding_provider.embed(entry.content)
+        # Batch-compute missing embeddings instead of one-by-one calls
+        missing_texts = [entry.content for entry in active if entry.embedding is None]
+        if missing_texts:
+            embeddings = embedding_provider.embed_batch(missing_texts)
+            emb_iter = iter(embeddings)
+            for entry in active:
+                if entry.embedding is None:
+                    entry.embedding = next(emb_iter)
 
-        # O(n log k) partial selection instead of O(n log n) full sort
-        scored = (
+        scored = [
             (
                 embedding_provider.similarity(query_vec, entry.embedding)
-                * entry.get_effective_importance(),
+                * entry.get_effective_importance(now),
                 entry,
             )
-            for entry in self.buffer
-        )
+            for entry in active
+        ]
         results = [
             entry for _, entry in heapq.nlargest(top_k, scored, key=lambda x: x[0])
         ]
 
-        # Mark access
         for entry in results:
-            entry.touch()
+            entry.touch(now)
 
         return results
 
     def get_recent(self, n: int = 10) -> List[MemoryEntry]:
-        """Get recent n entries."""
-        # O(n log k) partial selection instead of O(n log n) full sort
-        return heapq.nlargest(n, self.buffer, key=lambda x: x.timestamp)
+        """Get recent n entries (skips expired)."""
+        now = time.time()
+        active = self._active_buffer(now)
+        return heapq.nlargest(n, active, key=lambda x: x.timestamp)
 
     def clear_expired(self) -> None:
-        """Clean expired memories."""
-        cutoff = time.time() - self.ttl
-        self.buffer = [e for e in self.buffer if e.timestamp > cutoff]
+        """Clean expired memories (both TTL and explicit expiry)."""
+        self.buffer = self._active_buffer(time.time())

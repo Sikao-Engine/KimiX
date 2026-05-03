@@ -18,6 +18,8 @@ agent:
     - "my_tools.lint:SyntaxLint"
     - "kimix.memory.tools:Remember"
     - "kimix.memory.tools:Recall"
+    - "kimix.memory.tools:AddScar"
+    - "kimix.memory.tools:AddRule"
     # - "kimix.memory.tools:GetContext"
     # - "my_tools.office:Docx2md"
     # - "my_tools.pdf:Pdf2md"

@@ -107,7 +107,7 @@ class TestFailurePropagation:
         assert isinstance(exc_info.value.errors["a"], RuntimeError)
 
     def test_partial_failure_in_diamond(self) -> None:
-        """
+        r"""
           a
          / \
         b  fail

@@ -366,7 +366,7 @@ class TestToolAttributes:
         """Test Recall tool attributes."""
         tool = Recall()
         assert tool.name == "Recall"
-        assert "memory" in tool.description.lower()
+        assert "memorie" in tool.description.lower()
         assert tool.params is not None
 
     def test_get_context_attributes(self):

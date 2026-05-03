@@ -78,6 +78,8 @@ class InvertedIndex:
         "_posting_docs",
         "_posting_tfs",
         "_finalized",
+        "_terms_by_length",
+        "_terms_by_length_prefix",
     )
 
     def __init__(self) -> None:
@@ -91,6 +93,8 @@ class InvertedIndex:
         self._posting_docs: list[NDArray[np.int32]] = []
         self._posting_tfs: list[NDArray[np.uint16]] = []
         self._finalized: bool = False
+        self._terms_by_length: dict[int, tuple[str, ...]] = {}
+        self._terms_by_length_prefix: dict[tuple[int, str], tuple[str, ...]] = {}
 
     @property
     def N(self) -> int:
@@ -147,13 +151,29 @@ class InvertedIndex:
                 continue
             tid = len(kept_terms)
             kept_terms[token] = tid
-            arr = np.array(postings, dtype=np.int32)
-            sort_order = np.argsort(arr[:, 0])
-            arr = arr[sort_order]
-            self._posting_docs.append(arr[:, 0])
-            self._posting_tfs.append(arr[:, 1].astype(np.uint16))
+            if len(postings) == 1:
+                doc_id, freq = postings[0]
+                self._posting_docs.append(np.array([doc_id], dtype=np.int32))
+                self._posting_tfs.append(np.array([freq], dtype=np.uint16))
+            else:
+                postings.sort(key=lambda p: p[0])
+                self._posting_docs.append(
+                    np.fromiter((p[0] for p in postings), dtype=np.int32, count=len(postings))
+                )
+                self._posting_tfs.append(
+                    np.fromiter((p[1] for p in postings), dtype=np.uint16, count=len(postings))
+                )
 
         self._term_to_id = kept_terms
+        # Build length + prefix buckets for fast fuzzy expansion
+        by_len: dict[int, list[str]] = defaultdict(list)
+        by_len_prefix: dict[tuple[int, str], list[str]] = defaultdict(list)
+        for term in kept_terms:
+            length = len(term)
+            by_len[length].append(term)
+            by_len_prefix[(length, term[:1])].append(term)
+        self._terms_by_length = {length: tuple(terms) for length, terms in by_len.items()}
+        self._terms_by_length_prefix = {key: tuple(terms) for key, terms in by_len_prefix.items()}
         if self._doc_lengths:
             self._avgdl = sum(self._doc_lengths) / len(self._doc_lengths)
             self._doc_lengths_arr = np.array(self._doc_lengths, dtype=np.int32)
@@ -214,6 +234,14 @@ class InvertedIndex:
         self._N = data["N"]
         self._avgdl = data["avgdl"]
         self._doc_lengths_arr = np.array(self._doc_lengths, dtype=np.int32)
+        by_len: dict[int, list[str]] = defaultdict(list)
+        by_len_prefix: dict[tuple[int, str], list[str]] = defaultdict(list)
+        for term in self._term_to_id:
+            length = len(term)
+            by_len[length].append(term)
+            by_len_prefix[(length, term[:1])].append(term)
+        self._terms_by_length = {length: tuple(terms) for length, terms in by_len.items()}
+        self._terms_by_length_prefix = {key: tuple(terms) for key, terms in by_len_prefix.items()}
         self._finalized = True
 
 
@@ -247,7 +275,6 @@ class BM25Scorer:
         ``candidate_docs`` restricts scoring to a subset of docs; ``None``
         scores every document that has at least one query token.
         """
-        scores: dict[int, float] = defaultdict(float)
         N = self.index.N
         avgdl = self.index.avgdl
         if N == 0 or avgdl == 0:
@@ -260,42 +287,53 @@ class BM25Scorer:
         one_minus_b = 1.0 - b
         b_over_avgdl = b / avgdl
 
-        cand_mask: NDArray[np.bool_] | None = None
+        scores_arr = np.zeros(N, dtype=np.float64)
+
         if candidate_docs is not None:
-            cand_mask = np.zeros(N, dtype=bool)
-            cand_mask[list(candidate_docs)] = True
-
-        for token in query_tokens:
-            postings = self.index.get_postings(token)
-            if postings is None:
-                continue
-            docs, tfs = postings
-            df = len(docs)
-            idf = self._idf(df, N)
-
-            if cand_mask is not None:
-                valid = cand_mask[docs]
+            cand_sorted = np.array(sorted(candidate_docs), dtype=np.int32)
+            for token in query_tokens:
+                postings = self.index.get_postings(token)
+                if postings is None:
+                    continue
+                docs, tfs = postings
+                # Fast intersection for small candidate sets via searchsorted
+                if len(cand_sorted) <= 256:
+                    idx = np.searchsorted(cand_sorted, docs)
+                    idx = np.clip(idx, 0, len(cand_sorted) - 1)
+                    valid = cand_sorted[idx] == docs
+                else:
+                    valid = np.isin(docs, cand_sorted)
                 if not np.any(valid):
                     continue
                 docs = docs[valid]
                 tfs = tfs[valid]
-
-            dls = doc_lengths[docs]
-            denom = tfs.astype(np.float64) + k1 * (one_minus_b + b_over_avgdl * dls)
-            valid = denom > 0
-            if not np.all(valid):
-                docs = docs[valid]
-                tfs = tfs[valid]
-                denom = denom[valid]
-                if len(docs) == 0:
+                df = len(docs)
+                if df == 0:
                     continue
+                idf = self._idf(df, N)
+                dls = doc_lengths[docs]
+                denom = tfs.astype(np.float64) + k1 * (one_minus_b + b_over_avgdl * dls)
+                token_scores = idf * tfs.astype(np.float64) * k1_plus_1 / denom
+                scores_arr[docs] += token_scores
+        else:
+            seen_tokens: set[str] = set()
+            for token in query_tokens:
+                if token in seen_tokens:
+                    continue
+                seen_tokens.add(token)
+                postings = self.index.get_postings(token)
+                if postings is None:
+                    continue
+                docs, tfs = postings
+                df = len(docs)
+                idf = self._idf(df, N)
+                dls = doc_lengths[docs]
+                denom = tfs.astype(np.float64) + k1 * (one_minus_b + b_over_avgdl * dls)
+                token_scores = idf * tfs.astype(np.float64) * k1_plus_1 / denom
+                scores_arr[docs] += token_scores
 
-            token_scores = idf * tfs.astype(np.float64) * k1_plus_1 / denom
-            sc = scores
-            for doc_id, score_val in zip(docs, token_scores):
-                sc[int(doc_id)] += float(score_val)
-
-        return dict(scores)
+        nonzero = np.flatnonzero(scores_arr)
+        return {int(i): float(scores_arr[i]) for i in nonzero}
 
 
 class LevenshteinAutomaton:
@@ -324,7 +362,7 @@ class LevenshteinAutomaton:
         return 2
 
     @staticmethod
-    @functools.lru_cache(maxsize=2048)
+    @functools.lru_cache(maxsize=8192)
     def _damerau_levenshtein(s: str, t: str) -> int:
         """Compute Damerau-Levenshtein distance between *s* and *t*."""
         m, n = len(s), len(t)
@@ -332,6 +370,18 @@ class LevenshteinAutomaton:
             return LevenshteinAutomaton._damerau_levenshtein(t, s)
         if n == 0:
             return m
+
+        # Fast paths for very short strings (common for n-grams)
+        if n == 1:
+            return 0 if s[0] == t[0] else 1
+        if m == 2 and n == 2:
+            if s == t:
+                return 0
+            if s[0] == t[0] or s[1] == t[1]:
+                return 1
+            if s[0] == t[1] and s[1] == t[0]:
+                return 1
+            return 2
 
         prev_prev = list(range(n + 1))
         prev = list(range(n + 1))
@@ -363,6 +413,43 @@ class LevenshteinAutomaton:
         prefix_length = self.prefix_length
         prefix = self.pattern[:prefix_length] if prefix_length > 0 else ""
         dl = self._damerau_levenshtein
+
+        # Fast-path: if dictionary has prefix buckets, exploit them
+        if hasattr(dictionary, "_terms_by_length_prefix"):
+            terms_by_prefix = dictionary._terms_by_length_prefix  # type: ignore[attr-defined]
+            for length in range(
+                max(pattern_len - max_edits, prefix_length), pattern_len + max_edits + 1
+            ):
+                bucket = terms_by_prefix.get((length, prefix), ()) if prefix_length > 0 else ()
+                if not bucket and prefix_length > 0:
+                    continue
+                for term in bucket or dictionary._terms_by_length.get(length, ()):
+                    if len(results) >= max_expansions:
+                        return results
+                    if prefix_length > 0 and term[:prefix_length] != prefix:
+                        continue
+                    if dl(self.pattern, term) <= max_edits:
+                        results.append(term)
+                if len(results) >= max_expansions:
+                    return results
+            return results
+
+        # Fast-path: if dictionary has length buckets only
+        if hasattr(dictionary, "_terms_by_length"):
+            terms_by_length = dictionary._terms_by_length  # type: ignore[attr-defined]
+            for length in range(
+                max(pattern_len - max_edits, prefix_length), pattern_len + max_edits + 1
+            ):
+                for term in terms_by_length.get(length, ()):
+                    if len(results) >= max_expansions:
+                        return results
+                    if prefix_length > 0 and term[:prefix_length] != prefix:
+                        continue
+                    if dl(self.pattern, term) <= max_edits:
+                        results.append(term)
+                if len(results) >= max_expansions:
+                    return results
+            return results
 
         for term in dictionary:
             if len(results) >= max_expansions:
@@ -437,7 +524,7 @@ class Searcher:
             token, max_edits=max_edits, prefix_length=self.prefix_length
         )
         matches = automaton.match(
-            self.index.terms(), max_expansions=self.max_expansions
+            self.index, max_expansions=self.max_expansions
         )
         return matches if matches else ([token] if self.index.has_term(token) else [])
 

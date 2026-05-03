@@ -14,7 +14,7 @@ class TestAgentMemorySystem:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            sys = AgentMemorySystem(ltm_path=path)
+            sys = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             entry = sys.perceive("test observation", importance=7.0)
             assert entry.content == "test observation"
             assert len(sys.working.items) == 1
@@ -26,7 +26,7 @@ class TestAgentMemorySystem:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            sys = AgentMemorySystem(ltm_path=path)
+            sys = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             sys.perceive("python asyncio", importance=8.0, tags=["python", "async"])
             sys.remember("python threading guide", importance=7.0, tags=["python", "threading"])
             results = sys.recall("python concurrency")
@@ -38,7 +38,7 @@ class TestAgentMemorySystem:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            sys = AgentMemorySystem(ltm_path=path)
+            sys = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             sys.perceive("test")
             results = sys.recall("test", use_working=False, use_short=False, use_long=False)
             assert results == {"working": [], "short_term": [], "long_term": []}
@@ -49,10 +49,10 @@ class TestAgentMemorySystem:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            sys = AgentMemorySystem(ltm_path=path)
+            sys = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             entry = sys.remember("important fact", importance=9.0, tags=["fact"])
             assert entry.content == "important fact"
-            assert len(sys.long_term.entries) == 1
+            assert sys.long_term.count() == 1
         finally:
             os.unlink(path)
 
@@ -60,7 +60,7 @@ class TestAgentMemorySystem:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            sys = AgentMemorySystem(ltm_path=path)
+            sys = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             sys.perceive("user query about python")
             sys.remember("python is a language")
             context = sys.get_context_for_llm("python", max_tokens=500)
@@ -72,7 +72,7 @@ class TestAgentMemorySystem:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            sys = AgentMemorySystem(ltm_path=path)
+            sys = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             sys.perceive("test")
             report = sys.reflect()
             assert "Working Memory" in report
@@ -86,7 +86,7 @@ class TestAgentMemorySystem:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            sys = AgentMemorySystem(ltm_path=path)
+            sys = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             sys.consolidation_interval = 5
             for i in range(5):
                 sys.perceive(f"observation {i}", importance=8.0)
@@ -99,7 +99,7 @@ class TestAgentMemorySystem:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            sys = AgentMemorySystem(ltm_path=path)
+            sys = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             sys.remember("user likes fastapi", tags=["user_preference"])
             sys.remember("python guide", tags=["guide"])
             results = sys.recall("user", tag_filter=["user_preference"])

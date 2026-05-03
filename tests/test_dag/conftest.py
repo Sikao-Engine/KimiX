@@ -97,7 +97,7 @@ def linear_dag() -> DAG:
 
 @pytest.fixture
 def diamond_dag() -> DAG:
-    """
+    r"""
       a
      / \
     b   c

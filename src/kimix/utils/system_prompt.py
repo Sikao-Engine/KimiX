@@ -61,7 +61,7 @@ def get_system_prompt(
                     items.append(
                         'Yolo mode: act without asking. Stay in workdir. No system changes unless asked.'
                     )
-                items.append('Use `Remember`, `Recall` tools to manage knowledge and memory.')
+                items.append('Use `Remember`, `Recall`, `GetContext`, `Reflect`, `AddScar`, `AddRule` tools to manage knowledge and memory.')
                 start_index = 1
             case SystemPromptType.TodoMaker:
                 role_doc = '''You are a plan maker. Only make plan, never implement.

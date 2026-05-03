@@ -10,6 +10,10 @@ if TYPE_CHECKING:
     from kimix.memory.long_term_memory import LongTermMemory
     from kimix.memory.retrieval import NgramTokenizer, InvertedIndex, BM25Scorer, Searcher
     from kimix.memory.system import AgentMemorySystem
+    from kimix.memory.procedural_memory import ProceduralMemory, ScarEntry, RuleEntry
+    from kimix.memory.programmatic_memory import ProgrammaticMemory, Workflow, Task, Trigger, TriggerType
+    from kimix.memory.cold_storage import ColdStorage
+    from kimix.memory.sqlite_backend import SQLiteBackend
 
 __all__ = [
     "MemoryEntry",
@@ -23,6 +27,16 @@ __all__ = [
     "BM25Scorer",
     "Searcher",
     "AgentMemorySystem",
+    "ProceduralMemory",
+    "ScarEntry",
+    "RuleEntry",
+    "ProgrammaticMemory",
+    "Workflow",
+    "Task",
+    "Trigger",
+    "TriggerType",
+    "ColdStorage",
+    "SQLiteBackend",
 ]
 
 _IMPORT_MAP = {
@@ -37,6 +51,16 @@ _IMPORT_MAP = {
     "BM25Scorer": "kimix.memory.retrieval",
     "Searcher": "kimix.memory.retrieval",
     "AgentMemorySystem": "kimix.memory.system",
+    "ProceduralMemory": "kimix.memory.procedural_memory",
+    "ScarEntry": "kimix.memory.procedural_memory",
+    "RuleEntry": "kimix.memory.procedural_memory",
+    "ProgrammaticMemory": "kimix.memory.programmatic_memory",
+    "Workflow": "kimix.memory.programmatic_memory",
+    "Task": "kimix.memory.programmatic_memory",
+    "Trigger": "kimix.memory.programmatic_memory",
+    "TriggerType": "kimix.memory.programmatic_memory",
+    "ColdStorage": "kimix.memory.cold_storage",
+    "SQLiteBackend": "kimix.memory.sqlite_backend",
 }
 
 

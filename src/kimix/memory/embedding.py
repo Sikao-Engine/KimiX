@@ -29,19 +29,45 @@ class EmbeddingProvider:
         rng = np.random.default_rng(seed)
         vec = rng.standard_normal(self.dim, dtype=np.float32)
         norm = np.linalg.norm(vec)
-        if norm != 0:
+        if norm:
             vec /= norm
 
         self._cache[text] = vec
         if len(self._cache) > self._max_cache_size:
-            self._cache.pop(next(iter(self._cache)))
+            oldest = next(iter(self._cache))
+            del self._cache[oldest]
         return vec
+
+    def embed_batch(self, texts: list[str]) -> list[np.ndarray]:
+        """Batch embedding with cache awareness.
+
+        Enables a single API call for real providers; the simulated provider
+        falls back to individual embed() calls while still leveraging cache.
+        """
+        results: list[np.ndarray | None] = [None] * len(texts)
+        missing_texts: list[str] = []
+        missing_indices: list[int] = []
+        for i, text in enumerate(texts):
+            vec = self._cache.get(text)
+            if vec is not None:
+                results[i] = vec
+            else:
+                missing_texts.append(text)
+                missing_indices.append(i)
+        if missing_texts:
+            computed = [self.embed(t) for t in missing_texts]
+            for idx, vec in zip(missing_indices, computed):
+                results[idx] = vec
+        return results  # type: ignore[return-value]
 
     def similarity(self, vec1: Sequence[float] | np.ndarray, vec2: Sequence[float] | np.ndarray) -> float:
         """Compute cosine similarity."""
         v1 = np.asarray(vec1, dtype=np.float32)
         v2 = np.asarray(vec2, dtype=np.float32)
-        norm = np.linalg.norm(v1) * np.linalg.norm(v2)
-        if norm == 0:
+        norm1 = np.linalg.norm(v1)
+        if norm1 == 0:
             return 0.0
-        return float(np.dot(v1, v2) / norm)
+        norm2 = np.linalg.norm(v2)
+        if norm2 == 0:
+            return 0.0
+        return float(np.dot(v1, v2) / (norm1 * norm2))
