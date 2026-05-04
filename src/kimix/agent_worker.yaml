@@ -3,6 +3,7 @@ agent:
   extend: default
   tools:
     - "kimix.tools.file.run:Run"
+    - "kimix.tools.py:Python"
     - "kimix.tools.file.input:Input"
     - "kimix.tools.background:TaskOutput"
     - "kimix.tools.background:TaskList"

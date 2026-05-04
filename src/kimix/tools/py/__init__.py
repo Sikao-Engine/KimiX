@@ -13,7 +13,7 @@ class Params(BaseModel):
     code: str = Field(
         description="Python code to execute.",
     )
-    dest: str | None = Field(
+    output_path: str | None = Field(
         default=None,
         description="Output file path (optional)."
     )
@@ -64,11 +64,11 @@ class Python(CallableTool2[Params]):
         # Get output
         output = await task.stream.pop_output() if task.stream else ""
 
-        # Handle dest parameter if provided
-        if params.dest:
-            async with await anyio.open_file(params.dest, 'w', encoding='utf-8', errors='replace') as f:
+        # Handle output_path parameter if provided
+        if params.output_path:
+            async with await anyio.open_file(params.output_path, 'w', encoding='utf-8', errors='replace') as f:
                 await f.write(output)
-            output = f'output exported to: {params.dest}'
+            output = f'output exported to: {params.output_path}'
         else:
             output = await _maybe_export_output_async(output)
 
@@ -78,7 +78,7 @@ class Python(CallableTool2[Params]):
 
 
         if not success:
-            if output and not params.dest:
+            if output and not params.output_path:
                 temp_path, _ = await _export_to_temp_file_async(key=None, content=output, ext='.txt')
                 output = f'saved to file `{temp_path}`'
             return ToolError(

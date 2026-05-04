@@ -71,7 +71,7 @@ class RunParams(BaseModel):
     )
     cwd: str | None = Field(
         default=None,
-        description="Working directory (default: current directory)."
+        description="Working directory (optional)."
     )
     output_path: str | None = Field(
         default=None,
@@ -93,16 +93,60 @@ class Run(CallableTool2[RunParams]):
         super().__init__()
         self._session = session
 
+    async def _run_bash_tool(self, params: RunParams, bash_tool: CallableTool2) -> ToolReturnValue:
+        import queue
+        from kimix.tools.background.utils import BackgroundStream, generate_task_id, add_task, remove_task_id
+
+        result_holder: list[ToolReturnValue] = []
+
+        async def wrapper(q: queue.Queue[str]) -> bool:
+            try:
+                result = await bash_tool(params)
+                result_holder.append(result)
+                output_str = result.output if isinstance(result.output, str) else str(result.output)
+                q.put_nowait(output_str)
+                return not result.is_error
+            except Exception as e:
+                q.put_nowait(f"\n[Error: {str(e)}]")
+                return False
+
+        stream = BackgroundStream()
+        task_id = generate_task_id(self._session, "run", params.path)
+        await stream.start(wrapper, lambda: None)
+        add_task(self._session, task_id, stream)
+
+        if params.run_in_background:
+            return ToolOk(
+                output=f"Process started in background.\nTask ID: {task_id}\n\nUse 'TaskList' to view all tasks, 'TaskOutput' to get output, 'Input' to input to process"
+            )
+
+        await stream.wait(params.timeout)
+
+        if await stream.thread_is_alive():
+            return ToolError(
+                output=f'Running in background. task_id: `{task_id}`. use `TaskOutput` or `TaskList` tool',
+                message="Process timeout",
+                brief="Timeout"
+            )
+
+        remove_task_id(self._session, task_id)
+
+        if result_holder:
+            return result_holder[0]
+
+        output = await stream.pop_output()
+        success = await stream.success()
+        if not success:
+            return ToolError(output=output, message="Command execution failed", brief="Command execution failed")
+        output = await _maybe_export_output_async(output)
+        return ToolOk(output=output)
+
     async def __call__(self, params: RunParams) -> ToolReturnValue:
         import sys
 
         bash_tool = _BASH_COMMANDS.get(params.path)
         if bash_tool:
-            if params.run_in_background:
-                return await bash_tool(params)
-            else:
-                # TODO run bash_tool(params) in BackgroundStream in `src\kimix\tools\background\utils.py`
-                pass
+            return await self._run_bash_tool(params, bash_tool)
 
         # check if using python
         if params.path == 'python':

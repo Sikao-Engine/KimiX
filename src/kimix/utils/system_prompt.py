@@ -42,7 +42,7 @@ def get_system_prompt(
                 )
                 role_doc = 'You are a terse ' + ('sub-agent' if is_sub_agent else 'coder')
                 items.append(
-                    'For long tasks, use `Run` with `run_in_background=true`, then manage via '
+                    'For long tasks, use `Run`/`Python` with `run_in_background=true`, then manage via '
                     '`TaskList`, `TaskOutput`, `Input`. Return control immediately after starting.'
                 )
                 items.append(
@@ -54,7 +54,6 @@ def get_system_prompt(
                         '"large-context analysis or tasks needing different expertise", '
                         '"permission-graded operations like read-only analysis or sandboxed execution".'
                     )
-                    items.append('Run Python: `python -c <code>`.')
                 if args.KIMI_OS != 'Windows':
                     items.append(f'Bash Shell: {args.KIMI_SHELL}. use `Run`')
                 if yolo:
