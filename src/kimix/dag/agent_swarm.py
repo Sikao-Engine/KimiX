@@ -19,7 +19,7 @@ async def create_swarm_session(task_prompt: str) -> DAG | None:
     agent_file = Path("agent_swarm.yaml")
     session = None
     try:
-        session = await _create_session_async(agent_file=agent_file, system_prompt=SystemPromptType.SwarmCoordinator)
+        session = await _create_session_async(agent_file=agent_file, agent_type=SystemPromptType.SwarmCoordinator)
         custom_data = session.get_custom_data()
         assert custom_data is not None
         dag = DAG()

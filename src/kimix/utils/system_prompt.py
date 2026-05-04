@@ -8,7 +8,7 @@ from kimi_cli.soul.agent import BuiltinSystemPromptArgs
 
 # This system prompt is designed to stop the modern LLM from over thinking and hallucination
 _SYSTEM_PROMP = (
-    '{AGENT_ROLE}.\n{NUMBERED}\n{AGENTS_MD}\n{SKILLS}\n'
+    '{AGENT_ROLE}.\n{NUMBERED}\n{AGENTS_MD}\n{SKILLS}\n{EXTRA}'
 )
 
 class SystemPromptType(Enum):
@@ -21,7 +21,7 @@ def get_system_prompt(
         is_sub_agent: bool = False,
         yolo: bool | None = None,
         work_dir: Optional[KaosPath] = None,
-        skills_dirs: Optional[list[KaosPath]] = None,
+        extra_system_prompt: str | None = None,
         agent_role: SystemPromptType = SystemPromptType.Worker
 ) -> Callable[[BuiltinSystemPromptArgs], str]:
     agent_md = (Path(str(work_dir)) if work_dir is not None else Path(
@@ -107,5 +107,6 @@ No multiple steps at once.
             NUMBERED=numbered_block,
             AGENTS_MD=agent_md_doc,
             SKILLS=skill_doc,
+            EXTRA=extra_system_prompt if extra_system_prompt is not None else ''
         ).strip()
     return system_prompt_func

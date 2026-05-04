@@ -1,4 +1,4 @@
-"""Complete Agent memory system — six-layer pyramid with hybrid retrieval."""
+"""Complete Agent memory system with hybrid retrieval."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from kimix.memory.cold_storage import ColdStorage
 
 
 class AgentMemorySystem:
-    """Complete Agent memory system — L1 through L6."""
+    """Complete Agent memory system."""
 
     def __init__(
         self,
@@ -35,7 +35,6 @@ class AgentMemorySystem:
             from kimix.memory.sqlite_backend import SQLiteBackend
             backend = SQLiteBackend(db_path)
 
-        # L1–L3
         self.working = WorkingMemory(max_items=10)
         self.short_term = ShortTermMemory(max_size=100, ttl_seconds=3600)
         self.long_term = LongTermMemory(
@@ -45,18 +44,9 @@ class AgentMemorySystem:
             agent_id=agent_id,
         )
 
-        # L4–L6
-        self.procedural = ProceduralMemory()
-        self.programmatic = ProgrammaticMemory()
-        self.cold_storage = ColdStorage(
-            archive_dir=f".kimix_cache/cold_storage/{agent_id}"
-        )
-
         # Config
         self.consolidation_interval = 100
         self.interaction_count = 0
-        self.scar_trigger_enabled = True
-        self.self_evolution_enabled = True
 
     # --- Perception ---
 
@@ -68,7 +58,7 @@ class AgentMemorySystem:
         source: str = "environment",
         expires_at: float | None = None,
     ) -> MemoryEntry:
-        """Agent perceives input, stores in L1 and L2."""
+        """Agent perceives input, stores in working and short-term memory."""
         entry = MemoryEntry(
             content=observation,
             memory_type=MemoryType.EPISODIC,
@@ -97,10 +87,9 @@ class AgentMemorySystem:
         use_working: bool = True,
         use_short: bool = True,
         use_long: bool = True,
-        use_procedural: bool = False,
         tag_filter: list[str] | None = None,
     ) -> dict[str, list[MemoryEntry]]:
-        """Multi-tier recall with optional scar-trigger elevation."""
+        """Multi-tier recall."""
         results: dict[str, list[MemoryEntry]] = {
             "working": [],
             "short_term": [],
@@ -126,21 +115,6 @@ class AgentMemorySystem:
                 query, top_k=context_size, tag_filter=tag_filter, query_vec=query_vec
             )
 
-        # L4 Scar Triggers: if query matches historical failure patterns,
-        # promote the scar into working memory so the agent doesn't repeat mistakes.
-        if use_procedural and self.scar_trigger_enabled:
-            matched_scars = self.procedural.match_scars(query, top_k=3)
-            matched_rules = self.procedural.match_rules(query, top_k=3)
-            proc_entries: list[MemoryEntry] = []
-            for scar in matched_scars:
-                scar_entry = scar.to_memory_entry()
-                proc_entries.append(scar_entry)
-                if scar.severity >= 7.0:
-                    self.working.add(scar_entry)
-            for rule in matched_rules:
-                proc_entries.append(rule.to_memory_entry())
-            results["procedural"] = proc_entries
-
         return results
 
     # --- Active memorization ---
@@ -153,7 +127,7 @@ class AgentMemorySystem:
         memory_type: MemoryType = MemoryType.SEMANTIC,
         expires_at: float | None = None,
     ) -> MemoryEntry:
-        """Actively memorize fact/knowledge into L3."""
+        """Actively memorize fact/knowledge into long-term memory."""
         return self.long_term.store(
             content=fact,
             importance=importance,
@@ -161,36 +135,6 @@ class AgentMemorySystem:
             memory_type=memory_type,
             source="agent_learning",
             expires_at=expires_at,
-        )
-
-    def add_scar(
-        self,
-        failure_pattern: str,
-        lesson: str,
-        trigger_conditions: list[str] | None = None,
-        severity: float = 5.0,
-    ) -> None:
-        """Record a failure scar into L4."""
-        self.procedural.add_scar(
-            failure_pattern=failure_pattern,
-            lesson=lesson,
-            trigger_conditions=trigger_conditions or [],
-            severity=severity,
-        )
-
-    def add_rule(
-        self,
-        condition: str,
-        action: str,
-        priority: float = 5.0,
-        tags: list[str] | None = None,
-    ) -> None:
-        """Add an operational rule into L4."""
-        self.procedural.add_rule(
-            condition=condition,
-            action=action,
-            priority=priority,
-            tags=tags or [],
         )
 
     # --- RAG context assembly ---
@@ -206,7 +150,6 @@ class AgentMemorySystem:
             ("Current Focus", memories["working"]),
             ("Recent Events", memories["short_term"]),
             ("Relevant Knowledge", memories["long_term"]),
-            ("Procedural Guidance", memories.get("procedural", [])),
         ):
             if not entries:
                 continue
@@ -232,24 +175,9 @@ class AgentMemorySystem:
     # --- Maintenance ---
 
     def _consolidate(self) -> None:
-        """Execute memory consolidation (L2 → L3) and TTL cleanup."""
+        """Execute memory consolidation (short-term -> long-term) and TTL cleanup."""
         self.long_term.consolidate(self.short_term, threshold=6.0)
         self.short_term.clear_expired()
-
-    def archive_to_cold_storage(
-        self,
-        entries: list[MemoryEntry] | None = None,
-        start_year: int | None = None,
-        end_year: int | None = None,
-    ) -> None:
-        """Archive entries (or all L3) into L6 cold storage."""
-        if entries is None:
-            entries = [
-                e for _, e in self.long_term._iter_entries()
-                if e.get_effective_importance() < 3.0
-            ]
-        if entries:
-            self.cold_storage.archive(entries, start_year=start_year, end_year=end_year)
 
     def self_reflect(self) -> str:
         """Self-evolution loop: analyse memory health and suggest actions.
@@ -262,7 +190,7 @@ class AgentMemorySystem:
         now = time.time()
         report_lines: list[str] = ["Self-Reflection Report:", "=" * 30]
 
-        # L3 health check
+        # Long-term health check
         ltm_count = self.long_term.count()
         report_lines.append(f"Long-term entries: {ltm_count}")
 
@@ -289,11 +217,6 @@ class AgentMemorySystem:
         self.short_term.clear_expired()
         report_lines.append(f"Short-term buffer: {len(self.short_term.buffer)} items")
 
-        # L4 / L5 / L6 summaries
-        report_lines.append(self.procedural.reflect())
-        report_lines.append(self.programmatic.reflect())
-        report_lines.append(self.cold_storage.reflect())
-
         return "\n".join(report_lines)
 
     def reflect(self) -> str:
@@ -305,9 +228,6 @@ Agent ID: {self.agent_id}
 Working Memory: {len(self.working.items)} items (capacity: {self.working.max_items})
 Short-term Memory: {len(self.short_term.buffer)} items (capacity: {self.short_term.max_size})
 Long-term Memory: {self.long_term.count()} items
-Procedural Memory: {len(self.procedural.scars)} scars, {len(self.procedural.rules)} rules
-Programmatic Memory: {len(self.programmatic.workflows)} workflows
-Cold Storage: {len(self.cold_storage.list_archives())} archives
 Interactions: {self.interaction_count}
         """
         return report

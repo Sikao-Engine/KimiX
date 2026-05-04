@@ -83,7 +83,6 @@ class RecallParams(BaseModel):
     use_working: bool = Field(default=True, description="Include working memory.")
     use_short: bool = Field(default=True, description="Include short-term memory.")
     use_long: bool = Field(default=True, description="Include long-term memory.")
-    use_procedural: bool = Field(default=False, description="Include procedural memory.")
     tags: list[str] = Field(default_factory=list, description="Tags to filter long-term memory.")
 
 
@@ -103,7 +102,6 @@ class Recall(CallableTool2):
                 use_working=params.use_working,
                 use_short=params.use_short,
                 use_long=params.use_long,
-                use_procedural=params.use_procedural,
                 tag_filter=params.tags or None,
             )
             output_parts: list[str] = []

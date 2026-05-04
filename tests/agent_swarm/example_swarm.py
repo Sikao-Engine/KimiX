@@ -64,7 +64,7 @@ class MockSession:
 async def mock_create_session(
     *,
     agent_file: Path | None = None,
-    system_prompt: SystemPromptType = SystemPromptType.Worker,
+    agent_type: SystemPromptType = SystemPromptType.Worker,
     vfs_path: Path | None = None,
     **kwargs: Any,
 ) -> MockSession:
@@ -133,7 +133,7 @@ async def create_swarm_session(task_prompt: str) -> DAG | None:
     agent_file = Path("agent_swarm.yaml")
     session = None
     try:
-        session = await mock_create_session(agent_file=agent_file, system_prompt=SystemPromptType.SwarmCoordinator)
+        session = await mock_create_session(agent_file=agent_file, agent_type=SystemPromptType.SwarmCoordinator)
         custom_data = session.get_custom_data()
         assert custom_data is not None
         dag = DAG()

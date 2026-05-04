@@ -1,4 +1,4 @@
-"""Advanced tests for AgentMemorySystem: L4/L5/L6 integration, scar triggers, self-evolution."""
+"""Advanced tests for AgentMemorySystem: procedural, programmatic, cold storage, self-evolution."""
 
 import os
 import tempfile
@@ -10,50 +10,31 @@ from kimix.memory.system import AgentMemorySystem
 from kimix.memory.types import MemoryType
 
 
-class TestSystemL4Integration:
-    def test_add_scar_and_trigger_in_recall(self):
+class TestSystemProceduralIntegration:
+    def test_add_scar(self):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
             sys = AgentMemorySystem(ltm_path=path)
             sys.add_scar("division by zero", "check denominator", ["divide", "zero"], severity=8.0)
-            # Without use_procedural, recall should stay backward-compatible
-            results = sys.recall("divide by zero")
-            assert "procedural" not in results
-            # With use_procedural=True
-            results = sys.recall("divide by zero", use_procedural=True)
-            assert "procedural" in results
-            assert len(results["procedural"]) >= 1
-            # High-severity scar should be elevated to working memory
-            assert any("SCAR" in e.content for e in sys.working.get_context(10))
+            assert len(sys.procedural.scars) == 1
+            assert sys.procedural.scars[0].failure_pattern == "division by zero"
         finally:
             os.unlink(path)
 
-    def test_add_rule_and_match(self):
+    def test_add_rule(self):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
             sys = AgentMemorySystem(ltm_path=path)
             sys.add_rule("deploy on friday", "reject deployment", 10.0, ["ops"])
-            results = sys.recall("deploy on friday evening", use_procedural=True)
-            assert any("RULE" in e.content for e in results["procedural"])
-        finally:
-            os.unlink(path)
-
-    def test_scar_trigger_disabled(self):
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
-            path = f.name
-        try:
-            sys = AgentMemorySystem(ltm_path=path)
-            sys.scar_trigger_enabled = False
-            sys.add_scar("fail", "avoid", ["fail"], 9.0)
-            results = sys.recall("fail", use_procedural=True)
-            assert results.get("procedural", []) == []
+            assert len(sys.procedural.rules) == 1
+            assert sys.procedural.rules[0].condition == "deploy on friday"
         finally:
             os.unlink(path)
 
 
-class TestSystemL5Integration:
+class TestSystemProgrammaticIntegration:
     def test_register_workflow_and_run(self):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
@@ -85,7 +66,7 @@ class TestSystemL5Integration:
             os.unlink(path)
 
 
-class TestSystemL6Integration:
+class TestSystemColdStorageIntegration:
     def test_archive_to_cold_storage(self):
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name

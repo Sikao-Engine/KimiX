@@ -2,6 +2,7 @@ from string import Template
 from kimix.base import print_warning
 from kimi_agent_sdk import Session
 from kimix.utils import *
+import kimix.base as base
 
 
 async def summarize(temp_file: str | None = None, session: Session | None = None, only_return_remember_str: bool = False) -> str | None:
@@ -23,17 +24,18 @@ async def summarize(temp_file: str | None = None, session: Session | None = None
     last_usage = session.status.context_usage
     from kimix.base import generate_memory
     lines = []
+
     def export_func(text: str, is_thinking: bool):
         if not is_thinking:
-            lines.append(text) 
-    await prompt_async(generate_memory, session=session, info_print=False, output_function=export_func)
-    await session.clear()
+            lines.append(text)
+    await prompt_async(generate_memory, session=session, info_print=False, output_function=export_func, merge_wire_messages=True)
     if lines:
         memory_content = '\n'.join(lines)
         if only_return_remember_str:
             memory_content = f'Remember this:\n```\n{memory_content}\n```\n'
             return memory_content
-        await prompt_async(f'Remember this:\n```\n{memory_content}\n```\nno tool calling, no any action', session=session, info_print=False)
+        system_prompts = get_system_prompt(False, base._default_yolo, '.', f'Memory:\n\n{memory_content}', SystemPromptType.Worker)
+        await session.clear(custom_system_prompt=system_prompts)
     else:
         print_warning('No memory generated.')
         return None
@@ -50,7 +52,8 @@ Output:
 3. **Fixes**: how to avoid them
 4. **Key Takeaways**: brief lessons''')
 
-def summarize_mistake(result_file: str, session = None) -> None:
+
+def summarize_mistake(result_file: str, session=None) -> None:
     errors = get_tool_call_errors(session)
     if not errors:
         print_warning('No errors.')
