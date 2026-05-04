@@ -34,6 +34,8 @@ def set_arg() -> tuple[bool, argparse.Namespace]:
                         help='Specify custom skill directory(s)')
     parser.add_argument('--config', type=str, default=None,
                         help='Path to a JSON config file to load as default provider')
+    parser.add_argument('--ralph', action='store_true',
+                        help='Enable Ralph mode (unlimited iterations)')
     args = parser.parse_args()
 
     if args.command == 'serve':
@@ -62,6 +64,14 @@ def set_arg() -> tuple[bool, argparse.Namespace]:
         print_debug('YOLO OFF.')
     else:
         base.set_default_yolo(True)
+
+    if args.ralph:
+        base._default_ralph = True
+        if base._default_provider is not None:
+            if 'loop_control' not in base._default_provider:
+                base._default_provider['loop_control'] = {}
+            base._default_provider['loop_control']['max_ralph_iterations'] = -1
+        print_debug('Ralph mode ON.')
 
     # Handle --config argument
     if args.config:

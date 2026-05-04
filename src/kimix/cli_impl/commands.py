@@ -254,6 +254,28 @@ def _cmd_file(task_split: list[str], text_arr: list[str]) -> tuple[str | None, b
     return file_path.read_text(encoding='utf-8', errors='replace'), False
 
 
+def _cmd_ralph(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
+    if len(task_split) < 2:
+        print_error('Command must be /ralph:on or /ralph:off')
+        return None, False
+    val = task_split[1].strip().lower()
+    session = get_default_session()
+    if session is None:
+        print_error('No active session.')
+        return None, False
+    if val == 'on':
+        base._default_ralph = True
+        session._cli._runtime.config.loop_control.max_ralph_iterations = -1
+        print_success('Ralph mode ON.')
+    elif val == 'off':
+        base._default_ralph = False
+        session._cli._runtime.config.loop_control.max_ralph_iterations = 0
+        print_success('Ralph mode OFF.')
+    else:
+        print_error('Command must be /ralph:on or /ralph:off')
+    return None, False
+
+
 def _cmd_unknown(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     print_warning('Unrecognized command.')
     return None, False
@@ -274,5 +296,6 @@ _command_map = {
     'plan': _cmd_plan,
     'compact': _cmd_compact,
     'export': _cmd_export,
-    'swarm': _cmd_swarm
+    'swarm': _cmd_swarm,
+    'ralph': _cmd_ralph
 }

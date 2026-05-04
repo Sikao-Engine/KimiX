@@ -93,12 +93,14 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
         }
         # Set loop control
         loop_control = provider_dict.get('loop_control')
+        lc = LoopControl()
         if loop_control and isinstance(loop_control, dict):
-            lc = LoopControl()
             for key, value in loop_control.items():
                 if hasattr(lc, key):
                     setattr(lc, key, value)
-            cfg.loop_control = lc
+        if getattr(base, '_default_ralph', False):
+            lc.max_ralph_iterations = -1
+        cfg.loop_control = lc
         def set_val(name: str, type_var: type) -> None:
             v = provider_dict.get(name)
             if v is not None:

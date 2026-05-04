@@ -134,6 +134,8 @@ async def prompt_async(
                 import time
                 start_time = time.time()
                 base.PRINT_STREAM.think = False
+                if output_function is not None:
+                    merge_wire_messages = True
                 async for message in session.prompt(prompt_str, merge_wire_messages=merge_wire_messages):
                     if cancel_callable is not None and cancel_callable():
                         session.cancel()

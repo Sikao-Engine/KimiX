@@ -411,7 +411,7 @@ def get_skill_dirs(use_kaos_path: bool = True) -> list[Any]:
         return _default_skill_dirs
     return []
 
-
+_default_ralph = False
 generate_memory = '''Summarize the session for a coding agent. Output directly; no preamble.
 1. **Project Overview**: Purpose, scope, tech stack.
 2. **Key Decisions**: Critical choices, rationale, rejected alternatives.

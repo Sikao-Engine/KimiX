@@ -7,6 +7,52 @@ from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 from kimi_cli.session import Session
 from kimix.tools.common import _maybe_export_output_async, _export_to_temp_file_async, ProcessTask
+from kimix.tools.file.bash import (
+    Awk, Bunzip2, Bzip2, Cal, Cat, Cp, Cut, Date, Df, Diff, Du, Env, File,
+    Find, Grep, Gunzip, Gzip, Head, Ln, Ls, Mkdir, Mv, Printenv, Ps, Pwd,
+    Rm, Rmdir, Sed, Tail, Tar, Touch, Tr, Unxz, Unzip, Wc, Xz, Zip,
+)
+
+
+_BASH_COMMANDS: dict[str, CallableTool2] = {
+    "awk": Awk(),
+    "bunzip2": Bunzip2(),
+    "bzip2": Bzip2(),
+    "cal": Cal(),
+    "cat": Cat(),
+    "cp": Cp(),
+    "cut": Cut(),
+    "date": Date(),
+    "df": Df(),
+    "diff": Diff(),
+    "du": Du(),
+    "env": Env(),
+    "file": File(),
+    "find": Find(),
+    "grep": Grep(),
+    "gunzip": Gunzip(),
+    "gzip": Gzip(),
+    "head": Head(),
+    "ln": Ln(),
+    "ls": Ls(),
+    "mkdir": Mkdir(),
+    "mv": Mv(),
+    "printenv": Printenv(),
+    "ps": Ps(),
+    "pwd": Pwd(),
+    "rm": Rm(),
+    "rmdir": Rmdir(),
+    "sed": Sed(),
+    "tail": Tail(),
+    "tar": Tar(),
+    "touch": Touch(),
+    "tr": Tr(),
+    "unxz": Unxz(),
+    "unzip": Unzip(),
+    "wc": Wc(),
+    "xz": Xz(),
+    "zip": Zip(),
+}
 
 
 class RunParams(BaseModel):
@@ -36,7 +82,6 @@ class RunParams(BaseModel):
         description="Run in an independent background process. Returns immediately with a task_id. Use TaskList, TaskOutput. ALWAYS set to True with input detection use `Input` tool."
     )
 
-
 class Run(CallableTool2[RunParams]):
     name: str = "Run"
     description: str = "Run an executable."
@@ -50,6 +95,15 @@ class Run(CallableTool2[RunParams]):
 
     async def __call__(self, params: RunParams) -> ToolReturnValue:
         import sys
+
+        bash_tool = _BASH_COMMANDS.get(params.path)
+        if bash_tool:
+            if params.run_in_background:
+                return await bash_tool(params)
+            else:
+                # TODO run bash_tool(params) in BackgroundStream in `src\kimix\tools\background\utils.py`
+                pass
+
         # check if using python
         if params.path == 'python':
             params.path = sys.executable
