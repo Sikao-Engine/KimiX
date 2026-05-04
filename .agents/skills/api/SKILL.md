@@ -16,6 +16,7 @@ Create a new or resume an existing Kimi session.
 ```python
 from kimix.utils import create_session
 from kaos.path import KaosPath
+from kimix.utils.system_prompt import SystemPromptType
 
 # Create a new session
 session = create_session(
@@ -24,14 +25,14 @@ session = create_session(
     skills_dir=None,                   # Optional: KaosPath to skills directory
     thinking=True,                     # Optional: enable deep thinking
     yolo=True,                         # Optional: enable yolo mode (auto-approve)
-    plan_mode=False,                   # Optional: enable plan mode
-    resume=False,                      # Optional: resume existing session
     agent_file=None,                   # Optional: Path to custom agent_worker.yaml
+    resume=False,                      # Optional: resume existing session
     provider_dict=None,                # Optional: custom LLM provider config dict
+    chat_provider=None,                # Optional: custom ChatProvider instance
     is_sub_agent=False,                # Optional: mark as sub-agent session
-    is_worker_system_prompt=True,      # Optional: use worker system prompt
+    agent_type=SystemPromptType.Worker, # Optional: Worker, TodoMaker, or SwarmCoordinator
     vfs_path=None,                     # Optional: Path for virtual file system
-    chat_provider=None                 # Optional: custom ChatProvider instance
+    extra_system_prompt=None           # Optional: additional system prompt text
 )
 
 # Close session when done
@@ -39,6 +40,20 @@ from kimix.utils import close_session, close_session_async
 close_session(session)
 # Or use async version
 await close_session_async(session)
+```
+
+### create_session_async
+
+Async version of `create_session` for use in async contexts.
+
+```python
+from kimix.utils.session import _create_session_async
+
+session = await _create_session_async(
+    session_id="my_session",
+    resume=True,
+    # ... same parameters as create_session
+)
 ```
 
 ### Default Session
@@ -72,7 +87,8 @@ prompt(
     output_function=custom_print,      # Optional: custom output handler for text chunks
     info_print=True,                   # Optional: print context usage after completion
     cancel_callable=None,              # Optional: callable that returns True to cancel
-    close_session_after_prompt=False   # Optional: close session after prompt completes
+    close_session_after_prompt=False,  # Optional: close session after prompt completes
+    merge_wire_messages=False          # Optional: merge wire messages for output_function
 )
 
 # Async version (coroutine)
@@ -122,13 +138,15 @@ errors = get_tool_call_errors(session)  # or session_id string
 # Returns formatted string: function, arguments, output, message
 ```
 
-### Session Settings
+## System Prompt Types (kimix.utils.system_prompt)
 
 ```python
-from kimix.utils import set_plan_mode
+from kimix.utils.system_prompt import SystemPromptType
 
-# Toggle plan mode (clears context automatically)
-set_plan_mode(value=True, resume=True)
+# Available agent types:
+SystemPromptType.Worker           # Standard coding agent (terse, direct output)
+SystemPromptType.TodoMaker        # Plan maker agent (creates implementation plans)
+SystemPromptType.SwarmCoordinator # Swarm coordinator (builds dependency DAG)
 ```
 
 ## Colorful Printing (kimix.base)
@@ -140,7 +158,7 @@ from kimix.base import (
     print_success,    # Green bold - success messages
     print_error,      # Red bold - error messages
     print_warning,    # Yellow bold - warning messages
-    print_info,       # Magenta - info messages
+    print_info,       # Bright magenta - info messages
     print_debug,      # Bright cyan - debug messages (silent if _quiet=True)
     print_string,     # Plain text (respects _print_func)
 )
@@ -184,7 +202,7 @@ from kimix.base import print_agent_json
 
 # Pretty-print streaming messages from the agent session
 print_agent_json(
-    get_message=lambda: message.model_dump_json(),
+    wire_msg=message,
     output_function=custom_handler  # Optional: callback for text content
 )
 ```
@@ -270,17 +288,29 @@ prompt_path(
 
 ```python
 from kimix.utils import fix_error
+from kimix.utils.fix_error import fix_error_async
 
-# Automatically detect and fix errors from a command
+# Automatically detect and fix errors from a command (sync)
 success = fix_error(
     command="python main.py",
     extra_prompt="Make sure to handle edge cases",  # Optional: extra instructions
     keycode=("error", "exception"),                  # Optional: keywords to detect
     skip_success=True,                               # Optional: skip if return code is 0
     session=None,                                    # Optional: session to use
-    max_loop=4                                       # Optional: max fix attempts
+    max_loop=4,                                      # Optional: max fix attempts
+    merge_wire_messages=False                        # Optional: merge wire messages
 )
 # Returns True if no error or fixed, False if max_loop reached
+
+# Async version
+success = await fix_error_async(
+    command="python main.py",
+    extra_prompt="Handle edge cases",
+    keycode=("error",),
+    session=None,
+    max_loop=4,
+    merge_wire_messages=False
+)
 ```
 
 ## Plan Execution (kimix.utils)
@@ -326,12 +356,12 @@ Default configuration values you can import and modify:
 ```python
 from kimix.base import (
     _default_thinking,       # Deep thinking mode (default: True)
-    _default_plan_mode,      # Plan mode (default: False)
     _default_yolo,           # Yolo mode (default: True)
     _default_agent_file,     # Path to agent_worker.yaml
     _default_agent_file_dir, # Directory containing agent_worker.yaml
     _default_skill_dirs,     # List of skill directories
     _default_provider,       # Custom provider dict or None
+    _default_ralph,          # Max Ralph iterations override or None
     _quiet,                  # If True, suppresses print_debug
     _colorful_print,         # If False, disables ANSI colors
     _print_func,             # Optional custom print handler (text, end) -> None
@@ -344,7 +374,6 @@ from kimix.base import (
 ```python
 from kimix.base import (
     set_default_thinking,
-    set_default_plan_mode,
     set_default_yolo,
     set_default_agent_file_dir,
     set_default_agent_file,
@@ -354,7 +383,6 @@ from kimix.base import (
 
 # Set default configuration values
 set_default_thinking(True)
-set_default_plan_mode(False)
 set_default_yolo(True)
 set_default_agent_file_dir(Path("./custom_agents"))
 set_default_agent_file(Path("./custom_agent.yaml"))
@@ -455,20 +483,23 @@ from kimix.utils import (
     create_session, close_session, close_session_async,
     prompt, prompt_async, clear_default_context, compact_default_context, print_usage,
     get_default_session, get_tool_call_errors,
-    set_plan_mode, cancel_prompt, get_cancel_event,
+    cancel_prompt, get_cancel_event,
     prompt_path, fix_error, async_prompt, async_fix_error,
     context_path, delete_session_dir, make_kaos_dir,
-    execute_plan, check_plan_cache, PlanLoader,
+    execute_plan, check_plan_cache,
     TextSearchIndex, SearchResult, _ensure_text_search,
 )
+from kimix.utils.system_prompt import SystemPromptType
+from kimix.utils.session import _create_session_async
+from kimix.utils.fix_error import fix_error_async
 from kimix.base import (
     print_success, print_error, print_warning,
     print_info, print_debug, colorful_print, colorful_text,
     Color, BgColor, Style, run_thread, sync_all,
     run_process_with_error, run_process_with_error_async,
-    run_script,
+    run_script, print_agent_json,
     get_skill_dirs, percentage_str, COMMON_SKILL_DIRS,
-    set_default_thinking, set_default_plan_mode, set_default_yolo,
+    set_default_thinking, set_default_yolo,
     set_default_agent_file_dir, set_default_agent_file, set_default_skill_dirs, set_default_provider
 )
 

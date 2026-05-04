@@ -12,9 +12,6 @@ if TYPE_CHECKING:
     from kimix.memory.long_term_memory import LongTermMemory
     from kimix.memory.retrieval import NgramTokenizer, InvertedIndex, BM25Scorer, Searcher
     from kimix.memory.system import AgentMemorySystem
-    from kimix.memory.procedural_memory import ProceduralMemory, ScarEntry, RuleEntry
-    from kimix.memory.programmatic_memory import ProgrammaticMemory, Workflow, Task, Trigger, TriggerType
-    from kimix.memory.cold_storage import ColdStorage
     from kimix.memory.sqlite_backend import SQLiteBackend
 
 __all__ = (
