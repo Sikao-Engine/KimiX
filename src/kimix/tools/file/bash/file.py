@@ -4,18 +4,9 @@ import stat
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
+from .params import Params
 
 from kimix.tools.common import _maybe_export_output_async
-
-
-class Params(BaseModel):
-    path: str = Field(description="Executable path.")
-    args: list[str] = Field(default_factory=list, description="Command arguments.")
-    timeout: int = Field(default=10, description="Timeout in seconds.")
-    cwd: str | None = Field(default=None, description="Working directory (default: current directory).")
-    output_path: str | None = Field(default=None, description="Output file path (optional).")
-
 
 def _guess_type(p: Path) -> str:
     if p.is_symlink():
@@ -52,7 +43,6 @@ def _guess_type(p: Path) -> str:
             return "data"
     except OSError as e:
         return f"cannot open ({e})"
-
 
 class File(CallableTool2[Params]):
     name: str = "File"

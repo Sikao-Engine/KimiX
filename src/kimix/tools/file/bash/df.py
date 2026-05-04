@@ -4,18 +4,9 @@ import platform
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
+from .params import Params
 
 from kimix.tools.common import _maybe_export_output_async
-
-
-class Params(BaseModel):
-    path: str = Field(description="Executable path.")
-    args: list[str] = Field(default_factory=list, description="Command arguments.")
-    timeout: int = Field(default=10, description="Timeout in seconds.")
-    cwd: str | None = Field(default=None, description="Working directory (default: current directory).")
-    output_path: str | None = Field(default=None, description="Output file path (optional).")
-
 
 def _get_disk_usage(path: str):
     if platform.system() == "Windows":
@@ -39,7 +30,6 @@ def _get_disk_usage(path: str):
         free = st.f_bavail * st.f_frsize
         used = (st.f_blocks - st.f_bfree) * st.f_frsize
         return total, used, free
-
 
 class Df(CallableTool2[Params]):
     name: str = "Df"

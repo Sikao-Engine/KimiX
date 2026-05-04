@@ -5,18 +5,9 @@ import time
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
+from .params import Params
 
 from kimix.tools.common import _maybe_export_output_async
-
-
-class Params(BaseModel):
-    path: str = Field(description="Executable path.")
-    args: list[str] = Field(default_factory=list, description="Command arguments.")
-    timeout: int = Field(default=10, description="Timeout in seconds.")
-    cwd: str | None = Field(default=None, description="Working directory (default: current directory).")
-    output_path: str | None = Field(default=None, description="Output file path (optional).")
-
 
 def _format_mode(mode: int) -> str:
     perms = [
@@ -32,7 +23,6 @@ def _format_mode(mode: int) -> str:
     ]
     return "".join(perms)
 
-
 def _format_size(size: int, human_readable: bool = False) -> str:
     if not human_readable:
         return str(size)
@@ -42,10 +32,8 @@ def _format_size(size: int, human_readable: bool = False) -> str:
         size /= 1024
     return f"{size:.1f}P"
 
-
 def _format_time(mtime: float) -> str:
     return time.strftime("%b %d %H:%M", time.localtime(mtime))
-
 
 class Ls(CallableTool2[Params]):
     name: str = "Ls"

@@ -3,24 +3,14 @@ import os
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
+from .params import Params
 
 from kimix.tools.common import _maybe_export_output_async
-
-
-class Params(BaseModel):
-    path: str = Field(description="Executable path.")
-    args: list[str] = Field(default_factory=list, description="Command arguments.")
-    timeout: int = Field(default=10, description="Timeout in seconds.")
-    cwd: str | None = Field(default=None, description="Working directory (default: current directory).")
-    output_path: str | None = Field(default=None, description="Output file path (optional).")
-
 
 def _diff_lines(a: list[str], b: list[str]) -> list[str]:
     # Simple unified diff approximation using difflib
     import difflib
     return list(difflib.unified_diff(a, b, lineterm=""))
-
 
 class Diff(CallableTool2[Params]):
     name: str = "Diff"

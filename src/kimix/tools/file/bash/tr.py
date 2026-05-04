@@ -4,18 +4,9 @@ import sys
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
+from .params import Params
 
 from kimix.tools.common import _maybe_export_output_async
-
-
-class Params(BaseModel):
-    path: str = Field(description="Executable path.")
-    args: list[str] = Field(default_factory=list, description="Command arguments.")
-    timeout: int = Field(default=10, description="Timeout in seconds.")
-    cwd: str | None = Field(default=None, description="Working directory (default: current directory).")
-    output_path: str | None = Field(default=None, description="Output file path (optional).")
-
 
 def _expand_set(s: str) -> str:
     if s.startswith("[") and s.endswith("]"):
@@ -33,7 +24,6 @@ def _expand_set(s: str) -> str:
             result.append(s[i])
             i += 1
     return "".join(result)
-
 
 class Tr(CallableTool2[Params]):
     name: str = "Tr"
