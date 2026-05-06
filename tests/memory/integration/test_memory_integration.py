@@ -28,7 +28,7 @@ class TestMemoryIntegration:
                 "Async programming uses async/await keywords, based on event loops",
                 importance=8.5,
                 tags=["python", "async", "concurrency"],
-                memory_type=MemoryType.PROCEDURAL,
+                memory_type=MemoryType.SEMANTIC,
             )
             memory.remember(
                 "User Alice prefers using FastAPI framework to build web services",

@@ -1,4 +1,4 @@
-"""BM25-based retrieve algorithm (refactored from bm25.py)."""
+"""BM25-based retrieve algorithm."""
 
 from __future__ import annotations
 
@@ -9,15 +9,13 @@ import pickle
 import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
 import numpy as np
 from numpy.typing import NDArray
 
 
 class NgramTokenizer:
-    """Overlapping n-gram generator with text normalization."""
-
     __slots__ = ("n",)
 
     def __init__(self, n: int = 2) -> None:
@@ -25,23 +23,21 @@ class NgramTokenizer:
 
     @staticmethod
     def normalize(text: str) -> str:
-        """Lower-case and apply Unicode NFKC normalization."""
         return unicodedata.normalize("NFKC", text.lower())
 
     @staticmethod
     def _is_cjk(char: str) -> bool:
         cp = ord(char)
         return (
-            (0x4E00 <= cp <= 0x9FFF)          # CJK Unified Ideographs
-            or (0xAC00 <= cp <= 0xD7AF)       # Hangul Syllables
-            or (0x3040 <= cp <= 0x309F)       # Hiragana
-            or (0x30A0 <= cp <= 0x30FF)       # Katakana
-            or (0x3400 <= cp <= 0x4DBF)       # Extension A
-            or (0x20000 <= cp <= 0x2EBEF)     # Extensions B-F
+            (0x4E00 <= cp <= 0x9FFF)
+            or (0xAC00 <= cp <= 0xD7AF)
+            or (0x3040 <= cp <= 0x309F)
+            or (0x30A0 <= cp <= 0x30FF)
+            or (0x3400 <= cp <= 0x4DBF)
+            or (0x20000 <= cp <= 0x2EBEF)
         )
 
     def _detect_n(self, text: str) -> int:
-        """Auto-detect n-gram size: bigram for CJK, trigram for mixed/code."""
         if not text:
             return self.n
         cjk_count = 0
@@ -55,7 +51,6 @@ class NgramTokenizer:
         return 3 if self.n < 3 else self.n
 
     def tokenize(self, text: str, n: int | None = None) -> list[str]:
-        """Generate overlapping character n-grams from *text*."""
         text = self.normalize(text).strip()
         if not text:
             return []
@@ -66,8 +61,6 @@ class NgramTokenizer:
 
 
 class InvertedIndex:
-    """Inverted index: build, persist, and load."""
-
     __slots__ = (
         "_term_to_id",
         "_temp_postings",
@@ -89,7 +82,6 @@ class InvertedIndex:
         self._doc_lengths_arr: NDArray[np.int32] = np.array([], dtype=np.int32)
         self._N: int = 0
         self._avgdl: float = 0.0
-        # Finalized compact arrays
         self._posting_docs: list[NDArray[np.int32]] = []
         self._posting_tfs: list[NDArray[np.uint16]] = []
         self._finalized: bool = False
@@ -113,7 +105,6 @@ class InvertedIndex:
         return self._doc_lengths_arr
 
     def add_document(self, doc_id: int, tokens: list[str]) -> None:
-        """Add a document's tokens to the index."""
         if self._finalized:
             raise RuntimeError("Cannot add documents after finalize().")
         counter = Counter(tokens)
@@ -125,7 +116,6 @@ class InvertedIndex:
         self._N = max(self._N, doc_id + 1)
 
     def _is_stop_ngram(self, token: str, df: int, threshold: float = 0.5) -> bool:
-        """Drop n-grams appearing in >*threshold* fraction of docs or pure punctuation."""
         if not token:
             return True
         if df > self._N * threshold:
@@ -135,7 +125,6 @@ class InvertedIndex:
         return False
 
     def finalize(self, stop_threshold: float = 0.5, prune_df: int | None = None) -> None:
-        """Convert temporary postings to compact numpy arrays."""
         if self._finalized:
             return
 
@@ -165,7 +154,6 @@ class InvertedIndex:
                 )
 
         self._term_to_id = kept_terms
-        # Build length + prefix buckets for fast fuzzy expansion
         by_len: dict[int, list[str]] = defaultdict(list)
         by_len_prefix: dict[tuple[int, str], list[str]] = defaultdict(list)
         for term in kept_terms:
@@ -183,7 +171,6 @@ class InvertedIndex:
     def get_postings(
         self, term: str
     ) -> tuple[NDArray[np.int32], NDArray[np.uint16]] | None:
-        """Return (doc_ids, term_frequencies) for *term*, or ``None``."""
         if not self._finalized:
             self.finalize()
         tid = self._term_to_id.get(term)
@@ -192,7 +179,6 @@ class InvertedIndex:
         return self._posting_docs[tid], self._posting_tfs[tid]
 
     def doc_freq(self, term: str) -> int:
-        """Document frequency of *term*."""
         postings = self.get_postings(term)
         if postings is None:
             return 0
@@ -205,7 +191,6 @@ class InvertedIndex:
         return self._term_to_id.keys()
 
     def save(self, path: str | Path) -> None:
-        """Persist the index to disk."""
         if not self._finalized:
             self.finalize()
         path = Path(path)
@@ -224,7 +209,6 @@ class InvertedIndex:
             )
 
     def load(self, path: str | Path) -> None:
-        """Load a persisted index from disk."""
         with open(path, "rb") as f:
             data = pickle.load(f)
         self._term_to_id = data["term_to_id"]
@@ -246,8 +230,6 @@ class InvertedIndex:
 
 
 class BM25Scorer:
-    """BM25 relevance scorer over an :class:`InvertedIndex`."""
-
     __slots__ = ("index", "k1", "b", "_denom_base")
 
     def __init__(
@@ -272,28 +254,19 @@ class BM25Scorer:
 
     @staticmethod
     def _idf(df: int, N: int) -> float:
-        """IDF = ln(1 + (N - df + 0.5) / (df + 0.5)) - Lucene BM25 variant."""
         return math.log(1 + (N - df + 0.5) / (df + 0.5))
 
-    def score(
+    def _accumulate(
         self,
         query_tokens: list[str],
-        candidate_docs: set[int] | None = None,
-    ) -> dict[int, float]:
-        """Accumulate BM25 score per candidate document.
-
-        ``candidate_docs`` restricts scoring to a subset of docs; ``None``
-        scores every document that has at least one query token.
-
-        Duplicate tokens in *query_tokens* are scored multiple times; callers
-        should deduplicate if needed.
-        """
+        candidate_docs: set[int] | None,
+    ) -> np.ndarray:
         N = self.index.N
+        scores_arr = np.zeros(N, dtype=np.float64)
         if N == 0 or self._denom_base is None:
-            return {}
+            return scores_arr
 
         k1_plus_1 = self.k1 + 1.0
-        scores_arr = np.zeros(N, dtype=np.float64)
         denom_base = self._denom_base
 
         if candidate_docs is not None:
@@ -303,7 +276,6 @@ class BM25Scorer:
                 if postings is None:
                     continue
                 docs, tfs = postings
-                # Fast intersection for small candidate sets via searchsorted
                 if len(cand_sorted) <= 256:
                     idx = np.searchsorted(cand_sorted, docs)
                     idx = np.clip(idx, 0, len(cand_sorted) - 1)
@@ -320,8 +292,7 @@ class BM25Scorer:
                 idf = self._idf(df, N)
                 tfs_f = tfs.astype(np.float64)
                 denom = tfs_f + denom_base[docs]
-                token_scores = idf * tfs_f * k1_plus_1 / denom
-                scores_arr[docs] += token_scores
+                scores_arr[docs] += idf * tfs_f * k1_plus_1 / denom
         else:
             for token in query_tokens:
                 postings = self.index.get_postings(token)
@@ -332,9 +303,16 @@ class BM25Scorer:
                 idf = self._idf(df, N)
                 tfs_f = tfs.astype(np.float64)
                 denom = tfs_f + denom_base[docs]
-                token_scores = idf * tfs_f * k1_plus_1 / denom
-                scores_arr[docs] += token_scores
+                scores_arr[docs] += idf * tfs_f * k1_plus_1 / denom
 
+        return scores_arr
+
+    def score(
+        self,
+        query_tokens: list[str],
+        candidate_docs: set[int] | None = None,
+    ) -> dict[int, float]:
+        scores_arr = self._accumulate(query_tokens, candidate_docs)
         nonzero = np.flatnonzero(scores_arr)
         return {int(i): float(scores_arr[i]) for i in nonzero}
 
@@ -344,58 +322,11 @@ class BM25Scorer:
         top_k: int,
         candidate_docs: set[int] | None = None,
     ) -> list[tuple[int, float]]:
-        """Accumulate BM25 scores and return the top-*k* results.
-
-        This is significantly faster than :meth:`score` followed by manual
-        top-*k* selection when the number of documents is large, because it
-        avoids materialising a full ``dict`` of all nonzero scores.
-        """
-        N = self.index.N
-        if N == 0 or self._denom_base is None or top_k <= 0:
+        if self.index.N == 0 or self._denom_base is None or top_k <= 0:
             return []
 
-        k1_plus_1 = self.k1 + 1.0
-        scores_arr = np.zeros(N, dtype=np.float64)
-        denom_base = self._denom_base
-
-        if candidate_docs is not None:
-            cand_sorted = np.array(sorted(candidate_docs), dtype=np.int32)
-            for token in query_tokens:
-                postings = self.index.get_postings(token)
-                if postings is None:
-                    continue
-                docs, tfs = postings
-                if len(cand_sorted) <= 256:
-                    idx = np.searchsorted(cand_sorted, docs)
-                    idx = np.clip(idx, 0, len(cand_sorted) - 1)
-                    valid = cand_sorted[idx] == docs
-                else:
-                    valid = np.isin(docs, cand_sorted)
-                if not np.any(valid):
-                    continue
-                docs = docs[valid]
-                tfs = tfs[valid]
-                df = len(docs)
-                if df == 0:
-                    continue
-                idf = self._idf(df, N)
-                tfs_f = tfs.astype(np.float64)
-                denom = tfs_f + denom_base[docs]
-                token_scores = idf * tfs_f * k1_plus_1 / denom
-                scores_arr[docs] += token_scores
-        else:
-            for token in query_tokens:
-                postings = self.index.get_postings(token)
-                if postings is None:
-                    continue
-                docs, tfs = postings
-                df = len(docs)
-                idf = self._idf(df, N)
-                tfs_f = tfs.astype(np.float64)
-                denom = tfs_f + denom_base[docs]
-                token_scores = idf * tfs_f * k1_plus_1 / denom
-                scores_arr[docs] += token_scores
-
+        scores_arr = self._accumulate(query_tokens, candidate_docs)
+        N = self.index.N
         if top_k >= N:
             nonzero = np.flatnonzero(scores_arr)
             return [(int(i), float(scores_arr[i])) for i in nonzero]
@@ -409,8 +340,6 @@ class BM25Scorer:
 
 
 class LevenshteinAutomaton:
-    """Damerau-Levenshtein automaton for fuzzy term expansion."""
-
     __slots__ = ("pattern", "max_edits", "prefix_length", "_pattern_counts", "_pattern_counts_items")
 
     def __init__(
@@ -422,7 +351,6 @@ class LevenshteinAutomaton:
         self.pattern = pattern
         self.max_edits = max_edits
         self.prefix_length = prefix_length
-        # Pre-compute character frequencies for cheap lower-bound rejection
         pc: dict[str, int] = {}
         for c in pattern:
             pc[c] = pc.get(c, 0) + 1
@@ -431,7 +359,6 @@ class LevenshteinAutomaton:
 
     @staticmethod
     def auto_fuzziness(term: str) -> int:
-        """AUTO mode: 0-2 chars -> 0, 3-5 -> 1, >5 -> 2."""
         length = len(term)
         if length <= 2:
             return 0
@@ -442,14 +369,12 @@ class LevenshteinAutomaton:
     @staticmethod
     @functools.lru_cache(maxsize=65536)
     def _damerau_levenshtein(s: str, t: str) -> int:
-        """Compute Damerau-Levenshtein distance between *s* and *t*."""
         if len(s) < len(t):
             s, t = t, s
         m, n = len(s), len(t)
         if n == 0:
             return m
 
-        # Fast paths for very short strings (common for n-grams)
         if n == 1:
             return 0 if s[0] == t[0] else 1
         if m == 2 and n == 2:
@@ -470,9 +395,9 @@ class LevenshteinAutomaton:
             for j in range(1, n + 1):
                 cost = 0 if si_1 == t[j - 1] else 1
                 curr[j] = min(
-                    curr[j - 1] + 1,      # insertion
-                    prev[j] + 1,          # deletion
-                    prev[j - 1] + cost,   # substitution
+                    curr[j - 1] + 1,
+                    prev[j] + 1,
+                    prev[j - 1] + cost,
                 )
                 if (
                     i > 1
@@ -480,12 +405,11 @@ class LevenshteinAutomaton:
                     and si_1 == t[j - 2]
                     and s[i - 2] == t[j - 1]
                 ):
-                    curr[j] = min(curr[j], prev_prev[j - 2] + 1)  # transposition
+                    curr[j] = min(curr[j], prev_prev[j - 2] + 1)
             prev_prev, prev, curr = prev, curr, prev_prev
         return prev[n]
 
     def _freq_lower_bound(self, term: str) -> int:
-        """Lower bound on edit distance based on character frequencies."""
         total = 0
         matched = 0
         term_len = len(term)
@@ -498,17 +422,14 @@ class LevenshteinAutomaton:
         return (total + 1) // 2
 
     def match(self, dictionary: Iterable[str], max_expansions: int = 50) -> list[str]:
-        """Walk *dictionary* and collect up to *max_expansions* matches."""
         results: list[str] = []
         pattern_len = len(self.pattern)
         max_edits = self.max_edits
         prefix_length = self.prefix_length
         prefix = self.pattern[:prefix_length] if prefix_length > 0 else ""
         dl = self._damerau_levenshtein
-        # Pre-compute pattern char frequencies for cheap lower-bound rejection
         has_freq_filter = len(self.pattern) <= 64
 
-        # Fast-path: if dictionary has prefix buckets, exploit them
         if hasattr(dictionary, "_terms_by_length_prefix"):
             terms_by_prefix = dictionary._terms_by_length_prefix  # type: ignore[attr-defined]
             for length in range(
@@ -518,9 +439,6 @@ class LevenshteinAutomaton:
                 if not bucket and prefix_length > 0:
                     continue
                 candidates = bucket or dictionary._terms_by_length.get(length, ())  # type: ignore[attr-defined]
-                # When prefix_length == 1, candidates already come from
-                # _terms_by_length_prefix which is keyed by (length, first_char),
-                # so the prefix check is redundant.
                 if prefix_length == 1:
                     for term in candidates:
                         if len(results) >= max_expansions:
@@ -543,7 +461,6 @@ class LevenshteinAutomaton:
                     return results
             return results
 
-        # Fast-path: if dictionary has length buckets only
         if hasattr(dictionary, "_terms_by_length"):
             terms_by_length = dictionary._terms_by_length  # type: ignore[attr-defined]
             for length in range(
@@ -585,8 +502,6 @@ class LevenshteinAutomaton:
 
 
 class Searcher:
-    """Query pipeline orchestrator: normalize -> tokenize -> score -> rank."""
-
     __slots__ = (
         "index",
         "tokenizer",
@@ -623,11 +538,9 @@ class Searcher:
 
     @staticmethod
     def _is_latin_token(token: str) -> bool:
-        """Heuristic: token is primarily Latin/ASCII."""
         return bool(token) and all(ord(c) < 128 for c in token)
 
     def _expand_token(self, token: str) -> list[str]:
-        """Fuzzy-expand a Latin token; CJK tokens are returned verbatim if present."""
         if not self._is_latin_token(token):
             return [token] if self.index.has_term(token) else []
 
@@ -648,7 +561,6 @@ class Searcher:
         return matches if matches else ([token] if self.index.has_term(token) else [])
 
     def search(self, query: str, top_k: int = 10) -> list[tuple[int, float]]:
-        """Run the full query pipeline and return top-k *(doc_id, score)* pairs."""
         if self.index.N == 0:
             return []
 
@@ -656,7 +568,6 @@ class Searcher:
         if not query_tokens:
             return []
 
-        # Expand tokens and enforce minimum-match
         expanded_tokens: list[str] = []
         unique_query = list(dict.fromkeys(query_tokens))
         hits = 0

@@ -8,27 +8,15 @@ import json
 import math
 import os
 import time
-from typing import Dict, List, Optional, Sequence, Set
-
 import numpy as np
 
-from kimix.memory.types import MemoryEntry, MemoryType
+from kimix.memory.types import MemoryEntry, MemoryType, _DECAY_COEFF
 from kimix.memory.embedding import EmbeddingProvider
 from kimix.memory.retrieval import InvertedIndex, NgramTokenizer, Searcher
-
-# Pre-computed decay coefficient (same as in types.py)
-_DECAY_COEFF = -0.1 / 86400.0
+from kimix.memory.short_term_memory import ShortTermMemory
 
 
 class LongTermMemory:
-    """Long-term memory: persistent storage with hybrid semantic + BM25 retrieval.
-
-    Supports two backends:
-    * **dict + JSON** (default) — backward-compatible in-memory dict with JSON persistence.
-    * **SQLite** — pass a :class:`kimix.memory.sqlite_backend.SQLiteBackend` instance
-      for ACID, multi-agent storage.
-    """
-
     __slots__ = (
         "storage_path", "dim", "entries", "index", "embedding_provider",
         "_dirty", "_backend", "_agent_id", "_bm25_index", "_bm25_searcher",
@@ -37,9 +25,9 @@ class LongTermMemory:
 
     def __init__(
         self,
-        storage_path: Optional[str] = None,
+        storage_path: str | None = None,
         dim: int = 384,
-        backend: Optional["kimix.memory.sqlite_backend.SQLiteBackend"] = None,
+        backend: "kimix.memory.sqlite_backend.SQLiteBackend" | None = None,
         agent_id: str = "default",
     ) -> None:
         self.storage_path = storage_path or "ltm.json"
@@ -50,23 +38,20 @@ class LongTermMemory:
             if parent:
                 os.makedirs(parent, exist_ok=True)
         self.dim = dim
-        self.entries: Dict[str, MemoryEntry] = {}  # id -> entry
-        self.index: Dict[str, Set[str]] = {}       # tag -> entry_ids
+        self.entries: dict[str, MemoryEntry] = {}
+        self.index: dict[str, set[str]] = {}
         self.embedding_provider = EmbeddingProvider(dim)
         self._dirty = False
         self._backend = backend
         self._agent_id = agent_id
 
-        # BM25 structures (lazy-built)
-        self._bm25_index: Optional[InvertedIndex] = None
-        self._bm25_searcher: Optional[Searcher] = None
-        self._doc_id_map: Dict[str, int] = {}      # entry_id -> bm25_doc_id
-        self._bm25_doc_to_entry_id: list[str] = []  # bm25_doc_id -> entry_id
+        self._bm25_index: InvertedIndex | None = None
+        self._bm25_searcher: Searcher | None = None
+        self._doc_id_map: dict[str, int] = {}
+        self._bm25_doc_to_entry_id: list[str] = []
         self._next_doc_id = 0
 
         self._load()
-
-    # --- Internal helpers ---
 
     def _hash(self, content: str) -> str:
         return hashlib.blake2b(content.encode(), digest_size=8).hexdigest()
@@ -93,14 +78,12 @@ class LongTermMemory:
             self._invalidate_bm25()
 
     def _build_bm25(self) -> Searcher:
-        """Build or rebuild the BM25 inverted index from current entries."""
         idx = InvertedIndex()
         tokenizer = NgramTokenizer()
         self._doc_id_map = {}
         self._bm25_doc_to_entry_id = []
         self._next_doc_id = 0
         if self._backend is not None:
-            # Fast path: avoid deserialising embeddings and full MemoryEntry objects.
             now = time.time()
             for eid, content, expires_at in self._backend.iter_rows(
                 agent_id=self._agent_id, exclude_expired=False
@@ -111,8 +94,7 @@ class LongTermMemory:
                 self._next_doc_id += 1
                 self._doc_id_map[eid] = doc_id
                 self._bm25_doc_to_entry_id.append(eid)
-                tokens = tokenizer.tokenize(content)
-                idx.add_document(doc_id, tokens)
+                idx.add_document(doc_id, tokenizer.tokenize(content))
         else:
             for eid, entry in self.entries.items():
                 if entry.is_expired():
@@ -121,8 +103,7 @@ class LongTermMemory:
                 self._next_doc_id += 1
                 self._doc_id_map[eid] = doc_id
                 self._bm25_doc_to_entry_id.append(eid)
-                tokens = tokenizer.tokenize(entry.content)
-                idx.add_document(doc_id, tokens)
+                idx.add_document(doc_id, tokenizer.tokenize(entry.content))
         idx.finalize()
         self._bm25_index = idx
         self._bm25_searcher = Searcher(idx, tokenizer=tokenizer)
@@ -134,7 +115,6 @@ class LongTermMemory:
         return self._bm25_searcher
 
     def _iter_entries(self):
-        """Iterate over (entry_id, MemoryEntry) regardless of backend."""
         if self._backend is not None:
             for eid, entry in self._backend.list_all(
                 agent_id=self._agent_id,
@@ -154,7 +134,9 @@ class LongTermMemory:
             return entry
         return self.entries.get(entry_id)
 
-    # --- Persistence (JSON fallback) ---
+    @staticmethod
+    def _valid(entry: MemoryEntry, now: float, min_importance: float) -> bool:
+        return (entry.expires_at is None or entry.expires_at > now) and entry.importance >= min_importance
 
     def _load(self) -> None:
         if self._backend is not None:
@@ -166,8 +148,6 @@ class LongTermMemory:
                 entry = MemoryEntry.from_dict(item)
                 if entry.agent_id != self._agent_id:
                     continue
-                # Normalise list embeddings to unit-norm ndarrays so
-                # retrieve() can skip redundant norm calculations.
                 emb = entry.embedding
                 if isinstance(emb, list):
                     arr = np.asarray(emb, dtype=np.float32)
@@ -191,19 +171,16 @@ class LongTermMemory:
             json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
         self._dirty = False
 
-    # --- Public API ---
-
     def store(
         self,
         content: str,
         importance: float = 5.0,
-        tags: Optional[List[str]] = None,
+        tags: list[str] | None = None,
         memory_type: MemoryType = MemoryType.SEMANTIC,
         source: str = "",
-        metadata: Optional[Dict[str, object]] = None,
-        expires_at: Optional[float] = None,
+        metadata: dict[str, object] | None = None,
+        expires_at: float | None = None,
     ) -> MemoryEntry:
-        """Store long-term memory."""
         entry = MemoryEntry(
             content=content,
             memory_type=memory_type,
@@ -222,16 +199,10 @@ class LongTermMemory:
 
     def store_many(
         self,
-        items: Sequence[Dict[str, object]],
-    ) -> List[MemoryEntry]:
-        """Batch-store multiple entries with a single persistence flush.
-
-        Each item in *items* is a dict of kwargs accepted by :meth:`store`.
-        This is **O(N)** total instead of **O(N²)** when calling :meth:`store`
-        in a loop.
-        """
-        results: List[MemoryEntry] = []
-        batch: List[tuple[str, MemoryEntry]] = []
+        items: list[dict[str, object]],
+    ) -> list[MemoryEntry]:
+        results: list[MemoryEntry] = []
+        batch: list[tuple[str, MemoryEntry]] = []
         embed = self.embedding_provider.embed
         for item in items:
             content = str(item["content"])
@@ -266,17 +237,12 @@ class LongTermMemory:
         self,
         query: str,
         top_k: int = 5,
-        tag_filter: Optional[List[str]] = None,
+        tag_filter: list[str] | None = None,
         min_importance: float = 0.0,
         use_hybrid: bool = True,
         bm25_weight: float = 0.3,
         query_vec: np.ndarray | None = None,
-    ) -> List[MemoryEntry]:
-        """Hybrid semantic + BM25 retrieval from long-term memory.
-
-        Final score = ``(1 - bm25_weight) * semantic_sim + bm25_weight * bm25_score``,
-        where BM25 scores are min-max normalised per-query.
-        """
+    ) -> list[MemoryEntry]:
         if self._backend is None and not self.entries:
             return []
 
@@ -284,7 +250,6 @@ class LongTermMemory:
             query_vec = self.embedding_provider.embed(query)
         now = time.time()
 
-        # Collect candidates (filter expiry and importance during iteration)
         candidates: list[MemoryEntry] = []
         candidate_ids: list[str] = []
         if tag_filter:
@@ -293,14 +258,12 @@ class LongTermMemory:
                     tag_filter, agent_id=self._agent_id, dim=self.dim
                 )
                 for eid, entry in raw:
-                    if entry.expires_at is not None and entry.expires_at <= now:
-                        continue
-                    if entry.importance < min_importance:
+                    if not self._valid(entry, now, min_importance):
                         continue
                     candidates.append(entry)
                     candidate_ids.append(eid)
             else:
-                filtered_ids: Optional[Set[str]] = None
+                filtered_ids: set[str] | None = None
                 for tag in tag_filter:
                     ids = self.index.get(tag)
                     if ids is None:
@@ -313,23 +276,20 @@ class LongTermMemory:
                     return []
                 for eid in filtered_ids:
                     entry = self.entries.get(eid)
-                    if entry is not None and (entry.expires_at is None or entry.expires_at > now):
-                        if entry.importance >= min_importance:
-                            candidates.append(entry)
-                            candidate_ids.append(eid)
-        else:
-            for eid, entry in self._iter_entries():
-                if entry.expires_at is None or entry.expires_at > now:
-                    if entry.importance >= min_importance:
+                    if entry is not None and self._valid(entry, now, min_importance):
                         candidates.append(entry)
                         candidate_ids.append(eid)
+        else:
+            for eid, entry in self._iter_entries():
+                if self._valid(entry, now, min_importance):
+                    candidates.append(entry)
+                    candidate_ids.append(eid)
 
         if not candidates or top_k <= 0:
             return []
 
         n_cand = len(candidates)
 
-        # Batch-embed missing vectors
         missing = [entry for entry in candidates if entry.embedding is None]
         if missing:
             texts = [e.content for e in missing]
@@ -337,8 +297,6 @@ class LongTermMemory:
             for entry, vec in zip(missing, vecs):
                 entry.embedding = vec
 
-        # Vectorised semantic similarity
-        # Use np.stack when all embeddings are already ndarrays (common case)
         try:
             embeddings = np.stack([entry.embedding for entry in candidates])
         except (TypeError, ValueError):
@@ -354,7 +312,6 @@ class LongTermMemory:
             with np.errstate(divide="ignore", invalid="ignore"):
                 sims = np.where(norms == 0, 0.0, dots / (norms * q_norm))
 
-            # Vectorised effective importance
             timestamps = np.empty(n_cand, dtype=np.float64)
             access_counts = np.empty(n_cand, dtype=np.float64)
             importances = np.empty(n_cand, dtype=np.float64)
@@ -367,7 +324,6 @@ class LongTermMemory:
             eff = importances * recency * (1.0 + access_boost)
             semantic_arr = sims.astype(np.float64) * eff
 
-        # BM25 scores (single-pass min-max normalisation)
         bm25_arr = np.zeros(n_cand, dtype=np.float64)
         if use_hybrid:
             searcher = self._ensure_bm25()
@@ -384,7 +340,6 @@ class LongTermMemory:
                     if idx is not None:
                         bm25_arr[idx] = (score - min_bm25) / bm25_range
 
-        # Hybrid fusion (vectorised)
         final = (1.0 - bm25_weight) * semantic_arr + bm25_weight * bm25_arr
         if top_k * 4 < n_cand:
             top_indices = np.argpartition(final, -top_k)[-top_k:]
@@ -400,18 +355,13 @@ class LongTermMemory:
         for entry in results:
             entry.touch(now)
 
-        # Note: access-count bumps are *not* persisted to JSON on every retrieve
-        # to avoid O(N) JSON rewrites on the read path.  They survive until the
-        # next write operation (store/forget/consolidate) or process exit.
         return results
 
     def consolidate(
         self,
-        short_term: "kimix.memory.short_term_memory.ShortTermMemory",
+        short_term: ShortTermMemory,
         threshold: float = 7.0,
     ) -> None:
-        """Memory consolidation: migrate high-value short-term to long-term."""
-        from kimix.memory.short_term_memory import ShortTermMemory
         if not isinstance(short_term, ShortTermMemory):
             raise TypeError("short_term must be a ShortTermMemory instance")
 
@@ -438,7 +388,6 @@ class LongTermMemory:
                 self._update_index(entry_id, entry)
             self._dirty = True
 
-        # Invalidate once after batch insert instead of N times in the loop.
         self._invalidate_bm25()
 
         migrate_ids = {id(entry) for entry in to_migrate}
@@ -447,7 +396,6 @@ class LongTermMemory:
         self._save()
 
     def forget(self, entry_id: str) -> None:
-        """Active forgetting: reduce importance or delete."""
         if self._backend is not None:
             entry = self._backend.get(entry_id, dim=self.dim)
             if entry is None:
@@ -476,13 +424,7 @@ class LongTermMemory:
         self._invalidate_bm25()
         self._save()
 
-    def forget_many(self, entry_ids: Sequence[str]) -> None:
-        """Batch-active forgetting with a single persistence flush.
-
-        Each entry has its importance halved; entries falling below 0.1 are
-        deleted.  This is **O(N)** total persistence work instead of
-        **O(N²)** when calling :meth:`forget` in a loop.
-        """
+    def forget_many(self, entry_ids: list[str]) -> None:
         if self._backend is not None:
             for entry_id in entry_ids:
                 entry = self._backend.get(entry_id, dim=self.dim)

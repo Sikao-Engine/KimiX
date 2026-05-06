@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
-
 from kimix.memory.types import MemoryEntry, MemoryType
 from kimix.memory.embedding import EmbeddingProvider
 from kimix.memory.working_memory import WorkingMemory
@@ -13,8 +11,6 @@ from kimix.memory.long_term_memory import LongTermMemory
 
 
 class AgentMemorySystem:
-    """Complete Agent memory system."""
-
     def __init__(
         self,
         dim: int = 384,
@@ -26,7 +22,6 @@ class AgentMemorySystem:
         self.agent_id = agent_id
         self.embedding_provider = EmbeddingProvider(dim)
 
-        # Optional SQLite backend
         backend = None
         if use_sqlite:
             from kimix.memory.sqlite_backend import SQLiteBackend
@@ -41,11 +36,8 @@ class AgentMemorySystem:
             agent_id=agent_id,
         )
 
-        # Config
         self.consolidation_interval = 100
         self.interaction_count = 0
-
-    # --- Perception ---
 
     def perceive(
         self,
@@ -55,7 +47,6 @@ class AgentMemorySystem:
         source: str = "environment",
         expires_at: float | None = None,
     ) -> MemoryEntry:
-        """Agent perceives input, stores in working and short-term memory."""
         entry = MemoryEntry(
             content=observation,
             memory_type=MemoryType.EPISODIC,
@@ -65,7 +56,6 @@ class AgentMemorySystem:
             expires_at=expires_at,
             agent_id=self.agent_id,
         )
-
         self.working.add(entry)
         self.short_term.add(entry)
         self.interaction_count += 1
@@ -74,8 +64,6 @@ class AgentMemorySystem:
             self._consolidate()
 
         return entry
-
-    # --- Recall ---
 
     def recall(
         self,
@@ -86,35 +74,28 @@ class AgentMemorySystem:
         use_long: bool = True,
         tag_filter: list[str] | None = None,
     ) -> dict[str, list[MemoryEntry]]:
-        """Multi-tier recall."""
         results: dict[str, list[MemoryEntry]] = {
             "working": [],
             "short_term": [],
             "long_term": [],
         }
-
         if context_size <= 0:
             return results
 
-        # Compute query embedding once and share across tiers.
         query_vec = self.embedding_provider.embed(query)
 
         if use_working:
             results["working"] = self.working.get_context(context_size)
-
         if use_short:
             results["short_term"] = self.short_term.search(
                 query, self.embedding_provider, top_k=context_size, query_vec=query_vec
             )
-
         if use_long:
             results["long_term"] = self.long_term.retrieve(
                 query, top_k=context_size, tag_filter=tag_filter, query_vec=query_vec
             )
 
         return results
-
-    # --- Active memorization ---
 
     def remember(
         self,
@@ -124,7 +105,6 @@ class AgentMemorySystem:
         memory_type: MemoryType = MemoryType.SEMANTIC,
         expires_at: float | None = None,
     ) -> MemoryEntry:
-        """Actively memorize fact/knowledge into long-term memory."""
         return self.long_term.store(
             content=fact,
             importance=importance,
@@ -134,10 +114,7 @@ class AgentMemorySystem:
             expires_at=expires_at,
         )
 
-    # --- RAG context assembly ---
-
     def get_context_for_llm(self, query: str, max_tokens: int = 2000) -> str:
-        """Generate context prompt for LLM (RAG style)."""
         memories = self.recall(query, context_size=5)
 
         context_parts: list[str] = []
@@ -169,25 +146,14 @@ class AgentMemorySystem:
 
         return "\n".join(context_parts)
 
-    # --- Maintenance ---
-
     def _consolidate(self) -> None:
-        """Execute memory consolidation (short-term -> long-term) and TTL cleanup."""
         self.long_term.consolidate(self.short_term, threshold=6.0)
         self.short_term.clear_expired()
 
     def self_reflect(self) -> str:
-        """Self-evolution loop: analyse memory health and suggest actions.
-
-        * Down-rank rarely-accessed memories.
-        * Promote high-access memories.
-        * Clear expired entries.
-        * Return a human-readable report.
-        """
         now = time.time()
         report_lines: list[str] = ["Self-Reflection Report:", "=" * 30]
 
-        # Long-term health check
         ltm_count = self.long_term.count()
         report_lines.append(f"Long-term entries: {ltm_count}")
 
@@ -200,31 +166,25 @@ class AgentMemorySystem:
                     low_access.append(e)
                 elif e.access_count >= 5:
                     high_access.append(e)
-            # Down-rank stale memories
             for entry in low_access:
                 entry.importance = max(0.1, entry.importance * 0.8)
-            # Up-rank hot memories
             for entry in high_access:
                 entry.importance = min(10.0, entry.importance * 1.1)
 
             report_lines.append(f"  Down-ranked stale: {len(low_access)}")
             report_lines.append(f"  Up-ranked hot: {len(high_access)}")
 
-        # TTL cleanup across tiers
         self.short_term.clear_expired()
         report_lines.append(f"Short-term buffer: {len(self.short_term.buffer)} items")
 
         return "\n".join(report_lines)
 
     def reflect(self) -> str:
-        """Generate memory system status report."""
-        report = f"""
-Memory System Status Report:
+        return f"""Memory System Status Report:
 ===========================
 Agent ID: {self.agent_id}
 Working Memory: {len(self.working.items)} items (capacity: {self.working.max_items})
 Short-term Memory: {len(self.short_term.buffer)} items (capacity: {self.short_term.max_size})
 Long-term Memory: {self.long_term.count()} items
 Interactions: {self.interaction_count}
-        """
-        return report
+"""

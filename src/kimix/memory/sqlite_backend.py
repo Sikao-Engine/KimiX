@@ -1,8 +1,4 @@
-"""SQLite backend: ACID storage for L2/L3 memory tiers.
-
-Keeps the ``MemoryEntry`` interface compatible while replacing JSON/dict
-storage with SQLite.  Embeddings are stored as BLOBs (float32 arrays).
-"""
+"""SQLite backend: ACID storage for L2/L3 memory tiers."""
 
 from __future__ import annotations
 
@@ -18,8 +14,6 @@ from kimix.memory.types import MemoryEntry, MemoryType
 
 
 class SQLiteBackend:
-    """SQLite-backed memory store with agent isolation."""
-
     _SCHEMA = """
     CREATE TABLE IF NOT EXISTS memories (
         id TEXT PRIMARY KEY,
@@ -30,9 +24,9 @@ class SQLiteBackend:
         access_count INTEGER NOT NULL DEFAULT 0,
         last_accessed REAL NOT NULL,
         embedding BLOB,
-        tags TEXT,               -- JSON list (kept for migration / read-only mirrors)
+        tags TEXT,
         source TEXT,
-        metadata TEXT,           -- JSON dict
+        metadata TEXT,
         expires_at REAL,
         agent_id TEXT NOT NULL DEFAULT 'default'
     );
@@ -40,16 +34,9 @@ class SQLiteBackend:
     CREATE INDEX IF NOT EXISTS idx_memories_agent ON memories(agent_id);
     CREATE INDEX IF NOT EXISTS idx_memories_timestamp ON memories(timestamp);
     CREATE INDEX IF NOT EXISTS idx_memories_expires ON memories(expires_at);
-    CREATE INDEX IF NOT EXISTS idx_memories_agent_type_ts
-        ON memories(agent_id, memory_type, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_memories_agent_expires
-        ON memories(agent_id, expires_at);
+    CREATE INDEX IF NOT EXISTS idx_memories_agent_type_ts ON memories(agent_id, memory_type, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_memories_agent_expires ON memories(agent_id, expires_at);
 
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-        content, content_rowid=rowid
-    );
-
-    -- Relational tag storage for fast AND-semantics tag search
     CREATE TABLE IF NOT EXISTS memory_tags (
         entry_id TEXT NOT NULL,
         tag TEXT NOT NULL,
@@ -73,21 +60,13 @@ class SQLiteBackend:
         self._conn.commit()
 
     def _apply_pragmas(self) -> None:
-        # WAL mode allows readers to not block writers and improves concurrency.
         self._conn.execute("PRAGMA journal_mode=WAL")
-        # NORMAL is safe with WAL and much faster than FULL.
         self._conn.execute("PRAGMA synchronous=NORMAL")
-        # ~64 MB page cache (negative = kiB units).
         self._conn.execute("PRAGMA cache_size=-64000")
-        # Keep temp tables in memory.
         self._conn.execute("PRAGMA temp_store=MEMORY")
-        # Memory-map up to 256 MB of the DB file (reduces system calls).
         self._conn.execute("PRAGMA mmap_size=268435456")
-        # Foreign keys are required for CASCADE to work on memory_tags.
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.commit()
-
-    # --- Serialization helpers ------------------------------------------------
 
     @staticmethod
     def _embedding_to_blob(embedding: np.ndarray | list[float] | None) -> bytes | None:
@@ -95,20 +74,10 @@ class SQLiteBackend:
             return None
         if isinstance(embedding, np.ndarray) and embedding.dtype == np.float32:
             return embedding.tobytes()
-        arr = np.asarray(embedding, dtype=np.float32)
-        return arr.tobytes()
-
-    @staticmethod
-    def _blob_to_embedding(blob: bytes | None, dim: int = 384) -> np.ndarray | None:
-        if blob is None:
-            return None
-        # Return a view (not a copy) for speed; caller should copy if mutation is required.
-        return np.frombuffer(blob, dtype=np.float32).reshape(-1)
+        return np.asarray(embedding, dtype=np.float32).tobytes()
 
     @staticmethod
     def _row_to_entry(row: sqlite3.Row, dim: int = 384) -> MemoryEntry:
-        # Use integer indices for sqlite3.Row (faster than string keys).
-        jl = json.loads
         emb = row[7]
         if emb is not None:
             emb = np.frombuffer(emb, dtype=np.float32).reshape(-1)
@@ -120,9 +89,9 @@ class SQLiteBackend:
             access_count=row[5],
             last_accessed=row[6],
             embedding=emb,
-            tags=jl(row[8]) if row[8] is not None else [],
+            tags=json.loads(row[8]) if row[8] is not None else [],
             source=row[9] or "",
-            metadata=jl(row[10]) if row[10] is not None else {},
+            metadata=json.loads(row[10]) if row[10] is not None else {},
             expires_at=row[11],
             agent_id=row[12],
         )
@@ -138,10 +107,7 @@ class SQLiteBackend:
     def _delete_tags(self, entry_id: str) -> None:
         self._conn.execute("DELETE FROM memory_tags WHERE entry_id = ?", (entry_id,))
 
-    # --- CRUD -----------------------------------------------------------------
-
     def store(self, entry: MemoryEntry, entry_id: str, dim: int = 384) -> None:
-        """Insert or replace a memory entry."""
         tags_blob = json.dumps(entry.tags, ensure_ascii=False) if entry.tags else None
         meta_blob = json.dumps(entry.metadata, ensure_ascii=False) if entry.metadata else None
         with self._conn:
@@ -173,7 +139,6 @@ class SQLiteBackend:
                 self._insert_tags(entry_id, entry.tags)
 
     def store_many(self, items: list[tuple[str, MemoryEntry]], dim: int = 384) -> None:
-        """Batch insert/replace entries in a single transaction."""
         if not items:
             return
 
@@ -213,10 +178,7 @@ class SQLiteBackend:
                 mem_params,
             )
             if tag_delete_params:
-                self._conn.executemany(
-                    "DELETE FROM memory_tags WHERE entry_id = ?",
-                    tag_delete_params,
-                )
+                self._conn.executemany("DELETE FROM memory_tags WHERE entry_id = ?", tag_delete_params)
             if tag_insert_params:
                 self._conn.executemany(
                     "INSERT OR IGNORE INTO memory_tags (entry_id, tag) VALUES (?, ?)",
@@ -224,18 +186,14 @@ class SQLiteBackend:
                 )
 
     def get(self, entry_id: str, dim: int = 384) -> MemoryEntry | None:
-        row = self._conn.execute(
-            "SELECT * FROM memories WHERE id = ?", (entry_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM memories WHERE id = ?", (entry_id,)).fetchone()
         if row is None:
             return None
         return self._row_to_entry(row, dim)
 
     def delete(self, entry_id: str) -> bool:
         with self._conn:
-            cursor = self._conn.execute(
-                "DELETE FROM memories WHERE id = ?", (entry_id,)
-            )
+            cursor = self._conn.execute("DELETE FROM memories WHERE id = ?", (entry_id,))
         return cursor.rowcount > 0
 
     def list_all(
@@ -245,7 +203,6 @@ class SQLiteBackend:
         exclude_expired: bool = True,
         dim: int = 384,
     ) -> list[tuple[str, MemoryEntry]]:
-        """Return all entries as (entry_id, MemoryEntry) pairs."""
         conditions: list[str] = []
         params: list[Any] = []
         if agent_id is not None:
@@ -269,10 +226,6 @@ class SQLiteBackend:
         memory_type: MemoryType | None = None,
         exclude_expired: bool = True,
     ):
-        """Yield lightweight (entry_id, content, expires_at) tuples.
-
-        Skips embedding deserialization — useful for BM25 index builds.
-        """
         conditions: list[str] = []
         params: list[Any] = []
         if agent_id is not None:
@@ -285,9 +238,7 @@ class SQLiteBackend:
             conditions.append("(expires_at IS NULL OR expires_at > ?)")
             params.append(time.time())
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
-        cursor = self._conn.execute(
-            f"SELECT id, content, expires_at FROM memories {where}", params
-        )
+        cursor = self._conn.execute(f"SELECT id, content, expires_at FROM memories {where}", params)
         for row in cursor:
             yield row["id"], row["content"], row["expires_at"]
 
@@ -300,11 +251,9 @@ class SQLiteBackend:
             )
 
     def update_access_many(self, entry_ids: list[str], now: float | None = None) -> None:
-        """Batch-bump access counters."""
         if not entry_ids:
             return
         now = now or time.time()
-        # Chunk to stay well below SQLite host-parameter limits.
         chunk_size = 900
         with self._conn:
             for i in range(0, len(entry_ids), chunk_size):
@@ -340,9 +289,7 @@ class SQLiteBackend:
             conditions.append("(expires_at IS NULL OR expires_at > ?)")
             params.append(time.time())
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
-        row = self._conn.execute(
-            f"SELECT COUNT(*) FROM memories {where}", params
-        ).fetchone()
+        row = self._conn.execute(f"SELECT COUNT(*) FROM memories {where}", params).fetchone()
         return row[0] if row else 0
 
     def search_by_tag(
@@ -352,11 +299,9 @@ class SQLiteBackend:
         exclude_expired: bool = True,
         dim: int = 384,
     ) -> list[tuple[str, MemoryEntry]]:
-        """Return entries whose tags contain *all* provided tags (AND semantics)."""
         if not tags:
             return self.list_all(agent_id=agent_id, exclude_expired=exclude_expired, dim=dim)
 
-        # Relational tag search via junction table.
         placeholders = ",".join("?" * len(tags))
         sql = f"""
             SELECT m.* FROM memories m
@@ -372,10 +317,7 @@ class SQLiteBackend:
             sql += " AND (m.expires_at IS NULL OR m.expires_at > ?)"
             params.append(time.time())
 
-        sql += """
-            GROUP BY m.id
-            HAVING COUNT(*) = ?
-        """
+        sql += " GROUP BY m.id HAVING COUNT(*) = ?"
         params.append(len(tags))
 
         rows = self._conn.execute(sql, params).fetchall()
@@ -388,8 +330,7 @@ class SQLiteBackend:
         now = time.time()
         row = self._conn.execute(
             """
-            SELECT COUNT(*),
-                   COUNT(CASE WHEN expires_at IS NOT NULL AND expires_at <= ? THEN 1 END)
+            SELECT COUNT(*), COUNT(CASE WHEN expires_at IS NOT NULL AND expires_at <= ? THEN 1 END)
             FROM memories
             """,
             (now,),

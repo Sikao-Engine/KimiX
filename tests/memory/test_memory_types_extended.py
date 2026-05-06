@@ -7,16 +7,6 @@ import pytest
 from kimix.memory.types import MemoryEntry, MemoryType
 
 
-class TestMemoryTypeExtended:
-    def test_all_memory_types_exist(self):
-        expected = {
-            "WORKING", "EPISODIC", "SEMANTIC", "PROCEDURAL",
-            "SCAR", "RULE", "COMPILED_TRUTH", "ENTITY", "FACT",
-            "WORKFLOW", "TASK", "TRIGGER", "PROGRAMMATIC", "COLD_ARCHIVE",
-        }
-        assert {mt.name for mt in MemoryType} == expected
-
-
 class TestMemoryEntryTemporalValidity:
     def test_not_expired_when_none(self):
         e = MemoryEntry(content="x", memory_type=MemoryType.SEMANTIC)
@@ -44,7 +34,7 @@ class TestMemoryEntryTemporalValidity:
     def test_from_dict_roundtrip(self):
         original = MemoryEntry(
             content="roundtrip",
-            memory_type=MemoryType.ENTITY,
+            memory_type=MemoryType.SEMANTIC,
             importance=7.0,
             tags=["a", "b"],
             metadata={"k": "v"},

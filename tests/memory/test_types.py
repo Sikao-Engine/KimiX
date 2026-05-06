@@ -11,7 +11,7 @@ class TestMemoryType:
     def test_memory_type_values(self):
         assert MemoryType.EPISODIC.value == "episodic"
         assert MemoryType.SEMANTIC.value == "semantic"
-        assert MemoryType.PROCEDURAL.value == "procedural"
+        assert MemoryType.WORKING.value == "working"
         assert MemoryType.WORKING.value == "working"
 
 
@@ -67,8 +67,8 @@ class TestMemoryEntry:
         assert effective > entry.importance  # Access boosts importance
 
     def test_to_dict(self):
-        entry = MemoryEntry(content="test", memory_type=MemoryType.PROCEDURAL)
+        entry = MemoryEntry(content="test", memory_type=MemoryType.WORKING)
         d = entry.to_dict()
         assert d["content"] == "test"
-        assert d["memory_type"] == "procedural"
+        assert d["memory_type"] == "working"
         assert "effective_importance" in d

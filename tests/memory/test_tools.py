@@ -491,7 +491,7 @@ class TestIntegration:
         recall = Recall()
         
         # Store different memory types
-        for mem_type in [MemoryType.SEMANTIC, MemoryType.PROCEDURAL]:
+        for mem_type in [MemoryType.SEMANTIC, MemoryType.EPISODIC]:
             await remember(Remember.params(
                 content=f"Memory of type {mem_type.value}",
                 importance=7.0,
