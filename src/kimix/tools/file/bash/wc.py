@@ -7,6 +7,56 @@ from .params import Params
 
 from kimix.tools.common import _maybe_export_output_async
 
+CHUNK_SIZE = 1024 * 1024  # 1MB
+
+
+def _count_all(path: Path) -> tuple[int, int, int]:
+    lines = 0
+    words = 0
+    nbytes = 0
+    prev_in_word = False
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            nbytes += len(chunk)
+            lines += chunk.count(10)  # ord('\n')
+            starts_in_word = chunk[0] > 0x20
+            if starts_in_word and prev_in_word:
+                words -= 1
+            words += len(chunk.split())
+            prev_in_word = chunk[-1] > 0x20
+    return lines, words, nbytes
+
+
+def _count_lines(path: Path) -> int:
+    lines = 0
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            lines += chunk.count(10)
+    return lines
+
+
+def _count_words(path: Path) -> int:
+    words = 0
+    prev_in_word = False
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(CHUNK_SIZE)
+            if not chunk:
+                break
+            starts_in_word = chunk[0] > 0x20
+            if starts_in_word and prev_in_word:
+                words -= 1
+            words += len(chunk.split())
+            prev_in_word = chunk[-1] > 0x20
+    return words
+
+
 class Wc(CallableTool2[Params]):
     name: str = "Wc"
     description: str = "Print newline, word, and byte counts for each file."
@@ -43,12 +93,23 @@ class Wc(CallableTool2[Params]):
             for p in paths:
                 target = Path(cwd) / p if not Path(p).is_absolute() else Path(p)
                 try:
-                    with open(target, "rb") as f:
-                        content = f.read()
-                    text = content.decode("utf-8", errors="replace")
-                    lines = text.count("\n")
-                    words = len(text.split())
-                    nbytes = len(content)
+                    if show_lines and show_words and show_bytes:
+                        lines, words, nbytes = _count_all(target)
+                    elif show_lines and not show_words and not show_bytes:
+                        lines = _count_lines(target)
+                        words = 0
+                        nbytes = 0
+                    elif show_words and not show_lines and not show_bytes:
+                        lines = 0
+                        words = _count_words(target)
+                        nbytes = 0
+                    elif show_bytes and not show_lines and not show_words:
+                        lines = 0
+                        words = 0
+                        nbytes = target.stat().st_size
+                    else:
+                        lines, words, nbytes = _count_all(target)
+
                     total_lines += lines
                     total_words += words
                     total_bytes += nbytes

@@ -21,13 +21,9 @@ class Params(BaseModel):
     )
     timeout: int = Field(
         default=10,
-        ge=1,
+        ge=3,
         le=60,
         description="Timeout in seconds."
-    )
-    run_in_background: bool = Field(
-        default=False,
-        description="Run in an independent background process. Returns immediately with a task_id. Use TaskOutput to manage."
     )
 
 
@@ -45,10 +41,6 @@ class Python(CallableTool2[Params]):
 
     async def __call__(self, params: Params) -> ToolReturnValue:
         async with self._semaphore:
-            # Handle background execution
-            if params.run_in_background:
-                return await self._run_in_background(params)
-
             task = ProcessTask(sys.executable, ['-u', '-c', params.code], None)
             task_id = await task.start(self._session, "python", "python")
 
@@ -57,9 +49,10 @@ class Python(CallableTool2[Params]):
             await task.wait(wait_timeout)
 
             if await task.thread_is_alive():
+                output = await task.stream.get_output() if task.stream else ""
                 return ToolError(
-                    output=f'Running in background. task_id: `{task_id}`. use `TaskOutput`',
-                    message="Python execution timeout",
+                    output=output,
+                    message=f"Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`",
                     brief="Timeout"
                 )
             # Clean up foreground task registration
@@ -93,28 +86,3 @@ class Python(CallableTool2[Params]):
 
             colored_code = colorful_text(params.code, fg=Color.BLACK)
             return ToolOk(output=f"{colored_code}\n\n{output}")
-
-    async def _run_in_background(self, params: Params) -> ToolReturnValue:
-        """Run Python code in the background and register it as a background task.
-
-        Args:
-            params: The Python execution parameters.
-
-        Returns:
-            ToolOk with task_id on success, ToolError on failure.
-        """
-        try:
-            task = ProcessTask(sys.executable, ['-u', '-c', params.code], None)
-            task_id = await task.start(self._session, "python", "python")
-
-            # Return success with task_id
-            return ToolOk(
-                output=f"Python process started in background.\nTask ID: {task_id}\n\nUse 'TaskOutput' to get output, 'Input' to input to process."
-            )
-
-        except Exception as exc:
-            return ToolError(
-                output="",
-                message=f"Failed to start background Python process: {str(exc)}",
-                brief="Failed to start background task"
-            )

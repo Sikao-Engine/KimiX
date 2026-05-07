@@ -23,7 +23,7 @@ async def _get_memory_system() -> AgentMemorySystem:
     if _memory_system is None:
         async with _init_lock:
             if _memory_system is None:
-                _memory_system = AgentMemorySystem()
+                _memory_system = AgentMemorySystem(use_sqlite=True)
     return _memory_system
 
 
@@ -144,6 +144,14 @@ class Reflect(CallableTool2):
             memory = await _get_memory_system()
             if params.deep:
                 report = memory.self_reflect()
+                # Heuristic: optimize DB periodically (every 100 interactions)
+                if (
+                    memory.long_term._backend is not None
+                    and memory.interaction_count > 0
+                    and memory.interaction_count % 100 == 0
+                ):
+                    await _run_sync(memory.long_term._backend.optimize)
+                    report += "\n[Database optimized]"
             else:
                 report = memory.reflect()
             return ToolOk(output=report)

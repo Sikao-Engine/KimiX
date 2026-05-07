@@ -16,7 +16,7 @@ class AgentMemorySystem:
         dim: int = 384,
         ltm_path: str = ".kimix_cache/ltm.json",
         agent_id: str = "default",
-        use_sqlite: bool = False,
+        use_sqlite: bool = True,
         db_path: str = ".kimix_cache/memory.db",
     ) -> None:
         self.agent_id = agent_id

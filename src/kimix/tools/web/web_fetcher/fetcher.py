@@ -3,7 +3,7 @@ import re
 import ssl
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
 
 _DESKTOP_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -29,20 +29,32 @@ async def _fetch_html(url: str, user_agent: str, viewport: dict, wait_until: str
                 "--disable-setuid-sandbox",
             ],
         )
-        context = await browser.new_context(
-            user_agent=user_agent,
-            viewport=viewport,
-            locale="en-US",
-        )
-        page = await context.new_page()
+        html = ""
         try:
-            await page.goto(url, wait_until=wait_until, timeout=60000)
-        except Exception:
-            # If networkidle times out, the DOM is usually ready enough.
-            pass
-        await page.wait_for_timeout(2000)
-        html = await page.content()
-        await browser.close()
+            context = await browser.new_context(
+                user_agent=user_agent,
+                viewport=viewport,
+                locale="en-US",
+            )
+            page = await context.new_page()
+            try:
+                await page.goto(url, wait_until=wait_until, timeout=60000)
+            except PWTimeoutError:
+                # If networkidle times out, the DOM is usually ready enough.
+                # But if the page never loaded at all, bail out so the caller
+                # can try the HTTP fallback instead of returning empty HTML.
+                if page.url == "about:blank" and not url.lower().startswith("about:"):
+                    raise RuntimeError(
+                        f"Browser navigation timed out without loading {url}"
+                    )
+                pass
+            await page.wait_for_timeout(2000)
+            html = await page.content()
+        finally:
+            try:
+                await browser.close()
+            except Exception:
+                pass
     return html
 
 
@@ -73,7 +85,10 @@ async def _fetch_html_http(url: str, user_agent: str) -> str:
     response = await loop.run_in_executor(None, _urlopen, req)
     charset = response.headers.get_content_charset("utf-8")
     data = await loop.run_in_executor(None, response.read)
-    return data.decode(charset, errors="replace")
+    try:
+        return data.decode(charset, errors="replace")
+    except LookupError:
+        return data.decode("utf-8", errors="replace")
 
 
 def _html_to_markdown(html: str) -> str:
@@ -129,13 +144,18 @@ async def fetch_to_markdown(url: str, wait_until: str = "networkidle") -> str:
     # If the result looks like a login wall, retry with a mobile user agent.
     text_len = len(markdown.replace(" ", "").replace("\n", ""))
     if text_len < 300 or _LOGIN_PATTERNS.search(markdown):
+        html_mobile = ""
         try:
             html_mobile = await _fetch_html(url, _MOBILE_UA, {"width": 390, "height": 844}, wait_until)
         except Exception:
-            html_mobile = await _fetch_html_http(url, _MOBILE_UA)
-        markdown_mobile = _html_to_markdown(html_mobile)
-        mobile_text_len = len(markdown_mobile.replace(" ", "").replace("\n", ""))
-        if mobile_text_len > text_len:
-            markdown = markdown_mobile
+            try:
+                html_mobile = await _fetch_html_http(url, _MOBILE_UA)
+            except Exception:
+                pass
+        if html_mobile:
+            markdown_mobile = _html_to_markdown(html_mobile)
+            mobile_text_len = len(markdown_mobile.replace(" ", "").replace("\n", ""))
+            if mobile_text_len > text_len:
+                markdown = markdown_mobile
 
     return markdown

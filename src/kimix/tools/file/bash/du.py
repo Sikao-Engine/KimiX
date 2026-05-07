@@ -8,32 +8,70 @@ from .params import Params
 from kimix.tools.common import _maybe_export_output_async
 
 
-def _dir_size(p: Path, cache: dict[Path, int]) -> int:
-    if p in cache:
-        return cache[p]
+def _walk(
+    p: Path,
+    depth: int,
+    summarize: bool,
+    max_depth: int | None,
+    _fmt,
+    collect_output: bool,
+) -> tuple[int, list[str]]:
+    """Single-pass walk computing size and building output.
+
+    Returns (total_size, results).
+    """
+    results: list[str] = []
     total = 0
     try:
-        if p.is_dir() and not p.is_symlink():
+        is_dir = p.is_dir() and not p.is_symlink()
+        if is_dir:
+            entries = []
             with os.scandir(p) as it:
                 for entry in it:
                     if entry.is_symlink():
                         continue
-                    if entry.is_dir(follow_symlinks=False):
-                        total += _dir_size(Path(entry.path), cache)
-                    else:
-                        try:
-                            total += entry.stat(follow_symlinks=False).st_size
-                        except OSError:
-                            pass
+                    entries.append(entry)
+            entries.sort(key=lambda e: e.name)
+
+            child_collect = (
+                collect_output
+                and not summarize
+                and (max_depth is None or depth + 1 <= max_depth)
+            )
+
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=False):
+                    subtotal, subresults = _walk(
+                        Path(entry.path),
+                        depth + 1,
+                        summarize,
+                        max_depth,
+                        _fmt,
+                        child_collect,
+                    )
+                    total += subtotal
+                    results.extend(subresults)
+                else:
+                    try:
+                        esize = entry.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        esize = 0
+                    total += esize
+                    if child_collect:
+                        results.append(f"{_fmt(esize)}\t{entry.path}")
+
+            if collect_output:
+                results.append(f"{_fmt(total)}\t{p}")
         else:
             try:
-                total += p.stat().st_size
+                total = p.stat().st_size
             except OSError:
                 pass
+            if collect_output:
+                results.append(f"{_fmt(total)}\t{p}")
     except PermissionError:
         pass
-    cache[p] = total
-    return total
+    return total, results
 
 
 class Du(CallableTool2[Params]):
@@ -78,33 +116,12 @@ class Du(CallableTool2[Params]):
                 return f"{size:.1f}E"
 
             cwd = params.cwd or os.getcwd()
-            results = []
-
-            def _du(p: Path, depth: int, cache: dict[Path, int]):
-                size = _dir_size(p, cache)
-                if summarize:
-                    results.append(f"{_fmt(size)}\t{p}")
-                elif max_depth is not None and depth >= max_depth:
-                    results.append(f"{_fmt(size)}\t{p}")
-                else:
-                    if p.is_dir() and not p.is_symlink():
-                        results.append(f"{_fmt(size)}\t{p}")
-                        if not summarize:
-                            try:
-                                for entry in sorted(os.scandir(p), key=lambda e: e.name):
-                                    if entry.is_dir(follow_symlinks=False) and not entry.is_symlink():
-                                        _du(Path(entry.path), depth + 1, cache)
-                                    else:
-                                        esize = _dir_size(Path(entry.path), cache)
-                                        results.append(f"{_fmt(esize)}\t{entry.path}")
-                            except PermissionError:
-                                pass
-                    else:
-                        results.append(f"{_fmt(size)}\t{p}")
+            results: list[str] = []
 
             for p in paths:
                 target = Path(cwd) / p if not Path(p).is_absolute() else Path(p)
-                _du(target, 0, {})
+                _, subresults = _walk(target, 0, summarize, max_depth, _fmt, True)
+                results.extend(subresults)
 
             output = "\n".join(results)
             if params.output_path:

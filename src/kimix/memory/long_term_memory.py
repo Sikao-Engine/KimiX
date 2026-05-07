@@ -120,6 +120,7 @@ class LongTermMemory:
                 agent_id=self._agent_id,
                 exclude_expired=False,
                 dim=self.dim,
+                include_embedding=True,
             ):
                 yield eid, entry
         else:
@@ -128,7 +129,7 @@ class LongTermMemory:
 
     def _get_entry(self, entry_id: str) -> MemoryEntry | None:
         if self._backend is not None:
-            entry = self._backend.get(entry_id, dim=self.dim)
+            entry = self._backend.get(entry_id, dim=self.dim, include_embedding=True)
             if entry is not None and entry.agent_id != self._agent_id:
                 return None
             return entry
@@ -255,7 +256,7 @@ class LongTermMemory:
         if tag_filter:
             if self._backend is not None:
                 raw = self._backend.search_by_tag(
-                    tag_filter, agent_id=self._agent_id, dim=self.dim
+                    tag_filter, agent_id=self._agent_id, dim=self.dim, include_embedding=True
                 )
                 for eid, entry in raw:
                     if not self._valid(entry, now, min_importance):

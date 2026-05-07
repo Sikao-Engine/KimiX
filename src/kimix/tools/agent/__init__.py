@@ -1,22 +1,15 @@
 import asyncio
-import queue
-import threading
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 from kimi_cli.session import Session
-from kimix.utils import prompt, close_session_async, _create_session_async
+from kimix.utils import close_session_async, _create_session_async
 from kimix.tools.common import _maybe_export_output_async
-from kimix.tools.background.utils import BackgroundStream, generate_task_id, add_task
 
 
 
 class SubAgentParams(BaseModel):
     prompt: str = Field(
         description="Task instructions for the sub-agent."
-    )
-    run_in_background: bool = Field(
-        default=False,
-        description="Run in an independent background process. Returns immediately with a task_id. Use TaskOutput to manage."
     )
 
 
@@ -32,9 +25,6 @@ class Agent(CallableTool2):
 
     async def __call__(self, params: SubAgentParams) -> ToolReturnValue:
         async with self._semaphore:
-            # Handle background execution
-            if params.run_in_background:
-                return await self._run_in_background(params)
             try:
                 output_strs = []
 
@@ -69,79 +59,3 @@ class Agent(CallableTool2):
                     message=str(exc),
                     brief="Failed to create session",
                 )
-
-    async def _run_in_background(self, params: SubAgentParams) -> ToolReturnValue:
-
-        # Shared state for stopping the task
-        _stop_event = threading.Event()
-
-        def run_agent_bg(q: queue.Queue[str]) -> bool:
-            """Run the sub-agent and collect output into the queue."""
-            try:
-                if _stop_event.is_set():
-                    return False
-
-                output_strs = []
-
-                def output_function(fn: str, is_thinking: bool) -> None:
-                    if fn and (not is_thinking):
-                        output_strs.append(fn)
-
-                async def prompt_async(cancel_callable=None):
-                    session = None
-                    try:
-                        import kimix.base as base
-                        session = await _create_session_async(
-                            agent_file=base._default_agent_file_dir / 'agent_subagent.yaml')
-                        import kimix.utils as utils
-                        await utils.prompt_async(prompt_str=params.prompt, session=session,
-                                                output_function=output_function, cancel_callable=cancel_callable)
-                    except Exception as e:
-                        return str(e)
-                    finally:
-                        if session:
-                            await close_session_async(session)
-                    return None
-
-                err_msg = asyncio.run(prompt_async(_stop_event.is_set))
-
-                # Collect output
-                output = '\n'.join(output_strs)
-                if output:
-                    q.put_nowait(output)
-
-                if err_msg:
-                    q.put_nowait(f"\n[Error: {err_msg}]")
-                    return False
-                else:
-                    q.put_nowait("\n[Sub-agent completed]")
-                    return True
-
-            except Exception as e:
-                q.put_nowait(f"\n[Error: {str(e)}]")
-                return False
-            finally:
-                _stop_event.set()
-
-        def stop_function():
-            """Signal the background task to stop."""
-            _stop_event.set()
-
-        try:
-            # Create and start the background stream
-            stream = BackgroundStream()
-            task_id = generate_task_id(self._session, "agent", "subagent")
-            await stream.start(run_agent_bg, stop_function)
-            # Register the task
-            add_task(self._session, task_id, stream)
-
-            return ToolOk(
-                output=f"Sub-agent started in background.\nTask ID: {task_id}\n\nUse 'TaskOutput' to get output."
-            )
-
-        except Exception as exc:
-            return ToolError(
-                output="",
-                message=f"Failed to start background sub-agent: {str(exc)}",
-                brief="Failed to start background task"
-            )

@@ -8,14 +8,15 @@ from pydantic import BaseModel, Field
 from kimi_cli.session import Session
 from kimix.tools.common import _maybe_export_output_async, _export_to_temp_file_async, ProcessTask
 from kimix.tools.file.bash import (
-    Awk, Bunzip2, Bzip2, Cal, Cat, Cp, Cut, Date, Df, Diff, Du, Env, File,
-    Find, Grep, Gunzip, Gzip, Head, Ln, Ls, Mkdir, Mv, Printenv, Ps, Pwd,
-    Rm, Rmdir, Sed, Tail, Tar, Touch, Tr, Unxz, Unzip, Wc, Xz, Zip,
+    Awk, Basename, Bunzip2, Bzip2, Cal, Cat, Cp, Cut, Date, Df, Diff, Dirname, Du, Env, Export, File,
+    Find, Grep, Gunzip, Gzip, Head, Hwclock, Ln, Ls, Man, Mkdir, Mktemp, Mv, Netstat, Printenv, Ps, Pwd,
+    Realpath, Rm, Rmdir, Sed, Stat, Tac, Tail, Tar, Touch, Tr, Tree, Unxz, Uniq, Unzip, Wc, Which, Xz, Zip,
 )
 
 
 _BASH_COMMANDS: dict[str, CallableTool2] = {
     "awk": Awk(),
+    "basename": Basename(),
     "bunzip2": Bunzip2(),
     "bzip2": Bzip2(),
     "cal": Cal(),
@@ -25,31 +26,43 @@ _BASH_COMMANDS: dict[str, CallableTool2] = {
     "date": Date(),
     "df": Df(),
     "diff": Diff(),
+    "dirname": Dirname(),
     "du": Du(),
     "env": Env(),
+    "export": Export(),
     "file": File(),
     "find": Find(),
     "grep": Grep(),
     "gunzip": Gunzip(),
     "gzip": Gzip(),
     "head": Head(),
+    "hwclock": Hwclock(),
     "ln": Ln(),
     "ls": Ls(),
+    "man": Man(),
     "mkdir": Mkdir(),
+    "mktemp": Mktemp(),
     "mv": Mv(),
+    "netstat": Netstat(),
     "printenv": Printenv(),
     "ps": Ps(),
     "pwd": Pwd(),
+    "realpath": Realpath(),
     "rm": Rm(),
     "rmdir": Rmdir(),
     "sed": Sed(),
+    "stat": Stat(),
+    "tac": Tac(),
     "tail": Tail(),
     "tar": Tar(),
     "touch": Touch(),
     "tr": Tr(),
+    "tree": Tree(),
     "unxz": Unxz(),
+    "uniq": Uniq(),
     "unzip": Unzip(),
     "wc": Wc(),
+    "which": Which(),
     "xz": Xz(),
     "zip": Zip(),
 }
@@ -57,7 +70,7 @@ _BASH_COMMANDS: dict[str, CallableTool2] = {
 
 class RunParams(BaseModel):
     path: str = Field(
-        description="Executable path."
+        description="Executable path or basic bash cmd."
     )
     args: list[str] = Field(
         default_factory=list,
@@ -76,10 +89,6 @@ class RunParams(BaseModel):
     output_path: str | None = Field(
         default=None,
         description="Output file path (optional)."
-    )
-    run_in_background: bool = Field(
-        default=False,
-        description="Run in an independent background process. Returns immediately with a task_id. Use TaskOutput. ALWAYS set to True with input detection use `Input` tool."
     )
 
 class Run(CallableTool2[RunParams]):
@@ -116,16 +125,12 @@ class Run(CallableTool2[RunParams]):
         await stream.start(wrapper, lambda: None)
         add_task(self._session, task_id, stream)
 
-        if params.run_in_background:
-            return ToolOk(
-                output=f"Process started in background.\nTask ID: {task_id}\n\nUse 'TaskOutput' to get output, 'Input' to input to process"
-            )
-
         await stream.wait(params.timeout)
 
         if await stream.thread_is_alive():
+            output = await stream.get_output()
             return ToolError(
-                output=f'Running in background. task_id: `{task_id}`. use `TaskOutput` tool',
+                output=output or f'Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`',
                 message="Process timeout",
                 brief="Timeout"
             )
@@ -143,6 +148,12 @@ class Run(CallableTool2[RunParams]):
         return ToolOk(output=output)
 
     async def __call__(self, params: RunParams) -> ToolReturnValue:
+        # params.path may contain arguments, split it with space, then insert to the start of params.args
+        if " " in params.path:
+            parts = params.path.split(" ")
+            params.path = parts[0]
+            params.args = parts[1:] + params.args
+
         async with self._semaphore:
             import sys
 
@@ -153,10 +164,6 @@ class Run(CallableTool2[RunParams]):
             # check if using python
             if params.path == 'python':
                 params.path = sys.executable
-            # Handle background execution
-            if params.run_in_background:
-                return await self._run_in_background(params)
-
             task = ProcessTask(params.path, params.args, params.cwd)
             task_id = await task.start(self._session, "run", Path(params.path).stem)
 
@@ -165,9 +172,10 @@ class Run(CallableTool2[RunParams]):
             await task.wait(wait_timeout)
             
             if await task.thread_is_alive():
+                output = await task.stream.get_output() if task.stream else ""
                 return ToolError(
-                    output=f'Running in background. task_id: `{task_id}`. use `TaskOutput` tool',
-                    message="Process timeout",
+                    output=output,
+                    message=f"Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`",
                     brief="Timeout"
                 )
             # Clean up foreground task registration
@@ -199,28 +207,3 @@ class Run(CallableTool2[RunParams]):
 
             output = await _maybe_export_output_async(output)
             return ToolOk(output=output)
-
-    async def _run_in_background(self, params: RunParams) -> ToolReturnValue:
-        """Run a process in the background and register it as a background task.
-
-        Args:
-            params: The run parameters.
-
-        Returns:
-            ToolOk with task_id on success, ToolError on failure.
-        """
-        try:
-            task = ProcessTask(params.path, params.args, params.cwd)
-            task_id = await task.start(self._session, "run", Path(params.path).stem)
-
-            # Return success with task_id
-            return ToolOk(
-                output=f"Process started in background.\nTask ID: {task_id}\n\nUse 'TaskOutput' to get output, 'Input' to input to process"
-            )
-
-        except Exception as exc:
-            return ToolError(
-                output="",
-                message=f"Failed to start background process: {str(exc)}",
-                brief="Failed to start background task"
-            )

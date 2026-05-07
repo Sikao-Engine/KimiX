@@ -42,8 +42,7 @@ def get_system_prompt(
                 )
                 role_doc = 'You are a terse ' + ('sub-agent' if is_sub_agent else 'coder')
                 items.append(
-                    'For long tasks, use `Run`/`Python` with `run_in_background=true`, then manage via '
-                    '`TaskOutput`, `Input`. Return control immediately after starting.'
+                    'For interactive tasks, use `Run`/`Python` with timeout < 10, then `TaskOutput`/`Input`.'
                 )
                 items.append(
                     'For complex or multi-step tasks, use `SetTodoList` to track progress.'
@@ -56,6 +55,8 @@ def get_system_prompt(
                     )
                 if args.KIMI_OS != 'Windows':
                     items.append(f'Bash Shell: {args.KIMI_SHELL}. use `Run`')
+                else:
+                    items.append('No Shell, use `Run`')
                 if yolo:
                     items.append(
                         'Yolo mode: act without asking. Stay in workdir. No system changes unless asked.'

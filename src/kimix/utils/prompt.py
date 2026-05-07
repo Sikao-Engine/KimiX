@@ -126,77 +126,47 @@ async def prompt_async(
         if info_print:
             print_debug(f'Start...', end='\n')
 
-        ralph_count = 0
-        try:
-            ralph_count = session._cli._runtime.config.loop_control.max_ralph_iterations or 0
-        except AttributeError:
-            pass
-
-        if ralph_count < 0:
-            loop_iter = iter(int, 1)
-        elif ralph_count > 0:
-            loop_iter = range(ralph_count + 1)
-        else:
-            loop_iter = range(1)
-
-        for _ in loop_iter:
+        max_retries = 5
+        prompt_success = False
+        for attempt in range(max_retries):
             if session._cancel_event is not None and session._cancel_event.is_set():
                 break
-
-            max_retries = 5
-            prompt_success = False
-            for attempt in range(max_retries):
-                if session._cancel_event is not None and session._cancel_event.is_set():
-                    break
-                try:
-                    import time
-                    start_time = time.time()
-                    base.PRINT_STREAM.flag = None
-                    if output_function is not None:
-                        merge_wire_messages = True
-                    async for message in session.prompt(prompt_str, merge_wire_messages=merge_wire_messages):
-                        if cancel_callable is not None and cancel_callable():
-                            session.cancel()
-                            break
-                        print_agent_json(message, output_function)
-                    print()
-                    if info_print:
-                        end_time = time.time()
-                        _print_usage(session, end_time - start_time)
-                    prompt_success = True
-                    break
-                except KeyboardInterrupt as e:
-                    if session:
+            try:
+                import time
+                start_time = time.time()
+                base.PRINT_STREAM.flag = None
+                if output_function is not None:
+                    merge_wire_messages = True
+                async for message in session.prompt(prompt_str, merge_wire_messages=merge_wire_messages):
+                    if cancel_callable is not None and cancel_callable():
                         session.cancel()
-                except Exception as e:
-                    print_error(str(e))
-                    if session:
-                        session.cancel()
-                    if "429" in str(e) or "400" in str(e) or "500" in str(e) or "502" in str(e) or "503" in str(e):
-                        wait_time = min(2 ** attempt, 60)
-                        print_warning(f"Rate limited. Waiting {wait_time}s...")
-                        await asyncio.sleep(wait_time)
-                    elif attempt == max_retries - 1:
-                        raise
-                    else:
-                        await asyncio.sleep(1)
-
-            if not prompt_success:
-                base.print_error('prompt failed.')
+                        break
+                    print_agent_json(message, output_function)
+                print()
+                if info_print:
+                    end_time = time.time()
+                    _print_usage(session, end_time - start_time)
+                prompt_success = True
                 break
+            except KeyboardInterrupt as e:
+                if session:
+                    session.cancel()
+            except Exception as e:
+                print_error(str(e))
+                if session:
+                    session.cancel()
+                if "429" in str(e) or "400" in str(e) or "500" in str(e) or "502" in str(e) or "503" in str(e):
+                    wait_time = min(2 ** attempt, 60)
+                    print_warning(f"Rate limited. Waiting {wait_time}s...")
+                    await asyncio.sleep(wait_time)
+                elif attempt == max_retries - 1:
+                    raise
+                else:
+                    await asyncio.sleep(1)
 
-            if ralph_count != 0:
-                todos = []
-                try:
-                    if hasattr(session, '_cli') and session._cli is not None and session._cli.session is not None:
-                        todos = load_session_state(session._cli.session.dir).todos
-                except Exception:
-                    pass
+        if not prompt_success:
+            base.print_error('prompt failed.')
 
-                if not todos or all(todo.status == 'done' for todo in todos):
-                    if ralph_count > 0:
-                        base.print_success('All todo-list done, quit.')
-                    break
     finally:
         if close_session_after_prompt and session:
             await close_session_async(session)
