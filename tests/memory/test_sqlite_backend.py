@@ -95,7 +95,7 @@ class TestSQLiteBackend:
             import numpy as np
             vec = np.array([0.1, 0.2, 0.3], dtype=np.float32)
             db.store(MemoryEntry(content="emb", memory_type=MemoryType.SEMANTIC, embedding=vec), "emb1")
-            fetched = db.get("emb1", dim=3)
+            fetched = db.get("emb1", dim=3, include_embedding=True)
             assert fetched is not None
             assert fetched.embedding is not None
             assert np.allclose(fetched.embedding, vec)

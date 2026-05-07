@@ -27,14 +27,54 @@ def reset_memory_system():
     """Reset global memory system before each test."""
     import kimix.memory.tools as tools_mod
     
+    # Close any open SQLite connection before cleanup
+    if tools_mod._memory_system is not None:
+        backend = tools_mod._memory_system.long_term._backend
+        if backend is not None:
+            try:
+                backend._conn.close()
+            except Exception:
+                pass
     tools_mod._memory_system = None
-    # Remove default memory file if it exists
-    if os.path.exists(".kimix_cache/ltm.json"):
-        os.unlink(".kimix_cache/ltm.json")
+    # Remove default memory files if they exist (ignore locked files on Windows)
+    for p in (".kimix_cache/ltm.json", ".kimix_cache/memory.db",
+              ".kimix_cache/memory.db-wal", ".kimix_cache/memory.db-shm"):
+        if os.path.exists(p):
+            try:
+                os.unlink(p)
+            except (PermissionError, OSError):
+                pass
+    
+    # Monkeypatch _get_memory_system to use file-backed storage (no SQLite)
+    # to avoid Windows file-locking issues across tests.
+    _original_get = tools_mod._get_memory_system
+    
+    async def _patched_get():
+        if tools_mod._memory_system is None:
+            async with tools_mod._init_lock:
+                if tools_mod._memory_system is None:
+                    tools_mod._memory_system = AgentMemorySystem(use_sqlite=False)
+        return tools_mod._memory_system
+    
+    tools_mod._get_memory_system = _patched_get
     yield
+    tools_mod._get_memory_system = _original_get
+    
+    if tools_mod._memory_system is not None:
+        backend = tools_mod._memory_system.long_term._backend
+        if backend is not None:
+            try:
+                backend._conn.close()
+            except Exception:
+                pass
     tools_mod._memory_system = None
-    if os.path.exists(".kimix_cache/ltm.json"):
-        os.unlink(".kimix_cache/ltm.json")
+    for p in (".kimix_cache/ltm.json", ".kimix_cache/memory.db",
+              ".kimix_cache/memory.db-wal", ".kimix_cache/memory.db-shm"):
+        if os.path.exists(p):
+            try:
+                os.unlink(p)
+            except (PermissionError, OSError):
+                pass
 
 
 @pytest.fixture
@@ -139,7 +179,7 @@ class TestRememberTool:
         try:
             # Reset and use custom path
             tools_mod._memory_system = None
-            memory = AgentMemorySystem(ltm_path=path)
+            memory = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             tools_mod._memory_system = memory
 
             tool = Remember()
@@ -502,3 +542,147 @@ class TestIntegration:
         # Recall
         result = await recall(Recall.params(query="memory"))
         assert isinstance(result, ToolOk)
+
+
+class TestToolsSQLite:
+    """Tests for memory tools with SQLite backend."""
+
+    def _cleanup_db(self, db_path: str) -> None:
+        for ext in ("", "-wal", "-shm"):
+            p = db_path + ext
+            if os.path.exists(p):
+                try:
+                    os.unlink(p)
+                except (PermissionError, OSError):
+                    pass
+
+    @pytest.fixture
+    def _sqlite_memory(self):
+        """Provide a temporary SQLite-backed memory system."""
+        import kimix.memory.tools as tools_mod
+
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        tools_mod._memory_system = AgentMemorySystem(db_path=db_path, use_sqlite=True)
+        yield db_path
+        tools_mod._memory_system = None
+        self._cleanup_db(db_path)
+
+    @pytest.mark.asyncio
+    async def test_remember_long_term_sqlite(self, _sqlite_memory):
+        """Test storing in long-term memory via remember with SQLite."""
+        tool = Remember()
+        result = await tool(Remember.params(content="sqlite long term fact", importance=8.0, long_term=True))
+        assert isinstance(result, ToolOk)
+        assert not result.is_error
+        assert "Remembered" in result.output
+        assert "sqlite long term fact" in result.output
+
+    @pytest.mark.asyncio
+    async def test_remember_short_term_sqlite(self, _sqlite_memory):
+        """Test storing in short-term memory via perceive with SQLite."""
+        tool = Remember()
+        result = await tool(Remember.params(content="sqlite short term observation", importance=5.0, long_term=False))
+        assert isinstance(result, ToolOk)
+        assert not result.is_error
+        assert "Perceived" in result.output
+        assert "sqlite short term observation" in result.output
+
+    @pytest.mark.asyncio
+    async def test_recall_with_memories_sqlite(self, _sqlite_memory):
+        """Test recalling stored memories with SQLite."""
+        tool = Recall()
+        remember = Remember()
+
+        await remember(Remember.params(content="recall this sqlite memory", importance=8.0, long_term=True))
+
+        result = await tool(Recall.params(query="recall"))
+        assert isinstance(result, ToolOk)
+        assert "recall this sqlite memory" in result.output or "No memories found" in result.output
+
+    @pytest.mark.asyncio
+    async def test_recall_empty_sqlite(self, _sqlite_memory):
+        """Test recalling with no matching memories using SQLite."""
+        tool = Recall()
+        result = await tool(Recall.params(query="nonexistentxyz123"))
+        assert isinstance(result, ToolOk)
+        assert result.output == "No memories found."
+
+    @pytest.mark.asyncio
+    async def test_get_context_with_memories_sqlite(self, _sqlite_memory):
+        """Test generating context with memories using SQLite."""
+        tool = GetContext()
+        remember = Remember()
+
+        await remember(Remember.params(content="sqlite python programming context", importance=8.0, long_term=True))
+
+        result = await tool(GetContext.params(query="python"))
+        assert isinstance(result, ToolOk)
+        assert "python" in result.output.lower()
+
+    @pytest.mark.asyncio
+    async def test_reflect_with_memories_sqlite(self, _sqlite_memory):
+        """Test reflecting with stored memories using SQLite."""
+        tool = Reflect()
+        remember = Remember()
+
+        await remember(Remember.params(content="sqlite test memory", importance=7.0, long_term=True))
+
+        result = await tool(Reflect.params())
+        assert isinstance(result, ToolOk)
+        assert "Memory System Status Report" in result.output
+
+    @pytest.mark.asyncio
+    async def test_remember_long_term_persists_to_sqlite(self, _sqlite_memory):
+        """Test that long-term memory persists in SQLite across instances."""
+        import kimix.memory.tools as tools_mod
+
+        db_path = _sqlite_memory
+
+        tool = Remember()
+        result = await tool(Remember.params(
+            content="sqlite disk persistent fact",
+            importance=9.0,
+            long_term=True
+        ))
+        assert isinstance(result, ToolOk)
+        assert "Remembered" in result.output
+
+        # Create a new memory system pointing at the same DB
+        tools_mod._memory_system = AgentMemorySystem(db_path=db_path, use_sqlite=True)
+
+        recall = Recall()
+        result = await recall(Recall.params(query="sqlite disk persistent"))
+        assert isinstance(result, ToolOk)
+        assert "sqlite disk persistent fact" in result.output
+
+    @pytest.mark.asyncio
+    async def test_full_workflow_sqlite(self, _sqlite_memory):
+        """Test complete memory workflow with SQLite backend."""
+        remember = Remember()
+        recall = Recall()
+        get_context = GetContext()
+        reflect = Reflect()
+
+        await remember(Remember.params(
+            content="SQLite workflow test",
+            importance=9.0,
+            tags=["sqlite", "test"],
+            long_term=True
+        ))
+
+        await remember(Remember.params(
+            content="SQLite short term item",
+            importance=6.0,
+            long_term=False
+        ))
+
+        recall_result = await recall(Recall.params(query="sqlite"))
+        assert isinstance(recall_result, ToolOk)
+
+        context_result = await get_context(GetContext.params(query="workflow"))
+        assert isinstance(context_result, ToolOk)
+
+        reflect_result = await reflect(Reflect.params())
+        assert isinstance(reflect_result, ToolOk)
+        assert "Memory System Status Report" in reflect_result.output

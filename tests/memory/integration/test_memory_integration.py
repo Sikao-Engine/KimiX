@@ -15,7 +15,7 @@ class TestMemoryIntegration:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            memory = AgentMemorySystem(dim=384, ltm_path=path)
+            memory = AgentMemorySystem(dim=384, ltm_path=path, use_sqlite=False)
 
             # 1. Pre-load long-term knowledge
             memory.remember(
@@ -93,7 +93,7 @@ class TestMemoryIntegration:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            memory = AgentMemorySystem(ltm_path=path)
+            memory = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             memory.consolidation_interval = 10
 
             # Add high-importance items to short-term
@@ -117,7 +117,7 @@ class TestMemoryIntegration:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            memory = AgentMemorySystem(ltm_path=path)
+            memory = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             memory.short_term.ttl = 0.01  # 10ms TTL
 
             memory.perceive("old event", importance=5.0)
@@ -135,7 +135,7 @@ class TestMemoryIntegration:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            memory = AgentMemorySystem(ltm_path=path)
+            memory = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             # Recreate working memory with capacity 3
             memory.working = memory.working.__class__(max_items=3)
 
@@ -156,12 +156,12 @@ class TestMemoryIntegration:
             path = f.name
         try:
             # Session 1
-            memory1 = AgentMemorySystem(ltm_path=path)
+            memory1 = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             memory1.remember("persistent fact", importance=9.0, tags=["test"])
             del memory1
 
             # Session 2
-            memory2 = AgentMemorySystem(ltm_path=path)
+            memory2 = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             results = memory2.long_term.retrieve("persistent")
             assert len(results) == 1
             assert results[0].content == "persistent fact"
@@ -174,7 +174,7 @@ class TestMemoryIntegration:
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
             path = f.name
         try:
-            memory = AgentMemorySystem(ltm_path=path)
+            memory = AgentMemorySystem(ltm_path=path, use_sqlite=False)
             entry = memory.remember("forgettable", importance=1.0)
             entry_id = memory.long_term._hash("forgettable")
 
@@ -190,3 +190,150 @@ class TestMemoryIntegration:
 
         finally:
             os.unlink(path)
+
+
+class TestMemoryIntegrationSQLite:
+    def _cleanup_db(self, db_path: str) -> None:
+        for ext in ("", "-wal", "-shm"):
+            p = db_path + ext
+            if os.path.exists(p):
+                try:
+                    os.unlink(p)
+                except (PermissionError, OSError):
+                    pass
+
+    def test_full_workflow_sqlite(self):
+        """End-to-end workflow with SQLite backend."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            memory = AgentMemorySystem(dim=384, db_path=db_path, use_sqlite=True)
+
+            # 1. Pre-load long-term knowledge
+            memory.remember(
+                "Python's GIL limits multi-threaded parallel execution efficiency",
+                importance=9.0,
+                tags=["python", "concurrency", "gil"],
+                memory_type=MemoryType.SEMANTIC,
+            )
+            memory.remember(
+                "Async programming uses async/await keywords, based on event loops",
+                importance=8.5,
+                tags=["python", "async", "concurrency"],
+                memory_type=MemoryType.SEMANTIC,
+            )
+            memory.remember(
+                "User Alice prefers using FastAPI framework to build web services",
+                importance=7.0,
+                tags=["user_preference", "alice", "fastapi"],
+                memory_type=MemoryType.SEMANTIC,
+            )
+            assert memory.long_term.count() == 3
+
+            # 2. Perceive environment
+            memory.perceive(
+                "User asks: 'How to handle high concurrency requests in Python?'",
+                importance=8.0,
+                tags=["query", "concurrency", "python"],
+                source="user_interaction",
+            )
+            memory.perceive(
+                "System detects current CPU usage at 85%",
+                importance=6.0,
+                tags=["system_status", "performance"],
+                source="system_monitor",
+            )
+            assert len(memory.working.items) == 2
+            assert len(memory.short_term.buffer) == 2
+
+            # 3. Recall
+            results = memory.recall(
+                query="Python async programming and concurrency handling",
+                use_working=True,
+                use_short=True,
+                use_long=True,
+            )
+            assert len(results["working"]) > 0
+            assert len(results["short_term"]) > 0
+            assert len(results["long_term"]) > 0
+
+            # 4. Generate LLM context
+            context = memory.get_context_for_llm(
+                "How to optimize Python concurrency performance", max_tokens=1000
+            )
+            assert "Python" in context or "async" in context or "concurrency" in context
+
+            # 5. Tag-filtered retrieval
+            user_prefs = memory.long_term.retrieve(
+                query="User preference",
+                tag_filter=["user_preference"],
+                top_k=3,
+            )
+            assert len(user_prefs) == 1
+            assert "Alice" in user_prefs[0].content
+
+            # 6. Reflect
+            report = memory.reflect()
+            assert "Working Memory" in report
+            assert "Long-term Memory: 3 items" in report
+
+        finally:
+            self._cleanup_db(db_path)
+
+    def test_memory_consolidation_sqlite(self):
+        """Test automatic consolidation from STM to LTM with SQLite."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            memory = AgentMemorySystem(db_path=db_path, use_sqlite=True)
+            memory.consolidation_interval = 10
+
+            for i in range(10):
+                memory.perceive(
+                    f"Important event {i}",
+                    importance=9.0,
+                    tags=["important"],
+                )
+
+            assert memory.interaction_count == 10
+            assert memory.long_term.count() > 0
+
+        finally:
+            self._cleanup_db(db_path)
+
+    def test_persistence_across_sessions_sqlite(self):
+        """Test that LTM persists across system instances with SQLite."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            # Session 1
+            memory1 = AgentMemorySystem(db_path=db_path, use_sqlite=True)
+            memory1.remember("persistent fact", importance=9.0, tags=["test"])
+            del memory1
+
+            # Session 2
+            memory2 = AgentMemorySystem(db_path=db_path, use_sqlite=True)
+            results = memory2.long_term.retrieve("persistent")
+            assert len(results) == 1
+            assert results[0].content == "persistent fact"
+
+        finally:
+            self._cleanup_db(db_path)
+
+    def test_forgetting_curve_sqlite(self):
+        """Test active forgetting reduces importance with SQLite."""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            db_path = f.name
+        try:
+            memory = AgentMemorySystem(db_path=db_path, use_sqlite=True)
+            memory.remember("forgettable", importance=1.0)
+            entry_id = memory.long_term._hash("forgettable")
+
+            for _ in range(4):
+                memory.long_term.forget(entry_id)
+                if memory.long_term.count() == 0:
+                    break
+            assert memory.long_term.count() == 0
+
+        finally:
+            self._cleanup_db(db_path)

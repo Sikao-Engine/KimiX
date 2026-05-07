@@ -2,7 +2,7 @@ import asyncio
 import re
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
 
 _DESKTOP_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -28,29 +28,38 @@ async def _fetch_html(url: str, user_agent: str, viewport: dict, wait_until: str
                 "--disable-setuid-sandbox",
             ],
         )
-        context = await browser.new_context(
-            user_agent=user_agent,
-            viewport=viewport,
-            locale="en-US",
-        )
-        page = await context.new_page()
+        html = ""
         try:
-            await page.goto(url, wait_until=wait_until, timeout=60000)
-        except Exception:
-            # If networkidle times out, the DOM is usually ready enough.
-            pass
-        await page.wait_for_timeout(2000)
-        html = await page.content()
-        await browser.close()
+            context = await browser.new_context(
+                user_agent=user_agent,
+                viewport=viewport,
+                locale="en-US",
+            )
+            page = await context.new_page()
+            try:
+                await page.goto(url, wait_until=wait_until, timeout=60000)
+            except PWTimeoutError:
+                # If networkidle times out, the DOM is usually ready enough.
+                pass
+            await page.wait_for_timeout(2000)
+            html = await page.content()
+        finally:
+            await browser.close()
     return html
 
 
 async def _fetch_html_http(url: str, user_agent: str) -> str:
     """Fallback HTTP fetch when Playwright browser is unavailable."""
     import urllib.request
+    import urllib.error
     req = urllib.request.Request(url, headers={"User-Agent": user_agent})
     loop = asyncio.get_running_loop()
-    response = await loop.run_in_executor(None, urllib.request.urlopen, req)
+    try:
+        response = await loop.run_in_executor(
+            None, lambda: urllib.request.urlopen(req, timeout=30)
+        )
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"HTTP fallback failed for {url}: {exc}") from exc
     charset = response.headers.get_content_charset("utf-8")
     data = await loop.run_in_executor(None, response.read)
     return data.decode(charset, errors="replace")
@@ -109,13 +118,18 @@ async def fetch_to_markdown(url: str, wait_until: str = "networkidle") -> str:
     # If the result looks like a login wall, retry with a mobile user agent.
     text_len = len(markdown.replace(" ", "").replace("\n", ""))
     if text_len < 300 or _LOGIN_PATTERNS.search(markdown):
+        html_mobile = ""
         try:
             html_mobile = await _fetch_html(url, _MOBILE_UA, {"width": 390, "height": 844}, wait_until)
         except Exception:
-            html_mobile = await _fetch_html_http(url, _MOBILE_UA)
-        markdown_mobile = _html_to_markdown(html_mobile)
-        mobile_text_len = len(markdown_mobile.replace(" ", "").replace("\n", ""))
-        if mobile_text_len > text_len:
-            markdown = markdown_mobile
+            try:
+                html_mobile = await _fetch_html_http(url, _MOBILE_UA)
+            except Exception:
+                pass
+        if html_mobile:
+            markdown_mobile = _html_to_markdown(html_mobile)
+            mobile_text_len = len(markdown_mobile.replace(" ", "").replace("\n", ""))
+            if mobile_text_len > text_len:
+                markdown = markdown_mobile
 
     return markdown
