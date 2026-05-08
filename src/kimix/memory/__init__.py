@@ -5,7 +5,7 @@ from kimix.memory.embedding import EmbeddingProvider
 from kimix.memory.working_memory import WorkingMemory
 from kimix.memory.short_term_memory import ShortTermMemory
 from kimix.memory.long_term_memory import LongTermMemory
-from kimix.memory.retrieval import NgramTokenizer, InvertedIndex, BM25Scorer, Searcher
+from kimix.retrieval import NgramTokenizer, InvertedIndex, BM25Scorer, Searcher
 from kimix.memory.system import AgentMemorySystem
 from kimix.memory.sqlite_backend import SQLiteBackend
 

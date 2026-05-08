@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from .bm25 import InvertedIndex, NgramTokenizer, Searcher
+from kimix.retrieval import InvertedIndex, NgramTokenizer, Searcher
 
 
 class FileReader:

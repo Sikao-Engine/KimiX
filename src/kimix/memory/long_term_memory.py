@@ -12,7 +12,7 @@ import numpy as np
 
 from kimix.memory.types import MemoryEntry, MemoryType, _DECAY_COEFF
 from kimix.memory.embedding import EmbeddingProvider
-from kimix.memory.retrieval import InvertedIndex, NgramTokenizer, Searcher
+from kimix.retrieval import InvertedIndex, NgramTokenizer, Searcher
 from kimix.memory.short_term_memory import ShortTermMemory
 
 

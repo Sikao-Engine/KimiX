@@ -11,6 +11,9 @@ from pydantic import BaseModel, Field
 
 from kimix.memory.system import AgentMemorySystem
 from kimix.memory.types import MemoryType
+from kimix.tools.common import _maybe_export_output_async
+from kimix.utils import close_session_async, _create_session_async, prompt_async
+from kimix.utils.system_prompt import SystemPromptType
 
 T = TypeVar("T")
 
@@ -79,6 +82,7 @@ class RecallParams(BaseModel):
     use_short: bool = Field(default=True, description="Include short-term memory.")
     use_long: bool = Field(default=True, description="Include long-term memory.")
     tags: list[str] = Field(default_factory=list, description="Filter long-term memories by these tags.")
+    use_agent: bool = Field(default=False, description="If true, launch a sub-agent to analyze recalled memories.")
 
 
 class Recall(CallableTool2):
@@ -106,7 +110,47 @@ class Recall(CallableTool2):
                 output_parts.append(f"\n=== {tier.upper()} ===")
                 output_parts.extend(f"- [{e.memory_type.value}] {e.content}" for e in entries)
             output = "\n".join(output_parts) if output_parts else "No memories found."
-            return ToolOk(output=output)
+
+            if not params.use_agent:
+                return ToolOk(output=output)
+
+            output_strs: list[str] = []
+
+            def output_function(fn: str, is_thinking: bool) -> None:
+                if fn and not is_thinking:
+                    output_strs.append(fn)
+
+            async def run_sub_agent(cancel_callable=None):
+                session = None
+                try:
+                    import kimix.base as base
+                    session = await _create_session_async(
+                        agent_file=base._default_agent_file_dir / "agent_recall.yaml",
+                        is_sub_agent=True,
+                        agent_type=SystemPromptType.Recaller,
+                    )
+                    agent_prompt = (
+                        f"Query: {params.query}\n\n"
+                        f"Recalled memories:\n{output}"
+                    )
+                    await prompt_async(
+                        prompt_str=agent_prompt,
+                        session=session,
+                        output_function=output_function,
+                        cancel_callable=cancel_callable,
+                    )
+                except Exception as e:
+                    return str(e)
+                finally:
+                    if session:
+                        await close_session_async(session)
+                return None
+
+            err_msg = await run_sub_agent()
+            agent_output = await _maybe_export_output_async("\n".join(output_strs))
+            if err_msg:
+                return ToolError(output=agent_output, message=err_msg, brief="")
+            return ToolOk(output=agent_output)
         except Exception as e:
             return ToolError(message=str(e), output="", brief="Failed to recall memories")
 

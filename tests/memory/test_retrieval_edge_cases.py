@@ -2,7 +2,7 @@
 
 import pytest
 
-from kimix.memory.retrieval import (
+from kimix.retrieval import (
     NgramTokenizer,
     InvertedIndex,
     BM25Scorer,

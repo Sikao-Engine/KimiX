@@ -8,14 +8,16 @@ from kimi_cli.soul.agent import BuiltinSystemPromptArgs
 
 # This system prompt is designed to stop the modern LLM from over thinking and hallucination
 _SYSTEM_PROMP = (
-    '{AGENT_ROLE}.\n\n{NUMBERED}\n{AGENTS_MD}\n{SKILLS}\n{EXTRA}'
+    '{AGENT_ROLE}:\n{NUMBERED}\n{AGENTS_MD}\n{SKILLS}\n{EXTRA}'
 )
 
 class SystemPromptType(Enum):
     Worker = 0
     TodoMaker = 1
-    SwarmCoordinator = 3
     Thinker = 2
+    SwarmCoordinator = 3
+    Recaller = 4
+    SkillSearcher = 5
     
 
 def get_system_prompt(
@@ -81,6 +83,16 @@ def get_system_prompt(
                     "Be concise. No text outside tags."
                 )
                 items.append('Self-verify: catch errors, omissions, bad assumptions before final answer.')
+            case SystemPromptType.Recaller:
+                role_doc = 'You are a memory recaller'
+                items.append('use `Recall` and `Reflect` tools.')
+                items.append('For complex or multi-step tasks, use `SetTodoList` to track progress.')
+                items.append('Search memories, analyze, provide insights, report findings concisely. Do not modify anything.')
+            case SystemPromptType.SkillSearcher:
+                role_doc = 'You are a skill searcher'
+                items.append('Only use `SkillSearch` tool.')
+                items.append('For complex or multi-step tasks, use `SetTodoList` to track progress.')
+                items.append('Search skills, analyze, provide insights, report results concisely. Do not modify anything.')
 
 
         items.append('Use `Remember`, `Recall`, `Reflect`, `Forget` whenever memory is needed: long tasks, heavy context, multi-turn work, or anything worth saving.')

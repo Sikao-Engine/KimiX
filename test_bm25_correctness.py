@@ -2,7 +2,7 @@
 import sys
 sys.path.insert(0, 'src')
 
-from kimix.tools.skill.searching.bm25 import InvertedIndex, NgramTokenizer, Searcher
+from kimix.retrieval import InvertedIndex, NgramTokenizer, Searcher
 
 # Simple corpus
 docs = [

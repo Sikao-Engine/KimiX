@@ -12,7 +12,7 @@ import pytest
 from kimi_agent_sdk import ToolError
 from kimix.memory.embedding import EmbeddingProvider
 from kimix.memory.long_term_memory import LongTermMemory
-from kimix.memory.retrieval import (
+from kimix.retrieval import (
     BM25Scorer,
     InvertedIndex,
     LevenshteinAutomaton,
