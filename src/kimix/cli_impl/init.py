@@ -134,6 +134,24 @@ def _ask_url(default: str = "https://api.kimi.com/coding/v1") -> str:
     return _ask("Enter model URL", default)
 
 
+def _ask_max_token(context_size: int, reserved: int, default: int) -> int:
+    max_allowed = context_size - reserved
+    prompt = f"Enter max tokens (max {max_allowed})"
+    while True:
+        value = _ask(prompt, str(default)).strip()
+        if not value:
+            return default
+        try:
+            num = int(value)
+        except ValueError:
+            print_warning(f"Invalid number '{value}', using default {default}")
+            return default
+        if num <= 0 or num > max_allowed:
+            print_warning(f"Value {num} out of range, using default {default}")
+            return default
+        return num
+
+
 def init(initialize: bool = True) -> None:
     if not initialize:
         v = input('default config not found, initialize? you can use /init any time. (y/n)').strip().lower() 
@@ -154,7 +172,8 @@ def init(initialize: bool = True) -> None:
             config["max_context_size"] = context_size
 
             reserved = config.get("loop_control", {}).get("reserved_context_size", 50000)
-            config["max_tokens"] = context_size - reserved
+            max_tokens = _ask_max_token(context_size, reserved, 128000)
+            config["max_tokens"] = max_tokens
 
             thinking = _ask_thinking_effort(config.get("thinking_effort", "low"))
             config["thinking_effort"] = thinking
