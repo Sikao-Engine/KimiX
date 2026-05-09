@@ -5,6 +5,7 @@ from kimix.tools.skill.searching.file_builder import FileBuilder, formatted_prin
 from kimix.tools.common import _maybe_export_output_async
 from kimix.utils import close_session_async, _create_session_async, prompt_async
 from kimix.utils.system_prompt import SystemPromptType
+from kimi_cli.session import Session
 
 
 class IndexerParams(BaseModel):
@@ -34,8 +35,14 @@ class SkillSearch(CallableTool2[IndexerParams]):
     file_builder_inited: bool = False
     file_builder: FileBuilder | None = None
 
+    def __init__(self, session: Session):
+        super().__init__()
+        self._session = session
+
     @override
     async def __call__(self, params: IndexerParams) -> ToolReturnValue:
+        if self._session.get_custom_data().get("is_sub_agent"):
+            params.use_agent = False
         import kimix.base as base
         if not self.file_builder_inited:
             skill_dirs = base.get_skill_dirs(False)
@@ -66,6 +73,7 @@ class SkillSearch(CallableTool2[IndexerParams]):
                         is_sub_agent=True,
                         agent_type=SystemPromptType.SkillSearcher,
                     )
+                    session.get_custom_data()['is_sub_agent'] = True
                     agent_prompt = (
                         f"Query: {params.query}\n\n"
                         f"Skill search results:\n{output}"
@@ -84,7 +92,7 @@ class SkillSearch(CallableTool2[IndexerParams]):
                 return None
 
             err_msg = await run_sub_agent()
-            agent_output = await _maybe_export_output_async("\n".join(output_strs))
+            agent_output = await _maybe_export_output_async("".join(output_strs))
             if err_msg:
                 return ToolError(output=agent_output, message=err_msg, brief="")
             return ToolOk(output=agent_output)

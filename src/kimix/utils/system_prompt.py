@@ -35,8 +35,9 @@ def get_system_prompt(
         items: list[str] = []
         agent_md_doc = ''
         skill_doc = ''
+        if agent_role != SystemPromptType.Thinker:
+            items.append('NO write pseudocode. NO flowcharts. No reasoning. Direct. NO step-by-step. No thinking. No planning. No explanations. No filler. No restating. No reconsider. No self-correction. First thought is final. No backtracking.')
         def worker_logic():
-            items.append('NO write pseudocode. NO flowcharts. No reasoning. Direct. NO step-by-step. No thinking. No planning. No explanations.')
             nonlocal role_doc
             role_doc = 'You are a terse ' + ('sub-agent' if is_sub_agent else 'coder')
             items.append(
@@ -45,12 +46,12 @@ def get_system_prompt(
             items.append(
                 'For complex or multi-step tasks, use `SetTodoList` to track progress.'
             )
-            if not is_sub_agent:
-                items.append(
-                    'Use `Agent` for: "parallelizable independent subtasks", '
-                    '"large-context analysis or tasks needing different expertise", '
-                    '"permission-graded operations like read-only analysis or sandboxed execution".'
-                )
+            # if not is_sub_agent:
+            #     items.append(
+            #         'Use `Agent` for: "parallelizable independent subtasks", '
+            #         '"large-context analysis or tasks needing different expertise", '
+            #         '"permission-graded operations like read-only analysis or sandboxed execution".'
+            #     )
             if args.KIMI_OS != 'Windows':
                 items.append(f'Bash Shell: {args.KIMI_SHELL}. use `Run`.')
             else:
@@ -60,6 +61,7 @@ def get_system_prompt(
                     'Yolo mode: act without asking. Stay in workdir. No system changes unless asked.'
                 )
             items.append('Use `SkillSearch` tool to search and retrieve skills.')
+            items.append('Use `Remember`, `Recall`, `Reflect`, `Forget` whenever memory is needed: long tasks, heavy context, multi-turn work, or anything worth saving.')
         match agent_role:
             case SystemPromptType.Worker:
                 worker_logic()
@@ -98,7 +100,6 @@ def get_system_prompt(
                 items.append('Search skills, analyze, provide insights, report results concisely. Do not modify anything.')
 
 
-        items.append('Use `Remember`, `Recall`, `Reflect`, `Forget` whenever memory is needed: long tasks, heavy context, multi-turn work, or anything worth saving.')
         if agent_md.is_file():
             agent_md_content = agent_md.read_text(encoding='utf-8', errors='replace')
             agent_md_doc = f'AGENTS.md:\n```\n{agent_md_content}\n```\n'

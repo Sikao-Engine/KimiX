@@ -14,6 +14,7 @@ from kimix.memory.types import MemoryType
 from kimix.tools.common import _maybe_export_output_async
 from kimix.utils import close_session_async, _create_session_async, prompt_async
 from kimix.utils.system_prompt import SystemPromptType
+from kimi_cli.session import Session
 
 T = TypeVar("T")
 
@@ -90,7 +91,13 @@ class Recall(CallableTool2):
     description: str = "Search and retrieve memories across all tiers."
     params: type[BaseModel] = RecallParams
 
+    def __init__(self, session: Session):
+        super().__init__()
+        self._session = session
+
     async def __call__(self, params: RecallParams) -> ToolReturnValue:
+        if self._session.get_custom_data().get("is_sub_agent"):
+            params.use_agent = False
         try:
             memory = await _get_memory_system()
             results = await _run_sync(
@@ -129,6 +136,7 @@ class Recall(CallableTool2):
                         is_sub_agent=True,
                         agent_type=SystemPromptType.Recaller,
                     )
+                    session.get_custom_data()['is_sub_agent'] = True
                     agent_prompt = (
                         f"Query: {params.query}\n\n"
                         f"Recalled memories:\n{output}"
@@ -147,7 +155,7 @@ class Recall(CallableTool2):
                 return None
 
             err_msg = await run_sub_agent()
-            agent_output = await _maybe_export_output_async("\n".join(output_strs))
+            agent_output = await _maybe_export_output_async("".join(output_strs))
             if err_msg:
                 return ToolError(output=agent_output, message=err_msg, brief="")
             return ToolOk(output=agent_output)
