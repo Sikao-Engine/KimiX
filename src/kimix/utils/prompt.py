@@ -11,7 +11,6 @@ from kimix.base import print_debug, print_warning, print_error, print_agent_json
 from . import _globals
 from .session import close_session_async, _create_default_session, _print_usage, clear_default_context, create_session, close_session
 from kimix.tools.common import _export_to_temp_file
-from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.session_state import load_session_state
 
 
@@ -101,7 +100,6 @@ async def prompt_async(
         close_session_after_prompt = False
     prompt_str = prompt_str.strip()
     prompt_str = escape_file_paths(prompt_str)
-    prompt_str = sanitize_for_tokenizer(prompt_str)
     if len(prompt_str) > 65536:  # too long, save to file
         name, new_id = _export_to_temp_file(content=prompt_str)
         prompt_str = f'read and execute: `{name}`'
