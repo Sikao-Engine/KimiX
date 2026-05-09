@@ -52,14 +52,13 @@ class _Replacer:
         text = self.text
         text_len = self.text_len
 
-        # Already inside quotes or backticks – leave as-is.
-        if (
-            raw_start > 0
-            and raw_end < text_len
-            and text[raw_start - 1] == text[raw_end]
-            and text[raw_start - 1] in "'\"`"
-        ):
-            return raw
+        # Already inside quotes, backticks, or bracket pairs – leave as-is.
+        if raw_start > 0 and raw_end < text_len:
+            prev, nxt = text[raw_start - 1], text[raw_end]
+            if prev == nxt and prev in "'\"`":
+                return raw
+            if (prev, nxt) in (("(", ")"), ("[", "]"), ("{", "}"), ("<", ">")):
+                return raw
 
         # Strip trailing punctuation – fast-path when unnecessary.
         trailing_punct = self.trailing_punct

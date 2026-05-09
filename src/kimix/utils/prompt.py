@@ -102,7 +102,6 @@ async def prompt_async(
     prompt_str = prompt_str.strip()
     prompt_str = escape_file_paths(prompt_str)
     prompt_str = sanitize_for_tokenizer(prompt_str)
-    print(prompt_str)
     if len(prompt_str) > 65536:  # too long, save to file
         name, new_id = _export_to_temp_file(content=prompt_str)
         prompt_str = f'read and execute: `{name}`'
