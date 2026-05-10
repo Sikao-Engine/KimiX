@@ -44,8 +44,8 @@ class TestWorkerPrompt:
         fn = get_system_prompt(yolo=False, agent_role=SystemPromptType.Worker)
         prompt = fn(mock_args)
         assert "You are a terse coder" in prompt
-        assert "use `Run`" in prompt
-        assert "Yolo mode" not in prompt
+        assert "Use `Run`" in prompt
+        assert "Yolo:" not in prompt
 
     def test_worker_sub_agent(self, mock_args: MagicMock) -> None:
         fn = get_system_prompt(is_sub_agent=True, agent_role=SystemPromptType.Worker)
@@ -56,7 +56,7 @@ class TestWorkerPrompt:
     def test_worker_yolo(self, mock_args: MagicMock) -> None:
         fn = get_system_prompt(yolo=True, agent_role=SystemPromptType.Worker)
         prompt = fn(mock_args)
-        assert "Yolo mode" in prompt
+        assert "Yolo:" in prompt
 
     def test_worker_windows(self, windows_args: MagicMock) -> None:
         fn = get_system_prompt(agent_role=SystemPromptType.Worker)
@@ -66,7 +66,7 @@ class TestWorkerPrompt:
     def test_worker_linux_shell(self, mock_args: MagicMock) -> None:
         fn = get_system_prompt(agent_role=SystemPromptType.Worker)
         prompt = fn(mock_args)
-        assert "Bash Shell" in prompt
+        assert "Shell: /bin/bash" in prompt
 
     def test_extra_system_prompt(self, mock_args: MagicMock) -> None:
         fn = get_system_prompt(
@@ -87,8 +87,8 @@ class TestTodoMakerPrompt:
     def test_todo_maker_role(self, mock_args: MagicMock) -> None:
         fn = get_system_prompt(agent_role=SystemPromptType.TodoMaker)
         prompt = fn(mock_args)
-        assert "You are a plan maker" in prompt
-        assert "Only make plan, never implement" in prompt
+        assert "You are a planner" in prompt
+        assert "Plan only. Do not implement." in prompt
 
 
 class TestSwarmCoordinatorPrompt:
@@ -109,7 +109,7 @@ class TestThinkerPrompt:
     def test_thinker_explicit_cot(self, mock_args: MagicMock) -> None:
         fn = get_system_prompt(agent_role=SystemPromptType.Thinker)
         prompt = fn(mock_args)
-        assert "Think step by step" in prompt
+        assert "Think in <thinking>" in prompt
         assert "<thinking>" in prompt
         assert "<quit/>" in prompt
 
@@ -127,12 +127,12 @@ class TestThinkerPrompt:
         prompt = fn(mock_args)
         assert "Self-verify" in prompt
         assert "errors" in prompt
-        assert "omissions" in prompt
+        assert "bad assumptions" in prompt
 
     def test_thinker_continue(self, mock_args: MagicMock) -> None:
         fn = get_system_prompt(agent_role=SystemPromptType.Thinker)
         prompt = fn(mock_args)
-        assert "think step by step" in prompt.lower()
+        assert "think in <thinking>" in prompt.lower()
 
     def test_thinker_sub_agent(self, mock_args: MagicMock) -> None:
         fn = get_system_prompt(is_sub_agent=True, agent_role=SystemPromptType.Thinker)
@@ -142,11 +142,10 @@ class TestThinkerPrompt:
     def test_thinker_worker_rules_preserved(self, mock_args: MagicMock) -> None:
         fn = get_system_prompt(agent_role=SystemPromptType.Thinker)
         prompt = fn(mock_args)
-        assert "use `Run`" in prompt
+        assert "Use `Run`" in prompt
         assert "SetTodoList" in prompt
         assert "Remember" in prompt
         assert "Recall" in prompt
-        assert "Reflect" in prompt
         assert "Forget" in prompt
         assert "SkillSearch" in prompt
 

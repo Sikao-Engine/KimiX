@@ -511,6 +511,49 @@ class TestCal:
 
 
 # ---------------------------------------------------------------------------
+# Cksum
+# ---------------------------------------------------------------------------
+class TestCksum:
+    async def test_single_file(self, tmp_path: Path) -> None:
+        f = tmp_path / "a.txt"
+        f.write_text("hello", encoding="utf-8")
+        result = await _run(Cksum, [str(f)])
+        assert isinstance(result, ToolOk)
+        assert "907060870 5" in result.output
+        assert str(f) in result.output
+
+    async def test_multiple_files(self, tmp_path: Path) -> None:
+        f1 = tmp_path / "a.txt"
+        f2 = tmp_path / "b.txt"
+        f1.write_text("hello", encoding="utf-8")
+        f2.write_text("world", encoding="utf-8")
+        result = await _run(Cksum, [str(f1), str(f2)])
+        assert isinstance(result, ToolOk)
+        assert "907060870 5" in result.output
+        assert "a.txt" in result.output
+        assert "b.txt" in result.output
+
+    async def test_missing_file(self, tmp_path: Path) -> None:
+        result = await _run(Cksum, [str(tmp_path / "missing.txt")])
+        assert isinstance(result, ToolError)
+        assert "No such file" in result.output
+
+    async def test_missing_operand(self) -> None:
+        result = await _run(Cksum, [])
+        assert isinstance(result, ToolError)
+        assert "missing operand" in result.message.lower()
+
+    async def test_output_path(self, tmp_path: Path) -> None:
+        f = tmp_path / "a.txt"
+        out = tmp_path / "cksum.txt"
+        f.write_text("hello", encoding="utf-8")
+        result = await _run(Cksum, [str(f)], output_path=str(out))
+        assert isinstance(result, ToolOk)
+        assert "saved to file" in result.output
+        assert "907060870 5" in out.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
 # Cp
 # ---------------------------------------------------------------------------
 class TestCp:

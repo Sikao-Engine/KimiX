@@ -199,9 +199,10 @@ class TestInit:
         assert saved["type"] == "kimi"
         assert saved["api_key"] == ""
         assert saved["max_context_size"] == 262144
-        assert saved["max_tokens"] == 262144 - 50000
+        assert saved["max_tokens"] == 128000
         assert saved["thinking_effort"] == "low"
         assert saved["url"] == "https://api.kimi.com/coding/v1"
+        assert saved["temperature"] == 1.0
 
     def test_all_custom(self, temp_config_path: Path, default_config: dict[str, Any]) -> None:
         inputs = iter([
@@ -209,8 +210,10 @@ class TestInit:
             "openai_legacy",   # type
             "sk-test",         # api key
             "512k",            # context size
+            "200000",          # max tokens
             "high",            # thinking effort
             "https://api.openai.com/v1",  # url
+            "0.5",             # temperature
         ])
         with (
             patch.object(init_module, "_DEFAULT_CONFIG_PATH", temp_config_path),
@@ -223,9 +226,10 @@ class TestInit:
         assert saved["type"] == "openai_legacy"
         assert saved["api_key"] == "sk-test"
         assert saved["max_context_size"] == 524288
-        assert saved["max_tokens"] == 524288 - 50000
+        assert saved["max_tokens"] == 200000
         assert saved["thinking_effort"] == "high"
         assert saved["url"] == "https://api.openai.com/v1"
+        assert saved["temperature"] == 0.5
 
     def test_api_key_empty_then_custom(
         self, temp_config_path: Path, default_config: dict[str, Any]
@@ -236,8 +240,10 @@ class TestInit:
             "",                # api key first empty
             "sk-real",         # api key second
             "",                # context size (default)
+            "",                # max tokens (default)
             "",                # thinking effort (default)
             "",                # url (default)
+            "",                # temperature (default)
         ])
         with (
             patch.object(init_module, "_DEFAULT_CONFIG_PATH", temp_config_path),
@@ -257,8 +263,10 @@ class TestInit:
             "",                # api key first empty
             "",                # api key second empty (skip)
             "",                # context size (default)
+            "",                # max tokens (default)
             "",                # thinking effort (default)
             "",                # url (default)
+            "",                # temperature (default)
         ])
         with (
             patch.object(init_module, "_DEFAULT_CONFIG_PATH", temp_config_path),
@@ -276,13 +284,13 @@ class TestInit:
             "",                # model name (default)
             "bad_type",        # type invalid
             "anthropic",       # type valid
-            "",                # api key (default after empty loop... wait)
-            # Actually _ask_api_key is called separately. Empty first, empty second -> skip
             "",                # api key first
             "",                # api key second
             "",                # context size (default)
+            "",                # max tokens (default)
             "",                # thinking effort (default)
             "",                # url (default)
+            "",                # temperature (default)
         ])
         with (
             patch.object(init_module, "_DEFAULT_CONFIG_PATH", temp_config_path),
@@ -303,8 +311,10 @@ class TestInit:
             "",                # api key second empty
             "bad_size",        # context size invalid
             "1M",              # context size valid
+            "",                # max tokens (default)
             "",                # thinking effort (default)
             "",                # url (default)
+            "",                # temperature (default)
         ])
         with (
             patch.object(init_module, "_DEFAULT_CONFIG_PATH", temp_config_path),
@@ -314,7 +324,7 @@ class TestInit:
 
         saved = orjson.loads(temp_config_path.read_bytes())
         assert saved["max_context_size"] == 1048576
-        assert saved["max_tokens"] == 1048576 - 50000
+        assert saved["max_tokens"] == 128000
 
     def test_invalid_thinking_effort_then_valid(
         self, temp_config_path: Path, default_config: dict[str, Any]
@@ -325,9 +335,11 @@ class TestInit:
             "",                # api key first empty
             "",                # api key second empty
             "",                # context size (default)
+            "",                # max tokens (default)
             "bad_effort",      # thinking effort invalid
             "medium",          # thinking effort valid
             "",                # url (default)
+            "",                # temperature (default)
         ])
         with (
             patch.object(init_module, "_DEFAULT_CONFIG_PATH", temp_config_path),
@@ -368,7 +380,8 @@ class TestInit:
             init_module.init()
 
         saved = orjson.loads(temp_config_path.read_bytes())
-        assert saved["max_tokens"] == 262144 - 10000
+        assert saved["max_tokens"] == 128000
+        assert saved["loop_control"]["reserved_context_size"] == 10000
 
     def test_missing_loop_control_defaults_reserved_to_50000(
         self, tmp_path: Path
@@ -384,7 +397,8 @@ class TestInit:
             init_module.init()
 
         saved = orjson.loads(path.read_bytes())
-        assert saved["max_tokens"] == 262144 - 50000
+        assert saved["max_tokens"] == 128000
+        assert saved["loop_control"]["reserved_context_size"] == 50000
 
     def test_load_and_save_use_orjson(self, temp_config_path: Path) -> None:
         with (
