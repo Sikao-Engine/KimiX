@@ -83,7 +83,7 @@ class RecallParams(BaseModel):
     use_short: bool = Field(default=True, description="Include short-term memory.")
     use_long: bool = Field(default=True, description="Include long-term memory.")
     tags: list[str] = Field(default_factory=list, description="Filter long-term memories by these tags.")
-    use_agent: bool = Field(default=False, description="If true, launch a sub-agent to analyze recalled memories.")
+    use_agent: bool = Field(default=False, description="If true, launch a sub-agent; query can be more specific and detailed than a few keywords.")
 
 
 class Recall(CallableTool2):

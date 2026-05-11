@@ -21,7 +21,7 @@ class IndexerParams(BaseModel):
     )
     use_agent: bool = Field(
         default=False,
-        description="If true, launch a sub-agent to analyze skill search results."
+        description="If true, launch a sub-agent; query can be more specific and detailed than a few keywords."
     )
 
 
