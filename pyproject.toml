@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kimix"
-version = "0.1.13"
+version = "0.1.14"
 description = "Kimi Agent Tools - Custom tool collection for Kimi Agent SDK"
 readme = "README.md"
 license = { text = "MIT" }
@@ -20,7 +20,7 @@ dependencies = [
     "playwright",
     "markdownify",
     "kimi-cli-x>=1.41.3",
-    "kimi-agent-sdk-x>=0.0.13",
+    "kimi-agent-sdk-x>=0.0.14",
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
     "sse-starlette>=2.0.0",

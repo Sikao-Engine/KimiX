@@ -60,7 +60,7 @@ def get_system_prompt(
             if yolo and not is_sub_agent:
                 items.append('Yolo: no asking. Stay in workdir.')
             if not is_sub_agent:
-                items.append('`Retrieve` to retrieve skills, docs.')
+                items.append('`Search` to search, retrieve skills, docs.')
                 items.append('Remember: Drop context aggressively, write memory to dir `.kimix_cache/` after task.')
         if extra_system_prompt and extra_system_prompt.role_callback:
             extra_system_prompt.role_callback(agent_role, items)
@@ -87,7 +87,7 @@ def get_system_prompt(
                 items.append(
                     'Keep acyclic. Minimize edges, maximize parallelism.')
                 items.append('Report nodes and edges.')
-                items.append('`Retrieve` to retrieve docs, skills.')
+                items.append('`Search` to search, retrieve skills, docs.')
             case SystemPromptType.Thinker:
                 worker_logic('thinker')
                 items.append(

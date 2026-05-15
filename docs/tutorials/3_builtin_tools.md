@@ -32,7 +32,7 @@
 - **不只"推测"问题，而是直接"读"文件、"搜"代码来验证**（`ReadFile`、`Grep`、`Glob`）
 - **不只"给出命令"，而是直接"运行"并观察输出**（`Run`）
 - **处理耗时任务时进行异步管理**（`TaskOutput`、`Input`）
-- **将外部资料纳入工作流**（`FetchURL`、`Retrieve`）
+- **将外部资料纳入工作流**（`FetchURL`、`Search`）
 
 ---
 
@@ -45,7 +45,7 @@
 | **文件与 I/O** | `WriteFile`, `ReadFile`, `StrReplaceFile`, `Glob`, `Grep` | 创建、读取、修改、搜索文件与目录 |
 | **代码执行** | `Run` | 执行可执行文件或常用 bash 命令 |
 | **进程管理** | `TaskOutput`, `Input` | 与后台进程交互、获取输出、发送输入 |
-| **搜索与信息** | `FetchURL`, `Retrieve` | 获取网页内容、搜索本地 skill |
+| **搜索与信息** | `FetchURL`, `Search` | 获取网页内容、搜索本地 skill |
 | **状态与标志** | `SetTodoList` | 设置状态标志、追踪多步骤任务进度 |
 | **子代理** | `Agent` | 委派子任务给独立 agent |
 
@@ -115,7 +115,7 @@
 - **功能**：使用无头浏览器获取网页内容并返回 Markdown 格式。适用于抓取文档、API 说明、技术博客等。
 - **示例场景**：读取某个包的官方文档页面、获取 GitHub issue 的详细内容。
 
-#### `Retrieve` —— Skill 搜索
+#### `Search` —— Skill 搜索
 - **功能**：基于语义搜索在本地 skill 目录中检索与关键词相关的 skill。支持指定 `dest_path` 限制搜索目录。
 - **示例场景**：查找是否有现成的 skill 可以处理当前任务、了解项目中可用的 agent 扩展能力。
 

@@ -23,10 +23,10 @@ class IndexerParams(BaseModel):
     )
 
 
-class Retrieve(CallableTool2[IndexerParams]):
+class Search(CallableTool2[IndexerParams]):
     """Indexer tool for semantic search over text files."""
 
-    name: str = "Retrieve"
+    name: str = "Search"
     description: str = "Search skills by keywords."
     params: type[IndexerParams] = IndexerParams
 
@@ -102,7 +102,7 @@ class Retrieve(CallableTool2[IndexerParams]):
                         )
                         session.get_custom_config()['is_sub_agent'] = True
                         import kimix.utils as utils
-                        prompt = f'Retrieve:\n```\n{params.prompt}\n```in `{dest_path_str}`'
+                        prompt = f'Search:\n```\n{params.prompt}\n```in `{dest_path_str}`'
                         await utils.prompt_async(prompt_str=prompt, session=session, output_function=output_function, info_print=False, cancel_callable=cancel_callable, merge_wire_messages=True)
                     except Exception as e:
                         return str(e)
