@@ -1,0 +1,19 @@
+{
+  "agent": {
+    "extend": "default",
+    "tools": [
+      "kimix.tools.file.run:Run",
+      "kimix.tools.file.input:Input",
+      "kimix.tools.background:TaskOutput",
+      "kimix.tools.skill:Search",
+      "kimi_cli.tools.todo:SetTodoList",
+      "kimi_cli.tools.file:WriteFile",
+      "kimi_cli.tools.file:ReadFile",
+      "kimi_cli.tools.file:Glob",
+      "kimi_cli.tools.file:Grep",
+      "kimi_cli.tools.file:StrReplaceFile",
+      "kimix.tools.web.fetch_url:FetchURL",
+      "kimix.tools.agent:Agent"
+    ]
+  }
+}

@@ -59,7 +59,11 @@ class Search(CallableTool2[IndexerParams]):
                         chat_provider = custom_config.get("chat_provider")
                         default_sub_provider = base._default_sub_provider if base._default_sub_provider is not None else base._default_provider
                         provider_dict = dict(default_sub_provider) if default_sub_provider is not None else dict(custom_config.get("provider_dict", {}))
-                        provider_dict.setdefault('loop_control', {})['max_ralph_iterations'] = 0
+                        loop_control = provider_dict.get('loop_control')
+                        if isinstance(loop_control, dict):
+                            provider_dict['loop_control'] = {**loop_control, 'max_ralph_iterations': 0}
+                        else:
+                            provider_dict['loop_control'] = {'max_ralph_iterations': 0}
                         if params.dest_path is not None:
                             valid_paths = []
                             for dp in params.dest_path:
@@ -94,7 +98,7 @@ class Search(CallableTool2[IndexerParams]):
                             return "No valid destination paths found."
                         dest_path_str = ', '.join(dest_path)
                         session = await _create_session_async(
-                            agent_file=base._default_agent_file_dir / 'agent_searcher.yaml',
+                            agent_file=base._default_agent_file_dir / 'agent_searcher.json',
                             agent_type=SystemPromptType.SkillSearcher,
                             provider_dict=provider_dict,
                             chat_provider=chat_provider,

@@ -1,8 +1,8 @@
 # 内置工具（Built-in Tools）完全指南
 
-作为 coding agent，核心能力不仅体现在对代码逻辑的理解与生成上，更体现在与外部环境的高效交互之中。本教程将系统性地介绍当前默认 agent worker（`src/kimix/agent_worker.yaml`）所拥有的全部**内置工具（Built-in Tools）**，并深入讲解如何在提示词（Prompt）中精准地引导 agent 调用这些工具，以完成从文件操作、代码执行、信息检索到复杂任务编排的各类工作。
+作为 coding agent，核心能力不仅体现在对代码逻辑的理解与生成上，更体现在与外部环境的高效交互之中。本教程将系统性地介绍当前默认 agent worker（`src/kimix/agent_worker.json`）所拥有的全部**内置工具（Built-in Tools）**，并深入讲解如何在提示词（Prompt）中精准地引导 agent 调用这些工具，以完成从文件操作、代码执行、信息检索到复杂任务编排的各类工作。
 
-> **注意**：`agent_worker.yaml` 通过 `extend: default` 继承基础配置，但由于显式重写了 `tools` 字段，最终可用的工具集**仅包含** `agent_worker.yaml` 中列出的 12 个工具。以下列表即为实际可用的完整配置。
+> **注意**：`agent_worker.json` 通过 `extend: default` 继承基础配置，但由于显式重写了 `tools` 字段，最终可用的工具集**仅包含** `agent_worker.json` 中列出的 12 个工具。以下列表即为实际可用的完整配置。
 
 ---
 

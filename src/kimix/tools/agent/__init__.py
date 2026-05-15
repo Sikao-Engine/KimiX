@@ -47,9 +47,13 @@ class Agent(CallableTool2):
                         chat_provider = custom_config.get("chat_provider")
                         default_sub_provider = base._default_sub_provider if base._default_sub_provider is not None else base._default_provider
                         provider_dict = dict(default_sub_provider) if default_sub_provider is not None else dict(custom_config.get("provider_dict", {}))
-                        provider_dict.setdefault('loop_control', {})['max_ralph_iterations'] = 0
+                        loop_control = provider_dict.get('loop_control')
+                        if isinstance(loop_control, dict):
+                            provider_dict['loop_control'] = {**loop_control, 'max_ralph_iterations': 0}
+                        else:
+                            provider_dict['loop_control'] = {'max_ralph_iterations': 0}
                         session = await _create_session_async(
-                            agent_file=base._default_agent_file_dir / 'agent_subagent.yaml', agent_type=SystemPromptType.TrivialSubAgent,
+                            agent_file=base._default_agent_file_dir / 'agent_subagent.json', agent_type=SystemPromptType.TrivialSubAgent,
                             provider_dict=provider_dict,
                             thinking=False,
                             chat_provider=chat_provider)

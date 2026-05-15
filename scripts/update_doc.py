@@ -17,7 +17,7 @@ read src/kimix/utils/prompt.py, update docs/tutorials/2_long_task.md
 ''')
 
 prompt('''
-read src/kimix/agent_worker.yaml , update docs/tutorials/3_builtin_tools.md
+read src/kimix/agent_worker.json , update docs/tutorials/3_builtin_tools.md
 ''')
 
 prompt('''

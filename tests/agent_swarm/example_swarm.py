@@ -130,7 +130,7 @@ def setup_mocks() -> None:
 
 async def create_swarm_session(task_prompt: str) -> DAG | None:
     """Create a swarm session and initialize the DAG."""
-    agent_file = Path("agent_swarm.yaml")
+    agent_file = Path("agent_swarm.json")
     session = None
     try:
         session = await mock_create_session(agent_file=agent_file, agent_type=SystemPromptType.SwarmCoordinator)

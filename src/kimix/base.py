@@ -338,7 +338,7 @@ def percentage_str(num: float) -> str:
 _default_thinking: bool = True
 _default_yolo: bool = True
 _default_agent_file_dir: Path = Path(__file__).parent
-_default_agent_file: Path = _default_agent_file_dir / "agent_worker.yaml"
+_default_agent_file: Path = _default_agent_file_dir / "agent_worker.json"
 _default_skill_dirs: list[Any] = []
 _default_provider: dict[str, Any] | None = None
 _default_sub_provider: dict[str, Any] | None = None

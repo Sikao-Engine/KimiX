@@ -41,7 +41,7 @@
 
 #### 阶段 1：计划生成
 
-1. **创建计划会话**：使用 `agent_boss.yaml` 配置和 `TodoMaker` 系统提示词创建专用会话
+1. **创建计划会话**：使用 `agent_boss.json` 配置和 `TodoMaker` 系统提示词创建专用会话
 2. **生成计划文件**：LLM 将任务拆解为步骤列表，写入 `~/.kimi/plan/plan_<uuid>.md`。生成过程最多重试 4 次，确保计划被正确写入
 3. **缓存机制**：计划信息（步骤数、文件路径、文件 SHA256 哈希值）存入 `~/.kimi/plan/.cache.json`。恢复时会校验文件哈希，若计划文件已被修改则放弃缓存
 
@@ -178,7 +178,7 @@ Agent Swarm 通过协调者（Coordinator）将复杂任务拆分为有向无环
 `_cmd_swarm` 内部按以下步骤执行（参考 `src/kimix/cli_impl/commands.py`）：
 
 1. **收集提示词**：将多行文本拼接为完整任务描述 `task_prompt`。
-2. **创建 Swarm 会话**：调用 `create_swarm_session(task_prompt)`，由协调者 Agent 根据 `agent_swarm.yaml` 规划 DAG 节点。
+2. **创建 Swarm 会话**：调用 `create_swarm_session(task_prompt)`，由协调者 Agent 根据 `agent_swarm.json` 规划 DAG 节点。
 3. **执行 DAG**：使用 `Executor().execute(dag)` 按依赖关系调度各节点运行。
 4. **输出结果**：执行完成后打印各节点返回结果；若任一阶段失败，打印对应错误信息。
 

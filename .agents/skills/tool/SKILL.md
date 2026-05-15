@@ -1,6 +1,6 @@
 ---
 name: tool
-description: Guide for creating tools using CallableTool2 and Params pattern
+description: Guide for creating tools using CallableTool2 and Params pattern, plus YAML agent registration
 ---
 
 # Tool Development Guide
@@ -273,3 +273,80 @@ stream.start(my_background_function, stop_function)
 add_task(task_id, stream)
 
 ```
+
+## YAML Agent Registration
+
+Every new tool **must** be registered in a YAML agent file to be available to the agent.
+
+### How Tools Are Loaded
+
+Each YAML file defines a `tools:` list. Each entry is a colon-delimited path:
+
+```
+"module.path:ClassName"
+```
+
+At startup, `KimiToolset.load_tools()` (in `kimi-cli/src/kimi_cli/soul/toolset.py`) parses each entry:
+
+1. Split on the **last** `:` → `module_name` and `class_name`
+2. `importlib.import_module(module_name)` → dynamic import
+3. `getattr(module, class_name)` → get the tool class
+4. Instantiate (injecting dependencies via `__init__` params) and call `toolset.add(tool)`
+
+### Agent YAML Files
+
+**kimix agents** (in `src/kimix/`):
+
+| File | Purpose |
+|------|---------|
+| `agent_worker.json` | Default worker agent (default agent file) |
+| `agent_boss.json` | Boss agent with ReadFile/Glob/Grep/FetchURL/Search/Note |
+| `agent_searcher.json` | Fast search agent with Run/Input/TaskOutput/ReadFile/Glob/Grep/FetchURL/WriteFile/StrReplaceFile |
+| `agent_subagent.json` | Sub-agent with Run/Input/TaskOutput/Search/SetTodoList/WriteFile/ReadFile/Glob/Grep/StrReplaceFile/FetchURL |
+| `agent_swarm.json` | Swarm agent with ReadFile/Glob/Grep/FetchURL/AddNode/Search/AddEdge |
+
+**kimi-cli base agents** (in `kimi-cli/src/kimi_cli/agents/default/`):
+
+| File | Purpose |
+|------|---------|
+| `agent.yaml` | Default base agent with full toolset (Shell, TaskList, ReadMediaFile, SearchWeb, etc.) |
+| `coder.yaml` | Subagent coder — extends agent.yaml, restricts to code-editing tools |
+| `explore.yaml` | Subagent explorer — extends agent.yaml, read-only exploration tools only |
+| `plan.yaml` | Subagent planner — extends agent.yaml, read-only planning tools, no Shell |
+
+### Registration Steps for a New Tool
+
+1. **Create the tool class** following the `CallableTool2` + `Params` pattern above
+2. **Add the tool entry** to the relevant YAML file(s) in `src/kimix/`:
+
+```yaml
+version: 1
+agent:
+  extend: default
+  tools:
+    - "kimix.tools.your_module:YourTool"  # add this line
+```
+
+3. **Choose the right agent file** based on which agent profile should have the tool:
+   - `agent_worker.json` — most common; the default agent
+   - `agent_boss.json` — boss/planning agent
+   - `agent_searcher.json` — fast search agents
+   - `agent_subagent.json` — sub-agents spawned via the `Agent` tool
+   - `agent_swarm.json` — swarm/graph agents
+
+### YAML Inheritance
+
+All kimix agent YAML files use `extend: default`, which resolves to `kimi-cli/src/kimi_cli/agents/default/agent.yaml` (the base agent).
+
+- If a child YAML specifies `tools:`, it **replaces** the parent's tools entirely.
+- If it omits `tools:`, the parent's tools are inherited.
+- Use `allowed_tools:` and `exclude_tools:` in subagent YAMLs (like `coder.yaml`) to restrict the parent toolset.
+
+### Tool Path Conventions
+
+| Prefix | Source |
+|--------|--------|
+| `kimi_cli.tools.*` | Built-in kimi-cli tools (Shell, ReadFile, Grep, etc.) |
+| `kimix.tools.*` | Kimix-extended tools (Run, Input, FetchURL, Search, Agent, Note, etc.) |
+
+Use `kimix.tools.*` for new tools created under `src/kimix/tools/`.

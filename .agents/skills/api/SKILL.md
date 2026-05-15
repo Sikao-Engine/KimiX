@@ -25,7 +25,7 @@ session = create_session(
     skills_dir=None,                   # Optional: KaosPath to skills directory
     thinking=True,                     # Optional: enable deep thinking
     yolo=True,                         # Optional: enable yolo mode (auto-approve)
-    agent_file=None,                   # Optional: Path to custom agent_worker.yaml
+    agent_file=None,                   # Optional: Path to custom agent_worker.json
     resume=False,                      # Optional: resume existing session
     provider_dict=None,                # Optional: custom LLM provider config dict
     chat_provider=None,                # Optional: custom ChatProvider instance
@@ -387,8 +387,8 @@ Default configuration values you can import and modify:
 from kimix.base import (
     _default_thinking,       # Deep thinking mode (default: True)
     _default_yolo,           # Yolo mode (default: True)
-    _default_agent_file,     # Path to agent_worker.yaml
-    _default_agent_file_dir, # Directory containing agent_worker.yaml
+    _default_agent_file,     # Path to agent_worker.json
+    _default_agent_file_dir, # Directory containing agent_worker.json
     _default_skill_dirs,     # List of skill directories
     _default_provider,       # Custom provider dict or None
     _default_ralph,          # Max Ralph iterations override or None

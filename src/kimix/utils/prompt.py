@@ -220,7 +220,7 @@ def execute_plan(prompt_str: str, ask_if_use_cache: Callable[[str], bool] | None
         task_finished = False
         plan_session: Session | None = None
         try:
-            plan_session = create_session(agent_file='agent_boss.yaml', agent_type=SystemPromptType.TodoMaker)
+            plan_session = create_session(agent_file='agent_boss.json', agent_type=SystemPromptType.TodoMaker)
             custom_data = plan_session.get_custom_data()
             if custom_data is not None:
                 custom_data['note_writing_path'] = plan_file

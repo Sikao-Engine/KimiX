@@ -15,8 +15,8 @@ _ALL_VFS_PATH: dict[str, Path] = dict()
 _MAX_AGENT_CONCURRENCY = 5
 
 async def create_swarm_session(task_prompt: str) -> DAG | None:
-    """Create a swarm session using agent_swarm.yaml and initialize the DAG."""
-    agent_file = Path("agent_swarm.yaml")
+    """Create a swarm session using agent_swarm.json and initialize the DAG."""
+    agent_file = Path("agent_swarm.json")
     session = None
     try:
         session = await _create_session_async(agent_file=agent_file, agent_type=SystemPromptType.SwarmCoordinator)
