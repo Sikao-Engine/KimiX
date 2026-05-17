@@ -4,7 +4,7 @@ import urllib.request
 import urllib.error
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from .params import Params
+from .params import Params, _is_protected_path
 
 from kimix.tools.common import _maybe_export_output_async
 
@@ -41,6 +41,10 @@ class Wget(CallableTool2[Params]):
                     f.write(data)
                 output = f"saved to file `{target}`"
             elif params.output_path:
+                cwd = params.cwd or os.getcwd()
+                is_prot, reason = _is_protected_path(params.output_path, cwd)
+                if is_prot:
+                    return ToolError(message=reason, output=reason, brief="protected path")
                 with open(params.output_path, "wb") as f:
                     f.write(data)
                 output = f"saved to file `{params.output_path}`"

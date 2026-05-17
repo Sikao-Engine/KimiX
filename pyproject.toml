@@ -66,7 +66,7 @@ url = "https://mirrors.aliyun.com/pypi/simple/"
 default = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/kimix", "src/my_tools"]
+packages = ["src/kimix", "src/kimi_agent_sdk"]
 sources = ["src"]
 
 [tool.uv]

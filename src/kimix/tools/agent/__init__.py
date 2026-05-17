@@ -19,7 +19,7 @@ class SubAgentParams(BaseModel):
 
 class Agent(CallableTool2):
     name: str = "Agent"
-    description: str = "Launch a thinking-off, stateless sub-agent for a task."
+    description: str = "Launch a sub-agent for a task."
     params: type[SubAgentParams] = SubAgentParams
 
     def __init__(self, session: Session):
@@ -40,7 +40,6 @@ class Agent(CallableTool2):
                 sub_session_id: str | None = None
 
                 def output_function(fn: str, is_thinking: bool) -> None:
-                    # Main agent no need to get thinking-output
                     if fn and not is_thinking:
                         output_strs.append(fn)
 
@@ -51,8 +50,7 @@ class Agent(CallableTool2):
                         import kimix.base as base
                         custom_config = self._session.custom_config
                         chat_provider = custom_config.get("chat_provider")
-                        default_sub_provider = base._default_sub_provider if base._default_sub_provider is not None else base._default_provider
-                        provider_dict = dict(default_sub_provider) if default_sub_provider is not None else dict(custom_config.get("provider_dict", {}))
+                        provider_dict = custom_config.get("provider_dict", base._default_provider)
                         session = await _create_session_async(
                             session_id=params.session_id,
                             agent_file=base._default_agent_file_dir / 'agent_subagent.json', agent_type=SystemPromptType.TrivialSubAgent,

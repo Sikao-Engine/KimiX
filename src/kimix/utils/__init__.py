@@ -2,7 +2,6 @@ from ._globals import (
     TextSearchIndex,
     SearchResult,
     _default_session,
-    _session_idx,
     _should_print_usage,
 )
 from .config import _create_config, _ensure_text_search
@@ -35,7 +34,6 @@ __all__ = [
     "SystemPromptType",
     "SearchResult",
     "_default_session",
-    "_session_idx",
     "_should_print_usage",
     "_create_config",
     "_ensure_text_search",

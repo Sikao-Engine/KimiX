@@ -3,11 +3,15 @@ import re
 import subprocess
 import shutil
 import sys
+import tarfile
+import time
+import urllib.request
 from pathlib import Path
 
 
 CURRENT_ROOT = Path(__file__).parent.resolve()
 DIST_DIR = CURRENT_ROOT / "dist"
+ARTIFACTS_DIR = CURRENT_ROOT / "artifacts"
 
 
 def confirm_step(step_name: str, package_name: str) -> bool:
@@ -44,6 +48,62 @@ def publish_package(token: str) -> int:
     return run_cmd(["uv", "publish", f"--token={token}"], cwd=str(CURRENT_ROOT))
 
 
+def create_artifact(package_name: str) -> Path:
+    """把 dist 目录打包成 artifact，模拟 CI 中 upload artifact 给下一个 job"""
+    ARTIFACTS_DIR.mkdir(exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    artifact_path = ARTIFACTS_DIR / f"{package_name}-{timestamp}-artifact.tar.gz"
+    with tarfile.open(artifact_path, "w:gz") as tar:
+        tar.add(DIST_DIR, arcname="dist")
+    print(f"📦 Artifact 已创建: {artifact_path}")
+    return artifact_path
+
+
+def start_local_pip_server(port: int = 8765) -> tuple[subprocess.Popen, int]:
+    """在 dist 目录启动本地 HTTP server，供 pip/uv 作为 find-links 源使用"""
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port), "--directory", str(DIST_DIR)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    # 等待 server 就绪
+    url = f"http://localhost:{port}/"
+    for _ in range(50):
+        try:
+            with urllib.request.urlopen(url, timeout=0.2):
+                break
+        except Exception:
+            time.sleep(0.05)
+    else:
+        proc.terminate()
+        proc.wait()
+        raise RuntimeError(f"Local pip server 无法在端口 {port} 启动")
+    print(f"🌐 Local pip server 已启动: {url}")
+    return proc, port
+
+
+def stop_local_pip_server(proc: subprocess.Popen) -> None:
+    """关闭本地 pip server"""
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    print("🌐 Local pip server 已关闭")
+
+
+def test_install_from_local(package_name: str, port: int = 8765) -> int:
+    """从 local pip server 安装包，验证 artifact 可用性"""
+    url = f"http://localhost:{port}/"
+    print(f"🧪 从 local pip server 测试安装 {package_name} ...")
+    return run_cmd([
+        "uv", "pip", "install", package_name,
+        "--find-links", url,
+        "--force-reinstall",
+    ])
+
+
 def bump_patch_version(version: str) -> str:
     """将版本号的最后一段 +1，例如 0.52.0 -> 0.52.1"""
     parts = version.split(".")
@@ -62,7 +122,7 @@ def update_dependency_in_content(content: str, package_name: str, new_version: s
 
 
 def bump_version() -> None:
-    """依次询问并升级 4 个包的版本，同时同步更新所有 pyproject.toml 中的依赖"""
+    """依次询问并升级包的版本，同时同步更新所有 pyproject.toml 中的依赖"""
     packages = [
         ("kosong-x", CURRENT_ROOT / "kimi-cli" / "packages" / "kosong" / "pyproject.toml"),
         ("kimi-cli-x", CURRENT_ROOT / "kimi-cli" / "pyproject.toml"),
@@ -138,29 +198,65 @@ def process_package(name: str, cwd: str | None, token: str) -> bool:
     return True
 
 
+def process_local_test(name: str, cwd: str | None, package_name: str) -> bool:
+    """
+    本地打包 -> 生成 artifact -> 启动 local pip server -> 测试安装
+    模拟 CI 中 build artifact 传给下一个 job 并验证的流程
+    """
+    print(f"\n========== 【{name}】本地打包 + Artifact + Local Pip Server 测试 ==========")
+
+    # 1) 清理并构建
+    delete_dist()
+    if build_package(cwd) != 0:
+        print(f"❌ 构建失败: {name}")
+        return False
+
+    # 2) 打包成 artifact
+    create_artifact(package_name)
+
+    # 3) 启动 local pip server（模拟下一个 job 里的 pip 源）
+    server_proc, port = start_local_pip_server()
+    try:
+        # 4) 从 local server 安装测试
+        if test_install_from_local(package_name, port) != 0:
+            print(f"❌ 本地安装测试失败: {name}")
+            return False
+        print(f"✅ {name} 本地安装测试通过！")
+    finally:
+        stop_local_pip_server(server_proc)
+
+    return True
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="发布 Python 包工具")
     parser.add_argument("--token", "-t", default=None, help="PyPI/仓库的发布 token")
     parser.add_argument("--bump-version", action="store_true", help="仅执行版本升级")
+    parser.add_argument("--local-test", action="store_true", help="本地打包后生成 artifact，启动 local pip server 测试安装")
     args = parser.parse_args()
 
     if args.bump_version:
         bump_version()
         return
 
+    # 定义包及其工作目录、安装名
+    packages = [
+        ("kosong-x", "kimi-cli\\packages\\kosong", "kosong-x"),
+        ("kimi-cli-x", "kimi-cli", "kimi-cli-x"),
+        ("根项目", None, "kimix"),
+    ]
+
+    if args.local_test:
+        for name, cwd, pkg_name in packages:
+            process_local_test(name, cwd, pkg_name)
+        print("\n🎉 所有包本地测试完毕！")
+        return
+
     token = args.token
     if not token:
         parser.error("--token 是发布时的必填参数")
 
-    # 定义四个包及其工作目录
-    packages = [
-        ("kosong-x", "kimi-cli\\packages\\kosong"),
-        ("kimi-cli-x", "kimi-cli"),
-        ("根项目", None),
-    ]
-
-    for name, cwd in packages:
-        # 处理每个包，如果用户选择跳过则继续下一个
+    for name, cwd, _pkg_name in packages:
         process_package(name, cwd, token)
 
     print("\n🎉 所有包处理完毕！")

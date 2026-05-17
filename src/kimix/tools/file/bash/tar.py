@@ -4,7 +4,7 @@ import tarfile
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from .params import Params
+from .params import Params, _is_protected_path
 
 from kimix.tools.common import _maybe_export_output_async
 
@@ -66,6 +66,20 @@ class Tar(CallableTool2[Params]):
                 return ToolError(message="tar: missing archive path", output="", brief="missing archive")
 
             cwd = params.cwd or os.getcwd()
+            if params.output_path:
+                is_prot, reason = _is_protected_path(params.output_path, cwd)
+                if is_prot:
+                    return ToolError(message=reason, output=reason, brief="protected path")
+
+            is_prot, reason = _is_protected_path(file_path, cwd)
+            if is_prot:
+                return ToolError(message=reason, output=reason, brief="protected path")
+
+            for p in paths:
+                is_prot, reason = _is_protected_path(p, cwd)
+                if is_prot:
+                    return ToolError(message=reason, output=reason, brief="protected path")
+
             archive = Path(cwd) / file_path if not Path(file_path).is_absolute() else Path(file_path)
 
             if list_mode:

@@ -17,6 +17,8 @@ class Test(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         try:
             args = params.args
+            cwd = params.cwd or os.getcwd()
+
             if not args:
                 # test with no args -> false
                 return ToolOk(output="")

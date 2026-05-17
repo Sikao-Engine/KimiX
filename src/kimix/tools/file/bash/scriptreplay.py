@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from .params import Params
+from .params import Params, _is_protected_path
 
 from kimix.tools.common import _maybe_export_output_async
 
@@ -30,6 +30,12 @@ class Scriptreplay(CallableTool2[Params]):
                 return ToolError(message="scriptreplay: missing operand", output="", brief="missing operand")
 
             cwd = params.cwd or os.getcwd()
+            if params.output_path:
+                is_prot, reason = _is_protected_path(params.output_path, cwd)
+                if is_prot:
+                    return ToolError(message=reason, output=reason, brief="protected path")
+
+
             t_path = Path(cwd) / timing_file if not Path(timing_file).is_absolute() else Path(timing_file)
             s_path = Path(cwd) / script_file if not Path(script_file).is_absolute() else Path(script_file)
 

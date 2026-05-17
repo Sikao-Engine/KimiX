@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from .params import Params
+from .params import Params, _is_protected_path
 
 from kimix.tools.common import _maybe_export_output_async
 
@@ -20,6 +20,16 @@ class Touch(CallableTool2[Params]):
                 return ToolError(message="touch: missing file operand", output="", brief="missing operand")
 
             cwd = params.cwd or os.getcwd()
+            if params.output_path:
+                is_prot, reason = _is_protected_path(params.output_path, cwd)
+                if is_prot:
+                    return ToolError(message=reason, output=reason, brief="protected path")
+
+            for p in paths:
+                is_prot, reason = _is_protected_path(p, cwd)
+                if is_prot:
+                    return ToolError(message=reason, output=reason, brief="protected path")
+
             cwd_path = Path(cwd)
             errors = []
             for p in paths:

@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from .params import Params
+from .params import Params, _is_protected_path
 
 from kimix.tools.common import _maybe_export_output_async
 
@@ -51,8 +51,18 @@ class Mktemp(CallableTool2[Params]):
                         prefix = arg[: arg.rfind("X") + 1]
                 i += 1
 
+            cwd = params.cwd or os.getcwd()
+            if params.output_path:
+                is_prot, reason = _is_protected_path(params.output_path, cwd)
+                if is_prot:
+                    return ToolError(message=reason, output=reason, brief="protected path")
+
             if dir_path is None:
                 dir_path = tempfile.gettempdir()
+
+            is_prot, reason = _is_protected_path(dir_path, cwd)
+            if is_prot:
+                return ToolError(message=reason, output=reason, brief="protected path")
 
             if dry_run:
                 name = prefix + "".join(random.choices(_ALPHANUM, k=6)) + suffix

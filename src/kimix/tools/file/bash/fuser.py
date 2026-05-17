@@ -2,7 +2,7 @@
 import os
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from .params import Params
+from .params import Params, _is_protected_path
 
 from kimix.tools.common import _maybe_export_output_async
 
@@ -17,6 +17,13 @@ class Fuser(CallableTool2[Params]):
             paths = [arg for arg in params.args if not arg.startswith("-")]
             if not paths:
                 return ToolError(message="fuser: missing operand", output="", brief="missing operand")
+
+            cwd = params.cwd or os.getcwd()
+            if params.output_path:
+                is_prot, reason = _is_protected_path(params.output_path, cwd)
+                if is_prot:
+                    return ToolError(message=reason, output=reason, brief="protected path")
+
 
             if os.name == "nt":
                 return ToolError(message="fuser: not supported on Windows", output="", brief="not supported")

@@ -2,7 +2,7 @@
 import os
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from .params import Params
+from .params import Params, _is_protected_path
 
 from kimix.tools.common import _maybe_export_output_async
 
@@ -20,6 +20,10 @@ class History(CallableTool2[Params]):
                 lines = [f" {i + 1}  {cmd}" for i, cmd in enumerate(_HISTORY)]
                 output = "\n".join(lines)
                 if params.output_path:
+                    cwd = params.cwd or os.getcwd()
+                    is_prot, reason = _is_protected_path(params.output_path, cwd)
+                    if is_prot:
+                        return ToolError(message=reason, output=reason, brief="protected path")
                     with open(params.output_path, "w", encoding="utf-8") as f:
                         f.write(output)
                     output = f"saved to file `{params.output_path}`"

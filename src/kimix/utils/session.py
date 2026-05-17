@@ -65,10 +65,6 @@ async def _create_session_async(
         await (work_dir / '.kimix_cache').mkdir(parents=True, exist_ok=True)
     else:
         await KaosPath('.kimix_cache').mkdir(parents=True, exist_ok=True)
-
-    if session_id is None:
-        session_id = str(_globals._session_idx)
-        _globals._session_idx += 1
     cfg, provider_dict = _create_config(provider_dict)
     session = None
     if agent_file is None:

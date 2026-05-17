@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from .params import Params
+from .params import Params, _is_protected_path
 
 from kimix.tools.common import _maybe_export_output_async
 
@@ -27,6 +27,12 @@ class Xxd(CallableTool2[Params]):
                 return ToolError(message="xxd: missing operand", output="", brief="missing operand")
 
             cwd = params.cwd or os.getcwd()
+            if params.output_path:
+                is_prot, reason = _is_protected_path(params.output_path, cwd)
+                if is_prot:
+                    return ToolError(message=reason, output=reason, brief="protected path")
+
+
             target = Path(cwd) / paths[0] if not Path(paths[0]).is_absolute() else Path(paths[0])
 
             if reverse:
