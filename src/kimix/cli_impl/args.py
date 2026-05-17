@@ -89,6 +89,14 @@ def set_arg() -> tuple[bool, argparse.Namespace]:
         if config_path.exists() and config_path.is_file():
             found = True
         else:
+            # Search in parent directories of current work-dir recursively
+            cwd = Path.cwd()
+            for parent in [cwd, *cwd.parents]:
+                candidate = parent / config_path.name
+                if candidate.exists() and candidate.is_file():
+                    config_path = candidate
+                    found = True
+                    break
             # Search in parent directories of __file__ recursively
             file_dir = Path(__file__).resolve().parent
             for parent in [file_dir, *file_dir.parents]:
@@ -116,10 +124,7 @@ def set_arg() -> tuple[bool, argparse.Namespace]:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config_data = json.load(f)
-            sub_provider = config_data.pop('sub_provider', None)
             base.set_default_provider(config_data)
-            if sub_provider and isinstance(sub_provider, dict):
-                base.set_default_sub_provider(sub_provider)
             print_debug(f'{str(config_path)} loaded')
         except json.JSONDecodeError as e:
             print_warning(
@@ -135,10 +140,7 @@ def set_arg() -> tuple[bool, argparse.Namespace]:
         if default_config_path.exists():
             try:
                 config_data = json.loads(default_config_path.read_text(encoding='utf-8'))
-                sub_provider = config_data.pop('sub_provider', None)
                 base.set_default_provider(config_data)
-                if sub_provider and isinstance(sub_provider, dict):
-                    base.set_default_sub_provider(sub_provider)
             except (json.JSONDecodeError, Exception):
                 pass
     # Handle --second_config argument
@@ -183,6 +185,17 @@ def set_arg() -> tuple[bool, argparse.Namespace]:
         except Exception as e:
             print_warning(
                 f'Failed to load second config file: {str(second_config_path)} ({e})')
+    # Load default second_config.json if no sub-provider has been set yet
+    if base._default_sub_provider is None:
+        default_second_config_path = Path(__file__).parent.parent / "second_config.json"
+        if default_second_config_path.exists():
+            try:
+                with open(default_second_config_path, 'r', encoding='utf-8') as f:
+                    second_config_data = json.load(f)
+                base.set_default_sub_provider(second_config_data)
+                print_debug(f'Default sub-provider config loaded from {str(default_second_config_path)}')
+            except (json.JSONDecodeError, Exception):
+                pass
     # Handle --skill-dir argument
     if args.skill_dir:
         skill_dirs = list(base._default_skill_dirs)
