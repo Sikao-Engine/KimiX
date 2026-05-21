@@ -86,7 +86,6 @@ async def prompt_async(
     prompt_str: str,
     session: Session | None = None,
     # settings
-    skill_name: str | None = None,
     output_function: Callable[[str, bool], Any] | None = None,
     info_print: bool = True,
     cancel_callable: Callable[[], bool] | None = None,
@@ -103,22 +102,6 @@ async def prompt_async(
         name, new_id = _export_to_temp_file(content=prompt_str)
         prompt_str = f'read and execute: `{name}`'
     try:
-        def enable_skill(skill_name: str) -> None:
-            nonlocal prompt_str
-            if not base._default_skill_dirs:
-                print_warning('Skill dir not setted.')
-            else:
-                skill_found = False
-                for skill_dir in base._default_skill_dirs:
-                    if (Path(str(skill_dir)) / Path(skill_name) / 'SKILL.md').exists():
-                        skill_found = True
-                        break
-                if not skill_found:
-                    print_warning(f'Skill {skill_name} not found.')
-                else:
-                    prompt_str = f'Use skill:{skill_name}.\n' + prompt_str
-        if skill_name:
-            enable_skill(skill_name)
         if info_print:
             print_debug(f'Start...', end='\n')
 
@@ -138,7 +121,7 @@ async def prompt_async(
                         session.cancel()
                         break
                     print_agent_json(message, output_function)
-                print()
+                base.print()
                 if info_print:
                     end_time = time.time()
                     _print_usage(session, end_time - start_time)
@@ -172,7 +155,6 @@ def prompt(
     prompt_str: str,
     session: Session | None = None,
     # settings
-    skill_name: str | None = None,
     output_function: Callable[[str, bool], Any] | None = None,
     info_print: bool = True,
     cancel_callable: Callable[[], bool] | None = None,
@@ -184,7 +166,6 @@ def prompt(
             prompt_str,
             session,
             # settings
-            skill_name,
             output_function,
             info_print,
             cancel_callable,

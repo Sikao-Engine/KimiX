@@ -12,6 +12,8 @@ import threading
 import time
 from typing import Optional, Callable, Tuple
 
+from kimix.base import print  # noqa: F811 - use base.print for flush support
+
 
 class TCPServer:
     """

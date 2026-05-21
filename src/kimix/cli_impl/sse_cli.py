@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, TextIO
 
-from kimix.base import print_error
+from kimix.base import print_error, print  # noqa: F811 - use base.print for flush support
 from kimix.server.client import KimixAsyncClient, parse_event, EventType, SSEEvent
 
 def _fmt_arg(s: str, max_len: int = 120) -> str:

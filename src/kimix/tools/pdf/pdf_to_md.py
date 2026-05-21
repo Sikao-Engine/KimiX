@@ -28,6 +28,8 @@ import sys
 from pathlib import Path
 from typing import Optional, List, Tuple
 
+from kimix.base import print  # noqa: F811 - use base.print for file/flush support
+
 # Optional imports - will be checked at runtime
 try:
     import fitz

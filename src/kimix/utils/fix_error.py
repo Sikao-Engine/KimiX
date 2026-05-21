@@ -54,7 +54,6 @@ def async_prompt(
     prompt_str: str,
     session: Session | None = None,
     # settings
-    skill_name: str | None = None,
     output_function: Callable[[str, bool], Any] | None = None,
     info_print: bool = True,
     cancel_callable: Callable[[], bool] | None = None,
@@ -64,7 +63,7 @@ def async_prompt(
         from .session import create_session
         session = create_session()
         session_created = True
-    return run_thread(prompt, (prompt_str, session, skill_name, output_function, info_print, cancel_callable, session_created, True))
+    return run_thread(prompt, (prompt_str, session, output_function, info_print, cancel_callable, session_created, True))
 
 
 def async_fix_error(

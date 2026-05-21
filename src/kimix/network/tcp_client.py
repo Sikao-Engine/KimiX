@@ -11,6 +11,8 @@ import threading
 import time
 from typing import Optional, Callable
 
+from kimix.base import print  # noqa: F811 - use base.print for flush support
+
 
 class TCPClient:
     """Low-level TCP socket client.

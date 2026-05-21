@@ -82,6 +82,8 @@ class Style(Enum):
 _colorful_print = True
 _print_func: Callable = print
 
+def print(*values: object, sep: str | None = " ", end: str | None = "\n", file: Any = None, flush: bool = False):
+    _print_func(*values, sep=sep, end=end, file=file, flush=flush)
 
 def colorful_text(
     text: str,
@@ -107,12 +109,14 @@ def colorful_print(
     bg: BgColor | None = None,
     styles: list[Style] | None = None,
     end: str = "\n",
+    file: Any = None,
+    flush: bool = False,
 ) -> None:
     if not _colorful_print:
-        _print_func(text, end=end)
+        _print_func(text, end=end, file=file, flush=flush)
         return
     text = colorful_text(text, fg, bg, styles)
-    _print_func(text, end=end)
+    _print_func(text, end=end, file=file, flush=flush)
 
 
 _quiet = False
@@ -123,8 +127,8 @@ def print_success(text: str, end: str = "\n") -> None:
     colorful_print(text, fg=Color.BRIGHT_GREEN, styles=[Style.BOLD], end=end)
 
 
-def print_string(text: str, end: str = "\n") -> None:
-    _print_func(text, end=end)
+def print_string(text: str, end: str = "\n", file: Any = None, flush: bool = False) -> None:
+    _print_func(text, end=end, file=file, flush=flush)
 
 
 def print_error(text: str, end: str = "\n") -> None:
@@ -165,7 +169,7 @@ PRINT_STREAM_last_ended_with_newline = False
 PRINT_STREAM_flag: str | None = None
 
 
-def print_tool(s: str) -> None:
+def print_tool(s: str, file: Any = None, flush: bool = False) -> None:
     global PRINT_STREAM_flag, PRINT_STREAM_last_ended_with_newline
     if (
         PRINT_STREAM_flag is not None
@@ -176,7 +180,7 @@ def print_tool(s: str) -> None:
             s = "\n" + s
         PRINT_STREAM_flag = "tool"
         PRINT_STREAM_last_ended_with_newline = True
-    _print_func(s)
+    _print_func(s, file=file, flush=flush)
 
 
 import kimi_cli.soul.toolset as toolset
