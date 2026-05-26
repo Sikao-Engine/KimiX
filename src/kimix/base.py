@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -93,6 +94,11 @@ class Style(Enum):
     STRIKETHROUGH = 9
 
 
+_ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_ESCAPE.sub("", text)
+
 _colorful_print = True
 _print_func: Callable = print
 
@@ -150,7 +156,7 @@ class PrintStream:
         self._last_char_was_newline = True
         self._state = StreamPrintState.Other
 
-    def print_word(self, word: str, require_new_line: bool) -> None:
+    def print_word(self, word: str, require_new_line: bool, raw_word: str | None = None) -> None:
         """Print a word, auto-inserting a leading newline when the previous
         output didn't end with one."""
         if not word:
@@ -163,7 +169,8 @@ class PrintStream:
             self._print_func('', end='\n')
 
         self._print_func(word, end='')
-        self._last_char_was_newline = word.endswith('\n')
+        check_word = raw_word if raw_word is not None else word
+        self._last_char_was_newline = _strip_ansi(check_word).endswith('\n')
 
     def colorful_print_word(
         self, word: str,
@@ -171,7 +178,7 @@ class PrintStream:
         fg: Color | None = None,
         bg: BgColor | None = None,
         styles: list[Style] | None = None) -> None:
-        self.print_word(colorful_text(word, fg, bg, styles), require_new_line=require_new_line)
+        self.print_word(colorful_text(word, fg, bg, styles), require_new_line=require_new_line, raw_word=word)
 
 _quiet = False
 
@@ -288,15 +295,17 @@ def _print_agent_json(
             part = wire_msg.arguments_part or ""
             if output_function and part:
                 output_function(part, MessageType.ToolCalling)
+            _stream.print_word('', True)
         elif isinstance(wire_msg, ToolResult):
             rv = wire_msg.return_value
             display_text = _format_display_blocks(rv.display)
-            if display_text:
-                _stream.print_word(display_text, require_new_line=True)
+            _stream.print_word(display_text, require_new_line=True)
             result_text = _format_tool_result(wire_msg)
             if result_text:
                 prefix = ("✗ " if rv.is_error else "✓ ")
                 _stream.colorful_print_word(f"{prefix}{result_text}", fg=Color.BRIGHT_RED if rv.is_error else Color.BRIGHT_GREEN, require_new_line=True)
+            else:
+                _stream.print_word('', True)
             if output_function:
                 formatted = f"[ToolResult] {_format_tool_result(wire_msg)}"
                 if formatted:

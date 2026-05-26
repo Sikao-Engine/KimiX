@@ -59,6 +59,11 @@ def _cmd_summarize(task_split: list[str], text_arr: list[str]) -> tuple[None, bo
 
 
 def _cmd_exit(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
+    session = get_default_session()
+    if session:
+        close_session(session)
+    _globals._default_session = None
+    _globals._default_role = None
     print_success('bye!')
     return None, True
 

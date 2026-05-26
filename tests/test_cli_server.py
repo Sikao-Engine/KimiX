@@ -301,14 +301,20 @@ def sync_client() -> KimixHttpClient:
     return KimixHttpClient(host="127.0.0.1", port=4096)
 
 
+def _mock_httpx_client(mock_resp):
+    client = MagicMock()
+    client.get = AsyncMock(return_value=mock_resp)
+    client.post = AsyncMock(return_value=mock_resp)
+    client.delete = AsyncMock(return_value=mock_resp)
+    return client
+
+
 def test_sync_health_check(sync_client: KimixHttpClient) -> None:
     payload = {"healthy": True, "version": "0.1.0"}
     mock_resp = _make_response(200, payload)
-    with patch.object(
-        sync_client._async_client._client,
-        "get",
-        new_callable=AsyncMock,
-        return_value=mock_resp,
+    with patch(
+        "kimix.cli_server.client.httpx.AsyncClient",
+        return_value=_mock_httpx_client(mock_resp),
     ):
         result = sync_client.health_check()
     assert result.healthy is True
@@ -323,11 +329,9 @@ def test_sync_create_session(sync_client: KimixHttpClient) -> None:
         "parentID": None,
     }
     mock_resp = _make_response(200, payload)
-    with patch.object(
-        sync_client._async_client._client,
-        "post",
-        new_callable=AsyncMock,
-        return_value=mock_resp,
+    with patch(
+        "kimix.cli_server.client.httpx.AsyncClient",
+        return_value=_mock_httpx_client(mock_resp),
     ):
         result = sync_client.create_session(title="Sync Session")
     assert result.id == "ses_sync"
@@ -335,11 +339,9 @@ def test_sync_create_session(sync_client: KimixHttpClient) -> None:
 
 def test_sync_delete_session(sync_client: KimixHttpClient) -> None:
     mock_resp = _make_response(200, {})
-    with patch.object(
-        sync_client._async_client._client,
-        "delete",
-        new_callable=AsyncMock,
-        return_value=mock_resp,
+    with patch(
+        "kimix.cli_server.client.httpx.AsyncClient",
+        return_value=_mock_httpx_client(mock_resp),
     ):
         ok = sync_client.delete_session("ses_sync")
     assert ok is True

@@ -687,12 +687,31 @@ class KimixHttpClient:
         port: int = 4096,
         timeout: float = 30.0,
     ) -> None:
+        self._host = host
+        self._port = port
+        self._timeout = timeout
         self._async_client = KimixAsyncClient(
             host=host, port=port, timeout=timeout
         )
 
+    def _run(self, coro):
+        """Run *coro* with a fresh async client to avoid stale loop bindings."""
+        client = KimixAsyncClient(
+            host=self._host, port=self._port, timeout=self._timeout
+        )
+        try:
+            return asyncio.run(coro(client))
+        finally:
+            try:
+                asyncio.run(client.close())
+            except RuntimeError:
+                pass
+
     def close(self) -> None:
-        asyncio.run(self._async_client.close())
+        try:
+            asyncio.run(self._async_client.close())
+        except RuntimeError:
+            pass
 
     def __enter__(self) -> "KimixHttpClient":
         return self
@@ -704,34 +723,34 @@ class KimixHttpClient:
     # ── Health ────────────────────────────────────────────────────
 
     def health_check(self) -> HealthResponse:
-        return asyncio.run(self._async_client.health_check())
+        return self._run(lambda c: c.health_check())
 
     # ── Session CRUD ─────────────────────────────────────────────
 
     def create_session(
         self, title: Optional[str] = None
     ) -> SessionResponse:
-        return asyncio.run(self._async_client.create_session(title=title))
+        return self._run(lambda c: c.create_session(title=title))
 
     def get_session(self, session_id: str) -> SessionResponse:
-        return asyncio.run(self._async_client.get_session(session_id))
+        return self._run(lambda c: c.get_session(session_id))
 
     def delete_session(self, session_id: str) -> bool:
-        return asyncio.run(self._async_client.delete_session(session_id))
+        return self._run(lambda c: c.delete_session(session_id))
 
     def list_sessions(self) -> List[SessionResponse]:
-        return asyncio.run(self._async_client.list_sessions())
+        return self._run(lambda c: c.list_sessions())
 
     def get_all_session_status(self) -> Dict[str, SessionStatusResponse]:
-        return asyncio.run(self._async_client.get_all_session_status())
+        return self._run(lambda c: c.get_all_session_status())
 
     # ── Messages ─────────────────────────────────────────────────
 
     def get_messages(
         self, session_id: str, limit: Optional[int] = None
     ) -> List[MessageResponse]:
-        return asyncio.run(
-            self._async_client.get_messages(session_id, limit=limit)
+        return self._run(
+            lambda c: c.get_messages(session_id, limit=limit)
         )
 
     def send_prompt_async(
@@ -741,57 +760,57 @@ class KimixHttpClient:
         agent: Optional[str] = None,
         model: Optional[str] = None,
     ) -> bool:
-        return asyncio.run(
-            self._async_client.send_prompt_async(
+        return self._run(
+            lambda c: c.send_prompt_async(
                 session_id, text, agent=agent, model=model
             )
         )
 
     def send_prompt(self, session_id: str, text: str) -> bool:
-        return asyncio.run(
-            self._async_client.send_prompt(session_id, text)
+        return self._run(
+            lambda c: c.send_prompt(session_id, text)
         )
 
     def get_output(self, session_id: str) -> Dict[str, Any]:
-        return asyncio.run(self._async_client.get_output(session_id))
+        return self._run(lambda c: c.get_output(session_id))
 
     def get_state(self, session_id: str) -> Dict[str, Any]:
-        return asyncio.run(self._async_client.get_state(session_id))
+        return self._run(lambda c: c.get_state(session_id))
 
     # ── Control ──────────────────────────────────────────────────
 
     def abort_session(self, session_id: str) -> bool:
-        return asyncio.run(self._async_client.abort_session(session_id))
+        return self._run(lambda c: c.abort_session(session_id))
 
     def grant_permission(
         self, session_id: str, permission_id: str
     ) -> bool:
-        return asyncio.run(
-            self._async_client.grant_permission(session_id, permission_id)
+        return self._run(
+            lambda c: c.grant_permission(session_id, permission_id)
         )
 
     # ── Session Operations ───────────────────────────────────────
 
     def clear_session(self, session_id: str) -> Dict[str, Any]:
-        return asyncio.run(self._async_client.clear_session(session_id))
+        return self._run(lambda c: c.clear_session(session_id))
 
     def get_session_context(self, session_id: str) -> Dict[str, Any]:
-        return asyncio.run(
-            self._async_client.get_session_context(session_id)
+        return self._run(
+            lambda c: c.get_session_context(session_id)
         )
 
     def compact_session(
         self, session_id: str, keep: Optional[int] = None
     ) -> Dict[str, Any]:
-        return asyncio.run(
-            self._async_client.compact_session(session_id, keep=keep)
+        return self._run(
+            lambda c: c.compact_session(session_id, keep=keep)
         )
 
     def export_session(
         self, session_id: str, output_path: Optional[str] = None
     ) -> Dict[str, Any]:
-        return asyncio.run(
-            self._async_client.export_session(
+        return self._run(
+            lambda c: c.export_session(
                 session_id, output_path=output_path
             )
         )

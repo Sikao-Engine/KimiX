@@ -221,7 +221,14 @@ def set_ralph_loop(value: int, session: Session | None = None) -> None:
 def close_session(session: Session) -> None:
     if not session:
         return
-    asyncio.run(session.close())
+    try:
+        asyncio.run(session.close())
+    except RuntimeError as exc:
+        # Transports bound to a now-closed ProactorEventLoop (Windows
+        # Python 3.14) raise RuntimeError('Event loop is closed').
+        # The OS will reclaim the socket, so we swallow it.
+        if "Event loop is closed" not in str(exc):
+            raise
 
 
 async def close_session_async(session: Session) -> None:

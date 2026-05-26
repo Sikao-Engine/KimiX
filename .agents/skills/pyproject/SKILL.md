@@ -66,7 +66,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 # or
-requires = ["uv_build>=0.8.5,<0.10.0"]
+requires = ["uv_build>=0.10.0,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
