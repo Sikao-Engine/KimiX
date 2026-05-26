@@ -222,6 +222,8 @@ def get_system_prompt(
                 items.append('`Search` to search, retrieve skills, docs.')
                 items.append('Drop context aggressively, use `StepMemory` to manage memory.')
                 items.append('Use `ContextRetrieval` to recall past conversation turns that were compacted out of context.')
+            else:
+                items.append('Sub-Agent: only report results.')
         if extra_system_prompt and extra_system_prompt.role_callback:
             extra_system_prompt.role_callback(agent_role, items)
 

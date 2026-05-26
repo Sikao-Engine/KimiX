@@ -123,9 +123,12 @@ def set_arg() -> tuple[bool, argparse.Namespace]:
                 config_data = orjson.loads(f.read())
             sub_provider = config_data.pop('sub_provider', None)
             base.set_default_provider(config_data)
+            print_debug(f'{str(config_path)} loaded.')
+            print_debug(f'Provider model: {config_data.get("model", "None")}')
             if sub_provider and isinstance(sub_provider, dict):
                 base.set_default_sub_provider(sub_provider)
-            print_debug(f'{str(config_path)} loaded')
+                print_debug(f'Sub-provider model: {sub_provider.get("model", "None")}')
+            
         except orjson.JSONDecodeError as e:
             print_warning(
                 f'Invalid JSON in config file: {str(config_path)} ({e})')
