@@ -525,11 +525,11 @@ async def test_google_genai_with_thinking():
 @pytest.mark.parametrize(
     ("arguments", "expected_error_substring"),
     [
-        ('{"a": 1, "b": 2', "invalid JSON arguments"),  # broken JSON
-        ("<args><a>1</a></args>", "invalid JSON arguments"),  # XML
-        ("a: 1\nb: 2", "invalid JSON arguments"),  # YAML
-        ("{{a=1, b=2}}", "invalid JSON arguments"),  # DSML-like
-        ("not json at all", "invalid JSON arguments"),  # garbage
+        ('{"a": 1, "b": 2', ""),  # broken JSON — loads_relaxed repairs it
+        ("<args><a>1</a></args>", "must be a JSON object, got str."),  # XML
+        ("a: 1\nb: 2", "must be a JSON object, got str."),  # YAML
+        ("{{a=1, b=2}}", "must be a JSON object, got list."),  # DSML-like
+        ("not json at all", "must be a JSON object, got str."),  # garbage
         ("[1, 2, 3]", "must be a JSON object"),  # valid JSON, but array
     ],
     ids=["broken_json", "xml", "yaml", "dsml", "garbage", "json_array"],
@@ -564,9 +564,14 @@ async def test_google_genai_malformed_tool_call_arguments_in_request(
     assert len(contents) == 1
     parts = contents[0]["parts"]
     assert parts[0]["text"] == "I'll call a tool."
-    assert expected_error_substring in parts[1]["text"]
-    assert parts[2]["functionCall"]["args"] == {}
-    assert parts[2]["functionCall"]["name"] == "add"
+    if not expected_error_substring:
+        # loads_relaxed successfully repaired the JSON
+        assert parts[1]["functionCall"]["args"] == {"a": 1, "b": 2}
+        assert parts[1]["functionCall"]["name"] == "add"
+    else:
+        assert expected_error_substring in parts[1]["text"]
+        assert parts[2]["functionCall"]["args"] == {}
+        assert parts[2]["functionCall"]["name"] == "add"
 
 
 async def test_google_genai_empty_tool_call_arguments_in_request():

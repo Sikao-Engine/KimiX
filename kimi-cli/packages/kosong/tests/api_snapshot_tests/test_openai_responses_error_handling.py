@@ -37,20 +37,20 @@ class TestInvalidToolCallArguments:
             ],
         )
         result = provider._convert_message(message)
-        # Should be a list of items: message with error text + original text, then function_call
+        # loads_relaxed repairs the broken JSON to a valid dict, so no error is emitted.
+        # Result is: message item with original text, then function_call with repaired args.
         assert len(result) == 2
         msg_item = result[0]
         assert msg_item["type"] == "message"
         assert msg_item["role"] == "assistant"
         content = msg_item["content"]
-        assert len(content) == 2
+        assert len(content) == 1
         assert content[0]["type"] == "output_text"
-        assert "invalid JSON arguments" in content[0]["text"]
-        assert content[1]["type"] == "output_text"
-        assert content[1]["text"] == "Let me call a tool."
-        # Tool call arguments should be sanitized
+        assert content[0]["text"] == "Let me call a tool."
+        # loads_relaxed validates successfully (repairs internally), but the original
+        # argument string is preserved in the output.
         assert result[1]["type"] == "function_call"
-        assert result[1]["arguments"] == "{}"
+        assert result[1]["arguments"] == '{"a": 1, "b": 2'
 
     def test_non_dict_json_returns_error_to_llm(self) -> None:
         provider = OpenAIResponses(

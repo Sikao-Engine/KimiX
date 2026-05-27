@@ -52,13 +52,14 @@ class Agent(CallableTool2):
                         custom_config = self._session.custom_config
                         chat_provider = custom_config.get("chat_provider")
                         default_sub_provider = base._default_sub_provider if base._default_sub_provider is not None else custom_config.get("provider_dict", base._default_provider)
+                        resume = params.session_id is not None
                         session = await _create_session_async(
                             session_id=params.session_id,
                             agent_file=base._default_agent_file_dir / 'agent_subagent.json', agent_type=SystemPromptType.TrivialSubAgent,
                             provider_dict=default_sub_provider,
                             chat_provider=chat_provider,
-                            resume=params.session_id is not None,
-                            anonymous=True,
+                            resume=resume,
+                            anonymous=not resume,
                             max_ralph_iterations=0)
                         sub_session_id = session.id
                         sub_custom_config = session.get_custom_config()

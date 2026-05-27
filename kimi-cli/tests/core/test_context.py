@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from kosong.message import Message, Role
+from kosong.utils.jsonx import loads_relaxed
 
 from kimi_cli.soul.context import Context
 from kimi_cli.wire.types import TextPart
@@ -21,9 +22,9 @@ def _write_lines(path: Path, lines: list[dict]) -> None:
 
 
 def _read_lines(path: Path) -> list[dict]:
-    """Read all JSON lines from a file."""
+    """Read all JSON lines from a file (using loads_relaxed for lenient parsing)."""
     return [
-        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
+        loads_relaxed(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
 
 
@@ -173,8 +174,9 @@ async def test_restore_skips_malformed_trailing_line(tmp_path: Path) -> None:
 
     assert restored is True
     assert ctx.system_prompt == "Frozen prompt"
-    assert len(ctx.history) == 1
+    assert len(ctx.history) == 2
     assert ctx.history[0].role == "user"
+    assert ctx.history[1].role == "assistant"
 
 
 @pytest.mark.asyncio
@@ -193,8 +195,9 @@ async def test_restore_skips_truncated_utf8_trailing_line(tmp_path: Path) -> Non
 
     assert restored is True
     assert ctx.system_prompt == "Frozen prompt"
-    assert len(ctx.history) == 1
+    assert len(ctx.history) == 2
     assert ctx.history[0].role == "user"
+    assert ctx.history[1].role == "assistant"
 
 
 # --- clear tests ---
@@ -303,6 +306,7 @@ async def test_revert_skips_malformed_line_before_checkpoint(tmp_path: Path) -> 
     assert lines == [
         {"role": "_system_prompt", "content": "Recovered prompt"},
         _message_dict("user", "Before bad line"),
+        {"role": "assistant", "content": "unterminated"},
     ]
 
 
@@ -358,6 +362,7 @@ async def test_revert_skips_truncated_utf8_line_before_checkpoint(tmp_path: Path
     assert lines == [
         {"role": "_system_prompt", "content": "Recovered prompt"},
         _message_dict("user", "Before bad line"),
+        {"role": "assistant", "content": "\ufffd"},
     ]
 
 

@@ -914,11 +914,11 @@ async def test_anthropic_parallel_tool_results_merged_into_single_user_message()
 @pytest.mark.parametrize(
     ("arguments", "expected_error_substring"),
     [
-        ('{"a": 1, "b": 2', "invalid JSON arguments"),  # broken JSON
-        ("<args><a>1</a></args>", "invalid JSON arguments"),  # XML
-        ("a: 1\nb: 2", "invalid JSON arguments"),  # YAML
-        ("{{a=1, b=2}}", "invalid JSON arguments"),  # DSML-like
-        ("not json at all", "invalid JSON arguments"),  # garbage
+        ('{"a": 1, "b": 2', ""),  # broken JSON — loads_relaxed repairs it
+        ("<args><a>1</a></args>", "must be a JSON object, got str."),  # XML
+        ("a: 1\nb: 2", "must be a JSON object, got str."),  # YAML
+        ("{{a=1, b=2}}", "must be a JSON object, got list."),  # DSML-like
+        ("not json at all", "must be a JSON object, got str."),  # garbage
         ("[1, 2, 3]", "must be a JSON object"),  # valid JSON, but array
     ],
     ids=["broken_json", "xml", "yaml", "dsml", "garbage", "json_array"],
@@ -957,12 +957,19 @@ async def test_anthropic_malformed_tool_call_arguments_in_request(
     content = messages[0]["content"]
     assert content[0]["type"] == "text"
     assert content[0]["text"] == "I'll call a tool."
-    assert content[1]["type"] == "text"
-    assert expected_error_substring in content[1]["text"]
-    assert content[2]["type"] == "tool_use"
-    assert content[2]["input"] == {}
-    assert content[2]["name"] == "add"
-    assert content[2]["id"] == "call_bad"
+    if not expected_error_substring:
+        # loads_relaxed successfully repaired the JSON
+        assert content[1]["type"] == "tool_use"
+        assert content[1]["input"] == {"a": 1, "b": 2}
+        assert content[1]["name"] == "add"
+        assert content[1]["id"] == "call_bad"
+    else:
+        assert content[1]["type"] == "text"
+        assert expected_error_substring in content[1]["text"]
+        assert content[2]["type"] == "tool_use"
+        assert content[2]["input"] == {}
+        assert content[2]["name"] == "add"
+        assert content[2]["id"] == "call_bad"
 
 
 async def test_anthropic_empty_tool_call_arguments_in_request():
@@ -1009,10 +1016,10 @@ async def test_anthropic_empty_tool_call_arguments_in_request():
     [
         ({"a": 1, "b": 2}, "tool_call", '{"a":1,"b":2}'),
         ('{"a": 1, "b": 2}', "tool_call", '{"a": 1, "b": 2}'),
-        ("<args><a>1</a></args>", "text_error", "invalid JSON input"),
-        ("a: 1\nb: 2", "text_error", "invalid JSON input"),
-        ("{{a=1, b=2}}", "text_error", "invalid JSON input"),
-        ("not json at all", "text_error", "invalid JSON input"),
+        ("<args><a>1</a></args>", "text_error", "non-object input"),
+        ("a: 1\nb: 2", "text_error", "non-object input"),
+        ("{{a=1, b=2}}", "text_error", "non-object input"),
+        ("not json at all", "text_error", "non-object input"),
         ("[1, 2, 3]", "text_error", "non-object input"),
     ],
     ids=["dict", "json_string", "xml", "yaml", "dsml", "garbage", "array_string"],
