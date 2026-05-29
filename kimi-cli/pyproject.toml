@@ -1,6 +1,6 @@
 [project]
 name = "kimi-cli-x"
-version = "1.44.5"
+version = "1.44.6"
 description = "Kimi Code CLI is your next CLI agent."
 readme = "README.md"
 requires-python = ">=3.14"
@@ -9,7 +9,7 @@ dependencies = [
     "aiofiles>=24.0,<26.0",
     "aiohttp==3.13.5",
     "typer==0.21.1",
-    "kosong-x==0.53.4",
+    "kosong-x==0.53.5",
     # loguru stays >=0.6.0 because notify-py (via batrachian-toad) caps it at <=0.6.0 on 3.14+.
     "loguru>=0.6.0,<0.8",
     "prompt-toolkit==3.0.52",
