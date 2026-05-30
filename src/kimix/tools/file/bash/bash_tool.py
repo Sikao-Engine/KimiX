@@ -1,6 +1,7 @@
 """Bash tool that executes commands via the system bash executable."""
 
 import os
+import queue
 import shlex
 import shutil
 import sys
@@ -67,7 +68,7 @@ def find_bash() -> str | None:
         try:
             import subprocess
             r = subprocess.run(
-                ["where", "bash.exe"],
+                ["where.exe", "bash.exe"],
                 capture_output=True, text=True, check=True
             )
             return r.stdout.strip().splitlines()[0]
@@ -100,7 +101,6 @@ class BashParams(BaseModel):
     """Parameters for the Bash tool — execute a bash command via the system bash."""
 
     cmd: str = Field(description="Bash command name.")
-    args: list[str] = Field(default_factory=list, description="Command arguments.")
     timeout: int = Field(
         default=10,
         ge=3,
@@ -131,22 +131,6 @@ class Bash(CallableTool2[BashParams]):
         if not self._bash:
             raise SkipThisTool()
 
-    @classmethod
-    def resolve_command(cls, command: str) -> tuple[str, "_CallableTool2 | None"]:
-        """Resolve a command name to its resolved name and optional builtin tool.
-
-        Args:
-            command: The command name (e.g., 'cat', 'dir').
-
-        Returns:
-            A tuple of (resolved_name, tool_instance_or_None).
-        """
-        from kimix.tools.file.bash import BASH_COMMANDS, WINDOWS_ALIASES
-
-        bash_name = WINDOWS_ALIASES.get(command, command)
-        tool = BASH_COMMANDS.get(bash_name)
-        return bash_name, tool
-
     async def __call__(self, params: BashParams) -> ToolReturnValue:
         """Execute the bash command via the system bash executable.
 
@@ -158,36 +142,17 @@ class Bash(CallableTool2[BashParams]):
         """
         from kimix.tools.background.utils import remove_task_id
 
-        # Split space-separated cmd into cmd + args, respecting quotes
-        if " " in params.cmd or "\t" in params.cmd:
-            parts = shlex.split(params.cmd, posix=os.name != "nt")
-            params.cmd = parts[0]
-            params.args[:0] = parts[1:]
-
-        # Resolve Windows aliases
-        cmd, _ = self.resolve_command(params.cmd)
-
-        if not cmd:
+        if not params.cmd:
             return ToolError(
                 output="Empty command.",
                 message="No command specified.",
                 brief=f"Empty command: {params.cmd}",
             )
 
-        bash_path = self._bash
-        if not bash_path:
-            return ToolError(
-                output="Bash executable not found.",
-                message="Bash executable not found. Please install bash.",
-                brief=f"Bash not found: {params.cmd}",
-            )
 
         # Build the command line to pass to bash -c
-        full_args = [cmd] + list(params.args)
-        cmdline = shlex.join(full_args)
-
-        process_task = ProcessTask(bash_path, ["-c", cmdline], params.cwd, None)
-        task_id = await process_task.start(self._session, "bash", cmd)
+        process_task = ProcessTask(self._bash, ["-c", params.cmd], params.cwd, None)
+        task_id = await process_task.start(self._session, "bash")
 
         await process_task.wait(params.timeout)
 

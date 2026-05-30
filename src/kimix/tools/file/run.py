@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 from kimi_cli.session import Session
 from kimix.tools.common import _maybe_export_output_async, _export_to_temp_file_async, ProcessTask
 from kimix.tools.file.bash import _BASH_COMMANDS, _WINDOWS_ALIASES
-from kimix.tools.file.bash.run_bash import run_bash
 from kimi_cli.tools.display import ShellDisplayBlock
 
 _HUGE_CMD_THRESHOLD = 10000
@@ -179,29 +178,12 @@ class Run(CallableTool2[RunParams]):
 
             if not is_process:
                 # Not a real process - check if it's a bash built-in command.
-                warning = " WARNING: This tool does not support shell commands; use `Python` tool."
-                if executable in _BASH_COMMANDS:
-                    # Pass params so run_bash can extract cmd + args from command
-                    result = await run_bash(params, self._session)
-                    return ToolReturnValue(
-                        is_error=result.is_error,
-                        message=(result.message or "") + warning, brief=result.brief or "", output=result.output,
-                        display=result.display
-                    )
-                bash_name = _WINDOWS_ALIASES.get(executable, executable)
-                if bash_name in _BASH_COMMANDS:
-                    result = await run_bash(params, self._session)
-                    return ToolReturnValue(
-                        is_error=result.is_error,
-                        message=(result.message or "") + warning, brief=result.brief or "", output=result.output,
-                        display=result.display
-                    )
-                else:
-                    return ToolError(
-                        output="",
-                        message=f"Executable not found: '{executable}' is not a valid executable or bash built-in command.",
-                        brief=display_cmd,
-                    )
+                error_msg = " This tool does not support shell commands; use `Bash` tool."
+                return ToolError(
+                    output='',
+                    message=error_msg,
+                    brief='Bash not supported.'
+                )
 
             # Handle extremely long python -c scripts via temp file (Windows CreateProcessW ~32767 limit)
             if is_py:

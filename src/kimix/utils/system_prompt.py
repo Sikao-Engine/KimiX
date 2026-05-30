@@ -58,6 +58,8 @@ def get_system_prompt(
             use_skills = True
             role_doc = f'You are a {role}'
             items.append(
+                'Persist: finish all requirements, keep trying until done.')
+            items.append(
                 'Interactive: `Run`/`Python` short timeout, then `TaskOutput`/`Input`.')
             # if args.KIMI_OS == 'Windows':
             #     items.append('No shell, powershell or cmd: use `Run`/`Python` instead.')
