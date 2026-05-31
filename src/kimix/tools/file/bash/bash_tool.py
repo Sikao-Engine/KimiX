@@ -1,5 +1,6 @@
 """Bash tool that executes commands via the system bash executable."""
 
+import functools
 import os
 import queue
 import shlex
@@ -8,17 +9,21 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import kimi_cli
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
+from kimi_cli.tools.display import ShellDisplayBlock
+from kimi_cli.share import get_share_dir
 
 from kimix.tools.common import _maybe_export_output_async, ProcessTask
 
 if TYPE_CHECKING:
     from kimi_agent_sdk import CallableTool2 as _CallableTool2
+import platform
 
-
+@functools.lru_cache(maxsize=1)
 def find_bash() -> str | None:
     """Find the system bash executable.
 
@@ -176,7 +181,7 @@ class Bash(CallableTool2[BashParams]):
             return ToolError(
                 output="Empty command.",
                 message="No command specified.",
-                brief=f"Empty command: {params.cmd}",
+                brief="Empty command",
             )
 
 
@@ -205,10 +210,13 @@ class Bash(CallableTool2[BashParams]):
             async with await anyio.open_file(params.output_path, 'w', encoding='utf-8', errors='replace') as f:
                 await f.write(output)
             output = f'saved to file `{params.output_path}`'
-            return ToolOk(output=output, brief=params.cmd)
 
         if not success:
-            return ToolError(output=output, message="Command execution failed", brief=f"Command execution failed: {params.cmd}")
+            return ToolError(output=output, message="Command execution failed", brief=params.cmd)
 
         output = await _maybe_export_output_async(output)
-        return ToolOk(output=output, brief=params.cmd)
+        return ToolOk(
+            output=output,
+            brief="Command executed successfully",
+            display_block=ShellDisplayBlock(language="shell", command=params.cmd),
+        )
