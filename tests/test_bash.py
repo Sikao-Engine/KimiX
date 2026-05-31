@@ -78,7 +78,7 @@ class TestBashParams:
 
     def test_timeout_max(self) -> None:
         with pytest.raises(Exception):
-            BashParams(cmd="ls", timeout=200)
+            BashParams(cmd="ls", timeout=901)
 
 
 # ============================================================================

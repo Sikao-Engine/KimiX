@@ -578,7 +578,8 @@ async def test_edit_after_file_changed_returns_error(
     # and returns False.
     from kimi_cli.utils.path import kaos_path_from_user_input
     key = str(kaos_path_from_user_input(str(file_path)).canonical())
-    session.file_mtime._times[key] = file_path.stat().st_mtime
+    st = await file_path.stat()
+    session.file_mtime._times[key] = st.st_mtime
 
     result = await edit_file_tool(
         Params(path=str(file_path), edit=Edit(old="original", new="modified"))

@@ -100,16 +100,18 @@ async def test_read_nonexistent_file(read_file_tool: ReadFile, temp_work_dir: Ka
     nonexistent_file = temp_work_dir / "nonexistent.txt"
     result = await read_file_tool(Params(path=str(nonexistent_file)))
     assert result.is_error
-    assert result.message == snapshot(f"`{nonexistent_file}` does not exist.")
-    assert result.brief == snapshot(f"File not found: {nonexistent_file}")
+    display_path = str(nonexistent_file).replace("\\", "/")
+    assert result.message == snapshot(f"`{display_path}` does not exist.")
+    assert result.brief == snapshot(f"File not found: {display_path}")
 
 
 async def test_read_directory_instead_of_file(read_file_tool: ReadFile, temp_work_dir: KaosPath):
     """Test attempting to read a directory."""
     result = await read_file_tool(Params(path=str(temp_work_dir)))
     assert result.is_error
-    assert result.message == snapshot(f"`{temp_work_dir}` is not a file.")
-    assert result.brief == snapshot(f"Invalid path: {temp_work_dir}")
+    display_path = str(temp_work_dir).replace("\\", "/")
+    assert result.message == snapshot(f"`{display_path}` is not a file.")
+    assert result.brief == snapshot(f"Invalid path: {display_path}")
 
 
 async def test_read_with_relative_path(
@@ -163,10 +165,11 @@ async def test_read_image_file(read_file_tool: ReadFile, temp_work_dir: KaosPath
     result = await read_file_tool(Params(path=str(image_file)))
 
     assert result.is_error
+    display_path = str(image_file).replace("\\", "/")
     assert result.message == snapshot(
-        f"`{image_file}` is a image file. Use other appropriate tools to read image or video files."
+        f"`{display_path}` is a image file. Use other appropriate tools to read image or video files."
     )
-    assert result.brief == snapshot(f"Unsupported file type: {image_file}")
+    assert result.brief == snapshot(f"Unsupported file type: {display_path}")
 
 
 async def test_read_extensionless_image_file(read_file_tool: ReadFile, temp_work_dir: KaosPath):
@@ -178,10 +181,11 @@ async def test_read_extensionless_image_file(read_file_tool: ReadFile, temp_work
     result = await read_file_tool(Params(path=str(image_file)))
 
     assert result.is_error
+    display_path = str(image_file).replace("\\", "/")
     assert result.message == snapshot(
-        f"`{image_file}` is a image file. Use other appropriate tools to read image or video files."
+        f"`{display_path}` is a image file. Use other appropriate tools to read image or video files."
     )
-    assert result.brief == snapshot(f"Unsupported file type: {image_file}")
+    assert result.brief == snapshot(f"Unsupported file type: {display_path}")
 
 
 async def test_read_video_file(read_file_tool: ReadFile, temp_work_dir: KaosPath):
@@ -193,10 +197,11 @@ async def test_read_video_file(read_file_tool: ReadFile, temp_work_dir: KaosPath
     result = await read_file_tool(Params(path=str(video_file)))
 
     assert result.is_error
+    display_path = str(video_file).replace("\\", "/")
     assert result.message == snapshot(
-        f"`{video_file}` is a video file. Use other appropriate tools to read image or video files."
+        f"`{display_path}` is a video file. Use other appropriate tools to read image or video files."
     )
-    assert result.brief == snapshot(f"Unsupported file type: {video_file}")
+    assert result.brief == snapshot(f"Unsupported file type: {display_path}")
 
 
 async def test_read_line_offset_beyond_file_length(read_file_tool: ReadFile, sample_file: KaosPath):
