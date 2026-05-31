@@ -11,8 +11,6 @@ from pydantic import BaseModel, Field
 from kimi_cli.session import Session
 from kimix.tools.common import _maybe_export_output_async, _export_to_temp_file_async, ProcessTask
 from kimi_cli.tools.display import ShellDisplayBlock
-from kimi_cli.tools import SkipThisTool
-from kimix.tools.file.bash.bash_tool import find_bash
 
 _HUGE_CMD_THRESHOLD = 10000
 """Character count above which command display is culled to only the path."""
@@ -77,8 +75,6 @@ class Run(CallableTool2[RunParams]):
         import os
         os.environ['PYTHONIOENCODING'] = 'utf-8'
         super().__init__()
-        if find_bash() is not None:
-            raise SkipThisTool()
         self._session = session
         self._semaphore = asyncio.Semaphore(8)
         self.use_posix = sys.platform != "win32"

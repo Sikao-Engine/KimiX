@@ -135,7 +135,10 @@ def find_bash() -> str | None:
 # Characters for which a backslash escape must be preserved in bash.
 # These are shell metacharacters and other special characters where
 # converting \X to /X would change shell syntax or semantics.
-_BASH_METACHARACTERS = set("()|;&<>$\"`'*?[]{}~!#=% \t\n\r")
+_BASH_METACHARACTERS = frozenset("()|;&<>$\"`'*?[]{}~!#=% \t\n\r")
+
+# In double quotes, \ only escapes these characters.
+_DQ_ESCAPES = frozenset(('"', '\\'))
 
 
 def _prepare_bash_cmd(cmd: str) -> str:
@@ -159,6 +162,29 @@ def _prepare_bash_cmd(cmd: str) -> str:
     length = len(cmd)
 
     while i < length:
+        # ---- find the next special character ----
+        # Use C-accelerated str.find (4 calls) to bulk-skip non-special chars.
+        nxt = length
+        pos = cmd.find('\\', i)
+        if pos != -1:
+            nxt = pos
+        pos = cmd.find("'", i)
+        if pos != -1 and pos < nxt:
+            nxt = pos
+        pos = cmd.find('"', i)
+        if pos != -1 and pos < nxt:
+            nxt = pos
+        pos = cmd.find('$', i)
+        if pos != -1 and pos < nxt:
+            nxt = pos
+
+        if nxt > i:
+            result.append(cmd[i:nxt])
+            i = nxt
+
+        if i >= length:
+            break
+
         char = cmd[i]
 
         if char == "'":
@@ -172,15 +198,30 @@ def _prepare_bash_cmd(cmd: str) -> str:
 
         elif char == '"':
             # Double-quoted region — copy literally until closing "
+            # In bash double quotes, \ only escapes $, `, ", \, and newline.
+            # We handle \" (escaped quote) and \\ (escaped backslash) to
+            # correctly find the region boundary.
             j = i + 1
             while j < length:
-                if cmd[j] == "\\" and j + 1 < length and cmd[j + 1] == '"':
-                    # Escaped quote inside double quotes
+                # Bulk-skip to next \ or " inside the region
+                nxt2 = length
+                pos = cmd.find('\\', j)
+                if pos != -1:
+                    nxt2 = pos
+                pos = cmd.find('"', j)
+                if pos != -1 and pos < nxt2:
+                    nxt2 = pos
+                if nxt2 > j:
+                    j = nxt2
+                if j >= length:
+                    break
+                if cmd[j] == "\\" and j + 1 < length and cmd[j + 1] in _DQ_ESCAPES:
+                    # Escaped quote or escaped backslash inside double quotes
                     j += 2
                 elif cmd[j] == '"':
                     break
                 else:
-                    j += 1
+                    j += 1  # regular char (or lone backslash), advance
             if j < length:
                 result.append(cmd[i : j + 1])
                 i = j + 1
@@ -192,12 +233,24 @@ def _prepare_bash_cmd(cmd: str) -> str:
             # $'...' ANSI-C quoted region
             j = i + 2
             while j < length:
+                # Bulk-skip to next \ or ' inside the region
+                nxt2 = length
+                pos = cmd.find('\\', j)
+                if pos != -1:
+                    nxt2 = pos
+                pos = cmd.find("'", j)
+                if pos != -1 and pos < nxt2:
+                    nxt2 = pos
+                if nxt2 > j:
+                    j = nxt2
+                if j >= length:
+                    break
                 if cmd[j] == "\\" and j + 1 < length:
                     j += 2  # skip escaped char
                 elif cmd[j] == "'":
                     break
                 else:
-                    j += 1
+                    j += 1  # regular char, advance
             if j < length:
                 result.append(cmd[i : j + 1])
                 i = j + 1
@@ -207,15 +260,20 @@ def _prepare_bash_cmd(cmd: str) -> str:
 
         elif char == "\\":
             if i + 1 < length and cmd[i + 1] in _BASH_METACHARACTERS:
-                # Backslash is escaping a bash metacharacter — preserve it
+                # Backslash is escaping a bash metacharacter — preserve both.
+                # Append atomically so the metacharacter (e.g. ' " $) is not
+                # re-processed as a quote-start or ANSI-C region on the next
+                # iteration.
                 result.append("\\")
-                i += 1
+                result.append(cmd[i + 1])
+                i += 2
             else:
                 # Unquoted backslash in a path-like context — convert to /
                 result.append("/")
                 i += 1
 
         else:
+            # Should not reach here — nxt always points to a special char
             result.append(char)
             i += 1
 

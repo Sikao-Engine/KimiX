@@ -261,6 +261,184 @@ class TestPrepareBashCmd:
             expected = r"cat src/tools/file.py && find build \( -name '*.py' \)"
             assert _prepare_bash_cmd(cmd) == expected
 
+    def test_escaped_single_quote_outside_quotes_on_windows(self) -> None:
+        """\' outside quotes should be preserved and NOT start a single-quoted region."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # \' → literal ', backslashes after should be converted
+            cmd = r"echo \'src\kimix\'"
+            expected = r"echo \'src/kimix\'"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_escaped_double_quote_outside_quotes_on_windows(self) -> None:
+        r"""\" outside quotes should be preserved and NOT start a double-quoted region."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # \" outside quotes: backslash escapes the double-quote → literal "
+            # The " should NOT start a double-quoted region.
+            cmd = r'echo \"src\kimix\"'
+            expected = r'echo \"src/kimix\"'
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_escaped_dollar_prevents_ansi_c_detection_on_windows(self) -> None:
+        """Escaped dollar before single-quote should NOT trigger ANSI-C processing."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # \$'text' — the $ is escaped, so 'text' is a separate single-quoted string
+            cmd = r"echo \$'text'"
+            expected = r"echo \$'text'"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    # -- corner cases discovered during review -------------------------------
+
+    def test_double_quoted_escaped_backslash_before_quote_on_windows(self) -> None:
+        r"""\\" inside double quotes: \\ is escaped backslash, then " closes the region."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # Bash: "hello\\" is the quoted region, then world", then "
+            cmd = r'"hello\\"world"'
+            # \\ inside "..." preserved, then world is outside (no backslashes),
+            # then " starts new region
+            expected = r'"hello\\"world"'
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_double_quoted_multiple_escaped_backslashes_on_windows(self) -> None:
+        r"""Multiple \\ sequences inside double quotes."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = r'"a\\b\\c"'
+            expected = r'"a\\b\\c"'
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_double_quoted_escaped_dollar_on_windows(self) -> None:
+        r"""\$ inside double quotes should not affect region detection."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = r'"price is \$100"'
+            expected = r'"price is \$100"'
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_double_quoted_with_dollar_ansi_c_inside_on_windows(self) -> None:
+        r"""$' inside double quotes should NOT trigger ANSI-C processing."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # "abc $'def' ghi" — the $' is inside double quotes, treated literally
+            cmd = r'"abc $"' + "'def' ghi\""
+            # The double-quoted region captures everything from first " to last "
+            expected = r'"abc $"' + "'def' ghi\""
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_backslash_before_hash_preserved_on_windows(self) -> None:
+        r"""\# should be preserved as bash comment escape."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd(r"echo \# not a comment") == r"echo \# not a comment"
+
+    def test_backslash_before_exclamation_preserved_on_windows(self) -> None:
+        r"""\! should be preserved as history expansion escape."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd(r"echo \!test") == r"echo \!test"
+
+    def test_backslash_before_percent_preserved_on_windows(self) -> None:
+        r"""\% should be preserved."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd(r"echo \%percent") == r"echo \%percent"
+
+    def test_backslash_before_equals_preserved_on_windows(self) -> None:
+        r"""\= should be preserved as assignment escape."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd(r"echo a\=b") == r"echo a\=b"
+
+    def test_triple_backslash_outside_quotes_on_windows(self) -> None:
+        r"""\\\ outside quotes: \\ → //, then \ before p → /p → ///path."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd(r"echo \\\path") == "echo ///path"
+
+    def test_backslash_before_newline_preserved_on_windows(self) -> None:
+        r"""\<newline> (line continuation) should be preserved."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "echo hello\\\nworld"
+            expected = "echo hello\\\nworld"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_ansi_c_with_double_backslash_before_quote_on_windows(self) -> None:
+        r"""$'...\\'' — \\ inside ANSI-C, then ' closes the region."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # $'it\\''s' → $'it\\' + 's' (the \\ produces \, then ' closes)
+            cmd = r"echo $'it\\'s working'"
+            expected = r"echo $'it\\'s working'"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_ansi_c_with_hex_escape_on_windows(self) -> None:
+        r"""$'...\x41...' — hex escapes are skipped correctly."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = r"echo $'\x41bc'"
+            expected = r"echo $'\x41bc'"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_ansi_c_with_octal_escape_on_windows(self) -> None:
+        r"""$'...\033...' — octal escapes are skipped correctly."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = r"echo $'\033[31mred'"
+            expected = r"echo $'\033[31mred'"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_ansi_c_with_unicode_escape_on_windows(self) -> None:
+        r"""$'...\u0041...' — unicode escapes."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = r"echo $'\u0041bc'"
+            expected = r"echo $'\u0041bc'"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_mixed_quotes_complex_on_windows(self) -> None:
+        """Complex mix of quote types and backslashes."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # 'single' preserved, "double" preserved, $'ansi' preserved, src\path → src/path
+            cmd = "echo 'single' \"double\" $'ansi' src\\path"
+            expected = "echo 'single' \"double\" $'ansi' src/path"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_only_backslashes_on_windows(self) -> None:
+        """String with only backslashes."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd("\\\\") == "//"
+            assert _prepare_bash_cmd("\\") == "/"
+            assert _prepare_bash_cmd("\\\\\\") == "///"
+
+    def test_backslash_before_each_metachar_on_windows(self) -> None:
+        """Every metacharacter preceded by backslash is preserved."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            metachars = "()|;&<>$\"`'*?[]{}~!#=% \t\n\r"
+            for ch in metachars:
+                # Build a command with \X where X is a metachar
+                cmd = "echo \\" + ch
+                result = _prepare_bash_cmd(cmd)
+                # The \X pair should be preserved as \X
+                assert ("\\" + ch) in result, f"Failed for \\{repr(ch)}: {result}"
+
+    def test_double_quoted_empty_on_windows(self) -> None:
+        """Empty double-quoted region."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd('echo ""') == 'echo ""'
+
+    def test_ansi_c_empty_on_windows(self) -> None:
+        """Empty ANSI-C quoted region."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd("echo $''") == "echo $''"
+
+    def test_single_quoted_empty_on_windows(self) -> None:
+        """Empty single-quoted region."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd("echo ''") == "echo ''"
+
+    def test_double_quoted_escaped_backslash_at_end_on_windows(self) -> None:
+        r"""Double-quoted region with \\ at the very end."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # "hello\\" — \\ inside, then " closes
+            cmd = r'"hello\\"'
+            expected = r'"hello\\"'
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_double_quoted_escaped_backslash_and_quote_on_windows(self) -> None:
+        r"""Double-quoted with \\\" — \\ (escaped backslash) then \" (escaped quote)."""
+        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # "hello\\\"world" — \\ → \, \" → " (escaped quote, region continues)
+            cmd = r'"hello\\\"world"'
+            expected = r'"hello\\\"world"'
+            assert _prepare_bash_cmd(cmd) == expected
+
 
 # ============================================================================
 # Bash.__call__ — integration tests with backslash paths on Windows

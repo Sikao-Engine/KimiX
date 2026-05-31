@@ -331,8 +331,12 @@ FIELD_ALIASES_FILE: dict[str, str] = {
     "original": "old",
     "find": "old",
     "target": "old",
+    "old_str": "old",
+    "old_content": "old",
     "replace_with": "new",
     "to": "new",
+    "new_str": "new",
+    "new_content": "new",
     "all": "replace_all",
     # output_path / destination
     "out": "output_path",
