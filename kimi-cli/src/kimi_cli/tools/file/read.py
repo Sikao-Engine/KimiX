@@ -123,6 +123,8 @@ class ReadFile(CallableTool2[Params]):
                 brief="Empty file path",
             )
 
+        display_path = params.path.replace("\\", "/")
+
         try:
             p = kaos_path_from_user_input(params.path)
             logical_path = p
@@ -134,22 +136,22 @@ class ReadFile(CallableTool2[Params]):
             if is_sensitive_file(str(logical_path)):
                 return ToolError(
                     message=(
-                        f"`{params.path}` appears to contain secrets "
+                        f"`{display_path}` appears to contain secrets "
                         "(matched sensitive file pattern). "
                         "Reading this file is blocked to protect credentials."
                     ),
-                    brief=f"Sensitive file: {params.path}",
+                    brief=f"Sensitive file: {display_path}",
                 )
 
             if not await p.exists():
                 return ToolError(
-                    message=f"`{params.path}` does not exist.",
-                    brief=f"File not found: {params.path}",
+                    message=f"`{display_path}` does not exist.",
+                    brief=f"File not found: {display_path}",
                 )
             if not await p.is_file():
                 return ToolError(
-                    message=f"`{params.path}` is not a file.",
-                    brief=f"Invalid path: {params.path}"
+                    message=f"`{display_path}` is not a file.",
+                    brief=f"Invalid path: {display_path}"
                 )
 
             header = await p.read_bytes(MEDIA_SNIFF_BYTES)
@@ -157,22 +159,22 @@ class ReadFile(CallableTool2[Params]):
             if file_type.kind in ("image", "video"):
                 return ToolError(
                     message=(
-                        f"`{params.path}` is a {file_type.kind} file. "
+                        f"`{display_path}` is a {file_type.kind} file. "
                         "Use other appropriate tools to read image or video files."
                     ),
-                    brief=f"Unsupported file type: {params.path}",
+                    brief=f"Unsupported file type: {display_path}",
                 )
 
             if file_type.kind == "unknown":
                 return ToolError(
                     message=(
-                        f"`{params.path}` seems not readable. "
+                        f"`{display_path}` seems not readable. "
                         "You may need to read it with proper shell commands, Python tools "
                         "or MCP tools if available. "
                         "If you read/operate it with Python, you MUST ensure that any "
                         "third-party packages are installed in a virtual environment (venv)."
                     ),
-                    brief=f"File not readable: {params.path}",
+                    brief=f"File not readable: {display_path}",
                 )
 
             assert params.n_lines >= 1
@@ -191,12 +193,13 @@ class ReadFile(CallableTool2[Params]):
         except Exception as e:
             logger.warning("ReadFile failed: {path}: {error}", path=params.path, error=e)
             return ToolError(
-                message=f"Failed to read {params.path}. Error: {e}",
-                brief=f"Failed to read file: {params.path}",
+                message=f"Failed to read {display_path}. Error: {e}",
+                brief=f"Failed to read file: {display_path}",
             )
 
     async def _read_forward(self, p: KaosPath, params: Params) -> ToolReturnValue:
         """Read file from a positive line_offset."""
+        display_path = params.path.replace("\\", "/")
         lines_with_no: list[str] = []
         n_bytes = 0
         truncated_line_numbers: list[int] = []
@@ -245,11 +248,12 @@ class ReadFile(CallableTool2[Params]):
         return ToolOk(
             output="".join(lines_with_no),
             message=message,
-            brief=f"Read {params.path}",
+            brief=f"Read {display_path}",
         )
 
     async def _read_tail(self, p: KaosPath, params: Params) -> ToolReturnValue:
         """Read file from a negative line_offset (tail mode)."""
+        display_path = params.path.replace("\\", "/")
         tail_count = abs(params.line_offset)
         line_limit = min(params.n_lines, MAX_LINES)
 
@@ -315,5 +319,5 @@ class ReadFile(CallableTool2[Params]):
         return ToolOk(
             output="".join(lines_with_no),
             message=message,
-            brief=f"Read {params.path}",
+            brief=f"Read {display_path}",
         )

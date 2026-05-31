@@ -236,7 +236,8 @@ class Run(CallableTool2[RunParams]):
                 if params.output_path:
                     async with await anyio.open_file(params.output_path, 'w', encoding='utf-8', errors='replace') as f:
                         await f.write(output)
-                    output = f'saved to file `{params.output_path}`'
+                    display_path = params.output_path.replace("\\", "/")
+                    output = f'saved to file `{display_path}`'
 
                 # Check success
                 success = await task.stream.success() if task.stream else False
@@ -244,7 +245,8 @@ class Run(CallableTool2[RunParams]):
                 if not success:
                     if output and not params.output_path:
                         temp_path, _ = await _export_to_temp_file_async(key=None, content=output, ext='.txt')
-                        output = f'saved to file `{temp_path}`'
+                        display_temp_path = temp_path.replace("\\", "/")
+                        output = f'saved to file `{display_temp_path}`'
                     return ToolError(
                         output=output,
                         message="Command execution failed",

@@ -325,7 +325,12 @@ def _build_rg_args(rg_path: str, params: Params, *, single_threaded: bool = Fals
 
 def _format_cmd(params: Params, *, rg_path: str = "rg") -> str:
     """Format the equivalent ripgrep command string for display."""
-    return shlex.join(_build_rg_args(rg_path, params))
+    args = _build_rg_args(rg_path, params)
+    if args:
+        args[0] = args[0].replace("\\", "/")
+    if len(args) >= 2:
+        args[-1] = args[-1].replace("\\", "/")
+    return shlex.join(args)
 
 
 async def _read_stream(
@@ -417,6 +422,35 @@ def _strip_path_prefix(lines: list[str], search_base: str) -> list[str]:
         else line
         for line in lines
     ]
+
+
+def _normalize_output_lines(lines: list[str], output_mode: str) -> list[str]:
+    """Convert Windows path separators to Unix style in path portions of grep output."""
+    if output_mode == "files_with_matches":
+        return [line.replace("\\", "/") for line in lines]
+    if output_mode == "count_matches":
+        result: list[str] = []
+        for line in lines:
+            idx = line.rfind(":")
+            if idx > 0:
+                result.append(line[:idx].replace("\\", "/") + line[idx:])
+            else:
+                result.append(line.replace("\\", "/"))
+        return result
+    # content mode
+    result: list[str] = []
+    for line in lines:
+        if line == "--":
+            result.append(line)
+            continue
+        m = _RG_LINE_RE.match(line)
+        if m:
+            path = m.group(1).replace("\\", "/")
+            rest = line[m.end():]
+            result.append(f"{path}{m.group(2)}{m.group(3)}{m.group(2)}{rest}")
+        else:
+            result.append(line.replace("\\", "/"))
+    return result
 
 
 # Minimal type-to-extension mapping for common file types.
@@ -782,6 +816,7 @@ class Grep(CallableTool2[Params]):
                 )
                 message = f"{message} {truncation_msg}" if message else truncation_msg
 
+            lines = _normalize_output_lines(lines, params.output_mode)
             output, truncated_by_bytes = _join_with_byte_limit(lines)
 
             if not output and not buffer_truncated:
@@ -838,8 +873,9 @@ class Grep(CallableTool2[Params]):
             # Validate workspace
             logical_search_path = KaosPath(params.path).expanduser().canonical()
             if not is_within_workspace(logical_search_path, self._work_dir, self._additional_dirs):
+                display_path = params.path.replace("\\", "/")
                 return ToolError(
-                    message=f"`{params.path}` is outside the workspace.",
+                    message=f"`{display_path}` is outside the workspace.",
                     brief=f"Path outside workspace | {_format_cmd(params)}",
                 )
 
@@ -851,8 +887,9 @@ class Grep(CallableTool2[Params]):
                     pass  # Path outside VFS work_dir, use original
 
             if not search_path.exists():
+                display_path = params.path.replace("\\", "/")
                 return ToolError(
-                    message=f"`{params.path}` does not exist.",
+                    message=f"`{display_path}` does not exist.",
                     brief=f"Path not found | {_format_cmd(params)}",
                 )
 
@@ -991,6 +1028,7 @@ class Grep(CallableTool2[Params]):
                     )
                     message = f"{message} {truncation_msg}" if message else truncation_msg
 
+            lines = _normalize_output_lines(lines, output_mode)
             builder = ToolResultBuilder()
             output, truncated_by_bytes = _join_with_byte_limit(lines)
 

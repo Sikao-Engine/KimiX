@@ -318,14 +318,16 @@ class Glob(CallableTool2[Params]):
             dir_path = KaosPath(str(kaos_path_from_user_input(params.directory)) if params.directory else str(self._work_dir))
             dir_path = await resolve_vfs(str(dir_path), self._vfs, for_write=False)
             if not await dir_path.exists():
+                display_dir = str(dir_path).replace("\\", "/")
                 return ToolError(
-                    message=f"`{params.directory}` does not exist.",
-                    brief=f"Directory not found: {params.directory}",
+                    message=f"`{display_dir}` does not exist.",
+                    brief=f"Directory not found: {display_dir}",
                 )
             if not await dir_path.is_dir():
+                display_dir = str(dir_path).replace("\\", "/")
                 return ToolError(
-                    message=f"`{params.directory}` is not a directory.",
-                    brief=f"Invalid directory: {params.directory}",
+                    message=f"`{display_dir}` is not a directory.",
+                    brief=f"Invalid directory: {display_dir}",
                 )
 
             # Load gitignore rules if needed (sync I/O in executor)
@@ -369,7 +371,7 @@ class Glob(CallableTool2[Params]):
             n_bytes = 0
             truncated_by_bytes = False
             for p in matches:
-                line = str(p.relative_to(dir_path))
+                line = str(p.relative_to(dir_path)).replace("\\", "/")
                 line_bytes = len(line.encode("utf-8"))
                 separator_bytes = 1 if output_lines else 0
                 output_lines.append(line)
@@ -406,10 +408,11 @@ class Glob(CallableTool2[Params]):
             if truncated_by_bytes:
                 message += f" Output truncated to {MAX_BYTES} bytes."
 
+            display_dir = str(dir_path).replace("\\", "/")
             return ToolOk(
                 output=output,
                 message=message,
-                brief=f"Glob {dir_path}",
+                brief=f"Glob {display_dir}",
             )
 
         except Exception as e:

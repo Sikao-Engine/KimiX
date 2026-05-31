@@ -261,6 +261,19 @@ FIELD_ALIASES_GENERAL: dict[str, str] = {
     "op": "action",
     # brief
     "short": "brief",
+    # status / state
+    "state": "status",
+    # question / query
+    "query": "question",
+    # options / choices
+    "choices": "options",
+    "answers": "options",
+    # multi_select
+    "multiple": "multi_select",
+    "allow_multiple": "multi_select",
+    # header
+    "category": "header",
+    "tag": "header",
 }
 
 FIELD_ALIASES_FILE: dict[str, str] = {
@@ -349,6 +362,20 @@ FIELD_ALIASES_FILE: dict[str, str] = {
     # glob / filter
     "filter": "glob",
     "file_pattern": "glob",
+    # directory (Glob)
+    "path": "directory",
+    # pages (ReadFile)
+    "page": "pages",
+    "page_range": "pages",
+    # edit (EditFile)
+    "edits": "edit",
+    # line_number (Grep)
+    "show_line_numbers": "line_number",
+    "line_numbers": "line_number",
+    "show_numbers": "line_number",
+    "number": "line_number",
+    # ignore_case (Grep) - reciprocal
+    "case_insensitive": "ignore_case",
 }
 
 FIELD_ALIASES_SHELL: dict[str, str] = {
@@ -380,6 +407,8 @@ FIELD_ALIASES_SHELL: dict[str, str] = {
     "environment": "env",
     "vars": "env",
     "variables": "env",
+    # command
+    "code": "command",
 }
 
 FIELD_ALIASES_WEB: dict[str, str] = {
@@ -409,6 +438,10 @@ FIELD_ALIASES_TASK: dict[str, str] = {
     "force": "kill",
     "terminate": "kill",
     "stop": "kill",
+    # limit (TaskList)
+    "head_limit": "limit",
+    # reason (TaskStop)
+    "message": "reason",
 }
 
 FIELD_ALIASES_INPUT: dict[str, str] = {

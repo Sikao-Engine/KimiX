@@ -97,7 +97,8 @@ class Python(CallableTool2[Params]):
             if params.output_path:
                 async with await anyio.open_file(params.output_path, 'w', encoding='utf-8', errors='replace') as f:
                     await f.write(output)
-                output = f'output exported to: {params.output_path}'
+                display_path = params.output_path.replace("\\", "/")
+                output = f'output exported to: {display_path}'
             else:
                 output = await _maybe_export_output_async(output)
 
@@ -109,7 +110,8 @@ class Python(CallableTool2[Params]):
             if not success:
                 if output and not params.output_path:
                     temp_path, _ = await _export_to_temp_file_async(key=None, content=output, ext='.txt')
-                    output = f'saved to file `{temp_path}`'
+                    display_temp_path = temp_path.replace("\\", "/")
+                    output = f'saved to file `{display_temp_path}`'
                 return ToolError(
                     output=output,
                     message="Python execution failed",

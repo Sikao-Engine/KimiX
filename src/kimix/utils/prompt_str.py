@@ -174,7 +174,7 @@ class _Replacer:
         if not Path(path).exists():
             return raw
 
-        return f"`{path}`{trailing}"
+        return f"`{path.replace('\\', '/')}`{trailing}"
 
 
 def _sanitize_text(text: str) -> str:

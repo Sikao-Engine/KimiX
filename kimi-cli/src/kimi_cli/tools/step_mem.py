@@ -79,7 +79,8 @@ class StepMemory(CallableTool2[Params]):
                 return data, None
         except (orjson.JSONDecodeError, OSError, UnicodeDecodeError):
             pass
-        return [], f"Corrupted step memory file, using empty history: {path}"
+        display_path = str(path).replace("\\", "/")
+        return [], f"Corrupted step memory file, using empty history: {display_path}"
 
     def _save_steps(self, steps: list[dict[str, Any]]) -> None:
         path = self._storage_path()

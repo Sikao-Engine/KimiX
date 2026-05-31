@@ -42,15 +42,17 @@ class FetchURL(CallableTool2[Params]):
                 output_file = Path(params.output_path)
                 output_file.parent.mkdir(parents=True, exist_ok=True)
                 await asyncio.to_thread(output_file.write_text, markdown, encoding="utf-8")
+                display_path = params.output_path.replace("\\", "/")
                 return ToolOk(
-                    output=f"Content saved to {params.output_path} ({len(markdown)} characters).",
-                    brief=f"Fetched {params.url} and saved to {params.output_path}"
+                    output=f"Content saved to {display_path} ({len(markdown)} characters).",
+                    brief=f"Fetched {params.url} and saved to {display_path}"
                 )
             except Exception as exc:
+                display_path = params.output_path.replace("\\", "/")
                 return ToolError(
                     message=str(exc),
                     output=markdown,
-                    brief=f"Failed to write {params.output_path}"
+                    brief=f"Failed to write {display_path}"
                 )
 
         output = _maybe_export_output(markdown)

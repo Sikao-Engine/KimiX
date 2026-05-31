@@ -287,7 +287,7 @@ class BashParams(BaseModel):
     timeout: int = Field(
         default=10,
         ge=3,
-        le=180,
+        le=900,
         description="Timeout in seconds."
     )
     output_path: str | None = Field(
@@ -359,7 +359,8 @@ class Bash(CallableTool2[BashParams]):
             import anyio
             async with await anyio.open_file(params.output_path, 'w', encoding='utf-8', errors='replace') as f:
                 await f.write(output)
-            output = f'saved to file `{params.output_path}`'
+            display_path = params.output_path.replace("\\", "/")
+            output = f'saved to file `{display_path}`'
 
         if not success:
             return ToolError(output=output, message="Command execution failed", brief=params.cmd)

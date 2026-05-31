@@ -252,6 +252,7 @@ class EditFile(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
+        display_path = params.path.replace("\\", "/")
         if not params.path:
             return ToolError(
                 message="File path cannot be empty.",
@@ -267,6 +268,7 @@ class EditFile(CallableTool2[Params]):
         try:
             p = kaos_path_from_user_input(params.path)
             logical_path = p
+            display_logical_path = str(logical_path).replace("\\", "/")
             _outside = not is_within_directory(logical_path.canonical(), self._work_dir)
             err, _ = await self._validate_path(p)
             if err:
@@ -292,7 +294,7 @@ class EditFile(CallableTool2[Params]):
                 st = await p.stat()
                 if not S_ISREG(st.st_mode):
                     return ToolError(
-                        message=f"{'[out of work-dir] ' if _outside else ''}`{logical_path}` is not a file.",
+                        message=f"{'[out of work-dir] ' if _outside else ''}`{display_logical_path}` is not a file.",
                         brief="Invalid path",
                     )
             except FileNotFoundError:
@@ -306,7 +308,7 @@ class EditFile(CallableTool2[Params]):
                         brief="Plan file not created",
                     )
                 return ToolError(
-                    message=f"{'[out of work-dir] ' if _outside else ''}`{logical_path}` does not exist.",
+                    message=f"{'[out of work-dir] ' if _outside else ''}`{display_logical_path}` does not exist.",
                     brief="File not found",
                 )
 
@@ -354,7 +356,7 @@ class EditFile(CallableTool2[Params]):
                 result = await self._approval.request(
                     self.name,
                     action,
-                    f"Edit file `{logical_path}`",
+                    f"Edit file `{display_logical_path}`",
                     display=diff_blocks,
                 )
                 if not result:

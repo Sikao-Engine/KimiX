@@ -96,6 +96,7 @@ class WriteFile(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
+        display_path = params.path.replace("\\", "/")
         # TODO: checks:
         # - check if the path may contain secrets
         if not params.path:
@@ -113,6 +114,7 @@ class WriteFile(CallableTool2[Params]):
         try:
             p = kaos_path_from_user_input(params.path)
             logical_path = p
+            display_logical_path = str(logical_path).replace("\\", "/")
             _outside = not is_within_directory(logical_path.canonical(), self._work_dir)
             err, path_is_inside = await self._validate_path(logical_path)
             if err:
@@ -120,10 +122,11 @@ class WriteFile(CallableTool2[Params]):
                 return err
 
             p = await resolve_vfs(params.path, self._vfs, for_write=True)
+            display_p = str(p).replace("\\", "/")
 
             if await p.is_dir():
                 return ToolError(
-                    message=f"{'[out of work-dir] ' if _outside else ''}`{p}` is a directory, not a file.",
+                    message=f"{'[out of work-dir] ' if _outside else ''}`{display_p}` is a directory, not a file.",
                     brief="Path is a directory",
                 )
 
@@ -145,7 +148,7 @@ class WriteFile(CallableTool2[Params]):
                 await p.parent.mkdir(parents=True, exist_ok=True)
             except OSError as e:
                 return ToolError(
-                    message=f"{'[out of work-dir] ' if _outside else ''}Failed to create parent directory for {p}: {e}",
+                    message=f"{'[out of work-dir] ' if _outside else ''}Failed to create parent directory for {display_p}: {e}",
                     brief="Parent directory not found",
                 )
 
@@ -233,7 +236,7 @@ class WriteFile(CallableTool2[Params]):
                 result = await self._approval.request(
                     self.name,
                     action,
-                    f"Write file `{logical_path}`",
+                    f"Write file `{display_logical_path}`",
                     display=diff_blocks,
                 )
                 if not result:
@@ -273,6 +276,6 @@ class WriteFile(CallableTool2[Params]):
             except Exception:
                 pass
             return ToolError(
-                message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to write to {params.path}. Error: {e}",
+                message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to write to {display_path}. Error: {e}",
                 brief="Failed to write file",
             )
