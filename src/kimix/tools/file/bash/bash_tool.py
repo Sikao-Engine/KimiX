@@ -18,6 +18,7 @@ from kimi_cli.tools.display import ShellDisplayBlock
 from kimi_cli.share import get_share_dir
 
 from kimix.tools.common import _maybe_export_output_async, ProcessTask
+from kimix.tools.file.run import _DEFAULT_FORBIDDEN_COMMANDS
 
 if TYPE_CHECKING:
     from kimi_agent_sdk import CallableTool2 as _CallableTool2
@@ -347,6 +348,14 @@ class Bash(CallableTool2[BashParams]):
         if not self._bash:
             raise SkipThisTool()
 
+        # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
+        raw_forbidden = _DEFAULT_FORBIDDEN_COMMANDS + self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
+        self._forbidden_tokens: list[list[str]] = []
+        for cmd in raw_forbidden:
+            if not isinstance(cmd, str) or not cmd:
+                continue
+            self._forbidden_tokens.append(" ".join(cmd.split()).split())
+
     async def __call__(self, params: BashParams) -> ToolReturnValue:
         """Execute the bash command via the system bash executable.
 
@@ -365,6 +374,19 @@ class Bash(CallableTool2[BashParams]):
                 brief="Empty command",
             )
 
+        # Check forbidden commands (pre-normalized in __init__)
+        if self._forbidden_tokens:
+            full_cmd = params.cmd
+            cmd_tokens = " ".join(full_cmd.split()).split()
+            for forbidden_tokens in self._forbidden_tokens:
+                if len(forbidden_tokens) > len(cmd_tokens):
+                    continue
+                if cmd_tokens[:len(forbidden_tokens)] == forbidden_tokens:
+                    return ToolError(
+                        output="",
+                        message=f"Command `{full_cmd}` is forbidden by config rule.",
+                        brief=full_cmd,
+                    )
 
         # Build the command line to pass to bash -c
         # On Windows, escape backslashes so bash preserves them in paths.

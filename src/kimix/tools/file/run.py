@@ -82,6 +82,14 @@ class Run(CallableTool2[RunParams]):
         self._semaphore = asyncio.Semaphore(8)
         self.use_posix = sys.platform != "win32"
 
+        # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
+        raw_forbidden = _DEFAULT_FORBIDDEN_COMMANDS + self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
+        self._forbidden_tokens: list[list[str]] = []
+        for cmd in raw_forbidden:
+            if not isinstance(cmd, str) or not cmd:
+                continue
+            self._forbidden_tokens.append(" ".join(cmd.split()).split())
+
     async def __call__(self, params: RunParams) -> ToolReturnValue:
         import os
         script_path: str | None = None
@@ -141,23 +149,17 @@ class Run(CallableTool2[RunParams]):
             cmd_str = shlex.join([executable] + display_args)
             display_cmd = executable if len(cmd_str) > _HUGE_CMD_THRESHOLD else cmd_str
 
-            # Check forbidden commands (default + user-configured)
-            forbidden_commands = _DEFAULT_FORBIDDEN_COMMANDS + self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
-            if forbidden_commands:
+            # Check forbidden commands (pre-normalized in __init__)
+            if self._forbidden_tokens:
                 full_cmd = params.command
-                normalized_cmd = " ".join(full_cmd.split())
-                cmd_tokens = normalized_cmd.split()
-                for forbidden in forbidden_commands:
-                    if not isinstance(forbidden, str) or not forbidden:
-                        continue
-                    normalized_forbidden = " ".join(forbidden.split())
-                    forbidden_tokens = normalized_forbidden.split()
+                cmd_tokens = " ".join(full_cmd.split()).split()
+                for forbidden_tokens in self._forbidden_tokens:
                     if len(forbidden_tokens) > len(cmd_tokens):
                         continue
                     if cmd_tokens[:len(forbidden_tokens)] == forbidden_tokens:
                         return ToolError(
                             output="",
-                            message=f"Command `{full_cmd}` is forbidden by config rule: `{forbidden}`.",
+                            message=f"Command `{full_cmd}` is forbidden by config rule.",
                             brief=display_cmd,
                         )
 
