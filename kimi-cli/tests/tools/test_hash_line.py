@@ -2001,3 +2001,123 @@ async def test_max_bytes_not_exceeded_small_file(hash_line_tool: HashRead, temp_
     assert "line 1" in result.output
     assert "line 2" in result.output
     assert "line 3" in result.output
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 25. New HashRead / HashEdit behavior tests (async)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def test_read_empty_path(hash_line_tool: HashRead):
+    """HashRead returns ToolError for empty path."""
+    result = await hash_line_tool(HashReadParams(path=""))
+    assert result.is_error
+    assert "File path cannot be empty" in result.message
+
+
+async def test_edit_file_mark_dirty_blocks_second_edit(
+    hash_edit_tool: HashEdit, temp_work_dir: KaosPath, session
+):
+    """Editing a tracked file whose mtime hasn't changed returns error."""
+    file_path = temp_work_dir / "test.txt"
+    content = "line 1\nline 2\nline 3\n"
+    await file_path.write_text(content)
+
+    # First edit succeeds (file is not yet tracked)
+    result1 = await hash_edit_tool(
+        HashEditParams(
+            path=str(file_path),
+            edits=[
+                ReplaceEdit(
+                    op="replace",
+                    pos=AnchorRef(line=2, hash=get_line_hash(content, 2)),
+                    end=None,
+                    lines=["MODIFIED"],
+                )
+            ],
+        )
+    )
+    assert not result1.is_error
+
+    # Simulate the tracker having the current mtime (no external change)
+    from kimi_cli.utils.path import kaos_path_from_user_input
+    key = str(kaos_path_from_user_input(str(file_path)).canonical())
+    st = await file_path.stat()
+    session.file_mtime._times[key] = st.st_mtime
+
+    # Second edit without an intervening read should fail
+    result2 = await hash_edit_tool(
+        HashEditParams(
+            path=str(file_path),
+            edits=[
+                ReplaceEdit(
+                    op="replace",
+                    pos=AnchorRef(line=3, hash=get_line_hash("line 1\nMODIFIED\nline 3\n", 3)),
+                    end=None,
+                    lines=["ALSO_MODIFIED"],
+                )
+            ],
+        )
+    )
+    assert result2.is_error
+    assert "File modified" in result2.message
+    assert "read file first" in result2.message
+
+
+async def test_edit_file_after_hashread_succeeds(
+    hash_line_tool: HashRead,
+    hash_edit_tool: HashEdit,
+    temp_work_dir: KaosPath,
+    session,
+):
+    """HashRead cleans the tracker so a subsequent HashEdit succeeds."""
+    file_path = temp_work_dir / "test.txt"
+    content = "line 1\nline 2\nline 3\n"
+    await file_path.write_text(content)
+
+    # First edit succeeds (untracked)
+    result1 = await hash_edit_tool(
+        HashEditParams(
+            path=str(file_path),
+            edits=[
+                ReplaceEdit(
+                    op="replace",
+                    pos=AnchorRef(line=2, hash=get_line_hash(content, 2)),
+                    end=None,
+                    lines=["MODIFIED"],
+                )
+            ],
+        )
+    )
+    assert not result1.is_error
+
+    # Manually set tracker to current mtime so a second edit would fail
+    from kimi_cli.utils.path import kaos_path_from_user_input
+    key = str(kaos_path_from_user_input(str(file_path)).canonical())
+    st = await file_path.stat()
+    session.file_mtime._times[key] = st.st_mtime
+
+    # Read the file with HashRead — this calls clean_file() and resets tracking
+    result2 = await hash_line_tool(HashReadParams(path=str(file_path)))
+    assert not result2.is_error
+
+    # Edit again should succeed because the tracker was cleared
+    result3 = await hash_edit_tool(
+        HashEditParams(
+            path=str(file_path),
+            edits=[
+                ReplaceEdit(
+                    op="replace",
+                    pos=AnchorRef(
+                        line=3,
+                        hash=get_line_hash("line 1\nMODIFIED\nline 3\n", 3),
+                    ),
+                    end=None,
+                    lines=["ALSO_MODIFIED"],
+                )
+            ],
+        )
+    )
+    assert not result3.is_error
+    assert "ALSO_MODIFIED" in await file_path.read_text()
