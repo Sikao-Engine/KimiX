@@ -20,6 +20,8 @@ from .utils import resolve_vfs
 
 NIBBLE_STR = "ZPMQVRWSNKTXJBYH"
 HASH_SEED = 0
+MAX_LINE_LENGTH = 2000
+MAX_BYTES = 100 << 10  # 100KB
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -605,23 +607,31 @@ def generate_hash_aware_diff(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-class Params(BaseModel):
-    op: Literal["read", "edit"] = Field(default="read")
+# ═══════════════════════════════════════════════════════════════════════════
+# HashRead — read files with hash-anchored line references
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class HashReadParams(BaseModel):
     path: str = Field(description="File path. Absolute for files outside working directory.")
     offset: int = Field(default=0, description="Line offset for read (0-based).")
     limit: int = Field(default=2000, description="Max lines to read.")
     max_char: int = Field(
         default=65536,
         ge=0,
-        description="Maximum characters per line. Longer lines are truncated with a marker.",
+        description="Maximum number of characters to return.",
     )
-    edits: list[HashlineEdit] | None = Field(default=None, description="Edits to apply.")
+    char_offset: int = Field(
+        default=0,
+        ge=0,
+        description="Character offset to start returning from.",
+    )
 
 
-class HashLine(CallableTool2[Params]):
-    name: str = "HashLine"
-    description: str = "Read or edit files using hash-anchored line references."
-    params: type[Params] = Params
+class HashRead(CallableTool2[HashReadParams]):
+    name: str = "HashRead"
+    description: str = "Read files using hash-anchored line references."
+    params: type[HashReadParams] = HashReadParams
 
     def __init__(
         self, runtime: Runtime, session: Session, vfs: VFS | None = None
@@ -634,7 +644,7 @@ class HashLine(CallableTool2[Params]):
         self._vfs = vfs
 
     async def _validate_path(
-        self, path: KaosPath, for_write: bool = False
+        self, path: KaosPath
     ) -> tuple[ToolError | None, bool]:
         resolved_path = path.canonical()
         inside = is_within_workspace(
@@ -653,11 +663,8 @@ class HashLine(CallableTool2[Params]):
                 False,
             )
 
-        config_key = (
-            "protected_write_paths" if for_write else "protected_read_paths"
-        )
         protected_paths = (
-            self._session.custom_config.get("config_json", {}).get(config_key)
+            self._session.custom_config.get("config_json", {}).get("protected_read_paths")
         )
         if protected_paths:
             from .utils import check_path_protected
@@ -665,10 +672,9 @@ class HashLine(CallableTool2[Params]):
             if matched := check_path_protected(
                 resolved_path, protected_paths, self._work_dir
             ):
-                action_word = "edit" if for_write else "read"
                 return (
                     ToolError(
-                        message=f"{action_word.capitalize()}ing `{path}` is blocked by protected path rule: `{matched}`.",
+                        message=f"Reading `{path}` is blocked by protected path rule: `{matched}`.",
                         brief="Protected path",
                     ),
                     False,
@@ -676,11 +682,23 @@ class HashLine(CallableTool2[Params]):
 
         return None, inside
 
-    async def _do_read(self, params: Params) -> ToolReturnValue:
+    @override
+    async def __call__(self, params: HashReadParams) -> ToolReturnValue:
+        if not params.path:
+            return ToolError(
+                message="File path cannot be empty.",
+                brief="Empty file path",
+            )
+        try:
+            return await self._do_read(params)
+        except Exception as e:
+            return ToolError(message=str(e), brief='Internal error.')
+
+    async def _do_read(self, params: HashReadParams) -> ToolReturnValue:
         display_path = params.path.replace("\\", "/")
         p = kaos_path_from_user_input(params.path)
         logical_path = p
-        err, _ = await self._validate_path(p, for_write=False)
+        err, _ = await self._validate_path(p)
         if err:
             return err
 
@@ -744,18 +762,29 @@ class HashLine(CallableTool2[Params]):
             cumulative_hashes.append(hash_str)
             prev_hash = hash_str
 
+        n_bytes = 0
+        max_bytes_reached = False
+        actual_end = end
         for i in range(start, end):
             line_num = i + 1
             line = lines[i]
             hash_str = cumulative_hashes[i]
             # Truncate long lines (hash is computed on original line)
-            if params.max_char > 0:
-                display_line = truncate_line(line, params.max_char)
-            else:
-                display_line = line
-            builder.write(f"{line_num}#{hash_str}:{display_line}\n")
+            display_line = truncate_line(line, MAX_LINE_LENGTH)
+            line_output = f"{line_num}#{hash_str}:{display_line}\n"
+            b_len = len(line_output.encode("utf-8"))
+            if n_bytes + b_len > MAX_BYTES and i > start:
+                max_bytes_reached = True
+                actual_end = i
+                break
+            builder.write(line_output)
+            n_bytes += b_len
 
-        if end < total_lines:
+        if max_bytes_reached:
+            builder.write(
+                f"\n(Output truncated at {MAX_BYTES // 1024}KB limit. Use 'offset' to read beyond line {actual_end})\n"
+            )
+        elif end < total_lines:
             builder.write(
                 f"\n(File has more lines. Use 'offset' parameter to read beyond line {end})\n"
             )
@@ -764,9 +793,90 @@ class HashLine(CallableTool2[Params]):
 
         builder.write("</file>")
         self._session.file_mtime.clean_file(params.path)
-        return builder.ok(message=f"Read {display_path}", brief=f"Read {display_path}")
+        result = builder.ok(message=f"Read {display_path}", brief=f"Read {display_path}")
+        # Apply char_offset / max_char slicing (like read.py)
+        if isinstance(result.output, str):
+            result.output = result.output[params.char_offset:params.max_char]
 
-    async def _do_edit(self, params: Params) -> ToolReturnValue:
+        return result
+
+# ═══════════════════════════════════════════════════════════════════════════
+# HashEdit — edit files using hash-anchored line references
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class HashEditParams(BaseModel):
+    path: str = Field(description="File path. Absolute for files outside working directory.")
+    edits: list[HashlineEdit] = Field(description="Edits to apply.")
+
+
+class HashEdit(CallableTool2[HashEditParams]):
+    name: str = "HashEdit"
+    description: str = "Edit files using hash-anchored line references."
+    params: type[HashEditParams] = HashEditParams
+
+    def __init__(
+        self, runtime: Runtime, session: Session, vfs: VFS | None = None
+    ) -> None:
+        super().__init__()
+        self._runtime = runtime
+        self._session = session
+        self._work_dir = runtime.builtin_args.KIMI_WORK_DIR
+        self._additional_dirs = runtime.additional_dirs
+        self._vfs = vfs
+
+    async def _validate_path(
+        self, path: KaosPath
+    ) -> tuple[ToolError | None, bool]:
+        resolved_path = path.canonical()
+        inside = is_within_workspace(
+            resolved_path, self._work_dir, self._additional_dirs
+        )
+        if not inside and not path.is_absolute():
+            return (
+                ToolError(
+                    message=(
+                        f"`{path}` is not an absolute path. "
+                        "You must provide an absolute path to access a file "
+                        "outside the working directory."
+                    ),
+                    brief="Invalid path",
+                ),
+                False,
+            )
+
+        protected_paths = (
+            self._session.custom_config.get("config_json", {}).get("protected_write_paths")
+        )
+        if protected_paths:
+            from .utils import check_path_protected
+
+            if matched := check_path_protected(
+                resolved_path, protected_paths, self._work_dir
+            ):
+                return (
+                    ToolError(
+                        message=f"Editing `{path}` is blocked by protected path rule: `{matched}`.",
+                        brief="Protected path",
+                    ),
+                    False,
+                )
+
+        return None, inside
+
+    @override
+    async def __call__(self, params: HashEditParams) -> ToolReturnValue:
+        if not params.path:
+            return ToolError(
+                message="File path cannot be empty.",
+                brief="Empty file path",
+            )
+        try:
+            return await self._do_edit(params)
+        except Exception as e:
+            return ToolError(message=str(e), brief='Internal error.')
+
+    async def _do_edit(self, params: HashEditParams) -> ToolReturnValue:
         display_path = params.path.replace("\\", "/")
 
         if not self._session.file_mtime.mark_dirty(params.path):
@@ -782,7 +892,7 @@ class HashLine(CallableTool2[Params]):
             _outside = not is_within_directory(
                 logical_path.canonical(), self._work_dir
             )
-            err, path_is_inside = await self._validate_path(p, for_write=True)
+            err, path_is_inside = await self._validate_path(p)
             if err:
                 if _outside:
                     err.message = f"[out of work-dir] {err.message}"
@@ -807,12 +917,6 @@ class HashLine(CallableTool2[Params]):
 
             content = await p.read_text(errors="replace")
             original_content = content
-
-            if params.edits is None:
-                return ToolError(
-                    message="No edits provided for edit operation.",
-                    brief="No edits provided",
-                )
 
             new_content, first_changed = apply_hashline_edits(content, params.edits)
 
@@ -863,7 +967,7 @@ class HashLine(CallableTool2[Params]):
             )
         except Exception as e:
             logger.warning(
-                "HashLine edit failed: {path}: {error}",
+                "HashEdit edit failed: {path}: {error}",
                 path=params.path,
                 error=e,
             )
@@ -880,17 +984,7 @@ class HashLine(CallableTool2[Params]):
                 brief="Failed to edit file",
             )
 
-    @override
-    async def __call__(self, params: Params) -> ToolReturnValue:
-        if not params.path:
-            return ToolError(
-                message="File path cannot be empty.",
-                brief="Empty file path",
-            )
-        try:
-            if params.op == "read":
-                return await self._do_read(params)
-            else:
-                return await self._do_edit(params)
-        except Exception as e:
-            return ToolError(message=str(e), brief='Internal error.')
+
+# Backward-compat aliases
+HashLine = HashRead  # noqa: F811
+Params = HashReadParams  # noqa: F811

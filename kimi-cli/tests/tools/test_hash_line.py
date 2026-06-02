@@ -1,4 +1,4 @@
-"""Tests for the HashLine tool."""
+"""Tests for HashRead, HashEdit, and shared hash_line utilities."""
 
 from __future__ import annotations
 
@@ -10,8 +10,14 @@ from kimi_cli.tools.file.hash_line import (
     AnchorRef,
     AppendEdit,
     DeleteEdit,
+    HashMismatch,
+    HashRead,
+    HashEdit,
+    HashReadParams,
+    HashEditParams,
     HashLine,
     HashlineMismatchError,
+    NIBBLE_STR,
     Params,
     PrependEdit,
     ReplaceEdit,
@@ -19,6 +25,7 @@ from kimi_cli.tools.file.hash_line import (
     compute_line_hash,
     generate_hash_aware_diff,
     parse_anchor,
+    validate_anchor_ref,
 )
 
 
@@ -125,13 +132,13 @@ def test_anchor_ref_model_validate_string():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-async def test_read_simple_file(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_read_simple_file(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """Read a file, verify output contains <file>, line hashes, content."""
     file_path = temp_work_dir / "test.txt"
     content = "line 1\nline 2\nline 3\n"
     await file_path.write_text(content)
 
-    result = await hash_line_tool(Params(path=str(file_path)))
+    result = await hash_line_tool(HashReadParams(path=str(file_path)))
     assert not result.is_error
     assert result.output == snapshot(
         f"""\
@@ -147,23 +154,23 @@ async def test_read_simple_file(hash_line_tool: HashLine, temp_work_dir: KaosPat
     assert result.message == snapshot(f"Read {display_path}.")
 
 
-async def test_read_empty_file(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_read_empty_file(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """Empty file returns '(End of file - 0 lines)'."""
     file_path = temp_work_dir / "empty.txt"
     await file_path.write_text("")
 
-    result = await hash_line_tool(Params(path=str(file_path)))
+    result = await hash_line_tool(HashReadParams(path=str(file_path)))
     assert not result.is_error
     assert result.output == snapshot("<file>\n(End of file - 0 lines)\n</file>")
 
 
-async def test_read_with_offset(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_read_with_offset(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """Offset skips first N lines."""
     file_path = temp_work_dir / "test.txt"
     content = "line 1\nline 2\nline 3\nline 4\nline 5\n"
     await file_path.write_text(content)
 
-    result = await hash_line_tool(Params(path=str(file_path), offset=2))
+    result = await hash_line_tool(HashReadParams(path=str(file_path), offset=2))
     assert not result.is_error
     assert result.output == snapshot(
         f"""\
@@ -177,13 +184,13 @@ async def test_read_with_offset(hash_line_tool: HashLine, temp_work_dir: KaosPat
     )
 
 
-async def test_read_with_limit(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_read_with_limit(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """Limit restricts number of lines."""
     file_path = temp_work_dir / "test.txt"
     content = "line 1\nline 2\nline 3\nline 4\nline 5\n"
     await file_path.write_text(content)
 
-    result = await hash_line_tool(Params(path=str(file_path), limit=2))
+    result = await hash_line_tool(HashReadParams(path=str(file_path), limit=2))
     assert not result.is_error
     assert result.output == snapshot(
         f"""\
@@ -196,23 +203,23 @@ async def test_read_with_limit(hash_line_tool: HashLine, temp_work_dir: KaosPath
     )
 
 
-async def test_read_offset_beyond_eof(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_read_offset_beyond_eof(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """Offset beyond file length returns 0 lines message."""
     file_path = temp_work_dir / "test.txt"
     await file_path.write_text("line 1\nline 2\n")
 
-    result = await hash_line_tool(Params(path=str(file_path), offset=100))
+    result = await hash_line_tool(HashReadParams(path=str(file_path), offset=100))
     assert not result.is_error
     assert result.output == snapshot("<file>\n(End of file - 0 lines)\n</file>")
 
 
-async def test_read_unicode(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_read_unicode(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """Unicode content handled correctly."""
     file_path = temp_work_dir / "unicode.txt"
     content = "Hello 世界\n🎉 Emoji test\n"
     await file_path.write_text(content)
 
-    result = await hash_line_tool(Params(path=str(file_path)))
+    result = await hash_line_tool(HashReadParams(path=str(file_path)))
     assert not result.is_error
     assert result.output == snapshot(
         f"""\
@@ -225,13 +232,13 @@ async def test_read_unicode(hash_line_tool: HashLine, temp_work_dir: KaosPath):
     )
 
 
-async def test_read_trailing_newline(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_read_trailing_newline(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """File with trailing newline preserves hash computation."""
     file_path = temp_work_dir / "test.txt"
     content = "line 1\nline 2\n"
     await file_path.write_text(content)
 
-    result = await hash_line_tool(Params(path=str(file_path)))
+    result = await hash_line_tool(HashReadParams(path=str(file_path)))
     assert not result.is_error
     assert result.output == snapshot(
         f"""\
@@ -244,21 +251,21 @@ async def test_read_trailing_newline(hash_line_tool: HashLine, temp_work_dir: Ka
     )
 
 
-async def test_read_nonexistent_file(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_read_nonexistent_file(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """Returns ToolError."""
     file_path = temp_work_dir / "nonexistent.txt"
-    result = await hash_line_tool(Params(path=str(file_path)))
+    result = await hash_line_tool(HashReadParams(path=str(file_path)))
     assert result.is_error
     display_path = str(file_path).replace("\\", "/")
     assert result.message == snapshot(f"`{display_path}` does not exist.")
 
 
-async def test_read_directory(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_read_directory(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """Returns ToolError."""
     dir_path = temp_work_dir / "directory"
     await dir_path.mkdir()
 
-    result = await hash_line_tool(Params(path=str(dir_path)))
+    result = await hash_line_tool(HashReadParams(path=str(dir_path)))
     assert result.is_error
     display_path = str(dir_path).replace("\\", "/")
     assert result.message == snapshot(f"`{display_path}` is not a file.")
@@ -758,16 +765,15 @@ def test_diff_note_present():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-async def test_edit_file_success(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_edit_file_success(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
     """Full tool call edits file on disk."""
     file_path = temp_work_dir / "test.txt"
     content = "line 1\nline 2\nline 3\n"
     await file_path.write_text(content)
 
-    result = await hash_line_tool(
-        Params(
+    result = await hash_edit_tool(
+        HashEditParams(
             path=str(file_path),
-            op="edit",
             edits=[
                 ReplaceEdit(
                     op="replace",
@@ -785,15 +791,14 @@ async def test_edit_file_success(hash_line_tool: HashLine, temp_work_dir: KaosPa
     assert await file_path.read_text() == "line 1\nMODIFIED\nline 3\n"
 
 
-async def test_edit_file_hash_mismatch(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_edit_file_hash_mismatch(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
     """Tool returns ToolError with hash mismatch message."""
     file_path = temp_work_dir / "test.txt"
     await file_path.write_text("first\nsecond\nthird\n")
 
-    result = await hash_line_tool(
-        Params(
+    result = await hash_edit_tool(
+        HashEditParams(
             path=str(file_path),
-            op="edit",
             edits=[
                 ReplaceEdit(
                     op="replace",
@@ -809,16 +814,15 @@ async def test_edit_file_hash_mismatch(hash_line_tool: HashLine, temp_work_dir: 
     assert "changed since last read" in result.message
 
 
-async def test_edit_file_overlapping(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_edit_file_overlapping(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
     """Tool returns ToolError for overlapping edits."""
     file_path = temp_work_dir / "test.txt"
     content = "line 1\nline 2\nline 3\nline 4\nline 5\n"
     await file_path.write_text(content)
 
-    result = await hash_line_tool(
-        Params(
+    result = await hash_edit_tool(
+        HashEditParams(
             path=str(file_path),
-            op="edit",
             edits=[
                 ReplaceEdit(
                     op="replace",
@@ -839,15 +843,14 @@ async def test_edit_file_overlapping(hash_line_tool: HashLine, temp_work_dir: Ka
     assert "Overlapping edits detected" in result.message
 
 
-async def test_edit_file_no_changes(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_edit_file_no_changes(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
     """Tool returns success with 'No changes made'."""
     file_path = temp_work_dir / "test.txt"
     await file_path.write_text("first\nsecond\nthird\n")
 
-    result = await hash_line_tool(
-        Params(
+    result = await hash_edit_tool(
+        HashEditParams(
             path=str(file_path),
-            op="edit",
             edits=[],
         )
     )
@@ -856,20 +859,19 @@ async def test_edit_file_no_changes(hash_line_tool: HashLine, temp_work_dir: Kao
     assert result.output == ""
 
 
-async def test_edit_file_empty_path(hash_line_tool: HashLine):
+async def test_edit_file_empty_path(hash_edit_tool: HashEdit):
     """Tool returns ToolError for empty path."""
-    result = await hash_line_tool(Params(path="", op="edit", edits=[]))
+    result = await hash_edit_tool(HashEditParams(path="", edits=[]))
     assert result.is_error
     assert "File path cannot be empty" in result.message
 
 
-async def test_edit_file_nonexistent(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_edit_file_nonexistent(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
     """Tool returns ToolError for nonexistent file."""
     file_path = temp_work_dir / "nonexistent.txt"
-    result = await hash_line_tool(
-        Params(
+    result = await hash_edit_tool(
+        HashEditParams(
             path=str(file_path),
-            op="edit",
             edits=[
                 ReplaceEdit(
                     op="replace",
@@ -886,15 +888,14 @@ async def test_edit_file_nonexistent(hash_line_tool: HashLine, temp_work_dir: Ka
     assert "does not exist" in result.message
 
 
-async def test_edit_file_not_a_file(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_edit_file_not_a_file(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
     """Tool returns ToolError for directory."""
     dir_path = temp_work_dir / "directory"
     await dir_path.mkdir()
 
-    result = await hash_line_tool(
-        Params(
+    result = await hash_edit_tool(
+        HashEditParams(
             path=str(dir_path),
-            op="edit",
             edits=[
                 ReplaceEdit(
                     op="replace",
@@ -951,12 +952,12 @@ def test_special_characters():
     assert "你好" in result
 
 
-async def test_windows_line_endings(hash_line_tool: HashLine, temp_work_dir: KaosPath):
+async def test_windows_line_endings(hash_line_tool: HashRead, temp_work_dir: KaosPath):
     """\\r\\n handling in read."""
     file_path = temp_work_dir / "test.txt"
     await file_path.write_bytes(b"line 1\r\nline 2\r\nline 3\r\n")
 
-    result = await hash_line_tool(Params(path=str(file_path)))
+    result = await hash_line_tool(HashReadParams(path=str(file_path)))
     assert not result.is_error
     # Hashes should be computed on lines without \r
     content_normalized = "line 1\nline 2\nline 3\n"
@@ -1080,7 +1081,6 @@ def test_seed_overflow_from_prev_hash():
 
 def test_hash_space_is_256():
     """Verify the hash output space is exactly 256 values (16 x 16 nibble combinations)."""
-    from kimi_cli.tools.file.hash_line import NIBBLE_STR
 
     assert len(NIBBLE_STR) == 16
     # All possible 2-char combinations
@@ -1366,14 +1366,9 @@ def test_compute_line_hash_mixed_cr():
 
 def test_hashline_mismatch_error_display():
     """HashlineMismatchError __str__ includes context lines."""
+
     content = "line 1\nline 2\nline 3\nline 4\nline 5\n"
     file_lines = content.splitlines()
-    mismatches = [
-        __import__("kimi_cli.tools.file.hash_line", fromlist=["HashMismatch"]).HashMismatch(
-            line=3, expected="XX", actual=get_line_hash(content, 3)
-        )
-    ]
-    from kimi_cli.tools.file.hash_line import HashMismatch
     mismatches = [HashMismatch(line=3, expected="XX", actual=get_line_hash(content, 3))]
     error = HashlineMismatchError(mismatches, file_lines)
     error_str = str(error)
@@ -1398,7 +1393,6 @@ def test_apply_hashline_edits_multiple_mismatches():
 
 def test_validate_anchor_ref_line_zero():
     """Directly test validate_anchor_ref with line=0."""
-    from kimi_cli.tools.file.hash_line import validate_anchor_ref
 
     file_lines = ["line 1"]
     mismatches: list = []
@@ -1526,7 +1520,6 @@ def test_cumulative_hash_insertion_shifts():
 
 def test_mismatch_error_single_line():
     """Single mismatch uses singular 'line'."""
-    from kimi_cli.tools.file.hash_line import HashMismatch
 
     file_lines = ["line 1", "line 2", "line 3"]
     mismatches = [HashMismatch(line=2, expected="ZZ", actual="AB")]
@@ -1538,7 +1531,6 @@ def test_mismatch_error_single_line():
 
 def test_mismatch_error_multiple_lines():
     """Multiple mismatches use plural 'lines'."""
-    from kimi_cli.tools.file.hash_line import HashMismatch
 
     file_lines = ["line 1", "line 2", "line 3"]
     mismatches = [
@@ -1552,7 +1544,6 @@ def test_mismatch_error_multiple_lines():
 
 def test_mismatch_error_context_at_boundary():
     """Mismatch at line 1 still shows context (no lines before)."""
-    from kimi_cli.tools.file.hash_line import HashMismatch
 
     file_lines = ["line 1", "line 2", "line 3"]
     mismatches = [HashMismatch(line=1, expected="ZZ", actual="AB")]
@@ -1878,7 +1869,6 @@ def test_fuzzy_fallback_not_triggered_for_wrong_hash():
 
 def test_fuzzy_fallback_with_direct_validate_call():
     """Fuzzy fallback in validate_anchor_ref triggers when file_lines contain \r."""
-    from kimi_cli.tools.file.hash_line import validate_anchor_ref
 
     # file_lines with \r (simulating lines before splitlines normalization)
     file_lines = ["line 1\r", "line 2\r", "line 3"]
@@ -1919,58 +1909,95 @@ def test_fuzzy_fallback_prev_hash_chain():
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-async def test_max_char_truncation(hash_line_tool: HashLine, temp_work_dir: KaosPath):
-    """Lines longer than max_char are truncated with marker in read output."""
-    file_path = temp_work_dir / "long_lines.txt"
-    long_line = "x" * 100
-    content = f"short\n{long_line}\nnormal\n"
+async def test_max_char_output_limit(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+    """max_char limits total output characters (like read.py)."""
+    file_path = temp_work_dir / "test.txt"
+    content = "line 1\nline 2\nline 3\nline 4\nline 5\n"
     await file_path.write_text(content)
 
-    # Use a small max_char to force truncation
-    result = await hash_line_tool(Params(path=str(file_path), max_char=20))
+    # Use a small max_char to limit total output
+    result = await hash_line_tool(HashReadParams(path=str(file_path), max_char=30))
     assert not result.is_error
-    # The long line should be truncated
-    assert "..." in result.output
-    # The short lines should be intact
-    assert "short" in result.output
-    assert "normal" in result.output
-    # Hash prefix should still be present
-    assert "2#" in result.output
-
-
-async def test_max_char_zero_no_truncation(hash_line_tool: HashLine, temp_work_dir: KaosPath):
-    """max_char=0 means no truncation (all lines shown fully)."""
-    file_path = temp_work_dir / "long_lines.txt"
-    long_line = "x" * 100
-    content = f"{long_line}\n"
-    await file_path.write_text(content)
-
-    result = await hash_line_tool(Params(path=str(file_path), max_char=0))
-    assert not result.is_error
-    # Full line should be present (no truncation)
-    assert long_line in result.output
-    assert "..." not in result.output
-
-
-async def test_max_char_larger_than_lines(hash_line_tool: HashLine, temp_work_dir: KaosPath):
-    """max_char larger than all lines means no truncation."""
-    file_path = temp_work_dir / "short_lines.txt"
-    content = "line 1\nline 2\n"
-    await file_path.write_text(content)
-
-    result = await hash_line_tool(Params(path=str(file_path), max_char=65536))
-    assert not result.is_error
+    assert len(result.output) <= 30
+    # Should contain beginning but cut off
     assert "line 1" in result.output
-    assert "line 2" in result.output
+
+
+async def test_max_char_zero_empty_output(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+    """max_char=0 returns empty output."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("line 1\nline 2\n")
+
+    result = await hash_line_tool(HashReadParams(path=str(file_path), max_char=0))
+    assert not result.is_error
+    assert result.output == ""
+
+
+async def test_char_offset_skip_start(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+    """char_offset skips first N characters of output."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("line 1\nline 2\n")
+
+    # Read full output first to know the length
+    full = await hash_line_tool(HashReadParams(path=str(file_path)))
+    assert not full.is_error
+    full_output = full.output
+
+    # With offset=5, first 5 chars are skipped
+    result = await hash_line_tool(HashReadParams(path=str(file_path), char_offset=5))
+    assert not result.is_error
+    assert result.output == full_output[5:]
+
+
+async def test_max_char_and_char_offset_combined(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+    """char_offset and max_char together: skip N then take M chars."""
+    file_path = temp_work_dir / "test.txt"
+    await file_path.write_text("line 1\nline 2\nline 3\n")
+
+    full = await hash_line_tool(HashReadParams(path=str(file_path)))
+    assert not full.is_error
+    full_output = full.output
+
+    result = await hash_line_tool(HashReadParams(path=str(file_path), char_offset=3, max_char=10))
+    assert not result.is_error
+    # max_char is the end index (Python slice semantics): [char_offset:max_char]
+    assert result.output == full_output[3:10]
 
 
 def test_max_char_hash_unchanged_by_truncation():
-    """Truncation is display-only; hashes are computed on full original lines."""
-    # This is tested indirectly: the hashes in read output should match
-    # hashes computed on the full file content
-    content = "short\n" + "x" * 200 + "\nnormal\n"
+    """Per-line truncation (MAX_LINE_LENGTH) is display-only; hashes are on full lines."""
+    content = "short\n" + "x" * 3000 + "\nnormal\n"
     h1 = get_line_hash(content, 1)
     h2 = get_line_hash(content, 2)
     h3 = get_line_hash(content, 3)
     assert len(h1) == len(h2) == len(h3) == 2
-    # Hashes are always 2 chars regardless of line length
+    # The long line hash is computed on the original 3000-char line, not truncated
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def test_max_bytes_truncation(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+    """Output is truncated when exceeding MAX_BYTES (100KB)."""
+    file_path = temp_work_dir / "big.txt"
+    # Generate ~200KB of content to exceed the 100KB limit
+    big_line = "x" * 1000
+    lines = [f"line {i}: {big_line}" for i in range(200)]
+    content_text = "\n".join(lines) + "\n"
+    await file_path.write_text(content_text)
+
+    result = await hash_line_tool(HashReadParams(path=str(file_path)))
+    assert not result.is_error
+    assert "KB" in result.output
+
+
+async def test_max_bytes_not_exceeded_small_file(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+    """Small files under MAX_BYTES are shown completely."""
+    file_path = temp_work_dir / "small.txt"
+    await file_path.write_text("line 1\nline 2\nline 3\n")
+
+    result = await hash_line_tool(HashReadParams(path=str(file_path)))
+    assert not result.is_error
+    assert "truncated" not in result.output.lower()
+    assert "line 1" in result.output
+    assert "line 2" in result.output
+    assert "line 3" in result.output

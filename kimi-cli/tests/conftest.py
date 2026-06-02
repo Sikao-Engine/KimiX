@@ -43,7 +43,7 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditFile
 from kimi_cli.tools.file.write import WriteFile
-from kimi_cli.tools.file.hash_line import HashLine
+from kimi_cli.tools.file.hash_line import HashRead, HashEdit, HashLine
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.think import Think
 from kimi_cli.tools.step_mem import StepMemory
@@ -330,8 +330,20 @@ def edit_file_tool(runtime: Runtime, approval: Approval, session: Session) -> Ge
 
 @pytest.fixture
 def hash_line_tool(runtime: Runtime, session: Session) -> HashLine:
-    """Create a HashLine tool instance."""
+    """Create a HashLine tool instance (backward-compat alias for HashRead)."""
     return HashLine(runtime, session)
+
+
+@pytest.fixture
+def hash_read_tool(runtime: Runtime, session: Session) -> HashRead:
+    """Create a HashRead tool instance."""
+    return HashRead(runtime, session)
+
+
+@pytest.fixture
+def hash_edit_tool(runtime: Runtime, session: Session) -> HashEdit:
+    """Create a HashEdit tool instance."""
+    return HashEdit(runtime, session)
 
 
 @pytest.fixture

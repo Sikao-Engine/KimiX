@@ -10,7 +10,8 @@
       "kimi_cli.tools.file:Glob",
       "kimi_cli.tools.file:Grep",
       "kimix.tools.web.fetch_url:FetchURL",
-      "kimi_cli.tools.file:HashLine",
+      "kimi_cli.tools.file:HashRead",
+      "kimi_cli.tools.file:HashEdit",
       "kimi_cli.tools.file:WriteFile"
     ]
   }
