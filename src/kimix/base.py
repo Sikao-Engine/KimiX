@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import orjson
 import os
 import re
 import subprocess
@@ -432,26 +433,157 @@ def _format_tool_result(result: ToolResult) -> str:
     return rv.message or ""
 
 
-def _handle_tool_call(wire_msg: ToolCall, output_function: Callable[[str, MessageType], Any] | None) -> None:
-    name = wire_msg.function.name
-    header = f"⚡ {name}"
-    _stream.colorful_print_word(
-        header, fg=Color.BRIGHT_MAGENTA, require_new_line=True)
-    _stream._state = StreamPrintState.Other
-    if output_function:
-        output_function(
-            f"{name} {wire_msg.function.arguments or ''}", MessageType.ToolCalling)
+_LAST_TOOL_CALL_KEY = "_kimix_last_tool_call"
 
 
-def _handle_tool_call_part(wire_msg: ToolCallPart, output_function: Callable[[str, MessageType], Any] | None) -> None:
-    part = wire_msg.arguments_part or ""
-    if output_function and part:
-        output_function(part, MessageType.ToolCallingPart)
-    _stream.print_word('', True)
-    _stream._state = StreamPrintState.Other
+def _format_tool_args(name: str, args: str | None) -> str | None:
+    """Format tool arguments into a friendly one-line sentence."""
+    if args is None:
+        return None
+    if args == "":
+        return ""
+    try:
+        parsed = orjson.loads(args)
+    except (orjson.JSONDecodeError, TypeError):
+        return None
+
+    try:
+        if not isinstance(parsed, dict):
+            return orjson.dumps(parsed).decode("utf-8")
+
+        def _fmt(v: Any, max_len: int = 60) -> str:
+            if v is None:
+                return "None"
+            s = str(v)
+            if len(s) > max_len:
+                return s[:max_len] + "..."
+            return s
+
+        def _collect(*keys: str, hide: set[str] | None = None) -> list[str]:
+            hide = hide or set()
+            parts: list[str] = []
+            for key in keys:
+                if key in parsed:
+                    if key in hide:
+                        parts.append(f"{key}: ...")
+                    else:
+                        parts.append(f"{key}: {_fmt(parsed[key])}")
+            return parts
+
+        match name:
+            case "Bash":
+                return ", ".join(_collect("cmd", "cwd", "timeout", "output_path"))
+            case "Run":
+                return ", ".join(_collect("command", "cwd", "timeout", "output_path", "env", "run_in_background"))
+            case "Python":
+                return ", ".join(_collect("code", "output_path", "timeout", "run_in_background", hide={"code"}))
+            case "Input":
+                return ", ".join(_collect("task_id", "text"))
+            case "TaskOutput":
+                return ", ".join(_collect("task_id", "block", "timeout", "output_path", "kill"))
+            case "Search":
+                return ", ".join(_collect("prompt", "dest_path"))
+            case "SetTodoList":
+                parts: list[str] = []
+                if "todos" in parsed:
+                    todos = parsed["todos"]
+                    if todos is None:
+                        parts.append("todos=None")
+                    elif isinstance(todos, list):
+                        parts.append(f"todos=[{len(todos)} items]")
+                    else:
+                        parts.append("todos=[1 item]")
+                if parsed.get("force_replace"):
+                    parts.append("force_replace=True")
+                return ", ".join(parts)
+            case "StepMemory":
+                return ", ".join(_collect("action", "step", "result", "files", "brief"))
+            case "ReadFile":
+                return ", ".join(_collect("path", "line_offset", "n_lines", "max_char", "char_offset"))
+            case "EditFile":
+                parts = []
+                if "path" in parsed:
+                    parts.append(f"path={_fmt(parsed['path'])}")
+                if "edit" in parsed:
+                    edit = parsed["edit"]
+                    if edit is None:
+                        parts.append("edit=None")
+                    elif isinstance(edit, list):
+                        parts.append(f"edit=[{len(edit)} edit(s)]")
+                    else:
+                        parts.append("edit=[1 edit]")
+                return ", ".join(parts)
+            case "WriteFile":
+                return ", ".join(_collect("path", "content", "mode", hide={"content"}))
+            case "Glob":
+                return ", ".join(_collect("pattern", "directory", "include_dirs", "include_ignored"))
+            case "Grep":
+                return ", ".join(
+                    _collect(
+                        "pattern", "path", "glob", "output_mode",
+                        "-B", "-A", "-C", "-n", "-i",
+                        "type", "head_limit", "offset", "multiline", "include_ignored",
+                    )
+                )
+            case "FetchURL":
+                return ", ".join(_collect("url", "output_path"))
+            case "Agent":
+                return ", ".join(_collect("prompt", "session_id"))
+            case _:
+                return orjson.dumps(parsed).decode("utf-8")
+    except TypeError:
+        return None
 
 
-def _handle_tool_result(wire_msg: ToolResult, output_function: Callable[[str, MessageType], Any] | None) -> None:
+def _handle_tool_call(
+    wire_msg: ToolCall | ToolCallPart,
+    output_function: Callable[[str, MessageType], Any] | None,
+    session: Session,
+) -> None:
+    if isinstance(wire_msg, ToolCall):
+        session._tmp_data[_LAST_TOOL_CALL_KEY] = wire_msg
+        name = wire_msg.function.name
+        args = wire_msg.function.arguments
+        formatted = _format_tool_args(name, args)
+        if formatted:
+            header = f"⚡ {name} {formatted}"
+        elif formatted is not None:
+            header = f"⚡ {name}"
+        else:
+            return
+        _stream.colorful_print_word(
+            header, fg=Color.BRIGHT_MAGENTA, require_new_line=True)
+        _stream._state = StreamPrintState.Other
+        if output_function:
+            output_function(
+                f"{name} {args or ''}", MessageType.ToolCalling)
+    else:  # ToolCallPart
+        last_tc: ToolCall = session._tmp_data.get(_LAST_TOOL_CALL_KEY)
+        if last_tc is not None:
+            last_tc.merge_in_place(wire_msg)
+        if last_tc is not None:
+            name = last_tc.function.name
+            args = last_tc.function.arguments
+            if args:
+                formatted = _format_tool_args(name, args)
+                header = None
+                if formatted:
+                    header = f"⚡ {name} {formatted}"
+                elif formatted is not None:
+                    header = f"⚡ {name}"
+                if header:
+                    _stream.colorful_print_word(header, fg=Color.BRIGHT_MAGENTA, require_new_line=True)
+            if output_function:
+                output_function(f"{name} {args or ''}", MessageType.ToolCallingPart)
+        elif output_function:
+            part = wire_msg.arguments_part or ""
+            if part:
+                output_function(part, MessageType.ToolCallingPart)
+        _stream.print_word('', True)
+        _stream._state = StreamPrintState.Other
+
+
+def _handle_tool_result(wire_msg: ToolResult, output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
     rv = wire_msg.return_value
     display_text = _format_display_blocks(rv.display)
     _stream.print_word(display_text, require_new_line=True)
@@ -472,20 +604,20 @@ def _handle_tool_result(wire_msg: ToolResult, output_function: Callable[[str, Me
             output_function(formatted, MessageType.ToolResult)
 
 
-def _handle_approval_request(wire_msg: ApprovalRequest, _output_function: Callable[[str, MessageType], Any] | None) -> None:
+def _handle_approval_request(wire_msg: ApprovalRequest, _output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
     wire_msg.resolve("approve")
 
 
-def _handle_noop(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None) -> None:
+def _handle_noop(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
     pass
 
 
-def _handle_compaction_begin(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None) -> None:
+def _handle_compaction_begin(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
     _stream.colorful_print_word(
         "Compacting...", require_new_line=True, fg=Color.BRIGHT_MAGENTA)
 
 
-def _handle_think_part(wire_msg: ThinkPart, output_function: Callable[[str, MessageType], Any] | None) -> None:
+def _handle_think_part(wire_msg: ThinkPart, output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
     think_content = wire_msg.think
     if not _quiet:
         if output_function:
@@ -499,7 +631,7 @@ def _handle_think_part(wire_msg: ThinkPart, output_function: Callable[[str, Mess
         _stream._state = StreamPrintState.Thinking
 
 
-def _handle_text_part(wire_msg: TextPart, output_function: Callable[[str, MessageType], Any] | None) -> None:
+def _handle_text_part(wire_msg: TextPart, output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
     chunk = wire_msg.text
     if output_function:
         output_function(chunk, MessageType.Text)
@@ -508,13 +640,13 @@ def _handle_text_part(wire_msg: TextPart, output_function: Callable[[str, Messag
     _stream._state = StreamPrintState.Text
 
 
-def _handle_other(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None) -> None:
+def _handle_other(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
     _stream._state = StreamPrintState.Other
 
 
-_PRINT_AGENT_JSON_DISPATCH: dict[type, Callable[[Any, Callable[[str, MessageType], Any] | None], None]] = {
+_PRINT_AGENT_JSON_DISPATCH: dict[type, Callable[[Any, Callable[[str, MessageType], Any] | None, Session], None]] = {
     ToolCall: _handle_tool_call,
-    ToolCallPart: _handle_tool_call_part,
+    ToolCallPart: _handle_tool_call,
     ToolResult: _handle_tool_result,
     ApprovalRequest: _handle_approval_request,
     StepBegin: _handle_noop,
@@ -534,9 +666,9 @@ def print_agent_json(
     _print_transition_usage(session, _message_transition_type(wire_msg))
     handler = _PRINT_AGENT_JSON_DISPATCH.get(type(wire_msg))
     if handler is not None:
-        handler(wire_msg, output_function)
+        handler(wire_msg, output_function, session)
     else:
-        _handle_other(wire_msg, output_function)
+        _handle_other(wire_msg, output_function, session)
 
 
 def run_thread(

@@ -79,6 +79,7 @@ class Session:
         self._cancel_event: asyncio.Event | None = None
         self._closed = False
         self._create_kwargs: dict[str, Any] = {}
+        self._tmp_data: dict[str, Any] = {}
         self._anonymous = False
 
     async def clear(self, **custom_arguments) -> None:
@@ -91,6 +92,7 @@ class Session:
         Raises:
             SessionStateError: When the session is closed.
         """
+        self._tmp_data.clear()
         if self._closed:
             return
         if self._cancel_event is not None:
@@ -134,6 +136,7 @@ class Session:
         Args:
             new_session_id: The new session ID to rename to.
         """
+        self._tmp_data.clear()
         work_dir = self._cli.session.work_dir
         old_session_id: str | None = None
 
@@ -191,6 +194,7 @@ class Session:
             LLMNotSet: When the LLM is not set.
             ChatProviderError: When the chat provider returns an error.
         """
+        self._tmp_data.clear()
         if self._closed:
             raise SessionStateError("Session is closed")
         if self._cancel_event is not None:
@@ -471,6 +475,7 @@ class Session:
             SessionStateError: When the session is closed.
             ValueError: When there are no messages to export or writing fails.
         """
+        self._tmp_data.clear()
         if self._closed:
             raise SessionStateError("Session is closed")
 
@@ -517,6 +522,7 @@ class Session:
         Note:
             Callers must handle ApprovalRequest manually unless yolo=True.
         """
+        self._tmp_data.clear()
         if isinstance(user_input, str):
             user_input = sanitize_for_tokenizer(user_input).strip()
             if not user_input:
