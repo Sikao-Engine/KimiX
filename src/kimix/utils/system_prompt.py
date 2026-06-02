@@ -85,9 +85,7 @@ def get_system_prompt(
                 use_skills = True
                 role_doc = 'You are a planner'
                 items.append('Plan only. Do not implement.')
-                items.append('Record steps with `Note`.')
-                items.append('No multiple steps at once.')
-                items.append('Use `Agent` to enable sub-agent, for research, analyze, find, retrieval.')
+                items.append('Record comprehensive plan with `Note`.')
             case SystemPromptType.SwarmCoordinator:
                 use_agent_md = True
                 use_skills = True

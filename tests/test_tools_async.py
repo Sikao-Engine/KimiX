@@ -358,3 +358,20 @@ class TestAsyncIntegration:
         await stream2.wait()
         remove_task_id(mock_session, "t1")
         remove_task_id(mock_session, "t2")
+
+
+# ---------------------------------------------------------------------------
+# RunParams scalar compatibility
+# ---------------------------------------------------------------------------
+class TestRunParams:
+    def test_env_accepts_string(self) -> None:
+        p = RunParams(command="echo hello", env="FOO=bar")
+        assert p.env == "FOO=bar"
+
+    def test_env_accepts_list(self) -> None:
+        p = RunParams(command="echo hello", env=["FOO=bar", "BAZ=qux"])
+        assert p.env == ["FOO=bar", "BAZ=qux"]
+
+    def test_env_none_default(self) -> None:
+        p = RunParams(command="echo hello")
+        assert p.env is None

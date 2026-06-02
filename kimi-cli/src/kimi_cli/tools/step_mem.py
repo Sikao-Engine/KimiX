@@ -33,7 +33,7 @@ class Params(BaseModel):
         default=None,
         description="Optional for save: outcome summary (success/failure/output).",
     )
-    files: list[str] | None = Field(
+    files: str | list[str] | None = Field(
         default=None,
         description="Optional: for save, list of files involved in this step. For load, search ToolCallReason for these files.",
     )
@@ -129,7 +129,7 @@ class StepMemory(CallableTool2[Params]):
                 "brief": params.brief or params.step[:50],
                 "step": params.step,
                 "result": params.result or "",
-                "files": params.files or [],
+                "files": ([params.files] if isinstance(params.files, str) else params.files) or [],
             }
             steps.append(entry)
             steps = self._maybe_compact(steps)
@@ -168,11 +168,12 @@ class StepMemory(CallableTool2[Params]):
                 )
             parts.append("\n\n".join(lines))
 
-        if params.files:
+        files_list = [params.files] if isinstance(params.files, str) else params.files
+        if files_list:
             tcr: ToolCallReason = self._session.custom_data.get(
                 "tool_call_reason", ToolCallReason()
             )
-            tool_reasons = tcr.formatted_print(params.files)
+            tool_reasons = tcr.formatted_print(files_list)
             if tool_reasons:
                 parts.append(f"Tool call reasons for files:\n\n{tool_reasons}")
 
@@ -186,8 +187,8 @@ class StepMemory(CallableTool2[Params]):
         msg_parts: list[str] = []
         if steps:
             msg_parts.append(f"Loaded {len(steps)} steps")
-        if params.files:
-            msg_parts.append(f"queried {len(params.files)} files")
+        if files_list:
+            msg_parts.append(f"queried {len(files_list)} files")
         message = "; ".join(msg_parts) if msg_parts else (warning or "Done")
 
         return ToolOk(

@@ -16,7 +16,7 @@ class IndexerParams(BaseModel):
     prompt: str = Field(
         description="Search prompt."
     )
-    dest_path: list[str] | None = Field(
+    dest_path: str | list[str] | None = Field(
         default=None,
         description="Destination path."
     )
@@ -58,9 +58,10 @@ class Search(CallableTool2[IndexerParams]):
                         custom_config = self._session.custom_config
                         chat_provider = custom_config.get("chat_provider")
                         default_sub_provider = base._default_sub_provider if base._default_sub_provider is not None else custom_config.get("provider_dict", base._default_provider)
-                        if params.dest_path is not None:
+                        dest_paths = [params.dest_path] if isinstance(params.dest_path, str) else params.dest_path
+                        if dest_paths is not None:
                             valid_paths = []
-                            for dp in params.dest_path:
+                            for dp in dest_paths:
                                 if not dp or not dp.strip():
                                     continue
                                 p = Path(dp)

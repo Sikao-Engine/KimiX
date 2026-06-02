@@ -8,8 +8,9 @@ from .utils import _input, _split_text
 from kimix.base import print_success, print_error, print_warning, print_debug, colorful_text, Color
 from kimix.utils import (
     clear_default_context, get_default_session, fix_error, compact_default_context,
-    print_usage, execute_plan, check_plan_cache, set_ralph_loop,
-    _create_default_session, close_session, create_session, SystemPromptType
+    print_usage, set_ralph_loop,
+    _create_default_session, close_session, create_session, SystemPromptType,
+    prompt_plan,
 )
 import kimix.utils._globals as _globals
 from .init import init
@@ -178,39 +179,14 @@ def _cmd_fix(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
 
 def _cmd_plan(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     if len(task_split) >= 2:
-        file_name_str = ':'.join(task_split[1:])
-        file_path = Path(file_name_str)
-        if not file_path.is_file():
-            print_error(f'file not found: {file_path}')
+        requirement = ':'.join(task_split[1:]).strip()
+        if requirement:
+            prompt_plan(requirement)
             return None, False
-        prompt_str = file_path.read_text(encoding='utf-8', errors='replace')
-        execute_plan(prompt_str)
-        return None, False
-
-    def _ask_if_use_cache(path: str) -> bool:
-        v = input(f'found cache `{path}`, load it and continue? (y/n) ')
-        if v.strip().lower() == 'y':
-            return True
-        return False
-
-    def ask_if_execute(steps: list[str], start_index: int) -> bool:
-        print('Plan steps:\n' + ('\n' + '=' *
-              40 + '\n').join(steps[start_index:]))
-        if not ask_plan:
-            return True
-        print_warning('execute the plan? (y/n)')
-        return input().strip().lower() == 'y'
-
-    use_cache, plan_loader = check_plan_cache(_ask_if_use_cache)
-    if use_cache:
-        ask_plan = input(
-            'Ask after make plan? no for auto accept-all. (y/n)').strip().lower() == 'y'
-        execute_plan('', ask_if_use_cache=None,
-                     ask_if_execute_plan=ask_if_execute, plan_loader=plan_loader)
-        return None, False
 
     print(
-        f'\n>>>> Make a task-list: input multiple-lines, end with {colorful_text('/end', Color.YELLOW)}, cancel with {colorful_text('/cancel', Color.YELLOW)}')
+        f'\n>>>> Start input requirement for plan, end with {colorful_text("/end", Color.YELLOW)}, '
+        f'cancel with {colorful_text("/cancel", Color.YELLOW)}')
     text: list[str] = []
     while True:
         s = _input('', text_arr)
@@ -220,14 +196,11 @@ def _cmd_plan(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
             text.clear()
             break
         text.append(s)
-    prompt_str = '\n'.join(text)
-
-    ask_plan = input(
-        'Ask after make plan? no for auto accept-all. (y/n)').strip().lower() == 'y'
-
-    if prompt_str.strip():
-        execute_plan(prompt_str, ask_if_use_cache=None,
-                     ask_if_execute_plan=ask_if_execute)
+    requirement = '\n'.join(text).strip()
+    if not requirement:
+        print_warning('No requirement provided.')
+        return None, False
+    prompt_plan(requirement)
     return None, False
 
 

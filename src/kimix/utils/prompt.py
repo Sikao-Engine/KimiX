@@ -1,86 +1,17 @@
-from string import Template
-from typing import Any, Callable, Optional
 import asyncio
-import orjson
-import hashlib
+import os
+import subprocess
+import sys
 from pathlib import Path
+from typing import Any, Callable, Optional
+
 from kimi_agent_sdk import Session
+
 import kimix.base as base
-from kimix.utils.system_prompt import SystemPromptType
-from kimix.base import MessageType, print_agent_json, Color, Style
-from . import _globals
-from .session import close_session_async, _create_default_session, _print_usage, clear_default_context, create_session, close_session
+from kimix.base import Color, MessageType, Style, print_agent_json
 from kimix.tools.common import _export_to_temp_file
-from kimi_cli.session_state import load_session_state
-
-
-class PlanLoader:
-    def __init__(self, file_path: str | Path) -> None:
-        self.file_path = Path(file_path)
-        self.steps_count: int = 0
-        self.plan_file_path: str = ""
-        self.plan_file_hash: str = ""
-        self.finished_step_count: int = 0
-
-    def load(self) -> None:
-        if self.file_path.exists():
-            with open(self.file_path, 'r', encoding='utf-8') as f:
-                data = orjson.loads(f.read())
-            self.steps_count = data.get('steps_count', 0)
-            self.plan_file_path = data.get('plan_file_path', '')
-            self.plan_file_hash = data.get('plan_file_hash', '')
-            self.finished_step_count = data.get('finished_step_count', 0)
-
-    def delete(self) -> None:
-        import os
-        if self.file_path.exists():
-            try:
-                os.unlink(self.file_path)
-            except Exception:
-                pass
-
-    def store(self) -> None:
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {
-            'steps_count': self.steps_count,
-            'plan_file_path': self.plan_file_path,
-            'plan_file_hash': self.plan_file_hash,
-            'finished_step_count': self.finished_step_count,
-        }
-        with open(self.file_path, 'w', encoding='utf-8') as f:
-            f.write(orjson.dumps(data, option=orjson.OPT_INDENT_2).decode('utf-8'))
-
-    @staticmethod
-    def compute_file_hash(file_path: str | Path) -> str:
-        path = Path(file_path)
-        if not path.exists():
-            return ""
-        with open(path, 'rb') as f:
-            return hashlib.sha256(f.read()).hexdigest()
-
-    @staticmethod
-    def compute_hash(content: str) -> str:
-        return hashlib.sha256(content.encode('utf-8', 'replace')).hexdigest()
-
-
-def check_plan_cache(ask_if_use_cache: Callable[[str], bool] | None = None) -> tuple[bool, PlanLoader | None]:
-    cache_file = Path.home() / '.kimi' / 'plan' / '.cache.json'
-    plan_loader: PlanLoader | None = None
-    use_cache = False
-
-    if ask_if_use_cache is not None and cache_file.exists():
-        plan_loader = PlanLoader(cache_file)
-        plan_loader.load()
-        cached_plan_path = Path(plan_loader.plan_file_path)
-        if cached_plan_path.exists():
-            current_hash = PlanLoader.compute_file_hash(cached_plan_path)
-            if current_hash == plan_loader.plan_file_hash and plan_loader.finished_step_count > 0 and plan_loader.finished_step_count < plan_loader.steps_count:
-                use_cache = ask_if_use_cache(str(cached_plan_path))
-                if use_cache:
-                    if not base._quiet:
-                        base._stream.colorful_print_word(
-                            f'Using cache, jumping to step {plan_loader.finished_step_count}.', fg=Color.BRIGHT_CYAN, require_new_line=True)
-    return use_cache, plan_loader
+from .session import _create_default_session, _create_session_async, close_session_async, _print_usage
+from .system_prompt import SystemPromptType
 
 
 async def prompt_async(
@@ -177,100 +108,6 @@ def prompt(
         ))
 
 
-def _make_new_plan_file() -> Path:
-    import uuid
-    return Path.home() / '.kimi' / 'plan' / Path('plan_' + str(uuid.uuid1()).replace('-', '') + '.md')
-
-
-def execute_plan(prompt_str: str, ask_if_use_cache: Callable[[str], bool] | None = None, ask_if_execute_plan: Callable[[list[str], int], bool] | None = None, plan_loader: PlanLoader | None = None) -> None:
-    import os
-    from kimix.tools.note import read_file, _enable_note
-    use_cache = False
-    if plan_loader is not None:
-        use_cache = True
-    elif ask_if_use_cache is not None:
-        use_cache, plan_loader = check_plan_cache(ask_if_use_cache)
-
-    if not use_cache:
-        # Step 1: generate plan
-        plan_file = _make_new_plan_file()
-        try:
-            os.unlink(plan_file)
-        except Exception:
-            pass
-        if plan_file.exists():
-            base._stream.colorful_print_word(f'plan file {plan_file} already exists. quit.', fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True)
-            return
-        task_finished = False
-        plan_session: Session | None = None
-        try:
-            _enable_note.value = True
-            plan_session = create_session(agent_file='agent_boss.json', agent_type=SystemPromptType.TodoMaker)
-            _enable_note.value = False
-            custom_data = plan_session.get_custom_data()
-            if custom_data is not None:
-                custom_data['note_writing_path'] = plan_file
-                custom_data['note_called'] = False
-            for i in range(4):
-                prompt(prompt_str, session=plan_session)
-                if not (custom_data is not None and custom_data.get('note_called', False)):
-                    base._stream.colorful_print_word(
-                        f'Prompt did not write the proper plan. let it try again({i + 1}/4).', fg=Color.BRIGHT_YELLOW, styles=[Style.BOLD], require_new_line=True)
-                else:
-                    task_finished = True
-                    break
-            if not task_finished:
-                base._stream.colorful_print_word(
-                    'Execute plan failed, the plan file cannot generated.', fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True)
-                return
-        finally:
-            if plan_session:
-                _cd = plan_session.get_custom_data()
-                if _cd is not None:
-                    _cd.pop('note_writing_path', None)
-                    _cd.pop('note_called', None)
-                close_session(plan_session)
-        steps = read_file(plan_file)
-        if plan_loader is None:
-            plan_loader = PlanLoader(Path.home() / '.kimi' / 'plan' / '.cache.json')
-        plan_loader.steps_count = len(steps)
-        plan_loader.plan_file_path = str(plan_file)
-        plan_loader.plan_file_hash = PlanLoader.compute_file_hash(
-            plan_file)
-        plan_loader.finished_step_count = 0
-        plan_loader.store()
-    else:
-        assert plan_loader is not None
-        plan_file = Path(plan_loader.plan_file_path)
-        steps = read_file(plan_file)
-
-    if not steps:
-        base._stream.colorful_print_word('No plan made, quit.', fg=Color.BRIGHT_YELLOW, styles=[Style.BOLD], require_new_line=True)
-        return
-
-    # Step 2: execute plan
-    start_idx = plan_loader.finished_step_count if plan_loader is not None else 0
-    if (ask_if_execute_plan is not None) and (not ask_if_execute_plan(steps, start_idx)):
-        base._stream.colorful_print_word('plan quit', fg=Color.BRIGHT_YELLOW, styles=[Style.BOLD], require_new_line=True)
-        return
-    clear_default_context()
-    for idx in range(start_idx, len(steps)):
-        base._stream.colorful_print_word(f'Executing step {idx}.', fg=Color.BRIGHT_MAGENTA, require_new_line=True)
-        step = steps[idx]
-        prompt(f'''Implement:
-
-{step}
-
-After done, run `SetTodoList` to record.
-''')
-        if idx != len(steps) - 1:  # not last
-            if plan_loader is not None:
-                plan_loader.finished_step_count = idx + 1
-                plan_loader.store()
-    if plan_loader is not None:
-        plan_loader.delete()
-
-
 def prompt_path(path: Path, split_word: Optional[str] = None, session: Session | None = None, after_prompt_coro: Any = None) -> None:
     try:
         with open(path, 'r', encoding='utf-8') as f:
@@ -296,3 +133,132 @@ def prompt_path(path: Path, split_word: Optional[str] = None, session: Session |
                 next(coro)
             except StopIteration as e:
                 coro = None
+
+
+async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md") -> None:
+    from kimix.tools.note import _enable_note
+
+    plan_file = Path(plan_file)
+    if plan_file.is_file():
+        plan_file.unlink()
+
+    _enable_note.value = True
+    planner_session: Session | None = None
+
+    try:
+        planner_session = await _create_session_async(agent_type=SystemPromptType.TodoMaker)
+        planner_session.custom_data["note_writing_path"] = plan_file
+
+        reminder = (
+            "Please read the following requirement carefully and generate a comprehensive plan. "
+            "Save the complete plan to a file using the Note tool.\n\n"
+            f"Requirement:\n{requirement.strip()}"
+        )
+
+        max_plan_attempts = 3
+        plan_generated = False
+        for attempt in range(max_plan_attempts):
+            if planner_session._cancel_event is not None and planner_session._cancel_event.is_set():
+                break
+            try:
+                base._stream.colorful_print_word(
+                    f"Generating plan (attempt {attempt + 1}/{max_plan_attempts})...\n",
+                    fg=Color.BRIGHT_CYAN,
+                    require_new_line=True,
+                )
+                async for message in planner_session.prompt(reminder):
+                    print_agent_json(message, planner_session, None)
+                base._stream.print_word("\n", require_new_line=True)
+
+                if plan_file.exists() and plan_file.stat().st_size > 0:
+                    plan_generated = True
+                    break
+
+                if attempt < max_plan_attempts - 1:
+                    reminder = (
+                        "The plan file was not generated. "
+                        "Please generate the plan and save it using the Note tool.\n\n"
+                        f"Requirement:\n{requirement.strip()}"
+                    )
+            except KeyboardInterrupt:
+                if planner_session:
+                    planner_session.cancel()
+                break
+            except Exception as exc:
+                base._stream.colorful_print_word(
+                    str(exc), fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True
+                )
+                if planner_session:
+                    planner_session.cancel()
+                if attempt == max_plan_attempts - 1:
+                    raise
+                await asyncio.sleep(1)
+
+        if planner_session:
+            await close_session_async(planner_session)
+            planner_session = None
+        _enable_note.value = False
+
+        if not plan_generated:
+            base._stream.colorful_print_word(
+                "Plan generation failed: plan file not found.",
+                fg=Color.BRIGHT_RED,
+                styles=[Style.BOLD],
+                require_new_line=True,
+            )
+            return
+
+        base._stream.colorful_print_word(
+            f"Plan generated: {plan_file.absolute()}\n",
+            fg=Color.BRIGHT_GREEN,
+            styles=[Style.BOLD],
+            require_new_line=True,
+        )
+
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(plan_file))
+            elif sys.platform == "darwin":
+                subprocess.run(["open", str(plan_file)])
+            else:
+                subprocess.run(["xdg-open", str(plan_file)])
+        except Exception:
+            pass
+
+        user_input = await asyncio.to_thread(
+            input, "Do you want to implement the plan? (y/n): "
+        )
+        if user_input.strip().lower() != "y":
+            return
+
+        if not plan_file.exists():
+            base._stream.colorful_print_word(
+                f"Plan file {plan_file} no longer exists. Aborting.",
+                fg=Color.BRIGHT_RED,
+                styles=[Style.BOLD],
+                require_new_line=True,
+            )
+            return
+
+        plan_content = plan_file.read_text(encoding="utf-8", errors="replace")
+        regular_session = await _create_session_async(agent_type=SystemPromptType.Worker)
+        await prompt_async(
+            f"Please implement the following plan:\n\n{plan_content}",
+            session=regular_session,
+            close_session_after_prompt=True,
+        )
+    except Exception as exc:
+        base._stream.colorful_print_word(
+            f"prompt_plan failed: {exc}",
+            fg=Color.BRIGHT_RED,
+            styles=[Style.BOLD],
+            require_new_line=True,
+        )
+    finally:
+        _enable_note.value = False
+        if planner_session:
+            await close_session_async(planner_session)
+
+
+def prompt_plan(requirement: str, plan_file: str | Path = "plan.md") -> None:
+    asyncio.run(prompt_plan_async(requirement, plan_file))

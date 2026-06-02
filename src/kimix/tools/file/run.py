@@ -38,6 +38,7 @@ _DEFAULT_FORBIDDEN_COMMANDS = [
     "regedt32",
 ]
 
+
 @functools.lru_cache(maxsize=1)
 def find_bash() -> str | None:
     """Find the system bash executable.
@@ -85,13 +86,16 @@ def find_bash() -> str | None:
         try:
             import winreg
             reg_paths = [
-                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Git_is1"),
-                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Git_is1"),
+                (winreg.HKEY_LOCAL_MACHINE,
+                 r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Git_is1"),
+                (winreg.HKEY_LOCAL_MACHINE,
+                 r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Git_is1"),
             ]
             for hkey, subkey in reg_paths:
                 try:
                     with winreg.OpenKey(hkey, subkey) as key:
-                        install_path, _ = winreg.QueryValueEx(key, "InstallLocation")
+                        install_path, _ = winreg.QueryValueEx(
+                            key, "InstallLocation")
                         for subpath in ("bin/bash.exe", "usr/bin/bash.exe"):
                             bash_candidate = Path(install_path) / subpath
                             if bash_candidate.exists():
@@ -125,10 +129,12 @@ def find_bash() -> str | None:
         for candidate in candidates:
             if Path(candidate).exists():
                 return str(Path(candidate).resolve())
-        local_git = Path.home() / "AppData" / "Local" / "Programs" / "Git" / "bin" / "bash.exe"
+        local_git = Path.home() / "AppData" / "Local" / \
+            "Programs" / "Git" / "bin" / "bash.exe"
         if local_git.exists():
             return str(local_git.resolve())
-        scoop_git = Path.home() / "scoop" / "apps" / "git" / "current" / "bin" / "bash.exe"
+        scoop_git = Path.home() / "scoop" / "apps" / "git" / \
+            "current" / "bin" / "bash.exe"
         if scoop_git.exists():
             return str(scoop_git.resolve())
         # Strategy 7: Download and install PortableGit to the share directory
@@ -202,7 +208,7 @@ class RunParams(BaseModel):
         default=None,
         description="Working directory."
     )
-    env: list[str] | None = Field(
+    env: str | list[str] | None = Field(
         default=None,
         description="Environment variables to set for the subprocess."
     )
@@ -228,7 +234,9 @@ class Run(CallableTool2[RunParams]):
         self.use_posix = sys.platform != "win32"
 
         # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
-        raw_forbidden = _DEFAULT_FORBIDDEN_COMMANDS + self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
+        raw_forbidden = _DEFAULT_FORBIDDEN_COMMANDS + \
+            self._session.custom_config.get(
+                "config_json", {}).get("forbidden_commands", [])
         self._forbidden_tokens: list[list[str]] = []
         for cmd in raw_forbidden:
             if not isinstance(cmd, str) or not cmd:
@@ -290,9 +298,11 @@ class Run(CallableTool2[RunParams]):
             args_list = list(args_raw)
 
         try:
-            display_args = [arg[:100] + '...' if len(arg) > 100 else arg for arg in args_list]
+            display_args = [
+                arg[:100] + '...' if len(arg) > 100 else arg for arg in args_list]
             cmd_str = shlex.join([executable] + display_args)
-            display_cmd = executable if len(cmd_str) > _HUGE_CMD_THRESHOLD else cmd_str
+            display_cmd = executable if len(
+                cmd_str) > _HUGE_CMD_THRESHOLD else cmd_str
 
             # Check forbidden commands (pre-normalized in __init__)
             if self._forbidden_tokens:
@@ -336,19 +346,34 @@ class Run(CallableTool2[RunParams]):
 
             # Handle extremely long python -c scripts via temp file (Windows CreateProcessW ~32767 limit)
             if is_py:
-                c_idx = next((i for i, a in enumerate(args_list) if a == '-c'), None)
+                c_idx = next((i for i, a in enumerate(
+                    args_list) if a == '-c'), None)
                 if c_idx is not None and c_idx + 1 < len(args_list) and len(args_list[c_idx + 1]) > 30000:
                     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
                         f.write(args_list[c_idx + 1])
                         script_path = f.name
                     # Replace -c <code> with <script_path>, preserving leading options and trailing args
-                    args_list = args_list[:c_idx] + [script_path] + args_list[c_idx + 2:]
+                    args_list = args_list[:c_idx] + \
+                        [script_path] + args_list[c_idx + 2:]
 
             async with self._semaphore:
                 env_dict: dict[str, str] | None = None
-                if params.env:
+                if isinstance(params.env, str):
+                    tokens = shlex.split(params.env)
+                    env_items = []
+                    i = 0
+                    while i < len(tokens):
+                        if i + 2 < len(tokens) and tokens[i + 1] == '=' and '=' not in tokens[i]:
+                            env_items.append(f"{tokens[i]}={tokens[i + 2]}")
+                            i += 3
+                        else:
+                            env_items.append(tokens[i])
+                            i += 1
+                else:
+                    env_items = params.env
+                if env_items:
                     env_dict = {}
-                    for item in params.env:
+                    for item in env_items:
                         if '=' in item:
                             key, value = item.split('=', 1)
                             env_dict[key] = value
@@ -361,7 +386,8 @@ class Run(CallableTool2[RunParams]):
                     return ToolOk(
                         output=f"Running in background. task_id: `{task_id}`. Use `TaskOutput` tool to retrieve output.",
                         brief="Background task started",
-                        display_block=ShellDisplayBlock(language="shell", command=display_cmd),
+                        display_block=ShellDisplayBlock(
+                            language="shell", command=display_cmd),
                     )
 
                 # Wait for completion with timeout (allow a small buffer for cleanup)
@@ -407,7 +433,8 @@ class Run(CallableTool2[RunParams]):
                 return ToolOk(
                     output=output,
                     brief="Command executed successfully",
-                    display_block=ShellDisplayBlock(language="shell", command=display_cmd),
+                    display_block=ShellDisplayBlock(
+                        language="shell", command=display_cmd),
                 )
         except Exception as e:
             return ToolError(
