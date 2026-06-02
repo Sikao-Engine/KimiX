@@ -23,6 +23,8 @@ HASH_SEED = 0
 MAX_LINE_LENGTH = 2000
 MAX_BYTES = 100 << 10  # 100KB
 
+# Precomputed lookup: hash byte → 2-char nibble string
+_NIBBLE_LOOKUP: list[str] = [NIBBLE_STR[i >> 4] + NIBBLE_STR[i & 0x0F] for i in range(256)]
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Hash Computation
@@ -30,18 +32,21 @@ MAX_BYTES = 100 << 10  # 100KB
 
 
 def compute_line_hash(line_num: int, line: str, prev_hash: str | None) -> str:
-    """Compute a short 2-character hash of a single line using xxHash32."""
-    # Remove trailing carriage return
+    """Compute a short 2-char hash of a line using xxHash32 with cumulative chaining."""
+    # Strip trailing carriage return
     if line.endswith("\r"):
         line = line[:-1]
 
-    # Normalize: remove all whitespace
-    normalized = "".join(c for c in line if not c.isspace())
+    # Single pass: collect non-whitespace chars, detect alphanumeric content
+    chars: list[str] = []
+    has_significant = False
+    for c in line:
+        if not c.isspace():
+            chars.append(c)
+            if not has_significant and c.isalnum():
+                has_significant = True
 
-    # Check if line has significant characters (alphanumeric)
-    has_significant = any(c.isalnum() for c in normalized)
-
-    # Build seed from previous hash (if any) or use defaults
+    # Build seed from previous hash or use defaults
     if prev_hash is not None:
         seed = 0
         for c in prev_hash:
@@ -51,14 +56,10 @@ def compute_line_hash(line_num: int, line: str, prev_hash: str | None) -> str:
     else:
         seed = line_num
 
-    # Compute xxHash32 and take lower 8 bits
-    hash_val = xxhash.xxh32(normalized.encode("utf-8"), seed).intdigest() & 0xFF
-
-    # Convert to 2-char hash using NIBBLE_STR
-    high = hash_val >> 4
-    low = hash_val & 0x0F
-    return NIBBLE_STR[high] + NIBBLE_STR[low]
-
+    # Compute xxHash32 of the normalized content, take lower 8 bits
+    data = "".join(chars).encode("utf-8")
+    hash_val = xxhash.xxh32(data, seed).intdigest() & 0xFF
+    return _NIBBLE_LOOKUP[hash_val]
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Anchor Parsing
@@ -66,10 +67,7 @@ def compute_line_hash(line_num: int, line: str, prev_hash: str | None) -> str:
 
 
 def parse_anchor(anchor: str) -> tuple[int, str] | None:
-    """Parse a line reference like '5#ab' into structured form.
-
-    Also accepts '5:abc' (old format) for backward compatibility.
-    """
+    """Parse 'LINE#HASH' into (line_num, hash). Accepts legacy 'LINE:HASH' format."""
     parts = anchor.split("#", 1)
     if len(parts) == 2:
         try:
@@ -213,6 +211,8 @@ def validate_anchor_ref(
     file_lines: list[str],
     mismatches: list[HashMismatch],
     validation_errors: list[str],
+    cumulative_hashes: list[str] | None = None,
+    fuzzy_hashes: list[str] | None = None,
 ) -> None:
     if anchor.line < 1:
         validation_errors.append(f"Line {anchor.line} must be >= 1")
@@ -223,23 +223,29 @@ def validate_anchor_ref(
         )
         return
 
-    # Compute cumulative hashes up to the anchor line
-    prev_hash: str | None = None
-    cumulative_hashes: list[str] = []
-    for i, line in enumerate(file_lines):
-        line_num = i + 1
-        hash_str = compute_line_hash(line_num, line, prev_hash)
-        cumulative_hashes.append(hash_str)
-        prev_hash = hash_str
-        if line_num == anchor.line:
-            break
+    # Use precomputed cumulative hashes if provided, else compute
+    if cumulative_hashes is not None:
+        actual_hash = cumulative_hashes[anchor.line - 1]
+    else:
+        prev_hash: str | None = None
+        computed: list[str] = []
+        for i, line in enumerate(file_lines):
+            line_num = i + 1
+            hash_str = compute_line_hash(line_num, line, prev_hash)
+            computed.append(hash_str)
+            prev_hash = hash_str
+            if line_num == anchor.line:
+                break
+        actual_hash = computed[anchor.line - 1]
 
-    actual_hash = cumulative_hashes[anchor.line - 1]
     if actual_hash != anchor.hash:
         # Fuzzy fallback: try with \r stripped from file lines
-        # This handles CRLF/LF mismatch scenarios
         fuzzy_match = False
-        if any("\r" in l for l in file_lines[:anchor.line]):
+        if fuzzy_hashes is not None:
+            # Use precomputed fuzzy hashes
+            if fuzzy_hashes[anchor.line - 1] == anchor.hash:
+                fuzzy_match = True
+        elif any("\r" in l for l in file_lines[:anchor.line]):
             prev_hash_fuzzy: str | None = None
             for i, line in enumerate(file_lines):
                 line_num = i + 1
@@ -329,6 +335,27 @@ def apply_hashline_edits(
     file_lines = content.splitlines()
     first_changed_line: list[int | None] = [None]
 
+    # Precompute cumulative hashes once for all anchor validations
+    file_hashes: list[str] = []
+    prev_hash: str | None = None
+    for i, line in enumerate(file_lines):
+        line_num = i + 1
+        hash_str = compute_line_hash(line_num, line, prev_hash)
+        file_hashes.append(hash_str)
+        prev_hash = hash_str
+
+    # Precompute fuzzy hashes (\r-stripped) if any lines contain \r
+    fuzzy_hashes: list[str] | None = None
+    if any("\r" in l for l in file_lines):
+        fuzzy_hashes = []
+        prev_fuzzy: str | None = None
+        for i, line in enumerate(file_lines):
+            line_num = i + 1
+            fuzzy_line = line.replace("\r", "")
+            hash_str = compute_line_hash(line_num, fuzzy_line, prev_fuzzy)
+            fuzzy_hashes.append(hash_str)
+            prev_fuzzy = hash_str
+
     # Pre-validate: collect all hash mismatches and check for invalid ranges
     mismatches: list[HashMismatch] = []
     validation_errors: list[str] = []
@@ -339,20 +366,20 @@ def apply_hashline_edits(
                 validation_errors.append(
                     f"Range start line {edit.pos.line} must be <= end line {edit.end.line}"
                 )
-            validate_anchor_ref(edit.pos, file_lines, mismatches, validation_errors)
+            validate_anchor_ref(edit.pos, file_lines, mismatches, validation_errors, file_hashes, fuzzy_hashes)
             if edit.end is not None:
                 validate_anchor_ref(
-                    edit.end, file_lines, mismatches, validation_errors
+                    edit.end, file_lines, mismatches, validation_errors, file_hashes, fuzzy_hashes
                 )
         elif isinstance(edit, AppendEdit):
             if edit.pos is not None:
                 validate_anchor_ref(
-                    edit.pos, file_lines, mismatches, validation_errors
+                    edit.pos, file_lines, mismatches, validation_errors, file_hashes, fuzzy_hashes
                 )
         elif isinstance(edit, PrependEdit):
             if edit.pos is not None:
                 validate_anchor_ref(
-                    edit.pos, file_lines, mismatches, validation_errors
+                    edit.pos, file_lines, mismatches, validation_errors, file_hashes, fuzzy_hashes
                 )
 
     if validation_errors:
@@ -806,13 +833,12 @@ class HashRead(CallableTool2[HashReadParams]):
 
 
 class HashEditParams(BaseModel):
-    path: str = Field(description="File path. Absolute for files outside working directory.")
+    path: str = Field(description="File path. Absolute paths required outside the working directory.")
     edits: list[HashlineEdit] = Field(description="Edits to apply.")
-
 
 class HashEdit(CallableTool2[HashEditParams]):
     name: str = "HashEdit"
-    description: str = "Edit files using hash-anchored line references."
+    description: str = "Edit files with hash-anchored line references for robustness against concurrent changes."
     params: type[HashEditParams] = HashEditParams
 
     def __init__(
