@@ -34,7 +34,6 @@ from kimi_cli.notifications import (
     NotificationView,
     build_notification_message,
     extract_notification_ids,
-    is_notification_message,
 )
 from kimi_cli.skill import Skill, read_skill_text
 from kimi_cli.skill.flow import Flow, FlowEdge, FlowNode, parse_choice
@@ -63,13 +62,7 @@ from kimi_cli.soul.dynamic_injection import (
 )
 from kimi_cli.soul.dynamic_injections.afk_mode import AfkModeInjectionProvider
 from kimi_cli.soul.dynamic_injections.plan_mode import PlanModeInjectionProvider
-from kimi_cli.soul.message import (
-    check_message,
-    is_system_reminder_message,
-    system,
-    system_reminder,
-    tool_result_to_message,
-)
+from kimi_cli.soul.message import check_message, system, system_reminder, tool_result_to_message
 from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
@@ -257,16 +250,6 @@ class KimiSoul:
         ]
         self._hook_engine: HookEngine = HookEngine()
         self._stop_hook_active: bool = False
-        # Incremental normalization state (Phase 2 — KV-cache optimization)
-        # _normalized_prefix caches the last normalize_history() output.
-        # _normalized_source_length tracks how many source messages were consumed.
-        # When history is append-only (the common case within a turn), only the
-        # suffix is re-normalized, avoiding O(n) per-step copies of the full history.
-        self._normalized_prefix: list[Message] = []
-        self._normalized_source_length: int = 0
-        # Lightweight fingerprint of the source history prefix for Phase 4
-        # stability verification (role + content-length tuples).
-        self._normalized_prefix_fingerprint: int | None = None
         if self.is_root:
             self._runtime.notifications.ack_ids("llm", extract_notification_ids(context.history))
 
@@ -1195,103 +1178,6 @@ class KimiSoul:
             # Consume any pending steers between steps before next iteration.
             await self._consume_pending_steers()
 
-    @staticmethod
-    def _compute_prefix_fingerprint(messages: Sequence[Message]) -> int:
-        """Compute a lightweight fingerprint of a message sequence.
-
-        Uses role + content-part-count + text-length of first text part.
-        This is intentionally cheap (no serialization) and only needs to
-        detect regressions, not guarantee uniqueness.
-        """
-        items: list[tuple[str, int, int]] = []
-        for msg in messages:
-            total_len = sum(
-                len(part.text) if isinstance(part, TextPart) and part.text else 0
-                for part in msg.content
-            )
-            items.append((msg.role, len(msg.content), total_len))
-        return hash(tuple(items))
-
-    def _incremental_normalize(self, history: Sequence[Message]) -> list[Message]:
-        """Normalize history incrementally for KV-cache prefix stability.
-
-        Within a turn, messages are only appended to ``_history`` (never
-        modified or removed from the middle under normal operation).  This
-        allows us to re-normalize only the suffix rather than copying and
-        iterating the entire history on every step.
-
-        When the history shrinks (compaction, revert, or ephemeral cleanup)
-        a full normalization is performed automatically.
-        """
-        n = len(history)
-        if n == 0:
-            self._normalized_prefix = []
-            self._normalized_source_length = 0
-            self._normalized_prefix_fingerprint = None
-            return []
-
-        # Full reset when history shrinks or is being built from scratch
-        if n <= self._normalized_source_length:
-            result = normalize_history(history)
-            self._normalized_prefix = result
-            self._normalized_source_length = n
-            self._normalized_prefix_fingerprint = self._compute_prefix_fingerprint(history)
-            return result
-
-        # ── Incremental path: only normalize new messages ────────────────────
-        new_msgs = list(history[self._normalized_source_length:])
-
-        if not self._normalized_prefix:
-            result = normalize_history(new_msgs)
-            self._normalized_prefix = result
-            self._normalized_source_length = n
-            self._normalized_prefix_fingerprint = self._compute_prefix_fingerprint(history)
-            return result
-
-        # Check whether the last cached message and the first new message
-        # should be merged (both are user messages and neither is a notification).
-        last_norm = self._normalized_prefix[-1]
-        if (
-            new_msgs
-            and last_norm.role == "user"
-            and new_msgs[0].role == "user"
-            and not is_notification_message(last_norm)
-            and not is_notification_message(new_msgs[0])
-        ):
-            # Merge boundary: re-normalize [last_norm] + new_msgs together
-            merged_tail = normalize_history([last_norm] + new_msgs)
-            result = self._normalized_prefix[:-1] + merged_tail
-        else:
-            # No merge at boundary: just normalize new messages and append
-            new_normalized = normalize_history(new_msgs)
-            result = self._normalized_prefix + new_normalized
-
-        # ── Prefix stability verification (Phase 4) ───────────────────────────
-        # Verify that the source history prefix hasn't changed unexpectedly.
-        # We compute a lightweight fingerprint of the old source prefix
-        # (role + content length) and compare.  A mismatch means the source
-        # history changed (not just appended), which would invalidate the
-        # KV-cache prefix.
-        old_prefix_len = self._normalized_source_length
-        if old_prefix_len > 0:
-            new_fingerprint = self._compute_prefix_fingerprint(
-                history[:old_prefix_len]
-            )
-            if (
-                self._normalized_prefix_fingerprint is not None
-                and new_fingerprint != self._normalized_prefix_fingerprint
-            ):
-                logger.warning(
-                    "KV-cache prefix instability detected: {old_len} source messages "
-                    "changed fingerprint. This will invalidate prompt cache.",
-                    old_len=old_prefix_len,
-                )
-
-        self._normalized_prefix = result
-        self._normalized_source_length = n
-        self._normalized_prefix_fingerprint = self._compute_prefix_fingerprint(history)
-        return result
-
     async def _step(self) -> StepOutcome | None:
         """Run a single step and return a stop outcome, or None to continue.
 
@@ -1356,10 +1242,6 @@ class KimiSoul:
         for inj in reversed(auto_retrieval_injections):
             injections.insert(0, inj)
         if injections:
-            # Remove previous system-reminder messages so they don't accumulate
-            # across steps. This keeps _history lean while preserving provider
-            # throttling (providers scan _history before this point).
-            self._context.remove_by_predicate(is_system_reminder_message)
             combined_reminders = "\n".join(system_reminder(inj.content).text for inj in injections)
             await self._context.append_message(
                 Message(
@@ -1371,7 +1253,7 @@ class KimiSoul:
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.3. HISTORY NORMALIZATION
         # ═══════════════════════════════════════════════════════════════════════
-        effective_history = self._incremental_normalize(self._context.history)
+        effective_history = normalize_history(self._context.history)
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.4. LLM CALL WITH RETRY
@@ -1475,14 +1357,6 @@ class KimiSoul:
         # ═══════════════════════════════════════════════════════════════════════
         # shield the context manipulation from interruption
         await asyncio.shield(self._grow_context(result, results))
-
-        # ── 2e.7a. Ephemeral cleanup ──────────────────────────────────────────
-        # Remove notification messages after they've been seen by the LLM.
-        # Notifications are delivered once; they don't need to persist beyond
-        # the current step. This prevents dead weight accumulation in _history
-        # which would bloat serialized payloads and degrade KV-cache prefix
-        # stability.
-        self._context.remove_by_predicate(is_notification_message)
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.8. OUTCOME RESOLUTION

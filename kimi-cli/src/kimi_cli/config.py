@@ -242,7 +242,7 @@ class Config(BaseModel):
     default_thinking: bool = Field(default=False, description="Default thinking mode")
     default_yolo: bool = Field(default=False, description="Default yolo (auto-approve) mode")
     skip_afk_prompt_injection: bool = Field(
-        default=True,
+        default=False,
         description=(
             "If true, suppress the afk-mode system reminder. "
             "Yolo mode does not inject a system reminder."

@@ -75,13 +75,7 @@ class Context:
 
     @property
     def history(self) -> Sequence[Message]:
-        """Return an immutable view of the current history.
-
-        Returns a tuple to prevent accidental external mutation of the
-        internal list, which would silently corrupt context and break
-        KV-cache prefix stability.
-        """
-        return tuple(self._history)
+        return self._history
 
     @property
     def token_count(self) -> int:
@@ -264,30 +258,6 @@ class Context:
         async with aiofiles.open(self._file_backend, "a", encoding="utf-8") as f:
             for message in messages:
                 await f.write(message.model_dump_json(exclude_none=True) + "\n")
-
-    def remove_by_predicate(self, predicate: Callable[[Message], bool]) -> int:
-        """Remove messages from history that match the predicate.
-
-        This operates on the in-memory history only. The file backend is
-        append-only by design and will retain all originally written records.
-
-        Returns:
-            The number of messages removed.
-        """
-        removed = 0
-        keep: list[Message] = []
-        for msg in self._history:
-            if predicate(msg):
-                removed += 1
-            else:
-                keep.append(msg)
-        if removed:
-            self._history = keep
-            logger.debug(
-                "Removed {count} ephemeral messages from context",
-                count=removed,
-            )
-        return removed
 
     async def update_token_count(self, token_count: int):
         logger.debug("Updating token count in context: {token_count}", token_count=token_count)

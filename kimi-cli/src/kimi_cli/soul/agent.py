@@ -382,10 +382,8 @@ class Agent:
 
     def get_system_prompt(self, is_compacting: bool = False) -> str:
         if callable(self.system_prompt):
-            if is_compacting:
-                return self.system_prompt(self.runtime, True)
-            if self.system_prompt_cached is None:
-                self.system_prompt_cached = self.system_prompt(self.runtime, False)
+            if self.system_prompt_cached is None or is_compacting:
+                self.system_prompt_cached = self.system_prompt(self.runtime, is_compacting)
             return self.system_prompt_cached
         return self.system_prompt
 
