@@ -28,7 +28,7 @@ async def fix_error_async(
                 error_keyword += ', ' + k
             else:
                 error_keyword = k
-        prompt_str = f'Fix "{error_keyword}" from command {command}:\n{result}\n'
+        prompt_str = f'Fix {error_keyword} from command `{command}`:\n\n{result}\n'
         if extra_prompt is not None:
             prompt_str = f'{extra_prompt}, {prompt_str}'
         from kimix.tools.common import _maybe_export_output
@@ -45,7 +45,7 @@ def fix_error(
         max_loop: int = 4,
         merge_wire_messages: bool = False,
         ) -> bool:
-    asyncio.run(fix_error_async(
+    return asyncio.run(fix_error_async(
         command, extra_prompt, skip_success, keycode, session, max_loop, merge_wire_messages
     ))
 

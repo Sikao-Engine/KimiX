@@ -11,7 +11,7 @@ from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.display import ShellDisplayBlock
 
 from kimix.tools.common import _maybe_export_output_async, ProcessTask, _DEFAULT_FORBIDDEN_COMMANDS
-from kimix.tools.file.run import find_pwsh, find_coreutils, USE_SYSTEM_SHELL, USE_SYSTEM_PWSH_ON_WINDOWS
+from kimix.tools.file.run import find_pwsh, USE_SYSTEM_SHELL, USE_SYSTEM_PWSH_ON_WINDOWS
 
 if TYPE_CHECKING:
     from kimi_agent_sdk import CallableTool2 as _CallableTool2
@@ -40,13 +40,10 @@ class Powershell(CallableTool2[PowershellParams]):
         if sys.platform != "win32" or not USE_SYSTEM_SHELL or not USE_SYSTEM_PWSH_ON_WINDOWS:
             raise SkipThisTool()
         
-        # Eagerly ensure coreutils are present on Windows so UNIX-style
         # commands work seamlessly in Run / Bash / PowerShell.
         self._pwsh = find_pwsh()
         if not self._pwsh:
             raise SkipThisTool()
-        if sys.platform == "win32":
-            find_coreutils()
         # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
         raw_forbidden = _DEFAULT_FORBIDDEN_COMMANDS + self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
         self._forbidden_tokens: list[list[str]] = []
