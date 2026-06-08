@@ -30,7 +30,7 @@ class PowershellParams(BaseModel):
 class Powershell(CallableTool2[PowershellParams]):
 
     name: str = "Powershell"
-    description: str = "Run a simple PowerShell(pwsh) command. Prefer Python for complex or stateful tasks."
+    description: str = "Run a simple powershell command. Prefer Python for complex or stateful tasks. "
     params: type[PowershellParams] = PowershellParams
 
     def __init__(self, session: Session):
@@ -66,22 +66,24 @@ class Powershell(CallableTool2[PowershellParams]):
             )
 
         # Check forbidden commands (pre-normalized in __init__)
+        cmd = pwsh_transform(params.cmd)
+        transform_warning = ""
+        if cmd != params.cmd:
+            transform_warning = f"[WARNING] Command `{params.cmd}` transformed to powershell 5.1\n"
         if self._forbidden_tokens:
-            full_cmd = params.cmd
-            cmd_tokens = " ".join(full_cmd.split()).split()
+            cmd_tokens = " ".join(cmd.split()).split()
             for forbidden_tokens in self._forbidden_tokens:
                 if len(forbidden_tokens) > len(cmd_tokens):
                     continue
                 if cmd_tokens[:len(forbidden_tokens)] == forbidden_tokens:
                     return ToolError(
                         output="",
-                        message=f"Command `{full_cmd}` is forbidden by config rule.",
+                        message=transform_warning + f"`{cmd}` is forbidden by config rule.",
                         brief="Forbidden command",
                     )
 
         # Build the command line to pass to PowerShell -Command
-        cmd, warning = pwsh_transform(params.cmd)
-        process_task = ProcessTask('powershell', ["-NoP", "-Exec", "Bypass", "-NoL", "-C", cmd], None, None)
+        process_task = ProcessTask('powershell', ["-NoP", "-NonI", "-Exec", "Bypass", "-NoL", "-C", cmd], None, None)
         task_id = await process_task.start(self._session, "pwsh")
 
         await process_task.wait(params.timeout)
@@ -90,7 +92,7 @@ class Powershell(CallableTool2[PowershellParams]):
             output = await process_task.stream.get_output() if process_task.stream else ""
             return ToolError(
                 output=output,
-                message=f"Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`\n{warning}".strip(),
+                message=transform_warning + f"`{cmd}` Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`",
                 brief="Timeout",
             )
 
@@ -100,11 +102,12 @@ class Powershell(CallableTool2[PowershellParams]):
         success = await process_task.stream.success() if process_task.stream else False
 
         if not success:
-            return ToolError(output=output, message=f"Command execution failed\n{warning}".strip(), brief="Command execution failed")
+            return ToolError(output=output, message=transform_warning + f"`{cmd}` failed", brief="Command execution failed")
 
         output = await _maybe_export_output_async(output)
         return ToolOk(
             output=output,
-            brief=f"Command executed successfully\n{warning}".strip(),
+            message=transform_warning + f'`{cmd}` success',
+            brief=f"Command executed successfully",
             display_block=ShellDisplayBlock(language="powershell", command=cmd),
         )

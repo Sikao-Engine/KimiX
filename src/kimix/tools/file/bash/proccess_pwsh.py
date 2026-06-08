@@ -13,7 +13,7 @@ This module performs a *source-to-source* transformation.  It operates on raw
 text rather than an AST because the target environment (5.1) cannot parse the
 new syntax in the first place.
 
-The public entry point is ``pwsh_transform(code, warn_chain=False)``.
+The public entry point is ``pwsh_transform(code)``.
 """
 
 from __future__ import annotations
@@ -678,25 +678,11 @@ def _transform_null_conditional_bracket_line(line: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Warning helpers
-# ---------------------------------------------------------------------------
-
-def _has_chain_operators(code: str) -> bool:
-    """Return ``True`` if *code* contains ``&&`` or ``||`` outside strings/comments."""
-    regions = _find_string_regions(code)
-    for m in re.finditer(r"&&|\|\|", code):
-        if _outside_regions(regions, m.start()):
-            return True
-    return False
-
-
-# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def pwsh_transform(code: str, *, warn_chain: bool = False) -> tuple[str, str]:
+def pwsh_transform(code: str) -> str:
     """Transform PowerShell 7.x syntax into PowerShell 5.1 compatible syntax."""
-    has_chain = _has_chain_operators(code) if warn_chain else False
     code = _join_continuation_lines(code)
     lines = code.split("\n")
     regions = _find_string_regions(code)
@@ -726,13 +712,7 @@ def pwsh_transform(code: str, *, warn_chain: bool = False) -> tuple[str, str]:
         line = _transform_chain_line(line)
         result.append(line)
 
-    result_code = "\n".join(result)
-    warning = (
-        "WARNING: PowerShell `&&` and `||` check the `$?` automatic variable "
-        "(success of last native command), NOT the raw exit code like bash. "
-        if has_chain else ""
-    )
-    return result_code, warning
+    return "\n".join(result)
 
 
 if __name__ == "__main__":
@@ -742,7 +722,5 @@ if __name__ == "__main__":
         text = " ".join(sys.argv[1:])
     else:
         text = sys.stdin.read()
-    transformed, warning = pwsh_transform(text)
-    print(transformed)
-    if warning:
-        print(warning, file=sys.stderr)
+    result = pwsh_transform(text)
+    print(result)

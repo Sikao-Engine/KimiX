@@ -453,7 +453,7 @@ class Bash(CallableTool2[BashParams]):
                 if cmd_tokens[:len(forbidden_tokens)] == forbidden_tokens:
                     return ToolError(
                         output="",
-                        message=f"Command `{full_cmd}` is forbidden by config rule.",
+                        message=f"`{full_cmd}` is forbidden by config rule.",
                         brief="Forbidden command",
                     )
 
@@ -469,7 +469,7 @@ class Bash(CallableTool2[BashParams]):
             output = await process_task.stream.get_output() if process_task.stream else ""
             return ToolError(
                 output=output,
-                message=f"Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`",
+                message=f"`{params.cmd}` Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`",
                 brief="Timeout",
             )
 
@@ -479,11 +479,12 @@ class Bash(CallableTool2[BashParams]):
         success = await process_task.stream.success() if process_task.stream else False
 
         if not success:
-            return ToolError(output=output, message="Command execution failed", brief="Command execution failed")
+            return ToolError(output=output, message=f"`{params.cmd}` failed", brief="Command execution failed")
 
         output = await _maybe_export_output_async(output)
         return ToolOk(
             output=output,
+            message=f'`{params.cmd}` success',
             brief="Command executed successfully",
             display_block=ShellDisplayBlock(language="shell", command=params.cmd),
         )

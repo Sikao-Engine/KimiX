@@ -262,7 +262,7 @@ class Run(CallableTool2[RunParams]):
                 if params.run_in_background:
                     return ToolOk(
                         output="",
-                        message=f"Running in background. task_id: `{task_id}`. Use `TaskOutput` tool to retrieve output.",
+                        message=f"`{display_cmd}` running in background. task_id: `{task_id}`. Use `TaskOutput` tool to retrieve output.",
                         brief="Background task started",
                         display_block=ShellDisplayBlock(
                             language="shell", command=display_cmd),
@@ -276,7 +276,7 @@ class Run(CallableTool2[RunParams]):
                     output = await task.stream.get_output() if task.stream else ""
                     return ToolError(
                         output=output,
-                        message=f"Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`",
+                        message=f"`{display_cmd}` running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`",
                         brief="Timeout",
                     )
                 # Clean up foreground task registration
@@ -303,13 +303,14 @@ class Run(CallableTool2[RunParams]):
                         output = f'saved to file `{display_temp_path}`'
                     return ToolError(
                         output=output,
-                        message="Command execution failed",
+                        message=f"`{display_cmd}` failed",
                         brief="Command execution failed",
                     )
 
                 output = await _maybe_export_output_async(output)
                 return ToolOk(
                     output=output,
+                    message=f"`{display_cmd}` success",
                     brief="Command executed successfully",
                     display_block=ShellDisplayBlock(
                         language="shell", command=display_cmd),
