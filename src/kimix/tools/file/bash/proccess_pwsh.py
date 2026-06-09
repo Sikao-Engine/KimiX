@@ -369,10 +369,19 @@ def _find_expr_start(line: str, end: int, mask: bytearray,
 def _find_expr_end(line: str, start: int, mask: bytearray) -> int:
     """Scan forwards from *start* to locate the end of the expression."""
     depth = 0
+    # Track mask value at the previous position to detect region boundaries.
+    prev_mask = 1 if start == 0 else mask[start - 1]
     for i in range(start, len(line)):
         c = line[i]
-        if not mask[i]:
+        cur_mask = mask[i]
+        if not cur_mask:
+            # If we just stepped from outside (mask=1) into a region and the
+            # character is '#', it is the start of a line comment — stop here.
+            if prev_mask and c == "#":
+                return i
+            prev_mask = cur_mask
             continue
+        prev_mask = cur_mask
         if c in _DEPTH_OPEN:
             depth += 1
         elif c in _DEPTH_CLOSE:
@@ -380,6 +389,8 @@ def _find_expr_end(line: str, start: int, mask: bytearray) -> int:
             if depth < 0:
                 return i
         elif depth == 0:
+            # Keep the direct '#' check as a defensive fallback (e.g. if mask
+            # handling changes in the future).
             if c == "#":
                 return i
             if c in _EXPR_STOP:
@@ -612,8 +623,21 @@ def _transform_chain_line(line: str) -> tuple[str, list[str]]:
             break
         condition = "$?" if best_op == "&&" else "-not $?"
         left = line[:best_pos].strip()
-        right = line[best_pos + 2:].strip()
-        new_line = f"{left}; if ({condition}) {{ {right} }}"
+        right_start = best_pos + 2
+        # Separate a trailing line comment from the right-hand expression
+        # so it stays outside the generated ``{ }`` block (a ``#`` inside
+        # braces would comment out the closing ``}``).
+        right_raw_end = len(line)
+        comment = ""
+        prev_m = 1 if right_start == 0 else mask[right_start - 1]
+        for ri in range(right_start, len(line)):
+            if mask[ri] == 0 and prev_m == 1 and line[ri] == "#":
+                right_raw_end = ri
+                comment = line[ri:]
+                break
+            prev_m = mask[ri]
+        right = line[right_start:right_raw_end].strip()
+        new_line = f"{left}; if ({condition}) {{ {right} }}{comment}"
         warnings.append(
             f"pipeline chain `{left} {best_op} {right}` "
             f"rewritten to `{new_line}`"

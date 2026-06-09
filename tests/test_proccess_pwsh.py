@@ -3004,6 +3004,56 @@ class TestOperatorsBeforeLineComment:
         assert "&&" not in result
         assert "# chain" in result
 
+    def test_nca_before_line_comment(self) -> None:
+        """??= with trailing comment: comment must stay outside the { } block."""
+        result = pwsh_transform('$var ??= value # comment')[0]
+        assert "??=" not in result
+        assert "# comment" in result
+        assert "if ($null -eq $var) { $var = value }# comment" == result
+
+    def test_coalescing_comment_not_inside_braces(self) -> None:
+        """?? with trailing comment: comment must appear after }} not inside."""
+        result = pwsh_transform('$x = $a ?? "default" # inline')[0]
+        assert "??" not in result
+        assert "# inline" in result
+        # The # must come after the closing braces, not inside them
+        assert result.endswith("# inline")
+
+    def test_ternary_comment_not_inside_braces(self) -> None:
+        """Ternary with trailing comment: comment must appear after }}."""
+        result = pwsh_transform('$x = $cond ? "a" : "b" # ternary')[0]
+        assert "?" not in result
+        assert "# ternary" in result
+        assert result.endswith("# ternary")
+
+    def test_or_chain_before_line_comment(self) -> None:
+        result = pwsh_transform("cmd1 || cmd2 # fallback")[0]
+        assert "||" not in result
+        assert "# fallback" in result
+        assert result.endswith("# fallback")
+
+    def test_null_conditional_assignment_comment(self) -> None:
+        """?. with assignment and trailing comment."""
+        result = pwsh_transform('$x = $a?.Length # comment')[0]
+        assert "?." not in result
+        assert "# comment" in result
+        assert result.endswith("# comment")
+
+    def test_comment_after_string_with_hash(self) -> None:
+        """Line comment after a string containing # should be detected correctly."""
+        result = pwsh_transform('$x = $a ?? "#notacomment" # real comment')[0]
+        assert "??" not in result
+        assert '"#notacomment"' in result
+        assert "# real comment" in result
+        assert result.endswith("# real comment")
+
+    def test_comment_idempotent(self) -> None:
+        """Transform with inline comment should be idempotent."""
+        code = '$x = $a ?? "default" # inline'
+        first = pwsh_transform(code)[0]
+        second = pwsh_transform(first)[0]
+        assert first == second
+
 
 # ============================================================================
 # Corner case: deeply nested ?. inside method args (multi-pass)
