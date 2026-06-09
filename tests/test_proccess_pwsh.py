@@ -2424,3 +2424,1457 @@ class TestIdempotencyWithDollarQuestion:
         first = pwsh_transform(code)[0]
         second = pwsh_transform(first)[0]
         assert first == second
+
+
+# ============================================================================
+# Corner case: -not / ! unary operator with ternary
+# ============================================================================
+
+class TestNotOperatorTernary:
+    def test_not_operator_in_ternary_condition(self) -> None:
+        """-not $cond ? 'a' : 'b' — -not is part of the condition."""
+        result = pwsh_transform("-not $cond ? 'a' : 'b'")[0]
+        assert "?" not in result
+        assert "if (-not $cond)" in result
+        assert "{ 'a' }" in result
+        assert "{ 'b' }" in result
+
+    def test_not_operator_with_parens_ternary(self) -> None:
+        result = pwsh_transform("!($a -eq $null) ? 'has-value' : 'null'")[0]
+        assert "?" not in result
+        assert "if (!($a -eq $null))" in result
+
+    def test_not_operator_ternary_in_assignment(self) -> None:
+        result = pwsh_transform('$x = -not (Test-Path $f) ? "missing" : "exists"')[0]
+        assert "?" not in result
+        assert "if (-not (Test-Path $f))" in result
+
+    def test_bang_operator_ternary(self) -> None:
+        """! is an alias for -not in PS."""
+        result = pwsh_transform('!$flag ? "off" : "on"')[0]
+        assert "?" not in result
+        assert "if (!$flag)" in result
+
+
+# ============================================================================
+# Corner case: [Type]::StaticMember with ??
+# ============================================================================
+
+class TestStaticMemberNullCoalescing:
+    def test_static_property_with_null_coalescing(self) -> None:
+        """[Math]::PI ?? 3.14 — static member as left operand."""
+        result = pwsh_transform("[Math]::PI ?? 3.14")[0]
+        assert "??" not in result
+        assert "if ($null -ne [Math]::PI)" in result
+        assert "[Math]::PI" in result
+        assert "3.14" in result
+
+    def test_static_method_call_with_coalescing(self) -> None:
+        result = pwsh_transform('[Enum]::Parse($type, $value) ?? "unknown"')[0]
+        assert "??" not in result
+        assert "if ($null -ne [Enum]::Parse($type, $value))" in result
+
+    def test_static_member_coalescing_in_assignment(self) -> None:
+        result = pwsh_transform('$x = [Version]::Parse($s) ?? [Version]::new(0,0)')[0]
+        assert "??" not in result
+        assert "if ($null -ne [Version]::Parse($s))" in result
+
+    def test_static_member_on_right_of_coalescing(self) -> None:
+        result = pwsh_transform('$v ?? [Math]::PI')[0]
+        assert "??" not in result
+        assert "if ($null -ne $v)" in result
+        assert "[Math]::PI" in result
+
+
+# ============================================================================
+# Corner case: ?. on @() array subexpression and parenthesized tuples
+# ============================================================================
+
+class TestNullConditionalOnArrayExpr:
+    def test_array_subexpr_dot_property(self) -> None:
+        """@(1,2,3)?.Count — null-conditional on array subexpression."""
+        result = pwsh_transform("@(1,2,3)?.Count")[0]
+        assert "?." not in result
+        assert "if ($null -ne @(1,2,3))" in result
+        assert "@(1,2,3).Count" in result
+
+    def test_array_subexpr_dot_method(self) -> None:
+        result = pwsh_transform("@(1,2,3)?.GetType()")[0]
+        assert "?." not in result
+        assert "if ($null -ne @(1,2,3))" in result
+        assert "@(1,2,3).GetType()" in result
+
+    def test_parenthesized_expression_dot(self) -> None:
+        result = pwsh_transform("(1,2,3)?.Count")[0]
+        assert "?." not in result
+        assert "if ($null -ne (1,2,3))" in result
+
+    def test_array_subexpr_bracket(self) -> None:
+        result = pwsh_transform("@(1,2,3)?[0]")[0]
+        assert "?[" not in result
+        assert "if ($null -ne @(1,2,3))" in result
+
+    def test_array_subexpr_assignment(self) -> None:
+        result = pwsh_transform("$x = @(1,2,3)?.Count")[0]
+        assert "?." not in result
+        assert "$x = $(if ($null -ne @(1,2,3)) { @(1,2,3).Count })" == result
+
+
+# ============================================================================
+# Corner case: ?. with PowerShell keyword member names
+# ============================================================================
+
+class TestNullConditionalKeywordMembers:
+    def test_keyword_begin_member(self) -> None:
+        """$obj?.Begin — 'Begin' is a PS keyword but also valid member name."""
+        result = pwsh_transform("$obj?.Begin")[0]
+        assert "?." not in result
+        assert "if ($null -ne $obj)" in result
+        assert "$obj.Begin" in result
+
+    def test_keyword_process_member(self) -> None:
+        result = pwsh_transform("$obj?.Process")[0]
+        assert "?." not in result
+        assert "$obj.Process" in result
+
+    def test_keyword_end_member(self) -> None:
+        result = pwsh_transform("$obj?.End")[0]
+        assert "?." not in result
+        assert "$obj.End" in result
+
+    def test_keyword_foreach_member(self) -> None:
+        result = pwsh_transform("$obj?.ForEach")[0]
+        assert "?." not in result
+        assert "$obj.ForEach" in result
+
+    def test_keyword_where_member(self) -> None:
+        result = pwsh_transform("$obj?.Where")[0]
+        assert "?." not in result
+        assert "$obj.Where" in result
+
+    def test_keyword_return_member(self) -> None:
+        result = pwsh_transform("$obj?.Return")[0]
+        assert "?." not in result
+        assert "$obj.Return" in result
+
+
+# ============================================================================
+# Corner case: $? as ?? left operand (automatic variable)
+# ============================================================================
+
+class TestDollarQuestionCoalescing:
+    def test_dollar_q_coalescing_left(self) -> None:
+        """$? ?? $false — $? is an automatic variable, not ternary."""
+        result = pwsh_transform("$? ?? $false")[0]
+        assert "??" not in result
+        assert "if ($null -ne $?)" in result
+        assert "{ $? }" in result
+        assert "{ $false }" in result
+
+    def test_dollar_q_coalescing_in_assignment(self) -> None:
+        result = pwsh_transform('$ok = $? ?? $false')[0]
+        assert "??" not in result
+        assert "$ok = " in result
+        assert "if ($null -ne $?)" in result
+
+    def test_dollar_q_nca(self) -> None:
+        """$? ??= $true — null-coalescing assignment with $?."""
+        result = pwsh_transform("$? ??= $true")[0]
+        assert "??=" not in result
+        assert "if ($null -eq $?)" in result
+        assert "$? = $true" in result
+
+
+# ============================================================================
+# Corner case: ?. on $$ / $^ automatic variables
+# ============================================================================
+
+class TestNullConditionalAutomaticVars:
+    def test_doubledollar_dot(self) -> None:
+        """$$?.Name — $$ is an automatic variable (last token)."""
+        result = pwsh_transform("$$?.Name")[0]
+        assert "?." not in result
+        assert "if ($null -ne $$)" in result
+        assert "$$.Name" in result
+
+    def test_caret_dot(self) -> None:
+        """$^?.Name — $^ is an automatic variable (first token)."""
+        result = pwsh_transform("$^?.Name")[0]
+        assert "?." not in result
+        assert "if ($null -ne $^)" in result
+        assert "$^.Name" in result
+
+    def test_dollar_q_then_question_bracket(self) -> None:
+        """$??[0] — $? followed by ?[ operator."""
+        result = pwsh_transform("$??[0]")[0]
+        # $?[0] in output is $? auto-var + [0] index, not ?[ operator
+        assert "if ($null -ne $?)" in result
+        assert "$?[0]" in result
+
+    def test_caret_coalescing(self) -> None:
+        result = pwsh_transform('$^ ?? "default"')[0]
+        assert "??" not in result
+        assert "if ($null -ne $^)" in result
+
+
+# ============================================================================
+# Corner case: chain operators with $(...) subexpressions
+# ============================================================================
+
+class TestChainWithSubexpressions:
+    def test_subexpr_and_subexpr(self) -> None:
+        """$(cmd1) && $(cmd2) — subexpressions in chain."""
+        result = pwsh_transform("$(cmd1) && $(cmd2)")[0]
+        assert "&&" not in result
+        assert "if ($?)" in result
+        assert "$(cmd1)" in result
+        assert "$(cmd2)" in result
+
+    def test_subexpr_or_subexpr(self) -> None:
+        result = pwsh_transform("$(cmd1) || $(cmd2)")[0]
+        assert "||" not in result
+        assert "if (-not $?)" in result
+
+    def test_subexpr_and_or_chain(self) -> None:
+        result = pwsh_transform("$(cmd1) && $(cmd2) || $(cmd3)")[0]
+        assert "&&" not in result
+        assert "||" not in result
+        assert result.count("if ($?)") >= 1
+        assert "if (-not $?)" in result
+
+    def test_mixed_subexpr_and_plain_chain(self) -> None:
+        result = pwsh_transform("cmd1 && $(cmd2) && cmd3")[0]
+        assert "&&" not in result
+        assert result.count("if ($?)") == 2
+
+
+# ============================================================================
+# Corner case: ?? with right side containing semicolons in parens
+# ============================================================================
+
+class TestCoalescingWithSemicolonRight:
+    def test_subexpr_right_with_semicolons(self) -> None:
+        """?? with subexpression right side containing ; at depth > 0."""
+        result = pwsh_transform('$a ?? (cmd1; cmd2)')[0]
+        assert "??" not in result
+        assert "if ($null -ne $a)" in result
+        assert "(cmd1; cmd2)" in result
+
+    def test_subexpr_right_with_nested_semicolons(self) -> None:
+        result = pwsh_transform('$a ?? $(cmd1; cmd2; cmd3)')[0]
+        assert "??" not in result
+        assert "if ($null -ne $a)" in result
+        assert "$(cmd1; cmd2; cmd3)" in result
+
+
+# ============================================================================
+# Corner case: ternary with -and / -or in condition
+# ============================================================================
+
+class TestTernaryWithLogicalOperators:
+    def test_and_in_condition(self) -> None:
+        result = pwsh_transform('$a -and $b ? "both" : "not-both"')[0]
+        assert "?" not in result
+        assert "if ($a -and $b)" in result
+
+    def test_or_in_condition(self) -> None:
+        result = pwsh_transform('$a -or $b ? "either" : "neither"')[0]
+        assert "?" not in result
+        assert "if ($a -or $b)" in result
+
+    def test_xor_in_condition(self) -> None:
+        result = pwsh_transform('$a -xor $b ? "one" : "both-or-neither"')[0]
+        assert "?" not in result
+        assert "if ($a -xor $b)" in result
+
+    def test_complex_logical_condition(self) -> None:
+        result = pwsh_transform('$a -gt 0 -and $b -lt 10 ? "ok" : "bad"')[0]
+        assert "?" not in result
+        assert "if ($a -gt 0 -and $b -lt 10)" in result
+
+
+# ============================================================================
+# Corner case: nested ternary in both true AND false branches
+# ============================================================================
+
+class TestNestedTernaryBothBranches:
+    def test_ternary_in_both_branches(self) -> None:
+        """Outer ternary with inner ternary in both branches (one pass)."""
+        result = pwsh_transform('$a ? ($b ? "c" : "d") : ($e ? "f" : "g")')[0]
+        assert "if ($a)" in result
+        # Inner ternaries preserved (one-pass limitation)
+        assert "?" in result
+        assert '"c"' in result
+        assert '"g"' in result
+
+    def test_ternary_chained_condition(self) -> None:
+        """$a ? "a" : $b ? "b" : $c ? "c" : "d" — right-associative parsing."""
+        result = pwsh_transform('$a ? "a" : $b ? "b" : $c ? "c" : "d"')[0]
+        # Only outer ?: transformed in one pass
+        assert "if ($a)" in result
+        assert '"a"' in result
+        # Inner cascading ternaries remain
+        assert "?" in result
+
+
+# ============================================================================
+# Corner case: $null as ?? left operand
+# ============================================================================
+
+class TestNullCoalescingWithNullLeft:
+    def test_null_literal_left_coalescing(self) -> None:
+        """$null ?? 'default' — $null is always null, so 'default' is chosen."""
+        result = pwsh_transform("$null ?? 'default'")[0]
+        assert "??" not in result
+        assert "if ($null -ne $null)" in result
+        assert "{ $null }" in result
+        assert "{ 'default' }" in result
+
+    def test_null_automatic_var_left_coalescing(self) -> None:
+        """$null with ??= is redundant but shouldn't crash."""
+        result = pwsh_transform("$null ??= 'value'")[0]
+        assert "??=" not in result
+        assert "if ($null -eq $null)" in result
+
+
+# ============================================================================
+# Corner case: ?[ with complex index containing operators
+# ============================================================================
+
+class TestNullConditionalBracketComplexIndex:
+    def test_bracket_index_with_coalescing_inside(self) -> None:
+        """$a?[$b ?? 0] — ?? inside bracket index at depth > 0."""
+        result = pwsh_transform("$a?[$b ?? 0]")[0]
+        assert "?[" not in result  # outer ?[ is transformed
+        assert "if ($null -ne $a)" in result
+        # The ?? inside the brackets is at depth > 0, not transformed in single pass
+
+    def test_bracket_index_with_ternary_inside(self) -> None:
+        result = pwsh_transform('$a?[$cond ? 0 : 1]')[0]
+        assert "?[" not in result
+        assert "if ($null -ne $a)" in result
+
+    def test_bracket_index_with_nested_bracket(self) -> None:
+        result = pwsh_transform("$a?[$b[$c]]")[0]
+        assert "?[" not in result
+        assert "if ($null -ne $a)" in result
+        assert "$b[$c]" in result
+
+
+# ============================================================================
+# Corner case: $scope:variable containing : adjacent to ternary :
+# ============================================================================
+
+class TestScopeColonWithTernary:
+    def test_scope_var_in_ternary_true_branch(self) -> None:
+        """$cond ? $global:x : $local:x — colon in $global:x vs ternary :."""
+        result = pwsh_transform('$cond ? $global:x : $local:x')[0]
+        assert "?" not in result
+        assert "if ($cond)" in result
+        assert "$global:x" in result
+        assert "$local:x" in result
+
+    def test_scope_var_in_ternary_false_branch(self) -> None:
+        result = pwsh_transform('$cond ? "a" : $script:val')[0]
+        assert "?" not in result
+        assert "$script:val" in result
+
+    def test_scope_var_as_ternary_condition(self) -> None:
+        result = pwsh_transform('$global:flag ? "yes" : "no"')[0]
+        assert "?" not in result
+        assert "if ($global:flag)" in result
+
+
+# ============================================================================
+# Corner case: ??= with property chain on left (deep assignment)
+# ============================================================================
+
+class TestNCAPropertyDeepChain:
+    def test_three_level_property_nca(self) -> None:
+        result = pwsh_transform('$obj.Prop1.Prop2.Prop3 ??= "init"')[0]
+        assert "??=" not in result
+        assert "if ($null -eq $obj.Prop1.Prop2.Prop3)" in result
+        assert "$obj.Prop1.Prop2.Prop3 = " in result
+
+    def test_property_chain_with_method_nca(self) -> None:
+        result = pwsh_transform('$svc.Status ??= "Running"')[0]
+        assert "??=" not in result
+        assert "if ($null -eq $svc.Status)" in result
+
+
+# ============================================================================
+# Corner case: backtick inside '' and "" NOT collapsed (literal)
+# ============================================================================
+
+class TestBacktickLiteralInStrings:
+    def test_backtick_n_in_dq_not_collapsed(self) -> None:
+        """`n inside double-quoted string is escape, not continuation."""
+        result = pwsh_transform('"hello`nworld"')[0]
+        assert "hello`nworld" in result
+
+    def test_backtick_t_in_dq_not_collapsed(self) -> None:
+        result = pwsh_transform('"col1`tcol2"')[0]
+        assert "col1`tcol2" in result
+
+    def test_backtick_in_sq_literal_not_collapsed(self) -> None:
+        result = pwsh_transform("'backtick ` is literal'")[0]
+        assert "`" in result
+
+    def test_backtick_before_chars_in_sq_not_collapsed(self) -> None:
+        """`a in single quotes is just literal `a."""
+        result = pwsh_transform("'`a ?? b'")[0]
+        assert "`a ?? b" in result
+        assert "??" in result  # inside string, preserved
+
+
+# ============================================================================
+# Corner case: $? preservation inside if/elseif/while conditions
+# ============================================================================
+
+class TestDollarQuestionInKeywords:
+    def test_if_with_dollar_q_condition(self) -> None:
+        result = pwsh_transform("if ($?) { Write-Output 'ok' }")[0]
+        assert result == "if ($?) { Write-Output 'ok' }"
+
+    def test_while_with_dollar_q_condition(self) -> None:
+        result = pwsh_transform("while ($?) { Do-Something }")[0]
+        assert result == "while ($?) { Do-Something }"
+
+    def test_elseif_with_dollar_q(self) -> None:
+        code = "if ($a) { 1 } elseif ($?) { 2 } else { 3 }"
+        result = pwsh_transform(code)[0]
+        assert "$?" in result
+        assert "?" not in result.replace("$?", "")  # no bare ? remains
+
+
+# ============================================================================
+# Corner case: ?. chain with method then property then index
+# ============================================================================
+
+class TestNullConditionalMixedChainTypes:
+    def test_method_then_property_chain(self) -> None:
+        result = pwsh_transform("$a?.GetValue()?.Length")[0]
+        assert "?." not in result
+        assert "GetValue()" in result
+        assert ".Length" in result
+
+    def test_property_then_method_then_property(self) -> None:
+        result = pwsh_transform("$a?.Items?.GetType()?.Name")[0]
+        assert "?." not in result
+        assert "Items" in result
+        assert "GetType()" in result
+        assert "Name" in result
+
+    def test_method_then_bracket_chain(self) -> None:
+        result = pwsh_transform("$a?.GetItems()?[0]")[0]
+        assert "?." not in result
+        assert "GetItems()" in result
+
+
+# ============================================================================
+# Corner case: ?? with @() or @{} on right side
+# ============================================================================
+
+class TestCoalescingRightSideCollections:
+    def test_coalescing_with_empty_array_right(self) -> None:
+        result = pwsh_transform("$a ?? @()")[0]
+        assert "??" not in result
+        assert "if ($null -ne $a)" in result
+        assert "@()" in result
+
+    def test_coalescing_with_empty_hashtable_right(self) -> None:
+        result = pwsh_transform("$a ?? @{}")[0]
+        assert "??" not in result
+        assert "if ($null -ne $a)" in result
+        assert "@{}" in result
+
+    def test_coalescing_with_scriptblock_right(self) -> None:
+        result = pwsh_transform("$a ?? { Get-Date }")[0]
+        assert "??" not in result
+        assert "{ Get-Date }" in result
+
+
+# ============================================================================
+# Corner case: multiple ?. chains on same line with ; separator
+# ============================================================================
+
+class TestMultipleNullConditionalChains:
+    def test_two_qd_chains_semicolon(self) -> None:
+        result = pwsh_transform("$a?.b?.c; $x?.y?.z")[0]
+        assert "?." not in result
+        assert "$a.b.c" in result
+        assert "$x.y.z" in result
+
+    def test_qd_and_qb_chains_semicolon(self) -> None:
+        result = pwsh_transform("$a?.Name; $b?[0]")[0]
+        assert "?." not in result
+        assert "?[" not in result
+        assert "$a.Name" in result
+        assert "$b[0]" in result
+
+    def test_three_qd_chains_semicolon(self) -> None:
+        result = pwsh_transform("$a?.P1; $b?.P2; $c?.P3")[0]
+        assert "?." not in result
+        assert result.count("if ($null -ne $") == 3
+
+
+# ============================================================================
+# Corner case: chain && || with trailing whitespace
+# ============================================================================
+
+class TestChainWithTrailingWhitespace:
+    def test_and_chain_trailing_spaces(self) -> None:
+        result = pwsh_transform("cmd1 && cmd2   ")[0]
+        assert "&&" not in result
+        assert "if ($?)" in result
+
+    def test_or_chain_trailing_tabs(self) -> None:
+        result = pwsh_transform("cmd1 || cmd2\t\t")[0]
+        assert "||" not in result
+        assert "if (-not $?)" in result
+
+    def test_and_chain_leading_spaces(self) -> None:
+        result = pwsh_transform("   cmd1 && cmd2")[0]
+        assert "&&" not in result
+        assert "if ($?)" in result
+
+
+# ============================================================================
+# Corner case: ternary with static method call in all positions
+# ============================================================================
+
+class TestTernaryStaticMethods:
+    def test_static_method_in_condition(self) -> None:
+        result = pwsh_transform('[string]::IsNullOrEmpty($s) ? "empty" : "ok"')[0]
+        assert "?" not in result
+        assert "if ([string]::IsNullOrEmpty($s))" in result
+
+    def test_static_method_in_true_branch(self) -> None:
+        result = pwsh_transform('$cond ? [Math]::Abs($x) : $x')[0]
+        assert "?" not in result
+        assert "{ [Math]::Abs($x) }" in result
+
+    def test_static_method_in_false_branch(self) -> None:
+        result = pwsh_transform('$cond ? $x : [Math]::Max($x, 0)')[0]
+        assert "?" not in result
+        assert "{ [Math]::Max($x, 0) }" in result
+
+
+# ============================================================================
+# Corner case: ??= idempotency after chain transforms
+# ============================================================================
+
+class TestNCAChainInteractionIdempotency:
+    def test_nca_after_transform_is_idempotent(self) -> None:
+        code = '$x ??= "init"'
+        first = pwsh_transform(code)[0]
+        second = pwsh_transform(first)[0]
+        third = pwsh_transform(second)[0]
+        assert first == second == third
+
+    def test_nca_combined_with_other_ops_idempotent(self) -> None:
+        code = '$a ??= "x"; $b = $c ?? "y"; cmd1 && cmd2'
+        first = pwsh_transform(code)[0]
+        second = pwsh_transform(first)[0]
+        assert first == second
+
+
+# ============================================================================
+# Corner case: operators adjacent to end-of-line comment (#)
+# ============================================================================
+
+class TestOperatorsBeforeLineComment:
+    def test_coalescing_before_line_comment(self) -> None:
+        result = pwsh_transform('$a ?? "default" # end of line')[0]
+        assert "??" not in result
+        assert "if ($null -ne $a)" in result
+        assert "# end of line" in result
+
+    def test_ternary_before_line_comment(self) -> None:
+        result = pwsh_transform('$cond ? "yes" : "no" # ternary')[0]
+        assert "if ($cond)" in result
+        assert "# ternary" in result
+
+    def test_null_conditional_before_line_comment(self) -> None:
+        result = pwsh_transform("$a?.Name # null-conditional")[0]
+        assert "?." not in result
+        assert "# null-conditional" in result
+
+    def test_chain_before_line_comment(self) -> None:
+        result = pwsh_transform("cmd1 && cmd2 # chain")[0]
+        assert "&&" not in result
+        assert "# chain" in result
+
+
+# ============================================================================
+# Corner case: deeply nested ?. inside method args (multi-pass)
+# ============================================================================
+
+class TestDeepNestedNullConditionalInArgs:
+    def test_qd_inside_qd_method_arg(self) -> None:
+        """?. inside another ?. method argument — both transformed."""
+        result = pwsh_transform("$a?.Foo($b?.Bar($c?.Baz()))")[0]
+        assert "?." not in result
+        assert ".Foo(" in result
+        assert ".Bar(" in result
+        assert ".Baz()" in result
+
+    def test_qd_with_nested_qb_in_arg(self) -> None:
+        result = pwsh_transform("$a?.Process($b?[0])")[0]
+        assert "?." not in result
+        assert "?[" not in result
+
+    def test_qd_with_nested_coalescing_in_arg(self) -> None:
+        result = pwsh_transform('$a?.Method($b ?? "fallback")')[0]
+        assert "?." not in result
+        assert "??" not in result
+
+
+# ============================================================================
+# Corner case: ?? with $(...) containing newlines
+# ============================================================================
+
+class TestSubexpressionWithNewlines:
+    def test_coalescing_with_multiline_subexpr_right(self) -> None:
+        code = "$a ?? $(\n  Get-Date\n  Get-Process\n)"
+        result = pwsh_transform(code)[0]
+        assert "??" not in result
+        assert "if ($null -ne $a)" in result
+
+    def test_coalescing_with_multiline_subexpr_left(self) -> None:
+        code = "$(\n  Get-Item $p\n) ?? 'default'"
+        result = pwsh_transform(code)[0]
+        assert "??" not in result
+
+
+# ============================================================================
+# Corner case: _join_continuation_lines preserves backtick in strings
+# ============================================================================
+
+class TestBacktickContinuationInStringsPreserved:
+    def test_backtick_n_in_dq_not_joined(self) -> None:
+        """`n inside "..." is escape sequence for newline, NOT continuation."""
+        code = '"line1`nline2"'
+        result = pwsh_transform(code)[0]
+        assert "line1`nline2" in result
+
+    def test_backtick_quote_in_dq_not_joined(self) -> None:
+        """`" inside "..." is escaped quote, NOT continuation."""
+        code = '"say `"hello`""'
+        result = pwsh_transform(code)[0]
+        assert '`"hello`"' in result
+
+
+# ============================================================================
+# Corner case: ??= with right side containing chain operators
+# ============================================================================
+
+class TestNCARightSideChain:
+    def test_nca_right_side_with_and_chain(self) -> None:
+        """$a ??= cmd1 && cmd2 — chain on right side of ??=."""
+        result = pwsh_transform("$a ??= cmd1 && cmd2")[0]
+        assert "??=" not in result
+        assert "&&" not in result
+        assert "if ($null -eq $a)" in result
+        assert "if ($?)" in result
+
+    def test_nca_right_side_with_or_chain(self) -> None:
+        result = pwsh_transform("$a ??= cmd1 || cmd2")[0]
+        assert "??=" not in result
+        assert "||" not in result
+        assert "if ($null -eq $a)" in result
+        assert "if (-not $?)" in result
+
+
+# ============================================================================
+# Corner case: ?. with static member as base
+# ============================================================================
+
+class TestNullConditionalOnStaticMember:
+    def test_static_property_dot(self) -> None:
+        """[SomeType]::Property?.Member — static member null-conditional."""
+        result = pwsh_transform("[SomeType]::Property?.Member")[0]
+        assert "?." not in result
+        assert "if ($null -ne [SomeType]::Property)" in result
+        assert "[SomeType]::Property.Member" in result
+
+    def test_static_method_call_dot(self) -> None:
+        result = pwsh_transform("[Enum]::GetValues($t)?.Count")[0]
+        assert "?." not in result
+        assert "if ($null -ne [Enum]::GetValues($t))" in result
+        assert "[Enum]::GetValues($t).Count" in result
+
+
+# ============================================================================
+# Corner case: ?. on splatted variable
+# ============================================================================
+
+class TestNullConditionalOnSplat:
+    def test_splat_variable_dot(self) -> None:
+        """@args?.Count — null-conditional on splatted variable base."""
+        # @args is not a valid base for ?., but shouldn't crash
+        result = pwsh_transform("@args?.Count")[0]
+        assert isinstance(result, str)
+
+
+# ============================================================================
+# Corner case: operators in multiline pipelines (realistic PS scripts)
+# ============================================================================
+
+class TestRealisticMultiLineScripts:
+    def test_conditional_service_check(self) -> None:
+        code = """$svc = Get-Service -Name $name
+$status = $svc?.Status ?? "Unknown"
+if ($status -eq "Running") { Write-Output "ok" } else { Write-Output "not ok" }"""
+        result = pwsh_transform(code)[0]
+        assert "?." not in result
+        assert "??" not in result
+
+    def test_file_processing_pipeline(self) -> None:
+        code = """$files = Get-ChildItem -Path $dir -Recurse
+$csv = $files?.Where({$_.Extension -eq '.csv'})
+$count = $csv?.Count ?? 0
+Write-Output "Found $count CSV files"
+"""
+        result = pwsh_transform(code)[0]
+        assert "?." not in result
+        assert "??" not in result
+
+    def test_api_response_handling(self) -> None:
+        code = """$response = Invoke-RestMethod -Uri $url
+$data = $response?.data ?? $response?.result ?? @{}
+$name = $data?.name ?? "anonymous"
+"""
+        result = pwsh_transform(code)[0]
+        assert "?." not in result
+        assert "??" not in result
+
+
+# ============================================================================
+# Corner case: ??= with ${} braced var containing nested braces
+# ============================================================================
+
+class TestNCANestedBracedVars:
+    def test_double_braced_var_nca(self) -> None:
+        """${outer.${inner}} ??= 'val' — nested braced variable."""
+        result = pwsh_transform("${outer.${inner}} ??= 'val'")[0]
+        assert "??=" not in result
+        assert "if ($null -eq ${outer.${inner}})" in result
+
+    def test_triple_braced_var_nca(self) -> None:
+        result = pwsh_transform("${a.${b.${c}}} ??= 'deep'")[0]
+        assert "??=" not in result
+        assert "if ($null -eq ${a.${b.${c}}})" in result
+
+
+# ============================================================================
+# Corner case: _find_expr_end with # comment at boundary
+# ============================================================================
+
+class TestExprEndHashComment:
+    def test_hash_comment_right_after_operator(self) -> None:
+        result = pwsh_transform("$a?.Name#$comment")[0]
+        assert "?." not in result
+        assert "if ($null -ne $a)" in result
+
+    def test_hash_comment_right_after_ternary(self) -> None:
+        result = pwsh_transform('$cond ? "a" : "b"#comment')[0]
+        assert "if ($cond)" in result
+
+
+# ============================================================================
+# Ultimate idempotency: transform 3 times for all operators
+# ============================================================================
+
+class TestTripleTransformIdempotency:
+    def test_triple_transform_all_ops(self) -> None:
+        code = '$a ??= $b; $c = $d?.$e?."f" ?? "g"; cmd1 && cmd2 || cmd3'
+        first = pwsh_transform(code)[0]
+        second = pwsh_transform(first)[0]
+        third = pwsh_transform(second)[0]
+        assert first == second == third
+
+    def test_triple_transform_ternary_only(self) -> None:
+        code = '$x = $a ? ($b ? "c" : "d") : "e"'
+        first = pwsh_transform(code)[0]
+        second = pwsh_transform(first)[0]
+        third = pwsh_transform(second)[0]
+        assert second == third  # May not stabilize after 1 pass (nested ternaries)
+
+    def test_triple_transform_coalescing_only(self) -> None:
+        code = '$x = $a ?? $b ?? $c ?? "d"'
+        first = pwsh_transform(code)[0]
+        second = pwsh_transform(first)[0]
+        third = pwsh_transform(second)[0]
+        assert second == third
+
+
+# ============================================================================
+# Corner case: ?. on $using: scoped variable (PS remoting / ForEach -Parallel)
+# ============================================================================
+
+class TestUsingScopeNullConditional:
+    def test_using_var_dot_property(self) -> None:
+        """$using:var?.Property — common in ForEach-Object -Parallel."""
+        result = pwsh_transform("$using:var?.Name")[0]
+        assert "?." not in result
+        assert "if ($null -ne $using:var)" in result
+        assert "$using:var.Name" in result
+
+    def test_using_var_bracket_index(self) -> None:
+        result = pwsh_transform("$using:arr?[0]")[0]
+        assert "?[" not in result
+        assert "if ($null -ne $using:arr)" in result
+        assert "$using:arr[0]" in result
+
+    def test_using_var_coalescing(self) -> None:
+        result = pwsh_transform('$using:val ?? "default"')[0]
+        assert "??" not in result
+        assert "if ($null -ne $using:val)" in result
+
+    def test_using_var_nca(self) -> None:
+        result = pwsh_transform('$using:val ??= 0')[0]
+        assert "??=" not in result
+        assert "if ($null -eq $using:val)" in result
+
+    def test_using_var_variable_property(self) -> None:
+        result = pwsh_transform("$using:obj?.$prop")[0]
+        assert "?." not in result
+        assert "if ($null -ne $using:obj)" in result
+        assert "$prop" in result
+
+    def test_using_var_chained(self) -> None:
+        result = pwsh_transform("$using:data?.Rows?.Count")[0]
+        assert "?." not in result
+        assert "$using:data" in result
+        assert ".Rows" in result
+        assert ".Count" in result
+
+    def test_using_var_idempotent(self) -> None:
+        code = "$using:obj?.Name"
+        first = pwsh_transform(code)[0]
+        second = pwsh_transform(first)[0]
+        assert first == second
+
+
+# ============================================================================
+# Corner case: `.` dot-sourcing operator with chain operators
+# ============================================================================
+
+class TestDotSourcingChain:
+    def test_dot_source_and_chain(self) -> None:
+        """. ./script.ps1 && cmd2 — dot-sourcing then chain."""
+        result = pwsh_transform(". ./script.ps1 && cmd2")[0]
+        assert "&&" not in result
+        assert "if ($?)" in result
+        assert ". ./script.ps1" in result
+
+    def test_dot_source_or_chain(self) -> None:
+        result = pwsh_transform(". ./setup.ps1 || Write-Error failed")[0]
+        assert "||" not in result
+        assert "if (-not $?)" in result
+
+    def test_dot_source_with_args_chain(self) -> None:
+        result = pwsh_transform(". ./helper.ps1 -Force && Write-Output ok")[0]
+        assert "&&" not in result
+        assert "if ($?)" in result
+        assert ". ./helper.ps1 -Force" in result
+
+    def test_dot_source_then_or_then_and(self) -> None:
+        result = pwsh_transform(". ./cfg.ps1 || . ./default.ps1 && Write-Output loaded")[0]
+        assert "||" not in result
+        assert "&&" not in result
+        assert "if (-not $?)" in result
+        assert "if ($?)" in result
+
+
+# ============================================================================
+# Corner case: `&` call operator with chain operators
+# ============================================================================
+
+class TestCallOperatorChain:
+    def test_call_op_and_chain(self) -> None:
+        """& $cmd $arg && & $cmd2 $arg2 — call operator chain."""
+        result = pwsh_transform("& $cmd $arg && & $cmd2 $arg2")[0]
+        assert "&&" not in result
+        assert "if ($?)" in result
+        assert "& $cmd $arg" in result
+        assert "& $cmd2 $arg2" in result
+
+    def test_call_op_or_chain(self) -> None:
+        result = pwsh_transform("& $backup || & $restore")[0]
+        assert "||" not in result
+        assert "if (-not $?)" in result
+
+    def test_call_op_with_splat_chain(self) -> None:
+        result = pwsh_transform("& $cmd @args && Write-Output done")[0]
+        assert "&&" not in result
+        assert "if ($?)" in result
+        assert "@args" in result
+
+    def test_call_op_nested_chain(self) -> None:
+        result = pwsh_transform("& $a && & $b || & $c")[0]
+        assert "&&" not in result
+        assert "||" not in result
+        assert "if ($?)" in result
+        assert "if (-not $?)" in result
+
+    def test_call_op_with_scriptblock_chain(self) -> None:
+        result = pwsh_transform("& { Get-Date } && Write-Output ok")[0]
+        assert "&&" not in result
+        assert "if ($?)" in result
+
+
+# ============================================================================
+# Corner case: ?. with scriptblock method arguments
+# ============================================================================
+
+class TestNullConditionalScriptblockMethod:
+    def test_foreach_with_scriptblock(self) -> None:
+        """$a?.ForEach({ $_ }) — method with scriptblock argument."""
+        result = pwsh_transform("$a?.ForEach({ $_ })")[0]
+        assert "?." not in result
+        assert "if ($null -ne $a)" in result
+        assert "$a.ForEach({ $_ })" in result
+
+    def test_where_with_scriptblock(self) -> None:
+        result = pwsh_transform("$a?.Where({ $_ -gt 0 })")[0]
+        assert "?." not in result
+        assert "$a.Where({ $_ -gt 0 })" in result
+
+    def test_foreach_then_property_chain(self) -> None:
+        """$a?.ForEach({ $_ })?.Count — chain after scriptblock method."""
+        result = pwsh_transform("$a?.ForEach({ $_ })?.Count")[0]
+        assert "?." not in result
+        assert ".ForEach({ $_ })" in result
+        assert ".Count" in result
+
+    def test_scriptblock_with_inner_operators(self) -> None:
+        """?.ForEach({ ... }) where scriptblock contains ?. or ?? which are at depth>0."""
+        result = pwsh_transform('$a?.ForEach({ $_.Name ?? "unknown" })')[0]
+        assert "?." not in result
+        assert "ForEach" in result
+        # ?? inside scriptblock is at depth>0, not transformed in single pass
+
+    def test_where_then_foreach_chain(self) -> None:
+        result = pwsh_transform("$a?.Where({ $_ }).ForEach({ $_ })?.Count")[0]
+        # ?. processed first, the rest depends on chain detection
+        assert "?." not in result
+
+
+# ============================================================================
+# Corner case: ?? inside @() array construction
+# ============================================================================
+
+class TestCoalescingInsideArrayExpr:
+    def test_array_with_two_coalescing(self) -> None:
+        """@($a ?? 0, $b ?? 1) — coalescing inside array subexpression."""
+        result = pwsh_transform("@($a ?? 0, $b ?? 1)")[0]
+        # At depth>0 inside @(), coalescing not transformed in single pass
+        assert "$a" in result
+        assert "$b" in result
+
+    def test_array_with_coalescing_and_ternary(self) -> None:
+        result = pwsh_transform('@($a ?? "x", $cond ? "t" : "f")')[0]
+        # Operators inside @() at depth>0 are not transformed
+        assert "$a" in result
+        assert "$cond" in result
+
+    def test_coalescing_outside_array(self) -> None:
+        """@(1,2) ?? @(3) — coalescing where left is @(). Already covered in TestNullCoalescingComplex, but duplicating for array context."""
+        result = pwsh_transform("@(1,2) ?? @(3)")[0]
+        assert "??" not in result
+        assert "if ($null -ne @(1,2))" in result
+
+
+# ============================================================================
+# Corner case: ?. on $Host / $PSVersionTable automatic variables
+# ============================================================================
+
+class TestAutomaticVariableNullConditional:
+    def test_host_version(self) -> None:
+        """$Host?.Version — null-conditional on $Host automatic variable."""
+        result = pwsh_transform("$Host?.Version")[0]
+        assert "?." not in result
+        assert "if ($null -ne $Host)" in result
+        assert "$Host.Version" in result
+
+    def test_psversiontable_psversion(self) -> None:
+        result = pwsh_transform("$PSVersionTable?.PSVersion")[0]
+        assert "?." not in result
+        assert "if ($null -ne $PSVersionTable)" in result
+
+    def test_psversiontable_chained(self) -> None:
+        result = pwsh_transform("$PSVersionTable?.PSVersion?.Major")[0]
+        assert "?." not in result
+        assert "$PSVersionTable" in result
+        assert ".PSVersion" in result
+        assert ".Major" in result
+
+    def test_host_ui_rawui_chained(self) -> None:
+        result = pwsh_transform("$Host?.UI?.RawUI?.WindowTitle")[0]
+        assert "?." not in result
+        assert "$Host" in result
+        assert ".UI" in result
+        assert ".RawUI" in result
+        assert ".WindowTitle" in result
+
+    def test_executioncontext_variable(self) -> None:
+        result = pwsh_transform("$ExecutionContext?.SessionState")[0]
+        assert "?." not in result
+        assert "if ($null -ne $ExecutionContext)" in result
+
+    def test_myinvocation_variable(self) -> None:
+        result = pwsh_transform("$MyInvocation?.MyCommand?.Name")[0]
+        assert "?." not in result
+        assert "$MyInvocation" in result
+
+
+# ============================================================================
+# Corner case: ?. chained from static member access
+# ============================================================================
+
+class TestNullConditionalStaticMemberChained:
+    def test_static_prop_to_prop_to_index(self) -> None:
+        """[Type]::Prop?.SubProp?[0] — chain from static prop through ?. to ?[."""
+        result = pwsh_transform("[SomeType]::Prop?.SubProp?[0]")[0]
+        assert "?." not in result
+        assert "?[" not in result
+        assert "[SomeType]::Prop" in result
+
+    def test_static_method_to_prop_to_coalescing(self) -> None:
+        result = pwsh_transform('[Enum]::GetValues($t)?.Length ?? 0')[0]
+        assert "?." not in result
+        assert "??" not in result
+        assert "[Enum]::GetValues($t)" in result
+
+    def test_static_prop_with_variable_member(self) -> None:
+        result = pwsh_transform("[SomeType]::Prop?.$member")[0]
+        assert "?." not in result
+        assert "if ($null -ne [SomeType]::Prop)" in result
+        assert "$member" in result
+
+    def test_static_method_to_quoted_member(self) -> None:
+        result = pwsh_transform('[obj]::Method()?."prop-name"')[0]
+        assert "?." not in result
+        assert '[obj]::Method()' in result
+        assert '"prop-name"' in result
+
+    def test_static_prop_to_method(self) -> None:
+        result = pwsh_transform("[SomeType]::Prop?.ToString()")[0]
+        assert "?." not in result
+        assert "[SomeType]::Prop.ToString()" in result
+
+
+# ============================================================================
+# Corner case: ${this} / ${PSCmdlet} automatic braced variables with ?.
+# ============================================================================
+
+class TestBracedAutomaticVarNullConditional:
+    def test_this_variable_dot(self) -> None:
+        """${this}?.Property — used in PS classes."""
+        result = pwsh_transform("${this}?.Name")[0]
+        assert "?." not in result
+        assert "if ($null -ne ${this})" in result
+        assert "${this}.Name" in result
+
+    def test_this_variable_bracket(self) -> None:
+        result = pwsh_transform("${this}?.[0]")[0]
+        assert "?[" not in result
+        # ?[ is processed after ?., but the `?.` before `[` makes it tricky
+
+    def test_pscmdlet_variable(self) -> None:
+        result = pwsh_transform("${PSCmdlet}?.MyInvocation")[0]
+        assert "?." not in result
+        assert "${PSCmdlet}" in result
+
+    def test_this_variable_nca(self) -> None:
+        result = pwsh_transform('${this} ??= "init"')[0]
+        assert "??=" not in result
+        assert "if ($null -eq ${this})" in result
+
+
+# ============================================================================
+# Corner case: ??= with string-literal-like left side
+# ============================================================================
+
+class TestNCALiteralLeft:
+    def test_string_single_quoted_left_nca(self) -> None:
+        """'literal' ??= 'value' — string literal on left of ??= (invalid PS, shouldn't crash)."""
+        result = pwsh_transform("'literal' ??= 'value'")[0]
+        assert isinstance(result, str)
+
+    def test_number_left_nca(self) -> None:
+        """123 ??= 'value' — number literal on left."""
+        result = pwsh_transform("123 ??= 'value'")[0]
+        assert isinstance(result, str)
+
+
+# ============================================================================
+# Corner case: -match operator combining with ternary and $Matches
+# ============================================================================
+
+class TestMatchOperatorWithTernary:
+    def test_match_result_in_ternary_condition(self) -> None:
+        r"""$s -match '(\d+)' ? $Matches[1] : $null — match then ternary."""
+        result = pwsh_transform("$s -match '(\\d+)' ? $Matches[1] : $null")[0]
+        assert "?" not in result
+        assert "if ($s -match '(\\d+)')" in result
+
+    def test_notmatch_in_ternary_condition(self) -> None:
+        result = pwsh_transform('$s -notmatch "x" ? "clean" : "dirty"')[0]
+        assert "?" not in result
+        assert "if ($s -notmatch \"x\")" in result
+
+    def test_match_with_parens_ternary(self) -> None:
+        result = pwsh_transform('($s -match "^(\\d+)$") ? [int]$Matches[1] : -1')[0]
+        assert "?" not in result
+        assert "if (($s -match \"^(\\d+)$\"))" in result
+
+
+# ============================================================================
+# Corner case: $?.?. chain (automatic var then null-conditional NOT $? first)
+# ============================================================================
+
+class TestDollarQuestionWithNullConditional:
+    def test_dollar_q_then_dot_chain(self) -> None:
+        """$??.Property — $? is auto var, ?. is null-conditional. Should NOT treat $? as ternary."""
+        result = pwsh_transform("$??.Property")[0]
+        # $? is detected, ?. is null-conditional
+        assert "if ($null -ne $?)" in result
+
+    def test_dollar_q_then_bracket_chain(self) -> None:
+        result = pwsh_transform("$??[0]")[0]
+        # $?[0] in output is $? auto-var + [0] index, not ?[ operator
+        assert "if ($null -ne $?)" in result
+        assert "$?[0]" in result
+
+
+# ============================================================================
+# Corner case: ?? in a pipeline (right side piped)
+# ============================================================================
+
+class TestCoalescingInPipeline:
+    def test_coalescing_right_piped_to_cmdlet(self) -> None:
+        """$a ?? $b | ForEach-Object { $_ } — pipe binds tighter than ??, so ?? right is just $b."""
+        result = pwsh_transform("$a ?? $b | ForEach-Object { $_ }")[0]
+        assert "??" not in result
+        assert "if ($null -ne $a)" in result
+
+    def test_coalescing_left_is_pipeline(self) -> None:
+        """(Get-Item $p) ?? $default — parenthesized pipeline as left."""
+        result = pwsh_transform("(Get-Item $p) ?? $default")[0]
+        assert "??" not in result
+        assert "if ($null -ne (Get-Item $p))" in result
+
+    def test_coalescing_pipe_both_sides(self) -> None:
+        result = pwsh_transform("(Get-Date) ?? (Get-Date -Year 2000)")[0]
+        assert "??" not in result
+        assert "if ($null -ne (Get-Date))" in result
+
+
+# ============================================================================
+# Corner case: multi-line $() subexpression and here-string interaction
+# ============================================================================
+
+class TestMultiLineSubExprEdgeCases:
+    def test_multiline_subexpr_left_of_coalescing(self) -> None:
+        code = """$(if ($a) {
+  Get-Date
+} else {
+  $null
+}) ?? 'default'"""
+        result = pwsh_transform(code)[0]
+        assert "??" not in result
+        # multi-line subexpr detection
+        assert "if ($null -ne" in result
+
+    def test_here_string_with_embedded_operators_across_lines(self) -> None:
+        code = """$text = @'
+line with ?? and ?. and &&
+and || operators
+'@
+$x = $a ?? 'fallback'"""
+        result = pwsh_transform(code)[0]
+        # Operators inside here-string preserved
+        assert "?? and ?. and &&" in result
+        assert "|| operators" in result
+        # Real ?? outside here-string transformed
+        assert "if ($null -ne $a)" in result
+
+
+# ============================================================================
+# Corner case: $? in subexpression context
+# ============================================================================
+
+class TestDollarQuestionSubExpr:
+    def test_dollar_q_in_if_condition(self) -> None:
+        """if ($?) { ... } — $? in if condition, not ternary."""
+        result = pwsh_transform("if ($?) { Write-Output ok } else { Write-Error fail }")[0]
+        assert result == "if ($?) { Write-Output ok } else { Write-Error fail }"
+
+    def test_dollar_q_assignment_ternary(self) -> None:
+        """$x = $? ? 'success' : 'failure' — $? as ternary condition."""
+        result = pwsh_transform("$x = $? ? 'success' : 'failure'")[0]
+        assert result == "$x = if ($?) { 'success' } else { 'failure' }"
+
+    def test_dollar_q_in_pipeline_chain(self) -> None:
+        """cmd1; if ($?) { cmd2 } — already transformed chain, $? should be preserved."""
+        result = pwsh_transform("cmd1; if ($?) { cmd2 }")[0]
+        assert result == "cmd1; if ($?) { cmd2 }"
+
+
+# ============================================================================
+# Corner case: ?. with property name matching a PS keyword used as function name
+# ============================================================================
+
+class TestNullConditionalKeywordPropertyChains:
+    def test_begin_process_end_chain(self) -> None:
+        """$obj?.Begin?.Process?.End — keyword-named properties in chain."""
+        result = pwsh_transform("$obj?.Begin?.Process?.End")[0]
+        assert "?." not in result
+        assert "$obj.Begin.Process.End" in result
+
+    def test_exit_break_continue_chain(self) -> None:
+        result = pwsh_transform("$obj?.Exit?.Break?.Continue")[0]
+        assert "?." not in result
+        assert "$obj.Exit.Break.Continue" in result
+
+    def test_try_catch_finally_chain(self) -> None:
+        result = pwsh_transform("$obj?.Try?.Catch?.Finally")[0]
+        assert "?." not in result
+        assert "$obj.Try.Catch.Finally" in result
+
+
+# ============================================================================
+# Corner case: ?. on array literal
+# ============================================================================
+
+class TestNullConditionalOnLiterals:
+    def test_string_literal_dot(self) -> None:
+        """'hello'?.Length — null-conditional on string literal (valid in PS7)."""
+        result = pwsh_transform("'hello'?.Length")[0]
+        assert "?." not in result
+        assert "if ($null -ne 'hello')" in result
+        assert "'hello'.Length" in result
+
+    def test_number_literal_dot(self) -> None:
+        result = pwsh_transform("123?.GetType()")[0]
+        assert "?." not in result
+        assert "if ($null -ne 123)" in result
+
+    def test_double_quoted_string_literal_dot(self) -> None:
+        result = pwsh_transform('"hello"?.Length')[0]
+        assert "?." not in result
+        assert "if ($null -ne \"hello\")" in result
+
+    def test_dollar_null_dot(self) -> None:
+        """$null?.Property — $null literal with null-conditional."""
+        result = pwsh_transform("$null?.Property")[0]
+        assert "?." not in result
+        assert "if ($null -ne $null)" in result
+
+
+# ============================================================================
+# Corner case: combined $? as ??? (three question marks in a row)
+# ============================================================================
+
+class TestTripleQuestionMark:
+    def test_dollar_q_double_question(self) -> None:
+        """$??? "fallback" — $? followed by ?? operator."""
+        result = pwsh_transform('$??? "fallback"')[0]
+        assert "??" not in result
+        assert "if ($null -ne $?)" in result
+        assert '"fallback"' in result
+
+    def test_dollar_q_then_question_dot(self) -> None:
+        """$??.Property — $? followed by ?. operator."""
+        result = pwsh_transform("$??.Property")[0]
+        # $?.Property in output is $? auto-var + .Property, not ?. operator
+        assert "if ($null -ne $?)" in result
+        assert "$?.Property" in result
+
+    def test_dollar_q_then_bracket_chain(self) -> None:
+        result = pwsh_transform("$??[0]")[0]
+        # $?[0] in output is $? auto-var + [0] index, not ?[ operator
+        assert "if ($null -ne $?)" in result
+        assert "$?[0]" in result
+
+
+# ============================================================================
+# Corner case: ?[ with depth tracking for nested brackets in index
+# ============================================================================
+
+class TestNullConditionalBracketDepthTracking:
+    def test_bracket_with_multiple_nested_brackets(self) -> None:
+        result = pwsh_transform("$a?[$b[$c[$d]]]")[0]
+        assert "?[" not in result
+        assert "if ($null -ne $a)" in result
+        assert "$b[$c[$d]]" in result
+
+    def test_bracket_with_parens_in_index(self) -> None:
+        result = pwsh_transform("$a?[($b + $c)]")[0]
+        assert "?[" not in result
+        assert "if ($null -ne $a)" in result
+        assert "($b + $c)" in result
+
+    def test_bracket_with_array_index(self) -> None:
+        result = pwsh_transform("$a?[$b, $c]")[0]
+        assert "?[" not in result
+        assert "if ($null -ne $a)" in result
+        assert "$b, $c" in result
+
+    def test_bracket_with_range_operator(self) -> None:
+        result = pwsh_transform("$a?[$b..$c]")[0]
+        assert "?[" not in result
+        assert "if ($null -ne $a)" in result
+
+
+# ============================================================================
+# Corner case: ??= with trailing code that contains other operators
+# ============================================================================
+
+class TestNCAWithTrailingOperators:
+    def test_nca_then_chain_on_same_line(self) -> None:
+        result = pwsh_transform('$a ??= "x"; cmd1 && cmd2')[0]
+        assert "??=" not in result
+        assert "&&" not in result
+        assert "if ($null -eq $a)" in result
+        assert "if ($?)" in result
+
+    def test_nca_then_ternary_on_same_line(self) -> None:
+        result = pwsh_transform('$a ??= "x"; $b = $cond ? "t" : "f"')[0]
+        assert "??=" not in result
+        assert "?" not in result  # ternary ? is gone
+        assert "if ($null -eq $a)" in result
+        assert "if ($cond)" in result
+
+    def test_nca_then_null_conditional_on_same_line(self) -> None:
+        result = pwsh_transform('$a ??= "x"; $b = $obj?.Name')[0]
+        assert "??=" not in result
+        assert "?." not in result
+        assert "if ($null -eq $a)" in result
+        assert "if ($null -ne $obj)" in result
+
+    def test_nca_then_coalescing_on_same_line(self) -> None:
+        result = pwsh_transform('$a ??= "x"; $b = $c ?? "y"')[0]
+        assert "??=" not in result
+        assert "??" not in result
+        assert "if ($null -eq $a)" in result
+        assert "if ($null -ne $c)" in result
+
+
+# ============================================================================
+# Corner case: multiple ??= on same line separated by ; (two ??=)
+# ============================================================================
+
+class TestMultipleNCAOnSameLine:
+    def test_two_nca_semicolon_separated(self) -> None:
+        result = pwsh_transform('$a ??= 1; $b ??= 2')[0]
+        assert "??=" not in result
+        assert "if ($null -eq $a)" in result
+        assert "if ($null -eq $b)" in result
+
+    def test_three_nca_semicolon_separated(self) -> None:
+        result = pwsh_transform('$a ??= 1; $b ??= 2; $c ??= 3')[0]
+        assert "??=" not in result
+        assert result.count("if ($null -eq $") == 3
+
+    def test_nca_mixed_with_null_conditional_semicolons(self) -> None:
+        result = pwsh_transform('$a ??= "x"; $b?.Name; $c ??= "y"')[0]
+        assert "??=" not in result
+        assert "?." not in result
+        assert "if ($null -eq $a)" in result
+        assert "if ($null -eq $c)" in result
+
+
+# ============================================================================
+# Corner case: backtick inside a here-string is literal, not continuation
+# ============================================================================
+
+class TestBacktickLiteralInHereString:
+    def test_backtick_newline_inside_here_string(self) -> None:
+        """Backtick+newline inside @'...'@ is literal, not merged."""
+        code = "@'\nline1 `\nline2\n'@"
+        result = pwsh_transform(code)[0]
+        # The backtick+newline is inside a here-string region, so not collapsed
+        assert isinstance(result, str)
+
+    def test_backtick_newline_inside_dq_here_string(self) -> None:
+        code = '@"\nline1 `\nline2\n"@'
+        result = pwsh_transform(code)[0]
+        assert isinstance(result, str)
+
+
+# ============================================================================
+# Corner case: ternary as sole content of a scriptblock
+# ============================================================================
+
+class TestTernaryInsideScriptBlock:
+    def test_ternary_inside_scriptblock_not_transformed(self) -> None:
+        """{ $a ? $b : $c } — ternary inside scriptblock at depth>0."""
+        result = pwsh_transform('$sb = { $a ? $b : $c }')[0]
+        assert "$sb = " in result
+        # Ternary inside braces at depth>0 is NOT transformed
+        assert "?" in result
+
+    def test_ternary_inside_nested_scriptblock(self) -> None:
+        result = pwsh_transform('$sb = { { $a ? $b : $c } }')[0]
+        assert "?" in result
+
+
+# ============================================================================
+# Corner case: ?? on same base variable used after transformation
+# ============================================================================
+
+class TestCoalescingReuseSameVar:
+    def test_same_var_multiple_coalescing(self) -> None:
+        """$x = $a ?? 1; $y = $a ?? 2 — same var used in two ?? expressions."""
+        result = pwsh_transform('$x = $a ?? 1; $y = $a ?? 2')[0]
+        assert "??" not in result
+        assert "if ($null -ne $a) { $a } else { 1 }" in result
+        assert "if ($null -ne $a) { $a } else { 2 }" in result
+
+    def test_same_var_coalescing_and_nca(self) -> None:
+        result = pwsh_transform('$a ??= 0; $b = $a ?? 1')[0]
+        assert "??=" not in result
+        assert "??" not in result
+        assert "if ($null -eq $a)" in result
+
+
+# ============================================================================
+# Corner case: -replace operator combined with ternary/coalescing
+# ============================================================================
+
+class TestReplaceOperatorCombined:
+    def test_replace_in_ternary_condition(self) -> None:
+        """-replace with comma-separated args before ternary.
+        KNOWN LIMITATION: comma is an expression boundary, so the ternary
+        condition is just '"y"' rather than '$s -replace "x","y"'."""
+        result = pwsh_transform('$s -replace "x","y" ? "changed" : "same"')[0]
+        assert "?" not in result
+        # Current behaviour: comma delimits expression, condition is '"y"'
+        assert "if (" in result
+        assert "\"changed\"" in result
+        assert "\"same\"" in result
+
+    def test_replace_in_coalescing_left(self) -> None:
+        result = pwsh_transform('($s -replace "a","b") ?? $s')[0]
+        assert "??" not in result
+        assert "if ($null -ne ($s -replace \"a\",\"b\"))" in result
+
+
+# ============================================================================
+# Corner case: ?. where member name is an integer (edge of _scan_member_name)
+# ============================================================================
+
+class TestNullConditionalNumericMember:
+    def test_integer_member_name(self) -> None:
+        """$a?.123 — numeric member names are not valid PS identifiers."""
+        result = pwsh_transform("$a?.123")[0]
+        assert isinstance(result, str)
+
+    def test_member_starting_with_digit_then_alpha(self) -> None:
+        """$a?.123abc — member starting with digit."""
+        result = pwsh_transform("$a?.123abc")[0]
+        assert isinstance(result, str)

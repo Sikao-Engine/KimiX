@@ -17,12 +17,34 @@ new syntax in the first place.
 from __future__ import annotations
 
 import re
-from bisect import bisect_left, bisect_right
+from bisect import bisect_right
 
 
-# ---------------------------------------------------------------------------
-# Low-level string / comment scanners
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Constants
+# ===========================================================================
+
+_PS_KEYWORDS = frozenset({
+    "begin", "break", "catch", "class", "continue", "data", "define", "do",
+    "dynamicparam", "else", "elseif", "end", "enum", "exit", "filter", "finally",
+    "for", "foreach", "from", "function", "hidden", "if", "in", "param",
+    "process", "return", "static", "switch", "throw", "trap", "try", "until",
+    "using", "var", "while",
+})
+
+_VAR_CHARS = frozenset(".$_:")
+
+_VAR_FIRST_CHARS = frozenset("$([\"'@0123456789")
+
+_EXPR_STOP = frozenset("=;|&,")
+
+_DEPTH_OPEN = frozenset("([{")
+_DEPTH_CLOSE = frozenset(")]}")
+
+
+# ===========================================================================
+# Low-level scanners — skip over strings, comments, subexpressions
+# ===========================================================================
 
 def _scan_single_quoted(code: str, i: int) -> int:
     """Skip a single-quoted string starting at *i*; return index after it."""
@@ -31,9 +53,9 @@ def _scan_single_quoted(code: str, i: int) -> int:
     while i < n:
         if code[i] == "'":
             if i + 1 < n and code[i + 1] == "'":
-                i += 2
+                i += 2          # escaped '' → literal single-quote
             else:
-                return i + 1
+                return i + 1     # closing quote
         else:
             i += 1
     return i
@@ -46,9 +68,9 @@ def _scan_double_quoted(code: str, i: int) -> int:
     while i < n:
         ch = code[i]
         if ch == "`" and i + 1 < n:
-            i += 2
+            i += 2              # backtick-escaped char
         elif ch == '"':
-            return i + 1
+            return i + 1         # closing quote
         elif ch == "$" and i + 1 < n and code[i + 1] == "(":
             i = _skip_subexpression(code, i)
         else:
@@ -101,12 +123,16 @@ def _skip_subexpression(code: str, start: int) -> int:
     return i
 
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Region finders  (strings, comments, here-strings)
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
-def _find_string_regions(code: str) -> list[tuple[int, int]]:
-    """Return intervals covering all string/comment regions in *code*."""
+def _find_regions(code: str, *, here_strings: bool = True) -> list[tuple[int, int]]:
+    """Return intervals covering all string/comment regions in *code*.
+
+    When *here_strings* is False, here-strings are not detected (used for
+    line-level scanning where here-strings cannot be reliably identified).
+    """
     regions: list[tuple[int, int]] = []
     i = 0
     n = len(code)
@@ -118,10 +144,13 @@ def _find_string_regions(code: str) -> list[tuple[int, int]]:
             regions.append((start, i))
         elif c == "#":
             start = i
-            while i < n and code[i] != "\n":
-                i += 1
+            if here_strings:
+                while i < n and code[i] != "\n":
+                    i += 1
+            else:
+                i = n  # rest of line is comment
             regions.append((start, i))
-        elif c == "@" and i + 1 < n and code[i + 1] in ("'", '"'):
+        elif here_strings and c == "@" and i + 1 < n and code[i + 1] in ("'", '"'):
             j = i + 2
             while j < n and code[j] in " \t\r":
                 j += 1
@@ -153,33 +182,6 @@ def _find_string_regions(code: str) -> list[tuple[int, int]]:
     return regions
 
 
-def _find_line_regions(line: str) -> list[tuple[int, int]]:
-    """Line-level variant of ``_find_string_regions`` (here-strings omitted)."""
-    regions: list[tuple[int, int]] = []
-    i = 0
-    n = len(line)
-    while i < n:
-        c = line[i]
-        if c == "<" and i + 1 < n and line[i + 1] == "#":
-            start = i
-            i = _scan_block_comment(line, i)
-            regions.append((start, i))
-        elif c == "#":
-            regions.append((i, n))
-            break
-        elif c == "'":
-            start = i
-            i = _scan_single_quoted(line, i)
-            regions.append((start, i))
-        elif c == '"':
-            start = i
-            i = _scan_double_quoted(line, i)
-            regions.append((start, i))
-        else:
-            i += 1
-    return regions
-
-
 def _outside_regions(regions: list[tuple[int, int]], pos: int) -> bool:
     """Return ``True`` iff *pos* is not inside any of the supplied regions."""
     idx = bisect_right(regions, (pos, float("inf"))) - 1
@@ -189,32 +191,35 @@ def _outside_regions(regions: list[tuple[int, int]], pos: int) -> bool:
     return True
 
 
-# ---------------------------------------------------------------------------
-# Depth tracking
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Depth tracking  (for matching ternary colon)
+# ===========================================================================
 
 def _compute_depths(line: str, regions: list[tuple[int, int]]) -> list[int]:
-    """Return nesting depth of ``()``, ``{}``, ``[]`` before each character."""
+    """Return nesting depth of ``()``, ``{}``, ``[]`` before each character.
+
+    Depths are now string-aware: brackets inside strings/comments are ignored.
+    """
     depths: list[int] = []
     depth = 0
     for i, ch in enumerate(line):
         depths.append(depth)
         if _outside_regions(regions, i):
-            if ch in "([{":
+            if ch in _DEPTH_OPEN:
                 depth += 1
-            elif ch in ")}]":
+            elif ch in _DEPTH_CLOSE:
                 depth -= 1
     depths.append(depth)
     return depths
 
 
-# ---------------------------------------------------------------------------
-# Pre-processing
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Pre-processing: backtick line continuation
+# ===========================================================================
 
 def _join_continuation_lines(code: str) -> str:
     """Collapse backtick line-continuations into single logical lines."""
-    regions = _find_string_regions(code)
+    regions = _find_regions(code)
     result: list[str] = []
     i = 0
     n = len(code)
@@ -235,19 +240,12 @@ def _join_continuation_lines(code: str) -> str:
     return "".join(result)
 
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
 # Assignment detection
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 _ASSIGN_RE = re.compile(r"(.*?)(\$\w+(?::\w+)?(?:\.\w+)*)\s*=\s*$")
 _COMMAND_PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*\s+")
-_PS_KEYWORDS = {
-    "begin", "break", "catch", "class", "continue", "data", "define", "do",
-    "dynamicparam", "else", "elseif", "end", "enum", "exit", "filter", "finally",
-    "for", "foreach", "from", "function", "hidden", "if", "in", "param",
-    "process", "return", "static", "switch", "throw", "trap", "try", "until",
-    "using", "var", "while",
-}
 
 
 def _match_assignment(before: str) -> tuple[str, str] | None:
@@ -259,7 +257,7 @@ def _match_assignment(before: str) -> tuple[str, str] | None:
 
 
 def _build_replacement(prefix: str, inner: str) -> str:
-    """Build a replacement string with optional assignment detection."""
+    """Build replacement string, preserving an assignment if one is detected."""
     assign = _match_assignment(prefix.rstrip())
     if assign:
         p, var = assign
@@ -270,58 +268,89 @@ def _build_replacement(prefix: str, inner: str) -> str:
 def _strip_command_prefix(expr: str, start: int) -> tuple[str, int]:
     """Strip a leading command name (e.g. ``Write-Output ``) from *expr*.
 
-    Returns the stripped expression and the adjusted start index.
+    Returns ``(stripped_expr, adjusted_start)``.
+    PowerShelle keywords (if, foreach, …) are never stripped.
     """
     m = _COMMAND_PREFIX_RE.match(expr)
     if m:
         cmd = m.group(0).strip().lower()
         if cmd not in _PS_KEYWORDS:
             expr_part = expr[m.end():]
-            if expr_part and expr_part[0] in "$([\"'@0123456789":
+            if expr_part and expr_part[0] in _VAR_FIRST_CHARS:
                 return expr_part, start + m.end()
     return expr, start
 
 
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# $? adjacency check — shared by all transforms
+# ===========================================================================
+
+def _after_dollar_question(line: str, op_idx: int) -> bool:
+    """Return True if *op_idx* is immediately after ``$?``.
+
+    When True the first ``?`` of the operator at *op_idx* is actually the
+    ``?`` of the ``$?`` automatic variable, so the operator should be skipped.
+
+    Does NOT match ``$$?.`` — ``$$`` is a separate automatic variable.
+    """
+    return (
+        op_idx > 0
+        and line[op_idx - 1] == "$"
+        and not (op_idx > 1 and line[op_idx - 2] == "$")
+    )
+
+
+# ===========================================================================
+# Shared colon-context check  (used by _find_expr_start & _find_matching_colon)
+# ===========================================================================
+
+def _is_scope_colon(line: str, i: int) -> bool:
+    """Return ``True`` if the colon at *i* belongs to a ``$scope:var`` prefix."""
+    if i > 0 and (line[i - 1].isalnum() or line[i - 1] == "_"):
+        j = i - 1
+        while j > 0 and (line[j].isalnum() or line[j] == "_"):
+            j -= 1
+        if line[j] == "$":
+            return True
+    return False
+
+
+# ===========================================================================
 # Expression boundary helpers
-# ---------------------------------------------------------------------------
+# ===========================================================================
 
 def _find_expr_start(line: str, end: int, regions: list[tuple[int, int]],
                      extra_stop: str = "") -> int:
     """Scan backwards from *end* to locate the start of the expression.
 
-    *extra_stop* can contain additional delimiter characters (e.g. "?:"
+    *extra_stop* can contain additional delimiter characters (e.g. ``"?:"``
     for null-conditional base scanning).
     """
     depth = 0
-    stop_set = "=;|&," + extra_stop
+    stop_set = _EXPR_STOP | frozenset(extra_stop) if extra_stop else _EXPR_STOP
     for i in range(end - 1, -1, -1):
         if not _outside_regions(regions, i):
             continue
         c = line[i]
-        if c in ")}]":
+        if c in _DEPTH_CLOSE:
             depth += 1
-        elif c in "([{":
+        elif c in _DEPTH_OPEN:
             depth -= 1
             if depth < 0:
                 return i + 1
         elif depth == 0 and c in stop_set:
-            # For ?/: in extra_stop, skip $? / :: / $scope: / ?. contexts.
             if c == "?":
                 if i + 1 < len(line) and line[i + 1] == ".":
-                    continue  # ?. null-conditional, not ternary ?
-                if i > 0 and line[i - 1] == "$":
-                    continue  # $? automatic variable
+                    continue  # ?. is null-conditional
+                if i > 0 and line[i - 1] == "$" and not (i > 1 and line[i - 2] == "$"):
+                    continue  # $? auto var (but not $$)
             elif c == ":":
                 if i + 1 < len(line) and line[i + 1] == ":":
-                    continue  # :: static member access
-                # Check for $scope: prefix
-                if i > 0 and (line[i - 1].isalnum() or line[i - 1] == "_"):
-                    j = i - 1
-                    while j > 0 and (line[j].isalnum() or line[j] == "_"):
-                        j -= 1
-                    if line[j] == "$":
-                        continue  # $scope:var
+                    continue  # :: static member
+                if i > 0 and line[i - 1] == ":":
+                    continue  # :: static member (right side)
+                if _is_scope_colon(line, i):
+                    continue  # $scope:var
             return i + 1
     return 0
 
@@ -331,32 +360,24 @@ def _find_expr_end(line: str, start: int, regions: list[tuple[int, int]]) -> int
     depth = 0
     for i in range(start, len(line)):
         c = line[i]
-        if c == "#":
-            if i > 0 and line[i - 1] == "<":
-                # Part of <# block-comment start; handled below by _outside_regions.
-                pass
-            elif _outside_regions(regions, i):
-                return i  # Bare # outside strings starts a line comment.
-            else:
-                # Inside a region — if this # starts that region, it is a boundary.
-                idx = bisect_right(regions, (i, float("inf"))) - 1
-                if idx >= 0 and regions[idx][0] == i:
-                    return i
         if not _outside_regions(regions, i):
             continue
-        if c in "([{":
+        if c in _DEPTH_OPEN:
             depth += 1
-        elif c in ")}]":
+        elif c in _DEPTH_CLOSE:
             depth -= 1
             if depth < 0:
                 return i
-        elif depth == 0 and c in ";|&,":
-            return i
+        elif depth == 0:
+            if c == "#":
+                return i
+            if c in _EXPR_STOP:
+                return i
     return len(line)
 
 
 def _expr_left(line: str, pos: int, regions: list[tuple[int, int]],
-                extra_stop: str = "") -> tuple[int, int]:
+               extra_stop: str = "") -> tuple[int, int]:
     """Return (start, end) of the expression immediately left of *pos*."""
     end = pos
     while end > 0 and line[end - 1] == " ":
@@ -374,9 +395,48 @@ def _expr_right(line: str, pos: int, regions: list[tuple[int, int]]) -> tuple[in
     return start, end
 
 
-# ---------------------------------------------------------------------------
-# Null-coalescing assignment  (??=)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Variable-name backward scanner  (shared by NCA and null-conditional)
+# ===========================================================================
+
+def _scan_var_backward(line: str, end: int) -> int:
+    """Scan backward from *end* to find the start of a variable reference.
+
+    Recognises ``$var``, ``$scope:var``, ``$obj.Prop``, ``$?``, ``$$``, ``$^``,
+    ``${braced}`` (the caller must handle the braced case separately).
+    Returns the index of the ``$`` or 0 if none found.
+    """
+    start = end
+    while start > 0 and (line[start - 1].isalnum() or line[start - 1] in _VAR_CHARS):
+        start -= 1
+    while start > 0 and line[start - 1] == "?":
+        start -= 1
+    if start > 0 and line[start - 1] == "$":
+        start -= 1
+    return start
+
+
+# ===========================================================================
+# Helper: skip whitespace backward / forward
+# ===========================================================================
+
+def _skip_spaces_back(line: str, pos: int) -> int:
+    """Return the index after skipping trailing spaces before *pos*."""
+    while pos > 0 and line[pos - 1] == " ":
+        pos -= 1
+    return pos
+
+
+def _skip_spaces_fwd(line: str, pos: int) -> int:
+    """Return the index after skipping leading spaces from *pos*."""
+    while pos < len(line) and line[pos] == " ":
+        pos += 1
+    return pos
+
+
+# ===========================================================================
+# Transform: null-coalescing assignment  (??=)
+# ===========================================================================
 
 def _transform_nca_line(line: str) -> tuple[str, list[str]]:
     """Rewrite null-coalescing assignment ``$var ??= value``.
@@ -385,58 +445,61 @@ def _transform_nca_line(line: str) -> tuple[str, list[str]]:
     """
     warnings: list[str] = []
     while True:
-        regions = _find_line_regions(line)
-        found = False
+        regions = _find_regions(line, here_strings=False)
+        matched = False
         pos = 0
         while pos < len(line) - 2:
-            if line[pos : pos + 3] == "??=" and _outside_regions(regions, pos):
-                var_end = pos
-                while var_end > 0 and line[var_end - 1] == " ":
-                    var_end -= 1
-                var_start = var_end
-                # Handle braced variables: ${global:var} ??= value
-                if var_start > 0 and line[var_start - 1] == "}":
-                    # Scan backward to find matching ${ ... }
-                    bd = 1
+            if line[pos:pos + 3] != "??=" or not _outside_regions(regions, pos):
+                pos += 1
+                continue
+            # Skip if $? before ??= (first ? belongs to $? auto-var)
+            if _after_dollar_question(line, pos):
+                pos += 1
+                continue
+
+            # Scan backward for the variable name.
+            var_end = _skip_spaces_back(line, pos)
+            var_start = var_end
+            if var_start > 0 and line[var_start - 1] == "}":
+                # Braced variable: ${global:var} → scan to matching ${
+                bd = 1
+                var_start -= 1
+                while var_start > 0 and bd > 0:
+                    if line[var_start - 1] == "}":
+                        bd += 1
+                    elif line[var_start - 1] == "{":
+                        bd -= 1
                     var_start -= 1
-                    while var_start > 0 and bd > 0:
-                        if line[var_start - 1] == "}":
-                            bd += 1
-                        elif line[var_start - 1] == "{":
-                            bd -= 1
-                        var_start -= 1
-                    if var_start > 0 and line[var_start - 1] == "$":
-                        var_start -= 1
-                else:
-                    while var_start > 0 and (line[var_start - 1].isalnum() or line[var_start - 1] in ".$_:"):
-                        var_start -= 1
-                    if var_start > 0 and line[var_start - 1] == "$":
-                        var_start -= 1
-                var = line[var_start:var_end].strip()
-                if not var:
-                    pos += 3
-                    continue
-                val_start, val_end = _expr_right(line, pos + 3, regions)
-                value = line[val_start:val_end].strip()
-                before = line[:var_start].rstrip()
-                prefix = f"{before} " if before else ""
-                new_inner = f"if ($null -eq {var}) {{ {var} = {value} }}"
-                warnings.append(
-                    f"null-coalescing assignment `{var} ??= {value}` "
-                    f"rewritten to `{new_inner}`"
-                )
-                line = f"{prefix}{new_inner}" + line[val_end:]
-                found = True
-                break
-            pos += 1
-        if not found:
+                if var_start > 0 and line[var_start - 1] == "$":
+                    var_start -= 1
+            else:
+                var_start = _scan_var_backward(line, var_end)
+
+            var = line[var_start:var_end].strip()
+            if not var:
+                pos += 3
+                continue
+
+            val_start, val_end = _expr_right(line, pos + 3, regions)
+            value = line[val_start:val_end].strip()
+            before = line[:var_start].rstrip()
+            prefix = f"{before} " if before else ""
+            new_inner = f"if ($null -eq {var}) {{ {var} = {value} }}"
+            warnings.append(
+                f"null-coalescing assignment `{var} ??= {value}` "
+                f"rewritten to `{new_inner}`"
+            )
+            line = f"{prefix}{new_inner}" + line[val_end:]
+            matched = True
+            break
+        if not matched:
             break
     return line, warnings
 
 
-# ---------------------------------------------------------------------------
-# Null-coalescing  (??)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Transform: null-coalescing  (??)
+# ===========================================================================
 
 def _transform_nc_line(line: str) -> tuple[str, list[str]]:
     """Transform every ``??`` on *line* into PS 5.1 compatible ``if`` form.
@@ -445,49 +508,62 @@ def _transform_nc_line(line: str) -> tuple[str, list[str]]:
     """
     warnings: list[str] = []
     while True:
-        regions = _find_line_regions(line)
-        rewritten = False
+        regions = _find_regions(line, here_strings=False)
+        matched = False
         pos = 0
         while pos < len(line) - 1:
             idx = line.find("??", pos)
             if idx == -1:
                 break
-            if _outside_regions(regions, idx):
-                left_start, left_end = _expr_left(line, idx, regions)
-                right_start, right_end = _expr_right(line, idx + 2, regions)
-                left_expr = line[left_start:left_end].strip()
-                left_expr, left_start = _strip_command_prefix(left_expr, left_start)
-                right_expr = line[right_start:right_end].strip()
-                if left_expr and right_expr:
-                    inner = f"if ($null -ne {left_expr}) {{ {left_expr} }} else {{ {right_expr} }}"
-                    warnings.append(
-                        f"null-coalescing `{left_expr} ?? {right_expr}` "
-                        f"rewritten to `{inner}`"
-                    )
-                    line = _build_replacement(line[:left_start], inner) + line[right_end:]
-                    rewritten = True
-                    break
+            if not _outside_regions(regions, idx):
+                pos = idx + 2
+                continue
+            # Skip $?? — the first ? belongs to $? auto-var
+            if _after_dollar_question(line, idx):
+                pos = idx + 1  # +1 so we can still find ?? at the next position
+                continue
+
+            left_start, left_end = _expr_left(line, idx, regions)
+            right_start, right_end = _expr_right(line, idx + 2, regions)
+            left_expr = line[left_start:left_end].strip()
+            left_expr, left_start = _strip_command_prefix(left_expr, left_start)
+            right_expr = line[right_start:right_end].strip()
+            if left_expr and right_expr:
+                inner = (
+                    f"if ($null -ne {left_expr}) "
+                    f"{{ {left_expr} }} else {{ {right_expr} }}"
+                )
+                warnings.append(
+                    f"null-coalescing `{left_expr} ?? {right_expr}` "
+                    f"rewritten to `{inner}`"
+                )
+                line = _build_replacement(line[:left_start], inner) + line[right_end:]
+                matched = True
+                break
             pos = idx + 2
-        if not rewritten:
+        if not matched:
             break
     return line, warnings
 
 
-# ---------------------------------------------------------------------------
-# Ternary  (? :)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Transform: ternary  (? :)
+# ===========================================================================
 
 def _find_matching_colon(
     line: str, start: int, regions: list[tuple[int, int]], depth_arr: list[int]
 ) -> int:
     """Find the colon that separates the true/false branches of a ternary."""
     for i in range(start, len(line)):
-        if line[i] == ":" and depth_arr[i] == 0 and _outside_regions(regions, i):
-            if i > 0 and line[i - 1] == ":":
-                continue
-            if i + 1 < len(line) and line[i + 1] == ":":
-                continue
-            return i
+        if line[i] != ":" or depth_arr[i] != 0 or not _outside_regions(regions, i):
+            continue
+        # Skip :: static member access
+        if (i > 0 and line[i - 1] == ":") or (i + 1 < len(line) and line[i + 1] == ":"):
+            continue
+        # Skip $scope:var prefix
+        if _is_scope_colon(line, i):
+            continue
+        return i
     return -1
 
 
@@ -497,14 +573,14 @@ def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
     Returns ``(transformed_line, warnings)``.
     """
     warnings: list[str] = []
-    regions = _find_line_regions(line)
+    regions = _find_regions(line, here_strings=False)
     depth_arr = _compute_depths(line, regions)
     pos = 0
     while pos < len(line):
         if (
             line[pos] == "?"
             and _outside_regions(regions, pos)
-            and not (pos > 0 and line[pos - 1] == "$")
+            and not (pos > 0 and line[pos - 1] == "$")  # $? skip
         ):
             colon_pos = _find_matching_colon(line, pos + 1, regions, depth_arr)
             if colon_pos != -1:
@@ -513,11 +589,12 @@ def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
                 true_expr = line[pos + 1:colon_pos].strip()
                 false_start, false_end = _expr_right(line, colon_pos + 1, regions)
                 false_expr = line[false_start:false_end].strip()
+                # Strip command prefix from condition when not in assignment
                 if not _match_assignment(line[:cond_start].rstrip()) and condition:
                     m = _COMMAND_PREFIX_RE.match(condition)
                     if m:
                         expr_part = condition[m.end():]
-                        if expr_part and expr_part[0] in "$([\"'@0123456789":
+                        if expr_part and expr_part[0] in _VAR_FIRST_CHARS:
                             cond_start += m.end()
                             condition = expr_part
                 inner = f"if ({condition}) {{ {true_expr} }} else {{ {false_expr} }}"
@@ -527,7 +604,7 @@ def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
                 )
                 suffix = line[false_end:]
                 line = _build_replacement(line[:cond_start], inner) + suffix
-                regions = _find_line_regions(line)
+                regions = _find_regions(line, here_strings=False)
                 depth_arr = _compute_depths(line, regions)
                 pos = len(line) - len(suffix)
                 continue
@@ -535,18 +612,20 @@ def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
     return line, warnings
 
 
-# ---------------------------------------------------------------------------
-# Pipeline chain operators  (&& / ||)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Transform: pipeline chain operators  (&& / ||)
+# ===========================================================================
 
 def _transform_chain_line(line: str) -> tuple[str, list[str]]:
     """Rewrite pipeline chain operators ``&&`` and ``||``.
+
+    Uses rightmost-first to maintain correct right-associative semantics.
 
     Returns ``(transformed_line, warnings)``.
     """
     warnings: list[str] = []
     while True:
-        regions = _find_line_regions(line)
+        regions = _find_regions(line, here_strings=False)
         # Find rightmost && or || outside string/comment regions.
         best_pos, best_op = -1, ""
         for op in ("&&", "||"):
@@ -570,9 +649,69 @@ def _transform_chain_line(line: str) -> tuple[str, list[str]]:
     return line, warnings
 
 
-# ---------------------------------------------------------------------------
-# Null-conditional member access  (?.)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Null-conditional helpers
+# ===========================================================================
+
+def _scan_member_name(line: str, ms: int, regions: list[tuple[int, int]]) -> int:
+    """Scan a member name starting at *ms*; return the index after it.
+
+    Handles plain identifiers, ``$property``, ``${braced}``, ``'quoted'``,
+    and ``"quoted"`` member names.
+    """
+    if ms >= len(line):
+        return ms
+    c0 = line[ms]
+    if c0 == "$":
+        me = ms + 1
+        if me < len(line) and line[me] == "{":
+            bd = 1
+            me += 1
+            while me < len(line) and bd > 0:
+                if line[me] == "{":
+                    bd += 1
+                elif line[me] == "}":
+                    bd -= 1
+                me += 1
+        else:
+            while me < len(line) and (line[me].isalnum() or line[me] in "_:"):
+                me += 1
+        return me
+    if c0 == "'":
+        return _scan_single_quoted(line, ms)
+    if c0 == '"':
+        return _scan_double_quoted(line, ms)
+    # Plain identifier
+    me = ms
+    while me < len(line) and (line[me].isalnum() or line[me] == "_"):
+        me += 1
+    return me
+
+
+def _scan_method_args(line: str, start: int, regions: list[tuple[int, int]]) -> tuple[str, int]:
+    """If *start* points to ``(``, scan the method argument list.
+
+    Returns ``(args_string, index_after_closing_paren)``.
+    If no ``(`` at *start*, returns ``("", start)``.
+    """
+    j = _skip_spaces_fwd(line, start)
+    if j >= len(line) or line[j] != "(":
+        return "", start
+    d = 1
+    k = j + 1
+    while k < len(line) and d > 0:
+        if _outside_regions(regions, k):
+            if line[k] == "(":
+                d += 1
+            elif line[k] == ")":
+                d -= 1
+        k += 1
+    return line[j:k], k
+
+
+# ===========================================================================
+# Transform: null-conditional member access  (?.)
+# ===========================================================================
 
 def _transform_null_conditional_dot_line(line: str) -> tuple[str, list[str]]:
     """Rewrite null-conditional member access ``$obj?.Member``.
@@ -581,7 +720,7 @@ def _transform_null_conditional_dot_line(line: str) -> tuple[str, list[str]]:
     """
     warnings: list[str] = []
     while True:
-        regions = _find_line_regions(line)
+        regions = _find_regions(line, here_strings=False)
         matched = False
         pos = 0
         while pos < len(line) - 1:
@@ -591,80 +730,46 @@ def _transform_null_conditional_dot_line(line: str) -> tuple[str, list[str]]:
             if not _outside_regions(regions, idx):
                 pos = idx + 2
                 continue
+            # Skip $?. — the ? belongs to $? auto-var
+            if _after_dollar_question(line, idx):
+                pos = idx + 1  # +1 so we can still find ?. at the next position
+                continue
+
             expr_start, expr_end = _expr_left(line, idx, regions, "?:")
             base = line[expr_start:expr_end].strip()
             base, expr_start = _strip_command_prefix(base, expr_start)
             if not base:
                 pos = idx + 2
                 continue
+
+            # Collect the chain of ?.member segments.
             chain: list[tuple[str, str, int]] = []
-            pos = idx
-            while pos < len(line) - 1 and line[pos : pos + 2] == "?.":
-                ms = pos + 2
-                while ms < len(line) and line[ms] == " ":
-                    ms += 1
-                me = ms
-                # Variable / quoted / plain identifier member name scanning.
-                c0 = line[ms] if ms < len(line) else ""
-                if c0 == "$":
-                    # Variable property name: $property, ${var}, $global:prop, etc.
-                    me = ms + 1
-                    if me < len(line) and line[me] == "{":
-                        # ${braced var}
-                        bd = 1
-                        me += 1
-                        while me < len(line) and bd > 0:
-                            if line[me] == "{":
-                                bd += 1
-                            elif line[me] == "}":
-                                bd -= 1
-                            me += 1
-                    else:
-                        while me < len(line) and (line[me].isalnum() or line[me] in "_:"):
-                            me += 1
-                elif c0 == "'":
-                    # Single-quoted member name: 'prop-name'
-                    me = _scan_single_quoted(line, ms)
-                elif c0 == '"':
-                    # Double-quoted member name: "prop-name"
-                    me = _scan_double_quoted(line, ms)
-                else:
-                    while me < len(line) and (line[me].isalnum() or line[me] == "_"):
-                        me += 1
+            cur = idx
+            while cur < len(line) - 1 and line[cur:cur + 2] == "?.":
+                ms = _skip_spaces_fwd(line, cur + 2)
+                me = _scan_member_name(line, ms, regions)
                 if me == ms:
                     break
                 mem = line[ms:me]
-                args = ""
-                j = me
-                while j < len(line) and line[j] == " ":
-                    j += 1
-                if j < len(line) and line[j] == "(":
-                    d = 1
-                    k = j + 1
-                    while k < len(line) and d > 0:
-                        if _outside_regions(regions, k):
-                            if line[k] == "(":
-                                d += 1
-                            elif line[k] == ")":
-                                d -= 1
-                        k += 1
-                    args = line[j:k]
-                    me = k
+                args, me = _scan_method_args(line, me, regions)
                 chain.append((mem, args, me))
-                pos = me
+                cur = me
             if not chain:
                 pos = idx + 2
                 continue
+
+            # Build nested if-null checks from the inside out.
             paths = [base]
-            orig_chain_parts = [base]
+            orig_parts = [base]
             for mem, args, _ in chain:
                 paths.append(f"{paths[-1]}.{mem}{args}")
-                orig_chain_parts.append(f"{mem}{args}")
+                orig_parts.append(f"{mem}{args}")
             inner = paths[-1]
             for p in reversed(paths[:-1]):
                 inner = f"if ($null -ne {p}) {{ {inner} }}"
             inner = f"$({inner})"
-            orig_expr = "?.".join(orig_chain_parts)
+
+            orig_expr = "?.".join(orig_parts)
             warnings.append(
                 f"null-conditional member access `{orig_expr}` "
                 f"rewritten to `{inner}`"
@@ -677,9 +782,9 @@ def _transform_null_conditional_dot_line(line: str) -> tuple[str, list[str]]:
     return line, warnings
 
 
-# ---------------------------------------------------------------------------
-# Null-conditional index access  (?[)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Transform: null-conditional index access  (?[)
+# ===========================================================================
 
 def _transform_null_conditional_bracket_line(line: str) -> tuple[str, list[str]]:
     """Rewrite null-conditional index access ``$obj?[index]``.
@@ -688,7 +793,7 @@ def _transform_null_conditional_bracket_line(line: str) -> tuple[str, list[str]]
     """
     warnings: list[str] = []
     while True:
-        regions = _find_line_regions(line)
+        regions = _find_regions(line, here_strings=False)
         matched = False
         pos = 0
         while pos < len(line) - 1:
@@ -698,12 +803,18 @@ def _transform_null_conditional_bracket_line(line: str) -> tuple[str, list[str]]
             if not _outside_regions(regions, idx):
                 pos = idx + 2
                 continue
+            # Skip $?[ — the ? belongs to $? auto-var
+            if _after_dollar_question(line, idx):
+                pos = idx + 1  # +1 so we can still find ?[ at the next position
+                continue
+
             expr_start, expr_end = _expr_left(line, idx, regions, "?:")
             expr = line[expr_start:expr_end].strip()
             expr, expr_start = _strip_command_prefix(expr, expr_start)
             if not expr:
                 pos = idx + 2
                 continue
+
             bracket_depth = 1
             bracket_end = idx + 2
             while bracket_end < len(line) and bracket_depth > 0:
@@ -714,7 +825,7 @@ def _transform_null_conditional_bracket_line(line: str) -> tuple[str, list[str]]
                     elif c == "]":
                         bracket_depth -= 1
                 bracket_end += 1
-            index_expr = line[idx + 2 : bracket_end - 1]
+            index_expr = line[idx + 2:bracket_end - 1]
             inner = f"$(if ($null -ne {expr}) {{ {expr}[{index_expr}] }})"
             warnings.append(
                 f"null-conditional index `{expr}?[{index_expr}]` "
@@ -727,20 +838,18 @@ def _transform_null_conditional_bracket_line(line: str) -> tuple[str, list[str]]
             break
     return line, warnings
 
-# ---------------------------------------------------------------------------
-# Warning collection helper
-# ---------------------------------------------------------------------------
 
-def _collect_line_warnings(all_warnings: list[str], line_idx: int,
-                          line_warnings: list[str]) -> None:
+# ===========================================================================
+# Public API
+# ===========================================================================
+
+def _collect_line_warnings(
+    all_warnings: list[str], line_idx: int, line_warnings: list[str]
+) -> None:
     """Prepend a line number prefix to each warning and append to *all_warnings*."""
     for w in line_warnings:
         all_warnings.append(f"Line {line_idx + 1}: {w}")
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def pwsh_transform(code: str) -> tuple[str, list[str]]:
     """Transform PowerShell 7.x syntax into PowerShell 5.1 compatible syntax.
@@ -750,8 +859,9 @@ def pwsh_transform(code: str) -> tuple[str, list[str]]:
     """
     code = _join_continuation_lines(code)
     lines = code.split("\n")
-    regions = _find_string_regions(code)
+    regions = _find_regions(code)
 
+    # Compute line offsets for multi-line region detection.
     line_offsets = [0]
     for ln in lines[:-1]:
         line_offsets.append(line_offsets[-1] + len(ln) + 1)
@@ -761,31 +871,33 @@ def pwsh_transform(code: str) -> tuple[str, list[str]]:
         if "\n" not in code[s:e]:
             continue
         first = bisect_right(line_offsets, s) - 1
-        last = bisect_left(line_offsets, e) - 1
+        last = bisect_right(line_offsets, e) - 1
         multi.update(range(first, last + 1))
 
     result: list[str] = []
     all_warnings: list[str] = []
+
+    # Order matters: ??= before ?? (so ??= isn't partially matched),
+    # ?. before ?[ before ?? (so ?? doesn't consume ?. output), etc.
+    _TRANSFORMS = (
+        _transform_nca_line,
+        _transform_null_conditional_dot_line,
+        _transform_null_conditional_bracket_line,
+        _transform_nc_line,
+        _transform_ternary_line,
+        _transform_chain_line,
+    )
+
     for i, line in enumerate(lines):
         if i in multi:
             result.append(line)
             continue
-        line, w = _transform_nca_line(line)
-        _collect_line_warnings(all_warnings, i, w)
-        line, w = _transform_null_conditional_dot_line(line)
-        _collect_line_warnings(all_warnings, i, w)
-        line, w = _transform_null_conditional_bracket_line(line)
-        _collect_line_warnings(all_warnings, i, w)
-        line, w = _transform_nc_line(line)
-        _collect_line_warnings(all_warnings, i, w)
-        line, w = _transform_ternary_line(line)
-        _collect_line_warnings(all_warnings, i, w)
-        line, w = _transform_chain_line(line)
-        _collect_line_warnings(all_warnings, i, w)
+        for xform in _TRANSFORMS:
+            line, w = xform(line)
+            _collect_line_warnings(all_warnings, i, w)
         result.append(line)
 
-    result_code = "\n".join(result)
-    return result_code, all_warnings
+    return "\n".join(result), all_warnings
 
 
 if __name__ == "__main__":
