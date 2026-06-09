@@ -12,8 +12,6 @@ PowerShell 5.1:
 This module performs a *source-to-source* transformation.  It operates on raw
 text rather than an AST because the target environment (5.1) cannot parse the
 new syntax in the first place.
-
-The public entry point is ``pwsh_transform(code)``.
 """
 
 from __future__ import annotations
@@ -380,8 +378,12 @@ def _expr_right(line: str, pos: int, regions: list[tuple[int, int]]) -> tuple[in
 # Null-coalescing assignment  (??=)
 # ---------------------------------------------------------------------------
 
-def _transform_nca_line(line: str) -> str:
-    """Rewrite null-coalescing assignment ``$var ??= value``."""
+def _transform_nca_line(line: str) -> tuple[str, list[str]]:
+    """Rewrite null-coalescing assignment ``$var ??= value``.
+
+    Returns ``(transformed_line, warnings)``.
+    """
+    warnings: list[str] = []
     while True:
         regions = _find_line_regions(line)
         found = False
@@ -418,21 +420,30 @@ def _transform_nca_line(line: str) -> str:
                 value = line[val_start:val_end].strip()
                 before = line[:var_start].rstrip()
                 prefix = f"{before} " if before else ""
-                line = f"{prefix}if ($null -eq {var}) {{ {var} = {value} }}" + line[val_end:]
+                new_inner = f"if ($null -eq {var}) {{ {var} = {value} }}"
+                warnings.append(
+                    f"null-coalescing assignment `{var} ??= {value}` "
+                    f"rewritten to `{new_inner}`"
+                )
+                line = f"{prefix}{new_inner}" + line[val_end:]
                 found = True
                 break
             pos += 1
         if not found:
             break
-    return line
+    return line, warnings
 
 
 # ---------------------------------------------------------------------------
 # Null-coalescing  (??)
 # ---------------------------------------------------------------------------
 
-def _transform_nc_line(line: str) -> str:
-    """Transform every ``??`` on *line* into PS 5.1 compatible ``if`` form."""
+def _transform_nc_line(line: str) -> tuple[str, list[str]]:
+    """Transform every ``??`` on *line* into PS 5.1 compatible ``if`` form.
+
+    Returns ``(transformed_line, warnings)``.
+    """
+    warnings: list[str] = []
     while True:
         regions = _find_line_regions(line)
         rewritten = False
@@ -449,13 +460,17 @@ def _transform_nc_line(line: str) -> str:
                 right_expr = line[right_start:right_end].strip()
                 if left_expr and right_expr:
                     inner = f"if ($null -ne {left_expr}) {{ {left_expr} }} else {{ {right_expr} }}"
+                    warnings.append(
+                        f"null-coalescing `{left_expr} ?? {right_expr}` "
+                        f"rewritten to `{inner}`"
+                    )
                     line = _build_replacement(line[:left_start], inner) + line[right_end:]
                     rewritten = True
                     break
             pos = idx + 2
         if not rewritten:
             break
-    return line
+    return line, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -476,8 +491,12 @@ def _find_matching_colon(
     return -1
 
 
-def _transform_ternary_line(line: str) -> str:
-    """Rewrite ternary ``$cond ? $true : $false`` into an ``if`` statement."""
+def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
+    """Rewrite ternary ``$cond ? $true : $false`` into an ``if`` statement.
+
+    Returns ``(transformed_line, warnings)``.
+    """
+    warnings: list[str] = []
     regions = _find_line_regions(line)
     depth_arr = _compute_depths(line, regions)
     pos = 0
@@ -502,6 +521,10 @@ def _transform_ternary_line(line: str) -> str:
                             cond_start += m.end()
                             condition = expr_part
                 inner = f"if ({condition}) {{ {true_expr} }} else {{ {false_expr} }}"
+                warnings.append(
+                    f"ternary operator `{condition} ? {true_expr} : {false_expr}` "
+                    f"rewritten to `{inner}`"
+                )
                 suffix = line[false_end:]
                 line = _build_replacement(line[:cond_start], inner) + suffix
                 regions = _find_line_regions(line)
@@ -509,15 +532,19 @@ def _transform_ternary_line(line: str) -> str:
                 pos = len(line) - len(suffix)
                 continue
         pos += 1
-    return line
+    return line, warnings
 
 
 # ---------------------------------------------------------------------------
 # Pipeline chain operators  (&& / ||)
 # ---------------------------------------------------------------------------
 
-def _transform_chain_line(line: str) -> str:
-    """Rewrite pipeline chain operators ``&&`` and ``||``."""
+def _transform_chain_line(line: str) -> tuple[str, list[str]]:
+    """Rewrite pipeline chain operators ``&&`` and ``||``.
+
+    Returns ``(transformed_line, warnings)``.
+    """
+    warnings: list[str] = []
     while True:
         regions = _find_line_regions(line)
         # Find rightmost && or || outside string/comment regions.
@@ -534,16 +561,25 @@ def _transform_chain_line(line: str) -> str:
         condition = "$?" if best_op == "&&" else "-not $?"
         left = line[:best_pos].strip()
         right = line[best_pos + 2:].strip()
-        line = f"{left}; if ({condition}) {{ {right} }}"
-    return line
+        new_line = f"{left}; if ({condition}) {{ {right} }}"
+        warnings.append(
+            f"pipeline chain `{left} {best_op} {right}` "
+            f"rewritten to `{new_line}`"
+        )
+        line = new_line
+    return line, warnings
 
 
 # ---------------------------------------------------------------------------
 # Null-conditional member access  (?.)
 # ---------------------------------------------------------------------------
 
-def _transform_null_conditional_dot_line(line: str) -> str:
-    """Rewrite null-conditional member access ``$obj?.Member``."""
+def _transform_null_conditional_dot_line(line: str) -> tuple[str, list[str]]:
+    """Rewrite null-conditional member access ``$obj?.Member``.
+
+    Returns ``(transformed_line, warnings)``.
+    """
+    warnings: list[str] = []
     while True:
         regions = _find_line_regions(line)
         matched = False
@@ -620,26 +656,37 @@ def _transform_null_conditional_dot_line(line: str) -> str:
                 pos = idx + 2
                 continue
             paths = [base]
+            orig_chain_parts = [base]
             for mem, args, _ in chain:
                 paths.append(f"{paths[-1]}.{mem}{args}")
+                orig_chain_parts.append(f"{mem}{args}")
             inner = paths[-1]
             for p in reversed(paths[:-1]):
                 inner = f"if ($null -ne {p}) {{ {inner} }}"
             inner = f"$({inner})"
+            orig_expr = "?.".join(orig_chain_parts)
+            warnings.append(
+                f"null-conditional member access `{orig_expr}` "
+                f"rewritten to `{inner}`"
+            )
             line = _build_replacement(line[:expr_start], inner) + line[chain[-1][2]:]
             matched = True
             break
         if not matched:
             break
-    return line
+    return line, warnings
 
 
 # ---------------------------------------------------------------------------
 # Null-conditional index access  (?[)
 # ---------------------------------------------------------------------------
 
-def _transform_null_conditional_bracket_line(line: str) -> str:
-    """Rewrite null-conditional index access ``$obj?[index]``."""
+def _transform_null_conditional_bracket_line(line: str) -> tuple[str, list[str]]:
+    """Rewrite null-conditional index access ``$obj?[index]``.
+
+    Returns ``(transformed_line, warnings)``.
+    """
+    warnings: list[str] = []
     while True:
         regions = _find_line_regions(line)
         matched = False
@@ -669,20 +716,38 @@ def _transform_null_conditional_bracket_line(line: str) -> str:
                 bracket_end += 1
             index_expr = line[idx + 2 : bracket_end - 1]
             inner = f"$(if ($null -ne {expr}) {{ {expr}[{index_expr}] }})"
+            warnings.append(
+                f"null-conditional index `{expr}?[{index_expr}]` "
+                f"rewritten to `{inner}`"
+            )
             line = _build_replacement(line[:expr_start], inner) + line[bracket_end:]
             matched = True
             break
         if not matched:
             break
-    return line
+    return line, warnings
+
+# ---------------------------------------------------------------------------
+# Warning collection helper
+# ---------------------------------------------------------------------------
+
+def _collect_line_warnings(all_warnings: list[str], line_idx: int,
+                          line_warnings: list[str]) -> None:
+    """Prepend a line number prefix to each warning and append to *all_warnings*."""
+    for w in line_warnings:
+        all_warnings.append(f"Line {line_idx + 1}: {w}")
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def pwsh_transform(code: str) -> str:
-    """Transform PowerShell 7.x syntax into PowerShell 5.1 compatible syntax."""
+def pwsh_transform(code: str) -> tuple[str, list[str]]:
+    """Transform PowerShell 7.x syntax into PowerShell 5.1 compatible syntax.
+
+    Returns ``(transformed_code, warnings)`` where *warnings* is a list of
+    human-readable messages describing each transformation that was applied.
+    """
     code = _join_continuation_lines(code)
     lines = code.split("\n")
     regions = _find_string_regions(code)
@@ -700,19 +765,27 @@ def pwsh_transform(code: str) -> str:
         multi.update(range(first, last + 1))
 
     result: list[str] = []
+    all_warnings: list[str] = []
     for i, line in enumerate(lines):
         if i in multi:
             result.append(line)
             continue
-        line = _transform_nca_line(line)
-        line = _transform_null_conditional_dot_line(line)
-        line = _transform_null_conditional_bracket_line(line)
-        line = _transform_nc_line(line)
-        line = _transform_ternary_line(line)
-        line = _transform_chain_line(line)
+        line, w = _transform_nca_line(line)
+        _collect_line_warnings(all_warnings, i, w)
+        line, w = _transform_null_conditional_dot_line(line)
+        _collect_line_warnings(all_warnings, i, w)
+        line, w = _transform_null_conditional_bracket_line(line)
+        _collect_line_warnings(all_warnings, i, w)
+        line, w = _transform_nc_line(line)
+        _collect_line_warnings(all_warnings, i, w)
+        line, w = _transform_ternary_line(line)
+        _collect_line_warnings(all_warnings, i, w)
+        line, w = _transform_chain_line(line)
+        _collect_line_warnings(all_warnings, i, w)
         result.append(line)
 
-    return "\n".join(result)
+    result_code = "\n".join(result)
+    return result_code, all_warnings
 
 
 if __name__ == "__main__":
@@ -722,5 +795,7 @@ if __name__ == "__main__":
         text = " ".join(sys.argv[1:])
     else:
         text = sys.stdin.read()
-    result = pwsh_transform(text)
+    result, warnings = pwsh_transform(text)
+    for w in warnings:
+        print(f"[WARNING] {w}", file=sys.stderr)
     print(result)

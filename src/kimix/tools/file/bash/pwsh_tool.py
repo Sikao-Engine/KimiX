@@ -65,11 +65,12 @@ class Powershell(CallableTool2[PowershellParams]):
                 brief="Empty command",
             )
 
-        # Check forbidden commands (pre-normalized in __init__)
-        cmd = pwsh_transform(params.cmd)
+        # Transform PS7 syntax to PS5.1 compatible syntax
+        cmd, transform_warnings = pwsh_transform(params.cmd)
         transform_warning = ""
-        if cmd != params.cmd:
-            transform_warning = f"[WARNING] Command `{params.cmd}` transformed to powershell 5.1\n"
+        if transform_warnings:
+            warning_lines = "\n".join(w for w in transform_warnings)
+            transform_warning = '\n[WARNING]' + warning_lines
         if self._forbidden_tokens:
             cmd_tokens = " ".join(cmd.split()).split()
             for forbidden_tokens in self._forbidden_tokens:
@@ -78,7 +79,7 @@ class Powershell(CallableTool2[PowershellParams]):
                 if cmd_tokens[:len(forbidden_tokens)] == forbidden_tokens:
                     return ToolError(
                         output="",
-                        message=transform_warning + f"`{cmd}` is forbidden by config rule.",
+                        message=f"`{cmd}` is forbidden by config rule." + transform_warning,
                         brief="Forbidden command",
                     )
 
@@ -92,7 +93,7 @@ class Powershell(CallableTool2[PowershellParams]):
             output = await process_task.stream.get_output() if process_task.stream else ""
             return ToolError(
                 output=output,
-                message=transform_warning + f"`{cmd}` Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`",
+                message=f"`{cmd}` Running in background. task_id: `{task_id}`. use `TaskOutput` or `Input`." + transform_warning,
                 brief="Timeout",
             )
 
@@ -102,12 +103,12 @@ class Powershell(CallableTool2[PowershellParams]):
         success = await process_task.stream.success() if process_task.stream else False
 
         if not success:
-            return ToolError(output=output, message=transform_warning + f"`{cmd}` failed", brief="Command execution failed")
+            return ToolError(output=output, message=f"`{cmd}` failed." + transform_warning, brief="Command execution failed")
 
         output = await _maybe_export_output_async(output)
         return ToolOk(
             output=output,
-            message=transform_warning + f'`{cmd}` success',
+            message=f'`{cmd}` success.' + transform_warning,
             brief=f"Command executed successfully",
             display_block=ShellDisplayBlock(language="powershell", command=cmd),
         )
