@@ -14,7 +14,7 @@ A coding agent's power comes from efficient interaction with the environment. Th
 | **Code Execution** | `Run`, `Python` | Execute commands or Python code |
 | **Process Management** | `TaskOutput`, `Input` | Interact with background processes |
 | **Search & Info** | `FetchURL`, `Search` | Fetch web content, search local skills |
-| **State & Tracking** | `SetTodoList`, `StepMemory` | Track progress, persist steps across compactions |
+| **State & Tracking** | `SetTodoList` | Track progress |
 | **Sub-agent** | `Agent` | Delegate subtasks |
 
 ---
@@ -77,12 +77,6 @@ Semantic search in local skill directories. Optional `dest_path` filter.
 #### `SetTodoList`
 Track multi-step task progress. States: `pending`, `in_progress`, `done`. Always pass the **complete list** on update.
 
-#### `StepMemory`
-Persist key steps to `.kimix_cache/steps/{session_id}.json` for recovery after context compaction.
-
-- `action="save"`: record a step (required: `step`; optional: `result`, `files`, `brief`)
-- `action="load"`: retrieve history by `step` text or `files`
-- Auto-compaction: >200 records → oldest half compressed to summaries
 
 ---
 

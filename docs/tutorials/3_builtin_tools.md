@@ -47,7 +47,7 @@
 | **代码执行** | `Run`, `Python` | 执行可执行文件、bash 命令或 Python 代码 |
 | **进程管理** | `TaskOutput`, `Input` | 与后台进程交互、获取输出、发送输入 |
 | **搜索与信息** | `FetchURL`, `Search` | 获取网页内容、搜索本地 skill |
-| **状态与标志** | `SetTodoList`, `StepMemory` | 追踪多步骤任务进度、持久化工作步骤（可跨 compact 恢复） |
+| **状态与标志** | `SetTodoList` | 追踪多步骤任务进度 |
 | **子代理** | `Agent` | 委派子任务给独立 agent |
 
 ---
@@ -140,13 +140,6 @@
 - **要点**：仅在复杂任务中使用，且每次更新必须传入**完整的任务列表**。
 - **示例场景**：重构一个大型模块时，将任务拆分为"调研依赖 → 修改接口 → 更新测试 → 验证编译"并持续更新进度。
 
-#### `StepMemory` —— 持久化工作步骤
-- **功能**：将已完成的关键步骤持久化到文件（`.kimix_cache/steps/{session_id}.json`），即使上下文被 compact 后也能恢复完整历史。
-- **两种操作**：
-  - `action="save"`：记录一个步骤。必须提供 `step`（步骤描述），可选 `result`（结果摘要）、`files`（涉及文件列表）、`brief`（简短标题用于 compact 后快速索引）
-  - `action="load"`：加载历史。支持按 `step` 文本过滤或按 `files` 搜索 ToolCallReason 记录
-- **自动压缩**：超过 200 条记录时，将最旧的一半压缩为摘要（保留 `seq`、`time`、`brief`，步骤和结果标记为 `[compacted]`）
-- **示例场景**：在 context compaction 后恢复之前的任务进度、跨会话追踪多阶段任务的完成情况
 
 ---
 

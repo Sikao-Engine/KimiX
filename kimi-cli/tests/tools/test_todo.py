@@ -42,7 +42,7 @@ class TestSetTodoListOutputNotEmpty:
             "SetTodoList output must not be empty — this is the root cause of issue #1710. "
             "The model needs to see confirmation of the todo state it just set."
         )
-        assert result.message == "Todo list updated. Consider using `StepMemory` to record key progress."
+        assert result.message == "Todo list updated."
 
     async def test_read_mode_returns_current_todos(self, set_todo_list_tool: SetTodoList):
         """When no todos are provided (None), the tool should return the current

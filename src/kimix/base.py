@@ -498,8 +498,6 @@ def _format_tool_args(name: str, args: str | None) -> str | None:
                 if parsed.get("force_replace"):
                     parts.append("force_replace=True")
                 return ", ".join(parts)
-            case "StepMemory":
-                return ", ".join(_collect("action", "step", "result", "files", "brief"))
             case "ReadFile":
                 return ", ".join(_collect("path", "line_offset", "n_lines", "max_char", "char_offset"))
             case "EditFile":

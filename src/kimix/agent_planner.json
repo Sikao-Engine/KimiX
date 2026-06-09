@@ -10,8 +10,7 @@
       "kimix.tools.note:WritePlan",
       "kimix.tools.note:ReadPlan",
       "kimix.tools.note:EditPlan",
-      "kimi_cli.tools.todo:SetTodoList",
-      "kimi_cli.tools.step_mem:StepMemory"
+      "kimi_cli.tools.todo:SetTodoList"
     ]
   }
 }

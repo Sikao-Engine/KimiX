@@ -224,7 +224,7 @@ class SetTodoList(CallableTool2[Params]):
         return ToolReturnValue(
             is_error=False,
             output=output,
-            message="Todo list updated. Consider using `StepMemory` to record key progress.",
+            message="Todo list updated.",
             display=[TodoDisplayBlock(items=items)],
         )
 
@@ -318,7 +318,7 @@ class SetTodoList(CallableTool2[Params]):
         if not todos:
             return ToolReturnValue(
                 is_error=False,
-                output="Todo list is empty. Consider using `StepMemory` to recall key progress.",
+                output="Todo list is empty.",
                 message="",
                 display=[],
             )
@@ -328,7 +328,7 @@ class SetTodoList(CallableTool2[Params]):
             lines.append(f"- [{todo.status}] {todo.title}")
         return ToolReturnValue(
             is_error=False,
-            output="\n".join(lines) + " Consider using `StepMemory` to recall key progress.",
+            output="\n".join(lines),
             message="",
             display=[],
         )

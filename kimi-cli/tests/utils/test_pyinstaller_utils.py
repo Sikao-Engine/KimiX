@@ -93,7 +93,7 @@ def test_pyinstaller_hiddenimports():
             "kimi_cli.tools.file.write",
             "kimi_cli.tools.plan",
             "kimi_cli.tools.plan.enter",
-            "kimi_cli.tools.plan.heroes", "kimi_cli.tools.reason", "kimi_cli.tools.shell", "kimi_cli.tools.step_mem", "kimi_cli.tools.test",
+            "kimi_cli.tools.plan.heroes", "kimi_cli.tools.reason", "kimi_cli.tools.shell", "kimi_cli.tools.test",
             "kimi_cli.tools.think",
             "kimi_cli.tools.todo",
             "kimi_cli.tools.utils",
