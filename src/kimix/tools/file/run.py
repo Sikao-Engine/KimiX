@@ -114,11 +114,15 @@ class Run(CallableTool2[RunParams]):
         raw_forbidden = _DEFAULT_FORBIDDEN_COMMANDS + \
             self._session.custom_config.get(
                 "config_json", {}).get("forbidden_commands", [])
-        self._forbidden_tokens: list[list[str]] = []
+        self._forbidden_keywords: list[str] = []
+        seen: set[str] = set()
         for cmd in raw_forbidden:
             if not isinstance(cmd, str) or not cmd:
                 continue
-            self._forbidden_tokens.append(" ".join(cmd.split()).split())
+            normalized = " ".join(cmd.split())
+            if normalized not in seen:
+                seen.add(normalized)
+                self._forbidden_keywords.append(normalized)
 
     async def __call__(self, params: RunParams) -> ToolReturnValue:
         import os
@@ -182,13 +186,11 @@ class Run(CallableTool2[RunParams]):
                 cmd_str) > _HUGE_CMD_THRESHOLD else cmd_str
 
             # Check forbidden commands (pre-normalized in __init__)
-            if self._forbidden_tokens:
+            if self._forbidden_keywords:
                 full_cmd = params.command
-                cmd_tokens = " ".join(full_cmd.split()).split()
-                for forbidden_tokens in self._forbidden_tokens:
-                    if len(forbidden_tokens) > len(cmd_tokens):
-                        continue
-                    if cmd_tokens[:len(forbidden_tokens)] == forbidden_tokens:
+                normalized_cmd = " ".join(full_cmd.split())
+                for keyword in self._forbidden_keywords:
+                    if keyword in normalized_cmd:
                         return ToolError(
                             output="",
                             message=f"Command `{full_cmd}` is forbidden by config rule.",
@@ -198,6 +200,11 @@ class Run(CallableTool2[RunParams]):
             # Check if executable is a valid process (in PATH or existing file),
             # then fall back to bash built-in commands.
             import shutil
+            # Refresh PATH/PATHEXT from registry so that tools installed
+            # since the last command (e.g. via WinGet) are discoverable.
+            if sys.platform == "win32":
+                from kimix.utils.windows_env import refresh_env_from_registry
+                refresh_env_from_registry()
 
             is_process = False
             is_py = False

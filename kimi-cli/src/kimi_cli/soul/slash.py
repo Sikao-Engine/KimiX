@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -249,6 +250,21 @@ async def export(soul: KimiSoul, args: str):
             "Please be cautious when sharing it externally."
         )
     )
+
+
+@registry.command(name="refresh-env")
+async def refresh_env(soul: KimiSoul, args: str):
+    """Refresh PATH/PATHEXT from the Windows registry (no restart required)"""
+    import platform
+
+    if platform.system() != "Windows":
+        wire_send(TextPart(text="This command is only available on Windows."))
+        return
+
+    from kimi_cli.utils.environment import refresh_windows_env
+
+    await asyncio.to_thread(refresh_windows_env)
+    wire_send(TextPart(text="PATH and PATHEXT have been refreshed from the registry."))
 
 
 @registry.command(name="import")

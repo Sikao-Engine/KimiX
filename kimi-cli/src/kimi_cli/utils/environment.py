@@ -6,11 +6,77 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Literal
 
 import kaos
 from kaos.path import KaosPath
+
+if sys.platform == "win32":
+    import ctypes
+    import winreg
+
+
+# ---------------------------------------------------------------------------
+# Registry helpers (used by refresh_windows_env)
+# ---------------------------------------------------------------------------
+
+
+def _expand_registry_string(value: str) -> str:
+    """Expand REG_EXPAND_SZ using the Windows API.
+
+    ``os.path.expandvars`` only expands against the current process
+    environment, which may be stale.  The Windows API
+    ``ExpandEnvironmentStringsW`` performs a fresh expansion against
+    the *system* and *user* environment blocks, giving the correct
+    result even for variables that were changed externally.
+    """
+    if "%" not in value:
+        return value
+    try:
+        nchars = ctypes.windll.kernel32.ExpandEnvironmentStringsW(
+            value, None, 0
+        )
+        if nchars == 0:
+            return value
+        buf = ctypes.create_unicode_buffer(nchars)
+        ctypes.windll.kernel32.ExpandEnvironmentStringsW(
+            value, buf, nchars
+        )
+        return buf.value
+    except Exception:
+        return os.path.expandvars(value)
+
+
+def _read_registry_value(hive: int, subkey: str, name: str) -> tuple[str | None, int | None]:
+    """Read a named value from the registry.
+
+    Returns ``(value, reg_type)``.  *value* may be ``None`` when the
+    value does not exist or cannot be read.  *reg_type* is the Windows
+    registry type constant (e.g. ``winreg.REG_SZ``).
+    """
+    try:
+        with winreg.OpenKey(hive, subkey, 0, winreg.KEY_READ) as key:
+            val, reg_type = winreg.QueryValueEx(key, name)
+            if isinstance(val, str):
+                return val, reg_type
+            return None, None
+    except (FileNotFoundError, OSError):
+        return None, None
+
+
+def _merge_dedup_paths(*sources: str) -> str:
+    """Merge semicolon-separated sources, dedup case-insensitively."""
+    seen: set[str] = set()
+    merged: list[str] = []
+    for src in sources:
+        for part in src.split(";"):
+            part = part.strip()
+            if part and part.lower() not in seen:
+                seen.add(part.lower())
+                merged.append(part)
+    return ";".join(merged)
 
 
 class GitBashNotFoundError(RuntimeError):
@@ -53,7 +119,10 @@ class Environment:
         os_arch = platform.machine()
         os_version = platform.version()
 
+        # Refresh PATH/PATHEXT from the Windows registry so that
+        # newly installed tools are visible without a full restart.
         if os_kind == "Windows":
+            await asyncio.to_thread(refresh_windows_env)
             candidates: list[tuple[str, KaosPath]] = []
 
             # 1. pwsh
@@ -126,6 +195,77 @@ class Environment:
 def is_windows() -> bool:
     """Return True iff the current process is running on native Windows."""
     return platform.system() == "Windows"
+
+
+def refresh_windows_env() -> None:
+    """Refresh ``os.environ["PATH"]`` and ``os.environ["PATHEXT"]``
+    from the Windows registry.
+
+    Reads both the system (HKLM) and user (HKCU) values,
+    expands REG_EXPAND_SZ entries via the Windows API, and
+    merges them into the current process environment.
+
+    After calling this function, ``shutil.which`` and
+    ``subprocess.Popen`` can locate binaries installed by
+    external package managers (WinGet, MSI, etc.) without
+    restarting the process.
+    """
+    if sys.platform != "win32":
+        return
+
+    # --- PATH ---
+    sys_val, sys_type = _read_registry_value(
+        winreg.HKEY_LOCAL_MACHINE,
+        r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        "Path",
+    )
+    usr_val, usr_type = _read_registry_value(
+        winreg.HKEY_CURRENT_USER,
+        r"Environment",
+        "Path",
+    )
+
+    path_parts: list[str] = []
+    if sys_val:
+        if sys_type == winreg.REG_EXPAND_SZ:
+            sys_val = _expand_registry_string(sys_val)
+        path_parts.append(sys_val)
+    if usr_val:
+        if usr_type == winreg.REG_EXPAND_SZ:
+            usr_val = _expand_registry_string(usr_val)
+        path_parts.append(usr_val)
+
+    if path_parts:
+        os.environ["PATH"] = _merge_dedup_paths(*path_parts)
+
+    # --- PATHEXT ---
+    sys_val, sys_type = _read_registry_value(
+        winreg.HKEY_LOCAL_MACHINE,
+        r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        "PATHEXT",
+    )
+    usr_val, usr_type = _read_registry_value(
+        winreg.HKEY_CURRENT_USER,
+        r"Environment",
+        "PATHEXT",
+    )
+
+    pathext_parts: list[str] = []
+    if sys_val:
+        if sys_type == winreg.REG_EXPAND_SZ:
+            sys_val = _expand_registry_string(sys_val)
+        pathext_parts.append(sys_val)
+    if usr_val:
+        if usr_type == winreg.REG_EXPAND_SZ:
+            usr_val = _expand_registry_string(usr_val)
+        pathext_parts.append(usr_val)
+
+    if pathext_parts:
+        os.environ["PATHEXT"] = _merge_dedup_paths(*pathext_parts)
+
+
+# Backward-compatibility alias matching the kimix naming convention.
+refresh_env_from_registry = refresh_windows_env
 
 
 async def _find_git_bash_path() -> KaosPath:

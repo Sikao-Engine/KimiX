@@ -419,11 +419,15 @@ class Bash(CallableTool2[BashParams]):
 
         # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
         raw_forbidden = _DEFAULT_FORBIDDEN_COMMANDS + self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
-        self._forbidden_tokens: list[list[str]] = []
+        self._forbidden_keywords: list[str] = []
+        seen: set[str] = set()
         for cmd in raw_forbidden:
             if not isinstance(cmd, str) or not cmd:
                 continue
-            self._forbidden_tokens.append(" ".join(cmd.split()).split())
+            normalized = " ".join(cmd.split())
+            if normalized not in seen:
+                seen.add(normalized)
+                self._forbidden_keywords.append(normalized)
 
     async def __call__(self, params: BashParams) -> ToolReturnValue:
         """Execute the bash command via the system bash executable.
@@ -444,13 +448,11 @@ class Bash(CallableTool2[BashParams]):
             )
 
         # Check forbidden commands (pre-normalized in __init__)
-        if self._forbidden_tokens:
+        if self._forbidden_keywords:
             full_cmd = params.cmd
-            cmd_tokens = " ".join(full_cmd.split()).split()
-            for forbidden_tokens in self._forbidden_tokens:
-                if len(forbidden_tokens) > len(cmd_tokens):
-                    continue
-                if cmd_tokens[:len(forbidden_tokens)] == forbidden_tokens:
+            normalized_cmd = " ".join(full_cmd.split())
+            for keyword in self._forbidden_keywords:
+                if keyword in normalized_cmd:
                     return ToolError(
                         output="",
                         message=f"`{full_cmd}` is forbidden by config rule.",

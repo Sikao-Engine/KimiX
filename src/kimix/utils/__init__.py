@@ -6,6 +6,7 @@ from ._globals import (
 )
 from .config import _create_config
 from .system_prompt import _SYSTEM_PROMP, get_system_prompt, SystemPromptType
+from .windows_env import refresh_env_from_registry
 from .session import (
     context_path,
     delete_session_dir,
@@ -66,4 +67,5 @@ __all__ = [
     "async_fix_error",
     "compact_default_context",
     "set_ralph_loop",
+    "refresh_env_from_registry",
 ]

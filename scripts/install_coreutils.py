@@ -92,36 +92,106 @@ def _download_file(url: str, dest: Path) -> None:
 
 
 def _refresh_path_from_registry() -> None:
-    """Refresh ``os.environ["PATH"]`` from the Windows registry.
+    """Refresh ``os.environ["PATH"]`` and ``os.environ["PATHEXT"]``
+    from the Windows registry.
 
-    Reads both the system (HKLM) and user (HKCU) PATH values and
-    merges them into the current process environment so that
-    ``shutil.which`` can find binaries installed by external
-    package managers (e.g. WinGet) without restarting the process.
+    Reads both the system (HKLM) and user (HKCU) values,
+    expands REG_EXPAND_SZ entries, and merges them into the
+    current process environment so that ``shutil.which`` can
+    find binaries installed by external package managers
+    (e.g. WinGet) without restarting the process.
     """
-    paths: list[str] = []
-    for hive, subkey in (
-        (winreg.HKEY_CURRENT_USER, r"Environment"),
-        (winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"),
-    ):
+    import ctypes
+
+    def _expand(value: str) -> str:
+        """Expand REG_EXPAND_SZ strings via Windows API."""
+        if "%" not in value:
+            return value
+        try:
+            nchars = ctypes.windll.kernel32.ExpandEnvironmentStringsW(
+                value, None, 0
+            )
+            if nchars == 0:
+                return value
+            buf = ctypes.create_unicode_buffer(nchars)
+            ctypes.windll.kernel32.ExpandEnvironmentStringsW(
+                value, buf, nchars
+            )
+            return buf.value
+        except Exception:
+            return os.path.expandvars(value)
+
+    def _read(hive: int, subkey: str, name: str) -> tuple[str | None, int | None]:
         try:
             with winreg.OpenKey(hive, subkey, 0, winreg.KEY_READ) as key:
-                val, _ = winreg.QueryValueEx(key, "Path")
+                val, reg_type = winreg.QueryValueEx(key, name)
                 if isinstance(val, str):
-                    paths.append(val)
+                    return val, reg_type
+                return None, None
         except (FileNotFoundError, OSError):
-            pass
+            return None, None
 
-    existing = os.environ.get("PATH", "")
-    merged: list[str] = []
-    seen: set[str] = set()
-    for part in existing.split(";") + [p for src in paths for p in src.split(";")]:
-        part = part.strip()
-        if part and part.lower() not in seen:
-            seen.add(part.lower())
-            merged.append(part)
-    if merged:
-        os.environ["PATH"] = ";".join(merged)
+    def _merge_dedup(*sources: str) -> str:
+        """Merge semicolon-separated sources, dedup case-insensitively."""
+        seen: set[str] = set()
+        merged: list[str] = []
+        for src in sources:
+            for part in src.split(";"):
+                part = part.strip()
+                if part and part.lower() not in seen:
+                    seen.add(part.lower())
+                    merged.append(part)
+        return ";".join(merged)
+
+    # --- PATH ---
+    sys_val, sys_type = _read(
+        winreg.HKEY_LOCAL_MACHINE,
+        r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        "Path",
+    )
+    usr_val, usr_type = _read(
+        winreg.HKEY_CURRENT_USER,
+        r"Environment",
+        "Path",
+    )
+
+    path_parts: list[str] = []
+    if sys_val:
+        if sys_type == winreg.REG_EXPAND_SZ:
+            sys_val = _expand(sys_val)
+        path_parts.append(sys_val)
+    if usr_val:
+        if usr_type == winreg.REG_EXPAND_SZ:
+            usr_val = _expand(usr_val)
+        path_parts.append(usr_val)
+
+    if path_parts:
+        os.environ["PATH"] = _merge_dedup(*path_parts)
+
+    # --- PATHEXT ---
+    sys_val, sys_type = _read(
+        winreg.HKEY_LOCAL_MACHINE,
+        r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+        "PATHEXT",
+    )
+    usr_val, usr_type = _read(
+        winreg.HKEY_CURRENT_USER,
+        r"Environment",
+        "PATHEXT",
+    )
+
+    pathext_parts: list[str] = []
+    if sys_val:
+        if sys_type == winreg.REG_EXPAND_SZ:
+            sys_val = _expand(sys_val)
+        pathext_parts.append(sys_val)
+    if usr_val:
+        if usr_type == winreg.REG_EXPAND_SZ:
+            usr_val = _expand(usr_val)
+        pathext_parts.append(usr_val)
+
+    if pathext_parts:
+        os.environ["PATHEXT"] = _merge_dedup(*pathext_parts)
 
 
 def _ensure_in_user_path(dirpath: str) -> None:

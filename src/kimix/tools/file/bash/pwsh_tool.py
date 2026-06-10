@@ -42,11 +42,15 @@ class Powershell(CallableTool2[PowershellParams]):
         # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
         # PowerShell is case-insensitive; normalize to lowercase.
         raw_forbidden = _DEFAULT_FORBIDDEN_COMMANDS + self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
-        self._forbidden_tokens: list[list[str]] = []
+        self._forbidden_keywords: list[str] = []
+        seen: set[str] = set()
         for cmd in raw_forbidden:
             if not isinstance(cmd, str) or not cmd:
                 continue
-            self._forbidden_tokens.append(" ".join(cmd.split()).lower().split())
+            normalized = " ".join(cmd.split()).lower()
+            if normalized not in seen:
+                seen.add(normalized)
+                self._forbidden_keywords.append(normalized)
 
     async def __call__(self, params: PowershellParams) -> ToolReturnValue:
         """Execute the PowerShell command via the system PowerShell executable.
@@ -58,6 +62,7 @@ class Powershell(CallableTool2[PowershellParams]):
             ToolOk on success, ToolError on failure or timeout.
         """
         from kimix.tools.background.utils import remove_task_id
+
 
         if not params.cmd:
             return ToolError(
@@ -72,18 +77,21 @@ class Powershell(CallableTool2[PowershellParams]):
         if transform_warnings:
             warning_lines = "\n".join(w for w in transform_warnings)
             transform_warning = '\n[WARNING]' + warning_lines
-        if self._forbidden_tokens:
-            # PowerShell is case-insensitive: compare lowercased tokens.
-            cmd_tokens = " ".join(cmd.split()).lower().split()
-            for forbidden_tokens in self._forbidden_tokens:
-                if len(forbidden_tokens) > len(cmd_tokens):
-                    continue
-                if cmd_tokens[:len(forbidden_tokens)] == forbidden_tokens:
+        if self._forbidden_keywords:
+            # PowerShell is case-insensitive: compare lowercased strings.
+            normalized_cmd = " ".join(cmd.split()).lower()
+            for keyword in self._forbidden_keywords:
+                if keyword in normalized_cmd:
                     return ToolError(
                         output="",
                         message=f"`{cmd}` is forbidden by config rule." + transform_warning,
                         brief="Forbidden command",
                     )
+        # Refresh PATH/PATHEXT from registry so that tools installed
+        # since the last command (e.g. via WinGet) are discoverable.
+        if sys.platform == "win32":
+            from kimix.utils.windows_env import refresh_env_from_registry
+            refresh_env_from_registry()
 
         # Build the command line to pass to PowerShell -Command
         process_task = ProcessTask('powershell', ["-NoP", "-NonI", "-Exec", "Bypass", "-NoL", "-C", cmd], None, None)
