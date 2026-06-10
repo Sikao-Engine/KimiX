@@ -356,6 +356,61 @@ def _cmd_supervisor(task_split: list[str], text_arr: list[str]) -> tuple[None, b
     return None, False
 
 
+def _cmd_todo(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
+    if len(task_split) < 2:
+        print_error('Command must be /todo:<path>')
+        return None, False
+    file_name_str = ':'.join(task_split[1:])
+    file_path = Path(file_name_str)
+    if not file_path.is_file():
+        print_error(f'file not found: {file_path}')
+        return None, False
+
+    from kimix.parser import (
+        PythonParser, CParser, ShellParser, HtmlParser, PascalParser, LispParser, SqlParser
+    )
+
+    suffix = file_path.suffix.lower()
+    parser = None
+    if suffix == '.py':
+        parser = PythonParser()
+    elif suffix in {'.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.java', '.js', '.ts', '.jsx', '.tsx', '.cs', '.go', '.rs'}:
+        parser = CParser()
+    elif suffix in {'.sh', '.bash', '.zsh'}:
+        parser = ShellParser()
+    elif suffix in {'.html', '.htm', '.xml', '.svg'}:
+        parser = HtmlParser()
+    elif suffix in {'.pas', '.pp', '.inc', '.dpr'}:
+        parser = PascalParser()
+    elif suffix in {'.lisp', '.lsp', '.clj', '.scm', '.ss', '.el'}:
+        parser = LispParser()
+    elif suffix == '.sql':
+        parser = SqlParser()
+    else:
+        print_error(f'Unsupported file type: {suffix}')
+        return None, False
+
+    try:
+        result = parser.parse_file(str(file_path))
+    except Exception as e:
+        print_error(f'Parse failed: {e}')
+        return None, False
+
+    todos = [c for c in result.comments if 'TODO' in c.content.upper()]
+    if not todos:
+        print_warning('No TODO comments found.')
+        return None, False
+
+    for todo in todos:
+        prompt_str = f'implement TODO at {file_path} at line: {todo.line}\n\nComment: {todo.content.strip()}'
+        try:
+            prompt(prompt_str=prompt_str, session=get_default_session())
+        except Exception as e:
+            print_error(f'Prompt failed for TODO at line {todo.line}: {e}')
+
+    return None, False
+
+
 def _cmd_unknown(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     print_warning('Unrecognized command.')
     return None, False
@@ -382,6 +437,7 @@ _command_map = {
     'ralph': _cmd_ralph,
     'cot': _cmd_cot,
     'supervisor': _cmd_supervisor,
-    'init': _cmd_init
+    'init': _cmd_init,
+    'todo': _cmd_todo
 }
 _command_map_keys = set(_command_map.keys())

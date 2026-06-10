@@ -145,6 +145,7 @@ uv run kimix --config <path>
 |---------|-------------|
 | `<path>` | Load file. Non-`.py` parsed as multi-line prompt; `.py` executed directly |
 | `/file:<path>` | Read entire file as a single prompt |
+| `/todo:<path>` | Scan code file for TODO comments and prompt agent to implement each one |
 | `/clear` | Clear current context |
 | `/summarize` | Summarize context to memory |
 | `/exit` | Exit |

@@ -26,6 +26,7 @@ HELP_STR = f'''Command line options:
 Available commands:
   {colorful_text('/file:<path>', fg=Color.YELLOW)}    - Load a file and execute its content line by line
   <path>              - Same as /file:<path>
+  {colorful_text('/todo:<path>', fg=Color.YELLOW)}    - Scan code file for TODO comments and prompt agent to implement them
   {colorful_text('/clear', fg=Color.YELLOW)}          - Clear the conversation context
   {colorful_text('/summarize', fg=Color.YELLOW)}      - Summarize conversation context to memory
   {colorful_text('/exit', fg=Color.YELLOW)}           - Exit the program
