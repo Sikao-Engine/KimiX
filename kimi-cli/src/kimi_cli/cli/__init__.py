@@ -10,10 +10,6 @@ if TYPE_CHECKING:
 
 from ._lazy_group import LazySubcommandGroup
 
-
-
-
-
 cli = typer.Typer(
     cls=LazySubcommandGroup,
     epilog="""\b\
@@ -23,9 +19,6 @@ LLM friendly version: https://moonshotai.github.io/kimi-cli/llms.txt""",
     context_settings={"help_option_names": ["-h", "--help"]},
     help="Kimi, your next CLI agent.",
 )
-
-UIMode = Literal["wire"]
-
 
 class ExitCode:
     SUCCESS = 0
@@ -264,6 +257,7 @@ def kimi(
     import asyncio
     import contextlib
     import inspect
+
     import orjson
 
     from kimi_cli.utils.proctitle import init_process_name
@@ -335,8 +329,6 @@ def kimi(
                 agent_file = DEFAULT_AGENT_FILE
             case "okabe":
                 agent_file = OKABE_AGENT_FILE
-
-    ui: UIMode = "wire"
 
     config: Config | Path | None = None
     if config_string is not None:
@@ -712,16 +704,6 @@ def logout(
         raise typer.Exit(code=1)
 
 
-@cli.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def term(
-    ctx: typer.Context,
-) -> None:
-    """Run Toad TUI backed by Kimi Code CLI ACP server."""
-    from .toad import run_term
-
-    run_term(ctx)
-
-
 @cli.command()
 def acp():
     """Run Kimi Code CLI ACP server."""
@@ -756,28 +738,6 @@ def background_task_worker(
             kill_grace_period_ms=kill_grace_period_ms,
         )
     )
-
-
-@cli.command(name="__web-worker", hidden=True)
-def web_worker(session_id: str) -> None:
-    """Run web worker subprocess (internal)."""
-    import asyncio
-    from uuid import UUID
-
-    from kimi_cli.utils.proctitle import set_process_title
-
-    set_process_title("kimi-code-worker")
-
-    from kimi_cli.app import enable_logging
-    from kimi_cli.web.runner.worker import run_worker
-
-    try:
-        parsed_session_id = UUID(session_id)
-    except ValueError as exc:
-        raise typer.BadParameter(f"Invalid session ID: {session_id}") from exc
-
-    enable_logging(debug=False)
-    asyncio.run(run_worker(parsed_session_id))
 
 
 if __name__ == "__main__":

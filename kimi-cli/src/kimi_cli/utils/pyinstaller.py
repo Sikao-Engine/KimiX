@@ -24,8 +24,6 @@ datas = (
             "prompts/**/*.md",
             "skills/**",
             "tools/**/*.md",
-            "web/static/**",
-            "vis/static/**",
             "CHANGELOG.md",
         ],
         excludes=[

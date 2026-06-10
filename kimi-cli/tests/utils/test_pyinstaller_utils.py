@@ -29,14 +29,11 @@ def test_pyinstaller_datas():
             ))
     datas = _datas
 
-    datas = [(p, d) for p, d in datas if "web/static" not in d and "vis/static" not in d]
-
     expected_datas = [
         ('src/kimi_cli/CHANGELOG.md', 'kimi_cli'),
         ('src/kimi_cli/agents/default/agent.yaml', 'kimi_cli/agents/default'),
         ('src/kimi_cli/agents/default/coder.yaml', 'kimi_cli/agents/default'),
         ('src/kimi_cli/agents/default/explore.yaml', 'kimi_cli/agents/default'),
-        ('src/kimi_cli/agents/default/plan.yaml', 'kimi_cli/agents/default'),
         ('src/kimi_cli/agents/default/system.md', 'kimi_cli/agents/default'),
         ('src/kimi_cli/agents/okabe/agent.yaml', 'kimi_cli/agents/okabe'),
         ('src/kimi_cli/prompts/compact.md', 'kimi_cli/prompts'),
@@ -54,8 +51,6 @@ def test_pyinstaller_datas():
         ('src/kimi_cli/tools/file/read.md', 'kimi_cli/tools/file'),
         ('src/kimi_cli/tools/file/read_media.md', 'kimi_cli/tools/file'),
         ('src/kimi_cli/tools/file/write.md', 'kimi_cli/tools/file'),
-        ('src/kimi_cli/tools/plan/description.md', 'kimi_cli/tools/plan'),
-        ('src/kimi_cli/tools/plan/enter_description.md', 'kimi_cli/tools/plan'),
         ('src/kimi_cli/tools/shell/bash.md', 'kimi_cli/tools/shell'),
         ('src/kimi_cli/tools/shell/powershell.md', 'kimi_cli/tools/shell'),
         ('src/kimi_cli/tools/think/think.md', 'kimi_cli/tools/think'),
@@ -77,7 +72,7 @@ def test_pyinstaller_hiddenimports():
             "kimi_cli.cli.export",
             "kimi_cli.cli.info",
             "kimi_cli.cli.mcp",
-            "kimi_cli.cli.plugin", "kimi_cli.cli.web",
+            "kimi_cli.cli.plugin",
             "kimi_cli.tools",
             "kimi_cli.tools.agent",
             "kimi_cli.tools.ask_user",
@@ -90,10 +85,7 @@ def test_pyinstaller_hiddenimports():
             "kimi_cli.tools.file.read_media",
             "kimi_cli.tools.file.replace",
             "kimi_cli.tools.file.utils",
-            "kimi_cli.tools.file.write",
-            "kimi_cli.tools.plan",
-            "kimi_cli.tools.plan.enter",
-            "kimi_cli.tools.plan.heroes", "kimi_cli.tools.reason", "kimi_cli.tools.shell", "kimi_cli.tools.test",
+            "kimi_cli.tools.file.write", "kimi_cli.tools.reason", "kimi_cli.tools.shell", "kimi_cli.tools.test",
             "kimi_cli.tools.think",
             "kimi_cli.tools.todo",
             "kimi_cli.tools.utils",
