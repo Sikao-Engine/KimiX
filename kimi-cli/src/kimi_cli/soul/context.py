@@ -16,7 +16,6 @@ from kimi_cli.soul.compaction import estimate_text_tokens
 from kimi_cli.soul.message import system
 from kosong.utils.jsonx import loads_relaxed
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.path import next_available_rotation
 
 
 class Context:
@@ -159,14 +158,13 @@ class Context:
         """
         Revert the context to the specified checkpoint.
         After this, the specified checkpoint and all subsequent content will be
-        removed from the context. File backend will be rotated.
+        removed from the context.
 
         Args:
             checkpoint_id (int): The ID of the checkpoint to revert to. 0 is the first checkpoint.
 
         Raises:
             ValueError: When the checkpoint does not exist.
-            RuntimeError: When no available rotation path is found.
         """
 
         logger.debug("Reverting checkpoint, ID: {id}", id=checkpoint_id)
@@ -174,51 +172,50 @@ class Context:
             logger.error("Checkpoint {checkpoint_id} does not exist", checkpoint_id=checkpoint_id)
             raise ValueError(f"Checkpoint {checkpoint_id} does not exist")
 
-        # rotate the context file
-        rotated_file_path = await next_available_rotation(self._file_backend)
-        if rotated_file_path is None:
-            logger.error("No available rotation path found")
-            raise RuntimeError("No available rotation path found")
-        await aiofiles.os.replace(self._file_backend, rotated_file_path)
-        logger.debug(
-            "Rotated context file: {rotated_file_path}", rotated_file_path=rotated_file_path
-        )
-
-        # restore the context until the specified checkpoint
+        # Read current file and write truncated version to a temp file
+        tmp_path = self._file_backend.with_suffix(".tmp")
         self._history.clear()
         self._token_count = 0
         self._next_checkpoint_id = 0
         self._system_prompt = None
         messages_after_last_usage: list[Message] = []
-        async with (
-            aiofiles.open(rotated_file_path, encoding="utf-8", errors="replace") as old_file,
-            aiofiles.open(self._file_backend, "w", encoding="utf-8") as new_file,
-        ):
-            line_no = 0
-            async for line in old_file:
-                line_no += 1
-                if not line.strip():
-                    continue
+        try:
+            async with (
+                aiofiles.open(self._file_backend, encoding="utf-8", errors="replace") as old_file,
+                aiofiles.open(tmp_path, "w", encoding="utf-8") as new_file,
+            ):
+                line_no = 0
+                async for line in old_file:
+                    line_no += 1
+                    if not line.strip():
+                        continue
 
-                line_json = self._parse_context_line(
-                    line,
-                    file_backend=rotated_file_path,
-                    line_no=line_no,
-                )
-                if line_json is None:
-                    continue
-                if line_json.get("role") == "_checkpoint" and line_json.get("id") == checkpoint_id:
-                    break
+                    line_json = self._parse_context_line(
+                        line,
+                        file_backend=self._file_backend,
+                        line_no=line_no,
+                    )
+                    if line_json is None:
+                        continue
+                    if line_json.get("role") == "_checkpoint" and line_json.get("id") == checkpoint_id:
+                        break
 
-                keep_line = self._apply_context_record(
-                    line_json,
-                    history=self._history,
-                    messages_after_last_usage=messages_after_last_usage,
-                    file_backend=rotated_file_path,
-                    line_no=line_no,
-                )
-                if keep_line:
-                    await new_file.write(line)
+                    keep_line = self._apply_context_record(
+                        line_json,
+                        history=self._history,
+                        messages_after_last_usage=messages_after_last_usage,
+                        file_backend=self._file_backend,
+                        line_no=line_no,
+                    )
+                    if keep_line:
+                        await new_file.write(line)
+
+            # Replace original with truncated version
+            await aiofiles.os.replace(tmp_path, self._file_backend)
+        except Exception:
+            if tmp_path.exists():
+                await aiofiles.os.unlink(tmp_path)
+            raise
 
         self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage, model=self._model_name)
 
@@ -227,24 +224,13 @@ class Context:
         Clear the context history.
         This is almost equivalent to revert_to(0), but without relying on the assumption
         that the first checkpoint exists.
-        File backend will be rotated.
-
-        Raises:
-            RuntimeError: When no available rotation path is found.
         """
 
         logger.debug("Clearing context")
 
-        # rotate the context file
-        rotated_file_path = await next_available_rotation(self._file_backend)
-        if rotated_file_path is None:
-            logger.error("No available rotation path found")
-            raise RuntimeError("No available rotation path found")
-        await aiofiles.os.replace(self._file_backend, rotated_file_path)
-        self._file_backend.touch()
-        logger.debug(
-            "Rotated context file: {rotated_file_path}", rotated_file_path=rotated_file_path
-        )
+        # Truncate the context file
+        async with aiofiles.open(self._file_backend, "w", encoding="utf-8") as f:
+            pass
 
         self._history.clear()
         self._token_count = 0

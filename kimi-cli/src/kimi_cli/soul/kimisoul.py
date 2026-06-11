@@ -18,6 +18,7 @@ from kosong.chat_provider import (
     APITimeoutError,
     RetryableChatProvider,
 )
+import secrets
 from kosong.message import Message
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
@@ -66,7 +67,9 @@ from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError
+from kimi_cli.utils.export import perform_export
 from kimi_cli.utils.logging import logger
+from kimi_cli.utils.path import next_available_rotation
 from kimi_cli.utils.slashcmd import SlashCommand, parse_slash_command_call
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
@@ -1347,9 +1350,33 @@ class KimiSoul:
         # Mark all indexed turns as archived before clearing context
         self._history_index.mark_compacted()
         self._history_index.save()
+        
+        # --- Export pre-compaction context ---
+        
+        rotated_path = self._runtime.session.work_dir / ".kimix_cache" / f"context_{secrets.token_hex(8)}.md"
+        if rotated_path is not None:
+            export_result = await perform_export(
+                history=list(self._context.history),
+                session_id=self._runtime.session.id,
+                work_dir=str(self._runtime.session.work_dir),
+                token_count=self._context.token_count,
+                args=str(rotated_path),
+                default_dir=self._runtime.session.dir,
+            )
+            if isinstance(export_result, tuple):
+                compact_export_path = str(export_result[0])
+                logger.info("Pre-compaction context exported to: {path}", path=compact_export_path)
+            else:
+                logger.warning("Failed to export pre-compaction context: {error}", error=export_result)
+                compact_export_path = None
+        else:
+            compact_export_path = None
+
         self._recently_retrieved_turn_ids.clear()
         await self._context.clear()
-        await self._context.write_system_prompt(self._agent.get_system_prompt(is_compacting=True))
+        await self._context.write_system_prompt(
+            self._agent.get_system_prompt(is_compacting=True, compact_export_path=compact_export_path)
+        )
         await self._checkpoint()
         await self._context.append_message(compaction_result.messages)
         estimated_token_count = compaction_result.estimated_token_count

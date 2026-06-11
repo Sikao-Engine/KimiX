@@ -168,7 +168,7 @@ def test_continue_session_appends(tmp_path) -> None:
     )
 
 
-def test_clear_context_rotates(tmp_path) -> None:
+def test_clear_context(tmp_path) -> None:
     config_path = write_scripted_config(tmp_path, ["text: hello"])
     work_dir = make_work_dir(tmp_path)
     home_dir = make_home_dir(tmp_path)
@@ -235,15 +235,6 @@ def test_clear_context_rotates(tmp_path) -> None:
     session_dir = session_root / session_ids[0]
     context_file = session_dir / "context.jsonl"
     assert _read_roles(context_file) == snapshot(["_system_prompt"])
-    rotated = sorted(
-        p.name
-        for p in session_dir.iterdir()
-        if p.is_file() and p.name.startswith("context_") and p.suffix == ".jsonl"
-    )
-    assert rotated == snapshot(["context_1.jsonl"])
-    assert _read_roles(session_dir / rotated[0]) == snapshot(
-        ["_system_prompt", "_checkpoint", "user", "_checkpoint", "assistant"]
-    )
 
 
 def test_manual_compact(tmp_path) -> None:

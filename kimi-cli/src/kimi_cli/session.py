@@ -22,6 +22,7 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.string import shorten
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import TurnBegin
+import secrets
 
 
 @dataclass(slots=True, kw_only=True)

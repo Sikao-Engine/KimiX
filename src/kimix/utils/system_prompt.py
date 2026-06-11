@@ -43,7 +43,7 @@ def get_system_prompt(
     yolo = yolo if yolo is not None else base._default_yolo
 
 
-    def system_prompt_func(runtime: Runtime, is_compacting: bool = False) -> str:
+    def system_prompt_func(runtime: Runtime, is_compacting: bool = False, compact_export_path: str | None = None) -> str:
         args = runtime.builtin_args
         items: list[str] = []
         agent_md_doc = ''
@@ -128,6 +128,9 @@ def get_system_prompt(
                     return 'read AGENTS.md before work\n'
                 return f'AGENTS.md:\n```\n{agent_md_content}\n```\n'
             return ''
+
+        if compact_export_path:
+            items.append(f'Pre-compaction context exported to: {compact_export_path}')
 
         if use_skills and args.KIMI_SKILLS:
             skill_doc = f'Skills:\n{args.KIMI_SKILLS}\n'

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -380,10 +381,14 @@ class Agent:
     runtime: Runtime
     """Each agent has its own runtime, which should be derived from its main agent."""
 
-    def get_system_prompt(self, is_compacting: bool = False) -> str:
+    def get_system_prompt(self, is_compacting: bool = False, compact_export_path: str | None = None) -> str:
         if callable(self.system_prompt):
             if self.system_prompt_cached is None or is_compacting:
-                self.system_prompt_cached = self.system_prompt(self.runtime, is_compacting)
+                sig = inspect.signature(self.system_prompt)
+                if len(sig.parameters) >= 3:
+                    self.system_prompt_cached = self.system_prompt(self.runtime, is_compacting, compact_export_path)
+                else:
+                    self.system_prompt_cached = self.system_prompt(self.runtime, is_compacting)
             return self.system_prompt_cached
         return self.system_prompt
 
