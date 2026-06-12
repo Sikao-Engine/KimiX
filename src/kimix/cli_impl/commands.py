@@ -196,7 +196,7 @@ def _cmd_plan(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         import secrets
         cache_dir = Path('.kimix_cache')
         cache_dir.mkdir(parents=True, exist_ok=True)
-        file_path = str(cache_dir / f'{secrets.token_hex(8)}.md')
+        file_path = str(cache_dir / f'plan_{secrets.token_hex(8)}.md')
     print(
         f'\n>>>> Start input requirement for plan, end with {colorful_text("/end", Color.YELLOW)}, '
         f'cancel with {colorful_text("/cancel", Color.YELLOW)}')
