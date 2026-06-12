@@ -1,5 +1,3 @@
-import copy
-import json
 import uuid
 
 from collections.abc import AsyncIterator, Sequence
@@ -40,13 +38,19 @@ from kosong.chat_provider import (
     TokenUsage,
 )
 from kosong.chat_provider.openai_common import (
+    apply_generation_kwargs,
     close_replaced_openai_client,
     convert_error,
     create_openai_client,
     reasoning_effort_to_thinking_effort,
     thinking_effort_to_reasoning_effort,
 )
-from kosong.contrib.chat_provider.common import ToolMessageConversion
+from kosong.contrib.chat_provider.common import (
+    BaseStreamedMessage,
+    ToolMessageConversion,
+    check_tool_call_id,
+    validate_tool_call_arguments,
+)
 from kosong.message import (
     AudioURLPart,
     ContentPart,
@@ -231,10 +235,7 @@ class OpenAIResponses:
         Returns:
             Self: A new instance of the chat provider with updated generation kwargs.
         """
-        new_self = copy.copy(self)
-        new_self._generation_kwargs = copy.deepcopy(self._generation_kwargs)
-        new_self._generation_kwargs.update(kwargs)
-        return new_self
+        return apply_generation_kwargs(self, **kwargs)
 
     @property
     def model_parameters(self) -> dict[str, Any]:
@@ -257,7 +258,11 @@ class OpenAIResponses:
         content: str kept; list[ContentPart] mapped to ResponseInputMessageContentListParam
         - role == tool: map to FunctionCallOutput with call_id and output
         """
-        message = message.model_copy(deep=True)
+        # Only deep-copy when we might mutate (tool_calls with invalid JSON).
+        needs_mutation = (
+            message.role == "assistant" and message.tool_calls
+        )
+        message = message.model_copy(deep=needs_mutation)
 
         role = message.role
         if is_openai_model(self.model_name) and role == "system":
@@ -267,11 +272,13 @@ class OpenAIResponses:
         if role == "tool":
             # Tool message without tool_call_id would cause a 400 from OpenAI.
             # Return the error to the LLM instead of crashing.
-            if message.tool_call_id is None:
+            if error_msg := check_tool_call_id(
+                message.tool_call_id, message.extract_text(sep="\n")
+            ):
                 return [
                     {
                         "role": "user",
-                        "content": f"Error: Tool message is missing `tool_call_id`. Content: {message.extract_text(sep='\n')}",
+                        "content": error_msg,
                         "type": "message",
                     }
                 ]
@@ -292,24 +299,7 @@ class OpenAIResponses:
 
         # Validate tool call arguments in assistant messages to avoid API 400s.
         if role == "assistant" and message.tool_calls:
-            from kosong.utils.jsonx import loads_relaxed
-
-            error_texts: list[str] = []
-            for tool_call in message.tool_calls:
-                if tool_call.function.arguments:
-                    try:
-                        parsed = loads_relaxed(tool_call.function.arguments)
-                    except json.JSONDecodeError as exc:
-                        error_texts.append(
-                            f"Error: Tool call '{tool_call.function.name}' has invalid JSON arguments: {exc}"
-                        )
-                        tool_call.function.arguments = "{}"
-                        continue
-                    if not isinstance(parsed, dict):
-                        error_texts.append(
-                            f"Error: Tool call '{tool_call.function.name}' arguments must be a JSON object, got {type(parsed).__name__}."
-                        )
-                        tool_call.function.arguments = "{}"
+            error_texts = validate_tool_call_arguments(message.tool_calls)
             if error_texts:
                 message.content = [TextPart(text="\n".join(error_texts)), *message.content]
 
@@ -473,61 +463,61 @@ def _message_content_to_function_output_items(
     return output
 
 
-def _map_audio_url_to_input_item(url: str) -> ResponseInputFileParam | None:
-    """Map audio URL/data URI to an input content item (always an input_file).
+def _parse_audio_url(url: str) -> tuple[str | None, str | None, str | None]:
+    """Parse an audio URL into (file_url, file_data, ext).
 
-    OpenAI Responses message content no longer accepts `input_audio`, so both inline
-    data and remote URLs are converted to `input_file` items instead.
+    For ``data:audio/...`` URIs the *ext* is the inferred file extension
+    (``"mp3"`` or ``"wav"``), or ``None`` for unsupported codecs.
+    For ``http://`` / ``https://`` URLs the file_url is returned directly.
     """
     if url.startswith("data:audio/"):
         try:
             header, b64 = url.split(",", 1)
             subtype = header.split("/")[1].split(";")[0].lower()
             ext = "mp3" if subtype in {"mp3", "mpeg"} else ("wav" if subtype == "wav" else None)
-            if ext is None:
-                return None
-            item: ResponseInputFileParam = {"type": "input_file", "file_data": b64}
-            item["filename"] = f"inline.{ext}"
-            return item
+            return None, b64, ext
         except Exception:
-            return None
+            return None, None, None
     if url.startswith("http://") or url.startswith("https://"):
-        return {"type": "input_file", "file_url": url}
+        return url, None, None
+    return None, None, None
+
+
+def _map_audio_url_to_input_item(url: str) -> ResponseInputFileParam | None:
+    """Map audio URL/data URI to an input content item (always an input_file).
+
+    OpenAI Responses message content no longer accepts ``input_audio``, so both
+    inline data and remote URLs are converted to ``input_file`` items instead.
+    """
+    file_url, file_data, ext = _parse_audio_url(url)
+    if file_url is not None:
+        return {"type": "input_file", "file_url": file_url}
+    if file_data is not None:
+        if ext is None:
+            return None
+        item: ResponseInputFileParam = {"type": "input_file", "file_data": file_data}
+        item["filename"] = f"inline.{ext}"
+        return item
     return None
 
 
 def _map_audio_url_to_file_content(url: str) -> ResponseInputFileContentParam | None:
     """Map audio URL/data URI to a file content item for function_call_output."""
-    if url.startswith("http://") or url.startswith("https://"):
-        return {"type": "input_file", "file_url": url}
-    if url.startswith("data:audio/"):
-        try:
-            _, b64 = url.split(",", 1)
-            # We can attach filename optionally; Responses accepts file_data only
-            return {"type": "input_file", "file_data": b64}
-        except Exception:
-            return None
+    file_url, file_data, _ = _parse_audio_url(url)
+    if file_url is not None:
+        return {"type": "input_file", "file_url": file_url}
+    if file_data is not None:
+        return {"type": "input_file", "file_data": file_data}
     return None
 
 
-class OpenAIResponsesStreamedMessage:
+class OpenAIResponsesStreamedMessage(BaseStreamedMessage):
     def __init__(self, response: Response | AsyncStream[ResponseStreamEvent]):
         if isinstance(response, Response):
             self._iter = self._convert_non_stream_response(response)
         else:
             self._iter = self._convert_stream_response(response)
-        self._id: str | None = None
         self._usage: ResponseUsage | None = None
-
-    def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
-        return self
-
-    async def __anext__(self) -> StreamedMessagePart:
-        return await self._iter.__anext__()
-
-    @property
-    def id(self) -> str | None:
-        return self._id
 
     @property
     def usage(self) -> TokenUsage | None:

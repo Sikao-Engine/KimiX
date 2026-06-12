@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-import inspect
+import copy
 import re
 import ssl
 from collections.abc import Awaitable, Mapping
@@ -23,6 +23,16 @@ from kosong.chat_provider import (
 )
 from kosong.tooling import Tool
 
+_SSL_CONTEXT: ssl.SSLContext | None = None
+
+
+def _get_ssl_context() -> ssl.SSLContext:
+    """Cached SSL context to avoid repeated CA bundle loading on client re-creation."""
+    global _SSL_CONTEXT
+    if _SSL_CONTEXT is None:
+        _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+    return _SSL_CONTEXT
+
 
 def create_openai_client(
     *,
@@ -32,7 +42,7 @@ def create_openai_client(
 ) -> AsyncOpenAI:
     kwargs = dict(client_kwargs)
     if "http_client" not in kwargs:
-        kwargs["http_client"] = httpx.AsyncClient(verify=ssl.create_default_context(cafile=certifi.where()))
+        kwargs["http_client"] = httpx.AsyncClient(verify=_get_ssl_context())
     return AsyncOpenAI(api_key=api_key, base_url=base_url, **kwargs)
 
 
@@ -49,7 +59,9 @@ def _on_close_task_done(task: asyncio.Task[None]) -> None:
 
 async def _drain_awaitable(awaitable: Awaitable[object]) -> None:
     try:
-        await awaitable
+        await asyncio.wait_for(awaitable, timeout=5.0)
+    except asyncio.TimeoutError:
+        return
     except RuntimeError as exc:
         # On Windows/Python 3.14, closing an httpx.AsyncClient whose
         # underlying transports were bound to a now-closed ProactorEventLoop
@@ -63,14 +75,14 @@ async def _drain_awaitable(awaitable: Awaitable[object]) -> None:
 
 
 def close_openai_client(client: AsyncOpenAI) -> None:
-    close = getattr(client, "close", None)
-    if not callable(close):
-        return
+    """Schedule an async close of the given AsyncOpenAI client.
+
+    ``AsyncOpenAI.close()`` is always a callable that returns an awaitable,
+    so we skip the ``getattr`` / ``callable`` / ``isawaitable`` guards.
+    """
     try:
-        result = close()
+        result = client.close()
     except Exception:
-        return
-    if not inspect.isawaitable(result):
         return
     try:
         loop = asyncio.get_running_loop()
@@ -192,3 +204,18 @@ def tool_to_openai(tool: Tool) -> ChatCompletionToolParam:
             "parameters": tool.parameters,
         },
     }
+
+
+def apply_generation_kwargs(self: Any, *, attr: str = "_generation_kwargs", **kwargs: Any) -> Any:
+    """Copy *self* with updated generation kwargs.
+
+    This is the shared implementation of the ``with_generation_kwargs``
+    pattern used across all chat providers.  Returns a shallow copy of
+    *self* whose *attr* dict is a deep copy of the original, merged with
+    *kwargs*.
+    """
+    new_self = copy.copy(self)
+    new_kwargs = copy.deepcopy(getattr(self, attr))
+    new_kwargs.update(kwargs)
+    setattr(new_self, attr, new_kwargs)
+    return new_self

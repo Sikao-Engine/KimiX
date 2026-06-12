@@ -7,8 +7,6 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 import base64
-import copy
-import json
 import orjson
 import mimetypes
 from collections.abc import AsyncIterator, Sequence
@@ -45,6 +43,8 @@ from kosong.chat_provider import (
     TokenUsage,
     convert_httpx_error,
 )
+from kosong.chat_provider.openai_common import apply_generation_kwargs
+from kosong.contrib.chat_provider.common import validate_tool_call_arguments
 from kosong.message import (
     AudioURLPart,
     ContentPart,
@@ -212,10 +212,7 @@ class GoogleGenAI:
         Returns:
             Self: A new instance of the chat provider with updated generation kwargs.
         """
-        new_self = copy.copy(self)
-        new_self._generation_kwargs = copy.deepcopy(self._generation_kwargs)
-        new_self._generation_kwargs.update(kwargs)
-        return new_self
+        return apply_generation_kwargs(self, **kwargs)
 
     @property
     def model_parameters(self) -> dict[str, Any]:
@@ -693,28 +690,17 @@ def message_to_google_genai(message: Message) -> Content:
             continue
 
     # Handle tool calls for assistant messages
+    # Validate tool call arguments before building parts.
+    if message.tool_calls:
+        error_texts = validate_tool_call_arguments(message.tool_calls)
+        for err_text in error_texts:
+            parts.append(Part.from_text(text=err_text))
+
+    from kosong.utils.jsonx import loads_relaxed
+
     for tool_call in message.tool_calls or []:
         if tool_call.function.arguments:
-            from kosong.utils.jsonx import loads_relaxed
-
-            try:
-                parsed_arguments = loads_relaxed(tool_call.function.arguments)
-            except json.JSONDecodeError as exc:  # pragma: no cover - defensive guard
-                # Return the parse error to the LLM instead of crashing.
-                parts.append(
-                    Part.from_text(
-                        text=f"Error: Tool call '{tool_call.function.name}' has invalid JSON arguments: {exc}",
-                    )
-                )
-                parsed_arguments = {}
-            if not isinstance(parsed_arguments, dict):
-                parts.append(
-                    Part.from_text(
-                        text=f"Error: Tool call '{tool_call.function.name}' arguments must be a JSON object, got {type(parsed_arguments).__name__}.",
-                    )
-                )
-                parsed_arguments = {}
-            args = cast(dict[str, object], parsed_arguments)
+            args = cast(dict[str, object], loads_relaxed(tool_call.function.arguments))
         else:
             args = {}
 

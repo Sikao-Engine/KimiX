@@ -27,6 +27,7 @@ from kosong.chat_provider import (
     TokenUsage,
 )
 from kosong.chat_provider.openai_common import (
+    apply_generation_kwargs,
     close_replaced_openai_client,
     convert_error,
     create_openai_client,
@@ -219,10 +220,7 @@ class Kimi:
         Returns:
             Self: A new instance of the chat provider with updated generation kwargs.
         """
-        new_self = copy.copy(self)
-        new_self._generation_kwargs = copy.deepcopy(self._generation_kwargs)
-        new_self._generation_kwargs.update(kwargs)
-        return new_self
+        return apply_generation_kwargs(self, **kwargs)
 
     def with_extra_body(self, extra_body: ExtraBody) -> Self:
         """

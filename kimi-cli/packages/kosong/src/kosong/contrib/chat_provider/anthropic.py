@@ -6,7 +6,6 @@ except ModuleNotFoundError as exc:
         'Install with `pip install "kosong[contrib]"`.'
     ) from exc
 
-import copy
 import json
 import orjson
 import re
@@ -79,7 +78,13 @@ from kosong.chat_provider import (
     TokenUsage,
     convert_httpx_error,
 )
-from kosong.contrib.chat_provider.common import ToolMessageConversion
+from kosong.chat_provider.openai_common import apply_generation_kwargs
+from kosong.contrib.chat_provider.common import (
+    BaseStreamedMessage,
+    ToolMessageConversion,
+    check_tool_call_id,
+    validate_tool_call_arguments,
+)
 from kosong.message import (
     ContentPart,
     ImageURLPart,
@@ -442,10 +447,7 @@ class Anthropic:
         Returns:
             Self: A new instance of the chat provider with updated generation kwargs.
         """
-        new_self = copy.copy(self)
-        new_self._generation_kwargs = copy.deepcopy(self._generation_kwargs)
-        new_self._generation_kwargs.update(kwargs)
-        return new_self
+        return apply_generation_kwargs(self, **kwargs)
 
     @property
     def model_parameters(self) -> dict[str, Any]:
@@ -475,15 +477,14 @@ class Anthropic:
                 ],
             )
         elif role == "tool":
-            if message.tool_call_id is None:
+            if error_msg := check_tool_call_id(
+                message.tool_call_id, message.extract_text(sep="\n")
+            ):
                 # Return the error to the LLM instead of crashing.
                 return MessageParam(
                     role="user",
                     content=[
-                        TextBlockParam(
-                            type="text",
-                            text=f"Error: Tool message is missing `tool_call_id`. Content: {message.extract_text(sep='\n')}",
-                        )
+                        TextBlockParam(type="text", text=error_msg)
                     ],
                 )
             if self._tool_message_conversion == "extract_text":
@@ -512,30 +513,17 @@ class Anthropic:
                     )
             else:
                 continue
+        # Validate tool call arguments before building blocks.
+        if message.tool_calls:
+            error_texts = validate_tool_call_arguments(message.tool_calls)
+            for err_text in error_texts:
+                blocks.append(TextBlockParam(type="text", text=err_text))
+
+        from kosong.utils.jsonx import loads_relaxed
+
         for tool_call in message.tool_calls or []:
             if tool_call.function.arguments:
-                from kosong.utils.jsonx import loads_relaxed
-
-                try:
-                    parsed_arguments = loads_relaxed(tool_call.function.arguments)
-                except json.JSONDecodeError as exc:  # pragma: no cover - defensive guard
-                    # Return the parse error to the LLM instead of crashing.
-                    blocks.append(
-                        TextBlockParam(
-                            type="text",
-                            text=f"Error: Tool call '{tool_call.function.name}' has invalid JSON arguments: {exc}",
-                        )
-                    )
-                    parsed_arguments = {}
-                if not isinstance(parsed_arguments, dict):
-                    blocks.append(
-                        TextBlockParam(
-                            type="text",
-                            text=f"Error: Tool call '{tool_call.function.name}' arguments must be a JSON object, got {type(parsed_arguments).__name__}.",
-                        )
-                    )
-                    parsed_arguments = {}
-                tool_input = cast(dict[str, object], parsed_arguments)
+                tool_input = cast(dict[str, object], loads_relaxed(tool_call.function.arguments))
             else:
                 tool_input = {}
             blocks.append(
@@ -549,24 +537,13 @@ class Anthropic:
         return MessageParam(role=role, content=blocks)
 
 
-class AnthropicStreamedMessage:
+class AnthropicStreamedMessage(BaseStreamedMessage):
     def __init__(self, response: AnthropicMessage | AsyncStream[RawMessageStreamEvent]):
         if isinstance(response, AnthropicMessage):
             self._iter = self._convert_non_stream_response(response)
         else:
             self._iter = self._convert_stream_response(response)
-        self._id: str | None = None
         self._usage = Usage(input_tokens=0, output_tokens=0)
-
-    def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
-        return self
-
-    async def __anext__(self) -> StreamedMessagePart:
-        return await self._iter.__anext__()
-
-    @property
-    def id(self) -> str | None:
-        return self._id
 
     @property
     def usage(self) -> TokenUsage | None:
