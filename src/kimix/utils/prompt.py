@@ -14,6 +14,101 @@ from .session import _create_default_session, _create_session_async, close_sessi
 from .system_prompt import SystemPromptType
 
 
+async def _maybe_build_todo_reminder(session: Session) -> str | None:
+    cli = getattr(session, "_cli", None)
+    if cli is None:
+        return None
+
+    toolset = getattr(getattr(getattr(cli, "soul", None), "agent", None), "toolset", None)
+    if toolset is None:
+        return None
+
+    try:
+        set_todo_tool = toolset.find("SetTodoList")
+    except Exception:
+        return None
+    if set_todo_tool is None:
+        return None
+
+    state = getattr(getattr(cli, "session", None), "state", None)
+    if state is None:
+        return None
+
+    todos = getattr(state, "todos", None)
+    if not todos:
+        return None
+
+    if all(getattr(todo, "status", None) == "done" for todo in todos):
+        return None
+
+    lines = [
+        "<system-reminder>",
+        "You still have unfinished todos. review the list below and complete all pending/in-progress items before finishing:",
+    ]
+    for todo in todos:
+        title = getattr(todo, "title", "")
+        status = getattr(todo, "status", "")
+        lines.append(f"- [{status}] {title}")
+    lines.append("</system-reminder>")
+    return "\n".join(lines)
+
+
+async def _run_single_prompt(
+    session: Session,
+    prompt_str: str,
+    output_function: Callable[[str, MessageType], Any] | None,
+    cancel_callable: Callable[[], bool] | None,
+    merge_wire_messages: bool,
+    info_print: bool,
+    label: str = "Start...",
+) -> bool:
+    """Send a single prompt to the session with retries and return True on success."""
+    if info_print:
+        base._stream.colorful_print_word(f"{label}\n", fg=base.Color.BRIGHT_CYAN, require_new_line=True)
+
+    max_retries = 5
+    for attempt in range(max_retries):
+        if session._cancel_event is not None and session._cancel_event.is_set():
+            return False
+        try:
+            import time
+
+            start_time = time.time()
+            base._stream._last_char_was_newline = True
+            async for message in session.prompt(prompt_str, merge_wire_messages=merge_wire_messages):
+                if cancel_callable is not None and cancel_callable():
+                    session.cancel()
+                    break
+                print_agent_json(message, session, output_function)
+            base._stream.print_word("\n", require_new_line=True)
+            if info_print:
+                end_time = time.time()
+                _print_usage(session, end_time - start_time)
+            return True
+        except KeyboardInterrupt:
+            if session:
+                session.cancel()
+            return False
+        except Exception as e:
+            base._stream.colorful_print_word(str(e), fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True)
+            if session:
+                session.cancel()
+            if "429" in str(e) or "400" in str(e) or "500" in str(e) or "502" in str(e) or "503" in str(e):
+                wait_time = min(2**attempt, 60)
+                base._stream.colorful_print_word(
+                    f"Rate limited. Waiting {wait_time}s...",
+                    fg=Color.BRIGHT_YELLOW,
+                    styles=[Style.BOLD],
+                    require_new_line=True,
+                )
+                await asyncio.sleep(wait_time)
+            elif attempt == max_retries - 1:
+                raise
+            else:
+                await asyncio.sleep(1)
+    return False
+
+
 async def prompt_async(
     prompt_str: str,
     session: Session | None = None,
@@ -22,9 +117,10 @@ async def prompt_async(
     info_print: bool = True,
     cancel_callable: Callable[[], bool] | None = None,
     close_session_after_prompt: bool = False,
-    merge_wire_messages: bool | None = None
+    merge_wire_messages: bool | None = None,
 ) -> None:
     from kimix.utils.prompt_str import escape_file_paths
+
     if session is None:
         session = _create_default_session()
         close_session_after_prompt = False
@@ -32,57 +128,50 @@ async def prompt_async(
     prompt_str = escape_file_paths(prompt_str)
     if len(prompt_str) > 65536:  # too long, save to file
         name, new_id = _export_to_temp_file(content=prompt_str)
-        prompt_str = f'read and execute: `{name}`'
+        prompt_str = f"read and execute: `{name}`"
+    if merge_wire_messages is None:
+        merge_wire_messages = output_function is not None
     try:
-        if info_print:
-            base._stream.colorful_print_word(f'Start...\n', fg=base.Color.BRIGHT_CYAN, require_new_line=True)
+        prompt_success = await _run_single_prompt(
+            session,
+            prompt_str,
+            output_function,
+            cancel_callable,
+            merge_wire_messages,
+            info_print,
+            label="Start...",
+        )
 
-        max_retries = 5
-        prompt_success = False
-        for attempt in range(max_retries):
-            if session._cancel_event is not None and session._cancel_event.is_set():
-                break
-            try:
-                import time
-                start_time = time.time()
-                base._stream._last_char_was_newline = True
-                if merge_wire_messages is None and output_function is not None:
-                    merge_wire_messages = True
-                async for message in session.prompt(prompt_str, merge_wire_messages=merge_wire_messages if merge_wire_messages is not None else False):
-                    if cancel_callable is not None and cancel_callable():
-                        session.cancel()
-                        break
-                    print_agent_json(message, session, output_function)
-                base._stream.print_word('\n', require_new_line=True)
-                if info_print:
-                    end_time = time.time()
-                    _print_usage(session, end_time - start_time)
-                prompt_success = True
-                break
-            except KeyboardInterrupt as e:
-                if session:
-                    session.cancel()
-                break
-            except Exception as e:
-                base._stream.colorful_print_word(str(e), fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True)
-                if session:
-                    session.cancel()
-                if "429" in str(e) or "400" in str(e) or "500" in str(e) or "502" in str(e) or "503" in str(e):
-                    wait_time = min(2 ** attempt, 60)
-                    base._stream.colorful_print_word(f"Rate limited. Waiting {wait_time}s...", fg=Color.BRIGHT_YELLOW, styles=[Style.BOLD], require_new_line=True)
-                    await asyncio.sleep(wait_time)
-                elif attempt == max_retries - 1:
-                    raise
-                else:
-                    await asyncio.sleep(1)
-
-        if not prompt_success:
-            base._stream.colorful_print_word('prompt failed.', fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True)
+        if prompt_success:
+            todo_reminder = await _maybe_build_todo_reminder(session)
+            if todo_reminder is not None:
+                if len(todo_reminder) > 65536:  # too long, save to file
+                    name, new_id = _export_to_temp_file(content=todo_reminder)
+                    todo_reminder = f"read and execute: `{name}`"
+                try:
+                    await _run_single_prompt(
+                        session,
+                        todo_reminder,
+                        output_function,
+                        cancel_callable,
+                        merge_wire_messages,
+                        info_print,
+                        label="Todo review...",
+                    )
+                except Exception as reminder_exc:
+                    base._stream.colorful_print_word(
+                        f"Todo reminder failed: {reminder_exc}",
+                        fg=Color.BRIGHT_RED,
+                        styles=[Style.BOLD],
+                        require_new_line=True,
+                    )
+        else:
+            base._stream.colorful_print_word("prompt failed.", fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True)
 
     finally:
         if close_session_after_prompt and session:
             await close_session_async(session)
-        base._stream.print_word('', True)
+        base._stream.print_word("", True)
 
 
 def prompt(
