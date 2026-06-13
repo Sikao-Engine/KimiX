@@ -17,10 +17,11 @@ from kosong.tooling import ToolError, ToolOk
 
 
 @pytest.fixture(autouse=True)
-def patch_find_bash() -> None:
-    with patch("kimix.tools.file.run.find_bash", return_value=None):
-        with patch("kimix.tools.file.run.find_pwsh", return_value=None):
-            yield
+def patch_run_flags() -> None:
+    with patch("kimix.tools.file.run.USE_SYSTEM_SHELL", False):
+        with patch("kimix.tools.file.run.USE_SYSTEM_PWSH_ON_WINDOWS", False):
+            with patch("kimix.tools.file.run.find_bash", return_value=None):
+                yield
 
 
 # ---------------------------------------------------------------------------
@@ -300,7 +301,8 @@ class TestRunForbiddenCommands:
     ) -> None:
         params = RunParams(command="git commitment something")
         result = await run_tool(params)
-        assert isinstance(result, ToolOk)
+        assert isinstance(result, ToolError)
+        assert result.brief == "Forbidden command"
 
     async def test_empty_forbidden_commands(
         self, run_tool: Run, mock_process_task: MagicMock

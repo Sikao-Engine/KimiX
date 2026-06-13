@@ -8,6 +8,8 @@ import pytest
 
 from kimix.dag import DAG, Executor, TaskNode
 
+pytestmark = pytest.mark.slow
+
 
 def make_executor(max_workers: int | None = None) -> Executor:
     return Executor(max_workers=max_workers)

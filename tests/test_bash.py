@@ -20,6 +20,18 @@ from kimix.tools.file.bash.bash_tool import find_bash, _prepare_bash_cmd
 from kimix.tools.background.utils import _pop_task_data
 
 
+def _bash_is_available() -> bool:
+    """Return True when Bash can be instantiated on this platform."""
+    try:
+        Bash(session=MagicMock(spec=Session))
+        return True
+    except SkipThisTool:
+        return False
+
+
+BASH_AVAILABLE = _bash_is_available()
+
+
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -600,6 +612,10 @@ class TestPrepareBashCmd:
 # Bash.__call__ — integration tests with backslash paths on Windows
 # ============================================================================
 
+@pytest.mark.skipif(
+    not BASH_AVAILABLE,
+    reason="Bash tool is not available on this platform",
+)
 class TestBashBackslashPaths:
     async def test_cat_with_backslash_path(self, mock_session: MagicMock) -> None:
         bash = Bash(session=mock_session)
@@ -648,6 +664,10 @@ class TestBashBackslashPaths:
 # Bash.__call__
 # ============================================================================
 
+@pytest.mark.skipif(
+    not BASH_AVAILABLE,
+    reason="Bash tool is not available on this platform",
+)
 class TestBashCall:
     async def test_echo_hello(self, mock_session: MagicMock) -> None:
         bash = Bash(session=mock_session)
@@ -744,6 +764,10 @@ class TestBashCall:
 # Edge cases
 # ============================================================================
 
+@pytest.mark.skipif(
+    not BASH_AVAILABLE,
+    reason="Bash tool is not available on this platform",
+)
 class TestEdgeCases:
     async def test_command_with_special_chars(self, mock_session: MagicMock) -> None:
         bash = Bash(session=mock_session)
@@ -766,6 +790,10 @@ class TestEdgeCases:
 # Complex bash commands — pipes, redirects, substitution, etc.
 # ============================================================================
 
+@pytest.mark.skipif(
+    not BASH_AVAILABLE,
+    reason="Bash tool is not available on this platform",
+)
 class TestComplexCommands:
     """Tests for complex bash commands: pipes, redirects, substitution, conditionals, etc."""
 

@@ -12,3 +12,6 @@ src/kimix/default_config.json
 nul
 src/app/dist
 node_modules/
+# Test-generated artifacts
+tests/test_result.txt
+tests/output.md
