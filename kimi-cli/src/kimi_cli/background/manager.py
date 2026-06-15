@@ -654,8 +654,6 @@ class BackgroundTaskManager:
             started_at=runtime.started_at,
         )
 
-        if runtime.started_at and runtime.finished_at:
-            duration = runtime.finished_at - runtime.started_at
 
     def _mark_task_failed(self, task_id: str, reason: str) -> None:
         runtime = self._store.read_runtime(task_id)
@@ -667,8 +665,6 @@ class BackgroundTaskManager:
         runtime.failure_reason = reason
         self._store.write_runtime(task_id, runtime)
 
-        if runtime.started_at and runtime.finished_at:
-            duration = runtime.finished_at - runtime.started_at
 
     def _mark_task_timed_out(self, task_id: str, reason: str) -> None:
         runtime = self._store.read_runtime(task_id)
@@ -682,8 +678,6 @@ class BackgroundTaskManager:
         runtime.failure_reason = reason
         self._store.write_runtime(task_id, runtime)
 
-        if runtime.started_at and runtime.finished_at:
-            duration = runtime.finished_at - runtime.started_at
 
     def _mark_task_killed(self, task_id: str, reason: str) -> None:
         runtime = self._store.read_runtime(task_id)
@@ -696,5 +690,4 @@ class BackgroundTaskManager:
         runtime.failure_reason = reason
         self._store.write_runtime(task_id, runtime)
 
-        if runtime.started_at and runtime.finished_at:
-            duration = runtime.finished_at - runtime.started_at
+

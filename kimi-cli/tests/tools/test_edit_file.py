@@ -7,11 +7,11 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 from kaos.path import KaosPath
-from kosong.tooling import ToolError
 
+from kimi_cli.session import Session
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval, ApprovalResult
-from kimi_cli.tools.file.replace import Edit, Params, EditFile
+from kimi_cli.tools.file.replace import Edit, EditFile, Params
 from kimi_cli.wire.types import DiffDisplayBlock
 from tests.conftest import tool_call_context
 
@@ -440,7 +440,7 @@ async def test_replace_memory_error_propagated(runtime: Runtime, session: Sessio
                 await tool(
                     Params(path=str(file_path), edit=Edit(old="old", new="new"))
                 )
-                assert False, "MemoryError should have been raised"
+                raise AssertionError("MemoryError should have been raised")
             except MemoryError as e:
                 assert "out of memory" in str(e)
 

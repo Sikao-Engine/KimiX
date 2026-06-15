@@ -548,8 +548,10 @@ class AnthropicStreamedMessage(BaseStreamedMessage):
     @property
     def usage(self) -> TokenUsage | None:
         # https://docs.claude.com/en/docs/build-with-claude/prompt-caching#tracking-cache-performance
-        return TokenUsage(
-            # Note: in some Anthropic-compatible APIs, input_tokens can be None
+        return self._build_token_usage(
+            # Note: in some Anthropic-compatible APIs, input_tokens can be None.
+            # Anthropic reports input_tokens as non-cached input already, so
+            # it maps directly to input_other.
             input_other=self._usage.input_tokens or 0,
             output=self._usage.output_tokens,
             input_cache_read=self._usage.cache_read_input_tokens or 0,

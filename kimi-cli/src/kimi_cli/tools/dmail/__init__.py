@@ -1,10 +1,8 @@
-from pathlib import Path
 from typing import override
 
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 from kimi_cli.soul.denwarenji import DenwaRenji, DenwaRenjiError, DMail
-from kimi_cli.tools.utils import load_desc
 
 NAME = "SendDMail"
 

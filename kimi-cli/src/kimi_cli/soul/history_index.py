@@ -1,18 +1,18 @@
 from __future__ import annotations
 
 import math
-import orjson
 import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from kosong.message import Message
-
-from kimi_cli.wire.types import TextPart
+import orjson
 
 # Use the existing BM25 engine from kimix
 from kimix.retrieval import InvertedIndex, NgramTokenizer, Searcher
+from kosong.message import Message
+
+from kimi_cli.wire.types import TextPart
 
 _MAX_TURNS: int = 500
 
@@ -75,7 +75,7 @@ class HistoryIndex:
 
         # Enforce size bound — drop oldest turns
         while len(self._turns) > _MAX_TURNS:
-            dropped = self._turns.pop(0)
+            self._turns.pop(0)
             # We do **not** rebuild the inverted index on every drop;
             # stale doc_ids in the index are harmless for read-only search
             # because the searcher returns doc_ids that we map back to

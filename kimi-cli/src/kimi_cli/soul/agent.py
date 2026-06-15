@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-import tempfile
-from typing import TYPE_CHECKING, Any, Literal, Callable
+from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
 from jinja2 import Environment as JinjaEnvironment
@@ -425,7 +425,7 @@ async def load_agent(
     """
     logger.info("Loading agent: {agent_file}", agent_file=agent_file)
     agent_spec = load_agent_spec(agent_file)
-    custom_system_prompt = custom_arguments.get('custom_system_prompt', None)
+    custom_system_prompt = custom_arguments.get('custom_system_prompt')
     if custom_system_prompt is not None:
         system_prompt: str | Callable[[Runtime, bool], str] = custom_system_prompt
     else:
@@ -471,7 +471,7 @@ async def load_agent(
         LaborMarket: runtime.labor_market,
         Environment: runtime.environment,
     }
-    vfs_path: Path | None = custom_arguments.get('vfs_path', None)
+    vfs_path: Path | None = custom_arguments.get('vfs_path')
     if vfs_path is not None:
         vfs = VFS(
             virtual_root=vfs_path,

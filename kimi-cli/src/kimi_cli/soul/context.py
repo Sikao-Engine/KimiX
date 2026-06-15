@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, cast
 
 import aiofiles
 import aiofiles.os
-import json
 import orjson
 from kosong.message import Message
+from kosong.utils.jsonx import loads_relaxed
 from pydantic import ValidationError
 
 from kimi_cli.soul.compaction import estimate_text_tokens
 from kimi_cli.soul.message import system
-from kosong.utils.jsonx import loads_relaxed
 from kimi_cli.utils.logging import logger
 
 
@@ -229,7 +229,7 @@ class Context:
         logger.debug("Clearing context")
 
         # Truncate the context file
-        async with aiofiles.open(self._file_backend, "w", encoding="utf-8") as f:
+        async with aiofiles.open(self._file_backend, "w", encoding="utf-8") as _:
             pass
 
         self._history.clear()

@@ -1,9 +1,9 @@
 """Plugin specification parsing and config injection."""
 
-import orjson
 from pathlib import Path
 from typing import Any
 
+import orjson
 from pydantic import BaseModel, ConfigDict, Field
 
 

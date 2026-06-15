@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import TYPE_CHECKING, Callable, NamedTuple, Protocol, runtime_checkable
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, NamedTuple, Protocol, runtime_checkable
 
 import kosong
 from kosong.chat_provider import TokenUsage
@@ -12,7 +12,7 @@ import kimi_cli.prompts as prompts
 from kimi_cli.llm import LLM
 from kimi_cli.soul.message import system
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.tokens import count_message_tokens, count_tokens
+from kimi_cli.utils.tokens import count_message_tokens
 from kimi_cli.wire.types import ContentPart, TextPart, ThinkPart
 
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import orjson
 from dataclasses import dataclass
 from typing import Any, Literal, cast
+
+import orjson
 
 from kimi_cli import logger
 

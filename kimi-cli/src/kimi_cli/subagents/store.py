@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import orjson
 import shutil
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, cast
 
+import orjson
 from pydantic import BaseModel, ValidationError
 
 from kimi_cli.session import Session

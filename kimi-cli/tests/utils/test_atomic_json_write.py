@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import orjson
 import os
 from pathlib import Path
 
+import orjson
 import pytest
 
 from kimi_cli.utils.io import atomic_json_write
@@ -53,7 +53,7 @@ class TestAtomicJsonWrite:
         original_dumps = orjson.dumps
 
         def bad_dumps(*args, **kwargs):
-            result = original_dumps(*args, **kwargs)
+            _result = original_dumps(*args, **kwargs)
             raise OSError("disk full")
 
         monkeypatch.setattr(orjson, "dumps", bad_dumps)

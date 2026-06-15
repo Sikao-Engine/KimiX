@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import orjson
 import os
 import platform
 import random
@@ -19,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 import aiohttp
 import keyring
+import orjson
 from pydantic import SecretStr
 
 from kimi_cli.auth import KIMI_CODE_PLATFORM_ID

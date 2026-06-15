@@ -12,7 +12,7 @@ from pathlib import Path
 
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.subprocess_env import get_clean_env
-import sys
+
 # VSCode needs --wait to block until the file is closed.
 _EDITOR_CANDIDATES = [
     (["code", "--wait"], "code"),

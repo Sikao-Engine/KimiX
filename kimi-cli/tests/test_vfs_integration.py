@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import os
+import random
 import tempfile
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator
 
 import pytest
 from kaos import reset_current_kaos, set_current_kaos
@@ -20,14 +21,14 @@ from kimi_cli.tools.file.grep_local import Params as GrepParams
 from kimi_cli.tools.file.read import Params as ReadFileParams
 from kimi_cli.tools.file.write import Params as WriteFileParams
 from kimi_cli.vfs import VFS
+from kimi_cli.vfs.core import merge as vfs_merge
 from kimi_cli.wire.types import ToolCall
 
 
 @pytest.fixture
 def vfs_setup():
     """Create VFS with temp virtual_root over a temp work_dir, with kaos context."""
-    with tempfile.TemporaryDirectory() as work_dir_tmp:
-        with tempfile.TemporaryDirectory() as virtual_root_tmp:
+    with tempfile.TemporaryDirectory() as work_dir_tmp, tempfile.TemporaryDirectory() as virtual_root_tmp:
             work_dir = Path(work_dir_tmp).resolve()
             virtual_root = Path(virtual_root_tmp).resolve()
             original_cwd = Path.cwd()
@@ -239,9 +240,6 @@ class TestVFSOverlay:
 
 
 # --- Merged from tests/test_vfs_integration.py: multi-VFS merge tests ---
-
-import random
-from kimi_cli.vfs.core import merge as vfs_merge
 
 
 def test_multi_vfs_shared_workdir(tmp_path: Path) -> None:

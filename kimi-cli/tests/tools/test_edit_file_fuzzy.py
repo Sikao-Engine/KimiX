@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from kimi_cli.tools.file.replace import Edit, EditFile, Params
-
 
 # ---------------------------------------------------------------------------
 # Line-ending normalization

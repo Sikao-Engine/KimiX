@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import orjson
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -8,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import aiofiles
+import orjson
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from kimi_cli.utils.logging import logger

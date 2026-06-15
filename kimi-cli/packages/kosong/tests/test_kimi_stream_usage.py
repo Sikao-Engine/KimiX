@@ -1,6 +1,6 @@
 from openai.types.chat import ChatCompletionChunk
 
-from kosong.chat_provider.kimi import extract_usage_from_chunk
+from kosong.chat_provider.openai_common import extract_usage_from_chunk
 
 
 def test_kimi_extracts_choice_usage_in_stream_chunk() -> None:

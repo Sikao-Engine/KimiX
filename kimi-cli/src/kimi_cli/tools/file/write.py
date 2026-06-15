@@ -1,20 +1,27 @@
-import json_repair
+import contextlib
 from typing import Literal, override
 
+import json_repair
 from kaos.path import KaosPath
 from kosong.tooling import CallableTool2, DisplayBlock, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field, field_validator
 
+from kimi_cli import logger
 from kimi_cli.session import Session
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools.display import DiffDisplayBlock
 from kimi_cli.tools.file import FileActions
-from kimi_cli.tools.file.check_fmt import check_json_text, check_toml_text, check_xml_text, check_yaml_text
+from kimi_cli.tools.file.check_fmt import (
+    check_json_text,
+    check_toml_text,
+    check_xml_text,
+    check_yaml_text,
+)
 from kimi_cli.utils.diff import build_diff_blocks
-from kimi_cli import logger
 from kimi_cli.utils.path import is_within_directory, is_within_workspace, kaos_path_from_user_input
 from kimi_cli.vfs import VFS
+
 from .utils import resolve_vfs
 
 _BASE_DESCRIPTION = "Write content to a file."
@@ -170,10 +177,7 @@ class WriteFile(CallableTool2[Params]):
             except FileNotFoundError:
                 pass
 
-            if params.mode == "overwrite":
-                new_text = params.content
-            else:
-                new_text = old_text + params.content
+            new_text = params.content if params.mode == "overwrite" else old_text + params.content
 
             # In-memory format validation & fix (before any write)
             fmt_error = None
@@ -270,10 +274,8 @@ class WriteFile(CallableTool2[Params]):
                 "WriteFile failed: {path}: {error}", path=params.path, error=e
             )
             _outside_ex = False
-            try:
+            with contextlib.suppress(Exception):
                 _outside_ex = not is_within_directory(kaos_path_from_user_input(params.path).canonical(), self._work_dir)
-            except Exception:
-                pass
             return ToolError(
                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to write to {display_path}. Error: {e}.",
                 brief="Failed to write file",

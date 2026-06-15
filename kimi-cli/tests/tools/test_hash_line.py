@@ -7,18 +7,16 @@ from inline_snapshot import snapshot
 from kaos.path import KaosPath
 
 from kimi_cli.tools.file.hash_line import (
+    NIBBLE_STR,
     AnchorRef,
     AppendEdit,
     DeleteEdit,
+    HashEdit,
+    HashEditParams,
+    HashlineMismatchError,
     HashMismatch,
     HashRead,
-    HashEdit,
     HashReadParams,
-    HashEditParams,
-    HashLine,
-    HashlineMismatchError,
-    NIBBLE_STR,
-    Params,
     PrependEdit,
     ReplaceEdit,
     apply_hashline_edits,
@@ -27,7 +25,6 @@ from kimi_cli.tools.file.hash_line import (
     parse_anchor,
     validate_anchor_ref,
 )
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Helpers
@@ -1207,7 +1204,7 @@ def test_anchor_long_hash_accepted():
     """Anchor with hash longer than 2 chars is accepted (just compared literally)."""
     content = "line 1\nline 2\n"
     # The hash is just a string comparison, so any string works
-    actual_hash = get_line_hash(content, 2)
+    _actual_hash = get_line_hash(content, 2)
     # Anchor with a 10-char hash would never match but is valid syntactically
     anchor = AnchorRef.model_validate("2#" + "A" * 10)
     assert anchor.line == 2
@@ -1259,7 +1256,7 @@ def test_file_with_only_newlines():
     # splitlines: ["", "", ""] — 3 empty lines
     lines = content.splitlines()
     assert len(lines) == 3
-    assert all(l == "" for l in lines)
+    assert all(line == "" for line in lines)
 
     h1 = get_line_hash(content, 1)
     h2 = get_line_hash(content, 2)

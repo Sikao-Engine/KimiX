@@ -1,16 +1,14 @@
-import orjson
 from pathlib import Path
 from typing import Any, Literal, cast, override
 
+import orjson
 from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field, field_validator
 
 from kimi_cli.session_state import TodoItemState
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
-from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.logging import logger
-
 
 # Jumbo fuzzy status map — maps common synonyms to canonical values
 _STATUS_MAP: dict[str, Literal["pending", "in_progress", "done"]] = {
@@ -138,11 +136,7 @@ class SetTodoList(CallableTool2[Params]):
         if params.todos is None:
             return self._read_todos()
 
-        new_todos: list[Todo]
-        if isinstance(params.todos, Todo):
-            new_todos = [params.todos]
-        else:
-            new_todos = params.todos
+        new_todos = [params.todos] if isinstance(params.todos, Todo) else params.todos
 
         return self._write_todos(new_todos, force_replace=params.force_replace)
 
@@ -255,7 +249,7 @@ class SetTodoList(CallableTool2[Params]):
                     is_error=True,
                     output=(
                         "Error: Cannot clear todos while old todos are not all done. "
-                        f"Unfinished: "
+                        "Unfinished: "
                         + ", ".join(t.title for t in old_todos if t.status != "done")
                     ),
                     message="Cannot clear todos while old todos are not all done.",
@@ -289,7 +283,7 @@ class SetTodoList(CallableTool2[Params]):
                 is_error=True,
                 output=(
                     "Error: Cannot replace with new todos while old todos are not all done. "
-                    f"Unfinished: "
+                    "Unfinished: "
                     + ", ".join(t.title for t in old_todos if t.status != "done")
                 ),
                 message="Cannot replace with new todos while old todos are not all done.",

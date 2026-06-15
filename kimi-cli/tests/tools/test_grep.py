@@ -8,10 +8,11 @@ from pathlib import Path
 
 import pytest
 from inline_snapshot import snapshot
+from kaos.path import KaosPath
+from pydantic import ValidationError
 
 from kimi_cli.tools.file.grep_local import Grep, Params, _build_rg_args, _strip_path_prefix
 from kimi_cli.tools.utils import DEFAULT_MAX_CHARS
-from pydantic import ValidationError
 
 
 @pytest.fixture
@@ -1383,6 +1384,7 @@ def test_is_binary():
 def test_read_file_text_binary():
     """_read_file_text returns None for binary files."""
     import tempfile
+
     from kimi_cli.tools.file.grep_local import _read_file_text
 
     with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -1396,6 +1398,7 @@ def test_read_file_text_binary():
 def test_read_file_text_utf8():
     """_read_file_text returns content for text files."""
     import tempfile
+
     from kimi_cli.tools.file.grep_local import _read_file_text
 
     with tempfile.NamedTemporaryFile(mode="w", delete=False, encoding="utf-8") as f:
@@ -1409,6 +1412,7 @@ def test_read_file_text_utf8():
 def test_compile_regex_cached():
     """_compile_regex_cached compiles and caches regex patterns."""
     import re
+
     from kimi_cli.tools.file.grep_local import _compile_regex_cached
 
     p1 = _compile_regex_cached("test", 0)

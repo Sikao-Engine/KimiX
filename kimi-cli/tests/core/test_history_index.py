@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import pytest
 from kosong.message import Message
 
 from kimi_cli.soul.history_index import HistoryIndex

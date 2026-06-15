@@ -4,7 +4,7 @@ import json
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Literal
 
-from kosong.chat_provider import StreamedMessagePart
+from kosong.chat_provider import StreamedMessagePart, TokenUsage
 
 if TYPE_CHECKING:
     from kosong.message import ToolCall
@@ -77,3 +77,24 @@ class BaseStreamedMessage:
     @property
     def id(self) -> str | None:
         return self._id
+
+    @staticmethod
+    def _build_token_usage(
+        *,
+        input_other: int,
+        output: int,
+        input_cache_read: int = 0,
+        input_cache_creation: int = 0,
+    ) -> TokenUsage:
+        """Canonical factory for ``TokenUsage``.
+
+        Subclass ``usage`` properties call this with provider-specific
+        extraction logic so that edge-case handling (None-vs-0, negation,
+        etc.) stays consistent across providers.
+        """
+        return TokenUsage(
+            input_other=input_other,
+            output=output,
+            input_cache_read=input_cache_read,
+            input_cache_creation=input_cache_creation,
+        )

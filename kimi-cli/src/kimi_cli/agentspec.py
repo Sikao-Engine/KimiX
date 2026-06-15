@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import orjson
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NamedTuple
 
+import orjson
 import yaml
 from pydantic import BaseModel, Field
 

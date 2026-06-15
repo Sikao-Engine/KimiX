@@ -38,10 +38,10 @@ from kosong.chat_provider import (
     TokenUsage,
 )
 from kosong.chat_provider.openai_common import (
+    CommonGenerationKwargs,
+    OpenAICompatibleProviderMixin,
     apply_generation_kwargs,
-    close_replaced_openai_client,
     convert_error,
-    create_openai_client,
     reasoning_effort_to_thinking_effort,
     thinking_effort_to_reasoning_effort,
 )
@@ -94,7 +94,7 @@ def is_openai_model(model_name: str) -> bool:
     return model_name in _openai_models
 
 
-class OpenAIResponses:
+class OpenAIResponses(OpenAICompatibleProviderMixin):
     """
     A chat provider that uses the OpenAI Responses API.
 
@@ -112,7 +112,7 @@ class OpenAIResponses:
 
     name = "openai-responses"
 
-    class GenerationKwargs(TypedDict, total=False):
+    class GenerationKwargs(CommonGenerationKwargs, total=False):
         max_output_tokens: int | None
         max_tool_calls: int | None
         reasoning_effort: ReasoningEffort | None
@@ -131,17 +131,10 @@ class OpenAIResponses:
         tool_message_conversion: ToolMessageConversion | None = None,
         **client_kwargs: Any,
     ):
+        self._init_openai_client(api_key=api_key, base_url=base_url, client_kwargs=client_kwargs)
         self._model = model
         self._stream = stream
         self._tool_message_conversion: ToolMessageConversion | None = tool_message_conversion
-        self._api_key: str | None = api_key
-        self._base_url: str | None = base_url
-        self._client_kwargs: dict[str, Any] = dict(client_kwargs)
-        self._client = create_openai_client(
-            api_key=self._api_key,
-            base_url=self._base_url,
-            client_kwargs=self._client_kwargs,
-        )
         self._generation_kwargs: OpenAIResponses.GenerationKwargs = {}
 
     @property
@@ -183,7 +176,7 @@ class OpenAIResponses:
             generation_kwargs["include"] = ["reasoning.encrypted_content"]
 
         try:
-            response = await self._client.responses.create(
+            response = await self.client.responses.create(
                 stream=self._stream,
                 model=self._model,
                 input=inputs,
@@ -194,16 +187,6 @@ class OpenAIResponses:
             return OpenAIResponsesStreamedMessage(response)
         except (OpenAIError, httpx.HTTPError) as e:
             raise convert_error(e) from e
-
-    def on_retryable_error(self, error: BaseException) -> bool:
-        old_client = self._client
-        self._client = create_openai_client(
-            api_key=self._api_key,
-            base_url=self._base_url,
-            client_kwargs=self._client_kwargs,
-        )
-        close_replaced_openai_client(old_client, client_kwargs=self._client_kwargs)
-        return True
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
         reasoning_effort = thinking_effort_to_reasoning_effort(effort)
@@ -236,18 +219,6 @@ class OpenAIResponses:
             Self: A new instance of the chat provider with updated generation kwargs.
         """
         return apply_generation_kwargs(self, **kwargs)
-
-    @property
-    def model_parameters(self) -> dict[str, Any]:
-        """
-        The parameters of the model to use.
-
-        For tracing/logging purposes.
-        """
-
-        model_parameters: dict[str, Any] = {"base_url": str(self._client.base_url)}
-        model_parameters.update(self._generation_kwargs)
-        return model_parameters
 
     def _convert_message(self, message: Message) -> list[ResponseInputItemParam]:
         """Convert a single message to OpenAI Responses input format.
@@ -513,6 +484,7 @@ def _map_audio_url_to_file_content(url: str) -> ResponseInputFileContentParam | 
 
 class OpenAIResponsesStreamedMessage(BaseStreamedMessage):
     def __init__(self, response: Response | AsyncStream[ResponseStreamEvent]):
+        super().__init__()
         if isinstance(response, Response):
             self._iter = self._convert_non_stream_response(response)
         else:
@@ -521,14 +493,18 @@ class OpenAIResponsesStreamedMessage(BaseStreamedMessage):
 
     @property
     def usage(self) -> TokenUsage | None:
+        """Derive ``TokenUsage`` from the collected ``ResponseUsage``.
+
+        Handles the standard OpenAI Responses caching schema
+        (``input_tokens_details.cached_tokens``).
+        """
         if self._usage:
             cached = 0
-            other_input = self._usage.input_tokens
+            total_input = self._usage.input_tokens
             if self._usage.input_tokens_details and self._usage.input_tokens_details.cached_tokens:
                 cached = self._usage.input_tokens_details.cached_tokens
-                other_input -= cached
-            return TokenUsage(
-                input_other=other_input,
+            return self._build_token_usage(
+                input_other=total_input - cached,
                 output=self._usage.output_tokens,
                 input_cache_read=cached,
             )

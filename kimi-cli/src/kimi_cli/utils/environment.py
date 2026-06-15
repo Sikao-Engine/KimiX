@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ntpath
 import os
 import platform
@@ -148,10 +149,8 @@ class Environment:
                 pass
 
             # 3. git bash
-            try:
+            with contextlib.suppress(GitBashNotFoundError):
                 candidates.append(("bash", await _find_git_bash_path()))
-            except GitBashNotFoundError:
-                pass
 
             # 4. fallback
             system_root = os.environ.get("SYSTEMROOT", r"C:\Windows")

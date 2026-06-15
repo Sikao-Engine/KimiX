@@ -9,9 +9,9 @@ import time
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+from kimi_agent_sdk import ToolOk
 from pydantic import SecretStr
 
-from kimi_agent_sdk import ToolOk
 from kimi_cli.cli.export import _collect_recent_log_files, _session_time_range
 
 _TWO_DAYS = 2 * 24 * 60 * 60

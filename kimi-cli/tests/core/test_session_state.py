@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-import orjson
 from pathlib import Path
 
+import orjson
 import pytest
 
 from kimi_cli.session_state import (
@@ -341,7 +341,7 @@ class TestSessionState:
         original_dumps = orjson.dumps
 
         def bad_dumps(*args, **kwargs):
-            result = original_dumps(*args, **kwargs)
+            _result = original_dumps(*args, **kwargs)
             raise OSError("simulated disk error")
 
         monkeypatch.setattr(orjson, "dumps", bad_dumps)

@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
 @cache
 def get_version() -> str:
-    from importlib import metadata
     return 'kimix'
     # try:
     #     return metadata.version("kimi-cli")

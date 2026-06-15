@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
-import orjson
 import platform
 import time
 import zipfile
@@ -13,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
+import orjson
 import typer
 from kaos.path import KaosPath
 

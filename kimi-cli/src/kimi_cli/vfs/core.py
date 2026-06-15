@@ -5,7 +5,6 @@ import shutil
 import threading
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable
 
 
 def _file_digest(path: Path) -> str:
@@ -32,10 +31,7 @@ class VFS:
     @lru_cache(maxsize=4096)
     def _resolve_rel(work_dir_str: str, path_str: str) -> str:
         p = Path(path_str)
-        if p.is_symlink():
-            p = p.parent.resolve() / p.name
-        else:
-            p = p.resolve()
+        p = p.parent.resolve() / p.name if p.is_symlink() else p.resolve()
         rel = p.relative_to(Path(work_dir_str))
         return str(rel)
 
@@ -45,7 +41,7 @@ class VFS:
             rel_str = self._resolve_rel(str(self.work_dir), str(path))
         except ValueError:
             p = Path(path).resolve()
-            raise ValueError(f"Path {p} is not under work_dir {self.work_dir}")
+            raise ValueError(f"Path {p} is not under work_dir {self.work_dir}") from None
         return Path(rel_str)
 
     def translate_path(self, path: Path) -> Path:

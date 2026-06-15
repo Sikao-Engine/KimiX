@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import json
-import orjson
 from collections.abc import Sequence
-
-from kosong.utils.jsonx import loads_relaxed
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import aiofiles
+import orjson
 from kaos.path import KaosPath
 from kosong.message import Message
+from kosong.utils.jsonx import loads_relaxed
 
 from kimi_cli.notifications.llm import is_notification_message
 from kimi_cli.soul.message import is_system_reminder_message, system

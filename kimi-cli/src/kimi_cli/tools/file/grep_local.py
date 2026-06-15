@@ -4,6 +4,8 @@ Be cautious that `KaosPath` is not used in this implementation.
 """
 
 import asyncio
+import concurrent.futures
+import contextlib
 import fnmatch
 import heapq
 import os
@@ -16,26 +18,25 @@ from pathlib import Path
 from typing import Literal, override
 
 from kaos.path import KaosPath
-
-from ripgrepy import Ripgrepy, RipGrepOut as _RipGrepOut
 from kosong.tooling import (
+    FIELD_ALIASES_FILE,
+    FIELD_ALIASES_GENERAL,
+    FIELD_ALIASES_WEB,
     CallableTool2,
     ToolError,
     ToolReturnValue,
-    FIELD_ALIASES_GENERAL,
-    FIELD_ALIASES_FILE,
-    FIELD_ALIASES_WEB,
 )
 from pydantic import BaseModel, Field, field_validator
+from ripgrepy import RipGrepOut as _RipGrepOut
+from ripgrepy import Ripgrepy
 
 from kimi_cli.share import get_share_dir
-from kimi_cli.tools.utils import ToolResultBuilder, load_desc
+from kimi_cli.soul.agent import Runtime
+from kimi_cli.tools.utils import ToolResultBuilder
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_workspace, normalize_user_path
 from kimi_cli.utils.sensitive import is_sensitive_file, sensitive_file_warning
-from kimi_cli.soul.agent import Runtime
 from kimi_cli.vfs import VFS
-import concurrent.futures
 
 # Fuzzy output_mode map — maps common synonyms to canonical values
 _OUTPUT_MODE_MAP: dict[str, Literal["files_with_matches", "count_matches", "content"]] = {
@@ -343,7 +344,7 @@ def _is_windows_reserved_name(path: str) -> bool:
     reserved (regardless of extension). Passing such paths to ripgrep
     causes ``ERROR_INVALID_FUNCTION`` (os error 1).
     """
-    if not platform.system() == "Windows":
+    if platform.system() != "Windows":
         return False
     normalized = os.path.normpath(path)
     for part in normalized.split(os.sep):
@@ -458,9 +459,7 @@ def _is_binary(data: bytes) -> bool:
 def _should_skip_dir(dirname: str, include_ignored: bool) -> bool:
     if dirname in _VCS_DIRS:
         return True
-    if not include_ignored and dirname in _IGNORED_DIRS:
-        return True
-    return False
+    return not include_ignored and dirname in _IGNORED_DIRS
 
 
 def _matches_type(file_path: Path, type_name: str | None) -> bool:
@@ -499,10 +498,8 @@ def _compile_regex_cached(pattern: str, flags: int) -> re.Pattern[str]:
 def _read_file_text(file_path: Path, vfs: VFS | None = None) -> str | None:
     """Read a file in a single pass: binary read, null-byte check, then decode."""
     if vfs is not None:
-        try:
+        with contextlib.suppress(ValueError):
             file_path = vfs.translate_path(file_path)
-        except ValueError:
-            pass  # Path outside VFS work_dir, use original
     try:
         with open(file_path, "rb") as f:
             data = f.read()
@@ -573,9 +570,7 @@ class Grep(CallableTool2[Params]):
             rg = _build_ripgrepy(rg_path, params, single_threaded=_retry)
 
             timed_out = False
-            buffer_truncated = False
             output = ""
-            stderr_str = ""
 
             try:
                 # Run ripgrepy in a thread pool executor with timeout
@@ -646,11 +641,11 @@ class Grep(CallableTool2[Params]):
                 k = params.offset + (params.head_limit or 0)
                 if k and len(lines) > k:
                     lines = [p for _, p in heapq.nlargest(
-                        k, zip(mtimes, lines), key=lambda x: x[0]
+                        k, zip(mtimes, lines, strict=False), key=lambda x: x[0]
                     )]
                     files_truncated_early = True
                 else:
-                    lines = [p for _, p in sorted(zip(mtimes, lines), key=lambda x: x[0], reverse=True)]
+                    lines = [p for _, p in sorted(zip(mtimes, lines, strict=False), key=lambda x: x[0], reverse=True)]
 
             # Step 2: shorten paths to relative (prefix stripping)
             search_base = os.path.abspath(os.path.expanduser(normalize_user_path(params.path)))
@@ -818,10 +813,8 @@ class Grep(CallableTool2[Params]):
 
             # Translate search path through VFS for I/O
             if self._vfs is not None:
-                try:
+                with contextlib.suppress(ValueError):
                     search_path = self._vfs.translate_path(search_path)
-                except ValueError:
-                    pass  # Path outside VFS work_dir, use original
 
             if not search_path.exists():
                 display_path = params.path.replace("\\", "/")
@@ -1021,9 +1014,7 @@ class Grep(CallableTool2[Params]):
             return False
         if not _matches_glob(file_path, params.glob):
             return False
-        if not _matches_type(file_path, params.type):
-            return False
-        return True
+        return _matches_type(file_path, params.type)
 
     def _search_content_single(
         self, file_path: Path, content: str, regex: re.Pattern[str], params: Params

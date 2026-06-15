@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import contextlib
-import orjson
 import os
 import tempfile
 from pathlib import Path
 from typing import Any
+
+import orjson
 
 
 def atomic_json_write(data: Any, path: Path) -> None:

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import orjson
 import platform
 from typing import Annotated, TypedDict
 
+import orjson
 import typer
 
 

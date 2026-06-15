@@ -424,7 +424,7 @@ async def test_glob_default_directory(glob_tool: Glob, temp_work_dir: KaosPath):
 
 async def test_glob_description_for_os():
     """Test _description_for_os includes Windows hint on Windows."""
-    from kimi_cli.tools.file.glob import _description_for_os, WINDOWS_PATH_HINT
+    from kimi_cli.tools.file.glob import WINDOWS_PATH_HINT, _description_for_os
 
     desc = _description_for_os("Windows")
     assert WINDOWS_PATH_HINT in desc

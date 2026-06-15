@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from kimi_cli.tools.file.check_fmt import check_json_text, check_xml_text
-
 
 # --- JSON tests ---
 

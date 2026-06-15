@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, override
+from typing import override
 
 from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field

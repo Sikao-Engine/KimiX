@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import difflib
-from typing import Annotated, Literal, Union, override
+from typing import Annotated, Literal, override
 
 import xxhash
 from kaos.path import KaosPath
@@ -16,6 +17,7 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_directory, is_within_workspace, kaos_path_from_user_input
 from kimi_cli.utils.sensitive import is_sensitive_file
 from kimi_cli.vfs import VFS
+
 from .utils import resolve_vfs
 
 NIBBLE_STR = "ZPMQVRWSNKTXJBYH"
@@ -110,7 +112,7 @@ class AnchorRef(BaseModel):
             except ValueError:
                 raise ValueError(
                     f"Invalid line number '{parts[0]}' in anchor '{v}', expected format 'LINE#HASH' (e.g., '8#RT')"
-                )
+                ) from None
             return {"line": line, "hash": parts[1]}
         return v
 
@@ -140,7 +142,7 @@ class DeleteEdit(BaseModel):
 
 
 HashlineEdit = Annotated[
-    Union[ReplaceEdit, AppendEdit, PrependEdit, DeleteEdit],
+    ReplaceEdit | AppendEdit | PrependEdit | DeleteEdit,
     Field(discriminator="op"),
 ]
 
@@ -245,7 +247,7 @@ def validate_anchor_ref(
             # Use precomputed fuzzy hashes
             if fuzzy_hashes[anchor.line - 1] == anchor.hash:
                 fuzzy_match = True
-        elif any("\r" in l for l in file_lines[:anchor.line]):
+        elif any("\r" in line for line in file_lines[:anchor.line]):
             prev_hash_fuzzy: str | None = None
             for i, line in enumerate(file_lines):
                 line_num = i + 1
@@ -283,16 +285,10 @@ def _deduplicate_edits(edits: list[HashlineEdit]) -> list[HashlineEdit]:
                 line_key = f"s:{edit.pos.line}"
             key = f"{line_key}:{chr(10).join(edit.lines)}"
         elif isinstance(edit, AppendEdit):
-            if edit.pos is not None:
-                line_key = f"i:{edit.pos.line}"
-            else:
-                line_key = "ieof"
+            line_key = f"i:{edit.pos.line}" if edit.pos is not None else "ieof"
             key = f"{line_key}:{chr(10).join(edit.lines)}"
         elif isinstance(edit, PrependEdit):
-            if edit.pos is not None:
-                line_key = f"ib:{edit.pos.line}"
-            else:
-                line_key = "ibef"
+            line_key = f"ib:{edit.pos.line}" if edit.pos is not None else "ibef"
             key = f"{line_key}:{chr(10).join(edit.lines)}"
         elif isinstance(edit, DeleteEdit):
             key = f"d:{edit.pos.line}"
@@ -346,7 +342,7 @@ def apply_hashline_edits(
 
     # Precompute fuzzy hashes (\r-stripped) if any lines contain \r
     fuzzy_hashes: list[str] | None = None
-    if any("\r" in l for l in file_lines):
+    if any("\r" in line for line in file_lines):
         fuzzy_hashes = []
         prev_fuzzy: str | None = None
         for i, line in enumerate(file_lines):
@@ -371,12 +367,7 @@ def apply_hashline_edits(
                 validate_anchor_ref(
                     edit.end, file_lines, mismatches, validation_errors, file_hashes, fuzzy_hashes
                 )
-        elif isinstance(edit, AppendEdit):
-            if edit.pos is not None:
-                validate_anchor_ref(
-                    edit.pos, file_lines, mismatches, validation_errors, file_hashes, fuzzy_hashes
-                )
-        elif isinstance(edit, PrependEdit):
+        elif isinstance(edit, (AppendEdit, PrependEdit)):
             if edit.pos is not None:
                 validate_anchor_ref(
                     edit.pos, file_lines, mismatches, validation_errors, file_hashes, fuzzy_hashes
@@ -903,8 +894,6 @@ class HashEdit(CallableTool2[HashEditParams]):
             return ToolError(message=str(e), brief='Internal error.')
 
     async def _do_edit(self, params: HashEditParams) -> ToolReturnValue:
-        display_path = params.path.replace("\\", "/")
-
         if not self._session.file_mtime.mark_dirty(params.path):
             return ToolError(
                 message="File modified, read file first.",
@@ -998,13 +987,11 @@ class HashEdit(CallableTool2[HashEditParams]):
                 error=e,
             )
             _outside_ex = False
-            try:
+            with contextlib.suppress(Exception):
                 _outside_ex = not is_within_directory(
                     kaos_path_from_user_input(params.path).canonical(),
                     self._work_dir,
                 )
-            except Exception:
-                pass
             return ToolError(
                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to edit. Error: {e}",
                 brief="Failed to edit file",

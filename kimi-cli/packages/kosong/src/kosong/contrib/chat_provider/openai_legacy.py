@@ -1,16 +1,14 @@
 import copy
-import uuid
 
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Self, Unpack, cast
 
 import httpx
 from openai import AsyncStream, Omit, OpenAIError, omit
-from openai.types import CompletionUsage, ReasoningEffort
+from openai.types import ReasoningEffort
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionChunk,
-    ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageParam,
 )
 from typing_extensions import TypedDict
@@ -18,26 +16,25 @@ from typing_extensions import TypedDict
 from kosong.chat_provider import (
     ChatProvider,
     RetryableChatProvider,
-    StreamedMessagePart,
     ThinkingEffort,
-    TokenUsage,
 )
 from kosong.chat_provider.openai_common import (
+    CommonGenerationKwargs,
+    OpenAICompatibleProviderMixin,
+    OpenAICompatibleStreamedMessage,
     apply_generation_kwargs,
-    close_replaced_openai_client,
     convert_error,
-    create_openai_client,
+    extract_reasoning_from_content,
     reasoning_effort_to_thinking_effort,
     thinking_effort_to_reasoning_effort,
     tool_to_openai,
 )
 from kosong.contrib.chat_provider.common import (
-    BaseStreamedMessage,
     ToolMessageConversion,
     check_tool_call_id,
     validate_tool_call_arguments,
 )
-from kosong.message import ContentPart, Message, TextPart, ThinkPart, ToolCall, ToolCallPart
+from kosong.message import ContentPart, Message, TextPart, ThinkPart
 from kosong.tooling import Tool
 
 if TYPE_CHECKING:
@@ -57,7 +54,7 @@ def _reasoning_effort_to_extra_body_level(reasoning_effort: ReasoningEffort | Om
     return "high"
 
 
-class OpenAILegacy:
+class OpenAILegacy(OpenAICompatibleProviderMixin):
     """
     A chat provider that uses the OpenAI Chat Completions API.
 
@@ -70,15 +67,12 @@ class OpenAILegacy:
 
     name = "openai"
 
-    class GenerationKwargs(TypedDict, extra_items=Any, total=False):
+    class GenerationKwargs(CommonGenerationKwargs, extra_items=Any, total=False):
         """
         Generation kwargs for various kinds of OpenAI-compatible APIs.
         `extra_items=Any` is used to support any extra args.
         """
 
-        max_tokens: int | None
-        temperature: float | None
-        top_p: float | None
         n: int | None
         presence_penalty: float | None
         frequency_penalty: float | None
@@ -102,17 +96,10 @@ class OpenAILegacy:
         To support OpenAI-compatible APIs that inject reasoning content in a extra field in
         the message, such as `{"reasoning": ...}`, `reasoning_key` can be set to the key name.
         """
+        self._init_openai_client(api_key=api_key, base_url=base_url, client_kwargs=client_kwargs)
+        """The underlying `AsyncOpenAI` client."""
         self.model = model
         self.stream = stream
-        self._api_key: str | None = api_key
-        self._base_url: str | None = base_url
-        self._client_kwargs: dict[str, Any] = dict(client_kwargs)
-        self.client = create_openai_client(
-            api_key=self._api_key,
-            base_url=self._base_url,
-            client_kwargs=self._client_kwargs,
-        )
-        """The underlying `AsyncOpenAI` client."""
         self._reasoning_effort: ReasoningEffort | Omit = omit
         self._reasoning_key = reasoning_key
         self._tool_message_conversion: ToolMessageConversion | None = tool_message_conversion
@@ -192,16 +179,6 @@ class OpenAILegacy:
         except (OpenAIError, httpx.HTTPError) as e:
             raise convert_error(e) from e
 
-    def on_retryable_error(self, error: BaseException) -> bool:
-        old_client = self.client
-        self.client = create_openai_client(
-            api_key=self._api_key,
-            base_url=self._base_url,
-            client_kwargs=self._client_kwargs,
-        )
-        close_replaced_openai_client(old_client, client_kwargs=self._client_kwargs)
-        return True
-
     def with_thinking(self, effort: ThinkingEffort) -> Self:
         new_self = copy.copy(self)
         new_self._reasoning_effort = thinking_effort_to_reasoning_effort(effort)
@@ -276,130 +253,28 @@ class OpenAILegacy:
             if error_texts:
                 message.content = [TextPart(text="\n".join(error_texts)), *message.content]
 
-        reasoning_content: str = ""
-        content: list[ContentPart] = []
-        has_reasoning = False
-        for part in message.content:
-            if isinstance(part, ThinkPart):
-                has_reasoning = True
-                reasoning_content += part.think
-            else:
-                content.append(part)
+        reasoning_content, visible_content = extract_reasoning_from_content(message.content)
+        has_reasoning = any(isinstance(part, ThinkPart) for part in message.content)
         # if tool message and `tool_result_conversion` is `extract_text`, patch all text parts into
         # one so that we can make use of the serialization process of `Message` to output string
         if message.role == "tool" and self._tool_message_conversion == "extract_text":
             message.content = [TextPart(text=message.extract_text(sep="\n"))]
         else:
-            message.content = content
+            message.content = visible_content
         dumped_message = message.model_dump(exclude_none=True)
-        # reasoning_content only matters for tool-call messages (DeepSeek/Kimi/MiniMax/Qwen
-        # require it; the API ignores it in pure chat). Always include it when tool_calls
-        if self._reasoning_key and message.tool_calls and has_reasoning:
+        # reasoning_content is required by several OpenAI-compatible APIs (DeepSeek/Kimi/
+        # MiniMax/Qwen) whenever the history contains a ThinkPart. Include it whenever a
+        # reasoning key is configured and a ThinkPart was present.
+        if self._reasoning_key and has_reasoning:
             dumped_message[self._reasoning_key] = reasoning_content
         return cast(ChatCompletionMessageParam, dumped_message)
 
 
-class OpenAILegacyStreamedMessage(BaseStreamedMessage):
+class OpenAILegacyStreamedMessage(OpenAICompatibleStreamedMessage):
     def __init__(
         self, response: ChatCompletion | AsyncStream[ChatCompletionChunk], reasoning_key: str | None
     ):
-        self._reasoning_key: str | None = reasoning_key
-        if isinstance(response, ChatCompletion):
-            self._iter = self._convert_non_stream_response(response)
-        else:
-            self._iter = self._convert_stream_response(response)
-        self._usage: CompletionUsage | None = None
-
-    @property
-    def usage(self) -> TokenUsage | None:
-        if self._usage:
-            cached = 0
-            other_input = self._usage.prompt_tokens
-            if (
-                self._usage.prompt_tokens_details
-                and self._usage.prompt_tokens_details.cached_tokens
-            ):
-                cached = self._usage.prompt_tokens_details.cached_tokens
-                other_input -= cached
-            return TokenUsage(
-                input_other=other_input,
-                output=self._usage.completion_tokens,
-                input_cache_read=cached,
-            )
-        return None
-
-    async def _convert_non_stream_response(
-        self,
-        response: ChatCompletion,
-    ) -> AsyncIterator[StreamedMessagePart]:
-        self._id = response.id
-        self._usage = response.usage
-        message = response.choices[0].message
-        reasoning_key = self._reasoning_key
-        if reasoning_key and (reasoning_content := getattr(message, reasoning_key, None)):
-            assert isinstance(reasoning_content, str)
-            yield ThinkPart(think=reasoning_content)
-        if message.content:
-            yield TextPart(text=message.content)
-        if message.tool_calls:
-            for tool_call in message.tool_calls:
-                if isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
-                    yield ToolCall(
-                        id=tool_call.id or str(uuid.uuid4()),
-                        function=ToolCall.FunctionBody(
-                            name=tool_call.function.name,
-                            arguments=tool_call.function.arguments,
-                        ),
-                    )
-
-    async def _convert_stream_response(
-        self,
-        response: AsyncIterator[ChatCompletionChunk],
-    ) -> AsyncIterator[StreamedMessagePart]:
-        try:
-            async for chunk in response:
-                if chunk.id:
-                    self._id = chunk.id
-                if chunk.usage:
-                    self._usage = chunk.usage
-
-                if not chunk.choices:
-                    continue
-
-                delta = chunk.choices[0].delta
-
-                # convert thinking content
-                reasoning_key = self._reasoning_key
-                if reasoning_key and (reasoning_content := getattr(delta, reasoning_key, None)):
-                    assert isinstance(reasoning_content, str)
-                    yield ThinkPart(think=reasoning_content)
-
-                # convert text content
-                if delta.content:
-                    yield TextPart(text=delta.content)
-
-                # convert tool calls
-                for tool_call in delta.tool_calls or []:
-                    if not tool_call.function:
-                        continue
-
-                    if tool_call.function.name:
-                        yield ToolCall(
-                            id=tool_call.id or str(uuid.uuid4()),
-                            function=ToolCall.FunctionBody(
-                                name=tool_call.function.name,
-                                arguments=tool_call.function.arguments,
-                            ),
-                        )
-                    elif tool_call.function.arguments:
-                        yield ToolCallPart(
-                            arguments_part=tool_call.function.arguments,
-                        )
-                    else:
-                        # skip empty tool calls
-                        pass
-        except (OpenAIError, httpx.HTTPError) as e:
-            raise convert_error(e) from e
+        super().__init__(response, reasoning_key=reasoning_key)
 
 
 if __name__ == "__main__":

@@ -73,6 +73,7 @@ class TestExportedContext:
 
     def test_populated(self) -> None:
         from kosong.message import Message
+
         from kimi_cli.wire.types import TextPart
 
         ctx = ExportedContext(

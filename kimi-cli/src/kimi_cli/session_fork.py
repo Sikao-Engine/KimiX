@@ -7,13 +7,14 @@ for both the Web API and CLI slash commands (/undo, /fork).
 from __future__ import annotations
 
 import json
-import orjson
 import mimetypes
 import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
+
+import orjson
 
 from kimi_cli.session_state import load_session_state, save_session_state
 

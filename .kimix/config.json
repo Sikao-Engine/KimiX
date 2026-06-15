@@ -45,12 +45,8 @@
     "curl",
     "wget",
     "Stop-Process",
-    "Remove-Item",
-    "Invoke-WebRequest",
-    "Invoke-RestMethod",
     "Restart-Computer",
     "Stop-Computer",
-    "Clear-Content -Path",
-    "Remove-ItemProperty"
+    "Clear-Content -Path"
   ]
 }

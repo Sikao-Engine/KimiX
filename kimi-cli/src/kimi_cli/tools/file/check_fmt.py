@@ -1,8 +1,10 @@
-import xml.etree.ElementTree as ET
-import orjson
 import tomllib
+import xml.etree.ElementTree as ET
+from collections.abc import Callable
+from typing import Any
+
+import orjson
 import yaml
-from typing import Callable, Any
 
 
 def check_json_text(text: str, json_callback: Callable[[Any], None] | None = None) -> str | None:

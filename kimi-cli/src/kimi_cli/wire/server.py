@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import orjson
 from typing import Any, Literal, cast
 
 import acp  # type: ignore[reportMissingTypeStubs]
+import orjson
 import pydantic
 from kosong.chat_provider import APIStatusError, ChatProviderError
 from kosong.tooling import ToolError, ToolResult
@@ -29,7 +29,6 @@ from kimi_cli.wire.types import (
     QuestionRequest,
     QuestionResponse,
     Request,
-    StatusUpdate,
     ToolCallRequest,
     is_event,
     is_request,

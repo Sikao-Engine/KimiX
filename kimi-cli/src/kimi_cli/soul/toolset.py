@@ -5,15 +5,15 @@ import contextlib
 import importlib
 import inspect
 import json
-import orjson
 import time
-import contextvars
+import typing
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-import typing
 from typing import TYPE_CHECKING, Any, Literal, cast, overload
+
+import orjson
 from kosong.tooling import (
     CallableTool,
     CallableTool2,
@@ -38,17 +38,12 @@ from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.wire.types import (
     AudioURLPart,
-    BackgroundTaskDisplayBlock,
-    BriefDisplayBlock,
     ContentPart,
-    DiffDisplayBlock,
     ImageURLPart,
     MCPServerSnapshot,
     MCPStatusSnapshot,
-    ShellDisplayBlock,
     TextPart,
     ThinkPart,
-    TodoDisplayBlock,
     ToolCall,
     ToolCallRequest,
     ToolResult,
@@ -475,7 +470,7 @@ class KimiToolset:
                                 sanitized_parts.append(part)
                         ret.output = sanitized_parts
                     MAX_BYTES = 128 << 10  # 128KB
-                    if type(ret.output) == str:
+                    if isinstance(ret.output, str):
                         len_bytes = len(ret.output.encode("utf-8"))
                         if len_bytes > MAX_BYTES:   # Add by Maxwell: process large size
                             temp_file = _export_to_temp_file(ret.output)

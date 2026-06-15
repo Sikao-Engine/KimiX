@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
-
 from pathlib import Path
 
+import pytest
 from kosong.tooling import ToolReturnValue
+
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.todo import Params, SetTodoList, Todo
 
@@ -682,8 +682,9 @@ class TestSetTodoListInternals:
 
     def test_read_subagent_state_non_dict(self):
         """_read_subagent_state handles non-JSON and non-dict data."""
-        from kimi_cli.tools.todo import SetTodoList
         import tempfile
+
+        from kimi_cli.tools.todo import SetTodoList
 
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
             f.write("[1, 2, 3]")  # valid JSON but not a dict

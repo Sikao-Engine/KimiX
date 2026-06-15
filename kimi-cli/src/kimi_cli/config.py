@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import orjson
 from pathlib import Path
 from typing import Literal, Self
 
+import orjson
 import tomlkit
 from pydantic import (
     AliasChoices,

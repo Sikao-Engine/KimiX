@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 from kosong.message import Message
 
-from kimi_cli.utils.tokens import _estimate_chars_tokens, _is_cjk_text, count_message_tokens, count_tokens
+from kimi_cli.utils.tokens import (
+    _estimate_chars_tokens,
+    _is_cjk_text,
+    count_message_tokens,
+    count_tokens,
+)
 from kimi_cli.wire.types import TextPart
 
 

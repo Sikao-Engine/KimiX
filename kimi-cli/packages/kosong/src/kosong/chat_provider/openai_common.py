@@ -3,25 +3,57 @@ import contextlib
 import copy
 import re
 import ssl
-from collections.abc import Awaitable, Mapping
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Mapping
 from typing import Any, cast
 
 import certifi
 import httpx
 import openai
-from openai import AsyncOpenAI, OpenAIError
+from openai import AsyncOpenAI, AsyncStream, OpenAIError
 from openai.types import ReasoningEffort
-from openai.types.chat import ChatCompletionToolParam
+from openai.types.chat import (
+    ChatCompletion,
+    ChatCompletionChunk,
+    ChatCompletionMessageFunctionToolCall,
+    ChatCompletionToolParam,
+)
+from openai.types.completion_usage import CompletionUsage
 
 from kosong.chat_provider import (
     APIConnectionError,
     APIStatusError,
     APITimeoutError,
     ChatProviderError,
+    StreamedMessagePart,
     ThinkingEffort,
+    TokenUsage,
     convert_httpx_error,
 )
+from kosong.contrib.chat_provider.common import BaseStreamedMessage
+from kosong.message import (
+    ContentPart,
+    TextPart,
+    ThinkPart,
+    ToolCall,
+    ToolCallPart,
+)
 from kosong.tooling import Tool
+
+from typing_extensions import TypedDict
+
+
+class CommonGenerationKwargs(TypedDict, total=False):
+    """Shared generation kwargs for OpenAI-compatible chat providers.
+
+    Provider-specific ``GenerationKwargs`` TypedDicts can extend this to
+    inherit the common fields while adding their own proprietary ones.
+    """
+
+    max_tokens: int | None
+    temperature: float | None
+    top_p: float | None
+
 
 _SSL_CONTEXT: ssl.SSLContext | None = None
 
@@ -219,3 +251,219 @@ def apply_generation_kwargs(self: Any, *, attr: str = "_generation_kwargs", **kw
     new_kwargs.update(kwargs)
     setattr(new_self, attr, new_kwargs)
     return new_self
+
+
+class OpenAICompatibleProviderMixin:
+    """Mix-in for any chat provider backed by an ``AsyncOpenAI`` client.
+
+    Provides canonical implementations of :meth:`on_retryable_error` and
+    :meth:`model_parameters`, plus a helper to initialise the client during
+    ``__init__``.
+
+    Subclasses must store generation kwargs in ``self._generation_kwargs``
+    (the standard pattern across all providers).
+    """
+
+    def _init_openai_client(
+        self,
+        *,
+        api_key: str | None,
+        base_url: str | None,
+        client_kwargs: Mapping[str, Any],
+    ) -> None:
+        self._api_key = api_key
+        self._base_url = base_url
+        self._client_kwargs: dict[str, Any] = dict(client_kwargs)
+        self.client: AsyncOpenAI = create_openai_client(
+            api_key=self._api_key,
+            base_url=self._base_url,
+            client_kwargs=self._client_kwargs,
+        )
+
+    def on_retryable_error(self, error: BaseException) -> bool:
+        old_client = self.client
+        # Read api_key from the live client (not self._api_key) so that
+        # OAuth token refreshes applied via client.api_key are preserved.
+        current_api_key = old_client.api_key
+        self.client = create_openai_client(
+            api_key=current_api_key,
+            base_url=self._base_url,
+            client_kwargs=self._client_kwargs,
+        )
+        self._api_key = current_api_key
+        close_replaced_openai_client(old_client, client_kwargs=self._client_kwargs)
+        return True
+
+    @property
+    def model_parameters(self) -> dict[str, Any]:
+        """Parameters of the underlying model (for tracing / logging)."""
+        model_parameters: dict[str, Any] = {"base_url": str(self.client.base_url)}
+        model_parameters.update(self._generation_kwargs)
+        return model_parameters
+
+
+def extract_reasoning_from_content(
+    content: list[ContentPart],
+) -> tuple[str, list[ContentPart]]:
+    """Separate ThinkPart content from visible content parts.
+
+    Returns a ``(reasoning_text, visible_parts)`` tuple where *reasoning_text*
+    is the concatenated text of all ``ThinkPart`` items and *visible_parts*
+    contains every non-``ThinkPart`` entry in its original order.
+    """
+    reasoning = ""
+    visible: list[ContentPart] = []
+    for part in content:
+        if isinstance(part, ThinkPart):
+            reasoning += part.think
+        else:
+            visible.append(part)
+    return reasoning, visible
+
+
+def extract_usage_from_chunk(chunk: ChatCompletionChunk) -> CompletionUsage | None:
+    """Extract token usage from a streaming ``ChatCompletionChunk``.
+
+    OpenAI-compatible APIs may place usage info at the top-level ``usage``
+    field (standard) or nest it inside the first choice's model dump (some
+    compatibility layers).  This helper handles both formats.
+    """
+    if chunk.usage:
+        return chunk.usage
+    if not chunk.choices:
+        return None
+    choice_dump: dict[str, object] = chunk.choices[0].model_dump()
+    raw_usage = choice_dump.get("usage")
+    if isinstance(raw_usage, CompletionUsage):
+        return raw_usage
+    if isinstance(raw_usage, dict):
+        return CompletionUsage.model_validate(raw_usage)
+    return None
+
+
+class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
+    """Base class for streamed messages using the OpenAI Chat Completions wire format.
+
+    Handles both streaming and non-streaming responses, text / reasoning /
+    tool-call delta processing, and usage extraction.  Subclasses only need
+    to supply *reasoning_key* (e.g. ``"reasoning_content"`` for Kimi) and,
+    optionally, override :meth:`usage` for provider-specific cache-token
+    extraction.
+    """
+
+    def __init__(
+        self,
+        response: ChatCompletion | AsyncStream[ChatCompletionChunk],
+        *,
+        reasoning_key: str | None = None,
+    ):
+        super().__init__()
+        self._reasoning_key: str | None = reasoning_key
+        if isinstance(response, ChatCompletion):
+            self._iter = self._convert_non_stream_response(response)
+        else:
+            self._iter = self._convert_stream_response(response)
+        self._usage: CompletionUsage | None = None
+
+    # -- usage (OpenAI-standard CompletionUsage → TokenUsage) ------------------
+
+    @property
+    def usage(self) -> TokenUsage | None:
+        """Derive ``TokenUsage`` from the collected ``CompletionUsage``.
+
+        The default implementation handles the standard OpenAI caching
+        schema (``prompt_tokens_details.cached_tokens``).  Providers whose
+        models surface caching via non-standard attributes (e.g. Moonshot's
+        legacy ``cached_tokens`` field) should override this property.
+        """
+        if self._usage:
+            cached = 0
+            total_input = self._usage.prompt_tokens
+            if (
+                self._usage.prompt_tokens_details
+                and self._usage.prompt_tokens_details.cached_tokens
+            ):
+                cached = self._usage.prompt_tokens_details.cached_tokens
+            return self._build_token_usage(
+                input_other=total_input - cached,
+                output=self._usage.completion_tokens,
+                input_cache_read=cached,
+            )
+        return None
+
+    # -- non-streaming conversion ---------------------------------------------
+
+    async def _convert_non_stream_response(
+        self,
+        response: ChatCompletion,
+    ) -> AsyncIterator[StreamedMessagePart]:
+        self._id = response.id
+        self._usage = response.usage
+        message = response.choices[0].message
+        reasoning_key = self._reasoning_key
+        if reasoning_key and (reasoning_content := getattr(message, reasoning_key, None)):
+            assert isinstance(reasoning_content, str)
+            yield ThinkPart(think=reasoning_content)
+        if message.content:
+            yield TextPart(text=message.content)
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                if isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
+                    yield ToolCall(
+                        id=tool_call.id or str(uuid.uuid4()),
+                        function=ToolCall.FunctionBody(
+                            name=tool_call.function.name,
+                            arguments=tool_call.function.arguments,
+                        ),
+                    )
+
+    # -- streaming conversion -------------------------------------------------
+
+    async def _convert_stream_response(
+        self,
+        response: AsyncIterator[ChatCompletionChunk],
+    ) -> AsyncIterator[StreamedMessagePart]:
+        try:
+            async for chunk in response:
+                if chunk.id:
+                    self._id = chunk.id
+                if usage := extract_usage_from_chunk(chunk):
+                    self._usage = usage
+
+                if not chunk.choices:
+                    continue
+
+                delta = chunk.choices[0].delta
+
+                # extract reasoning / thinking content
+                reasoning_key = self._reasoning_key
+                if reasoning_key and (reasoning_content := getattr(delta, reasoning_key, None)):
+                    assert isinstance(reasoning_content, str)
+                    yield ThinkPart(think=reasoning_content)
+
+                # extract text content
+                if delta.content:
+                    yield TextPart(text=delta.content)
+
+                # extract tool-call deltas
+                for tool_call in delta.tool_calls or []:
+                    if not tool_call.function:
+                        continue
+
+                    if tool_call.function.name:
+                        yield ToolCall(
+                            id=tool_call.id or str(uuid.uuid4()),
+                            function=ToolCall.FunctionBody(
+                                name=tool_call.function.name,
+                                arguments=tool_call.function.arguments,
+                            ),
+                        )
+                    elif tool_call.function.arguments:
+                        yield ToolCallPart(
+                            arguments_part=tool_call.function.arguments,
+                        )
+                    else:
+                        # skip empty tool calls
+                        pass
+        except (OpenAIError, httpx.HTTPError) as e:
+            raise convert_error(e) from e

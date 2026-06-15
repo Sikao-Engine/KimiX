@@ -1,6 +1,5 @@
-from typing import cast
-
 import json
+from typing import cast
 
 import streamingjson  # type: ignore[reportMissingTypeStubs]
 from kaos.path import KaosPath

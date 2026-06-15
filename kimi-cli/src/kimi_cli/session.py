@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import builtins
+import json
 import shutil
 import uuid
 from dataclasses import dataclass, field
@@ -9,20 +10,18 @@ from pathlib import Path
 from typing import Any
 
 import aiofiles
-import json
 from kaos.path import KaosPath
 from kosong.message import Message
+from kosong.utils.jsonx import loads_relaxed
 
 from kimi_cli.file_mtine import FileMTime
 from kimi_cli.metadata import WorkDirMeta, load_metadata, save_metadata
 from kimi_cli.session_state import SessionState, load_session_state, save_session_state
 from kimi_cli.soul.context_records import ExportedContext
-from kosong.utils.jsonx import loads_relaxed
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.string import shorten
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import TurnBegin
-import secrets
 
 
 @dataclass(slots=True, kw_only=True)

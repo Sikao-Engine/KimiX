@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Sequence
 from pathlib import Path
-from typing import Self, TypeVar
+from typing import Self
 
 import pytest
 from inline_snapshot import Snapshot, snapshot
@@ -31,7 +31,6 @@ def approval() -> Approval:
     return Approval(yolo=False)
 
 
-T = TypeVar("T")
 RALPH_IMAGE_URL = "https://example.com/test.png"
 RALPH_IMAGE_USER_INPUT = [
     TextPart(text="Check this image"),
@@ -39,7 +38,7 @@ RALPH_IMAGE_USER_INPUT = [
 ]
 
 
-def expect_snapshot(value: T, expected: Snapshot[T]) -> None:
+def expect_snapshot[T](value: T, expected: Snapshot[T]) -> None:
     if expected != value:
         pytest.fail(f"Snapshot mismatch: {value!r} != {expected!r}")
 

@@ -39,11 +39,11 @@ from kimi_cli.tools.background import (
 from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
+from kimi_cli.tools.file.hash_line import HashEdit, HashLine, HashRead
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditFile
 from kimi_cli.tools.file.write import WriteFile
-from kimi_cli.tools.file.hash_line import HashRead, HashEdit, HashLine
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.think import Think
 from kimi_cli.tools.todo import SetTodoList

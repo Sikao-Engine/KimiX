@@ -6,6 +6,7 @@ from pathlib import Path, PurePath
 from typing import Literal
 
 from kaos.path import KaosPath
+
 from kimi_cli.vfs import VFS
 
 MEDIA_SNIFF_BYTES = 512
@@ -274,11 +275,7 @@ async def resolve_vfs(path_str: str, vfs: VFS | None, *, for_write: bool = False
     p = KaosPath(str(path_str)).expanduser().canonical()
     if vfs is None:
         return p
-    if for_write:
-        # Ensure file is copied into virtual layer; returns virtual Path
-        real = vfs.get(Path(str(p)), mark_dirty=True)
-    else:
-        real = vfs.translate_path(Path(str(p)))
+    real = vfs.get(Path(str(p)), mark_dirty=True) if for_write else vfs.translate_path(Path(str(p)))
     return KaosPath.unsafe_from_local_path(real)
 
 

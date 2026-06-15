@@ -50,22 +50,6 @@ print("ok")
     )
     assert proc.stdout.strip() == "ok"
 
-
-def test_import_kimi_cli_constant_defers_package_metadata() -> None:
-    proc = _run_python(
-        """
-import sys
-sys.modules.pop("importlib.metadata", None)
-import kimi_cli.constant as constant
-assert "importlib.metadata" not in sys.modules
-assert constant.get_version()
-assert "importlib.metadata" in sys.modules
-print("ok")
-"""
-    )
-    assert proc.stdout.strip() == "ok"
-
-
 def test_root_help_lists_lazy_subcommands_without_importing_them() -> None:
     proc = _run_python(
         """

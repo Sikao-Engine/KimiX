@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 import time
 import uuid
 import weakref
 from collections.abc import Awaitable, Callable, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -20,7 +22,6 @@ from kosong.chat_provider import (
     APITimeoutError,
     RetryableChatProvider,
 )
-import secrets
 from kosong.message import Message
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
@@ -56,7 +57,6 @@ from kimi_cli.soul.compaction import (
     estimate_text_tokens,
     should_auto_compact,
 )
-from kimi_cli.utils.tokens import count_tokens
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.dynamic_injection import (
     DynamicInjection,
@@ -64,15 +64,21 @@ from kimi_cli.soul.dynamic_injection import (
     normalize_history,
 )
 from kimi_cli.soul.dynamic_injections.afk_mode import AfkModeInjectionProvider
-from kimi_cli.soul.message import check_message, strip_system_reminders, system, system_reminder, tool_result_to_message
+from kimi_cli.soul.message import (
+    check_message,
+    strip_system_reminders,
+    system,
+    system_reminder,
+    tool_result_to_message,
+)
 from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.export import perform_export
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.path import next_available_rotation
 from kimi_cli.utils.slashcmd import SlashCommand, parse_slash_command_call
+from kimi_cli.utils.tokens import count_tokens
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
     CompactionBegin,
@@ -1469,14 +1475,10 @@ class KimiSoul:
         if not anonymous:
             return
         for rotated_path in rotated_paths:
-            try:
+            with suppress(Exception):
                 os.remove(str(rotated_path))
-            except Exception:
-                pass
-        try:
+        with suppress(Exception):
             os.remove(str(file_backend))
-        except Exception:
-            pass
 
     async def __aenter__(self) -> KimiSoul:
         return self
@@ -1499,10 +1501,8 @@ class KimiSoul:
 
         # Break the soul <-> context reference cycle so the object can be
         # reclaimed promptly without waiting for cyclic GC.
-        try:
+        with suppress(Exception):
             self._context._on_append = None
-        except Exception:
-            pass
 
         if self._anonymous:
             for rotated_path in self._rotated_paths:

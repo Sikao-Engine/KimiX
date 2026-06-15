@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from kimi_cli.soul.dynamic_injection import DynamicInjection
 from kimi_cli.soul.kimisoul import KimiSoul
 
 

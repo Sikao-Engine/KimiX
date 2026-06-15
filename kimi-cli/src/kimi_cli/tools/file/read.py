@@ -8,12 +8,13 @@ from pydantic import BaseModel, Field, model_validator
 from kimi_cli.session import Session
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, detect_file_type
-from kimi_cli.vfs import VFS
-from .utils import resolve_vfs
 from kimi_cli.tools.utils import load_desc, truncate_line
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_workspace, kaos_path_from_user_input
 from kimi_cli.utils.sensitive import is_sensitive_file
+from kimi_cli.vfs import VFS
+
+from .utils import resolve_vfs
 
 MAX_LINES = 1000
 MAX_LINE_LENGTH = 2000
@@ -48,7 +49,7 @@ class Params(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_line_offset(self) -> "Params":
+    def _validate_line_offset(self) -> Params:
         if self.line_offset == 0:
             raise ValueError(
                 "line_offset cannot be 0; use 1 for the first line or -1 for the last line"

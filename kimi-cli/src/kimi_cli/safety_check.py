@@ -1,5 +1,6 @@
-import unicodedata
 import re
+import unicodedata
+
 """
 Text safety utilities: clean hidden/invisible characters and prevent tokenization failures.
 """
@@ -62,9 +63,7 @@ def _strip_noncharacters(text: str) -> str:
         cp = ord(ch)
         if 0xFDD0 <= cp <= 0xFDEF:
             return False
-        if (cp & 0xFFFF) in (0xFFFE, 0xFFFF):
-            return False
-        return True
+        return (cp & 65535) not in (65534, 65535)
 
     return "".join(ch for ch in text if _keep(ch))
 
@@ -78,9 +77,7 @@ def _strip_pua(text: str) -> str:
             return False
         if 0xF0000 <= cp <= 0xFFFFD:
             return False
-        if 0x100000 <= cp <= 0x10FFFD:
-            return False
-        return True
+        return not 1048576 <= cp <= 1114109
 
     return "".join(ch for ch in text if _keep(ch))
 
@@ -154,10 +151,8 @@ def sanitize_for_tokenizer(
     # 8. Truncate if requested
     if max_chars > 0 and len(text) > max_chars:
         text = text[:max_chars]
-        if truncate_msg:
-            # Ensure we don't exceed max_chars after appending message
-            if len(truncate_msg) < max_chars:
-                text = text[: max_chars - len(truncate_msg)] + truncate_msg
+        if truncate_msg and len(truncate_msg) < max_chars:
+            text = text[: max_chars - len(truncate_msg)] + truncate_msg
 
     # 9. Final strip
     return text

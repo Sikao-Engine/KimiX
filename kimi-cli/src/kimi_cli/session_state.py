@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import orjson
 from pathlib import Path
 from typing import Literal
 
+import orjson
 from pydantic import BaseModel, Field, ValidationError
 
 from kimi_cli.utils.io import atomic_json_write
@@ -101,7 +101,7 @@ def load_session_state(session_dir: Path) -> SessionState:
         try:
             with open(state_file, encoding="utf-8") as f:
                 state = SessionState.model_validate(orjson.loads(f.read()))
-        except (orjson.JSONDecodeError, ValidationError, UnicodeDecodeError) as e:
+        except (orjson.JSONDecodeError, ValidationError, UnicodeDecodeError):
             logger.warning("Corrupted state file, using defaults: {path}", path=state_file)
 
             state = SessionState()

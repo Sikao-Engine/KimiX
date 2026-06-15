@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import functools
 import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -8,7 +7,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from kosong.message import Message
 
-    from kimi_cli.wire.types import ContentPart, TextPart
 
 # Regex to detect CJK characters
 _CJK_RE = re.compile(

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 from kimi_cli.vfs.core import VFS, merge
 

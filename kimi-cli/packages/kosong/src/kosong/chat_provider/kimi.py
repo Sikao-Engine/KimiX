@@ -1,8 +1,7 @@
 import copy
 import mimetypes
 import os
-import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, Self, Unpack, cast
 
 import httpx
@@ -11,26 +10,25 @@ from openai._types import RequestFiles, RequestOptions
 from openai.types.chat import (
     ChatCompletion,
     ChatCompletionChunk,
-    ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageParam,
     ChatCompletionToolParam,
 )
-from openai.types.completion_usage import CompletionUsage
 from typing_extensions import TypedDict
 
 from kosong.chat_provider import (
     ChatProvider,
     ChatProviderError,
     RetryableChatProvider,
-    StreamedMessagePart,
     ThinkingEffort,
     TokenUsage,
 )
 from kosong.chat_provider.openai_common import (
+    CommonGenerationKwargs,
+    OpenAICompatibleProviderMixin,
+    OpenAICompatibleStreamedMessage,
     apply_generation_kwargs,
-    close_replaced_openai_client,
     convert_error,
-    create_openai_client,
+    extract_reasoning_from_content,
     tool_to_openai,
 )
 from kosong.message import (
@@ -38,8 +36,6 @@ from kosong.message import (
     Message,
     TextPart,
     ThinkPart,
-    ToolCall,
-    ToolCallPart,
     VideoURLPart,
 )
 from kosong.tooling import Tool
@@ -64,7 +60,7 @@ class ExtraBody(TypedDict, total=False, extra_items=Any):
     thinking: ThinkingConfig
 
 
-class Kimi:
+class Kimi(OpenAICompatibleProviderMixin):
     """
     A chat provider that uses the Kimi API.
 
@@ -81,14 +77,11 @@ class Kimi:
 
     name = "kimi"
 
-    class GenerationKwargs(TypedDict, total=False):
+    class GenerationKwargs(CommonGenerationKwargs, total=False):
         """
         See https://platform.moonshot.ai/docs/api/chat#request-body.
         """
 
-        max_tokens: int | None
-        temperature: float | None
-        top_p: float | None
         n: int | None
         presence_penalty: float | None
         frequency_penalty: float | None
@@ -116,19 +109,12 @@ class Kimi:
         if base_url is None:
             base_url = os.getenv("KIMI_BASE_URL", "https://api.moonshot.ai/v1")
 
+        self._init_openai_client(api_key=api_key, base_url=base_url, client_kwargs=client_kwargs)
+        """The underlying `AsyncOpenAI` client."""
         self.model: str = model
         """The name of the model to use."""
         self.stream: bool = stream
         """Whether to generate responses as a stream."""
-        self._api_key: str | None = api_key
-        self._base_url: str | None = base_url
-        self._client_kwargs: dict[str, Any] = dict(client_kwargs)
-        self.client: AsyncOpenAI = create_openai_client(
-            api_key=self._api_key,
-            base_url=self._base_url,
-            client_kwargs=self._client_kwargs,
-        )
-        """The underlying `AsyncOpenAI` client."""
         self._generation_kwargs: Kimi.GenerationKwargs = {}
 
     @property
@@ -179,20 +165,6 @@ class Kimi:
             return KimiStreamedMessage(response)
         except (OpenAIError, httpx.HTTPError) as e:
             raise convert_error(e) from e
-
-    def on_retryable_error(self, error: BaseException) -> bool:
-        old_client = self.client
-        # Read api_key from the live client (not self._api_key) so that
-        # OAuth token refreshes applied via client.api_key are preserved.
-        current_api_key = old_client.api_key
-        self.client = create_openai_client(
-            api_key=current_api_key,
-            base_url=self._base_url,
-            client_kwargs=self._client_kwargs,
-        )
-        self._api_key = current_api_key
-        close_replaced_openai_client(old_client, client_kwargs=self._client_kwargs)
-        return True
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
         match effort:
@@ -246,18 +218,6 @@ class Kimi:
         return new_self
 
     @property
-    def model_parameters(self) -> dict[str, Any]:
-        """
-        The parameters of the model to use.
-
-        For tracing/logging purposes.
-        """
-
-        model_parameters: dict[str, Any] = {"base_url": str(self.client.base_url)}
-        model_parameters.update(self._generation_kwargs)
-        return model_parameters
-
-    @property
     def files(self) -> "KimiFiles":
         return KimiFiles(self.client)
 
@@ -304,21 +264,14 @@ def _guess_filename(mime_type: str) -> str:
 
 def _convert_message(message: Message) -> ChatCompletionMessageParam:
     message = message.model_copy(deep=True)
-    reasoning_content: str = ""
-    content: list[ContentPart] = []
-    has_reasoning = False
-    for part in message.content:
-        if isinstance(part, ThinkPart):
-            has_reasoning = True
-            reasoning_content += part.think
-        else:
-            content.append(part)
-    message.content = content
+    reasoning_content, visible_content = extract_reasoning_from_content(message.content)
+    has_reasoning = any(isinstance(part, ThinkPart) for part in message.content)
+    message.content = visible_content
     dumped_message = message.model_dump(exclude_none=True)
     if (
         message.role == "assistant"
         and message.tool_calls
-        and _is_effectively_empty_content_parts(content)
+        and _is_effectively_empty_content_parts(visible_content)
     ):
         # OpenAI-compatible APIs allow assistant tool-call messages to omit
         # `content`, but the Kimi-for-Coding compat layer rejects a content
@@ -367,134 +320,32 @@ def _convert_tool(tool: Tool) -> ChatCompletionToolParam:
     return converted
 
 
-class KimiStreamedMessage:
+class KimiStreamedMessage(OpenAICompatibleStreamedMessage):
     """The streamed message of the Kimi chat provider."""
 
     def __init__(self, response: ChatCompletion | AsyncStream[ChatCompletionChunk]):
-        if isinstance(response, ChatCompletion):
-            self._iter = self._convert_non_stream_response(response)
-        else:
-            self._iter = self._convert_stream_response(response)
-        self._id: str | None = None
-        self._usage: CompletionUsage | None = None
-
-    def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
-        return self
-
-    async def __anext__(self) -> StreamedMessagePart:
-        return await self._iter.__anext__()
-
-    @property
-    def id(self) -> str | None:
-        return self._id
+        super().__init__(response, reasoning_key="reasoning_content")
 
     @property
     def usage(self) -> TokenUsage | None:
         if self._usage:
             cached = 0
-            other_input = self._usage.prompt_tokens
+            total_input = self._usage.prompt_tokens
             if hasattr(self._usage, "cached_tokens"):
                 # https://platform.moonshot.cn/docs/api/chat#%E8%BF%94%E5%9B%9E%E5%86%85%E5%AE%B9
                 # TODO: delete this when Moonshot API becomes compatible with OpenAI API
                 cached = getattr(self._usage, "cached_tokens") or 0  # noqa: B009
-                other_input -= cached
             elif (
                 self._usage.prompt_tokens_details
                 and self._usage.prompt_tokens_details.cached_tokens
             ):
                 cached = self._usage.prompt_tokens_details.cached_tokens
-                other_input -= cached
-            return TokenUsage(
-                input_other=other_input,
+            return self._build_token_usage(
+                input_other=total_input - cached,
                 output=self._usage.completion_tokens,
                 input_cache_read=cached,
             )
         return None
-
-    async def _convert_non_stream_response(
-        self,
-        response: ChatCompletion,
-    ) -> AsyncIterator[StreamedMessagePart]:
-        self._id = response.id
-        self._usage = response.usage
-        message = response.choices[0].message
-        if reasoning_content := getattr(message, "reasoning_content", None):
-            assert isinstance(reasoning_content, str)
-            yield ThinkPart(think=reasoning_content)
-        if message.content:
-            yield TextPart(text=message.content)
-        if message.tool_calls:
-            for tool_call in message.tool_calls:
-                if isinstance(tool_call, ChatCompletionMessageFunctionToolCall):
-                    yield ToolCall(
-                        id=tool_call.id or str(uuid.uuid4()),
-                        function=ToolCall.FunctionBody(
-                            name=tool_call.function.name,
-                            arguments=tool_call.function.arguments,
-                        ),
-                    )
-
-    async def _convert_stream_response(
-        self,
-        response: AsyncIterator[ChatCompletionChunk],
-    ) -> AsyncIterator[StreamedMessagePart]:
-        try:
-            async for chunk in response:
-                if chunk.id:
-                    self._id = chunk.id
-                if usage := extract_usage_from_chunk(chunk):
-                    self._usage = usage
-
-                if not chunk.choices:
-                    continue
-
-                delta = chunk.choices[0].delta
-
-                # convert thinking content
-                if reasoning_content := getattr(delta, "reasoning_content", None):
-                    assert isinstance(reasoning_content, str)
-                    yield ThinkPart(think=reasoning_content)
-
-                # convert text content
-                if delta.content:
-                    yield TextPart(text=delta.content)
-
-                # convert tool calls
-                for tool_call in delta.tool_calls or []:
-                    if not tool_call.function:
-                        continue
-
-                    if tool_call.function.name:
-                        yield ToolCall(
-                            id=tool_call.id or str(uuid.uuid4()),
-                            function=ToolCall.FunctionBody(
-                                name=tool_call.function.name,
-                                arguments=tool_call.function.arguments,
-                            ),
-                        )
-                    elif tool_call.function.arguments:
-                        yield ToolCallPart(
-                            arguments_part=tool_call.function.arguments,
-                        )
-                    else:
-                        # skip empty tool calls
-                        pass
-        except (OpenAIError, httpx.HTTPError) as e:
-            raise convert_error(e) from e
-
-
-def extract_usage_from_chunk(chunk: ChatCompletionChunk) -> CompletionUsage | None:
-    if chunk.usage:
-        return chunk.usage
-    if not chunk.choices:
-        return None
-    choice_dump: dict[str, object] = chunk.choices[0].model_dump()
-    raw_usage = choice_dump.get("usage")
-    if isinstance(raw_usage, CompletionUsage):
-        return raw_usage
-    if isinstance(raw_usage, dict):
-        return CompletionUsage.model_validate(raw_usage)
-    return None
 
 
 if __name__ == "__main__":

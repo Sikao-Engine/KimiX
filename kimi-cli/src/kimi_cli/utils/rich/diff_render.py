@@ -14,10 +14,9 @@ from enum import Enum, auto
 
 from rich.console import RenderableType
 from rich.panel import Panel
+from rich.style import Style as RichStyle
 from rich.table import Table
 from rich.text import Text
-
-from rich.style import Style as RichStyle
 
 from kimi_cli.tools.display import DiffDisplayBlock
 from kimi_cli.utils.rich.syntax import KimiSyntax

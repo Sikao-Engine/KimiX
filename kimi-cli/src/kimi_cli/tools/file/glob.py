@@ -14,11 +14,12 @@ from pydantic import BaseModel, Field
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.logging import logger
-from kimi_cli.vfs import VFS
-from .utils import resolve_vfs
 from kimi_cli.utils.path import (
     kaos_path_from_user_input,
 )
+from kimi_cli.vfs import VFS
+
+from .utils import resolve_vfs
 
 MAX_MATCHES = 1000
 MAX_BYTES = 100 << 10  # 100KB
@@ -32,7 +33,7 @@ WINDOWS_PATH_HINT = (
 # Global cache for .gitignore files under a root directory.
 # Key: root directory path (str)
 # Value: _GitignoreCacheEntry
-_GITIGNORE_CACHE: dict[str, "_GitignoreCacheEntry"] = {}
+_GITIGNORE_CACHE: dict[str, _GitignoreCacheEntry] = {}
 
 
 @dataclass
@@ -107,7 +108,6 @@ def _gitignore_match(path: Path, rel_path: str, is_dir: bool, rule: _GitignoreRu
 
     # Handle ** patterns
     if "**" in pattern:
-        parts = pattern.split("/")
         rel_parts = rel_path.split("/")
 
         if pattern == "**":
@@ -122,9 +122,7 @@ def _gitignore_match(path: Path, rel_path: str, is_dir: bool, rule: _GitignoreRu
             return False
         if pattern.endswith("/**"):
             prefix = pattern[:-3]
-            if rel_path.startswith(prefix + "/") or rel_path == prefix:
-                return True
-            return False
+            return rel_path.startswith(prefix + "/") or rel_path == prefix
         if "/**/" in pattern:
             prefix, suffix = pattern.split("/**/", 1)
             if rel_path.startswith(prefix + "/") or rel_path == prefix:
@@ -152,10 +150,7 @@ def _gitignore_match(path: Path, rel_path: str, is_dir: bool, rule: _GitignoreRu
         if fnmatch.fnmatch(basename, pattern):
             return True
         # Also match if any directory component matches
-        for part in rel_path.split("/")[:-1]:
-            if fnmatch.fnmatch(part, pattern):
-                return True
-        return False
+        return any(fnmatch.fnmatch(part, pattern) for part in rel_path.split("/")[:-1])
 
 
 def _is_ignored_by_gitignore(
@@ -205,7 +200,7 @@ def _load_gitignore_rules(root: Path) -> tuple[list[Path], list[_GitignoreRule],
         mtime = _safe_getmtime(str(gi_path))
         mtimes[str(gi_path)] = mtime
         try:
-            with open(gi_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(gi_path, encoding="utf-8", errors="replace") as f:
                 content = f.read()
         except OSError:
             continue
@@ -308,10 +303,7 @@ class Glob(CallableTool2[Params]):
             norm = params.pattern.replace("\\", "/")
             is_unsafe = norm.startswith("**")
             if is_unsafe:
-                if norm.startswith("**/"):
-                    pattern = norm[3:] if norm[3:] else "*"
-                else:
-                    pattern = "*"
+                pattern = (norm[3:] if norm[3:] else "*") if norm.startswith("**/") else "*"
             else:
                 pattern = params.pattern
 
@@ -360,7 +352,7 @@ class Glob(CallableTool2[Params]):
                             truncated = True
                             matches.pop()
                             break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 truncated = True
 
             # Sort for consistent output

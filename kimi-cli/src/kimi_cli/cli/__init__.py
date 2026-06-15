@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal
 
@@ -255,7 +256,6 @@ def kimi(
 ):
     """Kimi, your next CLI agent."""
     import asyncio
-    import contextlib
     import inspect
 
     import orjson
@@ -524,10 +524,8 @@ def kimi(
             except Exception:
                 return
             if inspect.isawaitable(result):
-                try:
+                with contextlib.suppress(Exception):
                     await asyncio.wait_for(result, timeout=5.0)
-                except Exception:
-                    pass
             return
 
     async def _delete_empty_session(session: Session) -> None:

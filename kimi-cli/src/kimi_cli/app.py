@@ -6,7 +6,7 @@ import dataclasses
 import sys
 import time
 import warnings
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -15,12 +15,10 @@ from kaos.path import KaosPath
 from pydantic import SecretStr
 
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
-from kimi_cli.auth.oauth import KIMI_CODE_OAUTH_KEY, OAuthManager, get_device_id
+from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.background.models import is_terminal_status
-
 from kimi_cli.config import Config, LLMModel, LLMProvider, load_config
-from kimi_cli.constant import VERSION
-from kimi_cli.llm import LLM, augment_provider_with_env_vars, create_llm, model_display_name
+from kimi_cli.llm import LLM, augment_provider_with_env_vars, create_llm
 from kimi_cli.session import Session
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul import RunCancelled, run_soul
@@ -29,9 +27,7 @@ from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.utils.aioqueue import QueueShutDown
-from kimi_cli.utils.envvar import get_env_bool
 from kimi_cli.utils.logging import logger, open_original_stderr, redirect_stderr_to_logger
-from kimi_cli.utils.path import shorten_home
 from kimi_cli.wire import Wire, WireUISide
 from kimi_cli.wire.types import ApprovalRequest, ApprovalResponse, ContentPart, WireMessage
 

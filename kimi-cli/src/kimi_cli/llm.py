@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import orjson
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast, get_args
 
-from kosong.chat_provider import ChatProvider, ThinkingEffort
+import orjson
+from kosong.chat_provider import ChatProvider
 from pydantic import SecretStr
 
 from kimi_cli.constant import USER_AGENT
 from kimi_cli.utils.logging import logger
+
 if TYPE_CHECKING:
     from kimi_cli.auth.oauth import OAuthManager
     from kimi_cli.config import Config, LLMModel, LLMProvider
@@ -251,14 +252,14 @@ def create_llm(
     _generation_kwargs = None
     if chat_provider is not None:
         _generation_kwargs = getattr(chat_provider, '_generation_kwargs', None)
-    if temperature is not None and _generation_kwargs and hasattr(_generation_kwargs, 'temperature'):
-        setattr(_generation_kwargs, 'temperature', float(temperature))
-    if top_p is not None and _generation_kwargs and hasattr(_generation_kwargs, 'top_p'):
-        setattr(_generation_kwargs, 'top_p', float(top_p))
-    if top_k is not None and _generation_kwargs and hasattr(_generation_kwargs, 'top_k'):
-        setattr(_generation_kwargs, 'top_k', int(top_k))
-    if max_tokens is not None and _generation_kwargs and hasattr(_generation_kwargs, 'max_tokens'):
-        setattr(_generation_kwargs, 'max_tokens', int(max_tokens))
+    if temperature is not None and _generation_kwargs and 'temperature' in _generation_kwargs:
+        _generation_kwargs['temperature'] = float(temperature)
+    if top_p is not None and _generation_kwargs and 'top_p' in _generation_kwargs:
+        _generation_kwargs['top_p'] = float(top_p)
+    if top_k is not None and _generation_kwargs and 'top_k' in _generation_kwargs:
+        _generation_kwargs['top_k'] = int(top_k)
+    if max_tokens is not None and _generation_kwargs and 'max_tokens' in _generation_kwargs:
+        _generation_kwargs['max_tokens'] = int(max_tokens)
     
 
     capabilities = derive_model_capabilities(model)

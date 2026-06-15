@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from kosong.tooling import CallableTool2
 from pydantic import BaseModel
 
-from kosong.tooling import CallableTool2
 from kimi_cli.tools.reason import ToolCallReason
 
 

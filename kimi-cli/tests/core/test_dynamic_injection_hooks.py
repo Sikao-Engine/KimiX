@@ -102,6 +102,7 @@ def _make_compactable_soul() -> Any:
     soul._run_with_connection_recovery = AsyncMock(return_value=fake_result)
 
     soul._injection_providers = []
+    soul._rotated_paths = []
     return soul
 
 

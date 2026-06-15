@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from kaos.path import KaosPath
-from kosong.message import Message
 
 from kimi_cli.session import Session
 from kimi_cli.soul.context_records import ExportedContext
