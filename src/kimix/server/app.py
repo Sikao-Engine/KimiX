@@ -307,7 +307,7 @@ def create_app() -> FastAPI:
         description="List all active sessions, sorted by most recently updated.",
     )
     async def list_sessions() -> List[Dict[str, Any]]:
-        return [s.to_dict() for s in session_manager.list_sessions()]
+        return [s.to_dict() for s in await session_manager.list_sessions()]
 
     @app.get(
         "/session/status",
@@ -329,7 +329,7 @@ def create_app() -> FastAPI:
     )
     async def get_session(sessionID: str) -> Dict[str, Any]:
         try:
-            return session_manager.get_session(sessionID).to_dict()
+            return (await session_manager.get_session(sessionID)).to_dict()
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
 
@@ -374,7 +374,7 @@ def create_app() -> FastAPI:
         limit: Optional[int] = Query(default=None, description="Maximum number of messages to return"),
     ) -> List[Dict[str, Any]]:
         try:
-            return session_manager.get_messages(sessionID, limit=limit)
+            return await session_manager.get_messages(sessionID, limit=limit)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
 
@@ -404,6 +404,8 @@ def create_app() -> FastAPI:
             return await session_manager.prompt(sessionID, text, agent=body.agent)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     # ── Prompt Async (fire-and-forget) ───────────────────────
 
@@ -424,6 +426,8 @@ def create_app() -> FastAPI:
             await session_manager.prompt_async(sessionID, text, agent=body.agent)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
         return Response(status_code=204)
 
     # ── Abort ────────────────────────────────────────────────

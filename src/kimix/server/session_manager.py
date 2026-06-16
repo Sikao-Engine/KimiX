@@ -19,9 +19,11 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from kimi_agent_sdk import Session
+from kaos.path import KaosPath
 
 from kimix.server.bus import bus, BusEvent
 from kimix.utils import (
@@ -29,6 +31,7 @@ from kimix.utils import (
     close_session_async,
 )
 from kimi_cli.session_state import load_session_state
+from kosong.utils.jsonx import loads_relaxed
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +252,7 @@ class ManagedSession:
 
     info: SessionInfo
     sdk_session: Optional[Session] = None
+    work_dir: Optional[str] = None
     status: SessionStatus = field(default_factory=SessionStatus)
     messages: List[MessageWithParts] = field(default_factory=list)
     _cancel_event: Optional[asyncio.Event] = field(default=None, repr=False)
@@ -264,6 +268,146 @@ class SessionManager:
     def __init__(self) -> None:
         self._sessions: Dict[str, ManagedSession] = {}
         self._lock = threading.Lock()
+
+    def _current_work_dir(self) -> KaosPath:
+        return KaosPath.unsafe_from_local_path(Path(os.getcwd()))
+
+    async def _refresh_disk_sessions(self) -> None:
+        """Index persisted sessions for the current work directory."""
+        try:
+            from kimi_cli.session import Session as CliSession
+
+            disk_sessions = await CliSession.list(self._current_work_dir())
+        except Exception:
+            logger.debug("Error listing persisted sessions", exc_info=True)
+            return
+
+        with self._lock:
+            existing = set(self._sessions)
+
+        for disk_session in disk_sessions:
+            if disk_session.id in existing:
+                continue
+            context_file = disk_session.context_file
+            created_at = self._mtime_ms(context_file)
+            updated_at = (
+                int(disk_session.updated_at * 1000) if disk_session.updated_at else created_at
+            )
+            entry = ManagedSession(
+                info=SessionInfo(
+                    id=disk_session.id,
+                    title=disk_session.title or f"Session {disk_session.id[:12]}",
+                    directory=str(disk_session.work_dir),
+                    createdAt=created_at,
+                    updatedAt=updated_at,
+                ),
+                sdk_session=None,
+                work_dir=str(disk_session.work_dir),
+                messages=self._load_context_messages(disk_session.id, context_file),
+            )
+            with self._lock:
+                self._sessions.setdefault(disk_session.id, entry)
+
+    async def _ensure_sdk_session(self, entry: ManagedSession) -> Session:
+        """Resume a persisted SDK session only when it is actually used."""
+        if entry.sdk_session is not None:
+            return entry.sdk_session
+
+        if not entry.work_dir:
+            raise ValueError(f"Session {entry.info.id} has no active SDK session")
+
+        work_dir = KaosPath.unsafe_from_local_path(Path(entry.work_dir))
+        try:
+            from kimi_cli.session import Session as CliSession
+
+            disk_session = await CliSession.find(work_dir, entry.info.id)
+        except Exception as exc:
+            raise ValueError(f"Session {entry.info.id} could not be restored") from exc
+        if disk_session is None:
+            raise ValueError(f"Session {entry.info.id} could not be restored")
+
+        restored = await _create_session_async(
+            session_id=entry.info.id,
+            work_dir=work_dir,
+            resume=True,
+        )
+        if restored is None:
+            raise ValueError(f"Session {entry.info.id} could not be restored")
+        entry.sdk_session = restored
+        return restored
+
+    def _load_context_messages(self, session_id: str, context_file: Path) -> List[MessageWithParts]:
+        messages: List[MessageWithParts] = []
+        try:
+            lines = context_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            return messages
+
+        created = self._mtime_ms(context_file)
+        for index, line in enumerate(lines[-100:]):
+            if not line.strip():
+                continue
+            try:
+                data = loads_relaxed(line)
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            role = data.get("role")
+            if not isinstance(role, str) or role.startswith("_"):
+                continue
+            content = self._context_content_text(data.get("content"))
+            if not content:
+                continue
+
+            message_id = f"msg_restored_{index}"
+            messages.append(
+                MessageWithParts(
+                    info=MessageInfo(
+                        id=message_id,
+                        role=role if role in {"user", "assistant", "system"} else "assistant",
+                        sessionID=session_id,
+                        time={"created": created},
+                    ),
+                    parts=[
+                        MessagePart(
+                            id=f"prt_restored_{index}",
+                            type="text",
+                            text=content,
+                            sessionID=session_id,
+                            messageID=message_id,
+                        )
+                    ],
+                )
+            )
+        return messages
+
+    def _context_content_text(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            text_parts: List[str] = []
+            for part in content:
+                if isinstance(part, str):
+                    text_parts.append(part)
+                elif isinstance(part, dict):
+                    value = part.get("text") or part.get("content")
+                    if isinstance(value, str):
+                        text_parts.append(value)
+            if text_parts:
+                return "\n".join(text_parts)
+        if content is None:
+            return ""
+        try:
+            return orjson.dumps(content).decode("utf-8")
+        except Exception:
+            return str(content)
+
+    def _mtime_ms(self, path: Path) -> int:
+        try:
+            return int(path.stat().st_mtime * 1000)
+        except OSError:
+            return _now_ms()
 
     # ── Session CRUD ─────────────────────────────────────────────
 
@@ -284,7 +428,11 @@ class SessionManager:
             parentID=parent_id,
         )
         sdk_session = await _create_session_async(session_id=session_id)
-        entry = ManagedSession(info=info, sdk_session=sdk_session)
+        entry = ManagedSession(
+            info=info,
+            sdk_session=sdk_session,
+            work_dir=os.getcwd(),
+        )
         with self._lock:
             self._sessions[session_id] = entry
 
@@ -294,15 +442,16 @@ class SessionManager:
         logger.info("[SessionManager] Created session %s", session_id)
         return info
 
-    def get_session(self, session_id: str) -> SessionInfo:
-        entry = self._get_entry(session_id)
+    async def get_session(self, session_id: str) -> SessionInfo:
+        entry = await self._get_entry_or_restore(session_id)
         return entry.info
 
     def get_sdk_session(self, session_id: str) -> Optional[Session]:
         entry = self._get_entry(session_id)
         return entry.sdk_session
 
-    def list_sessions(self) -> List[SessionInfo]:
+    async def list_sessions(self) -> List[SessionInfo]:
+        await self._refresh_disk_sessions()
         with self._lock:
             entries = list(self._sessions.values())
         return sorted(
@@ -315,12 +464,28 @@ class SessionManager:
         with self._lock:
             entry = self._sessions.pop(session_id, None)
         if entry is None:
-            return False
+            await self._refresh_disk_sessions()
+            with self._lock:
+                entry = self._sessions.pop(session_id, None)
+            if entry is None:
+                return False
         if entry.sdk_session:
             try:
                 await close_session_async(entry.sdk_session)
             except Exception:
                 logger.debug("Error closing sdk session", exc_info=True)
+        elif entry.work_dir:
+            try:
+                from kimi_cli.session import Session as CliSession
+
+                disk_session = await CliSession.find(
+                    KaosPath.unsafe_from_local_path(Path(entry.work_dir)),
+                    session_id,
+                )
+                if disk_session is not None:
+                    await disk_session.delete()
+            except Exception:
+                logger.debug("Error deleting persisted session", exc_info=True)
         bus.emit_type("session.deleted", info=entry.info.to_dict())
         logger.info("[SessionManager] Deleted session %s", session_id)
         return True
@@ -358,10 +523,10 @@ class SessionManager:
 
     # ── Messages ─────────────────────────────────────────────────
 
-    def get_messages(
+    async def get_messages(
         self, session_id: str, limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        entry = self._get_entry(session_id)
+        entry = await self._get_entry_or_restore(session_id)
         msgs = entry.messages
         if limit and limit > 0:
             msgs = msgs[-limit:]
@@ -488,10 +653,8 @@ class SessionManager:
             ToolResult,
         )
 
-        entry = self._get_entry(session_id)
-        sdk_session = entry.sdk_session
-        if sdk_session is None:
-            raise ValueError(f"Session {session_id} has no active SDK session")
+        entry = await self._get_entry_or_restore(session_id)
+        sdk_session = await self._ensure_sdk_session(entry)
 
         self._set_status(entry, "busy")
         entry._cancel_event = None
@@ -994,6 +1157,8 @@ class SessionManager:
         agent: Optional[str] = None,
     ) -> None:
         """Fire-and-forget: start prompt in background, events via SSE."""
+        entry = await self._get_entry_or_restore(session_id)
+        await self._ensure_sdk_session(entry)
 
         async def _run() -> None:
             try:
@@ -1116,6 +1281,13 @@ class SessionManager:
         if entry is None:
             raise KeyError(f"Session not found: {session_id}")
         return entry
+
+    async def _get_entry_or_restore(self, session_id: str) -> ManagedSession:
+        try:
+            return self._get_entry(session_id)
+        except KeyError:
+            await self._refresh_disk_sessions()
+            return self._get_entry(session_id)
 
     def _set_status(self, entry: ManagedSession, status_type: str) -> None:
         entry.status = SessionStatus(type=status_type, time=time.time())
