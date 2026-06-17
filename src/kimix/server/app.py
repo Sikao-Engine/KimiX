@@ -10,6 +10,7 @@ Routes (opencode-standard):
     GET  /global/event                     — SSE event stream (global alias)
     GET  /config                           — Instance config
     GET  /config/providers                 — Providers + default model map
+    GET  /experimental/features            — Feature capability discovery
     GET  /project                          — List projects
     GET  /project/current                  — Current project
     GET  /path                             — Path info
@@ -24,6 +25,7 @@ Routes (opencode-standard):
     POST /session/{id}/message             — Send message (sync, WithParts)
     POST /session/{id}/prompt_async        — Send message (fire-and-forget, 204)
     POST /session/{id}/abort               — Abort session (returns bool)
+    POST /session/{id}/summarize           — Summarize / compact session (returns bool)
     POST /session/{id}/permissions/{permissionID} — Grant permission
     GET  /session/{id}/clear               — Clear session
     GET  /session/{id}/context             — Get session context
@@ -107,6 +109,26 @@ class SessionResponse(BaseModel):
 
 class SessionStatusResponse(BaseModel):
     type: str = Field(..., description="Status: idle | busy | retry")
+
+
+class FeatureInfo(BaseModel):
+    enabled: bool = Field(..., description="Whether the feature is available")
+    title: Optional[str] = Field(None, description="Human-readable label")
+    description: Optional[str] = Field(
+        None, description="Feature description / hint shown when unavailable"
+    )
+
+
+class FeaturesResponse(BaseModel):
+    features: Dict[str, FeatureInfo] = Field(
+        default_factory=dict, description="Map of feature name to capability info"
+    )
+
+
+class SummarizeRequest(BaseModel):
+    providerID: Optional[str] = Field(None, description="Provider to summarize with")
+    modelID: Optional[str] = Field(None, description="Model to summarize with")
+    keep: Optional[int] = Field(None, description="Number of recent messages to keep")
 
 
 class ErrorResponse(BaseModel):
@@ -245,6 +267,21 @@ def create_app() -> FastAPI:
     )
     async def get_config_providers() -> Dict[str, Any]:
         return session_manager.get_providers()
+
+    @app.get(
+        "/experimental/features",
+        response_model=FeaturesResponse,
+        tags=["Config"],
+        summary="List server features",
+        description=(
+            "Capability discovery for opencode-sse extension clients. Returns a "
+            "map of feature name to {enabled, title, description}. Clients must "
+            "disable any extension UI whose feature is missing or has "
+            "enabled == false."
+        ),
+    )
+    async def list_features() -> Dict[str, Any]:
+        return session_manager.get_features()
 
     @app.get(
         "/project",
@@ -439,6 +476,30 @@ def create_app() -> FastAPI:
     async def abort_session(sessionID: str) -> bool:
         try:
             session_manager.abort_session(sessionID)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
+        return True
+
+    # ── Summarize / Compact (opencode-sse extension) ─────────
+
+    @app.post(
+        "/session/{sessionID}/summarize",
+        response_model=bool,
+        tags=["Session"],
+        summary="Summarize / compact session",
+        description=(
+            "Compact (summarize) a session's context to shrink the context "
+            "window. opencode-sse extension endpoint — advertised via "
+            "/experimental/features as the `compact` feature."
+        ),
+        responses={404: {"model": ErrorResponse, "description": "Session not found"}},
+    )
+    async def summarize_session(
+        sessionID: str, body: Optional[SummarizeRequest] = None
+    ) -> bool:
+        body = body or SummarizeRequest()
+        try:
+            await session_manager.compact_session(sessionID, keep=body.keep)
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
         return True

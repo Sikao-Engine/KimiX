@@ -79,6 +79,33 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+# ── Server feature capabilities (opencode-sse extensions) ──────────
+#
+# Capability discovery for opencode-sse extension clients. Anything beyond the
+# core opencode surface (compact/summarize, interactive permissions, …) is
+# advertised here so a client can disable the matching UI when talking to a
+# server that does not implement it. Extend this map as new extension features
+# land — clients treat a missing key as "disabled".
+
+SERVER_FEATURES: Dict[str, Dict[str, Any]] = {
+    "compact": {
+        "enabled": True,
+        "title": "Compact context",
+        "description": "Summarize the conversation to shrink the context window.",
+    },
+    "abort": {
+        "enabled": True,
+        "title": "Abort",
+        "description": "Cancel the prompt that is currently running.",
+    },
+    "permissions": {
+        "enabled": True,
+        "title": "Permissions",
+        "description": "Interactive permission prompts for tool calls.",
+    },
+}
+
+
 # ── Data Models ──────────────────────────────────────────────────
 
 
@@ -393,6 +420,15 @@ class SessionManager:
             "model": f"{ref['providerID']}/{ref['modelID']}",
             "username": os.environ.get("USER") or os.environ.get("USERNAME") or "user",
         }
+
+    def get_features(self) -> Dict[str, Any]:
+        """Return advertised server capabilities for opencode-sse extensions.
+
+        Shape: ``{"features": {name: {enabled, title, description}}}``.
+        Clients should disable any extension UI whose feature is missing here
+        or reported with ``enabled == false``.
+        """
+        return {"features": {k: dict(v) for k, v in SERVER_FEATURES.items()}}
 
     def get_providers(self) -> Dict[str, Any]:
         """Return opencode ConfigProvidersResponse: {providers, default}."""
@@ -961,27 +997,29 @@ class SessionManager:
                 "[SessionManager] Prompt error: %s", exc, exc_info=True
             )
         finally:
+            # Finalize the turn BEFORE signaling idle. The terminal
+            # `session.idle` event must be the LAST thing the client sees:
+            # if we flush the trailing text/step-finish parts *after* idle,
+            # the webview receives idle (stops "busy"), then a late
+            # message.part.updated re-opens the busy state with no following
+            # idle — leaving the UI stuck "running" forever.
+            _flush_reasoning()
+            _flush_text()
+
+            reason = error_msg or step_finish_reason
+            _emit_step_finish(reason)
+
+            asst_msg.info.time["completed"] = _now_ms()
+            entry.info.updatedAt = _now_ms()
+            entry._cancel_event = None
+
+            bus.emit_type(
+                "message.updated",
+                info=asst_msg.info.to_dict(),
+            )
+
+            # Idle last — terminal event for this turn.
             self._set_status(entry, "idle")
-
-        # ── Flush remaining buffers ──────────────────────────────
-        _flush_reasoning()
-        _flush_text()
-
-        # ── Emit final step-finish ───────────────────────────────
-        reason = step_finish_reason
-        if error_msg:
-            reason = error_msg
-        _emit_step_finish(reason)
-
-        # ── Finalize ─────────────────────────────────────────────
-        asst_msg.info.time["completed"] = _now_ms()
-        entry.info.updatedAt = _now_ms()
-        entry._cancel_event = None
-
-        bus.emit_type(
-            "message.updated",
-            info=asst_msg.info.to_dict(),
-        )
 
         return asst_msg.to_dict()
 
@@ -1035,7 +1073,7 @@ class SessionManager:
         if entry.sdk_session:
             await entry.sdk_session.clear()
         entry.messages.clear()
-        entry.info.updatedAt = time.time()
+        entry.info.updatedAt = _now_ms()
         logger.info("[SessionManager] Cleared session %s", session_id)
         return True
 
@@ -1046,7 +1084,7 @@ class SessionManager:
             await entry.sdk_session.compact()
         if keep is not None and len(entry.messages) > keep:
             entry.messages = entry.messages[-keep:]
-        entry.info.updatedAt = time.time()
+        entry.info.updatedAt = _now_ms()
         logger.info("[SessionManager] Compacted session %s", session_id)
         return True
 
