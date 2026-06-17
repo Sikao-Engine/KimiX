@@ -1504,6 +1504,17 @@ class KimiSoul:
         with suppress(Exception):
             self._context._on_append = None
 
+        # Close the chat provider's underlying HTTP client before the event loop
+        # shuts down.  This avoids noisy "Event loop is closed" RuntimeErrors from
+        # the httpx/anyio transport teardown on Windows/Python 3.14.
+        if self._runtime.llm is not None:
+            chat_provider = self._runtime.llm.chat_provider
+            if hasattr(chat_provider, "aclose"):
+                try:
+                    await chat_provider.aclose()  # type: ignore[misc]
+                except Exception:
+                    logger.exception("Failed to close chat provider")
+
         if self._anonymous:
             for rotated_path in self._rotated_paths:
                 try:

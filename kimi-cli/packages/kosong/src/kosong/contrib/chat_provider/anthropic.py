@@ -6,10 +6,11 @@ except ModuleNotFoundError as exc:
         'Install with `pip install "kosong[contrib]"`.'
     ) from exc
 
+import asyncio
 import json
 import orjson
 import re
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, Self, TypedDict, Unpack, cast
 
 import httpx
@@ -105,6 +106,31 @@ if TYPE_CHECKING:
 type MessagePayload = tuple[str | None, list[MessageParam]]
 
 type BetaFeatures = Literal["interleaved-thinking-2025-05-14"]
+
+
+_ANTHROPIC_CLOSE_TASKS: set[asyncio.Task[None]] = set()
+
+
+def _on_close_task_done(task: asyncio.Task[None]) -> None:
+    _ANTHROPIC_CLOSE_TASKS.discard(task)
+
+
+async def _drain_awaitable(awaitable: Awaitable[object]) -> None:
+    """Drain an awaitable, ignoring harmless shutdown errors."""
+    try:
+        await asyncio.wait_for(awaitable, timeout=5.0)
+    except asyncio.TimeoutError:
+        return
+    except RuntimeError as exc:
+        # On Windows/Python 3.14, closing an httpx.AsyncClient whose
+        # underlying transports were bound to a now-closed ProactorEventLoop
+        # raises RuntimeError('Event loop is closed').  This is harmless —
+        # the OS will reclaim the socket — so we swallow it.
+        if "Event loop is closed" in str(exc):
+            return
+        raise
+    except Exception:
+        return
 
 
 # Models that accept adaptive thinking but don't expose a major.minor version
@@ -448,6 +474,58 @@ class Anthropic:
             Self: A new instance of the chat provider with updated generation kwargs.
         """
         return apply_generation_kwargs(self, **kwargs)
+
+    async def aclose(self) -> None:
+        """Close the underlying Anthropic HTTP client.
+
+        Safe to call multiple times; subsequent calls are no-ops.
+        """
+        try:
+            await self._client.close()
+        except RuntimeError as exc:
+            # Swallow the harmless "Event loop is closed" error that can occur
+            # when the process is shutting down on Windows/Python 3.14.
+            if "Event loop is closed" not in str(exc):
+                raise
+
+    def close(self) -> None:
+        """Schedule an asynchronous close of the underlying HTTP client.
+
+        This synchronous helper is useful when cleanup must be initiated from a
+        non-async context (e.g. object finalization or a sync callback).  If an
+        event loop is running the close is scheduled as a task; otherwise the
+        client is abandoned because there is no loop left to drain it.
+        """
+        try:
+            result = self._client.close()
+        except Exception:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No event loop running.  The client's original loop is gone, so
+            # creating a new loop to close it will fail for transports bound
+            # to the old loop.  Abandon the client — the OS will clean up the
+            # sockets on process exit.
+            return
+        try:
+            task = loop.create_task(_drain_awaitable(cast(Awaitable[object], result)))
+        except RuntimeError:
+            # The loop is shutting down; abandon the close.
+            return
+        _ANTHROPIC_CLOSE_TASKS.add(task)
+        task.add_done_callback(_on_close_task_done)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object,
+    ) -> None:
+        await self.aclose()
 
     @property
     def model_parameters(self) -> dict[str, Any]:

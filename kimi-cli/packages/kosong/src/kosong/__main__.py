@@ -158,7 +158,11 @@ async def main():
     if with_bash:
         toolset += BashTool()
 
-    await agent_loop(chat_provider, toolset)
+    try:
+        await agent_loop(chat_provider, toolset)
+    finally:
+        if hasattr(chat_provider, "aclose"):
+            await chat_provider.aclose()  # type: ignore[misc]
 
 
 asyncio.run(main())

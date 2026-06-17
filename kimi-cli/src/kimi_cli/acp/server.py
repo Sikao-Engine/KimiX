@@ -356,6 +356,16 @@ class ACPServer:
             thinking=model_id_conv.thinking,
             oauth=cli_instance.soul.runtime.oauth,
         )
+
+        old_llm = cli_instance.soul.runtime.llm
+        if old_llm is not None:
+            old_provider = old_llm.chat_provider
+            if hasattr(old_provider, "aclose"):
+                try:
+                    await old_provider.aclose()  # type: ignore[misc]
+                except Exception:
+                    logger.exception("Failed to close previous chat provider")
+
         cli_instance.soul.runtime.llm = new_llm
 
         config.default_model = model_id_conv.model_key

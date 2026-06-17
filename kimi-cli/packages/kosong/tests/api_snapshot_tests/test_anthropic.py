@@ -1092,6 +1092,32 @@ async def test_anthropic_with_parallel_tool_calls_disabled():
         )
 
 
+async def test_anthropic_aclose_is_idempotent():
+    provider = Anthropic(
+        model="claude-sonnet-4-20250514",
+        api_key="test-key",
+        default_max_tokens=1024,
+        stream=False,
+    )
+    await provider.aclose()
+    await provider.aclose()
+
+
+async def test_anthropic_async_context_manager_closes_client():
+    with respx.mock(base_url="https://api.anthropic.com") as mock:
+        mock.post("/v1/messages").mock(return_value=Response(200, json=make_anthropic_response()))
+        async with Anthropic(
+            model="claude-sonnet-4-20250514",
+            api_key="test-key",
+            default_max_tokens=1024,
+            stream=False,
+        ) as provider:
+            stream = await provider.generate("", [], [Message(role="user", content="Hi")])
+            async for _ in stream:
+                pass
+        assert provider._client.is_closed()
+
+
 async def test_anthropic_with_parallel_tool_calls_enabled():
     """with_parallel_tool_calls(True) should omit disable_parallel_tool_use."""
     with respx.mock(base_url="https://api.anthropic.com") as mock:
