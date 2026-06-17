@@ -315,6 +315,7 @@ def _cmd_todo(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         print_error(f'file not found: {file_path}')
         return None, False
 
+    import re
     from kimix.parser import (
         PythonParser, CParser, ShellParser, HtmlParser, PascalParser, LispParser, SqlParser
     )
@@ -345,7 +346,7 @@ def _cmd_todo(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         print_error(f'Parse failed: {e}')
         return None, False
 
-    todos = [c for c in result.comments if 'TODO' in c.content.upper()]
+    todos = [c for c in result.comments if re.search(r'(?<![a-zA-Z0-9])TODO(?![a-zA-Z0-9])', c.content.upper())]
     if not todos:
         print_warning('No TODO comments found.')
         return None, False

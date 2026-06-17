@@ -5,13 +5,32 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from kimi_agent_sdk import Session
-
 import kimix.base as base
+from kimi_agent_sdk import Session
 from kimix.base import Color, MessageType, Style, print_agent_json
 from kimix.tools.common import _export_to_temp_file
-from .session import _create_default_session, _create_session_async, close_session_async, _print_usage
-from .system_prompt import SystemPromptType
+from kimix.utils.session import (
+    _create_default_session,
+    _create_session_async,
+    _print_usage,
+    close_session_async,
+)
+from kimix.utils.system_prompt import SystemPromptType
+
+
+def _read_subagent_state(path: Path) -> dict[str, Any]:
+    """Read a subagent state file, returning an empty dict on missing/corrupt data."""
+    import orjson
+
+    if not path.exists():
+        return {}
+    try:
+        data = orjson.loads(path.read_text(encoding="utf-8"))
+    except (orjson.JSONDecodeError, OSError, UnicodeDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
 
 
 async def _maybe_build_todo_reminder(session: Session) -> str | None:
@@ -43,7 +62,8 @@ async def _maybe_build_todo_reminder(session: Session) -> str | None:
 
     lines = [
         "<system-reminder>",
-        "You still have unfinished todos. review the list below and complete all pending/in-progress items before finishing:",
+        # Prompt the agent: the `SetTodoList` tool has remaining tasks that need to be reviewed and completed
+        "You have unfinished todos managed by the `SetTodoList` tool. Review the list below and use `SetTodoList` to update task statuses — complete all pending/in-progress items before finishing:",
     ]
     for todo in todos:
         title = getattr(todo, "title", "")
@@ -52,9 +72,13 @@ async def _maybe_build_todo_reminder(session: Session) -> str | None:
     lines.append("</system-reminder>")
     return "\n".join(lines)
 
-
 async def _clear_session_todos(session: Session) -> None:
-    """Clear the todo-list stored on the session state, if present."""
+    """Clear both in-memory and persisted todo content for the session.
+
+    Mirrors the persistence split in ``kimi_cli.tools.todo.SetTodoList``:
+    root sessions store todos in ``SessionState`` and subagent sessions store
+    them in a separate ``state.json`` under the subagent instance directory.
+    """
     cli = getattr(session, "_cli", None)
     if cli is None:
         return
@@ -65,6 +89,28 @@ async def _clear_session_todos(session: Session) -> None:
 
     if hasattr(state, "todos"):
         state.todos = []
+
+    runtime = getattr(cli, "_runtime", None)
+    if runtime is None:
+        return
+
+    if getattr(runtime, "role", "root") == "root":
+        # Root session: persist the cleared list through SessionState.
+        cli_session = cli.session
+        if hasattr(cli_session, "save_state"):
+            cli_session.save_state()
+    else:
+        # Subagent session: persist the cleared list to the subagent state file.
+        subagent_store = getattr(runtime, "subagent_store", None)
+        subagent_id = getattr(runtime, "subagent_id", None)
+        if subagent_store is not None and subagent_id is not None:
+            from kimi_cli.utils.io import atomic_json_write
+
+            state_file = subagent_store.instance_dir(subagent_id) / "state.json"
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            data = _read_subagent_state(state_file)
+            data["todos"] = []
+            atomic_json_write(data, state_file)
 
 
 async def _run_single_prompt(
@@ -230,14 +276,14 @@ def prompt_path(path: Path, split_word: Optional[str] = None, session: Session |
             if coro is not None:
                 try:
                     next(coro)
-                except StopIteration as e:
+                except StopIteration:
                     coro = None
     else:
         prompt(s, session=session)
         if coro is not None:
             try:
                 next(coro)
-            except StopIteration as e:
+            except StopIteration:
                 coro = None
 
 
