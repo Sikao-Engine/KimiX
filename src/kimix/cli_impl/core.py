@@ -13,8 +13,17 @@ from kimix.utils import (
 from kimix.cot import cot_prompt
 exec_ctx: dict[str, Any] = {}
 
+
+def _enable_line_editing() -> None:
+    try:
+        __import__("readline")
+    except Exception:
+        pass
+
+
 def _client_cli() -> None:
     global exec_ctx
+    _enable_line_editing()
     input_str = None
     _create_default_session(False)
     assert get_default_session()
