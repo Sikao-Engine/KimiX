@@ -10,6 +10,7 @@ from . import _globals
 
 def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config, dict[str, Any] | None]:
     from kimi_cli.config import LLMModel, LLMProvider
+    from kimi_cli.share import get_share_dir
     from kimix.base import print_debug, print_warning
 
     provider_dict = provider_dict if provider_dict is not None else base._default_provider
@@ -20,13 +21,19 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
             return False
         return value.startswith(start_with)
     if provider_dict is None:
-        try:
-            provider_dict = orjson.loads(
-                (Path(__file__).parent.parent / 'default_config.json').read_text(encoding='utf-8', errors='replace'))
-            if type(provider_dict) != dict:
+        for config_path in (
+            get_share_dir() / 'kimix_default_config.json',
+            Path(__file__).parent.parent / 'default_config.json',
+        ):
+            try:
+                provider_dict = orjson.loads(
+                    config_path.read_text(encoding='utf-8', errors='replace'))
+                if type(provider_dict) != dict:
+                    provider_dict = None
+                else:
+                    break
+            except:
                 provider_dict = None
-        except:
-            pass
     if provider_dict is not None:
         model_name = provider_dict.get('model_name', 'unknown_model')
         name = provider_dict.get('name', 'unknown')

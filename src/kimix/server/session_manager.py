@@ -303,7 +303,7 @@ class SessionManager:
                 ),
                 sdk_session=None,
                 work_dir=str(disk_session.work_dir),
-                messages=self._load_context_messages(disk_session.id, context_file),
+                messages=self._load_persisted_messages(disk_session.id, context_file),
             )
             with self._lock:
                 self._sessions.setdefault(disk_session.id, entry)
@@ -335,6 +335,12 @@ class SessionManager:
             raise ValueError(f"Session {entry.info.id} could not be restored")
         entry.sdk_session = restored
         return restored
+
+    def _load_persisted_messages(self, session_id: str, context_file: Path) -> List[MessageWithParts]:
+        messages = self._load_context_messages(session_id, context_file)
+        if messages:
+            return messages
+        return self._load_wire_messages(session_id, context_file.with_name("wire.jsonl"))
 
     def _load_context_messages(self, session_id: str, context_file: Path) -> List[MessageWithParts]:
         messages: List[MessageWithParts] = []
@@ -382,6 +388,64 @@ class SessionManager:
             )
         return messages
 
+    def _load_wire_messages(self, session_id: str, wire_file: Path) -> List[MessageWithParts]:
+        """Restore readable history from persisted wire events when context has no chat."""
+        messages: List[MessageWithParts] = []
+        try:
+            from kimi_cli.wire.file import WireMessageRecord, parse_wire_file_line
+            from kimi_cli.wire.types import TurnBegin
+        except Exception:
+            logger.debug("Error importing wire history helpers", exc_info=True)
+            return messages
+
+        try:
+            lines = wire_file.read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            return messages
+
+        for index, line in enumerate(lines[-300:]):
+            if not line.strip():
+                continue
+            try:
+                record = parse_wire_file_line(line)
+            except Exception:
+                continue
+            if not isinstance(record, WireMessageRecord):
+                continue
+
+            try:
+                wire_msg = record.to_wire_message()
+            except Exception:
+                continue
+            if not isinstance(wire_msg, TurnBegin):
+                continue
+
+            content = self._context_content_text(wire_msg.user_input)
+            if not content:
+                continue
+
+            message_id = f"msg_wire_{index}"
+            messages.append(
+                MessageWithParts(
+                    info=MessageInfo(
+                        id=message_id,
+                        role="user",
+                        sessionID=session_id,
+                        time={"created": int(record.timestamp * 1000)},
+                    ),
+                    parts=[
+                        MessagePart(
+                            id=f"prt_wire_{index}",
+                            type="text",
+                            text=content,
+                            sessionID=session_id,
+                            messageID=message_id,
+                        )
+                    ],
+                )
+            )
+        return messages
+
     def _context_content_text(self, content: Any) -> str:
         if isinstance(content, str):
             return content
@@ -392,6 +456,10 @@ class SessionManager:
                     text_parts.append(part)
                 elif isinstance(part, dict):
                     value = part.get("text") or part.get("content")
+                    if isinstance(value, str):
+                        text_parts.append(value)
+                else:
+                    value = getattr(part, "text", None) or getattr(part, "content", None)
                     if isinstance(value, str):
                         text_parts.append(value)
             if text_parts:

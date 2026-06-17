@@ -34,6 +34,43 @@ def _disk_session(tmp_path, session_id: str = "ses_disk"):
     )
 
 
+def _disk_session_with_wire_only(tmp_path, session_id: str = "ses_wire"):
+    from kimi_cli.wire.file import WireFileMetadata, WireMessageRecord
+    from kimi_cli.wire.protocol import WIRE_PROTOCOL_VERSION
+    from kimi_cli.wire.types import TurnBegin
+
+    session_dir = tmp_path / session_id
+    session_dir.mkdir(parents=True)
+    context_file = session_dir / "context.jsonl"
+    context_file.write_text(
+        json.dumps({"role": "_system_prompt", "content": "hidden"}) + "\n",
+        encoding="utf-8",
+    )
+    wire_file = session_dir / "wire.jsonl"
+    wire_file.write_text(
+        "\n".join(
+            [
+                WireFileMetadata(
+                    protocol_version=WIRE_PROTOCOL_VERSION,
+                ).model_dump_json(),
+                WireMessageRecord.from_wire_message(
+                    TurnBegin(user_input="hello from wire"),
+                    timestamp=123.456,
+                ).model_dump_json(),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return SimpleNamespace(
+        id=session_id,
+        title="Wire session",
+        updated_at=123.0,
+        work_dir=KaosPath.unsafe_from_local_path(tmp_path),
+        context_file=context_file,
+    )
+
+
 @pytest.mark.asyncio
 async def test_list_sessions_includes_persisted_session(tmp_path, monkeypatch):
     from kimi_cli.session import Session as CliSession
@@ -69,6 +106,22 @@ async def test_get_messages_reads_persisted_context(tmp_path, monkeypatch):
     ]
     assert messages[0]["parts"][0]["text"] == "hello from disk"
     assert messages[1]["parts"][0]["text"] == "hi"
+
+
+@pytest.mark.asyncio
+async def test_get_messages_falls_back_to_wire_turns(tmp_path, monkeypatch):
+    from kimi_cli.session import Session as CliSession
+
+    disk_session = _disk_session_with_wire_only(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(CliSession, "list", AsyncMock(return_value=[disk_session]))
+
+    manager = SessionManager()
+
+    messages = await manager.get_messages("ses_wire")
+
+    assert [message["info"]["role"] for message in messages] == ["user"]
+    assert messages[0]["parts"][0]["text"] == "hello from wire"
 
 
 @pytest.mark.asyncio
