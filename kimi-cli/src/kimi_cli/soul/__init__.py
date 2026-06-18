@@ -199,6 +199,7 @@ async def run_soul(
     """
     wire = Wire(file_backend=wire_file)
     wire_token = _current_wire.set(wire)
+    soul_token = _current_soul.set(soul)
 
     logger.debug("Starting UI loop with function: {ui_loop_fn}", ui_loop_fn=ui_loop_fn)
     ui_task = asyncio.create_task(ui_loop_fn(wire))
@@ -250,9 +251,16 @@ async def run_soul(
             logger.warning("UI loop timed out")
         finally:
             _current_wire.reset(wire_token)
+            _current_soul.reset(soul_token)
 
 
 _current_wire = ContextVar[Wire | None]("current_wire", default=None)
+_current_soul = ContextVar[Soul | None]("current_soul", default=None)
+
+
+def get_current_soul_or_none() -> Soul | None:
+    """Return the soul that is currently running, if any."""
+    return _current_soul.get()
 
 
 def get_wire_or_none() -> Wire | None:

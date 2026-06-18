@@ -13,7 +13,9 @@
       "kimix.tools.agent:Agent",
       "kimix.tools.agent:AgentList",
       "kimix.tools.agent:AgentClose",
-      "kimi_cli.tools.todo:SetTodoList"
+      "kimi_cli.tools.todo:SetTodoList",
+      "kimix.tools.context:ContextUsage",
+      "kimix.tools.context:Compact"
     ]
   }
 }

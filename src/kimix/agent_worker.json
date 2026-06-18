@@ -18,7 +18,9 @@
       "kimix.tools.agent:AgentClose",
       "kimi_cli.tools.file:Glob",
       "kimi_cli.tools.file:Grep",
-      "kimix.tools.web.fetch_url:FetchURL"
+      "kimix.tools.web.fetch_url:FetchURL",
+      "kimix.tools.context:ContextUsage",
+      "kimix.tools.context:Compact"
     ]
   }
 }

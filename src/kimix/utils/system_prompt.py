@@ -61,6 +61,7 @@ def get_system_prompt(
             items.append('One action per turn: each response = exactly one tool call, edit, or verification.')
             items.append('Error recovery: retry, adjust approach, or break into sub-tasks. Never give up.')
             items.append('Verification gate: run all tests/checks and confirm they pass before finishing.')
+            items.append('After completing an independent task or finishing one part of the schedule, check `ContextUsage`; if usage is high, call `Compact` before the next step.')
             # if args.KIMI_OS == 'Windows':
             #     items.append('No shell, powershell or cmd: use `Run`/`Python` instead.')
             # else:

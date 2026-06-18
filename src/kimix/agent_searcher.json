@@ -13,7 +13,9 @@
       "kimix.tools.web.fetch_url:FetchURL",
       "kimi_cli.tools.file:ReadFile",
       "kimi_cli.tools.file:EditFile",
-      "kimi_cli.tools.file:WriteFile"
+      "kimi_cli.tools.file:WriteFile",
+      "kimix.tools.context:ContextUsage",
+      "kimix.tools.context:Compact"
     ]
   }
 }
