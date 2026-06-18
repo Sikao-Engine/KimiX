@@ -5,7 +5,9 @@ def _get_slash_commands() -> set[str]:
 
 def _input(text: str, text_arr: list[str], multi_line_mode: bool = False) -> str:
     if text_arr is None or len(text_arr) == 0:
-        return input(text)
+        if text:
+            print(text, end='', flush=True)
+        return input()
     v = text_arr.pop(0)
     return v
 
