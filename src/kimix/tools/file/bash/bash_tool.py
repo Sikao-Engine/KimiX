@@ -589,6 +589,12 @@ class Bash(CallableTool2[BashParams]):
                         brief="Forbidden command",
                     )
 
+        # Refresh PATH/PATHEXT from registry so that tools installed
+        # since the last command (e.g. via WinGet) are discoverable.
+        if sys.platform == "win32":
+            from kimix.utils.windows_env import refresh_env_from_registry
+            refresh_env_from_registry()
+
         # Build the command line to pass to bash -c
         # On Windows, escape backslashes so bash preserves them in paths.
         safe_cmd = _prepare_bash_cmd(params.cmd)
