@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from kimi_agent_sdk import CallableTool2 as _CallableTool2
 
 USE_SYSTEM_SHELL = True
-USE_SYSTEM_PWSH_ON_WINDOWS = False
+USE_SYSTEM_PWSH_ON_WINDOWS = True
 
 
 def _where_git_executables() -> list[str]:
