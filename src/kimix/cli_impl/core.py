@@ -1,25 +1,34 @@
-from typing import Any
 from pathlib import Path
+from typing import Any
 
-from . import constants
-from .utils import _input, _split_text
-from .args import set_arg
-from .commands import _command_map, _cmd_unknown
 import kimix.base as base
-from kimix.base import print_debug, print_success, print_error, print_warning, print_info, sync_all
-from kimix.utils import (
-    prompt, _create_default_session, get_default_session
+from kimix.base import (
+    print_debug,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+    sync_all,
 )
 from kimix.cot import cot_prompt
+from kimix.utils import _create_default_session, get_default_session, prompt
+
+from . import constants, utils
+from .args import set_arg
+from .commands import _cmd_unknown, _command_map
+from .utils import _input
+
 exec_ctx: dict[str, Any] = {}
 
 
 def _enable_line_editing() -> None:
-    try:
-        __import__("readline")
-    except Exception:
-        pass
-
+    rl = utils._ensure_readline()
+    if rl is None:
+        import warnings
+        warnings.warn(
+            "On Windows, install pyreadline3 for Tab completion: pip install pyreadline3",
+            stacklevel=2,
+        )
 
 def _client_cli() -> None:
     global exec_ctx
@@ -32,7 +41,7 @@ def _client_cli() -> None:
     while True:
         try:
             input_str = _input(
-                "\n>>>>>>>>> Enter your prompt or command:\n", text_arr)
+                "\n>>>>>>>>> Enter your prompt or command:\n", text_arr, use_completion=True)
         except KeyboardInterrupt as e:
             print_success('\nbye.')
             break

@@ -1,8 +1,8 @@
-from typing import Any
 import os
 from pathlib import Path
 
 import kimix.base as base
+
 from . import constants
 from .utils import _input, _split_text
 
@@ -23,18 +23,35 @@ def _read_multi_line(text_arr: list[str], *, allow_cancel: bool = True) -> tuple
         lines.append(s)
     return lines, False
 
-from kimix.base import print_success, print_error, print_warning, print_info, print_debug, colorful_text, Color
-from kimix.utils import (
-    clear_default_context, get_default_session, fix_error, compact_default_context,
-    print_usage, set_ralph_loop,
-    _create_default_session, close_session, create_session, create_supervisor_session,
-    SystemPromptType,
-    prompt_plan, prompt,
-)
-import kimix.utils._globals as _globals
-from .init import init
-from kimix.dag import Executor
 import asyncio
+
+import kimix.utils._globals as _globals
+from kimix.base import (
+    Color,
+    colorful_text,
+    print_debug,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+)
+from kimix.utils import (
+    SystemPromptType,
+    _create_default_session,
+    clear_default_context,
+    close_session,
+    compact_default_context,
+    create_session,
+    create_supervisor_session,
+    fix_error,
+    get_default_session,
+    print_usage,
+    prompt,
+    prompt_plan,
+    set_ralph_loop,
+)
+
+from .init import init
 
 
 def _cmd_help(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
@@ -111,6 +128,7 @@ def _cmd_rename(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]
 
 def _cmd_summarize(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     import asyncio
+
     from kimix.summarize import summarize
     asyncio.run(summarize())
     return None, False
@@ -316,8 +334,15 @@ def _cmd_todo(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         return None, False
 
     import re
+
     from kimix.parser import (
-        PythonParser, CParser, ShellParser, HtmlParser, PascalParser, LispParser, SqlParser
+        CParser,
+        HtmlParser,
+        LispParser,
+        PascalParser,
+        PythonParser,
+        ShellParser,
+        SqlParser,
     )
 
     suffix = file_path.suffix.lower()
@@ -408,3 +433,14 @@ _command_map = {
     'todo': _cmd_todo
 }
 _command_map_keys = set(_command_map.keys())
+
+# Argument-type categories used by the readline Tab completer in utils.py.
+_command_arg_types: dict[str, str] = {
+    "cd": "dir",
+    "file": "file",
+    "todo": "file",
+    "export": "file",
+    "plan": "file",
+    "ralph": "ralph",
+    "cot": "bool_on_off",
+}

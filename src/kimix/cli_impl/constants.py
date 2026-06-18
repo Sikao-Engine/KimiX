@@ -1,8 +1,8 @@
-from typing import Any
-from pathlib import Path
 import os
+from pathlib import Path
+from typing import Any
 
-from kimix.base import colorful_text, Color
+from kimix.base import Color, colorful_text
 
 curr_dir = Path(os.curdir)
 if not curr_dir.is_absolute():
@@ -50,6 +50,8 @@ Available commands:
   {colorful_text('/cd:<path>', fg=Color.YELLOW)}      - Change directory
 
 Or enter any prompt to send to the agent.
+
+Press <Tab> after '/' to complete commands and arguments.
 '''
 # End writen by AGENT
 
