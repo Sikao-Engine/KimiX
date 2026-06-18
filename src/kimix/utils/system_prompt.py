@@ -51,7 +51,7 @@ def get_system_prompt(
         use_agent_md = False
         use_skills = False
         items.append('Call tools in parallel.')
-        items.append(f'OS: {args.KIMI_OS}, Work-Dir: {args.KIMI_WORK_DIR}, Shell: {args.KIMI_SHELL}')
+        items.append(f'OS: {args.KIMI_OS}, Work-Dir: {args.KIMI_WORK_DIR}')
         def worker_logic(role: str, is_sub_agent: bool = False):
             nonlocal role_doc, use_agent_md, use_skills
             use_agent_md = True

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.display import ShellDisplayBlock
+from kimix.tools.file.bash import bash_tool as _bash_tool
 from kimix.tools.file.bash.proccess_pwsh import pwsh_transform
 from kimix.tools.common import _maybe_export_output_async, _summarize_long_output_async, ProcessTask
 
@@ -41,9 +42,9 @@ class Powershell(CallableTool2[PowershellParams]):
     def __init__(self, session: Session):
         super().__init__()
         self._session = session
-        if sys.platform != "win32":
+        if not _bash_tool._should_enable_powershell():
             raise SkipThisTool()
-        
+
         # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
         # PowerShell is case-insensitive; normalize to lowercase.
         raw_forbidden = self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])

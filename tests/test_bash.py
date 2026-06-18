@@ -2,6 +2,7 @@
 
 import os
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -15,8 +16,18 @@ from kimi_cli.tools import SkipThisTool
 from kimix.tools.file.bash import (
     Bash,
     BashParams,
+    Powershell,
 )
-from kimix.tools.file.bash.bash_tool import find_bash, _prepare_bash_cmd
+from kimix.tools.file.bash.bash_tool import (
+    find_bash,
+    _prepare_bash_cmd,
+    _find_git_bash_windows,
+    _git_bash_candidate_from_git_path,
+    _git_bash_candidates_from_exec_path,
+    _git_exec_path,
+    _git_install_root_from_exec_path,
+    _where_git_executables,
+)
 from kimix.tools.background.utils import _pop_task_data
 
 
@@ -63,6 +74,109 @@ class TestFindBash:
         path = find_bash()
         assert path is not None
         assert Path(path).name.lower() in ("bash.exe", "bash")
+
+
+class TestFindGitBashWindows:
+    def test_git_bash_candidate_from_git_path(self) -> None:
+        candidate = _git_bash_candidate_from_git_path(r"C:\Program Files\Git\cmd\git.exe")
+        assert str(candidate) == r"C:\Program Files\Git\bin\bash.exe"
+
+    def test_install_root_from_exec_path(self) -> None:
+        assert (
+            _git_install_root_from_exec_path(r"C:\Program Files\Git\mingw64\libexec\git-core")
+            == r"C:\Program Files\Git"
+        )
+        assert _git_install_root_from_exec_path(r"C:\some\random\path") is None
+
+    def test_bash_candidates_from_exec_path(self) -> None:
+        candidates = _git_bash_candidates_from_exec_path(
+            r"C:\Program Files\Git\mingw64\libexec\git-core"
+        )
+        assert [str(c) for c in candidates] == [r"C:\Program Files\Git\bin\bash.exe"]
+
+        candidates = _git_bash_candidates_from_exec_path(r"C:\Program Files\Git\libexec\git-core")
+        assert [str(c) for c in candidates] == [r"C:\Program Files\Git\bin\bash.exe"]
+
+    def test_honors_env_override(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv("KIMIX_GIT_BASH_PATH", r"C:\Custom\Git\bin\bash.exe")
+        with patch(
+            "kimix.tools.file.bash.bash_tool.Path.exists",
+            lambda self: str(self) == r"C:\Custom\Git\bin\bash.exe",
+        ), patch(
+            "kimix.tools.file.bash.bash_tool.shutil.which",
+            return_value=None,
+        ):
+            assert _find_git_bash_windows() == r"C:\Custom\Git\bin\bash.exe"
+
+    def test_env_override_missing_file_ignored(self, monkeypatch: Any) -> None:
+        monkeypatch.setenv("KIMIX_GIT_BASH_PATH", r"C:\Custom\Git\bin\bash.exe")
+        with patch(
+            "kimix.tools.file.bash.bash_tool.Path.exists",
+            lambda self: str(self) == r"C:\Program Files\Git\bin\bash.exe",
+        ), patch(
+            "kimix.tools.file.bash.bash_tool._where_git_executables",
+            return_value=[r"C:\Program Files\Git\cmd\git.exe"],
+        ), patch(
+            "kimix.tools.file.bash.bash_tool._git_exec_path",
+            return_value=None,
+        ), patch(
+            "kimix.tools.file.bash.bash_tool.shutil.which",
+            return_value=None,
+        ):
+            assert _find_git_bash_windows() == r"C:\Program Files\Git\bin\bash.exe"
+
+
+# ============================================================================
+# Bash / Powershell mutual exclusion on Windows
+# ============================================================================
+
+class TestWindowsShellExclusion:
+    @pytest.fixture
+    def mock_session(self) -> MagicMock:
+        session = MagicMock()
+        session.custom_config.get.return_value = {}
+        session.custom_data = {}
+        return session
+
+    def _platform_patchers(self, bash_available: bool, pwsh_preferred: bool) -> list[Any]:
+        return [
+            patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"),
+            patch("kimix.tools.file.bash.bash_tool.USE_SYSTEM_PWSH_ON_WINDOWS", pwsh_preferred),
+            patch(
+                "kimix.tools.file.bash.bash_tool.find_bash",
+                return_value=(r"C:\Git\bin\bash.exe" if bash_available else None),
+            ),
+        ]
+
+    def _with_platform(self, bash_available: bool, pwsh_preferred: bool) -> ExitStack:
+        stack = ExitStack()
+        for cm in self._platform_patchers(bash_available, pwsh_preferred):
+            stack.enter_context(cm)
+        return stack
+
+    def test_bash_enabled_powershell_disabled_when_git_bash_available(
+        self, mock_session: MagicMock
+    ) -> None:
+        with self._with_platform(bash_available=True, pwsh_preferred=False):
+            Bash(mock_session)  # does not raise
+            with pytest.raises(SkipThisTool):
+                Powershell(mock_session)
+
+    def test_powershell_enabled_bash_disabled_when_git_bash_missing(
+        self, mock_session: MagicMock
+    ) -> None:
+        with self._with_platform(bash_available=False, pwsh_preferred=False):
+            Powershell(mock_session)  # does not raise
+            with pytest.raises(SkipThisTool):
+                Bash(mock_session)
+
+    def test_powershell_enabled_bash_disabled_when_pwsh_preferred(
+        self, mock_session: MagicMock
+    ) -> None:
+        with self._with_platform(bash_available=True, pwsh_preferred=True):
+            Powershell(mock_session)  # does not raise
+            with pytest.raises(SkipThisTool):
+                Bash(mock_session)
 
 
 # ============================================================================

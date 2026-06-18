@@ -383,8 +383,9 @@ class TestPowershellToolCallsRefresh:
         mock_session.custom_data = {}
 
         with patch("kimix.tools.file.bash.pwsh_tool.sys.platform", "win32"):
-            from kimix.tools.file.bash.pwsh_tool import Powershell, PowershellParams
-            tool = Powershell(mock_session)
+            with patch("kimix.tools.file.bash.pwsh_tool._bash_tool.find_bash", return_value=None):
+                from kimix.tools.file.bash.pwsh_tool import Powershell, PowershellParams
+                tool = Powershell(mock_session)
 
             with patch(
                 "kimix.utils.windows_env.refresh_env_from_registry"

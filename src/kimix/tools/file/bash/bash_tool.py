@@ -2,8 +2,11 @@
 
 
 import functools
+import ntpath
+import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,12 +24,120 @@ if TYPE_CHECKING:
     from kimi_agent_sdk import CallableTool2 as _CallableTool2
 
 USE_SYSTEM_SHELL = True
-USE_SYSTEM_PWSH_ON_WINDOWS = True
+USE_SYSTEM_PWSH_ON_WINDOWS = False
+
+
+def _where_git_executables() -> list[str]:
+    """Return candidate git.exe paths reported by ``where.exe git``."""
+    try:
+        result = subprocess.run(
+            ["where.exe", "git"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return []
+    if result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def _git_bash_candidate_from_git_path(git_path: str) -> Path:
+    """Derive ``<gitRoot>/bin/bash.exe`` from the path to ``git.exe``."""
+    normalized = ntpath.normpath(ntpath.join(ntpath.dirname(git_path), "..", "bin", "bash.exe"))
+    return Path(normalized)
+
+
+def _git_exec_path(git_path: str) -> str | None:
+    """Run ``git --exec-path`` and return the first non-empty line."""
+    try:
+        result = subprocess.run(
+            [git_path, "--exec-path"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        exec_path = line.strip()
+        if exec_path:
+            return exec_path
+    return None
+
+
+def _git_install_root_from_exec_path(exec_path: str) -> str | None:
+    """Return the Git for Windows install root given a ``mingw*/libexec/git-core`` path."""
+    current = ntpath.normpath(exec_path)
+    while True:
+        parent, name = ntpath.split(current)
+        if name.casefold() in {"mingw32", "mingw64"}:
+            return parent
+        if parent == current:
+            return None
+        current = parent
+
+
+def _git_bash_candidates_from_exec_path(exec_path: str) -> list[Path]:
+    """Return candidate ``bash.exe`` paths derived from ``git --exec-path``."""
+    normalized_exec_path = ntpath.normpath(exec_path)
+    install_root = _git_install_root_from_exec_path(normalized_exec_path)
+    if install_root is not None:
+        return [Path(ntpath.join(install_root, "bin", "bash.exe"))]
+    return [
+        Path(ntpath.normpath(ntpath.join(normalized_exec_path, "..", "..", "bin", "bash.exe")))
+    ]
+
+
+def _find_git_bash_windows() -> str | None:
+    """Locate Git Bash on Windows.
+
+    Resolution order:
+      1. ``KIMIX_GIT_BASH_PATH`` environment variable.
+      2. ``where.exe git`` -> ``<gitDir>/../bin/bash.exe``.
+      3. ``git --exec-path`` -> Git for Windows install root -> ``bin/bash.exe``.
+      4. Common install locations.
+      5. ``bash`` on PATH.
+    """
+    override = os.environ.get("KIMIX_GIT_BASH_PATH")
+    if override:
+        candidate = Path(override)
+        if candidate.exists():
+            return str(candidate.resolve())
+
+    for git_path in _where_git_executables():
+        bash_candidate = _git_bash_candidate_from_git_path(git_path)
+        if bash_candidate.exists():
+            return str(bash_candidate.resolve())
+
+        git_exec_path = _git_exec_path(git_path)
+        if git_exec_path:
+            for bash_candidate in _git_bash_candidates_from_exec_path(git_exec_path):
+                if bash_candidate.exists():
+                    return str(bash_candidate.resolve())
+
+    for candidate in (
+        Path(r"C:\Program Files\Git\bin\bash.exe"),
+        Path(r"C:\Program Files (x86)\Git\bin\bash.exe"),
+    ):
+        if candidate.exists():
+            return str(candidate.resolve())
+
+    bash = shutil.which("bash")
+    if bash:
+        return bash
+    return None
 
 
 @functools.lru_cache(maxsize=1)
 def find_bash() -> str | None:
     """Find the system bash executable."""
+    if sys.platform == "win32":
+        return _find_git_bash_windows()
     if sys.platform == "darwin":
         # Strategy 1: Homebrew bash (Apple Silicon) – often newer than system bash
         candidate = Path("/opt/homebrew/bin/bash")
@@ -61,6 +172,24 @@ def find_bash() -> str | None:
     if bash:
         return bash
     return None
+
+
+def _should_enable_bash() -> bool:
+    """Return True when the Bash tool should be enabled on this platform."""
+    if not USE_SYSTEM_SHELL:
+        return False
+    if sys.platform == "win32" and USE_SYSTEM_PWSH_ON_WINDOWS:
+        return False
+    return find_bash() is not None
+
+
+def _should_enable_powershell() -> bool:
+    """Return True when the Powershell tool should be enabled on this platform."""
+    if sys.platform != "win32":
+        return False
+    if USE_SYSTEM_PWSH_ON_WINDOWS:
+        return True
+    return find_bash() is None
 
 
 # Characters for which a backslash escape must be preserved in bash.
@@ -413,14 +542,10 @@ class Bash(CallableTool2[BashParams]):
 
     def __init__(self, session: Session):
         super().__init__()
-        if not USE_SYSTEM_SHELL:
+        if not _should_enable_bash():
             raise SkipThisTool()
         self._session = session
-        if sys.platform == "win32" and USE_SYSTEM_PWSH_ON_WINDOWS:
-            raise SkipThisTool()
         self._bash = find_bash()
-        if not self._bash:
-            raise SkipThisTool()
 
         # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
         raw_forbidden = self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
