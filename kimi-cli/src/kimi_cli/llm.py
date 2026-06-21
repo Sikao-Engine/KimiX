@@ -9,7 +9,7 @@ import orjson
 from kosong.chat_provider import ChatProvider
 from pydantic import SecretStr
 
-from kimi_cli.constant import USER_AGENT
+from kimi_cli.constant import get_user_agent, get_user_agent_other
 from kimi_cli.utils.logging import logger
 
 if TYPE_CHECKING:
@@ -98,7 +98,8 @@ def augment_provider_with_env_vars(provider: LLMProvider, model: LLMModel) -> di
 
 
 def _kimi_default_headers(provider: LLMProvider, oauth: OAuthManager | None) -> dict[str, str]:
-    headers = {"User-Agent": USER_AGENT}
+    user_agent = get_user_agent() if provider.type in {"kimi", "_chaos"} else get_user_agent_other()
+    headers = {"User-Agent": user_agent}
     if oauth:
         headers.update(oauth.common_headers())
     if provider.custom_headers:
