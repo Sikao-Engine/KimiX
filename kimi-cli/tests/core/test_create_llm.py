@@ -8,6 +8,7 @@ from kosong.contrib.chat_provider.openai_responses import OpenAIResponses
 from pydantic import SecretStr
 
 from kimi_cli.config import LLMModel, LLMProvider, OpenAISettings
+from kimi_cli.constant import USER_AGENT
 from kimi_cli.llm import augment_provider_with_env_vars, create_llm
 
 
@@ -148,6 +149,7 @@ def test_create_llm_openai_legacy_custom_headers():
     assert llm is not None
     assert isinstance(llm.chat_provider, OpenAILegacy)
     assert llm.chat_provider._client_kwargs.get("default_headers") == {
+        "User-Agent": USER_AGENT,
         "X-Custom": "value",
         "X-Canary": "always",
     }
@@ -256,7 +258,10 @@ def test_create_llm_openai_responses_custom_headers():
     llm = create_llm(provider, model)
     assert llm is not None
     assert isinstance(llm.chat_provider, OpenAIResponses)
-    assert llm.chat_provider._client_kwargs.get("default_headers") == {"X-Custom": "value"}
+    assert llm.chat_provider._client_kwargs.get("default_headers") == {
+        "User-Agent": USER_AGENT,
+        "X-Custom": "value",
+    }
 
 
 def test_create_llm_anthropic_custom_headers():
@@ -360,8 +365,8 @@ def test_create_llm_custom_headers_isolated_between_instances():
     assert provider.custom_headers["X-Custom"] == "original"
 
 
-def test_create_llm_no_custom_headers_keeps_existing_behavior():
-    """When custom_headers is None, providers should work exactly as before."""
+def test_create_llm_no_custom_headers_includes_user_agent():
+    """When custom_headers is None, the default KimiX User-Agent is still sent."""
     from kosong.contrib.chat_provider.openai_legacy import OpenAILegacy
 
     provider = LLMProvider(
@@ -378,8 +383,7 @@ def test_create_llm_no_custom_headers_keeps_existing_behavior():
     llm = create_llm(provider, model)
     assert llm is not None
     assert isinstance(llm.chat_provider, OpenAILegacy)
-    # When custom_headers is None, the SDK client should have no custom headers
-    assert llm.chat_provider.client._custom_headers == {}
+    assert llm.chat_provider.client._custom_headers == {"User-Agent": USER_AGENT}
 
 
 def test_create_llm_openai_responses_thinking_false_no_reasoning_in_params():

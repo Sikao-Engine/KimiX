@@ -120,7 +120,9 @@ def test_reminder_injected_when_todos_unfinished(monkeypatch: Any) -> None:
 
     asyncio.run(prompt_mod.prompt_async("hello", session=session, info_print=False))
 
-    assert len(session.prompts) == 2
+    # The fake session never updates todo statuses, so both the regular and the
+    # strong follow-up reminder are injected before cleanup.
+    assert len(session.prompts) == 3
     assert session.prompts[0] == "hello"
     reminder = session.prompts[1]
     assert "<system-reminder>" in reminder
@@ -129,6 +131,14 @@ def test_reminder_injected_when_todos_unfinished(monkeypatch: Any) -> None:
     assert "- [in_progress] Implement helper" in reminder
     assert "- [done] Run tests" in reminder
     assert "</system-reminder>" in reminder
+
+    strong_reminder = session.prompts[2]
+    assert "<system-reminder>" in strong_reminder
+    assert "CRITICAL" in strong_reminder
+    assert "MUST use `SetTodoList`" in strong_reminder
+    assert "- [pending] Analyze requirement" in strong_reminder
+    assert "- [in_progress] Implement helper" in strong_reminder
+    assert "</system-reminder>" in strong_reminder
 
 
 def test_no_reminder_when_all_todos_done(monkeypatch: Any) -> None:
@@ -174,6 +184,29 @@ def test_prompt_async_works_without_cli_attribute(monkeypatch: Any) -> None:
     asyncio.run(prompt_mod.prompt_async("hello", session=session, info_print=False))
 
     assert session.prompts == ["hello"]
+
+
+def test_reminder_stops_when_todos_marked_done(monkeypatch: Any) -> None:
+    _suppress_stream(monkeypatch)
+    todos = [
+        TodoItemState(title="Analyze requirement", status="pending"),
+    ]
+    session = FakeSessionWithCLI(has_set_todo=True, todos=todos)
+
+    async def mark_done_prompt(self: Any, prompt: str, *, merge_wire_messages: bool = False) -> Any:
+        if "system-reminder" in prompt:
+            session._cli.session.state.todos[0].status = "done"
+        self.last_prompt = prompt
+        self.prompts.append(prompt)
+        yield TextPart(text="prompt output")
+
+    monkeypatch.setattr(FakeSessionWithCLI, "prompt", mark_done_prompt)
+
+    asyncio.run(prompt_mod.prompt_async("hello", session=session, info_print=False))
+
+    assert len(session.prompts) == 2
+    assert session.prompts[0] == "hello"
+    assert "You have unfinished todos" in session.prompts[1]
 
 
 def test_todos_are_cleared_after_prompt_async(monkeypatch: Any) -> None:
@@ -292,3 +325,32 @@ def test_todos_cleared_even_when_reminder_fails(monkeypatch: Any) -> None:
     asyncio.run(prompt_mod.prompt_async("hello", session=session, info_print=False))
 
     assert session._cli.session.state.todos == []
+
+
+class FakeCLISubagentWithToolset(FakeCLISubagent):
+    def __init__(self, state: FakeState, runtime: FakeRuntimeSubagent) -> None:
+        super().__init__(state, runtime)
+        self.soul = FakeSoul(has_set_todo=True)
+
+
+class FakeSessionSubagentWithToolset:
+    def __init__(self, state: FakeState, runtime: FakeRuntimeSubagent) -> None:
+        self._cli = FakeCLISubagentWithToolset(state, runtime)
+
+
+def test_subagent_reminder_reads_from_state_file(tmp_path: Path) -> None:
+    store = FakeSubagentStore(tmp_path / "subagents")
+    runtime = FakeRuntimeSubagent(store, "agent1")
+    state = FakeState(todos=[])
+    session = FakeSessionSubagentWithToolset(state, runtime)
+
+    state_file = store.instance_dir("agent1") / "state.json"
+    state_file.write_text(
+        json.dumps({"todos": [{"title": "Subagent task", "status": "pending"}]})
+    )
+
+    reminder = asyncio.run(prompt_mod._maybe_build_todo_reminder(session))
+
+    assert reminder is not None
+    assert "Subagent task" in reminder
+    assert "- [pending] Subagent task" in reminder

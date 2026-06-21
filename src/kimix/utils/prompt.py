@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable, Optional
 
 import kimix.base as base
@@ -33,7 +34,7 @@ def _read_subagent_state(path: Path) -> dict[str, Any]:
     return data
 
 
-async def _maybe_build_todo_reminder(session: Session) -> str | None:
+async def _maybe_build_todo_reminder(session: Session, *, strong: bool = False) -> str | None:
     cli = getattr(session, "_cli", None)
     if cli is None:
         return None
@@ -49,22 +50,45 @@ async def _maybe_build_todo_reminder(session: Session) -> str | None:
     if set_todo_tool is None:
         return None
 
-    state = getattr(getattr(cli, "session", None), "state", None)
-    if state is None:
-        return None
+    runtime = getattr(cli, "_runtime", None)
 
-    todos = getattr(state, "todos", None)
+    # Mirror the persistence split in ``kimi_cli.tools.todo.SetTodoList``:
+    # root sessions store todos in ``SessionState`` and subagent sessions store
+    # them in a separate ``state.json`` under the subagent instance directory.
+    role = getattr(runtime, "role", "root") if runtime is not None else "root"
+    if role == "root":
+        state = getattr(getattr(cli, "session", None), "state", None)
+        if state is None:
+            return None
+        todos = getattr(state, "todos", None) or []
+    else:
+        subagent_store = getattr(runtime, "subagent_store", None)
+        subagent_id = getattr(runtime, "subagent_id", None)
+        if subagent_store is None or subagent_id is None:
+            return None
+        state_file = subagent_store.instance_dir(subagent_id) / "state.json"
+        data = _read_subagent_state(state_file)
+        raw_todos = data.get("todos", []) if isinstance(data.get("todos"), list) else []
+        todos = [
+            SimpleNamespace(title=t.get("title", ""), status=t.get("status", ""))
+            for t in raw_todos
+        ]
+
     if not todos:
         return None
 
     if all(getattr(todo, "status", None) == "done" for todo in todos):
         return None
 
-    lines = [
-        "<system-reminder>",
-        # Prompt the agent: the `SetTodoList` tool has remaining tasks that need to be reviewed and completed
-        "You have unfinished todos managed by the `SetTodoList` tool. Review the list below and use `SetTodoList` to update task statuses — complete all pending/in-progress items before finishing:",
-    ]
+    lines = ["<system-reminder>"]
+    if strong:
+        lines.append(
+            "CRITICAL: The previous todo review did NOT finish all tasks. You STILL have unfinished todos managed by the `SetTodoList` tool. You MUST use `SetTodoList` to mark EVERY remaining item as `done` BEFORE finishing this session. Do not declare completion, do not run final verification, and do not end until the todo list is empty or all entries show `[done]`."
+        )
+    else:
+        lines.append(
+            "You have unfinished todos managed by the `SetTodoList` tool. Review the list below and use `SetTodoList` to update task statuses — complete all pending/in-progress items before finishing:"
+        )
     for todo in todos:
         title = getattr(todo, "title", "")
         status = getattr(todo, "status", "")
@@ -203,11 +227,15 @@ async def prompt_async(
         )
 
         if prompt_success:
-            todo_reminder = await _maybe_build_todo_reminder(session)
-            if todo_reminder is not None:
+            max_todo_attempts = 2
+            for attempt in range(max_todo_attempts):
+                todo_reminder = await _maybe_build_todo_reminder(session, strong=(attempt > 0))
+                if todo_reminder is None:
+                    break
                 if len(todo_reminder) > 65536:  # too long, save to file
                     name, new_id = _export_to_temp_file(content=todo_reminder)
                     todo_reminder = f"read and execute: `{name}`"
+                label = "Todo review..." if attempt == 0 else "Final todo review..."
                 try:
                     await _run_single_prompt(
                         session,
@@ -216,7 +244,7 @@ async def prompt_async(
                         cancel_callable,
                         merge_wire_messages,
                         info_print,
-                        label="Todo review...",
+                        label=label,
                     )
                 except Exception as reminder_exc:
                     base._stream.colorful_print_word(
@@ -225,6 +253,7 @@ async def prompt_async(
                         styles=[Style.BOLD],
                         require_new_line=True,
                     )
+                    break
         else:
             base._stream.colorful_print_word("prompt failed.", fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True)
 
