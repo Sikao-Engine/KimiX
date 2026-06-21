@@ -11,7 +11,6 @@ NAME = "Kimi Code CLI"
 if TYPE_CHECKING:
     VERSION: str
     USER_AGENT: str
-    USER_AGENT_OTHER: str
 
 # Build SHA injected at package/build time via scripts/inject_build_sha.py.
 # When present it overrides any runtime detection.
@@ -29,9 +28,6 @@ def get_version() -> str:
 @cache
 def get_user_agent() -> str:
     return f"KimiCLI/{get_version()}"
-@cache
-def get_user_agent_other() -> str:
-    return f"KimiX"
 
 
 def _normalize_remote(url: str) -> str:
@@ -109,8 +105,6 @@ def __getattr__(name: str) -> str:
         return get_version()
     if name == "USER_AGENT":
         return get_user_agent()
-    if name == "USER_AGENT_OTHER":
-        return get_user_agent_other()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -118,9 +112,7 @@ __all__ = [
     "NAME",
     "VERSION",
     "USER_AGENT",
-    "USER_AGENT_OTHER",
     "get_version",
     "get_user_agent",
-    "get_user_agent_other",
     "get_build_sha",
 ]
