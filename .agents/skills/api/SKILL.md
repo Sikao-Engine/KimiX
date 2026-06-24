@@ -978,6 +978,125 @@ result = await cot_prompt_with_verification_async("Complex reasoning task")
 
 - `cli()` — launches the interactive Kimix CLI
 
+## Dynamic System Reminders
+
+The agent runtime injects short system reminders into the LLM context before a step. Reminders are produced by pluggable `DynamicInjectionProvider`s registered on `KimiSoul`.
+
+### Core data structures
+
+```python
+# File: kimi_cli/soul/dynamic_injection.py
+from dataclasses import dataclass
+from kosong.message import Message
+
+@dataclass(frozen=True, slots=True)
+class DynamicInjection:
+    type: str      # identifier, e.g. "afk_mode", "compact_reminder", "done_reminder"
+    content: str   # plain text; will be wrapped in <system-reminder> tags
+
+class DynamicInjectionProvider(ABC):
+    @abstractmethod
+    async def get_injections(
+        self,
+        history: Sequence[Message],
+        soul: KimiSoul,
+    ) -> list[DynamicInjection]: ...
+
+    async def on_context_compacted(self) -> None:
+        """Override to reset throttling after context compaction."""
+
+    async def on_afk_changed(self, enabled: bool) -> None:
+        """Override to reset throttling when afk mode toggles."""
+```
+
+Providers decide for themselves whether to inject, usually throttling by step number, message index, or internal state.
+
+### Wrapping and delivery
+
+```python
+# File: kimi_cli/soul/message.py
+def system(message: str) -> ContentPart:
+    return TextPart(text=f"<system>{message}</system>")
+
+def system_reminder(message: str) -> TextPart:
+    return TextPart(text=f"<system-reminder>\n{message}\n</system-reminder>")
+```
+
+Before each LLM step, `KimiSoul._collect_injections()` awaits every provider, concatenates the resulting `content`s, wraps each with `system_reminder()`, and appends the combined text as a user-role message. Adjacent user messages (including these reminders) are later merged by `normalize_history()` for the API call.
+
+### Registration in `KimiSoul`
+
+```python
+# File: kimi_cli/src/kimi_cli/soul/kimisoul.py
+class KimiSoul:
+    def __init__(self, agent: Agent, *, context: Context, anonymous: bool = False):
+        ...
+        self._injection_providers: list[DynamicInjectionProvider] = [
+            AfkModeInjectionProvider() if not config.skip_afk_prompt_injection else [],
+            CompactReminderProvider(threshold=loop_control.compact_reminder_threshold)
+                if loop_control.compact_reminder_enabled else [],
+            DoneReminderProvider(
+                enabled=True,
+                cooldown_steps=loop_control.done_reminder_cooldown_steps,
+            ) if loop_control.done_reminder_enabled else [],
+        ]
+
+    def add_injection_provider(self, provider: DynamicInjectionProvider) -> None:
+        self._injection_providers.append(provider)
+
+    async def _collect_injections(self) -> list[DynamicInjection]:
+        ...
+
+    async def _notify_injection_providers_compacted(self) -> None:
+        ...
+
+    async def notify_afk_changed(self, enabled: bool) -> None:
+        ...
+```
+
+Built-in providers are registered in `__init__` according to `Config` / `LoopControl` flags. External code can add more via `add_injection_provider()`.
+
+### Built-in providers
+
+| Provider | File | Type | Purpose | Config knobs |
+|----------|------|------|---------|--------------|
+| `AfkModeInjectionProvider` | `dynamic_injections/afk_mode.py` | `afk_mode` | Instructs the model not to ask the user questions while afk, and to finish end-to-end. | `Config.skip_afk_prompt_injection` |
+| `CompactReminderProvider` | `dynamic_injections/compact_reminder.py` | `compact_reminder` | Suggests calling `Compact` when context usage exceeds a threshold. | `LoopControl.compact_reminder_enabled`, `compact_reminder_threshold` |
+| `DoneReminderProvider` | `dynamic_injections/done_reminder.py` | `done_reminder` | Detects completion language in the latest assistant `TextPart`s and reminds the model to call `TodoList` before concluding. | `LoopControl.done_reminder_enabled`, `done_reminder_cooldown_steps` |
+
+All three providers skip subagent sessions and reset their throttling state in `on_context_compacted()` and/or `on_afk_changed()`.
+
+### Implementing a custom provider
+
+```python
+from kosong.message import Message
+from kimi_cli.soul.dynamic_injection import DynamicInjection, DynamicInjectionProvider
+
+class MyReminderProvider(DynamicInjectionProvider):
+    def __init__(self) -> None:
+        self._fired = False
+
+    async def get_injections(self, history: Sequence[Message], soul: KimiSoul) -> list[DynamicInjection]:
+        if self._fired or soul.is_subagent:
+            return []
+        if not history or history[-1].role != "assistant":
+            return []
+        text = history[-1].extract_text(" ")
+        if "my trigger" not in text.lower():
+            return []
+        self._fired = True
+        return [DynamicInjection(type="my_reminder", content="Remember to do X.")]
+
+    async def on_context_compacted(self) -> None:
+        self._fired = False
+```
+
+Register it on an existing soul:
+
+```python
+soul.add_injection_provider(MyReminderProvider())
+```
+
 ## Complete Package Index
 
 | Package / Module | Description |
