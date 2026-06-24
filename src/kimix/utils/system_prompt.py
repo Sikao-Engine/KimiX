@@ -66,7 +66,7 @@ def get_system_prompt(
             #     items.append('No shell, powershell or cmd: use `Run`/`Python` instead.')
             # else:
             #     items.append('No shell or bash: use `Run`/`Python` instead.')
-            items.append('Multi-step: use `SetTodoList`. Finish all before ending.')
+            items.append('Multi-step: use `TodoList`. Finish all before ending.')
             if not is_sub_agent:
                 if yolo:
                     items.append('Yolo: no asking. accept all.')
@@ -111,7 +111,7 @@ def get_system_prompt(
                 items.append('Decompose into non-overlapping tasks (Explorer/Worker/Reviewer/Verifier). Serial if same output.')
                 items.append('Dispatch via `Agent` with role, goal, scope, non-goal, inputs, acceptance criteria.')
                 items.append('Never do sub-agent work yourself. Route failures through inquiry, then narrow correction.')
-                items.append('Track with `SetTodoList`. Accept or inquire/reject each result against criteria.')
+                items.append('Track with `TodoList`. Accept or inquire/reject each result against criteria.')
                 items.append('After all accepted and merged, run one overall verification suited to task type.')
                 items.append('Final: report tasks, deliverables, verification result, unresolved work, merged conclusion.')
 

@@ -36,7 +36,7 @@ agent:
   tools:
     - "kimi_cli.tools.multiagent:Task"
     - "kimi_cli.tools.think:Think"
-    - "kimi_cli.tools.todo:SetTodoList"
+    - "kimi_cli.tools.todo:TodoList"
     - "kimi_cli.tools.shell:Shell"
     - "kimi_cli.tools.file:Glob"
     - "kimi_cli.tools.file:WriteFile" # for the final report file

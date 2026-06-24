@@ -32,7 +32,7 @@ async def test_builder_builds_coder_with_write_tools(runtime):
     assert "EditFile" in tool_names
     assert "Agent" not in tool_names
     assert "AskUserQuestion" not in tool_names
-    assert "SetTodoList" not in tool_names
+    assert "TodoList" not in tool_names
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")

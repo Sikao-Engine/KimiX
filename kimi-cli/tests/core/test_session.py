@@ -358,7 +358,7 @@ async def test_save_state_preserves_in_memory_todos(isolated_share_dir: Path, wo
 
     session = await Session.create(work_dir)
 
-    # Simulate SetTodoList setting todos in memory before calling save_state()
+    # Simulate TodoList setting todos in memory before calling save_state()
     session.state.todos = [TodoItemState(title="Worker todo", status="pending")]
     session.save_state()
 

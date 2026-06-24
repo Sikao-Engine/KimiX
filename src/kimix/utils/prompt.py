@@ -1,7 +1,9 @@
 import asyncio
+import orjson
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Optional
@@ -44,15 +46,15 @@ async def _maybe_build_todo_reminder(session: Session, *, strong: bool = False) 
         return None
 
     try:
-        set_todo_tool = toolset.find("SetTodoList")
+        todo_tool = toolset.find("TodoList")
     except Exception:
         return None
-    if set_todo_tool is None:
+    if todo_tool is None:
         return None
 
     runtime = getattr(cli, "_runtime", None)
 
-    # Mirror the persistence split in ``kimi_cli.tools.todo.SetTodoList``:
+    # Mirror the persistence split in ``kimi_cli.tools.todo.TodoList``:
     # root sessions store todos in ``SessionState`` and subagent sessions store
     # them in a separate ``state.json`` under the subagent instance directory.
     role = getattr(runtime, "role", "root") if runtime is not None else "root"
@@ -83,11 +85,11 @@ async def _maybe_build_todo_reminder(session: Session, *, strong: bool = False) 
     lines = ["<system-reminder>"]
     if strong:
         lines.append(
-            "CRITICAL: The previous todo review did NOT finish all tasks. You STILL have unfinished todos managed by the `SetTodoList` tool. You MUST use `SetTodoList` to mark EVERY remaining item as `done` BEFORE finishing this session. Do not declare completion, do not run final verification, and do not end until the todo list is empty or all entries show `[done]`."
+            "CRITICAL: The previous todo review did NOT finish all tasks. You STILL have unfinished todos managed by the `TodoList` tool. You MUST use `TodoList` to mark EVERY remaining item as `done` BEFORE finishing this session. Do not declare completion, do not run final verification, and do not end until the todo list is empty or all entries show `[done]`."
         )
     else:
         lines.append(
-            "You have unfinished todos managed by the `SetTodoList` tool. Review the list below and use `SetTodoList` to update task statuses — complete all pending/in-progress items before finishing:"
+            "You have unfinished todos managed by the `TodoList` tool. Review the list below and use `TodoList` to update task statuses — complete all pending/in-progress items before finishing:"
         )
     for todo in todos:
         title = getattr(todo, "title", "")
@@ -99,7 +101,7 @@ async def _maybe_build_todo_reminder(session: Session, *, strong: bool = False) 
 async def _clear_session_todos(session: Session) -> None:
     """Clear both in-memory and persisted todo content for the session.
 
-    Mirrors the persistence split in ``kimi_cli.tools.todo.SetTodoList``:
+    Mirrors the persistence split in ``kimi_cli.tools.todo.TodoList``:
     root sessions store todos in ``SessionState`` and subagent sessions store
     them in a separate ``state.json`` under the subagent instance directory.
     """
@@ -135,6 +137,122 @@ async def _clear_session_todos(session: Session) -> None:
             data = _read_subagent_state(state_file)
             data["todos"] = []
             atomic_json_write(data, state_file)
+
+
+async def _export_session_todos(session: Session, path: Path) -> None:
+    """Export the session's current todo list to ``path`` as JSON.
+
+    Mirrors the persistence split in ``kimi_cli.tools.todo.TodoList``:
+    root sessions read todos from ``SessionState`` and subagent sessions read
+    them from a separate ``state.json`` under the subagent instance directory.
+    """
+    cli = getattr(session, "_cli", None)
+    if cli is None:
+        return
+
+    toolset = getattr(getattr(getattr(cli, "soul", None), "agent", None), "toolset", None)
+    if toolset is None:
+        return
+
+    try:
+        todo_tool = toolset.find("TodoList")
+    except Exception:
+        return
+    if todo_tool is None:
+        return
+
+    runtime = getattr(cli, "_runtime", None)
+    role = getattr(runtime, "role", "root") if runtime is not None else "root"
+
+    if role == "root":
+        state = getattr(getattr(cli, "session", None), "state", None)
+        if state is None:
+            return
+        todos = getattr(state, "todos", None) or []
+    else:
+        subagent_store = getattr(runtime, "subagent_store", None)
+        subagent_id = getattr(runtime, "subagent_id", None)
+        if subagent_store is None or subagent_id is None:
+            return
+        state_file = subagent_store.instance_dir(subagent_id) / "state.json"
+        data = _read_subagent_state(state_file)
+        todos = data.get("todos", []) if isinstance(data.get("todos"), list) else []
+
+    export_data: list[dict[str, str]] = []
+    for todo in todos:
+        if isinstance(todo, dict):
+            export_data.append({
+                "title": todo.get("title", ""),
+                "status": todo.get("status", ""),
+            })
+        else:
+            export_data.append({
+                "title": getattr(todo, "title", ""),
+                "status": getattr(todo, "status", ""),
+            })
+    if not export_data:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(orjson.dumps(export_data).decode("utf-8"), encoding="utf-8")
+    except Exception as exc:
+        base.print_error(f"Failed to export todo list to {path}: {exc}")
+
+
+async def _import_session_todos(session: Session, path: Path) -> None:
+    """Import a todo list from ``path`` into the session's ``TodoList`` tool.
+
+    The JSON file is expected to contain a list of objects with ``title`` and
+    ``status`` keys. Todos are loaded via the tool's public interface so that
+    persistence and validation are handled consistently.
+    """
+    if not path.exists():
+        return
+
+    try:
+        raw_data = orjson.loads(path.read_text(encoding="utf-8"))
+    except (orjson.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        base.print_error(f"Failed to read todo list from {path}: {exc}")
+        return
+    if not isinstance(raw_data, list):
+        base.print_error(f"Invalid todo list format in {path}: expected a list")
+        return
+
+    cli = getattr(session, "_cli", None)
+    if cli is None:
+        return
+
+    toolset = getattr(getattr(getattr(cli, "soul", None), "agent", None), "toolset", None)
+    if toolset is None:
+        return
+
+    try:
+        todo_tool = toolset.find("TodoList")
+    except Exception:
+        return
+    if todo_tool is None:
+        return
+
+    from kimi_cli.tools.todo import Params, Todo
+
+    todos: list[Todo] = []
+    for item in raw_data:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title", "")
+        status = item.get("status", "")
+        try:
+            todos.append(Todo(title=title, status=status))
+        except Exception:
+            continue
+
+    if not todos:
+        return
+
+    try:
+        await todo_tool(Params(todos=todos, force_replace=True))
+    except Exception as exc:
+        base.print_error(f"Failed to import todo list into session: {exc}")
 
 
 async def _run_single_prompt(
@@ -202,8 +320,17 @@ async def prompt_async(
     cancel_callable: Callable[[], bool] | None = None,
     close_session_after_prompt: bool = False,
     merge_wire_messages: bool | None = None,
+    ensure_todo_finished: bool = True,
+    export_todo_list_path: Path | None = None,
 ) -> None:
     from kimix.utils.prompt_str import escape_file_paths
+
+    if export_todo_list_path is not None and export_todo_list_path.suffix.lower() != ".json":
+        base.print_error(
+            f"Invalid todo list export path: {export_todo_list_path}. "
+            "Path must end with .json"
+        )
+        export_todo_list_path = None
 
     if session is None:
         session = _create_default_session()
@@ -225,8 +352,7 @@ async def prompt_async(
             info_print,
             label="Start...",
         )
-
-        if prompt_success:
+        if prompt_success and ensure_todo_finished:
             max_todo_attempts = 2
             for attempt in range(max_todo_attempts):
                 todo_reminder = await _maybe_build_todo_reminder(session, strong=(attempt > 0))
@@ -260,7 +386,10 @@ async def prompt_async(
 
     finally:
         if session:
-            await _clear_session_todos(session)
+            if export_todo_list_path is not None:
+                await _export_session_todos(session, export_todo_list_path)
+            else:
+                await _clear_session_todos(session)
             if close_session_after_prompt:
                 await close_session_async(session)
         base._stream.print_word("", True)
@@ -274,7 +403,9 @@ def prompt(
     info_print: bool = True,
     cancel_callable: Callable[[], bool] | None = None,
     close_session_after_prompt: bool = False,
-    merge_wire_messages: bool | None = None
+    merge_wire_messages: bool | None = None,
+    ensure_todo_finished: bool = True,
+    export_todo_list_path: Path | None = None,
 ) -> None:
     asyncio.run(
         prompt_async(
@@ -285,7 +416,9 @@ def prompt(
             info_print,
             cancel_callable,
             close_session_after_prompt,
-            merge_wire_messages=merge_wire_messages
+            merge_wire_messages=merge_wire_messages,
+            ensure_todo_finished=ensure_todo_finished,
+            export_todo_list_path=export_todo_list_path,
         ))
 
 
@@ -332,7 +465,9 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
 
         reminder = (
             "read the following requirement carefully and generate a comprehensive plan. "
-            f"Save the complete plan to a file using the WritePlan tool.\n\n"
+            "Save the complete plan to a file using the WritePlan tool. "
+            "After generating the plan, call `TodoList` to list the implementation steps "
+            "with their statuses, so the execution agent can track progress.\n\n"
             f"Requirement:\n{requirement.strip()}"
         )
 
@@ -425,7 +560,8 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
             revision_reminder = (
                 "The user reviewed the plan and wants the following changes:\n\n"
                 f"{feedback.strip()}\n\n"
-                "Please update the plan file accordingly using the WritePlan or EditPlan tools."
+                "Please update the plan file accordingly using the WritePlan or EditPlan tools. "
+                "After updating the plan, call `TodoList` to reflect the revised implementation steps."
             )
             try:
                 base._stream.colorful_print_word(
@@ -453,8 +589,10 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
                 )
                 # Continue the loop so the user can try again
 
-        # User approved — close planner session, then proceed to implementation
+        # User approved — export planner todos, close planner session, then proceed to implementation
+        plan_todos_path = Path(".kimix_cache") / f"plan_todos_{uuid.uuid4().hex}.json"
         if planner_session:
+            await _export_session_todos(planner_session, plan_todos_path)
             await close_session_async(planner_session)
             planner_session = None
         _enable_plan.value = False
@@ -473,20 +611,24 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
         plan_content = plan_file.read_text(encoding="utf-8", errors="replace")
         plan_size = len(plan_content.encode("utf-8"))
         regular_session = _create_default_session()
+        if plan_todos_path.exists():
+            await _import_session_todos(regular_session, plan_todos_path)
         if plan_size > 100 * 1024:
-            impl_prompt = f"Implement the plan in `{plan_file}`."
+            impl_prompt = f"Call `TodoList` to get current todo list. Implement the plan in `{plan_file}`."
             review_reminder = f"Review the plan in `{plan_file}` and ensure all tasks are completed."
         else:
-            impl_prompt = f"Implement this plan:\n\n{plan_content}"
+            impl_prompt = f"Call `TodoList` to get current todo list. Implement this plan:\n\n{plan_content}"
             review_reminder = f"Review this plan and ensure all tasks are completed:\n\n{plan_content}"
         await prompt_async(
             impl_prompt,
             session=regular_session,
+            ensure_todo_finished=False,
         )
 
         await prompt_async(
             review_reminder,
             session=regular_session,
+            ensure_todo_finished=False,
         )
     except Exception as exc:
         base._stream.colorful_print_word(

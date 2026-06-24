@@ -46,7 +46,7 @@ from kimi_cli.tools.file.replace import EditFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.think import Think
-from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.todo import TodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
 from kimi_cli.utils.environment import Environment
@@ -253,9 +253,9 @@ def think_tool() -> Think:
 
 
 @pytest.fixture
-def set_todo_list_tool(runtime: Runtime) -> SetTodoList:
-    """Create a SetTodoList tool instance."""
-    return SetTodoList(runtime)
+def todo_list_tool(runtime: Runtime) -> TodoList:
+    """Create a TodoList tool instance."""
+    return TodoList(runtime)
 
 
 @pytest.fixture

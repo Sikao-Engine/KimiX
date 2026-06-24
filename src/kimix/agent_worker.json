@@ -9,7 +9,7 @@
       "kimix.tools.file.input:Input",
       "kimix.tools.background:TaskOutput",
       "kimix.tools.skill:Search",
-      "kimi_cli.tools.todo:SetTodoList",
+      "kimi_cli.tools.todo:TodoList",
       "kimi_cli.tools.file:ReadFile",
       "kimi_cli.tools.file:EditFile",
       "kimi_cli.tools.file:WriteFile",

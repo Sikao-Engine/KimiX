@@ -18,7 +18,7 @@ from kimi_cli.tools.file.replace import EditFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.think import Think
-from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.todo import TodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
 
@@ -59,9 +59,9 @@ def test_think_description(think_tool: Think):
     )
 
 
-def test_set_todo_list_description(set_todo_list_tool: SetTodoList):
-    """Test the description of SetTodoList tool."""
-    assert set_todo_list_tool.base.description == snapshot(
+def test_todo_list_description(todo_list_tool: TodoList):
+    """Test the description of TodoList tool."""
+    assert todo_list_tool.base.description == snapshot(
         "Track progress with a todo list."
     )
 

@@ -8,7 +8,7 @@
       "kimix.tools.py:Python",
       "kimix.tools.file.input:Input",
       "kimix.tools.background:TaskOutput",
-      "kimi_cli.tools.todo:SetTodoList",
+      "kimi_cli.tools.todo:TodoList",
       "kimi_cli.tools.file:ReadFile",
       "kimi_cli.tools.file:EditFile",
       "kimi_cli.tools.file:WriteFile",

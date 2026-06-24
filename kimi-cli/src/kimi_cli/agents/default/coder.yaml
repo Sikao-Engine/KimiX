@@ -19,5 +19,5 @@ agent:
   exclude_tools:
     - "kimi_cli.tools.agent:Agent"
     - "kimi_cli.tools.ask_user:AskUserQuestion"
-    - "kimi_cli.tools.todo:SetTodoList"
+    - "kimi_cli.tools.todo:TodoList"
   subagents:

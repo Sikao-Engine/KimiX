@@ -128,10 +128,10 @@ def build_shell_tool_call(tool_call_id: str, command: str) -> str:
     return f"tool_call: {json.dumps(payload)}"
 
 
-def build_set_todo_call(tool_call_id: str, todos: list[dict[str, str]]) -> str:
+def build_todo_call(tool_call_id: str, todos: list[dict[str, str]]) -> str:
     payload = {
         "id": tool_call_id,
-        "name": "SetTodoList",
+        "name": "TodoList",
         "arguments": json.dumps({"todos": todos}),
     }
     return f"tool_call: {json.dumps(payload)}"

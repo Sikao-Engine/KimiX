@@ -8,7 +8,7 @@ from inline_snapshot import snapshot
 
 from .wire_helpers import (
     build_approval_response,
-    build_set_todo_call,
+    build_todo_call,
     build_shell_tool_call,
     collect_until_response,
     make_home_dir,
@@ -817,7 +817,7 @@ def test_display_block_diff_str_replace(tmp_path) -> None:
 
 def test_display_block_todo(tmp_path) -> None:
     script = "\n".join(
-        ["text: todo", build_set_todo_call("tc-1", [{"title": "one", "status": "pending"}])]
+        ["text: todo", build_todo_call("tc-1", [{"title": "one", "status": "pending"}])]
     )
     scripts = [script, "text: done"]
     config_path = write_scripted_config(tmp_path, scripts)
@@ -859,7 +859,7 @@ def test_display_block_todo(tmp_path) -> None:
                         "type": "function",
                         "id": "tc-1",
                         "function": {
-                            "name": "SetTodoList",
+                            "name": "TodoList",
                             "arguments": '{"todos": [{"title": "one", "status": "pending"}]}',
                         },
                         "extras": None,
@@ -924,7 +924,7 @@ def test_tool_call_part_streaming(tmp_path) -> None:
     script = "\n".join(
         [
             "text: start",
-            f"tool_call: {json.dumps({'id': 'tc-1', 'name': 'SetTodoList', 'arguments': None})}",
+            f"tool_call: {json.dumps({'id': 'tc-1', 'name': 'TodoList', 'arguments': None})}",
             'tool_call_part: {"arguments_part": "{"}',
             f"tool_call_part: {part_middle_json}",
             'tool_call_part: {"arguments_part": "}"}',
@@ -969,7 +969,7 @@ def test_tool_call_part_streaming(tmp_path) -> None:
                     "payload": {
                         "type": "function",
                         "id": "tc-1",
-                        "function": {"name": "SetTodoList", "arguments": None},
+                        "function": {"name": "TodoList", "arguments": None},
                         "extras": None,
                     },
                 },

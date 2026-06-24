@@ -15,7 +15,7 @@ from kimi_cli.tools.file.replace import EditFile
 from kimi_cli.tools.file.write import WriteFile
 from kimi_cli.tools.shell import Shell
 from kimi_cli.tools.think import Think
-from kimi_cli.tools.todo import SetTodoList
+from kimi_cli.tools.todo import TodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
 
@@ -102,9 +102,9 @@ def test_think_params_schema(think_tool: Think):
     )
 
 
-def test_set_todo_list_params_schema(set_todo_list_tool: SetTodoList):
-    """Test the schema of SetTodoList tool parameters."""
-    assert set_todo_list_tool.base.parameters == snapshot(
+def test_todo_list_params_schema(todo_list_tool: TodoList):
+    """Test the schema of TodoList tool parameters."""
+    assert todo_list_tool.base.parameters == snapshot(
         {
             "properties": {
                 "todos": {

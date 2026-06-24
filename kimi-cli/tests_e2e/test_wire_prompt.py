@@ -6,7 +6,7 @@ from inline_snapshot import snapshot
 
 from tests_e2e.wire_helpers import (
     build_approval_response,
-    build_set_todo_call,
+    build_todo_call,
     build_shell_tool_call,
     collect_until_request,
     collect_until_response,
@@ -223,7 +223,7 @@ def test_content_part_prompt(tmp_path) -> None:
 
 
 def test_max_steps_reached(tmp_path) -> None:
-    todo_line = build_set_todo_call("tc-1", [{"title": "x", "status": "pending"}])
+    todo_line = build_todo_call("tc-1", [{"title": "x", "status": "pending"}])
     script = "\n".join(
         [
             "text: start",
@@ -277,7 +277,7 @@ def test_max_steps_reached(tmp_path) -> None:
                         "type": "function",
                         "id": "tc-1",
                         "function": {
-                            "name": "SetTodoList",
+                            "name": "TodoList",
                             "arguments": '{"todos": [{"title": "x", "status": "pending"}]}',
                         },
                         "extras": None,

@@ -122,8 +122,8 @@ class Params(BaseModel):
     )
 
 
-class SetTodoList(CallableTool2[Params]):
-    name: str = "SetTodoList"
+class TodoList(CallableTool2[Params]):
+    name: str = "TodoList"
     description: str = "Track progress with a todo list."
     params: type[Params] = Params
 
