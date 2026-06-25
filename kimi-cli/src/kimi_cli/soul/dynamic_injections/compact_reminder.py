@@ -54,7 +54,7 @@ class CompactReminderProvider(DynamicInjectionProvider):
         if self._last_injected_step is not None:
             steps_since = step_no - self._last_injected_step
             usage_growth = context_usage - self._last_injected_usage
-            if steps_since < self._cooldown_steps or usage_growth < 0.05:
+            if steps_since <= self._cooldown_steps or usage_growth < 0.05:
                 return []
 
         self._last_injected_step = step_no

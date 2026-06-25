@@ -12,12 +12,10 @@ if TYPE_CHECKING:
     from kimi_cli.soul.kimisoul import KimiSoul
 
 _RESILIENCE_REMINDER_TYPE = "resilience_reminder"
-
 _RESILIENCE_REMINDER_TEMPLATE = (
-    "You sound like you are about to give up or declare the task finished. "
-    "Keep trying alternatives: research, decompose the problem, test a smaller "
-    "case, or ask a targeted clarifying question. Do not stop until the user's "
-    "request is fully addressed."
+    "Do not give up or declare the task finished. The user's request must be "
+    "fully addressed. Keep trying: research, decompose the problem, test a smaller "
+    "case, or ask a targeted clarifying question. Persist until it is complete."
 )
 
 # Patterns that detect resignation, defeat, or "call it done" language in the
