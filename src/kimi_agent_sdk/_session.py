@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import orjson
+import traceback
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -248,11 +249,14 @@ class Session:
             if aclose is None:
                 return
             await aclose()
+        except RuntimeError as exc:
+            # Print the specific traceback for the harmless
+            # ``RuntimeError: Event loop is closed`` so we can pinpoint where it
+            # originates, but still swallow it because cleanup is best-effort.
+            if "Event loop is closed" in str(exc):
+                traceback.print_exc()
         except Exception:
             # Best-effort cleanup; never let provider close failures escape.
-            # This also covers the harmless ``RuntimeError: Event loop is closed``
-            # that can occur on Windows/Python 3.14 when the loop is already gone
-            # (the OS will reclaim the socket).
             pass
 
     @staticmethod

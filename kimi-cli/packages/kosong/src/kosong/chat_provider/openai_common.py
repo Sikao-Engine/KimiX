@@ -3,6 +3,7 @@ import contextlib
 import copy
 import re
 import ssl
+import traceback
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Mapping
 from typing import Any, cast
@@ -101,9 +102,11 @@ async def _drain_awaitable(awaitable: Awaitable[object]) -> None:
     except RuntimeError as exc:
         # On Windows/Python 3.14, closing an httpx.AsyncClient whose
         # underlying transports were bound to a now-closed ProactorEventLoop
-        # raises RuntimeError('Event loop is closed').  This is harmless —
-        # the OS will reclaim the socket — so we swallow it.
+        # raises RuntimeError('Event loop is closed').  Print the traceback
+        # so we can see exactly where it originates, then swallow it — the OS
+        # will reclaim the socket.
         if "Event loop is closed" in str(exc):
+            traceback.print_exc()
             return
         raise
     except Exception:
@@ -315,7 +318,9 @@ class OpenAICompatibleProviderMixin:
         try:
             await self.client.close()
         except RuntimeError as exc:
-            if "Event loop is closed" not in str(exc):
+            if "Event loop is closed" in str(exc):
+                traceback.print_exc()
+            else:
                 raise
         except asyncio.CancelledError:
             return

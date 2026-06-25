@@ -11,6 +11,7 @@ import contextlib
 import json
 import orjson
 import re
+import traceback
 from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, Self, TypedDict, Unpack, cast
 
@@ -133,9 +134,11 @@ async def _drain_awaitable(awaitable: Awaitable[object]) -> None:
     except RuntimeError as exc:
         # On Windows/Python 3.14, closing an httpx.AsyncClient whose
         # underlying transports were bound to a now-closed ProactorEventLoop
-        # raises RuntimeError('Event loop is closed').  This is harmless —
-        # the OS will reclaim the socket — so we swallow it.
+        # raises RuntimeError('Event loop is closed').  Print the traceback
+        # so we can see exactly where it originates, then swallow it — the OS
+        # will reclaim the socket.
         if "Event loop is closed" in str(exc):
+            traceback.print_exc()
             return
         raise
     except Exception:
@@ -500,9 +503,11 @@ class Anthropic:
         try:
             await self._client.close()
         except RuntimeError as exc:
-            # Swallow the harmless "Event loop is closed" error that can occur
-            # when the process is shutting down on Windows/Python 3.14.
-            if "Event loop is closed" not in str(exc):
+            # Print the traceback for the harmless "Event loop is closed" error
+            # so its origin is visible during debugging, then swallow it.
+            if "Event loop is closed" in str(exc):
+                traceback.print_exc()
+            else:
                 raise
         except asyncio.CancelledError:
             # Cancelled during close (e.g. event-loop shutdown).
