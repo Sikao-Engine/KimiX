@@ -1,7 +1,9 @@
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal, cast, override
 
 import orjson
+import rapidfuzz
 from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field, field_validator
 
@@ -9,6 +11,31 @@ from kimi_cli.session_state import TodoItemState
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
 from kimi_cli import logger
+
+# Fuzzy mode map — maps common synonyms to canonical write modes
+_MODE_MAP: dict[str, Literal["overwrite", "append"]] = {
+    # overwrite synonyms
+    "overwrite": "overwrite",
+    "over_write": "overwrite",
+    "over-write": "overwrite",
+    "replace": "overwrite",
+    "write": "overwrite",
+    "set": "overwrite",
+    "put": "overwrite",
+    "truncate": "overwrite",
+    "rewrite": "overwrite",
+    "new": "overwrite",
+    # append synonyms
+    "append": "append",
+    "add": "append",
+    "merge": "append",
+    "update": "append",
+    "patch": "append",
+    "extend": "append",
+    "concat": "append",
+    "concatenate": "append",
+}
+
 
 # Jumbo fuzzy status map — maps common synonyms to canonical values
 _STATUS_MAP: dict[str, Literal["pending", "in_progress", "done"]] = {
@@ -116,10 +143,25 @@ class Params(BaseModel):
         default=None,
         description="Updated list, a single Todo item, or omit to return current list unchanged.",
     )
-    force_replace: bool = Field(
-        default=False,
-        description="If true, directly replace the old todo-list without validation.",
+    mode: Literal["overwrite", "append"] = Field(
+        default="append",
+        description="Write mode: 'overwrite' replaces the existing todo list; 'append' merges the provided todos into the existing list.",
     )
+    force: bool = Field(
+        default=False,
+        description="If true, bypass the requirement that all existing todos must be done before overwrite mode replaces the list.",
+    )
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _validate_mode(cls, v: str) -> str:
+        normalized = v.strip().lower().replace("-", "_")
+        canonical = _MODE_MAP.get(normalized)
+        if canonical is None:
+            raise ValueError(
+                f"Invalid mode '{v}'. Must be 'overwrite' or 'append' (or a known synonym)."
+            )
+        return canonical
 
 
 class TodoList(CallableTool2[Params]):
@@ -138,11 +180,11 @@ class TodoList(CallableTool2[Params]):
 
         new_todos = [params.todos] if isinstance(params.todos, Todo) else params.todos
 
-        return self._write_todos(new_todos, force_replace=params.force_replace)
+        return self._write_todos(new_todos, mode=params.mode, force=params.force)
 
     # ---- Write mode --------------------------------------------------------
 
-    def _write_todos(self, todos: list[Todo], *, force_replace: bool) -> ToolReturnValue:
+    def _write_todos(self, todos: list[Todo], *, mode: Literal["overwrite", "append"], force: bool) -> ToolReturnValue:
         old_todos = self._load_todos()
 
         # Validate new todos
@@ -165,7 +207,20 @@ class TodoList(CallableTool2[Params]):
                 display=[],
             )
 
-        if not force_replace and old_todos:
+        if mode == "overwrite" and not force and old_todos and not all(t.status == "done" for t in old_todos):
+            unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
+            error_text = (
+                "Error: Cannot overwrite todos while old todos are not all done. "
+                f"Unfinished:\n{unfinished}"
+            )
+            return ToolReturnValue(
+                is_error=True,
+                output=error_text,
+                message="Cannot overwrite todos while old todos are not all done.",
+                display=[],
+            )
+
+        if mode == "append" and old_todos:
             result = self._merge_todos(old_todos, todos)
             if isinstance(result, ToolReturnValue):
                 return result
@@ -218,8 +273,8 @@ class TodoList(CallableTool2[Params]):
         output = "\n".join(output_lines)
 
         message_lines: list[str] = ["Todo list updated."]
-        if force_replace:
-            message_lines.append("Warning: force_replace=True bypasses all validation logic.")
+        if mode == "overwrite" and force:
+            message_lines.append("Warning: mode='overwrite' with force=True replaces the existing todo list and bypasses merge validation logic.")
         message = "\n".join(message_lines)
 
         return ToolReturnValue(
@@ -262,35 +317,60 @@ class TodoList(CallableTool2[Params]):
             f"- [{display_status[t.status]}] {t.title}" for t in selected
         )
 
+    # Score threshold for user-facing title suggestions. rapidfuzz returns a
+    # normalized similarity in [0, 100]; 60 catches minor typos while avoiding
+    # suggestions that share only a few characters.
+    _FUZZY_TITLE_CUTOFF: float = 60.0
+
+    # Warning threshold for append-mode titles that are fuzzy near-matches of
+    # existing titles. Higher than the suggestion cutoff because the warning is
+    # emitted before any merge logic runs and must avoid flagging genuinely new
+    # titles that merely share common words (e.g. "New task" vs "Old task").
+    _FUZZY_WARNING_CUTOFF: float = 85.0
+
     @staticmethod
     def _find_nearest_titles(
         query_titles: list[str],
         candidate_titles: list[str],
         top_k: int = 1,
+        *,
+        score_cutoff: float | None = None,
+        processor: Callable[[str], str] | None = None,
     ) -> dict[str, list[tuple[str, float]]]:
-        """Return nearest candidate titles for each query title using BM25 retrieval.
+        """Return nearest candidate titles for each query title.
 
-        Returns a mapping ``query_title -> [(nearest_title, score), ...]``.  If no
-        candidate titles exist or BM25 returns no hits for a query, the list is
-        empty.
+        Uses a lightweight string similarity matcher (rapidfuzz) instead of
+        rebuilding a full inverted index on every call. Returns a mapping
+        ``query_title -> [(nearest_title, score), ...]``. If no candidate titles
+        exist or no match clears the cutoff, the list is empty.
+
+        Args:
+            query_titles: Titles to look up.
+            candidate_titles: Titles to search against.
+            top_k: Maximum number of nearest matches to return per query.
+            score_cutoff: Minimum rapidfuzz score to include. Defaults to
+                ``_FUZZY_TITLE_CUTOFF`` for backward compatibility.
+            processor: Optional preprocessing function applied to both query and
+                candidate strings before scoring. The returned candidate title is
+                the original (unprocessed) value.
         """
-        from kimix.retrieval import InvertedIndex, NgramTokenizer, Searcher
-
         if not candidate_titles or not query_titles:
             return {q: [] for q in query_titles}
 
-        tokenizer = NgramTokenizer(n=2)
-        index = InvertedIndex()
-        for doc_id, title in enumerate(candidate_titles):
-            index.add_document(doc_id, tokenizer.tokenize(title))
-        index.finalize(stop_threshold=1.0)
-        searcher = Searcher(index, tokenizer=tokenizer)
+        cutoff = score_cutoff if score_cutoff is not None else TodoList._FUZZY_TITLE_CUTOFF
 
         results: dict[str, list[tuple[str, float]]] = {}
         for query in query_titles:
-            hits = searcher.search(query, top_k=top_k)
+            matches = rapidfuzz.process.extract(
+                query,
+                candidate_titles,
+                scorer=rapidfuzz.fuzz.token_sort_ratio,
+                limit=top_k,
+                score_cutoff=cutoff,
+                processor=processor,
+            )
             results[query] = [
-                (candidate_titles[doc_id], float(score)) for doc_id, score in hits
+                (str(match[0]), float(match[1])) for match in matches
             ]
         return results
 
@@ -299,6 +379,43 @@ class TodoList(CallableTool2[Params]):
     ) -> ToolReturnValue | list[Todo]:
         if not old_todos:
             return new_todos
+
+        old_title_list = [t.title for t in old_todos]
+        old_title_set = set(old_title_list)
+
+        # Detect fuzzy near-matches before any merge logic runs. This prevents
+        # LLM-hallucinated title variations from being silently treated as new
+        # todos and also avoids partial state changes when some titles match.
+        fuzzy_warnings: list[tuple[str, str]] = []
+        for new_todo in new_todos:
+            if new_todo.title in old_title_set:
+                continue
+            nearest = self._find_nearest_titles(
+                [new_todo.title],
+                old_title_list,
+                top_k=1,
+                score_cutoff=TodoList._FUZZY_WARNING_CUTOFF,
+                processor=str.lower,
+            )
+            hits = nearest.get(new_todo.title, [])
+            if hits:
+                fuzzy_warnings.append((new_todo.title, hits[0][0]))
+
+        if fuzzy_warnings:
+            lines = [
+                "Warning: The following new todo titles are very similar to existing titles but not identical. "
+                "If you meant the same todo, please use the exact existing title; if it is a new todo, please use a clearly different title.",
+                "",
+            ]
+            for new_title, existing_title in fuzzy_warnings:
+                lines.append(f'- "{new_title}" looks like existing "{existing_title}"')
+            warning_text = "\n".join(lines)
+            return ToolReturnValue(
+                is_error=True,
+                output=warning_text,
+                message=warning_text,
+                display=[],
+            )
 
         # Empty list: treat as clear operation
         if not new_todos:
@@ -357,7 +474,7 @@ class TodoList(CallableTool2[Params]):
                 )
                 for query in sorted(nearest):
                     hits = nearest[query]
-                    if hits and hits[0][1] > 0:
+                    if hits and hits[0][1] >= TodoList._FUZZY_TITLE_CUTOFF:
                         suggestions.append(f'- "{query}" -> "{hits[0][0]}"')
 
             if suggestions:

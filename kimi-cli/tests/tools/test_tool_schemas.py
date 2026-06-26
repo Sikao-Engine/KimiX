@@ -137,9 +137,14 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
 }, "required": ["title", "status"], "type": "object"}, {"type": "null"}],
                     "default": None,
                     "description": "Updated list, a single Todo item, or omit to return current list unchanged.",
-                }, "force_replace": {
+                }, "mode": {
+    "default": "append",
+    "description": "Write mode: 'overwrite' replaces the existing todo list; 'append' merges the provided todos into the existing list.",
+    "enum": ["overwrite", "append"],
+    "type": "string",
+}, "force": {
     "default": False,
-    "description": "If true, directly replace the old todo-list without validation.",
+    "description": "If true, bypass the requirement that all existing todos must be done before overwrite mode replaces the list.",
     "type": "boolean",
 }},
             "type": "object",

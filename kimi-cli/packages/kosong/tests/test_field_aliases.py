@@ -290,11 +290,11 @@ def test_model_aliases() -> None:
 def test_todo_aliases() -> None:
     class Model(BaseModel):
         todos: list[str] = Field(default_factory=list)
-        force_replace: bool = False
+        mode: str = "append"
 
-    data = {"items": ["a"], "replace": True}
+    data = {"items": ["a"], "replace": "overwrite"}
     repaired = _repair_dict_for_model(data, Model, FIELD_ALIASES_TODO)
-    assert repaired == {"todos": ["a"], "force_replace": True}
+    assert repaired == {"todos": ["a"], "mode": "overwrite"}
 
 
 def test_active_aliases() -> None:
@@ -1063,3 +1063,76 @@ def test_callable_tool2_no_repair_note_when_repair_not_attempted() -> None:
     result = asyncio.run(tool.call("not_a_dict"))
     assert isinstance(result, ToolValidateError)
     assert "automatic argument repair was attempted" not in result.message
+
+
+# ---------------------------------------------------------------------------
+# 14. Tests for fuzzy key matching in _repair_dict_for_model
+# ---------------------------------------------------------------------------
+
+
+def test_fuzzy_match_keys_case_insensitive() -> None:
+    """Case differences should not suppress strong fuzzy matches."""
+    class Model(BaseModel):
+        base_url: str = ""
+
+    # ``base_URL`` differs only in case from the field ``base_url``.
+    repaired = _repair_dict_for_model({"base_URL": "https://example.com"}, Model)
+    assert repaired == {"base_url": "https://example.com"}
+
+
+def test_fuzzy_match_keys_short_names_ignored() -> None:
+    """Short keys (< 4 chars) are never remapped via fuzzy matching."""
+    class Model(BaseModel):
+        id: str = ""
+
+    repaired = _repair_dict_for_model({"if": "123"}, Model)
+    # ``if`` is too short to fuzzy-match to ``id``.
+    assert repaired == {"if": "123"}
+
+
+def test_fuzzy_match_keys_one_to_one_assignment() -> None:
+    """Each unmapped key can be consumed by at most one missing field."""
+    class Model(BaseModel):
+        base_url: str = ""
+        base_path: str = ""
+
+    data = {"base_uri": "https://example.com"}
+    repaired = _repair_dict_for_model(data, Model)
+    # ``base_uri`` should map to exactly one of the two fields; the other
+    # field remains absent (its default value is not present in input).
+    matched = {k for k in ("base_url", "base_path") if k in repaired}
+    assert len(matched) == 1
+    assert repaired[next(iter(matched))] == "https://example.com"
+
+
+def test_fuzzy_match_keys_weak_matches_rejected() -> None:
+    """Low-similarity keys are not remapped."""
+    class Model(BaseModel):
+        description: str = ""
+
+    repaired = _repair_dict_for_model({"xyz": "nope"}, Model)
+    assert repaired == {"xyz": "nope"}
+
+
+def test_fuzzy_match_keys_helper_directly() -> None:
+    """``_fuzzy_match_keys`` returns the expected case-insensitive mapping."""
+    from kosong.tooling import _fuzzy_match_keys
+
+    missing = {"base_url", "output_path"}
+    available = {"base_URL", "out_path"}
+    matches = _fuzzy_match_keys(missing, available)
+    assert matches["base_url"] == "base_URL"
+    assert matches["output_path"] == "out_path"
+
+
+def test_fuzzy_match_keys_helper_uses_strongest_first() -> None:
+    """The helper assigns the strongest match when keys compete."""
+    from kosong.tooling import _fuzzy_match_keys
+
+    # ``base_url`` is closer to ``base_uri`` than ``base_path`` is.
+    missing = {"base_url", "base_path"}
+    available = {"base_uri"}
+    matches = _fuzzy_match_keys(missing, available)
+    assert "base_url" in matches
+    assert matches["base_url"] == "base_uri"
+    assert "base_path" not in matches

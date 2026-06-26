@@ -489,9 +489,12 @@ FIELD_ALIASES_TODO: dict[str, str] = {
     "list": "todos",
     "tasks": "todos",
     "entries": "todos",
-    # force_replace
-    "replace": "force_replace",
-    "override": "force_replace",
+    "replace": "mode",
+    "override": "mode",
+    "overwrite": "mode",
+    "append": "mode",
+    "merge": "mode",
+    "update": "mode",
 }
 
 FIELD_ALIASES_ACTIVE: dict[str, str] = {
@@ -682,6 +685,70 @@ def _cached_model_field_info(model: type[BaseModel]) -> tuple[
     return known, field_meta, extra_forbid, frozenset(model.model_fields.keys())
 
 
+def _fuzzy_match_keys(
+    missing: set[str],
+    available: set[str],
+    cutoff_short: float = 0.80,
+    cutoff_long: float = 0.75,
+    min_length: int = 4,
+) -> dict[str, str]:
+    """Fuzzy-map missing field names to still-available unmapped keys.
+
+    The matching is case-insensitive so that plausible LLM casing differences
+    (e.g. ``base_url`` vs ``base_URL``) do not suppress an otherwise strong
+    match. Each available key is consumed at most once, and the strongest
+    matches are applied first.
+
+    Returns a mapping ``missing_field -> original_available_key``.
+    """
+    if not missing or not available:
+        return {}
+
+    # Build lowercase lookup so we can match case-insensitively while still
+    # returning the original key.
+    available_lower: dict[str, str] = {}
+    for key in available:
+        lower = key.lower()
+        # If two keys differ only by case, keep the first encountered; this is
+        # deterministic and rare in practice.
+        available_lower.setdefault(lower, key)
+    available_list = list(available_lower.keys())
+
+    candidates: list[tuple[float, str, str]] = []
+    for missing_field in missing:
+        if len(missing_field) < min_length:
+            continue
+        # Longer field names are harder to type exactly; allow a slightly lower cutoff.
+        cutoff = cutoff_long if len(missing_field) >= 8 else cutoff_short
+        close = difflib.get_close_matches(
+            missing_field.lower(), available_list, n=1, cutoff=cutoff
+        )
+        if not close:
+            continue
+        matched_lower = close[0]
+        matched_key = available_lower[matched_lower]
+        if len(matched_key) < min_length:
+            continue
+        # get_close_matches already applied the cutoff, but we need a numeric
+        # score to sort candidates across different missing fields. Compute the
+        # ratio once against the lowercased strings.
+        ratio = difflib.SequenceMatcher(
+            None, missing_field.lower(), matched_lower
+        ).ratio()
+        candidates.append((ratio, missing_field, matched_key))
+
+    # Apply strongest matches first; each unmapped key can only be used once.
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    used: set[str] = set()
+    result: dict[str, str] = {}
+    for _ratio, missing_field, matched_key in candidates:
+        if matched_key in used:
+            continue
+        used.add(matched_key)
+        result[missing_field] = matched_key
+    return result
+
+
 def _repair_dict_for_model(
     data: dict[str, Any],
     model: type[BaseModel],
@@ -735,31 +802,9 @@ def _repair_dict_for_model(
                 break
 
     # Third pass: fuzzy match remaining missing fields against still-available unmapped keys.
-    available = list(unmapped_keys)
-    if available and missing:
-        candidates: list[tuple[float, str, str]] = []
-        for missing_field in missing:
-            if len(missing_field) < 4:
-                continue
-            # Longer field names are harder to type exactly; allow a slightly lower cutoff.
-            cutoff = 0.75 if len(missing_field) >= 8 else 0.80
-            close = difflib.get_close_matches(
-                missing_field, available, n=1, cutoff=cutoff
-            )
-            if close:
-                matched_key = close[0]
-                if len(matched_key) < 4:
-                    continue
-                ratio = difflib.SequenceMatcher(None, missing_field, matched_key).ratio()
-                candidates.append((ratio, missing_field, matched_key))
-        # Apply strongest matches first; each unmapped key can only be used once.
-        candidates.sort(key=lambda x: x[0], reverse=True)
-        used: set[str] = set()
-        for _ratio, missing_field, matched_key in candidates:
-            if matched_key in used:
-                continue
-            used.add(matched_key)
-            mapped[missing_field] = mapped.pop(matched_key)
+    fuzzy_matches = _fuzzy_match_keys(missing, unmapped_keys)
+    for missing_field, matched_key in fuzzy_matches.items():
+        mapped[missing_field] = mapped.pop(matched_key)
 
     # Fourth pass: recurse, clamp, fix list/scalar, coerce, all in one loop.
     for fname, nested, constraints, is_list, scalar_type in field_meta:

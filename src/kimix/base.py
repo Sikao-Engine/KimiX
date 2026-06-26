@@ -518,8 +518,8 @@ def _format_tool_args(name: str, args: str | None) -> str | None:
                         parts.append(f"todos=[{len(todos)} items]")
                     else:
                         parts.append("todos=[1 item]")
-                if parsed.get("force_replace"):
-                    parts.append("force_replace=True")
+                if parsed.get("mode") and parsed.get("mode") != "append":
+                    parts.append(f"mode={parsed['mode']}")
                 return ", ".join(parts)
             case "ReadFile":
                 return ", ".join(_collect("path", "line_offset", "n_lines", "max_char", "char_offset"))
