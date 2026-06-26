@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 from kimi_cli.session_state import TodoItemState
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
-from kimi_cli.utils.logging import logger
+from kimi_cli import logger
 
 # Jumbo fuzzy status map — maps common synonyms to canonical values
 _STATUS_MAP: dict[str, Literal["pending", "in_progress", "done"]] = {
@@ -143,30 +143,27 @@ class TodoList(CallableTool2[Params]):
     # ---- Write mode --------------------------------------------------------
 
     def _write_todos(self, todos: list[Todo], *, force_replace: bool) -> ToolReturnValue:
-        """Persist the todo list and return confirmation."""
         old_todos = self._load_todos()
-        messages: list[str] = []
 
         # Validate new todos
         dup = self._find_duplicate_titles(todos)
         if dup:
+            error_text = f"Error: Duplicate todo titles found: {dup}"
             return ToolReturnValue(
                 is_error=True,
-                output=f"Error: Duplicate todo titles found: {dup}",
-                message=f"Duplicate todo titles found: {dup}",
+                output=error_text,
+                message=error_text,
                 display=[],
             )
 
         if len(todos) > 4096:
+            error_text = "Error: Todo list exceeds maximum limit of 4096 items."
             return ToolReturnValue(
                 is_error=True,
-                output="Error: Todo list exceeds maximum limit of 4096 items.",
-                message="Todo list exceeds maximum limit of 4096 items.",
+                output=error_text,
+                message=error_text,
                 display=[],
             )
-
-        if force_replace:
-            messages.append("Warning: force_replace=True bypasses all validation logic.")
 
         if not force_replace and old_todos:
             result = self._merge_todos(old_todos, todos)
@@ -212,13 +209,23 @@ class TodoList(CallableTool2[Params]):
             )
 
         items = [TodoDisplayItem(title=todo.title, status=todo.status) for todo in todos]
-        output = "Todo list updated"
-        if messages:
-            output += "\n" + "\n".join(messages)
+
+        active_summary = self._format_todos(todos)
+
+        output_lines: list[str] = ["Todo list updated"]
+        if active_summary:
+            output_lines.append(active_summary)
+        output = "\n".join(output_lines)
+
+        message_lines: list[str] = ["Todo list updated."]
+        if force_replace:
+            message_lines.append("Warning: force_replace=True bypasses all validation logic.")
+        message = "\n".join(message_lines)
+
         return ToolReturnValue(
             is_error=False,
             output=output,
-            message="Todo list updated.",
+            message=message,
             display=[TodoDisplayBlock(items=items)],
         )
 
@@ -231,13 +238,65 @@ class TodoList(CallableTool2[Params]):
             seen.add(t.title)
         return None
 
+    @staticmethod
+    def _format_todos(
+        todos: list[Todo],
+        *,
+        status_filter: tuple[Literal["pending", "in_progress", "done"], ...] = (
+            "pending",
+            "in_progress",
+        ),
+        display_status: dict[Literal["pending", "in_progress", "done"], str] | None = None,
+    ) -> str:
+        """Return a dense Markdown summary of selected todos, or '' if none."""
+        if display_status is None:
+            display_status = {
+                "pending": "pending",
+                "in_progress": "in progress",
+                "done": "done",
+            }
+        selected = [t for t in todos if t.status in status_filter]
+        if not selected:
+            return ""
+        return "\n".join(
+            f"- [{display_status[t.status]}] {t.title}" for t in selected
+        )
+
+    @staticmethod
+    def _find_nearest_titles(
+        query_titles: list[str],
+        candidate_titles: list[str],
+        top_k: int = 1,
+    ) -> dict[str, list[tuple[str, float]]]:
+        """Return nearest candidate titles for each query title using BM25 retrieval.
+
+        Returns a mapping ``query_title -> [(nearest_title, score), ...]``.  If no
+        candidate titles exist or BM25 returns no hits for a query, the list is
+        empty.
+        """
+        from kimix.retrieval import InvertedIndex, NgramTokenizer, Searcher
+
+        if not candidate_titles or not query_titles:
+            return {q: [] for q in query_titles}
+
+        tokenizer = NgramTokenizer(n=2)
+        index = InvertedIndex()
+        for doc_id, title in enumerate(candidate_titles):
+            index.add_document(doc_id, tokenizer.tokenize(title))
+        index.finalize(stop_threshold=1.0)
+        searcher = Searcher(index, tokenizer=tokenizer)
+
+        results: dict[str, list[tuple[str, float]]] = {}
+        for query in query_titles:
+            hits = searcher.search(query, top_k=top_k)
+            results[query] = [
+                (candidate_titles[doc_id], float(score)) for doc_id, score in hits
+            ]
+        return results
+
     def _merge_todos(
         self, old_todos: list[Todo], new_todos: list[Todo]
     ) -> ToolReturnValue | list[Todo]:
-        """Validate and merge new todos into old todos.
-
-        Returns a ToolReturnValue on error, or the merged todo list on success.
-        """
         if not old_todos:
             return new_todos
 
@@ -245,18 +304,18 @@ class TodoList(CallableTool2[Params]):
         if not new_todos:
             all_old_done = all(t.status == "done" for t in old_todos)
             if not all_old_done:
+                unfinished = ", ".join(t.title for t in old_todos if t.status != "done")
+                error_text = (
+                    "Error: Cannot clear todos while old todos are not all done. "
+                    f"Unfinished: {unfinished}"
+                )
                 return ToolReturnValue(
                     is_error=True,
-                    output=(
-                        "Error: Cannot clear todos while old todos are not all done. "
-                        "Unfinished: "
-                        + ", ".join(t.title for t in old_todos if t.status != "done")
-                    ),
-                    message="Cannot clear todos while old todos are not all done.",
+                    output=error_text,
+                    message=error_text,
                     display=[],
                 )
             return new_todos
-
         old_titles = {t.title for t in old_todos}
         new_titles = {t.title for t in new_todos}
 
@@ -268,7 +327,7 @@ class TodoList(CallableTool2[Params]):
             merged: list[Todo] = []
             seen: set[str] = set()
             for t in old_todos:
-                merged.append(Todo(title=t.title, status=status_map[t.title]))
+                merged.append(Todo(title=t.title, status=cast(Literal["pending", "in_progress", "done"], status_map[t.title])))
                 seen.add(t.title)
             for new_todo in new_todos:
                 if new_todo.title not in seen:
@@ -276,17 +335,40 @@ class TodoList(CallableTool2[Params]):
                     seen.add(new_todo.title)
             return merged
 
-        has_new_titles = bool(new_titles - old_titles)
+        unmatched = new_titles - old_titles
+        has_new_titles = bool(unmatched)
         all_old_done = all(t.status == "done" for t in old_todos)
         if has_new_titles and not all_old_done:
+            unfinished = ", ".join(t.title for t in old_todos if t.status != "done")
+            base_output = (
+                "Error: Cannot replace with new todos while old todos are not all done. "
+                f"Unfinished: {unfinished}"
+            )
+            base_message = (
+                "Cannot replace with new todos while old todos are not all done."
+            )
+
+            suggestions: list[str] = []
+            if unmatched:
+                nearest = self._find_nearest_titles(
+                    sorted(unmatched),
+                    [t.title for t in old_todos],
+                    top_k=1,
+                )
+                for query in sorted(nearest):
+                    hits = nearest[query]
+                    if hits and hits[0][1] > 0:
+                        suggestions.append(f'- "{query}" -> "{hits[0][0]}"')
+
+            if suggestions:
+                suggestion_text = "\nDid you mean:\n" + "\n".join(suggestions)
+                base_output += suggestion_text
+                base_message += "\nDid you mean:\n" + "\n".join(suggestions)
+
             return ToolReturnValue(
                 is_error=True,
-                output=(
-                    "Error: Cannot replace with new todos while old todos are not all done. "
-                    "Unfinished: "
-                    + ", ".join(t.title for t in old_todos if t.status != "done")
-                ),
-                message="Cannot replace with new todos while old todos are not all done.",
+                output=base_output,
+                message=base_message,
                 display=[],
             )
 
@@ -299,7 +381,13 @@ class TodoList(CallableTool2[Params]):
             status_map = {t.title: t.status for t in old_todos}
             for new_todo in new_todos:
                 status_map[new_todo.title] = new_todo.status
-            merged = [Todo(title=t.title, status=status_map[t.title]) for t in old_todos]
+            merged = [
+                Todo(
+                    title=t.title,
+                    status=cast(Literal["pending", "in_progress", "done"], status_map[t.title]),
+                )
+                for t in old_todos
+            ]
             return merged
 
         return new_todos
@@ -307,7 +395,6 @@ class TodoList(CallableTool2[Params]):
     # ---- Read mode ---------------------------------------------------------
 
     def _read_todos(self) -> ToolReturnValue:
-        """Return the current todo list as text output for the model."""
         todos = self._load_todos()
         if not todos:
             return ToolReturnValue(
@@ -316,13 +403,18 @@ class TodoList(CallableTool2[Params]):
                 message="",
                 display=[],
             )
-
-        lines: list[str] = ["Current todo list:"]
-        for todo in todos:
-            lines.append(f"- [{todo.status}] {todo.title}")
+        formatted = self._format_todos(
+            todos,
+            status_filter=("pending", "in_progress", "done"),
+            display_status={
+                "pending": "pending",
+                "in_progress": "in_progress",
+                "done": "done",
+            },
+        )
         return ToolReturnValue(
             is_error=False,
-            output="\n".join(lines),
+            output="\n".join(["Current todo list:", formatted]),
             message="",
             display=[],
         )
@@ -360,7 +452,7 @@ class TodoList(CallableTool2[Params]):
         result: list[Todo] = []
         for t in fresh.todos:
             try:
-                result.append(Todo(title=t.title, status=t.status))
+                result.append(Todo(title=t.title, status=cast(Literal["pending", "in_progress", "done"], t.status)))
             except Exception:
                 logger.warning("Skipping malformed todo item in root state: {t}", t=t)
         return result

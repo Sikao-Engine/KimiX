@@ -688,6 +688,7 @@ def test_build_rg_args_defaults():
     args = _build_rg_args("/usr/bin/rg", Params(pattern="test", path="/tmp"))
 
     # Fixed params always present
+    assert "--no-config" in args
     assert "--hidden" in args
     assert "--max-columns" in args
     for vcs in (".git", ".svn", ".hg", ".bzr", ".jj", ".sl"):
@@ -702,6 +703,26 @@ def test_build_rg_args_defaults():
     )
     assert "--max-columns" not in content_args
     assert "--files-with-matches" not in content_args
+    # default head_limit=250 adds --max-count with margin
+    assert "--max-count" in content_args
+    idx = content_args.index("--max-count")
+    assert content_args[idx + 1] == "1250"  # 0 + 250 + 1000
+
+    # head_limit=0 (unlimited): no --max-count
+    unlimited_args = _build_rg_args(
+        "/usr/bin/rg",
+        Params(pattern="x", path="/tmp", output_mode="content", head_limit=0),
+    )
+    assert "--max-count" not in unlimited_args
+
+    # content mode with head_limit + offset: adds --max-count including both
+    limited_args = _build_rg_args(
+        "/usr/bin/rg",
+        Params(pattern="x", path="/tmp", output_mode="content", head_limit=30, offset=5),
+    )
+    assert "--max-count" in limited_args
+    idx = limited_args.index("--max-count")
+    assert limited_args[idx + 1] == "1035"  # 5 + 30 + 1000
 
     # count_matches mode: has --count-matches
     count_args = _build_rg_args(
@@ -781,6 +802,21 @@ def test_strip_path_prefix_windows(monkeypatch):
         "--",
     ]
     result = _strip_path_prefix(output, "C:\\repo")
+    assert result == [
+        "src\\a.py:42:code",
+        "src\\b.py-41-context",
+        "--",
+    ]
+
+
+def test_strip_path_prefix_mixed_separators():
+    """Prefix stripping handles ripgrep's mixed Windows-style paths."""
+    output = [
+        "D:/repo\\src\\a.py:42:code",
+        "D:/repo\\src\\b.py-41-context",
+        "--",
+    ]
+    result = _strip_path_prefix(output, "D:\\repo")
     assert result == [
         "src\\a.py:42:code",
         "src\\b.py-41-context",

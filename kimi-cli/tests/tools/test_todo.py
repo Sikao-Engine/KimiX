@@ -84,8 +84,8 @@ class TestTodoListOutputNotEmpty:
         clear_params = Params(todos=[], force_replace=True)
         result = await todo_list_tool(clear_params)
         assert not result.is_error
-        assert result.output.startswith("Todo list updated")
-        assert "force_replace" in result.output
+        assert result.output == "Todo list updated"
+        assert "force_replace=True bypasses all validation logic" in result.message
 
         # Verify cleared
         read_params = Params(todos=None)
@@ -159,6 +159,101 @@ class TestTodoListOutputNotEmpty:
         read_params = Params(todos=None)
         result = await todo_list_tool(read_params)
         assert result.display == []
+
+
+class TestTodoListActiveSummary:
+    """Tests for the active-todo summary appended to successful writes."""
+
+    async def test_write_outputs_pending_and_in_progress_summary(
+        self, todo_list_tool: TodoList
+    ):
+        """Successful writes list pending and in_progress todos in output."""
+        params = Params(
+            todos=[
+                Todo(title="Pending task", status="pending"),
+                Todo(title="In progress task", status="in_progress"),
+                Todo(title="Done task", status="done"),
+            ]
+        )
+        result = await todo_list_tool(params)
+        assert not result.is_error
+        assert "- [pending] Pending task" in result.output
+        assert "- [in progress] In progress task" in result.output
+        assert "Done task" not in result.output
+
+    async def test_write_summary_omits_done_items(self, todo_list_tool: TodoList):
+        """When all todos are done, no active summary is emitted."""
+        params = Params(todos=[Todo(title="Only done", status="done")])
+        result = await todo_list_tool(params)
+        assert not result.is_error
+        assert result.output == "Todo list updated"
+
+    async def test_write_summary_preserved_when_all_done(self, todo_list_tool: TodoList):
+        """Marking all active todos as done removes the active summary."""
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Active A", status="pending"),
+                    Todo(title="Active B", status="in_progress"),
+                ]
+            )
+        )
+
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Active A", status="done"),
+                    Todo(title="Active B", status="done"),
+                ]
+            )
+        )
+        assert not result.is_error
+        assert result.output == "Todo list updated"
+
+    async def test_write_summary_with_force_replace_warning(
+        self, todo_list_tool: TodoList
+    ):
+        """Warning from force_replace is in message; active summary is in output."""
+        params = Params(
+            todos=[
+                Todo(title="Forced pending", status="pending"),
+                Todo(title="Forced in progress", status="in_progress"),
+            ],
+            force_replace=True,
+        )
+        result = await todo_list_tool(params)
+        assert not result.is_error
+        assert result.output.startswith("Todo list updated")
+        assert "- [pending] Forced pending" in result.output
+        assert "- [in progress] Forced in progress" in result.output
+        assert "force_replace" not in result.output
+        assert "force_replace=True bypasses all validation logic" in result.message
+
+    async def test_write_summary_order_matches_persisted_order(
+        self, todo_list_tool: TodoList
+    ):
+        """Active todos are listed in the exact order they appear after the write."""
+        params = Params(
+            todos=[
+                Todo(title="First", status="pending"),
+                Todo(title="Second", status="in_progress"),
+                Todo(title="Third", status="pending"),
+                Todo(title="Fourth", status="done"),
+                Todo(title="Fifth", status="in_progress"),
+            ]
+        )
+        result = await todo_list_tool(params)
+        assert not result.is_error
+
+        active_lines = [
+            line for line in result.output.splitlines() if line.startswith("- [")
+        ]
+        assert active_lines == [
+            "- [pending] First",
+            "- [in progress] Second",
+            "- [pending] Third",
+            "- [in progress] Fifth",
+        ]
 
 
 class TestTodoListIncrementalUpdate:
@@ -275,11 +370,11 @@ class TestTodoListValidation:
         assert "exceeds maximum limit of 4096" in result.output
 
     async def test_force_replace_outputs_warning(self, todo_list_tool: TodoList):
-        """force_replace=True should include a warning in the output."""
+        """force_replace=True should include a warning in the message."""
         params = Params(todos=[Todo(title="Task", status="pending")], force_replace=True)
         result = await todo_list_tool(params)
         assert not result.is_error
-        assert "force_replace=True bypasses all validation logic" in result.output
+        assert "force_replace=True bypasses all validation logic" in result.message
 
     async def test_status_regression_blocked(self, todo_list_tool: TodoList):
         """Changing a done todo back to pending/in_progress should be blocked."""
@@ -589,6 +684,73 @@ class TestTodoListSubagent:
 # --- Additional comprehensive tests ---
 
 
+class TestTodoListFuzzyMatching:
+    """Test fuzzy title matching in error messages."""
+
+    async def test_new_todo_typo_suggests_nearest_title(
+        self, todo_list_tool: TodoList
+    ):
+        """A typo in a new todo title should suggest the nearest existing title."""
+        await todo_list_tool(
+            Params(todos=[Todo(title="Implement feature", status="pending")])
+        )
+
+        result = await todo_list_tool(
+            Params(todos=[Todo(title="Implement featuer", status="pending")])
+        )
+        assert result.is_error
+        assert "Cannot replace with new todos" in result.output
+        assert "Implement featuer" in result.output
+        assert "Implement feature" in result.output
+        assert "Did you mean" in result.output
+
+    async def test_new_todo_no_match_does_not_crash(
+        self, todo_list_tool: TodoList
+    ):
+        """A completely unrelated title should still error without crashing."""
+        await todo_list_tool(Params(todos=[Todo(title="Old task", status="pending")]))
+
+        result = await todo_list_tool(
+            Params(todos=[Todo(title="Completely unrelated", status="pending")])
+        )
+        assert result.is_error
+        assert isinstance(result.output, str)
+        assert result.output
+        assert isinstance(result.message, str)
+        assert result.message
+
+    def test_find_nearest_titles_helper_directly(self):
+        """_find_nearest_titles should return BM25 nearest matches."""
+        nearest = TodoList._find_nearest_titles(
+            ["foo bar"], ["foo baz", "qux"], top_k=1
+        )
+        assert "foo bar" in nearest
+        assert len(nearest["foo bar"]) == 1
+        assert nearest["foo bar"][0][0] == "foo baz"
+
+        empty_candidates = TodoList._find_nearest_titles(["foo"], [], top_k=1)
+        assert empty_candidates == {"foo": []}
+
+    async def test_fuzzy_suggestions_in_subagent_context(self, runtime: Runtime):
+        """Fuzzy suggestions should work when TodoList runs in a subagent."""
+        subagent_runtime = runtime.copy_for_subagent(
+            agent_id="test-sub-fuzzy",
+            subagent_type="coder",
+        )
+        assert subagent_runtime.subagent_store is not None
+        subagent_runtime.subagent_store.instance_dir("test-sub-fuzzy", create=True)
+
+        tool = TodoList(subagent_runtime)
+        await tool(Params(todos=[Todo(title="Sub task", status="in_progress")]))
+
+        result = await tool(Params(todos=[Todo(title="Sub taks", status="pending")]))
+        assert result.is_error
+        assert "Cannot replace with new todos" in result.output
+        assert "Sub taks" in result.output
+        assert "Sub task" in result.output
+        assert "Did you mean" in result.output
+
+
 class TestTodoModel:
     """Test Todo model validation."""
 
@@ -718,7 +880,7 @@ class TestTodoListRegression:
             )
         )
         assert not result.is_error
-        assert "force_replace" in result.output
+        assert "force_replace=True bypasses all validation logic" in result.message
 
         read = await todo_list_tool(Params(todos=None))
         assert "[pending] B" in read.output

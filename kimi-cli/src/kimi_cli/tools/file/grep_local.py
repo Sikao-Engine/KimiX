@@ -165,6 +165,7 @@ RG_BASE_URL = "https://github.com/BurntSushi/ripgrep/releases/download"
 RG_MAX_BUFFER = 20_000_000  # 20MB stdout/stderr buffer limit
 RG_KILL_GRACE = 5  # seconds: SIGTERM -> SIGKILL
 MAX_BYTES = 100 << 10  # 100KB
+_RG_HEAD_LIMIT_MARGIN = 1000  # extra matches for content-mode --max-count
 _RG_DOWNLOAD_LOCK = asyncio.Lock()
 
 
@@ -297,6 +298,7 @@ def _build_rg_args(rg_path: str, params: Params, *, single_threaded: bool = Fals
     args: list[str] = [rg_path]
 
     # Fixed args
+    args.append("--no-config")  # avoid user config adding slow options
     if params.output_mode != "content":
         args.extend(["--max-columns", "500"])
     args.append("--hidden")
@@ -324,6 +326,12 @@ def _build_rg_args(rg_path: str, params: Params, *, single_threaded: bool = Fals
             args.extend(["--context", str(params.context)])
         if params.line_number:
             args.append("--line-number")
+        # Stop ripgrep early once we have enough matches for the requested
+        # page. A generous margin is included so that sensitive-file
+        # filtering still leaves enough results in the common case.
+        if params.head_limit:
+            max_count = (params.offset or 0) + params.head_limit + _RG_HEAD_LIMIT_MARGIN
+            args.extend(["--max-count", str(max_count)])
 
     # File filtering options
     if params.glob:
@@ -447,15 +455,18 @@ def _join_with_byte_limit(lines: list[str], max_bytes: int = MAX_BYTES) -> tuple
 
 def _strip_path_prefix(lines: list[str], search_base: str) -> list[str]:
     """Strip search_base prefix from each line to produce relative paths."""
-    prefix = search_base.rstrip("/\\")
+    # Normalize to forward slashes so Windows paths from ripgrep (which may
+    # preserve the drive-letter slash from the input path while using
+    # backslashes elsewhere) still match search_base from os.path.abspath.
+    prefix = search_base.replace("\\", "/").rstrip("/")
     prefix_slash = prefix + "/"
-    prefix_backslash = prefix + "\\"
-    return [
-        line[len(prefix_slash):] if line.startswith(prefix_slash)
-        else line[len(prefix_backslash):] if line.startswith(prefix_backslash)
-        else line
-        for line in lines
-    ]
+    result: list[str] = []
+    for line in lines:
+        if line.replace("\\", "/").startswith(prefix_slash):
+            result.append(line[len(prefix_slash):])
+        else:
+            result.append(line)
+    return result
 
 
 def _normalize_output_lines(lines: list[str], output_mode: str) -> list[str]:

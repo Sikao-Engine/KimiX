@@ -57,6 +57,7 @@ def get_system_prompt(
             use_agent_md = True
             use_skills = True
             role_doc = f'You are a {role}'
+            items.append('DO NOT use your own knowledge. Read the provided references, skills, and files first, then judge and act strictly from the evidence you read.')
             items.append('Persist: finish all requirements, keep trying until done.')
             items.append('One action per turn: each response = exactly one tool call, edit, or verification.')
             items.append('Error recovery: retry, adjust approach, or break into sub-tasks. Never give up.')
