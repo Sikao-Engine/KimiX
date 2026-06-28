@@ -311,3 +311,51 @@ uv run kimix --clean --manually-cot
 | `/cd:<path>` | 切换当前工作目录（切换后会重置 skill 目录并清空对话上下文） |
 
 除上述命令外，你也可以直接输入任意自然语言提示词（prompt）发送给 Agent 进行处理。
+
+
+---
+
+## 六、MCP（Model Context Protocol）
+
+Kimix 同时支持作为 MCP 客户端和 MCP 服务器使用。
+
+### 使用 MCP 服务器
+
+将外部 MCP 服务器添加到 Kimix，使其工具、资源和提示词对 Agent 可用：
+
+```bash
+# stdio 服务器
+kimix mcp add --transport stdio my-server -- npx -y @example/mcp-server
+
+# streamable HTTP 服务器
+kimix mcp add --transport http my-server https://api.example.com/mcp
+
+# 列出已配置的服务器
+kimix mcp list
+
+# 测试连接
+kimix mcp test my-server
+```
+
+项目级 MCP 服务器也可以放入版本控制中的 `.kimix/mcp.json`。Kimix 会自动合并全局配置（`~/.kimi/mcp.json`）、项目配置（`.kimix/mcp.json`）以及显式传入的配置，优先级为：显式 > 项目 > 全局。
+
+### 将 Kimix 作为 MCP 服务器对外提供服务
+
+将当前 Kimix 运行时暴露给外部 MCP 客户端（如 Claude Desktop、Cursor 等）：
+
+```bash
+# stdio 传输（适合由客户端启动子进程）
+kimix mcp serve --transport stdio
+
+# streamable HTTP 传输
+kimix mcp serve --transport http --host 127.0.0.1 --port 4097
+```
+
+默认情况下，MCP 服务器会暴露：
+
+- **tools**：当前 Agent 工具集中的所有工具
+- **resources**：`AGENTS.md`、`README.md` 以及工作目录下的项目文件
+- **prompts**：Agent 的系统提示词
+
+使用 `--no-resource` 或 `--no-prompt` 可分别禁用资源或提示词；使用 `--agent-file` 可加载指定的 Agent 配置文件。
+

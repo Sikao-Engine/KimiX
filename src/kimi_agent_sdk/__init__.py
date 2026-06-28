@@ -12,6 +12,10 @@ Key features:
   handling, session persistence, and context management for long-running agent interactions.
 - Message structures, approval types, and exceptions are re-exported from kosong and kimi_cli
   for convenient access.
+- MCP (Model Context Protocol) servers can be attached via `mcp_configs`. Each entry is a
+  `fastmcp.mcp_config.MCPConfig` (or equivalent dict) describing stdio or HTTP servers. Exposed
+  tools are loaded into the agent toolset; resource and prompt discovery is performed for status
+  reporting and future context injection.
 
 Example (high-level API):
 
@@ -92,6 +96,7 @@ from kimi_cli.wire.types import (
     TodoDisplayBlock,
     TodoDisplayItem,
     TokenUsage,
+    UnknownDisplayBlock,
     ToolCallPart,
     ToolResult,
     TurnBegin,
@@ -117,7 +122,7 @@ from kosong.message import (
     ToolCall,
     VideoURLPart,
 )
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue, UnknownDisplayBlock
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 from kimi_agent_sdk._approval import ApprovalHandlerFn
 from kimi_agent_sdk._exception import PromptValidationError, SessionStateError
@@ -163,6 +168,7 @@ __all__ = [
     "ShellDisplayBlock",
     "TodoDisplayBlock",
     "TodoDisplayItem",
+    "UnknownDisplayBlock",
     "TokenUsage",
     "is_event",
     "is_request",

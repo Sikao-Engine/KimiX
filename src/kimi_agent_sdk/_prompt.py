@@ -57,7 +57,10 @@ async def prompt(
         yolo: Automatically approve all approval requests.
         approval_handler_fn: Custom approval handler callback (sync or async).
         agent_file: Agent specification file path.
-        mcp_configs: MCP server configurations.
+        mcp_configs: MCP server configurations. Each entry is a ``fastmcp.mcp_config.MCPConfig``
+            or an equivalent dict with an ``mcpServers`` mapping. Supports stdio, HTTP, and
+            OAuth-enabled servers. Tools are loaded into the agent toolset; resources and prompts
+            are discovered for status reporting.
         skills_dir: Single skills directory (KaosPath). Preserved for SDK compatibility.
         skills_dirs: Multiple skills directories (KaosPath list) for newer kimi-cli.
         max_steps_per_turn: Maximum number of steps in one turn.

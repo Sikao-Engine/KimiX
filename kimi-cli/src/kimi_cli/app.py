@@ -14,11 +14,13 @@ import kaos
 from kaos.path import KaosPath
 from pydantic import SecretStr
 
+from kimi_cli import logger
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.auth.oauth import OAuthManager
 from kimi_cli.background.models import is_terminal_status
 from kimi_cli.config import Config, LLMModel, LLMProvider, load_config
 from kimi_cli.llm import LLM, augment_provider_with_env_vars, create_llm
+from kimi_cli.mcp.config import discover_mcp_configs
 from kimi_cli.session import Session
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul import RunCancelled, run_soul
@@ -27,7 +29,7 @@ from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.utils.aioqueue import QueueShutDown
-from kimi_cli.utils.logging import logger, open_original_stderr, redirect_stderr_to_logger
+from kimi_cli.utils.logging import open_original_stderr, redirect_stderr_to_logger
 from kimi_cli.wire import Wire, WireUISide
 from kimi_cli.wire.types import ApprovalRequest, ApprovalResponse, ContentPart, WireMessage
 
@@ -137,7 +139,7 @@ class KimiCLI:
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
         max_ralph_iterations: int | None = None,
-        **load_agent_custom_arguments, # Add by maxwell
+        **load_agent_custom_arguments,  # Add by maxwell
     ) -> KimiCLI:
         """
         Create a KimiCLI instance.
@@ -232,7 +234,6 @@ class KimiCLI:
                 thinking=thinking,
                 session_id=session.id,
                 oauth=oauth,
-                
                 max_tokens=config.max_tokens,
                 temperature=config.temperature,
                 top_p=config.top_p,
@@ -241,10 +242,11 @@ class KimiCLI:
             )
         else:
             llm.max_context_size = model.max_context_size
-            llm.capabilities = model.capabilities
+            if model.capabilities is not None:
+                llm.capabilities = model.capabilities
             llm.model_config = model
             llm.provider_config = provider
-            
+
         if llm is not None:
             logger.info("Using LLM provider: {provider}", provider=provider)
             logger.info("Using LLM model: {model}", model=model)
@@ -284,10 +286,13 @@ class KimiCLI:
             agent_file = DEFAULT_AGENT_FILE
 
         _phase_t = time.monotonic()
+        discovered_mcp_configs = mcp_configs
+        if discovered_mcp_configs is None:
+            discovered_mcp_configs = discover_mcp_configs(str(session.work_dir))
         agent = await load_agent(
             agent_file,
             runtime,
-            mcp_configs=mcp_configs or [],
+            mcp_configs=discovered_mcp_configs or [],
             start_mcp_loading=True,
             **load_agent_custom_arguments,
         )
@@ -358,7 +363,7 @@ class KimiCLI:
             toolset = self.soul.agent.toolset
             if isinstance(toolset, KimiToolset):
                 await toolset.cleanup()
-        except (Exception, asyncio.CancelledError):
+        except Exception, asyncio.CancelledError:
             logger.warning("Error during toolset cleanup; continuing exit", exc_info=True)
 
         bg_config = self._runtime.config.background

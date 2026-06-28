@@ -166,3 +166,52 @@ uv run kimix --config <path>
 | `/script` | Write and execute Python script (end with `/end`) |
 | `/cmd:<command>` | Execute system command |
 | `/cd:<path>` | Change working directory (resets skills and clears context) |
+
+
+---
+
+## MCP (Model Context Protocol)
+
+Kimix can act as both an MCP client and an MCP server.
+
+### Using MCP Servers
+
+Add an MCP server to Kimix so that its tools, resources, and prompts are available to the agent:
+
+```bash
+# stdio server
+kimix mcp add --transport stdio my-server -- npx -y @example/mcp-server
+
+# streamable HTTP server
+kimix mcp add --transport http my-server https://api.example.com/mcp
+
+# list configured servers
+kimix mcp list
+
+# test a connection
+kimix mcp test my-server
+```
+
+Project-level servers can also be committed to version control in `.kimix/mcp.json`. Kimix automatically merges global (`~/.kimi/mcp.json`), project (`.kimix/mcp.json`), and explicitly supplied configs, with explicit configs taking highest priority.
+
+### Serving Kimix as an MCP Server
+
+Expose the current Kimix runtime to external MCP clients such as Claude Desktop or Cursor:
+
+```bash
+# stdio (for clients that spawn a subprocess)
+kimix mcp serve --transport stdio
+
+# streamable HTTP
+kimix mcp serve --transport http --host 127.0.0.1 --port 4097
+```
+
+By default the server exposes:
+
+- **tools**: every tool in the active agent toolset
+- **resources**: `AGENTS.md`, `README.md`, and project files under the work directory
+- **prompts**: the agent's system prompt
+
+Use `--no-resource` or `--no-prompt` to disable resources or prompts. Use `--agent-file` to load a specific agent specification.
+
+

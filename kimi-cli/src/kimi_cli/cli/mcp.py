@@ -1,49 +1,52 @@
+import contextlib
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import orjson
 import typer
 
+from kimi_cli.mcp.config import (
+    get_global_mcp_config_file,
+    load_global_mcp_config,
+    load_project_mcp_config,
+    merge_mcp_configs,
+)
+
 cli = typer.Typer(help="Manage MCP server configurations.")
 
 
-def get_global_mcp_config_file() -> Path:
-    """Get the global MCP config file path."""
-    from kimi_cli.share import get_share_dir
-
-    return get_share_dir() / "mcp.json"
-
-
-def _load_mcp_config() -> dict[str, Any]:
-    """Load MCP config from global mcp config file."""
+def _load_mcp_config(work_dir: Path | None = None) -> dict[str, Any]:
+    """Load MCP config from global and project mcp config files."""
     from fastmcp.mcp_config import MCPConfig
     from pydantic import ValidationError
 
-    mcp_file = get_global_mcp_config_file()
-    if not mcp_file.exists():
-        return {"mcpServers": {}}
-    try:
-        config = orjson.loads(mcp_file.read_text(encoding="utf-8"))
-    except orjson.JSONDecodeError as e:
-        raise typer.BadParameter(f"Invalid JSON in MCP config file '{mcp_file}': {e}") from e
+    global_config = load_global_mcp_config()
+    project_config = load_project_mcp_config(work_dir)
+    merged = merge_mcp_configs(global_config, project_config)
 
     try:
-        MCPConfig.model_validate(config)
+        MCPConfig.model_validate(merged)
     except ValidationError as e:
-        raise typer.BadParameter(f"Invalid MCP config in '{mcp_file}': {e}") from e
+        config_file = get_global_mcp_config_file()
+        raise typer.BadParameter(f"Invalid MCP config in '{config_file}': {e}") from e
 
-    return config
+    return merged
 
 
 def _save_mcp_config(config: dict[str, Any]) -> None:
     """Save MCP config to default file."""
     mcp_file = get_global_mcp_config_file()
-    mcp_file.write_text(orjson.dumps(config, option=orjson.OPT_INDENT_2).decode("utf-8"), encoding="utf-8")
+    mcp_file.write_text(
+        orjson.dumps(config, option=orjson.OPT_INDENT_2).decode("utf-8"),
+        encoding="utf-8",
+    )
 
 
-def _get_mcp_server(name: str, *, require_remote: bool = False) -> dict[str, Any]:
+def _get_mcp_server(
+    name: str, *, require_remote: bool = False, work_dir: Path | None = None
+) -> dict[str, Any]:
     """Get MCP server config by name."""
-    config = _load_mcp_config()
+    config = _load_mcp_config(work_dir)
     servers = config.get("mcpServers", {})
     if name not in servers:
         typer.echo(f"MCP server '{name}' not found.", err=True)
@@ -86,7 +89,7 @@ Transport = Literal["stdio", "http"]
     Examples:\n
       \n
       # Add streamable HTTP server:\n
-      kimi mcp add --transport http context7 https://mcp.context7.com/mcp --header \"CONTEXT7_API_KEY: ctx7sk-your-key\"\n
+      kimi mcp add --transport http context7 https://mcp.context7.com/mcp --header "CONTEXT7_API_KEY: ctx7sk-your-key"\n
       \n
       # Add streamable HTTP server with OAuth authorization:\n
       kimi mcp add --transport http --auth oauth linear https://mcp.linear.app/mcp\n
@@ -216,10 +219,18 @@ async def _has_oauth_tokens(server_url: str) -> bool:
 
 
 @cli.command("list")
-def mcp_list():
+def mcp_list(
+    work_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--work-dir",
+            help="Project working directory for .kimix/mcp.json discovery.",
+        ),
+    ] = None,
+):
     """List all MCP servers."""
     config_file = get_global_mcp_config_file()
-    config = _load_mcp_config()
+    config = _load_mcp_config(work_dir)
     servers: dict[str, Any] = config.get("mcpServers", {})
 
     typer.echo(f"MCP config file: {config_file}")
@@ -351,3 +362,69 @@ def mcp_test(
             raise typer.Exit(code=1) from None
 
     asyncio.run(_test())
+
+
+@cli.command("serve")
+def mcp_serve(
+    transport: Annotated[
+        Transport,
+        typer.Option(
+            "--transport",
+            "-t",
+            help="Transport for the MCP server. Default: stdio.",
+        ),
+    ] = "stdio",
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Host to bind to for HTTP transport."),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Port to bind to for HTTP transport."),
+    ] = 4097,
+    work_dir: Annotated[
+        Path | None,
+        typer.Option("--work-dir", help="Workspace directory for resources and session."),
+    ] = None,
+    agent_file: Annotated[
+        Path | None,
+        typer.Option("--agent-file", help="Agent specification file to load."),
+    ] = None,
+    no_resource: Annotated[
+        bool,
+        typer.Option("--no-resource", help="Do not expose file resources."),
+    ] = False,
+    no_prompt: Annotated[
+        bool,
+        typer.Option("--no-prompt", help="Do not expose prompts."),
+    ] = False,
+):
+    """Serve Kimix as an MCP server."""
+    import asyncio
+
+    from kaos.path import KaosPath
+
+    from kimi_cli.app import KimiCLI
+    from kimi_cli.mcp.server import serve_http, serve_stdio
+    from kimi_cli.session import Session
+
+    async def _run() -> None:
+        resolved_work_dir = KaosPath(str(work_dir or Path.cwd()))
+        cli_session = await Session.create(resolved_work_dir)
+        cli = await KimiCLI.create(
+            cli_session,
+            agent_file=agent_file,
+        )
+        runtime = cli.soul.agent.runtime
+        options = {
+            "agent": cli.soul.agent,
+            "include_resources": not no_resource,
+            "include_prompts": not no_prompt,
+        }
+        if transport == "stdio":
+            await serve_stdio(runtime, **options)
+        else:
+            await serve_http(runtime, host=host, port=port, **options)
+
+    with contextlib.suppress(KeyboardInterrupt):
+        asyncio.run(_run())

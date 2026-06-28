@@ -2,20 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import orjson
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
+import orjson
 from kaos.path import KaosPath
 from kimi_cli.app import KimiCLI
 from kimi_cli.config import Config
 from kimi_cli.llm import LLM
+from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.session import Session as CliSession
 from kimi_cli.soul import StatusSnapshot
-from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.wire.types import ContentPart, TextPart, ThinkPart, WireMessage
-from kimi_cli.soul.agent import BuiltinSystemPromptArgs
 from kosong.chat_provider import ChatProvider
 
 from kimi_agent_sdk._exception import SessionStateError
@@ -29,6 +28,7 @@ if TYPE_CHECKING:
 def _ensure_type(name: str, value: object, expected: type) -> None:
     if not isinstance(value, expected):
         raise TypeError(f"{name} must be {expected.__name__}, got {type(value).__name__}")
+
 
 def _resolve_skills_dirs(
     skills_dir: KaosPath | None,
@@ -58,12 +58,12 @@ async def _load_config_json(work_dir: KaosPath) -> dict[str, Any]:
         loaded = orjson.loads(raw)
         if isinstance(loaded, dict):
             config_json = loaded
-    except (OSError, orjson.JSONDecodeError, ValueError):
+    except OSError, orjson.JSONDecodeError, ValueError:
         pass
     return {"config_json": config_json}
 
 
-from kimi_cli.soul.context_records import ExportedContext  # noqa: E402
+from kimi_cli.soul.context_records import ExportedContext  # noqa: E402, F401
 
 
 class Session:
@@ -280,7 +280,7 @@ class Session:
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
         max_ralph_iterations: int | None = None,
-        **custom_arguments # Add by maxwell
+        **custom_arguments,  # Add by maxwell
     ) -> Session:
         """
         Create a new Session instance.
@@ -293,7 +293,10 @@ class Session:
             thinking: Whether to enable thinking mode (requires model support).
             yolo: Automatically approve all approval requests.
             agent_file: Agent specification file path.
-            mcp_configs: MCP server configurations.
+            mcp_configs: MCP server configurations. Each entry is a ``fastmcp.mcp_config.MCPConfig``
+                or an equivalent dict with an ``mcpServers`` mapping. Supports stdio, HTTP, and
+                OAuth-enabled servers. Tools are loaded into the agent toolset; resources and
+                prompts are discovered for status reporting.
             skills_dir: Single skills directory (KaosPath). Preserved for SDK compatibility.
             skills_dirs: Multiple skills directories (KaosPath list) for newer kimi-cli.
             max_steps_per_turn: Maximum number of steps in one turn.
@@ -322,7 +325,7 @@ class Session:
         custom_config = await _load_config_json(work_dir_path)
         cli_session.custom_config = custom_config
         llm: LLM | None = None
-        chat_provider: ChatProvider | None = custom_arguments.pop('chat_provider', None)
+        chat_provider: ChatProvider | None = custom_arguments.pop("chat_provider", None)
         if chat_provider is not None:
             llm = LLM(chat_provider, 0, set())
         cli = await KimiCLI.create(
@@ -339,7 +342,7 @@ class Session:
             max_steps_per_turn=max_steps_per_turn,
             max_retries_per_step=max_retries_per_step,
             max_ralph_iterations=max_ralph_iterations,
-            **custom_arguments
+            **custom_arguments,
         )
         session = Session(cli)
         session._anonymous = anonymous if anonymous else session_id is None
@@ -386,7 +389,7 @@ class Session:
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
         max_ralph_iterations: int | None = None,
-        **custom_arguments # Add by maxwell
+        **custom_arguments,  # Add by maxwell
     ) -> Session | None:
         """
         Resume an existing session.
@@ -399,7 +402,10 @@ class Session:
             thinking: Whether to enable thinking mode (requires model support).
             yolo: Automatically approve all approval requests.
             agent_file: Agent specification file path.
-            mcp_configs: MCP server configurations.
+            mcp_configs: MCP server configurations. Each entry is a ``fastmcp.mcp_config.MCPConfig``
+                or an equivalent dict with an ``mcpServers`` mapping. Supports stdio, HTTP, and
+                OAuth-enabled servers. Tools are loaded into the agent toolset; resources and
+                prompts are discovered for status reporting.
             skills_dirs: Skills directories (KaosPath or list of KaosPath).
             skills_dir: Single skills directory (KaosPath). Preserved for SDK compatibility.
             skills_dirs: Multiple skills directories (KaosPath list) for newer kimi-cli.
@@ -430,7 +436,7 @@ class Session:
         custom_config = await _load_config_json(work_dir)
         cli_session.custom_config = custom_config
         llm: LLM | None = None
-        chat_provider: ChatProvider | None = custom_arguments.pop('chat_provider', None)
+        chat_provider: ChatProvider | None = custom_arguments.pop("chat_provider", None)
         if chat_provider is not None:
             llm = LLM(chat_provider, 0, set())
         cli = await KimiCLI.create(
@@ -447,7 +453,7 @@ class Session:
             max_steps_per_turn=max_steps_per_turn,
             max_retries_per_step=max_retries_per_step,
             max_ralph_iterations=max_ralph_iterations,
-            **custom_arguments
+            **custom_arguments,
         )
         session = Session(cli)
         session._anonymous = anonymous if anonymous else session_id is None
@@ -484,20 +490,18 @@ class Session:
         return self._cli.soul.status
 
     def get_custom_data(self) -> dict[str, Any] | None:
-        # Return the custom data dictionary from the underlying CLI session. Always reset in 'clear' 
+        # Return the custom data dictionary from the underlying CLI session. Always reset in 'clear'
         if self._cli is not None and self._cli.session is not None:
             return self._cli.session.custom_data
         return None
-    
+
     def get_custom_config(self) -> dict[str, Any] | None:
         # Return the custom data dictionary from the underlying CLI session.
         if self._cli is not None and self._cli.session is not None:
             return self._cli.session.custom_config
         return None
 
-    async def export(
-        self, output_path: str | Path | None = None
-    ) -> tuple[Path, int]:
+    async def export(self, output_path: str | Path | None = None) -> tuple[Path, int]:
         """Export current session context to a markdown file.
 
         Args:
@@ -627,7 +631,7 @@ class Session:
         await self._close_chat_provider()
         if getattr(self, "_anonymous", False):
             await self._cli.session.delete()
-            
+
     def __del__(self):
         if getattr(self, "_anonymous", False):
             self._cli.session.delete_sync()

@@ -182,6 +182,8 @@ async def test_wire_message_serde():
                             "name": "context7",
                             "status": "connecting",
                             "tools": [],
+                            "resources": [],
+                            "prompts": [],
                         }
                     ],
                 },

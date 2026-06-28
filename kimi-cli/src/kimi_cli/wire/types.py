@@ -161,6 +161,8 @@ class MCPServerSnapshot(BaseModel):
     name: str
     status: Literal["pending", "connecting", "connected", "failed", "unauthorized"]
     tools: tuple[str, ...] = ()
+    resources: tuple[str, ...] = ()
+    prompts: tuple[str, ...] = ()
 
 
 class MCPStatusSnapshot(BaseModel):

@@ -34,6 +34,9 @@ from kosong.utils.typing import JsonType
 from kimi_cli import logger
 from kimi_cli.exception import InvalidToolError, MCPRuntimeError
 from kimi_cli.hooks.engine import HookEngine
+from kimi_cli.mcp.client import MCPClient
+from kimi_cli.mcp.prompts import MCPPromptManager
+from kimi_cli.mcp.resources import MCPResourceManager
 from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.wire.types import (
@@ -52,10 +55,8 @@ from kimi_cli.wire.types import (
 )
 
 if TYPE_CHECKING:
-    import fastmcp
     import mcp
     from fastmcp.client.client import CallToolResult
-    from fastmcp.client.transports import ClientTransport
     from fastmcp.mcp_config import MCPConfig
 
     from kimi_cli.soul.agent import Runtime
@@ -66,9 +67,10 @@ _current_session_id: ContextVar[str] = ContextVar("_current_session_id", default
 _temp_idx = 0
 print_tool_func = print
 
-_temp_folder: Path = Path.home() / '.kimi' / 'logs'
+_temp_folder: Path = Path.home() / ".kimi" / "logs"
 
-def _export_to_temp_file(content: str, ext:str='.log') -> str:
+
+def _export_to_temp_file(content: str, ext: str = ".log") -> str:
     global _temp_idx
     """Export content to a temporary file and return the file path."""
     id = _temp_idx
@@ -76,7 +78,7 @@ def _export_to_temp_file(content: str, ext:str='.log') -> str:
     _temp_folder.mkdir(parents=True, exist_ok=True)
     name = str(_temp_folder / (str(id) + ext))
     # Append content if key exists, otherwise overwrite/create
-    with open(name, 'w', encoding='utf-8') as f:
+    with open(name, "w", encoding="utf-8") as f:
         f.write(content)
     return name
 
@@ -122,10 +124,12 @@ _REMINDER_TEXT_1 = (
 def _make_reminder_text_2(tool_name: str, repeat_count: int, canonical_args: str) -> str:
     return (
         "\n\n<system-reminder>\n"
-        f"You have called this tool with identical parameters {repeat_count} times without progress:\n"
+        f"You have called this tool with identical parameters {repeat_count} "
+        "times without progress:\n"
         f"- tool: {tool_name}\n"
         f"- arguments: {canonical_args}\n"
-        "Do not repeat this call. Choose a different action, different parameters, or finish the task."
+        "Do not repeat this call. Choose a different action, different "
+        "parameters, or finish the task."
         "\n</system-reminder>"
     )
 
@@ -182,7 +186,7 @@ def _canonical_tool_arguments(arguments: Any) -> str:
         return orjson.dumps(
             _sort_json_value(arguments),
         ).decode("utf-8")
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return str(arguments)
 
 
@@ -242,9 +246,9 @@ class KimiToolset:
         self._turn_id: str = ""
 
         # "Different-args" per-tool call tracking (relaxed limitation)
-        self._tool_call_counts: dict[str, int] = {}   # tool_name → total calls this turn
-        self._tool_warned_at: dict[str, set[int]] = {}  # tool_name → {count thresholds already warned}
-        self._turn_tool_warning_issued: bool = False    # flag to avoid flooding multiple tools in same step
+        self._tool_call_counts: dict[str, int] = {}  # tool_name → total calls this turn
+        self._tool_warned_at: dict[str, set[int]] = {}  # thresholds already warned
+        self._turn_tool_warning_issued: bool = False  # avoid flooding multiple tools
 
     def set_hook_engine(self, engine: HookEngine) -> None:
         self._hook_engine = engine
@@ -472,9 +476,11 @@ class KimiToolset:
                     MAX_BYTES = 128 << 10  # 128KB
                     if isinstance(ret.output, str):
                         len_bytes = len(ret.output.encode("utf-8"))
-                        if len_bytes > MAX_BYTES:   # Add by Maxwell: process large size
+                        if len_bytes > MAX_BYTES:  # Add by Maxwell: process large size
                             temp_file = _export_to_temp_file(ret.output)
-                            ret.output = f'Output too large ({len_bytes} bytes), exported to `{temp_file}`'
+                            ret.output = (
+                                f"Output too large ({len_bytes} bytes), exported to `{temp_file}`"
+                            )
                     else:
                         # Handle list[ContentPart] or single ContentPart
                         parts = ret.output if isinstance(ret.output, list) else [ret.output]
@@ -507,8 +513,16 @@ class KimiToolset:
                                     lines.append(f"[{part.type}]")
                             output_str = "\n".join(lines)
                             temp_file = _export_to_temp_file(output_str)
-                            msg = TextPart(text=f'Output too large ({total_bytes} bytes), exported to `{temp_file}`')
-                            ret.output = [msg] if isinstance(ret.output, list) else msg
+                            msg = TextPart(
+                                text=(
+                                    f"Output too large ({total_bytes} bytes), "
+                                    f"exported to `{temp_file}`"
+                                )
+                            )
+                            if isinstance(ret.output, list):
+                                ret.output = [msg]
+                            else:
+                                ret.output = msg.text
                 except Exception as e:
                     tool_elapsed = time.monotonic() - t0
                     logger.exception(
@@ -622,6 +636,8 @@ class KimiToolset:
                 name=name,
                 status=info.status,
                 tools=tuple(tool.name for tool in info.tools),
+                resources=info.resources,
+                prompts=info.prompts,
             )
             for name, info in self._mcp_servers.items()
         )
@@ -738,10 +754,10 @@ class KimiToolset:
             MCPRuntimeError(KimiCLIException, RuntimeError): When any MCP server cannot be
                 connected.
         """
-        import fastmcp
         from fastmcp.mcp_config import MCPConfig, RemoteMCPServer
 
         from kimi_cli.mcp_oauth import create_mcp_oauth, has_mcp_oauth_tokens
+
         async def _check_oauth_tokens(server_url: str) -> bool:
             """Check if OAuth tokens exist for the server."""
             return await has_mcp_oauth_tokens(server_url)
@@ -768,10 +784,33 @@ class KimiToolset:
             server_info.status = "connecting"
             try:
                 assert server_info.client is not None
-                async with server_info.client as client:
-                    for tool in await client.list_tools():
+                client = server_info.client.inner
+                async with client:
+                    tools = await client.list_tools()
+                    for tool in tools:
                         server_info.tools.append(
-                            MCPTool(server_name, tool, client, runtime=runtime)
+                            MCPTool(server_name, tool, server_info.client, runtime=runtime)
+                        )
+
+                    # Best-effort resource/prompt discovery
+                    try:
+                        resources = await MCPResourceManager.list_resources(client)
+                        server_info.resources = tuple(str(r.uri) for r in resources[0])
+                    except Exception as exc:
+                        logger.debug(
+                            "MCP server '{server_name}' does not expose resources: {error}",
+                            server_name=server_name,
+                            error=exc,
+                        )
+
+                    try:
+                        prompts = await MCPPromptManager.list_prompts(client)
+                        server_info.prompts = tuple(p.name for p in prompts)
+                    except Exception as exc:
+                        logger.debug(
+                            "MCP server '{server_name}' does not expose prompts: {error}",
+                            server_name=server_name,
+                            error=exc,
                         )
 
                 for tool in server_info.tools:
@@ -835,7 +874,11 @@ class KimiToolset:
                         continue
                     server_config = server_config.model_copy(update={"auth": auth})
 
-                client = fastmcp.Client(MCPConfig(mcpServers={server_name: server_config}))
+                client = MCPClient(
+                    MCPConfig(mcpServers={server_name: server_config}),
+                    name=server_name,
+                    timeout_ms=runtime.config.mcp.client.tool_call_timeout_ms,
+                )
                 self._mcp_servers[server_name] = MCPServerInfo(
                     status="pending", client=client, tools=[]
                 )
@@ -878,16 +921,18 @@ class KimiToolset:
 @dataclass(slots=True)
 class MCPServerInfo:
     status: Literal["pending", "connecting", "connected", "failed", "unauthorized"]
-    client: fastmcp.Client[Any] | None
+    client: MCPClient | None
     tools: list[MCPTool[Any]]
+    resources: tuple[str, ...] = ()
+    prompts: tuple[str, ...] = ()
 
 
-class MCPTool[T: ClientTransport](CallableTool):
+class MCPTool(CallableTool):
     def __init__(
         self,
         server_name: str,
         mcp_tool: mcp.Tool,
-        client: fastmcp.Client[T],
+        client: MCPClient,
         *,
         runtime: Runtime,
         **kwargs: Any,
@@ -914,20 +959,18 @@ class MCPTool[T: ClientTransport](CallableTool):
             return result.rejection_error()
 
         try:
-            async with self._client as client:
-                result = await client.call_tool(
-                    self._mcp_tool.name,
-                    kwargs,
-                    timeout=self._timeout,
-                    raise_on_error=False,
+            result = await self._client.call_tool(
+                self._mcp_tool.name,
+                kwargs,
+                timeout_ms=int(self._timeout.total_seconds() * 1000),
+            )
+            if result.is_error:
+                logger.warning(
+                    "MCP tool returned error: {tool_name}: {content}",
+                    tool_name=self._mcp_tool.name,
+                    content=[str(p) for p in result.content][:3],
                 )
-                if result.is_error:
-                    logger.warning(
-                        "MCP tool returned error: {tool_name}: {content}",
-                        tool_name=self._mcp_tool.name,
-                        content=[str(p) for p in result.content][:3],
-                    )
-                return convert_mcp_tool_result(result)
+            return convert_mcp_tool_result(result)
         except Exception as e:
             # fastmcp raises `RuntimeError` on timeout and we cannot tell it from other errors
             exc_msg = str(e).lower()

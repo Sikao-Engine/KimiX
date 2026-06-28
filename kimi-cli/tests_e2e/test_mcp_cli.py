@@ -290,3 +290,13 @@ MCP config file: <home_dir>/.kimi/mcp.json
     assert _normalize_cli_output(remove_missing.stderr) == snapshot(
         "MCP server 'missing' not found.\n"
     )
+
+
+def test_mcp_serve_help_shows_subcommand_options(tmp_path: Path) -> None:
+    home_dir = make_home_dir(tmp_path)
+    env = make_env(home_dir)
+
+    result = _run_cli(["mcp", "serve", "--help"], env)
+    assert result.returncode == 0, result.stderr
+    assert "--transport" in result.stdout
+    assert "--port" in result.stdout

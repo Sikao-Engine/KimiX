@@ -35,22 +35,21 @@ def _client_cli() -> None:
 
     while True:
         try:
-            input_str = _input(
-                "\n>>>>>>>>> Enter your prompt or command:\n", text_arr)
-        except KeyboardInterrupt as e:
-            print_success('\nbye.')
+            input_str = _input("\n>>>>>>>>> Enter your prompt or command:\n", text_arr)
+        except KeyboardInterrupt:
+            print_success("\nbye.")
             break
-        except EOFError as e:
-            print_success('\nbye.')
+        except EOFError:
+            print_success("\nbye.")
             break
         try:
             if len(input_str) == 0:
                 continue
-            if input_str is not None and input_str[0] == '/':
+            if input_str is not None and input_str[0] == "/":
                 task = input_str[1:]
-                split_idx = task.strip().find(':')
+                split_idx = task.strip().find(":")
                 if split_idx >= 0:
-                    task_split = [task[:split_idx], task[split_idx+1:]]
+                    task_split = [task[:split_idx], task[split_idx + 1 :]]
                 else:
                     task_split = [task]
                 handler = _command_map.get(task_split[0], _cmd_unknown)
@@ -68,29 +67,29 @@ def _client_cli() -> None:
                     path = constants.curr_dir / path
                 if path.is_file():
                     try:
-                        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+                        with open(path, "r", encoding="utf-8", errors="replace") as f:
                             s = f.read()
                         suffix = path.suffix
-                        if suffix == '.py':
-                            print_info(
-                                f'Executing {path.name}', end='\n\n')
+                        if suffix == ".py":
+                            print_info(f"Executing {path.name}", end="\n\n")
                             try:
-                                exec_ctx['__file__'] = str(path)
+                                exec_ctx["__file__"] = str(path)
                                 exec(s, exec_ctx)
                             except KeyboardInterrupt as e:
                                 raise e
                             except Exception as e:
                                 import traceback
+
                                 print_error(str(e))
                                 print_error(traceback.format_exc())
                             finally:
                                 sync_all()
                             input_str = None
                         else:
-                            print_debug('File not executable, consider as prompt.')
+                            print_debug("File not executable, consider as prompt.")
                             input_str = s
-                    except KeyboardInterrupt as e:
-                        print_warning('Keyboard Interrupt.')
+                    except KeyboardInterrupt:
+                        print_warning("Keyboard Interrupt.")
                         input_str = None
                     except Exception as e:
                         print_error(str(e))
@@ -98,38 +97,51 @@ def _client_cli() -> None:
                 if input_str is not None and len(input_str) > 0:
                     try:
                         if base._default_manually_cot:
-                            print_info('Manually CoT mode enabled: may use multiple sessions and extra tokens.')
+                            print_info(
+                                "Manually CoT mode enabled: may use multiple sessions and extra tokens."
+                            )
                             cot_prompt(input_str)
                         else:
-                            prompt(prompt_str=input_str,
-                                   session=get_default_session(),
-                                   format_output=True)
-                    except KeyboardInterrupt as e:
-                        print_warning('Keyboard Interrupt.')
-        except KeyboardInterrupt as e:
-            print_success('\nbye.')
+                            prompt(
+                                prompt_str=input_str,
+                                session=get_default_session(),
+                                format_output=True,
+                            )
+                    except KeyboardInterrupt:
+                        print_warning("Keyboard Interrupt.")
+        except KeyboardInterrupt:
+            print_success("\nbye.")
             break
         except Exception as e:
             import traceback
+
             traceback.print_exc()
             print_error(str(e))
 
 
 def _run_cli() -> None:
     global exec_ctx
-    exec_ctx = {'__name__': '__main__'}
+    exec_ctx = {"__name__": "__main__"}
 
     subcmd, args = set_arg()
 
     if subcmd == "serve":
         from kimix.server.serve import serve_cli
+
         serve_cli(args)
         return
 
     if subcmd == "ssecli":
-        print_debug('Launching SSE CLI debugger.')
+        print_debug("Launching SSE CLI debugger.")
         from .sse_cli import run_sse_cli
-        run_sse_cli(host=args.host, port=args.port, debug=getattr(args, 'debug', False))
+
+        run_sse_cli(host=args.host, port=args.port, debug=getattr(args, "debug", False))
+        return
+
+    if subcmd == "mcp":
+        from .mcp_cmd import run_mcp_subcommand
+
+        run_mcp_subcommand(args)
         return
 
     _client_cli()
