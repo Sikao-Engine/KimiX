@@ -102,7 +102,8 @@ def _client_cli() -> None:
                             cot_prompt(input_str)
                         else:
                             prompt(prompt_str=input_str,
-                                   session=get_default_session())
+                                   session=get_default_session(),
+                                   format_output=True)
                     except KeyboardInterrupt as e:
                         print_warning('Keyboard Interrupt.')
         except KeyboardInterrupt as e:

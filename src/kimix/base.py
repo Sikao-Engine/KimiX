@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import orjson
+import io
 import os
 import re
 import subprocess
@@ -14,15 +14,15 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+import orjson
 from kimi_cli.wire.types import (
     ApprovalRequest,
     BackgroundTaskDisplayBlock,
     BriefDisplayBlock,
     CompactionBegin,
-    DisplayBlock,
-    UnknownDisplayBlock,
     CompactionEnd,
     DiffDisplayBlock,
+    DisplayBlock,
     ShellDisplayBlock,
     StepBegin,
     StepInterrupted,
@@ -32,6 +32,7 @@ from kimi_cli.wire.types import (
     ToolCall,
     ToolCallPart,
     ToolResult,
+    UnknownDisplayBlock,
 )
 
 if TYPE_CHECKING:
@@ -365,6 +366,7 @@ def _process_lru() -> None:
 
 
 _stream = PrintStream()
+_text_buffer: io.StringIO | None = None
 
 
 _TOOL_TYPES = (ToolCall, ToolCallPart, ToolResult)
@@ -583,6 +585,7 @@ def _handle_tool_call(
     wire_msg: ToolCall | ToolCallPart,
     output_function: Callable[[str, MessageType], Any] | None,
     session: Session,
+    format_output: bool = False,
 ) -> None:
     if isinstance(wire_msg, ToolCall):
         session._tmp_data[_LAST_TOOL_CALL_KEY] = wire_msg
@@ -624,7 +627,7 @@ def _handle_tool_call(
         _stream._state = StreamPrintState.Other
 
 
-def _handle_tool_result(wire_msg: ToolResult, output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
+def _handle_tool_result(wire_msg: ToolResult, output_function: Callable[[str, MessageType], Any] | None, _session: Session, format_output: bool = False) -> None:
     rv = wire_msg.return_value
     display_text = _format_display_blocks(rv.display)
     _stream.print_word(display_text, require_new_line=True)
@@ -657,20 +660,20 @@ def _handle_tool_result(wire_msg: ToolResult, output_function: Callable[[str, Me
             output_function(formatted, MessageType.ToolResult)
 
 
-def _handle_approval_request(wire_msg: ApprovalRequest, _output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
+def _handle_approval_request(wire_msg: ApprovalRequest, _output_function: Callable[[str, MessageType], Any] | None, _session: Session, format_output: bool = False) -> None:
     wire_msg.resolve("approve")
 
 
-def _handle_noop(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
+def _handle_noop(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None, _session: Session, format_output: bool = False) -> None:
     pass
 
 
-def _handle_compaction_begin(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
+def _handle_compaction_begin(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None, _session: Session, format_output: bool = False) -> None:
     _stream.colorful_print_word(
         "Compacting...", require_new_line=True, fg=Color.BRIGHT_MAGENTA)
 
 
-def _handle_think_part(wire_msg: ThinkPart, output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
+def _handle_think_part(wire_msg: ThinkPart, output_function: Callable[[str, MessageType], Any] | None, _session: Session, format_output: bool = False) -> None:
     think_content = wire_msg.think
     if not _quiet:
         if output_function:
@@ -684,20 +687,27 @@ def _handle_think_part(wire_msg: ThinkPart, output_function: Callable[[str, Mess
         _stream._state = StreamPrintState.Thinking
 
 
-def _handle_text_part(wire_msg: TextPart, output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
+def _handle_text_part(wire_msg: TextPart, output_function: Callable[[str, MessageType], Any] | None, _session: Session, format_output: bool = False) -> None:
     chunk = wire_msg.text
     if output_function:
         output_function(chunk, MessageType.Text)
-    _stream.print_word(
-        chunk, require_new_line=_stream._state != StreamPrintState.Text)
+    if format_output:
+        global _text_buffer
+        if _text_buffer is None:
+            _text_buffer = io.StringIO()
+        _text_buffer.write(chunk)
+    else:
+        _stream.print_word(
+            chunk, require_new_line=_stream._state != StreamPrintState.Text)
     _stream._state = StreamPrintState.Text
 
 
-def _handle_other(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None, _session: Session) -> None:
+
+def _handle_other(_wire_msg: Any, _output_function: Callable[[str, MessageType], Any] | None, _session: Session, format_output: bool = False) -> None:
     _stream._state = StreamPrintState.Other
 
 
-_PRINT_AGENT_JSON_DISPATCH: dict[type, Callable[[Any, Callable[[str, MessageType], Any] | None, Session], None]] = {
+_PRINT_AGENT_JSON_DISPATCH: dict[type, Callable[[Any, Callable[[str, MessageType], Any] | None, Session, bool], None]] = {
     ToolCall: _handle_tool_call,
     ToolCallPart: _handle_tool_call,
     ToolResult: _handle_tool_result,
@@ -711,17 +721,38 @@ _PRINT_AGENT_JSON_DISPATCH: dict[type, Callable[[Any, Callable[[str, MessageType
 }
 
 
+def _flush_agent_json_text() -> None:
+    """Flush any buffered text parts as formatted markdown."""
+    global _text_buffer
+    if _text_buffer is not None:
+        text = _text_buffer.getvalue()
+        _text_buffer.close()
+        _text_buffer = None
+        if text:
+            from kimix.cli_impl.utils import render_markdown
+            _stream.print_word(render_markdown(text), require_new_line=True)
+
+
+def print_agent_json_flush_text() -> None:
+    """Public helper to flush buffered text parts as formatted markdown."""
+    _flush_agent_json_text()
+
+
 def print_agent_json(
     wire_msg: Any,
     session: Session,
     output_function: Callable[[str, MessageType], Any] | None = None,
+    format_output: bool = False,
 ) -> None:
+    if format_output and _stream._state == StreamPrintState.Text and not isinstance(wire_msg, TextPart):
+        _flush_agent_json_text()
+        _stream._state = StreamPrintState.Other
     _print_transition_usage(session, _message_transition_type(wire_msg))
     handler = _PRINT_AGENT_JSON_DISPATCH.get(type(wire_msg))
     if handler is not None:
-        handler(wire_msg, output_function, session)
+        handler(wire_msg, output_function, session, format_output)
     else:
-        _handle_other(wire_msg, output_function, session)
+        _handle_other(wire_msg, output_function, session, format_output)
 
 
 def run_thread(

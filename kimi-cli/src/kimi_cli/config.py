@@ -149,13 +149,6 @@ class LoopControl(BaseModel):
     done_reminder_cooldown_steps: int = Field(default=5, ge=1)
     """Minimum number of steps between consecutive done-reminder injections.
     Default is 5."""
-    resilience_reminder_enabled: bool = Field(default=True)
-    """When true, inject a system-reminder to keep trying whenever the model's
-    text or thinking output contains resignation/give-up language.
-    Default is true."""
-    resilience_reminder_cooldown_steps: int = Field(default=20, ge=1)
-    """Minimum number of steps between consecutive resilience-reminder injections.
-    Default is 20."""
     auto_retrieve_history: bool = Field(default=True)
     """When true, automatically search archived conversation history before each
     turn and inject the most relevant past turn if it exceeds the similarity

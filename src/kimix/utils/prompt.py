@@ -1,5 +1,4 @@
 import asyncio
-import orjson
 import os
 import subprocess
 import sys
@@ -7,9 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Optional
 
+import orjson
+
 import kimix.base as base
 from kimi_agent_sdk import Session
-from kimix.base import Color, MessageType, Style, print_agent_json
+from kimix.base import Color, MessageType, Style, print_agent_json, print_agent_json_flush_text
 from kimix.tools.common import _export_to_temp_file
 from kimix.utils.session import (
     _create_default_session,
@@ -206,6 +207,7 @@ async def _run_single_prompt(
     merge_wire_messages: bool,
     info_print: bool,
     label: str = "Start...",
+    format_output: bool = False,
 ) -> bool:
     """Send a single prompt to the session with retries and return True on success."""
     if info_print:
@@ -224,8 +226,14 @@ async def _run_single_prompt(
                 if cancel_callable is not None and cancel_callable():
                     session.cancel()
                     break
-                print_agent_json(message, session, output_function)
-            base._stream.print_word("\n", require_new_line=True)
+                print_agent_json(message, session, output_function, format_output=format_output)
+            # After finishing, flush any remaining buffered text parts as formatted markdown.
+            if format_output:
+                print_agent_json_flush_text()
+                if not base._stream._last_char_was_newline:
+                    base._stream.print_word("\n", require_new_line=True)
+            else:
+                base._stream.print_word("\n", require_new_line=True)
             if info_print:
                 end_time = time.time()
                 _print_usage(session, end_time - start_time)
@@ -265,6 +273,7 @@ async def prompt_async(
     merge_wire_messages: bool | None = None,
     ensure_todo_finished: bool = True,
     export_todo_list_path: Path | None = None,
+    format_output: bool = False,
 ) -> None:
     from kimix.utils.prompt_str import escape_file_paths
 
@@ -294,6 +303,7 @@ async def prompt_async(
             merge_wire_messages,
             info_print,
             label="Start...",
+            format_output=format_output,
         )
         if prompt_success and ensure_todo_finished:
             max_todo_attempts = 2
@@ -314,6 +324,7 @@ async def prompt_async(
                         merge_wire_messages,
                         info_print,
                         label=label,
+                        format_output=False,
                     )
                 except Exception as reminder_exc:
                     base._stream.colorful_print_word(
@@ -348,6 +359,7 @@ def prompt(
     merge_wire_messages: bool | None = None,
     ensure_todo_finished: bool = True,
     export_todo_list_path: Path | None = None,
+    format_output: bool = False,
 ) -> None:
     asyncio.run(
         prompt_async(
@@ -361,6 +373,7 @@ def prompt(
             merge_wire_messages=merge_wire_messages,
             ensure_todo_finished=ensure_todo_finished,
             export_todo_list_path=export_todo_list_path,
+            format_output=format_output,
         ))
 
 
@@ -556,12 +569,14 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
             impl_prompt,
             session=regular_session,
             ensure_todo_finished=False,
+            format_output=True
         )
 
         await prompt_async(
             review_reminder,
             session=regular_session,
             ensure_todo_finished=False,
+            format_output=True
         )
     except Exception as exc:
         base._stream.colorful_print_word(

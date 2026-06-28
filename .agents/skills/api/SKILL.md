@@ -1038,10 +1038,6 @@ class KimiSoul:
                 enabled=True,
                 cooldown_steps=loop_control.done_reminder_cooldown_steps,
             ) if loop_control.done_reminder_enabled else [],
-            ResilienceReminderProvider(
-                enabled=True,
-                cooldown_steps=loop_control.resilience_reminder_cooldown_steps,
-            ) if loop_control.resilience_reminder_enabled else [],
         ]
 
     def add_injection_provider(self, provider: DynamicInjectionProvider) -> None:
@@ -1065,9 +1061,8 @@ Built-in providers are registered in `__init__` according to `Config` / `LoopCon
 |----------|------|------|---------|--------------|
 | `CompactReminderProvider` | `dynamic_injections/compact_reminder.py` | `compact_reminder` | Suggests calling `Compact` when context usage exceeds a threshold. | `LoopControl.compact_reminder_enabled`, `compact_reminder_threshold` |
 | `DoneReminderProvider` | `dynamic_injections/done_reminder.py` | `done_reminder` | Detects completion language in the latest assistant `TextPart`s and reminds the model to call `TodoList` before concluding. | `LoopControl.done_reminder_enabled`, `done_reminder_cooldown_steps` |
-| `ResilienceReminderProvider` | `dynamic_injections/resilience_reminder.py` | `resilience_reminder` | Detects resignation/give-up language in assistant text/thinking and reminds the model to keep trying alternatives. | `LoopControl.resilience_reminder_enabled`, `resilience_reminder_cooldown_steps` |
 
-All three providers skip subagent sessions and reset their throttling state in `on_context_compacted()` and/or `on_afk_changed()`.
+Both providers skip subagent sessions and reset their throttling state in `on_context_compacted()` and/or `on_afk_changed()`.
 
 ### Implementing a custom provider
 

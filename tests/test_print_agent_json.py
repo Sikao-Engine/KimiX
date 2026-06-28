@@ -4,8 +4,9 @@ import importlib
 from dataclasses import dataclass
 from typing import Any
 
-import kimix.base as base
 from kimi_cli.wire.types import TextPart, ThinkPart, ToolCall, ToolCallPart
+
+import kimix.base as base
 
 prompt_mod = importlib.import_module("kimix.utils.prompt")
 
@@ -38,6 +39,7 @@ def _capture_base_stream(monkeypatch: Any) -> list[str]:
         chunks.append(sep.join(str(value) for value in values) + end)
 
     monkeypatch.setattr(base, "_stream", base.PrintStream(print_func=print_func))
+    monkeypatch.setattr(base, "_text_buffer", None)
     monkeypatch.setattr(base, "_quiet", False)
     monkeypatch.setattr(base, "_colorful_print", True)
     return chunks
@@ -85,8 +87,8 @@ def test_prompt_async_passes_session_to_print_agent_json(monkeypatch: Any) -> No
     calls: list[tuple[object, object, object]] = []
     session = FakeSession()
 
-    def fake_print_agent_json(wire_msg: object, passed_session: object, output_function: object) -> None:
-        calls.append((wire_msg, passed_session, output_function))
+    def fake_print_agent_json(wire_msg: object, passed_session: object, output_function: object, format_output: bool = False) -> None:
+        calls.append((wire_msg, passed_session, output_function, format_output))
 
     monkeypatch.setattr(prompt_mod, "print_agent_json", fake_print_agent_json)
     monkeypatch.setattr(prompt_mod.base._stream, "colorful_print_word", lambda *args, **kwargs: None)
@@ -99,3 +101,43 @@ def test_prompt_async_passes_session_to_print_agent_json(monkeypatch: Any) -> No
     assert isinstance(calls[0][0], TextPart)
     assert calls[0][1] is session
     assert calls[0][2] is None
+    assert calls[0][3] is False
+
+
+def test_print_agent_json_format_output_buffers_text_until_mode_change(monkeypatch: Any) -> None:
+    chunks = _capture_base_stream(monkeypatch)
+    session = FakeSession()
+
+    base.print_agent_json(TextPart(text="hello "), session, format_output=True)
+    base.print_agent_json(TextPart(text="world"), session, format_output=True)
+    assert "hello world" not in "".join(chunks)
+
+    base.print_agent_json(ThinkPart(think="hmm"), session, format_output=True)
+    output = "".join(chunks)
+    assert "hello world" in output
+    assert "[Think] hmm" in output
+
+
+def test_print_agent_json_format_output_flushes_remaining_text_at_end(monkeypatch: Any) -> None:
+    chunks = _capture_base_stream(monkeypatch)
+    session = FakeSession()
+
+    base.print_agent_json(TextPart(text="hello"), session, format_output=True)
+    assert "hello" not in "".join(chunks)
+
+    base.print_agent_json_flush_text()
+    assert "hello" in "".join(chunks)
+
+
+def test_print_agent_json_format_output_still_calls_output_function(monkeypatch: Any) -> None:
+    monkeypatch.setattr(base, "_text_buffer", None)
+    session = FakeSession()
+    received: list[str] = []
+
+    def output_function(text: str, _msg_type: object) -> None:
+        received.append(text)
+
+    base.print_agent_json(TextPart(text="chunk1"), session, output_function=output_function, format_output=True)
+    base.print_agent_json(TextPart(text="chunk2"), session, output_function=output_function, format_output=True)
+
+    assert received == ["chunk1", "chunk2"]

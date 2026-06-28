@@ -67,7 +67,6 @@ from kimi_cli.soul.dynamic_injection import (
 )
 from kimi_cli.soul.dynamic_injections.compact_reminder import CompactReminderProvider
 from kimi_cli.soul.dynamic_injections.done_reminder import DoneReminderProvider
-from kimi_cli.soul.dynamic_injections.resilience_reminder import ResilienceReminderProvider
 from kimi_cli.soul.message import (
     check_message,
     strip_system_reminders,
@@ -262,14 +261,6 @@ class KimiSoul:
                 else [DoneReminderProvider(
                     enabled=True,
                     cooldown_steps=self._loop_control.done_reminder_cooldown_steps,
-                )]
-            ),
-            *(
-                []
-                if not self._loop_control.resilience_reminder_enabled
-                else [ResilienceReminderProvider(
-                    enabled=True,
-                    cooldown_steps=self._loop_control.resilience_reminder_cooldown_steps,
                 )]
             ),
         ]

@@ -43,8 +43,6 @@ def test_default_config_dump():
                 "compact_reminder_threshold": 0.7,
                 "done_reminder_enabled": True,
                 "done_reminder_cooldown_steps": 5,
-                "resilience_reminder_enabled": True,
-                "resilience_reminder_cooldown_steps": 20,
                 "auto_retrieve_history": True,
                 "auto_retrieve_history_threshold": 5.0,
                 "auto_retrieve_working_memory": True,
