@@ -278,8 +278,6 @@ def _md_apply_inline_styles(segment: str, theme: dict[str, Any]) -> str:
 
     def _bold_repl(m: re.Match[str]) -> str:
         body = colorful_text(m.group(2), **theme["bold"])
-        if m.group(1) == "**":
-            return f" {body} "
         return body
 
     def _italic_repl(m: re.Match[str]) -> str:

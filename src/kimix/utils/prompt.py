@@ -437,7 +437,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
                     require_new_line=True,
                 )
                 async for message in planner_session.prompt(reminder):
-                    print_agent_json(message, planner_session, None)
+                    print_agent_json(message, planner_session, None, True)
                 base._stream.print_word("\n", require_new_line=True)
 
                 if plan_file.exists() and plan_file.stat().st_size > 0:
