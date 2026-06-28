@@ -117,12 +117,12 @@ DEFAULT_MD_THEME: dict[str, dict[str, Any]] = {
         "styles": [Style.BOLD, Style.ITALIC],
     },
     "inline_code": {
-        "fg": Color.BRIGHT_GREEN,
+        "fg": Color.YELLOW,
         "bg": BgColor256(236),
         "styles": [],
     },
     "code_fence": {
-        "fg": Color.BRIGHT_BLACK,
+        "fg": GRAY_LIGHT,
         "bg": None,
         "styles": [Style.BOLD, Style.DIM],
     },
@@ -277,7 +277,10 @@ def _md_apply_inline_styles(segment: str, theme: dict[str, Any]) -> str:
         return colorful_text(m.group(2), **theme["bold_italic"])
 
     def _bold_repl(m: re.Match[str]) -> str:
-        return colorful_text(m.group(2), **theme["bold"])
+        body = colorful_text(m.group(2), **theme["bold"])
+        if m.group(1) == "**":
+            return f" {body} "
+        return body
 
     def _italic_repl(m: re.Match[str]) -> str:
         return colorful_text(m.group(2), **theme["italic"])
