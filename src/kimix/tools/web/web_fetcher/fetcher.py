@@ -1,6 +1,8 @@
 import asyncio
 import re
 import ssl
+
+import httpx
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
 from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
@@ -17,6 +19,20 @@ _LOGIN_PATTERNS = re.compile(
     r"登录|密码登录|验证码登录|注册|Sign in|Log in|Login|Verification code|短信验证码",
     re.IGNORECASE,
 )
+_BROWSER_HEADERS = {
+    "Accept": (
+        "text/html,application/xhtml+xml,application/xml;q=0.9,"
+        "image/avif,image/webp,image/apng,*/*;q=0.8"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Cache-Control": "max-age=0",
+}
 
 
 async def _fetch_html(url: str, user_agent: str, viewport: dict, wait_until: str) -> str:
@@ -58,37 +74,79 @@ async def _fetch_html(url: str, user_agent: str, viewport: dict, wait_until: str
     return html
 
 
-async def _fetch_html_http(url: str, user_agent: str) -> str:
-    """Fallback HTTP fetch when Playwright browser is unavailable."""
-    import urllib.request
+def _build_ssl_context(
+    verify: bool = True, tls_version: str | None = None
+) -> ssl.SSLContext:
+    """Build an SSL context with optional verification and TLS version pinning."""
+    if tls_version == "1.2":
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    else:
+        ctx = ssl.create_default_context()
+    if not verify:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
-    req = urllib.request.Request(url, headers={"User-Agent": user_agent})
-    loop = asyncio.get_running_loop()
 
-    def _urlopen(req):
-        try:
-            return urllib.request.urlopen(req, timeout=30)
-        except Exception as exc:
-            # Retry with relaxed SSL context on SSL-related failures (e.g. UNEXPECTED_EOF_WHILE_READING)
-            is_ssl_err = (
-                isinstance(exc, ssl.SSLError)
-                or (hasattr(exc, "reason") and isinstance(exc.reason, ssl.SSLError))
-                or "SSL" in str(exc)
-            )
-            if not is_ssl_err:
+async def _fetch_html_http(
+    url: str,
+    user_agent: str,
+    *,
+    retries: int = 3,
+    verify: bool = True,
+    tls_version: str | None = None,
+) -> str:
+    """Fallback HTTP fetch using httpx with retries and relaxed SSL support."""
+    headers = {"User-Agent": user_agent, **_BROWSER_HEADERS}
+    ssl_context = _build_ssl_context(verify=verify, tls_version=tls_version)
+
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(30.0, connect=15.0),
+        follow_redirects=True,
+        verify=ssl_context,
+    ) as client:
+        last_exc: Exception | None = None
+        for attempt in range(retries):
+            try:
+                response = await client.get(url, headers=headers)
+                # Raise for 4xx/5xx so we can retry transient failures.
+                if response.status_code >= 500:
+                    response.raise_for_status()
+                return response.text
+            except httpx.HTTPStatusError as exc:
+                last_exc = exc
+                # Retry only transient server errors and rate limits.
+                if exc.response.status_code == 429 or exc.response.status_code >= 500:
+                    if attempt < retries - 1:
+                        await asyncio.sleep(2 ** attempt)
+                    continue
                 raise
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            return urllib.request.urlopen(req, context=ctx, timeout=30)
+            except (httpx.ConnectError, httpx.TimeoutException, ssl.SSLError) as exc:
+                last_exc = exc
+                if attempt < retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                continue
+        # If we exhausted retries, surface the last error.
+        raise last_exc or RuntimeError(f"Failed to fetch {url} after {retries} attempts")
 
-    response = await loop.run_in_executor(None, _urlopen, req)
-    charset = response.headers.get_content_charset("utf-8")
-    data = await loop.run_in_executor(None, response.read)
-    try:
-        return data.decode(charset, errors="replace")
-    except LookupError:
-        return data.decode("utf-8", errors="replace")
+
+async def fetch_html_http_with_fallback(url: str, user_agent: str) -> str:
+    """Try HTTP fetch with cert verification, then without, then TLS 1.2 pinned."""
+    attempts = [
+        {"verify": True, "tls_version": None},
+        {"verify": False, "tls_version": None},
+        {"verify": False, "tls_version": "1.2"},
+    ]
+    last_exc: Exception | None = None
+    for config in attempts:
+        try:
+            return await _fetch_html_http(url, user_agent, **config)
+        except (httpx.ConnectError, ssl.SSLError) as exc:
+            last_exc = exc
+            continue
+    raise last_exc or RuntimeError(f"Failed to fetch {url}")
 
 
 def _html_to_markdown(html: str) -> str:
@@ -137,7 +195,7 @@ async def fetch_to_markdown(url: str, wait_until: str = "networkidle") -> str:
     try:
         html = await _fetch_html(url, _DESKTOP_UA, {"width": 1920, "height": 1080}, wait_until)
     except Exception:
-        html = await _fetch_html_http(url, _DESKTOP_UA)
+        html = await fetch_html_http_with_fallback(url, _DESKTOP_UA)
 
     markdown = _html_to_markdown(html)
 
@@ -149,7 +207,7 @@ async def fetch_to_markdown(url: str, wait_until: str = "networkidle") -> str:
             html_mobile = await _fetch_html(url, _MOBILE_UA, {"width": 390, "height": 844}, wait_until)
         except Exception:
             try:
-                html_mobile = await _fetch_html_http(url, _MOBILE_UA)
+                html_mobile = await fetch_html_http_with_fallback(url, _MOBILE_UA)
             except Exception:
                 pass
         if html_mobile:

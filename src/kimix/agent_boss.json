@@ -2,7 +2,6 @@
   "agent": {
     "extend": "default",
     "tools": [
-      "kimix.tools.py:Python",
       "kimi_cli.tools.file:ReadFile",
       "kimi_cli.tools.file:Glob",
       "kimi_cli.tools.file:Grep",
