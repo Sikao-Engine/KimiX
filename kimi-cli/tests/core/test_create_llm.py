@@ -55,6 +55,8 @@ def test_create_llm_kimi_model_parameters(monkeypatch):
         capabilities=None,
     )
 
+    # Temperature is ignored for the kimi provider and forced by thinking state.
+    # top_p and max_tokens continue to be read from the environment.
     monkeypatch.setenv("KIMI_MODEL_TEMPERATURE", "0.2")
     monkeypatch.setenv("KIMI_MODEL_TOP_P", "0.8")
     monkeypatch.setenv("KIMI_MODEL_MAX_TOKENS", "1234")
@@ -66,7 +68,7 @@ def test_create_llm_kimi_model_parameters(monkeypatch):
     assert llm.chat_provider.model_parameters == snapshot(
         {
             "base_url": "https://api.test/v1/",
-            "temperature": 0.2,
+            "temperature": 0.6,
             "top_p": 0.8,
             "max_tokens": 1234,
         }
@@ -562,3 +564,81 @@ def test_create_llm_kimi_thinking_keep_injected_on_explicit_thinking_true(monkey
     assert llm.chat_provider.model_parameters.get("extra_body") == snapshot(
         {"thinking": {"type": "enabled", "keep": "all"}}
     )
+
+
+def test_create_llm_kimi_thinking_on_forces_temperature_to_one(monkeypatch):
+    """Always-thinking kimi models must use temperature=1.0."""
+    monkeypatch.delenv("KIMI_MODEL_TEMPERATURE", raising=False)
+    provider, model = _make_kimi_thinking_model()
+
+    llm = create_llm(provider, model)
+    assert llm is not None
+    assert isinstance(llm.chat_provider, Kimi)
+    assert llm.chat_provider.model_parameters["temperature"] == 1.0
+
+
+def test_create_llm_kimi_thinking_off_forces_temperature_to_zero_six(monkeypatch):
+    """Non-thinking kimi models must use temperature=0.6."""
+    monkeypatch.delenv("KIMI_MODEL_TEMPERATURE", raising=False)
+    provider, model = _make_kimi_plain_model()
+
+    llm = create_llm(provider, model, thinking=False)
+    assert llm is not None
+    assert isinstance(llm.chat_provider, Kimi)
+    assert llm.chat_provider.model_parameters["temperature"] == 0.6
+
+
+def test_create_llm_kimi_explicit_temperature_ignored(monkeypatch):
+    """Explicit temperature argument must not override kimi forced default."""
+    monkeypatch.delenv("KIMI_MODEL_TEMPERATURE", raising=False)
+    provider, model = _make_kimi_thinking_model()
+
+    llm = create_llm(provider, model, temperature=0.5)
+    assert llm is not None
+    assert isinstance(llm.chat_provider, Kimi)
+    assert llm.chat_provider.model_parameters["temperature"] == 1.0
+
+
+def test_create_llm_kimi_env_temperature_ignored(monkeypatch):
+    """KIMI_MODEL_TEMPERATURE env var must not override kimi forced default."""
+    monkeypatch.setenv("KIMI_MODEL_TEMPERATURE", "0.3")
+    provider, model = _make_kimi_thinking_model()
+
+    llm = create_llm(provider, model)
+    assert llm is not None
+    assert isinstance(llm.chat_provider, Kimi)
+    assert llm.chat_provider.model_parameters["temperature"] == 1.0
+
+
+def test_create_llm_kimi_config_temperature_ignored(monkeypatch):
+    """Config-level temperature (passed as the temperature kwarg) must not
+    override kimi forced default for thinking-off models."""
+    monkeypatch.delenv("KIMI_MODEL_TEMPERATURE", raising=False)
+    provider, model = _make_kimi_plain_model()
+
+    llm = create_llm(provider, model, thinking=False, temperature=0.7)
+    assert llm is not None
+    assert isinstance(llm.chat_provider, Kimi)
+    assert llm.chat_provider.model_parameters["temperature"] == 0.6
+
+
+def test_create_llm_non_kimi_not_affected_by_kimi_temperature_forcing():
+    """Non-kimi providers must not have their temperature forced to the kimi
+    defaults. The explicit temperature argument is ignored for this provider
+    path (pre-existing behavior); this test guards against accidentally
+    applying the kimi logic to other providers."""
+    provider = LLMProvider(
+        type="openai_responses",
+        base_url="https://api.openai.com/v1",
+        api_key=SecretStr("test-key"),
+    )
+    model = LLMModel(
+        provider="openai",
+        model="gpt-4o",
+        max_context_size=128000,
+    )
+
+    llm = create_llm(provider, model, temperature=0.5)
+    assert llm is not None
+    assert isinstance(llm.chat_provider, OpenAIResponses)
+    assert "temperature" not in llm.chat_provider.model_parameters

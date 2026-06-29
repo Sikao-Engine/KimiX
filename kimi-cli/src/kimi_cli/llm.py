@@ -137,6 +137,14 @@ def create_llm(
         else provider.api_key.get_secret_value()
     )
 
+    # Resolve capabilities and final thinking state early so that the kimi
+    # provider can force its temperature based on the same decision that later
+    # drives with_thinking().
+    capabilities = derive_model_capabilities(model)
+    thinking_on = "always_thinking" in capabilities or (
+        thinking is True and "thinking" in capabilities
+    )
+
     match provider.type:
         case "kimi":
             from kosong.chat_provider.kimi import Kimi
@@ -151,10 +159,11 @@ def create_llm(
             gen_kwargs: Kimi.GenerationKwargs = {}
             if session_id:
                 gen_kwargs["prompt_cache_key"] = session_id
-            if temperature is None:
-                temperature = os.getenv("KIMI_MODEL_TEMPERATURE")
-            if temperature is not None:
-                gen_kwargs["temperature"] = float(temperature)
+            # For the kimi provider, temperature is always forced by the final
+            # thinking state. config.temperature, KIMI_MODEL_TEMPERATURE, and
+            # any explicit temperature argument are intentionally ignored.
+            temperature = 1.0 if thinking_on else 0.6
+            gen_kwargs["temperature"] = temperature
             if top_p is None:
                 top_p = os.getenv("KIMI_MODEL_TOP_P")
             if top_p is not None:
@@ -269,12 +278,8 @@ def create_llm(
         _generation_kwargs['max_tokens'] = int(max_tokens)
     
 
-    capabilities = derive_model_capabilities(model)
-
-    # Apply thinking if specified or if model always requires thinking
-    thinking_on = "always_thinking" in capabilities or (
-        thinking is True and "thinking" in capabilities
-    )
+    # Apply thinking using the pre-computed capability/thinking decision so it
+    # matches the temperature forced above for the kimi provider.
     if thinking_on:
         chat_provider = chat_provider.with_thinking(thinking_effort if thinking_effort is not None else 'high')
     elif thinking is False:
@@ -326,6 +331,11 @@ def clone_llm_with_model_alias(
         thinking=thinking,
         session_id=session_id,
         oauth=oauth,
+        max_tokens=config.max_tokens,
+        temperature=config.temperature,
+        top_p=config.top_p,
+        top_k=config.top_k,
+        thinking_effort=config.thinking_effort,
     )
 
 

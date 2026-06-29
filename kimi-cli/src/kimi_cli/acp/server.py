@@ -355,6 +355,11 @@ class ACPServer:
             session_id=acp_session.id,
             thinking=model_id_conv.thinking,
             oauth=cli_instance.soul.runtime.oauth,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            top_p=config.top_p,
+            top_k=config.top_k,
+            thinking_effort=config.thinking_effort,
         )
 
         old_llm = cli_instance.soul.runtime.llm
