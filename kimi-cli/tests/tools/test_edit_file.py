@@ -133,6 +133,35 @@ async def test_replace_no_match(edit_file_tool: EditFile, temp_work_dir: KaosPat
     assert await file_path.read_text() == original_content  # Content unchanged
 
 
+async def test_call_with_string_edit_is_repaired_and_succeeds(
+    edit_file_tool: EditFile, temp_work_dir: KaosPath
+):
+    """Reproduce report #6: edit serialized as a JSON string instead of an object.
+
+    When the model emits the ``edit`` argument as a JSON-encoded string rather
+    than a nested object/list, the shared argument-repair machinery should
+    parse the JSON string into the expected nested model and apply the edit.
+    """
+    file_path = temp_work_dir / "test.txt"
+    original_content = "  // OpCopyMemory is core — no capabilities needed\nvoid foo() {}\n"
+    await file_path.write_text(original_content)
+
+    # This is how the broken tool call looked: `edit` is a string, not an object.
+    result = await edit_file_tool.call(
+        {
+            "path": str(file_path),
+            "edit": '{"old": "  // OpCopyMemory is core — no capabilities needed", "new": "  // OpCopyMemory is core - no capabilities needed"}',
+        }
+    )
+
+    assert not result.is_error
+    assert "successfully edited" in result.message
+    assert (
+        await file_path.read_text()
+        == "  // OpCopyMemory is core - no capabilities needed\nvoid foo() {}\n"
+    )
+
+
 async def test_replace_with_relative_path(
     edit_file_tool: EditFile, temp_work_dir: KaosPath
 ):

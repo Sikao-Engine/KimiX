@@ -39,6 +39,7 @@ from kimi_cli.mcp.prompts import MCPPromptManager
 from kimi_cli.mcp.resources import MCPResourceManager
 from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.tools import SkipThisTool
+from kimi_cli.tools.utils import repair_tool_arguments
 from kimi_cli.wire.types import (
     AudioURLPart,
     ContentPart,
@@ -454,7 +455,8 @@ class KimiToolset:
                 # --- Execute tool ---
                 t0 = time.monotonic()
                 try:
-                    ret = await tool.call(arguments)
+                    repaired_arguments = repair_tool_arguments(tool.params, arguments)
+                    ret = await tool.call(repaired_arguments)
                     if isinstance(ret.output, str):
                         ret.output = sanitize_for_tokenizer(ret.output)
                     elif isinstance(ret.output, list):

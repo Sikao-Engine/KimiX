@@ -1546,3 +1546,72 @@ class TestTodoListPydanticValidation:
 
         with pytest.raises(ValidationError):
             Params(delete="   ")
+
+
+class TestTodoListCallingJsonString:
+    """Regression tests for JSON-string todos passed through the tool-call layer.
+
+    Some callers serialize ``todos`` as a JSON string instead of a nested object/list.
+    TodoList should parse these strings and treat them the same as native dict/list input.
+    """
+
+    async def test_todos_as_json_string_accepted(self, todo_list_tool: TodoList):
+        """A JSON-array string for ``todos`` should be parsed and accepted."""
+        result = await todo_list_tool.call(
+            {
+                "mode": "overwrite",
+                "todos": '[{"title": "Build DXC", "status": "in_progress", "priority": "high"}]',
+            }
+        )
+        assert not result.is_error
+        assert "Build DXC" in result.message or "Build DXC" in result.output
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "[in_progress] Build DXC" in read.output
+
+    async def test_single_todo_as_json_string_accepted(self, todo_list_tool: TodoList):
+        """A JSON-object string representing a single todo should be accepted."""
+        result = await todo_list_tool.call(
+            {
+                "mode": "overwrite",
+                "todos": '{"title": "Build DXC", "status": "in_progress"}',
+            }
+        )
+        assert not result.is_error
+        assert "Build DXC" in result.message or "Build DXC" in result.output
+
+    async def test_repairable_json_string_accepted(self, todo_list_tool: TodoList):
+        """A string with a repairable JSON syntax error should be fixed and accepted."""
+        result = await todo_list_tool.call(
+            {
+                "mode": "overwrite",
+                "todos": '[{"title": "Build DXC", "status": "in_progress"',  # missing closing bracket
+            }
+        )
+        assert not result.is_error
+        assert "Build DXC" in result.message or "Build DXC" in result.output
+
+    async def test_invalid_json_string_returns_validation_error(
+        self, todo_list_tool: TodoList
+    ):
+        """A JSON string that parses to an invalid todo structure should still error."""
+        result = await todo_list_tool.call(
+            {
+                "mode": "overwrite",
+                "todos": "[1, 2, 3]",
+            }
+        )
+        assert result.is_error
+
+    async def test_plain_string_still_returns_validation_error(
+        self, todo_list_tool: TodoList
+    ):
+        """A non-JSON string should still be rejected."""
+        result = await todo_list_tool.call(
+            {
+                "mode": "overwrite",
+                "todos": "just a plain title",
+            }
+        )
+        assert result.is_error
+        assert "todos must be a list of todos" in result.message

@@ -17,6 +17,7 @@ from kimi_cli import logger
 from kimi_cli.session_state import TodoItemState, TodoPriority, TodoStatus
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
+from kimi_cli.tools.utils import repair_json_string
 
 
 # Fuzzy mode map — maps common synonyms to canonical write modes
@@ -333,6 +334,11 @@ class Params(BaseModel):
             return None
         if isinstance(v, Todo):
             return v
+        if isinstance(v, str):
+            parsed = repair_json_string(v)
+            if parsed is None:
+                raise ValueError("todos must be a list of todos, a single todo dict/object, or None")
+            v = parsed
         if isinstance(v, dict):
             try:
                 return Todo.model_validate(v)

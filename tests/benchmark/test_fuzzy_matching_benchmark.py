@@ -166,8 +166,8 @@ class TestTodoTitleMatcherBenchmark:
         for q in queries:
             assert old[q], f"old impl returned no match for {q!r}"
             assert new[q], f"new impl returned no match for {q!r}"
-            assert old[q][0][0] == new[q][0][0], (
-                f"mismatch for {q!r}: old={old[q][0][0]!r}, new={new[q][0][0]!r}"
+            assert old[q][0][0] == new[q][0].choice, (
+                f"mismatch for {q!r}: old={old[q][0][0]!r}, new={new[q][0].choice!r}"
             )
 
     def test_new_impl_rejects_weak_matches(self) -> None:
@@ -182,7 +182,7 @@ class TestTodoTitleMatcherBenchmark:
         result = TodoList._find_nearest_titles(
             ["bug fix"], ["fix bug", "write tests"], top_k=1
         )
-        assert result["bug fix"][0][0] == "fix bug"
+        assert result["bug fix"][0].choice == "fix bug"
 
 
 # ---------------------------------------------------------------------------

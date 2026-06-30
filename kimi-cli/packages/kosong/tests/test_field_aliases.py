@@ -1136,3 +1136,161 @@ def test_fuzzy_match_keys_helper_uses_strongest_first() -> None:
     assert "base_url" in matches
     assert matches["base_url"] == "base_uri"
     assert "base_path" not in matches
+
+
+# ---------------------------------------------------------------------------
+# 15. Tests for JSON-string repair of nested models
+# ---------------------------------------------------------------------------
+
+
+def test_repair_dict_parses_json_string_into_nested_model() -> None:
+    """A JSON-encoded string for a nested-model field is parsed and repaired."""
+
+    class Inner(BaseModel):
+        command: str
+
+    class Outer(BaseModel):
+        inner: Inner
+
+    data = {"inner": '{"cmd": "ls"}'}
+    repaired = _repair_dict_for_model(data, Outer, FIELD_ALIASES_SHELL)
+    assert repaired == {"inner": {"command": "ls"}}
+
+
+def test_repair_dict_parses_json_string_into_list_of_nested_models() -> None:
+    """A JSON-encoded string for a list-of-models field is parsed and repaired."""
+
+    class Item(BaseModel):
+        url: str
+
+    class Outer(BaseModel):
+        items: list[Item]
+
+    data = {"items": '[{"link": "a"}, {"href": "b"}]'}
+    repaired = _repair_dict_for_model(data, Outer, FIELD_ALIASES_WEB)
+    assert repaired == {"items": [{"url": "a"}, {"url": "b"}]}
+
+
+def test_repair_dict_parses_json_string_with_nested_model_inside_list_items() -> None:
+    """A list-of-models field where items themselves contain nested models."""
+
+    class Option(BaseModel):
+        label: str
+
+    class Question(BaseModel):
+        title: str
+        options: list[Option]
+
+    class Outer(BaseModel):
+        questions: list[Question]
+
+    data = {
+        "questions": '[{"content": "q1", "choices": [{"label": "a"}]}]'
+    }
+    repaired = _repair_dict_for_model(data, Outer, FIELD_ALIASES_GENERAL)
+    assert repaired == {"questions": [{"title": "q1", "options": [{"label": "a"}]}]}
+
+
+def test_repair_dict_parses_json_string_into_todo_union() -> None:
+    """A JSON string for a `list[Todo] | Todo | None` field is parsed."""
+
+    class Todo(BaseModel):
+        title: str
+
+    class Outer(BaseModel):
+        todos: list[Todo] | Todo | None = None
+
+    data = {"todos": '{"title": "single"}'}
+    repaired = _repair_dict_for_model(data, Outer)
+    assert repaired == {"todos": {"title": "single"}}
+
+    data_list = {"todos": '[{"title": "one"}, {"title": "two"}]'}
+    repaired_list = _repair_dict_for_model(data_list, Outer)
+    assert repaired_list == {"todos": [{"title": "one"}, {"title": "two"}]}
+
+
+def test_repair_dict_parses_json_string_into_discriminated_union() -> None:
+    """A JSON string for a discriminated-union model field is parsed."""
+    from typing import Literal
+
+    class ReplaceEdit(BaseModel):
+        kind: Literal["replace"]
+        old: str
+        new: str
+
+    class DeleteEdit(BaseModel):
+        kind: Literal["delete"]
+        target: str
+
+    class Params(BaseModel):
+        edit: ReplaceEdit | DeleteEdit
+
+    data = {"edit": '{"kind": "replace", "original": "a", "replace_with": "b"}'}
+    repaired = _repair_dict_for_model(data, Params, FIELD_ALIASES_FILE)
+    assert repaired == {"edit": {"kind": "replace", "old": "a", "new": "b"}}
+
+
+def test_repair_dict_keeps_invalid_json_string_for_validation_error() -> None:
+    """A non-JSON string for a nested-model field is left untouched."""
+
+    class Inner(BaseModel):
+        value: str
+
+    class Outer(BaseModel):
+        inner: Inner
+
+    data = {"inner": "not a json object"}
+    repaired = _repair_dict_for_model(data, Outer)
+    assert repaired == {"inner": "not a json object"}
+
+
+def test_callable_tool2_accepts_json_encoded_nested_model() -> None:
+    """CallableTool2.call parses a JSON string argument into a nested model."""
+
+    class Inner(BaseModel):
+        value: str
+
+    class Params(BaseModel):
+        name: str
+        inner: Inner
+
+    class TestTool(CallableTool2[Params]):
+        name: str = "test"
+        description: str = "test"
+        params: type[Params] = Params
+        field_aliases: ClassVar[dict[str, str]] = {}
+
+        @override
+        async def __call__(self, params: Params) -> ToolReturnValue:
+            return ToolOk(output=f"{params.name}:{params.inner.value}")
+
+    tool = TestTool()
+    result = asyncio.run(
+        tool.call({"name": "foo", "inner": '{"value": "bar"}'})
+    )
+    assert result == ToolOk(output="foo:bar")
+
+
+def test_callable_tool2_invalid_json_string_nested_model_still_errors() -> None:
+    """A non-JSON string for a nested-model argument still produces a validation error."""
+
+    class Inner(BaseModel):
+        value: str
+
+    class Params(BaseModel):
+        inner: Inner
+
+    class TestTool(CallableTool2[Params]):
+        name: str = "test"
+        description: str = "test"
+        params: type[Params] = Params
+        field_aliases: ClassVar[dict[str, str]] = {}
+
+        @override
+        async def __call__(self, params: Params) -> ToolReturnValue:
+            return ToolOk(output=params.inner.value)
+
+    tool = TestTool()
+    result = asyncio.run(tool.call({"inner": "not a json object"}))
+    assert isinstance(result, ToolValidateError)
+    assert "Invalid arguments for tool `test`" in result.message

@@ -1,9 +1,78 @@
 import re
 from pathlib import Path
+from typing import Any, Union, get_args, get_origin
 
+import json_repair
+import orjson
 from jinja2 import Environment, Undefined
 from kosong.tooling import BriefDisplayBlock, DisplayBlock, ToolError, ToolReturnValue
 from kosong.utils.typing import JsonType
+from pydantic import BaseModel
+
+
+def _looks_like_json(value: str) -> bool:
+    """Return True if the string starts with a JSON array/object opener."""
+    stripped = value.strip()
+    return bool(stripped) and stripped[0] in ("[", "{")
+
+
+def repair_json_string(value: str) -> Any | None:
+    """Parse or repair a JSON string. Return None if it cannot be parsed/repaired.
+
+    First attempts a fast ``orjson.loads`` parse. If that fails, falls back to
+    ``json_repair.repair_json(return_objects=True)`` to recover from common
+    serialization mistakes such as missing closing brackets or trailing commas.
+    """
+    if not _looks_like_json(value):
+        return None
+    try:
+        return orjson.loads(value)
+    except orjson.JSONDecodeError:
+        pass
+    try:
+        repaired = json_repair.repair_json(value, return_objects=True)
+        if repaired is None or repaired == "":
+            return None
+        return repaired
+    except Exception:
+        return None
+
+
+def _is_plain_string_annotation(annotation: Any) -> bool:
+    """Return True if the annotation is ``str`` or ``str | None``/``Optional[str]``."""
+    if annotation is str:
+        return True
+    origin = get_origin(annotation)
+    if origin is Union:
+        return all(arg is type(None) or _is_plain_string_annotation(arg) for arg in get_args(annotation))
+    return False
+
+
+def repair_tool_arguments(
+    params_model: type[BaseModel], arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Repair JSON-string values in tool arguments based on the params schema.
+
+    Only fields annotated as plain ``str`` (or optional str) are left untouched;
+    all other fields are candidates for JSON-string repair when the value looks
+    like JSON.
+    """
+    if not arguments:
+        return arguments
+    repaired = dict(arguments)
+    fields = params_model.model_fields
+    for key, value in list(repaired.items()):
+        if not isinstance(value, str):
+            continue
+        field_info = fields.get(key)
+        if field_info is None:
+            continue
+        if _is_plain_string_annotation(field_info.annotation):
+            continue
+        parsed = repair_json_string(value)
+        if parsed is not None:
+            repaired[key] = parsed
+    return repaired
 
 
 class _KeepPlaceholderUndefined(Undefined):

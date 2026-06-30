@@ -103,6 +103,7 @@ def format_release_notes(changelog: dict[str, ReleaseEntry], include_lib_changes
     return "\n".join(parts).strip()
 
 
+_CHANGELOG_PATH = Path(__file__).parent.parent / "CHANGELOG.md"
 CHANGELOG = parse_changelog(
-    (Path(__file__).parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+    _CHANGELOG_PATH.read_text(encoding="utf-8") if _CHANGELOG_PATH.exists() else ""
 )

@@ -538,3 +538,16 @@ class TestEditPlanCall:
             result = await tool(EditPlanParams(edit=Edit(old="a", new="b")))
         assert isinstance(result, ToolError)
         assert "Failed to edit plan" in result.message
+
+    async def test_string_edit_json_is_repaired(
+        self, mock_session: MagicMock, plan_path: Path
+    ) -> None:
+        """A JSON-encoded `edit` string is parsed into an Edit and applied."""
+        plan_path.write_text("hello world", encoding="utf-8")
+        mock_session.custom_data["plan_writing_path"] = plan_path
+        tool = EditPlan(session=mock_session)
+        result = await tool.call(
+            {"edit": '{"old": "hello", "new": "hi"}'}
+        )
+        assert isinstance(result, ToolOk)
+        assert plan_path.read_text(encoding="utf-8") == "hi world"

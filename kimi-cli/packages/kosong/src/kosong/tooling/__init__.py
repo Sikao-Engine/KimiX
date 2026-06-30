@@ -14,6 +14,7 @@ from pydantic_core import core_schema
 
 from kosong.message import ContentPart, ToolCall
 from kosong.utils.jsonschema import deref_json_schema
+from kosong.utils.jsonx import loads_relaxed
 from kosong.utils.typing import JsonType
 
 type ParametersType = dict[str, Any]
@@ -561,6 +562,24 @@ def _get_base_model_type(annotation: Any) -> type[BaseModel] | None:
     return None
 
 
+def _maybe_parse_json_string(value: Any) -> Any:
+    """If *value* is a string containing a JSON object/array, return it parsed.
+
+    Returns the original value when it is not a string, when parsing fails,
+    or when the parsed value is not a structural JSON object/array, so that
+    normal Pydantic validation can report the error.
+    """
+    if not isinstance(value, str):
+        return value
+    try:
+        parsed = loads_relaxed(value)
+    except Exception:
+        return value
+    if isinstance(parsed, (dict, list)):
+        return parsed
+    return value
+
+
 def _clamp_numeric_value(value: Any, finfo: Any) -> Any | None:
     """Clamp a numeric value to the field's min/max constraints.
 
@@ -812,13 +831,25 @@ def _repair_dict_for_model(
             continue
         val = mapped[fname]
         if nested is not None:
+            # LLMs sometimes serialize nested objects as JSON strings; parse them
+            # before recursing so the nested model repair rules apply.
+            if isinstance(val, str):
+                val = _maybe_parse_json_string(val)
+                mapped[fname] = val
+
             if isinstance(val, dict):
                 mapped[fname] = _repair_dict_for_model(val, nested, common_aliases)
             elif isinstance(val, list):
-                mapped[fname] = [
-                    _repair_dict_for_model(item, nested, common_aliases) if isinstance(item, dict) else item
-                    for item in val
-                ]
+                repaired_items: list[Any] = []
+                for item in val:
+                    parsed_item = _maybe_parse_json_string(item)
+                    if isinstance(parsed_item, dict):
+                        repaired_items.append(
+                            _repair_dict_for_model(parsed_item, nested, common_aliases)
+                        )
+                    else:
+                        repaired_items.append(item)
+                mapped[fname] = repaired_items
         elif constraints is not None:
             clamped = _apply_constraints(val, constraints)
             if clamped is not None:
