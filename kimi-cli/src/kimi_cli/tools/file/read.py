@@ -37,6 +37,9 @@ class Params(BaseModel):
     path: str | list[str] = Field(
         description=(
             "File path, or a list of file paths. "
+            "Each path may also be a glob pattern such as `*.py`; only the final "
+            "path component may contain wildcards (`*`, `?`, `[...]`), and "
+            "recursive patterns starting with `**` are not allowed. "
             "Absolute for files outside working directory."
         )
     )
