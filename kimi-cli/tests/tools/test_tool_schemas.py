@@ -408,31 +408,43 @@ def test_read_file_params_schema(read_file_tool: ReadFile):
         {
             "properties": {
                 "path": {
-                    "description": "File path. Absolute for files outside working directory.",
-                    "type": "string",
+                    "anyOf": [
+                        {"type": "string"},
+                        {"items": {"type": "string"}, "type": "array"},
+                    ],
+                    "description": "File path, or a list of file paths. Absolute for files outside working directory.",
                 },
                 "line_offset": {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"items": {"type": "integer"}, "type": "array"},
+                    ],
                     "default": 1,
-                    "description": "Start line, 1-based. Negative reads from end. Max abs 1000.",
-                    "type": "integer",
+                    "description": "Start line, 1-based. Negative reads from end. Max abs 1000. May be a single integer applied to all files, or a list with one integer per file path.",
                 },
                 "n_lines": {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"items": {"type": "integer"}, "type": "array"},
+                    ],
                     "default": 1000,
-                    "description": "Lines to read, max 1000.",
-                    "minimum": 1,
-                    "type": "integer",
+                    "description": "Lines to read, max 1000. May be a single integer applied to all files, or a list with one integer per file path.",
                 },
                 "max_char": {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"items": {"type": "integer"}, "type": "array"},
+                    ],
                     "default": 65536,
-                    "description": "Maximum number of characters to return.",
-                    "minimum": 0,
-                    "type": "integer",
+                    "description": "Maximum number of characters to return. May be a single integer applied to all files, or a list with one integer per file path.",
                 },
                 "char_offset": {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"items": {"type": "integer"}, "type": "array"},
+                    ],
                     "default": 0,
-                    "description": "Character offset to start returning from.",
-                    "minimum": 0,
-                    "type": "integer",
+                    "description": "Character offset to start returning from. May be a single integer applied to all files, or a list with one integer per file path.",
                 },
             },
             "required": ["path"],

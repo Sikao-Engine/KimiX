@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+from pathlib import Path
 
 from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
 from kosong.tooling.error import ToolNotFoundError as KosongToolNotFoundError
@@ -463,3 +464,124 @@ async def test_cross_step_dedup_not_triggered_after_back_to_the_future():
     # Should NOT have the cross-step reminder appended
     assert tr.return_value.output == "a"
     assert ts.dedup_triggered is False
+
+
+
+# --- Dynamic tool output byte budget ---
+
+
+class _MockLLM:
+    def __init__(self, max_context_size: int) -> None:
+        self.max_context_size = max_context_size
+
+
+class _MockRuntime:
+    def __init__(self, max_context_size: int) -> None:
+        self.llm = _MockLLM(max_context_size)
+
+
+class _EchoTool(CallableTool2[DummyParams]):
+    name: str = "EchoTool"
+    description: str = "Echoes the input value"
+    params: type[DummyParams] = DummyParams
+
+    async def __call__(self, params: DummyParams) -> ToolReturnValue:
+        return ToolOk(output=params.value)
+
+
+def test_max_output_bytes_fallback_without_runtime():
+    """Without a runtime the byte budget falls back to the original 128 KiB."""
+    ts = KimiToolset()
+    assert ts._get_max_output_bytes() == 128 << 10
+
+
+def test_max_output_bytes_with_total_context_budget():
+    """Empty context: the remaining-context term dominates for typical models."""
+    ts = KimiToolset(runtime=_MockRuntime(32_768))
+    # total_budget = 32768 * 4 = 131072
+    # remaining_budget = int(32768 * 4 * 0.9) = 117964
+    assert ts._get_max_output_bytes() == 117_964
+
+
+def test_max_output_bytes_with_partial_context():
+    """Partially filled context shrinks the budget via the remaining-context term."""
+    ts = KimiToolset(
+        runtime=_MockRuntime(131_072),
+        context_token_provider=lambda: 65_536,
+    )
+    # total_budget = 131072 * 4 = 524288
+    # remaining_budget = int((131072 - 65536) * 4 * 0.9) = 235929
+    assert ts._get_max_output_bytes() == 235_929
+
+
+def test_max_output_bytes_near_full_context():
+    """Near-full context drives the budget toward zero."""
+    ts = KimiToolset(
+        runtime=_MockRuntime(131_072),
+        context_token_provider=lambda: 130_000,
+    )
+    # remaining_budget = int((131072 - 130000) * 4 * 0.9) = 3859
+    assert ts._get_max_output_bytes() == 3_859
+
+
+def test_max_output_bytes_absolute_ceiling():
+    """Very large contexts are capped by the absolute 1 MiB ceiling."""
+    ts = KimiToolset(runtime=_MockRuntime(1_048_576))
+    assert ts._get_max_output_bytes() == 1 << 20
+
+
+def test_set_context_token_provider_overrides_provider():
+    """The setter can replace the callback used by _get_max_output_bytes."""
+    ts = KimiToolset(
+        runtime=_MockRuntime(131_072),
+        context_token_provider=lambda: 65_536,
+    )
+    assert ts._get_max_output_bytes() == 235_929
+
+    ts.set_context_token_provider(lambda: 130_000)
+    assert ts._get_max_output_bytes() == 3_859
+
+
+async def test_oversized_string_output_is_spilled():
+    """A string tool output above the dynamic limit is exported to a temp file."""
+    ts = KimiToolset()  # fallback 128 KiB budget
+    ts.add(_EchoTool())
+
+    # Use a non-repeating pattern so sanitize_for_tokenizer does not collapse it.
+    large_output = "".join(chr(65 + i % 26) for i in range(200_000))
+    tool_call = ToolCall(
+        id="tc-large",
+        function=ToolCall.FunctionBody(
+            name="EchoTool",
+            arguments=json.dumps({"value": large_output}),
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, asyncio.Task)
+    tr = await result
+    output = tr.return_value.output
+    assert isinstance(output, str)
+    assert output.startswith("Output too large (200000 bytes), exported to")
+
+    path = output.split("exported to `")[-1].rstrip("`")
+    assert Path(path).exists()
+    assert Path(path).read_text(encoding="utf-8") == large_output
+
+
+async def test_small_string_output_is_returned_normally():
+    """A string tool output below the dynamic limit is returned unchanged."""
+    ts = KimiToolset()
+    ts.add(_EchoTool())
+
+    small_output = "hello"
+    tool_call = ToolCall(
+        id="tc-small",
+        function=ToolCall.FunctionBody(
+            name="EchoTool",
+            arguments=json.dumps({"value": small_output}),
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, asyncio.Task)
+    tr = await result
+    assert tr.return_value.output == small_output

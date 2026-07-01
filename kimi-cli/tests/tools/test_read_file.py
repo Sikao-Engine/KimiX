@@ -11,6 +11,7 @@ from kaos.path import KaosPath
 
 from kimi_cli.tools.file.read import (
     MAX_BYTES,
+    MAX_FILES,
     MAX_LINE_LENGTH,
     MAX_LINES,
     Params,
@@ -271,7 +272,7 @@ async def test_line_truncation_and_messaging(read_file_tool: ReadFile, temp_work
 
     # Test single long line truncation
     single_line_file = temp_work_dir / "single_long_line.txt"
-    long_content = "A" * 2500 + " This should be truncated"
+    long_content = "A" * (MAX_LINE_LENGTH + 100) + " This should be truncated"
     await single_line_file.write_text(long_content)
 
     result = await read_file_tool(Params(path=str(single_line_file)))
@@ -289,8 +290,8 @@ async def test_line_truncation_and_messaging(read_file_tool: ReadFile, temp_work
 
     # Test multiple long lines with truncation messaging
     multi_line_file = temp_work_dir / "multi_truncation_test.txt"
-    long_line_1 = "A" * 2500
-    long_line_2 = "B" * 3000
+    long_line_1 = "A" * (MAX_LINE_LENGTH + 100)
+    long_line_2 = "B" * (MAX_LINE_LENGTH + 200)
     normal_line = "Short line"
     content = f"{long_line_1}\n{normal_line}\n{long_line_2}"
     await multi_line_file.write_text(content)
@@ -350,8 +351,11 @@ async def test_max_lines_boundary(read_file_tool: ReadFile, temp_work_dir: KaosP
     content = "\n".join([f"Line {i}" for i in range(1, MAX_LINES + 10)])
     await large_file.write_text(content)
 
-    # Request more than MAX_LINES to trigger the boundary check
-    result = await read_file_tool(Params(path=str(large_file), n_lines=MAX_LINES + 5))
+    # Request more than MAX_LINES to trigger the boundary check.
+    # Use a large max_char so the output is not sliced after reading.
+    result = await read_file_tool(
+        Params(path=str(large_file), n_lines=MAX_LINES + 5, max_char=10_000_000)
+    )
 
     assert not result.is_error
     assert isinstance(result.output, str)
@@ -418,9 +422,8 @@ async def test_read_outside_relative_path_error_has_warning(
 
 async def test_max_bytes_boundary(read_file_tool: ReadFile, temp_work_dir: KaosPath):
     """Test that reading respects the MAX_BYTES boundary."""
-    # Create a file that exceeds MAX_BYTES
+    # Create a file that exceeds MAX_BYTES but stays under MAX_LINES
     large_file = temp_work_dir / "large_bytes.txt"
-    # Create content that will exceed 100KB but stay under MAX_LINES
     line_content = "A" * 1000  # 1000 characters per line
     num_lines = (MAX_BYTES // 1000) + 5  # Enough to exceed MAX_BYTES
     content = "\n".join([line_content] * num_lines)
@@ -563,11 +566,14 @@ async def test_read_tail_max_lines(read_file_tool: ReadFile, temp_work_dir: Kaos
     content = "\n".join([f"Line {i}" for i in range(1, total + 1)])
     await large_file.write_text(content)
 
-    # Use -MAX_LINES (the maximum allowed negative offset)
-    result = await read_file_tool(Params(path=str(large_file), line_offset=-MAX_LINES))
+    # Use -MAX_LINES (the maximum allowed negative offset).
+    # Use a large max_char so the output is not sliced after reading.
+    result = await read_file_tool(
+        Params(path=str(large_file), line_offset=-MAX_LINES, max_char=10_000_000)
+    )
     assert not result.is_error
     assert f"Total lines in file: {total}." in result.message
-    # deque captures last 1000 lines (501-1500), n_lines defaults to MAX_LINES so all 1000 are output
+    # tail_buf captures the last MAX_LINES lines; n_lines defaults to MAX_LINES so all are output
     assert isinstance(result.output, str)
     output_lines = [line for line in result.output.split("\n") if line.strip()]
     assert len(output_lines) == MAX_LINES
@@ -576,9 +582,10 @@ async def test_read_tail_max_lines(read_file_tool: ReadFile, temp_work_dir: Kaos
 
 
 async def test_read_tail_max_bytes(read_file_tool: ReadFile, temp_work_dir: KaosPath):
-    """Tail mode MAX_BYTES truncation should keep newest lines (closest to EOF)."""
+    """Tail mode byte-budget truncation should keep newest lines (closest to EOF)."""
     large_file = temp_work_dir / "tail_bytes.txt"
-    # Each line ~1001 bytes (1000 chars + \n), need > 100KB to exceed MAX_BYTES
+    max_bytes = MAX_BYTES
+    # Each line ~1001 bytes (1000 chars + \n), need > MAX_BYTES to trigger truncation
     num_lines = (MAX_BYTES // 1001) + 20
     # Tag each line with its number so we can verify which lines are kept
     lines_data = [f"{i:04d}{'B' * 996}" for i in range(1, num_lines + 1)]
@@ -586,10 +593,10 @@ async def test_read_tail_max_bytes(read_file_tool: ReadFile, temp_work_dir: Kaos
     await large_file.write_text(content)
 
     result = await read_file_tool(
-        Params(path=str(large_file), line_offset=-(num_lines), max_char=200000)
+        Params(path=str(large_file), line_offset=-(num_lines), max_char=2_000_000)
     )
     assert not result.is_error
-    assert f"Max {MAX_BYTES} bytes reached" in result.message
+    assert f"Max {max_bytes} bytes reached" in result.message
     assert f"Total lines in file: {num_lines}." in result.message
 
     # Verify that the LAST line of the file is included (newest lines kept)
@@ -597,11 +604,11 @@ async def test_read_tail_max_bytes(read_file_tool: ReadFile, temp_work_dir: Kaos
     output_lines = [x for x in result.output.split("\n") if x.strip()]
     last_output = output_lines[-1].split("\t", 1)[1]
     assert last_output.startswith(f"{num_lines:04d}"), (
-        "MAX_BYTES truncation should keep newest lines closest to EOF"
+        "Byte-budget truncation should keep newest lines closest to EOF"
     )
     # Verify that the first output line is NOT line 1 (oldest lines trimmed)
     first_output = output_lines[0].split("\t", 1)[1]
-    assert not first_output.startswith("0001"), "MAX_BYTES truncation should trim oldest lines"
+    assert not first_output.startswith("0001"), "Byte-budget truncation should trim oldest lines"
 
 
 async def test_read_tail_n_lines_not_affected_by_byte_cap(
@@ -614,7 +621,7 @@ async def test_read_tail_n_lines_not_affected_by_byte_cap(
     """
     large_file = temp_work_dir / "tail_nlines_bytecap.txt"
     # Create a file where tail_buf total bytes >> MAX_BYTES but n_lines=1 is fine.
-    # Each line ~2000 bytes (after truncation), 500 lines total.
+    # Each line ~2000 bytes, 500 lines total (> MAX_BYTES).
     num_lines = 500
     lines_data = [f"{i:04d}{'X' * 1996}" for i in range(1, num_lines + 1)]
     content = "\n".join(lines_data)
@@ -640,7 +647,7 @@ async def test_read_tail_line_truncation(read_file_tool: ReadFile, temp_work_dir
     """Tail mode should correctly report truncated lines via was_truncated flag in deque."""
     trunc_file = temp_work_dir / "tail_truncation.txt"
     short_line = "Short line"
-    long_line = "X" * 2500  # Exceeds MAX_LINE_LENGTH=2000
+    long_line = "X" * (MAX_LINE_LENGTH + 100)  # Exceeds MAX_LINE_LENGTH
     # 5 lines: short, long, short, long, short
     content = f"{short_line}\n{long_line}\n{short_line}\n{long_line}\n{short_line}"
     await trunc_file.write_text(content)
@@ -865,3 +872,183 @@ class TestReadFileCharSlicing:
         result = await read_file_tool(Params(path=str(f), char_offset=7, max_char=9))
         assert not result.is_error
         assert result.output == "你好"
+
+
+# ── Multi-file read tests ────────────────────────────────────────────────────
+
+
+async def test_read_multiple_files(read_file_tool: ReadFile, temp_work_dir: KaosPath):
+    """Read two files in a single call."""
+    a = temp_work_dir / "a.txt"
+    b = temp_work_dir / "b.txt"
+    await a.write_text("File A line 1\nFile A line 2")
+    await b.write_text("File B line 1")
+
+    result = await read_file_tool(Params(path=[str(a), str(b)]))
+    assert not result.is_error
+    display_a = str(a).replace("\\", "/")
+    display_b = str(b).replace("\\", "/")
+    assert f"======== {display_a} ========" in result.output
+    assert "File A line 1" in result.output
+    assert f"======== {display_b} ========" in result.output
+    assert "File B line 1" in result.output
+    assert "Read 2 file(s)" in result.message
+
+
+async def test_read_multiple_files_single_string_still_works(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """A single string path still behaves exactly like a single-file read."""
+    a = temp_work_dir / "a.txt"
+    await a.write_text("single file content")
+
+    result = await read_file_tool(Params(path=str(a)))
+    assert not result.is_error
+    assert result.output == snapshot("     1\tsingle file content")
+    assert "Read file" in result.brief
+
+
+async def test_read_multiple_files_with_errors(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """One success and one failure returns a successful aggregate with both blocks."""
+    a = temp_work_dir / "a.txt"
+    missing = temp_work_dir / "missing.txt"
+    await a.write_text("present")
+
+    result = await read_file_tool(Params(path=[str(a), str(missing)]))
+    assert not result.is_error
+    display_a = str(a).replace("\\", "/")
+    display_missing = str(missing).replace("\\", "/")
+    assert f"======== {display_a} ========" in result.output
+    assert "present" in result.output
+    assert f"======== {display_missing} ========" in result.output
+    assert "does not exist" in result.output
+    assert "Read 1 file(s), 1 error(s)" in result.message
+
+
+async def test_read_multiple_files_all_fail(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """All files failing returns a ToolError."""
+    missing1 = temp_work_dir / "missing1.txt"
+    missing2 = temp_work_dir / "missing2.txt"
+
+    result = await read_file_tool(Params(path=[str(missing1), str(missing2)]))
+    assert result.is_error
+    assert "Failed to read" in result.message
+    assert result.brief == "Failed to read files"
+
+
+async def test_read_multiple_files_deduplicated(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """Duplicate paths are read only once."""
+    a = temp_work_dir / "a.txt"
+    await a.write_text("content")
+
+    result = await read_file_tool(Params(path=[str(a), str(a)]))
+    assert not result.is_error
+    # Deduplication leaves a single file, so the single-file output format is used.
+    assert result.output == snapshot("     1\tcontent")
+    assert result.output.count("content") == 1
+
+
+async def test_read_multiple_files_too_many(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """Reading more than MAX_FILES in one call is rejected."""
+    paths = [str(temp_work_dir / f"file{i}.txt") for i in range(MAX_FILES + 1)]
+
+    result = await read_file_tool(Params(path=paths))
+    assert result.is_error
+    assert f"Cannot read more than {MAX_FILES} files" in result.message
+    assert result.brief == "Too many files"
+
+
+async def test_read_multiple_files_empty_list(read_file_tool: ReadFile):
+    """An empty path list is rejected."""
+    result = await read_file_tool(Params(path=[]))
+    assert result.is_error
+    assert "cannot be empty" in result.message.lower()
+
+
+async def test_read_multiple_files_per_file_limits(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """Per-file line_offset and n_lines apply independently."""
+    a = temp_work_dir / "a.txt"
+    b = temp_work_dir / "b.txt"
+    await a.write_text("a1\na2\na3\na4")
+    await b.write_text("b1\nb2\nb3\nb4\nb5")
+
+    result = await read_file_tool(
+        Params(path=[str(a), str(b)], line_offset=[1, 2], n_lines=[2, 3])
+    )
+    assert not result.is_error
+    display_a = str(a).replace("\\", "/")
+    display_b = str(b).replace("\\", "/")
+    # a should contain lines 1-2
+    assert f"======== {display_a} ========" in result.output
+    assert "     1\ta1" in result.output
+    assert "     2\ta2" in result.output
+    assert "     3\ta3" not in result.output.split(f"======== {display_b} ========")[0]
+    # b should contain lines 2-4
+    b_section = result.output.split(f"======== {display_b} ========")[1]
+    assert "     2\tb2" in b_section
+    assert "     3\tb3" in b_section
+    assert "     4\tb4" in b_section
+    assert "     5\tb5" not in b_section
+
+
+async def test_read_multiple_files_scalar_options(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """Scalar n_lines applies to every file."""
+    a = temp_work_dir / "a.txt"
+    b = temp_work_dir / "b.txt"
+    await a.write_text("a1\na2")
+    await b.write_text("b1\nb2")
+
+    result = await read_file_tool(Params(path=[str(a), str(b)], n_lines=1))
+    assert not result.is_error
+    display_a = str(a).replace("\\", "/")
+    display_b = str(b).replace("\\", "/")
+    a_section = result.output.split(f"======== {display_b} ========")[0]
+    b_section = result.output.split(f"======== {display_b} ========")[1]
+    assert "     1\ta1" in a_section
+    assert "     2\ta2" not in a_section
+    assert "     1\tb1" in b_section
+    assert "     2\tb2" not in b_section
+
+
+async def test_read_multiple_files_mismatched_option_length(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """A per-file option list with the wrong length is rejected at validation time."""
+    a = temp_work_dir / "a.txt"
+    b = temp_work_dir / "b.txt"
+    await a.write_text("a")
+    await b.write_text("b")
+
+    with pytest.raises(ValueError, match="n_lines"):
+        Params(path=[str(a), str(b)], n_lines=[1])
+
+
+async def test_read_multiple_files_alias_paths(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """The 'paths' alias is repaired to 'path'."""
+    a = temp_work_dir / "a.txt"
+    b = temp_work_dir / "b.txt"
+    await a.write_text("alpha")
+    await b.write_text("beta")
+
+    result = await read_file_tool.call({"paths": [str(a), str(b)]})
+    assert not result.is_error
+    assert "alpha" in result.output
+    assert "beta" in result.output
+    assert "Read 2 file(s)" in result.message
+
+
+

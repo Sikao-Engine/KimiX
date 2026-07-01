@@ -11,7 +11,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Literal, cast, overload
 
 import orjson
 from kosong.tooling import (
@@ -69,6 +69,12 @@ _temp_idx = 0
 print_tool_func = print
 
 _temp_folder: Path = Path.home() / ".kimi" / "logs"
+
+_DEFAULT_TOOL_OUTPUT_MAX_BYTES = 128 << 10  # 128 KiB fallback
+_TOOL_OUTPUT_BYTES_PER_TOKEN = 4  # conservative UTF-8 bytes/token estimate
+_TOOL_OUTPUT_CONTEXT_FRACTION = 1.0  # budget derived from total context size
+_TOOL_OUTPUT_REMAINING_FRACTION = 0.9  # must stay strictly below remaining context
+_TOOL_OUTPUT_ABS_MAX_BYTES = 1 << 20  # 1 MiB hard ceiling
 
 
 def _export_to_temp_file(content: str, ext: str = ".log") -> str:
@@ -226,7 +232,14 @@ def _append_reminder_to_return_value(
 
 
 class KimiToolset:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        runtime: Runtime | None = None,
+        context_token_provider: Callable[[], int] | None = None,
+    ) -> None:
+        self._runtime = runtime
+        self._context_token_provider = context_token_provider
+
         self._tool_dict: dict[str, ToolType] = {}
         self._hidden_tools: set[str] = set()
         self._mcp_servers: dict[str, MCPServerInfo] = {}
@@ -253,6 +266,42 @@ class KimiToolset:
 
     def set_hook_engine(self, engine: HookEngine) -> None:
         self._hook_engine = engine
+
+    def set_context_token_provider(self, provider: Callable[[], int] | None) -> None:
+        """Set a callback that returns the current context token count."""
+        self._context_token_provider = provider
+
+    def _get_max_output_bytes(self) -> int:
+        """Return the per-tool output byte budget.
+
+        The budget is the more restrictive of:
+          - a fraction of the model's total context size, and
+          - a fraction of the currently remaining context tokens.
+
+        Falls back to `_DEFAULT_TOOL_OUTPUT_MAX_BYTES` when no runtime/LLM is available.
+        """
+        llm = getattr(self._runtime, "llm", None)
+        max_context = getattr(llm, "max_context_size", None)
+        if not isinstance(max_context, int) or max_context <= 0:
+            return _DEFAULT_TOOL_OUTPUT_MAX_BYTES
+
+        # Budget derived from total context size
+        total_budget = int(
+            max_context * _TOOL_OUTPUT_BYTES_PER_TOKEN * _TOOL_OUTPUT_CONTEXT_FRACTION
+        )
+
+        # Budget derived from remaining context (safety constraint)
+        current_tokens = 0
+        if self._context_token_provider is not None:
+            current_tokens = self._context_token_provider()
+        remaining_tokens = max(0, max_context - current_tokens)
+        remaining_budget = int(
+            remaining_tokens * _TOOL_OUTPUT_BYTES_PER_TOKEN * _TOOL_OUTPUT_REMAINING_FRACTION
+        )
+
+        # Enforce: max_bytes is less than remaining context usage
+        max_bytes = min(total_budget, remaining_budget)
+        return max(0, min(max_bytes, _TOOL_OUTPUT_ABS_MAX_BYTES))
 
     def add(self, tool: ToolType) -> None:
         self._tool_dict[tool.name] = tool
@@ -475,10 +524,10 @@ class KimiToolset:
                             else:
                                 sanitized_parts.append(part)
                         ret.output = sanitized_parts
-                    MAX_BYTES = 128 << 10  # 128KB
+                    max_bytes = self._get_max_output_bytes()
                     if isinstance(ret.output, str):
                         len_bytes = len(ret.output.encode("utf-8"))
-                        if len_bytes > MAX_BYTES:  # Add by Maxwell: process large size
+                        if len_bytes > max_bytes:
                             temp_file = _export_to_temp_file(ret.output)
                             ret.output = (
                                 f"Output too large ({len_bytes} bytes), exported to `{temp_file}`"
@@ -498,7 +547,7 @@ class KimiToolset:
                                 total_bytes += len(part.audio_url.url.encode("utf-8"))
                             elif isinstance(part, VideoURLPart):
                                 total_bytes += len(part.video_url.url.encode("utf-8"))
-                        if total_bytes > MAX_BYTES:
+                        if total_bytes > max_bytes:
                             lines: list[str] = []
                             for part in parts:
                                 if isinstance(part, TextPart):

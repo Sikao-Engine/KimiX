@@ -1,1 +1,1 @@
-Read text files. Lines over ${MAX_LINE_LENGTH} chars truncated. Max ${MAX_LINES} lines, ${MAX_BYTES} bytes per call. Negative offset = tail mode.
+Read one or more text files. `path` may be a single file path or a list of paths. `line_offset`, `n_lines`, `max_char`, and `char_offset` may each be a single value applied to all files, or a list with one value per file path. Lines over ${MAX_LINE_LENGTH} chars truncated. Max ${MAX_LINES} lines per file. Bytes per file scale with the model's context window (at least ${MAX_BYTES} bytes, up to 1MiB). Negative offset = tail mode.

@@ -2,7 +2,13 @@ from pathlib import Path
 from typing import override
 
 from kaos.path import KaosPath
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kosong.tooling import (
+    CallableTool2,
+    ToolError,
+    ToolOk,
+    ToolReturnValue,
+    _COMMON_FIELD_ALIASES,
+)
 from pydantic import BaseModel, Field, model_validator
 
 from kimi_cli.session import Session
@@ -16,62 +22,117 @@ from kimi_cli.vfs import VFS
 
 from .utils import resolve_vfs
 
-MAX_LINES = 1000
-MAX_LINE_LENGTH = 2000
-MAX_BYTES = 100 << 10  # 100KB
+MAX_LINES = 5000
+MAX_LINE_LENGTH = 4000
+MAX_FILES = 32
+
+_DEFAULT_READ_MAX_BYTES = 100 << 10  # 100 KiB fallback
+
+MAX_BYTES = _DEFAULT_READ_MAX_BYTES  # kept for backward compatibility
 
 
 class Params(BaseModel):
-    path: str = Field(
-        description="File path. Absolute for files outside working directory."
+    path: str | list[str] = Field(
+        description=(
+            "File path, or a list of file paths. "
+            "Absolute for files outside working directory."
+        )
     )
-    line_offset: int = Field(
+    line_offset: int | list[int] = Field(
         description=(
             "Start line, 1-based. Negative reads from end. "
-            f"Max abs {MAX_LINES}."
+            f"Max abs {MAX_LINES}. May be a single integer applied to all files, "
+            "or a list with one integer per file path."
         ),
         default=1,
     )
-    n_lines: int = Field(
-        description=f"Lines to read, max {MAX_LINES}.",
+    n_lines: int | list[int] = Field(
+        description=(
+            f"Lines to read, max {MAX_LINES}. "
+            "May be a single integer applied to all files, "
+            "or a list with one integer per file path."
+        ),
         default=MAX_LINES,
-        ge=1,
     )
-    max_char: int = Field(
-        description="Maximum number of characters to return.",
+    max_char: int | list[int] = Field(
+        description=(
+            "Maximum number of characters to return. "
+            "May be a single integer applied to all files, "
+            "or a list with one integer per file path."
+        ),
         default=65536,
-        ge=0,
     )
-    char_offset: int = Field(
-        description="Character offset to start returning from.",
+    char_offset: int | list[int] = Field(
+        description=(
+            "Character offset to start returning from. "
+            "May be a single integer applied to all files, "
+            "or a list with one integer per file path."
+        ),
         default=0,
-        ge=0,
     )
 
     @model_validator(mode="after")
-    def _validate_line_offset(self) -> Params:
-        if self.line_offset == 0:
-            raise ValueError(
-                "line_offset cannot be 0; use 1 for the first line or -1 for the last line"
-            )
-        if self.line_offset < -MAX_LINES:
-            raise ValueError(
-                f"line_offset cannot be less than -{MAX_LINES}. "
-                "Use a positive line_offset with the total line count "
-                "to read from a specific position."
-            )
+    def _validate(self) -> "Params":
+        n = len(self.path) if isinstance(self.path, list) else 1
+
+        fields: list[tuple[str, int | list[int], int]] = [
+            ("line_offset", self.line_offset, -MAX_LINES),
+            ("n_lines", self.n_lines, 1),
+            ("max_char", self.max_char, 0),
+            ("char_offset", self.char_offset, 0),
+        ]
+        for name, value, min_value in fields:
+            if isinstance(value, list):
+                if len(value) != n:
+                    raise ValueError(
+                        f"{name} list length ({len(value)}) must match "
+                        f"path list length ({n})."
+                    )
+                values = value
+            else:
+                values = [value]
+            for i, v in enumerate(values):
+                if name == "line_offset":
+                    if v == 0:
+                        raise ValueError(
+                            f"{name}[{i}] cannot be 0; use 1 for the first line "
+                            "or -1 for the last line"
+                        )
+                    if v < -MAX_LINES:
+                        raise ValueError(
+                            f"{name}[{i}] cannot be less than -{MAX_LINES}. "
+                            "Use a positive line_offset with the total line count "
+                            "to read from a specific position."
+                        )
+                elif v < min_value:
+                    raise ValueError(
+                        f"{name}[{i}] must be >= {min_value}."
+                    )
         return self
+
+
+def _normalize_per_file(value: int | list[int], n: int) -> list[int]:
+    """Return a per-file option list; scalars are broadcast to all files."""
+    if isinstance(value, list):
+        return value
+    return [value] * n
 
 
 class ReadFile(CallableTool2[Params]):
     name: str = "ReadFile"
     params: type[Params] = Params
-    def __del__(self):
-        # TODO
-        pass
-        
+    field_aliases = {
+        **_COMMON_FIELD_ALIASES,
+        "files": "path",
+        "paths": "path",
+    }
 
-    def __init__(self, runtime: Runtime, session: Session, vfs: VFS | None = None) -> None:
+    def __init__(
+        self,
+        runtime: Runtime,
+        session: Session,
+        vfs: VFS | None = None,
+    ) -> None:
         self.session_id = session.id
         self._session = session
         description = load_desc(
@@ -118,20 +179,105 @@ class ReadFile(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
-        display_path = params.path.replace("\\", "/")
-        if not params.path:
+        raw_paths: list[str] = [params.path] if isinstance(params.path, str) else params.path
+
+        if not raw_paths:
+            return ToolError(
+                message="File path cannot be empty.",
+                brief="Empty file path",
+            )
+        if len(raw_paths) > MAX_FILES:
+            return ToolError(
+                message=f"Cannot read more than {MAX_FILES} files in one call.",
+                brief="Too many files",
+            )
+
+        n = len(raw_paths)
+        line_offsets = _normalize_per_file(params.line_offset, n)
+        n_lines_list = _normalize_per_file(params.n_lines, n)
+        max_chars = _normalize_per_file(params.max_char, n)
+        char_offsets = _normalize_per_file(params.char_offset, n)
+
+        # Deduplicate paths while preserving order and keeping option entries in sync.
+        seen: set[str] = set()
+        deduped_paths: list[str] = []
+        deduped_options: list[tuple[int, int, int, int]] = []
+        for i, raw_path in enumerate(raw_paths):
+            if raw_path not in seen:
+                seen.add(raw_path)
+                deduped_paths.append(raw_path)
+                deduped_options.append(
+                    (line_offsets[i], n_lines_list[i], max_chars[i], char_offsets[i])
+                )
+
+        results: list[ToolReturnValue] = []
+        success_count = 0
+        error_count = 0
+        for raw_path, (line_offset, n_lines, max_char, char_offset) in zip(
+            deduped_paths, deduped_options
+        ):
+            result = await self._read_single_file(
+                raw_path, line_offset, n_lines, char_offset, max_char
+            )
+            results.append(result)
+            if result.is_error:
+                error_count += 1
+            else:
+                success_count += 1
+
+        # Single-file reads keep the original output/message format for backward compatibility.
+        if len(deduped_paths) == 1:
+            return results[0]
+
+        if success_count == 0:
+            messages = [r.message for r in results]
+            return ToolError(
+                message=f"Failed to read {error_count} file(s). " + " ".join(messages),
+                brief="Failed to read files",
+            )
+
+        parts: list[str] = []
+        for idx, (raw_path, result) in enumerate(zip(deduped_paths, results)):
+            display_path = raw_path.replace("\\", "/")
+            parts.append(f"======== {display_path} ========")
+            if result.is_error:
+                parts.append(result.message)
+            else:
+                parts.append(result.output)
+            if idx < len(deduped_paths) - 1:
+                parts.append("")
+        final_output = "\n".join(parts)
+
+        messages = [r.message for r in results]
+        final_message = f"Read {success_count} file(s), {error_count} error(s). " + " ".join(messages)
+        return ToolOk(
+            output=final_output,
+            message=final_message,
+            brief=f"Read {success_count} files",
+        )
+
+    async def _read_single_file(
+        self,
+        raw_path: str,
+        line_offset: int,
+        n_lines: int,
+        char_offset: int,
+        max_char: int,
+    ) -> ToolReturnValue:
+        display_path = raw_path.replace("\\", "/")
+        if not raw_path:
             return ToolError(
                 message="File path cannot be empty.",
                 brief="Empty file path",
             )
 
         try:
-            p = kaos_path_from_user_input(params.path)
+            p = kaos_path_from_user_input(raw_path)
             logical_path = p
             if err := await self._validate_path(p):
                 return err
 
-            p = await resolve_vfs(params.path, self._vfs, for_write=False)
+            p = await resolve_vfs(raw_path, self._vfs, for_write=False)
 
             if is_sensitive_file(str(logical_path)):
                 return ToolError(
@@ -177,41 +323,46 @@ class ReadFile(CallableTool2[Params]):
                     brief="File not readable",
                 )
 
-            assert params.n_lines >= 1
-            assert params.line_offset != 0
+            assert n_lines >= 1
+            assert line_offset != 0
 
-            if params.line_offset < 0:
-                result = await self._read_tail(p, params)
+            if line_offset < 0:
+                result = await self._read_tail(p, display_path, line_offset, n_lines)
             else:
-                result = await self._read_forward(p, params)
+                result = await self._read_forward(p, display_path, line_offset, n_lines)
 
             if isinstance(result, ToolOk):
                 if isinstance(result.output, str):
-                    result.output = result.output[params.char_offset:params.max_char]
-                self._session.file_mtime.clean_file(params.path)
+                    result.output = result.output[char_offset:max_char]
+                self._session.file_mtime.clean_file(raw_path)
             return result
         except Exception as e:
-            logger.warning("ReadFile failed: {path}: {error}", path=params.path, error=e)
+            logger.warning("ReadFile failed: {path}: {error}", path=raw_path, error=e)
             return ToolError(
                 message=f"Failed to read {display_path}. Error: {e}",
                 brief="Failed to read file",
             )
 
-    async def _read_forward(self, p: KaosPath, params: Params) -> ToolReturnValue:
+    async def _read_forward(
+        self,
+        p: KaosPath,
+        display_path: str,
+        line_offset: int,
+        n_lines: int,
+    ) -> ToolReturnValue:
         """Read file from a positive line_offset."""
-        display_path = params.path.replace("\\", "/")
         lines_with_no: list[str] = []
         n_bytes = 0
         truncated_line_numbers: list[int] = []
         max_lines_reached = False
         max_bytes_reached = False
         current_line_no = 0
-        target_lines = min(params.n_lines, MAX_LINES)
+        target_lines = min(n_lines, MAX_LINES)
         eof_reached = True
 
         async for line in p.read_lines(errors="replace"):
             current_line_no += 1
-            if current_line_no < params.line_offset:
+            if current_line_no < line_offset:
                 continue
             truncated = truncate_line(line, MAX_LINE_LENGTH)
             if truncated != line:
@@ -228,7 +379,7 @@ class ReadFile(CallableTool2[Params]):
                 eof_reached = False
                 break
 
-        start_line = params.line_offset
+        start_line = line_offset
 
         message = (
             f"{len(lines_with_no)} lines read from file starting from line {start_line}."
@@ -241,7 +392,7 @@ class ReadFile(CallableTool2[Params]):
             message += f" Max {MAX_LINES} lines reached."
         elif max_bytes_reached:
             message += f" Max {MAX_BYTES} bytes reached."
-        elif len(lines_with_no) < params.n_lines:
+        elif len(lines_with_no) < n_lines:
             message += " End of file reached."
         if truncated_line_numbers:
             message += f" Lines {truncated_line_numbers} were truncated."
@@ -252,11 +403,16 @@ class ReadFile(CallableTool2[Params]):
             brief="Read file",
         )
 
-    async def _read_tail(self, p: KaosPath, params: Params) -> ToolReturnValue:
+    async def _read_tail(
+        self,
+        p: KaosPath,
+        display_path: str,
+        line_offset: int,
+        n_lines: int,
+    ) -> ToolReturnValue:
         """Read file from a negative line_offset (tail mode)."""
-        display_path = params.path.replace("\\", "/")
-        tail_count = abs(params.line_offset)
-        line_limit = min(params.n_lines, MAX_LINES)
+        tail_count = abs(line_offset)
+        line_limit = min(n_lines, MAX_LINES)
 
         # Bounded list keeping the last `tail_count` lines.
         # Each entry: (line_no, truncated_line, was_truncated, byte_len)
@@ -276,16 +432,17 @@ class ReadFile(CallableTool2[Params]):
         candidates = tail_buf[:line_limit]
         max_lines_reached = len(tail_buf) > MAX_LINES and len(candidates) == MAX_LINES
 
-        # Apply MAX_BYTES — reverse-scan to keep the newest lines that fit.
+        # Apply max_bytes — reverse-scan to keep the newest lines that fit.
+        max_bytes = MAX_BYTES
         if candidates:
             total_candidate_bytes = sum(entry[3] for entry in candidates)
-            if total_candidate_bytes > MAX_BYTES:
+            if total_candidate_bytes > max_bytes:
                 max_bytes_reached = True
                 kept = 0
                 n_bytes = 0
                 for entry in reversed(candidates):
                     n_bytes += entry[3]
-                    if n_bytes > MAX_BYTES:
+                    if n_bytes > max_bytes:
                         break
                     kept += 1
                 candidates = candidates[len(candidates) - kept :]
@@ -312,8 +469,8 @@ class ReadFile(CallableTool2[Params]):
         if max_lines_reached:
             message += f" Max {MAX_LINES} lines reached."
         elif max_bytes_reached:
-            message += f" Max {MAX_BYTES} bytes reached."
-        elif len(lines_with_no) < params.n_lines:
+            message += f" Max {max_bytes} bytes reached."
+        elif len(lines_with_no) < n_lines:
             message += " End of file reached."
         if truncated_line_numbers:
             message += f" Lines {truncated_line_numbers} were truncated."
