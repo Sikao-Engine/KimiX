@@ -123,3 +123,32 @@ function createDetailLine(text: string, className?: string): HTMLElement {
   line.textContent = `       ${text}`;
   return line;
 }
+
+// ── Streaming Render Functions ────────────────────────────────────
+
+/** Create an empty element ready for streaming thinking content. */
+export function createThinkingStreamElement(): HTMLElement {
+  const el = document.createElement("span");
+  el.className = "msg-part part-thinking";
+  el.dataset.streaming = "true";
+  return el;
+}
+
+/** Update a thinking stream element with new text content (realtime). */
+export function updateThinkingStreamElement(el: HTMLElement, text: string): void {
+  el.textContent = text;
+}
+
+/** Create an element for accumulating text that will be markdown-rendered later. */
+export function createTextStreamContainer(): HTMLElement {
+  const el = document.createElement("span");
+  el.className = "msg-part part-text";
+  el.dataset.streaming = "true";
+  return el;
+}
+
+/** Finalize a text stream: render accumulated text as markdown. */
+export function finalizeTextStreamElement(el: HTMLElement, text: string): void {
+  el.innerHTML = renderMarkdown(text);
+  delete el.dataset.streaming;
+}

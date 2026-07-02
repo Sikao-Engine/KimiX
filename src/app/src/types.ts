@@ -55,6 +55,17 @@ export interface RawSSEEvent {
   id: string | null;
 }
 
+/** Streaming state for realtime partial updates.
+ *  Tracks in-progress parts being streamed via SSE before they are finalized.
+ */
+export interface StreamingPartState {
+  element: HTMLElement | null;
+  accumulatedText: string;
+  type: MessagePartType;
+  partId: string;
+  isComplete: boolean;
+}
+
 // OpenCode wire format type mapping
 const OPENCODE_TYPE_MAP: Record<string, MessagePartType> = {
   tool: MessagePartType.TOOL_CALLING,

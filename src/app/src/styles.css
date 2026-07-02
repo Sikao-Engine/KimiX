@@ -281,6 +281,23 @@ code {
   color: var(--red);
 }
 
+/* ── Streaming / Part Animation ─────────────────────────────── */
+
+.part-thinking[data-streaming]::after {
+  content: "▊";
+  animation: blink-cursor 1s step-end infinite;
+  color: var(--cyan);
+  opacity: 0.7;
+}
+
+@keyframes blink-cursor {
+  50% { opacity: 0; }
+}
+
+.part-text[data-streaming] {
+  opacity: 0.9;
+}
+
 /* ── Context Usage Bar ──────────────────────────────────────── */
 
 .context-usage-bar {

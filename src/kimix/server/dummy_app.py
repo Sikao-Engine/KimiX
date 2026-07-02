@@ -21,6 +21,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from starlette.responses import StreamingResponse
 
+from kimix.server.bus import bus, BusEvent
 from kimix.server.dummy_session_manager import session_manager  # <-- dummy
 
 logger = logging.getLogger(__name__)
@@ -127,23 +128,28 @@ def create_app() -> FastAPI:
         print("[DummyApp] GET /event")
 
         async def _generate():
-            import orjson
+            # Initial connected event
+            yield BusEvent(type="server.connected", properties={}).to_sse()
 
-            connected = orjson.dumps(
-                {"type": "server.connected", "properties": {}}
-            ).decode("utf-8")
-            yield f"data: {connected}\n\n"
-
-            while True:
-                if await request.is_disconnected():
-                    break
-                try:
-                    await asyncio.sleep(15.0)
-                except asyncio.CancelledError:
-                    break
-                if await request.is_disconnected():
-                    break
-                yield ": heartbeat\n\n"
+            q = bus.create_async_queue()
+            try:
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    try:
+                        event = await asyncio.wait_for(q.get(), timeout=10.0)
+                    except asyncio.TimeoutError:
+                        if await request.is_disconnected():
+                            break
+                        yield BusEvent(type="server.heartbeat", properties={}).to_sse()
+                        continue
+                    except asyncio.CancelledError:
+                        break
+                    if event is None:
+                        break
+                    yield event.to_sse()
+            finally:
+                bus.remove_async_queue(q)
 
         return StreamingResponse(
             _generate(),

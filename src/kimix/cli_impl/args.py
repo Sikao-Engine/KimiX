@@ -216,7 +216,7 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
         except (orjson.JSONDecodeError, Exception) as e:
             print_warning(f"Failed to read skill_dir from .kimix/skill.json: {e}")
     # Handle --config argument
-    if args.config:
+    if getattr(args, "config", None):
         config_path = Path(args.config)
         found = False
         if config_path.exists() and config_path.is_file():

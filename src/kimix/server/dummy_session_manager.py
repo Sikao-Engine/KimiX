@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 from kimi_agent_sdk import Session
 from kimix.base import MessageType, _default_agent_file_dir
+from kimix.server.bus import bus, BusEvent
 from kimix.utils.session import _create_session_async
 from kimix.utils.system_prompt import SystemPromptType
 
@@ -43,6 +44,9 @@ class SessionStateClass:
     running: bool = True
     is_working: bool = False
     _loop: Optional[asyncio.AbstractEventLoop] = field(default=None, repr=False)
+    part_id_map: Dict[str, str] = field(default_factory=dict)
+    session_id: str = ""
+    _part_counter: int = 0
 
     def stop(self) -> None:
         """Signal the work loop to stop and join the thread."""
@@ -160,6 +164,26 @@ async def _process_prompt(
     """Call prompt_async with an output_function that enqueues messages."""
     from kimix.utils.prompt import prompt_async
 
+    # Emit running status
+    bus.emit(BusEvent(type="session.status", properties={
+        "status": {"type": "running", "sessionID": state.session_id},
+    }))
+
+    part_text_buf: Dict[str, str] = {}
+
+    def _get_or_create_part_id(msg_type: MessageType) -> str:
+        key = msg_type.name if hasattr(msg_type, "name") else str(msg_type)
+        if key in state.part_id_map:
+            return state.part_id_map[key]
+        state._part_counter += 1
+        pid = f"prt_dummy_{state._part_counter:04x}"
+        state.part_id_map[key] = pid
+        return pid
+
+    def _get_cumulative_text(msg_type: MessageType) -> str:
+        key = msg_type.name if hasattr(msg_type, "name") else str(msg_type)
+        return part_text_buf.setdefault(key, "")
+
     def _output_handler(chunk: str, msg_type: MessageType) -> None:
         item: Dict[str, Any] = {
             "type": msg_type.name if hasattr(msg_type, "name") else str(msg_type),
@@ -176,12 +200,48 @@ async def _process_prompt(
                 item["tool_result"] = chunk[len(prefix):]
         state.output_queue.put(item)
 
+        # Emit SSE event via bus — send cumulative text so frontend can display full content
+        part_id = _get_or_create_part_id(msg_type)
+        # Accumulate the chunk into the per-type buffer
+        key = msg_type.name if hasattr(msg_type, "name") else str(msg_type)
+        part_text_buf[key] = part_text_buf.get(key, "") + chunk
+        cumulative_text = part_text_buf[key]
+
+        sse_type = ""
+        if msg_type == MessageType.Thinking:
+            sse_type = "reasoning"
+        elif msg_type == MessageType.Text:
+            sse_type = "text"
+        elif msg_type == MessageType.ToolCalling:
+            sse_type = "tool"
+        elif msg_type == MessageType.ToolResult:
+            sse_type = "tool_result"
+        else:
+            sse_type = msg_type.name if hasattr(msg_type, "name") else str(msg_type)
+
+        bus.emit(BusEvent(
+            type="message.part.updated",
+            properties={
+                "part": {
+                    "id": part_id,
+                    "sessionID": state.session_id,
+                    "type": sse_type,
+                    "text": cumulative_text,
+                }
+            },
+        ))
+
     await prompt_async(
         prompt_str=text,
         session=state.session,
         output_function=_output_handler,
         info_print=False,
     )
+
+    # Emit idle status after completion
+    bus.emit(BusEvent(type="session.status", properties={
+        "status": {"type": "idle", "sessionID": state.session_id},
+    }))
 
 
 # ── Dummy Session Manager ────────────────────────────────────────
@@ -240,7 +300,7 @@ class DummySessionManager:
             updatedAt=now,
         )
 
-        state = SessionStateClass(session=sdk_session)
+        state = SessionStateClass(session=sdk_session, session_id=session_id)
         state.work_thread = threading.Thread(
             target=_work_loop,
             args=(state,),

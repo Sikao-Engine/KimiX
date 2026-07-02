@@ -1,9 +1,15 @@
 // main.ts — Main application logic mirroring _sse_cli_main from sse_cli.py
 
 import { KimixClient } from "./client";
-import { renderMessagePart } from "./renderer";
+import {
+  renderMessagePart,
+  createThinkingStreamElement,
+  updateThinkingStreamElement,
+  createTextStreamContainer,
+  finalizeTextStreamElement,
+} from "./renderer";
 import { MessagePartType } from "./types";
-import type { Message, Session, SessionStatus } from "./types";
+import type { Message, Session, SessionStatus, StreamingPartState } from "./types";
 
 // ── Application State ──────────────────────────────────────────────
 
@@ -20,6 +26,9 @@ let renderedPartMap: Map<string, HTMLElement> = new Map();
 // already-shown messages. Dummy format has empty message IDs and is draining, so those
 // messages are always rendered.
 let renderedMessageIds: Set<string> = new Set();
+
+// Track in-progress streaming parts for realtime SSE updates
+let streamingParts: Map<string, StreamingPartState> = new Map();
 
 // ── Context Usage Tracking (mirrors _print_transition_usage from base.py) ─
 
@@ -80,6 +89,55 @@ function maybePrintContextTransition(partType: string): void {
     }
   }
   previousPartType = partType;
+}
+
+// ── Streaming Helpers ───────────────────────────────────────────
+
+/** Finalize any active TEXT streaming part (render accumulated markdown). */
+function finalizePreviousTextStream(): void {
+  for (const [_pid, state] of streamingParts) {
+    if (state.type === MessagePartType.TEXT && !state.isComplete) {
+      state.isComplete = true;
+      const textEl = state.element?.querySelector(".part-text") as HTMLElement | null;
+      if (textEl) {
+        finalizeTextStreamElement(textEl, state.accumulatedText);
+      }
+      break;
+    }
+  }
+}
+
+/** Mark any active THINKING stream as complete (remove streaming indicator). */
+function finalizeActiveThinkingStream(): void {
+  for (const [_pid, state] of streamingParts) {
+    if (state.type === MessagePartType.THINKING && !state.isComplete) {
+      state.isComplete = true;
+      const el = state.element?.querySelector(".part-thinking") as HTMLElement | null;
+      if (el) {
+        delete el.dataset.streaming;
+      }
+      break;
+    }
+  }
+}
+
+/** Finalize ALL active streaming parts (both TEXT and THINKING). */
+function finalizeAllStreamingParts(): void {
+  for (const [_pid, state] of streamingParts) {
+    if (state.isComplete) continue;
+    state.isComplete = true;
+    if (state.type === MessagePartType.TEXT) {
+      const textEl = state.element?.querySelector(".part-text") as HTMLElement | null;
+      if (textEl) {
+        finalizeTextStreamElement(textEl, state.accumulatedText);
+      }
+    } else if (state.type === MessagePartType.THINKING) {
+      const el = state.element?.querySelector(".part-thinking") as HTMLElement | null;
+      if (el) {
+        delete el.dataset.streaming;
+      }
+    }
+  }
 }
 
 // SSE streaming state
@@ -243,6 +301,7 @@ async function doConnect(): Promise<void> {
     // Reset state
     renderedPartMap = new Map();
     renderedMessageIds = new Set();
+    streamingParts = new Map();
     closeSSE();
     emptyPolls = 0;
     startPolling();
@@ -257,6 +316,7 @@ async function doConnect(): Promise<void> {
 async function doDisconnect(): Promise<void> {
   stopPolling();
   closeSSE();
+  streamingParts = new Map();
   if (client) {
     await client.deleteSession(session?.id || "").catch(() => {});
     client = null;
@@ -310,6 +370,8 @@ async function pollMessages(): Promise<void> {
         maybePrintContextTransition(part.type);
         // Use a composite ID for deduplication
         const pid = (part as unknown as Record<string, unknown>).id as string || `${msg.id}:${newCount}:${part.type}`;
+        // Skip if already being streamed via SSE
+        if (streamingParts.has(pid)) continue;
         const el = renderMessagePart(part);
         appendPart(el, pid);
       }
@@ -346,7 +408,7 @@ async function pollMessages(): Promise<void> {
                 }
                 const pid = (part as unknown as Record<string, unknown>).id as string || `${msg.id}:0:${part.type}`;
                 // Only render if not already rendered via SSE
-                if (!renderedPartMap.has(pid)) {
+                if (!renderedPartMap.has(pid) && !streamingParts.has(pid)) {
                   maybePrintContextTransition(part.type);
                   const el = renderMessagePart(part);
                   appendPart(el, pid);
@@ -376,6 +438,7 @@ function closeSSE(): void {
     sseConnection.close();
     sseConnection = null;
   }
+  streamingParts = new Map();
 }
 
 function handleSSEEvent(data: string, eventType: string): void {
@@ -397,30 +460,99 @@ function handleSSEEvent(data: string, eventType: string): void {
       const partId = partData.id;
       if (!partId) return;
 
-      // Parse part data to MessagePart
+      // Parse part data to MessagePart type
       const msgType = getMessagePartType(partData.type || "text");
       if (msgType === MessagePartType.STEP_START || msgType === MessagePartType.STEP_FINISH) {
         return;
       }
-      const part = {
-        type: msgType,
-        text: partData.text || null,
-        tool_name: partData.tool || null,
-        tool_status: partData.state?.status || null,
-        tool_state: partData.state || null,
-        tool_result: null,
-        call_id: partData.callID || null,
-        reason: partData.reason || null,
-        cost: partData.cost || null,
-        tokens: partData.tokens || null,
-        raw_data: null as Record<string, unknown> | null,
-      };
 
-      // Print context usage bar if the part type changed
-      maybePrintContextTransition(msgType);
+      const text = partData.text || "";
 
-      const el = renderMessagePart(part);
-      appendPart(el, partId);
+      if (msgType === MessagePartType.THINKING) {
+        // Check if we already have a streaming container for this part
+        let state = streamingParts.get(partId);
+        if (!state) {
+          // New thinking stream — finalize previous text stream, create container and append
+          finalizePreviousTextStream();
+          maybePrintContextTransition(MessagePartType.THINKING);
+
+          const el = createThinkingStreamElement();
+          const wrapper = document.createElement("div");
+          wrapper.className = "log-line";
+          wrapper.appendChild(el);
+          outputEl.appendChild(wrapper);
+
+          state = {
+            element: wrapper,
+            accumulatedText: text,
+            type: MessagePartType.THINKING,
+            partId,
+            isComplete: false,
+          };
+          streamingParts.set(partId, state);
+        } else {
+          // Update existing thinking stream with new text
+          state.accumulatedText = text;
+          const thinkingEl = state.element?.querySelector(".part-thinking") as HTMLElement | null;
+          if (thinkingEl) {
+            updateThinkingStreamElement(thinkingEl, state.accumulatedText);
+          }
+        }
+        scrollToBottom();
+      } else {
+        // For any non-thinking part, finalize the active thinking stream first
+        finalizeActiveThinkingStream();
+
+        if (msgType === MessagePartType.TEXT) {
+          let state = streamingParts.get(partId);
+          if (!state) {
+            // New text stream — finalize previous text stream, create container and append
+            finalizePreviousTextStream();
+            maybePrintContextTransition(MessagePartType.TEXT);
+
+            const el = createTextStreamContainer();
+            const wrapper = document.createElement("div");
+            wrapper.className = "log-line has-inline";
+            wrapper.appendChild(el);
+            outputEl.appendChild(wrapper);
+
+            state = {
+              element: wrapper,
+              accumulatedText: text,
+              type: MessagePartType.TEXT,
+              partId,
+              isComplete: false,
+            };
+            streamingParts.set(partId, state);
+          } else {
+            // Accumulate text — show raw text while streaming (before markdown rendering)
+            state.accumulatedText = text;
+            const textEl = state.element?.querySelector(".part-text") as HTMLElement | null;
+            if (textEl) {
+              textEl.textContent = state.accumulatedText;
+            }
+          }
+          scrollToBottom();
+        } else {
+          // For tool and other types, render immediately (no streaming accumulation)
+          maybePrintContextTransition(msgType);
+          const part = {
+            type: msgType,
+            text: text || null,
+            tool_name: partData.tool || null,
+            tool_status: partData.state?.status || null,
+            tool_state: partData.state || null,
+            tool_result: null,
+            call_id: partData.callID || null,
+            reason: partData.reason || null,
+            cost: partData.cost || null,
+            tokens: partData.tokens || null,
+            raw_data: null as Record<string, unknown> | null,
+          };
+          const el = renderMessagePart(part);
+          appendPart(el, partId);
+        }
+      }
     } else if (eventTypeInner === "session.status") {
       const statusData = parsed.status || parsed.properties?.status || {};
       // Ignore status events for other sessions when a sessionID is present.
@@ -435,6 +567,8 @@ function handleSSEEvent(data: string, eventType: string): void {
         token_count: statusData.token_count ?? 0,
       } as SessionStatus);
       if (statusType === "idle" || statusType === "error") {
+        // Finalize all active streaming parts
+        finalizeAllStreamingParts();
         log(`[SSE CLI] Session ${statusType}, stream ended. Context usage: ${formatContextUsage()}`, "info");
         stopPolling();
         closeSSE();
@@ -477,8 +611,9 @@ async function sendPrompt(text: string): Promise<void> {
 
   log("[SSE CLI] Streaming events...", "info");
 
-  // Reset context usage tracking for new prompt
+  // Reset context usage tracking and streaming state for new prompt
   previousPartType = null;
+  streamingParts = new Map();
 
   // Connect to SSE for real-time streaming
   closeSSE();
@@ -526,6 +661,7 @@ async function handleCommand(cmd: string): Promise<void> {
         emptyPolls = 0;
         renderedPartMap = new Map();
         renderedMessageIds = new Set();
+        streamingParts = new Map();
         outputEl.innerHTML = "";
         previousPartType = null;
         break;
@@ -568,6 +704,7 @@ async function handleCommand(cmd: string): Promise<void> {
         outputEl.innerHTML = "";
         renderedPartMap = new Map();
         renderedMessageIds = new Set();
+        streamingParts = new Map();
         closeSSE();
         previousPartType = null;
         break;
