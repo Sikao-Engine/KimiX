@@ -1,7 +1,7 @@
 // main.ts — Main application logic mirroring _sse_cli_main from sse_cli.py
 
 import { KimixClient } from "./client";
-import { renderMessagePart, fmtArg, fmtTs } from "./renderer";
+import { renderMessagePart } from "./renderer";
 import { MessagePartType } from "./types";
 import type { Message, Session, SessionStatus } from "./types";
 
@@ -10,13 +10,16 @@ import type { Message, Session, SessionStatus } from "./types";
 let client: KimixClient | null = null;
 let session: Session | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
-let seenMessageCount = 0;
 let emptyPolls = 0;
 let connected = false;
 let debugMode = false;
 
 // Track rendered part IDs for deduplication, mapped to their DOM elements for in-place updates
 let renderedPartMap: Map<string, HTMLElement> = new Map();
+// Track rendered message IDs so cumulative backends (opencode format) don't repeat
+// already-shown messages. Dummy format has empty message IDs and is draining, so those
+// messages are always rendered.
+let renderedMessageIds: Set<string> = new Set();
 
 // ── Context Usage Tracking (mirrors _print_transition_usage from base.py) ─
 
@@ -130,7 +133,10 @@ function appendPart(partEl: HTMLElement, partId?: string): boolean {
     const existingEl = renderedPartMap.get(partId);
     if (existingEl) {
       // Part already exists — update text content in-place for streaming deltas
-      if (existingEl.classList.contains("part-text") || existingEl.classList.contains("part-thinking")) {
+      if (existingEl.classList.contains("part-text")) {
+        // Re-render markdown HTML for streaming text updates
+        existingEl.innerHTML = partEl.innerHTML;
+      } else if (existingEl.classList.contains("part-thinking")) {
         // Update text content from the new element
         existingEl.textContent = partEl.textContent;
       } else if (existingEl.classList.contains("part-tool-calling")) {
@@ -236,8 +242,8 @@ async function doConnect(): Promise<void> {
 
     // Reset state
     renderedPartMap = new Map();
+    renderedMessageIds = new Set();
     closeSSE();
-    seenMessageCount = 0;
     emptyPolls = 0;
     startPolling();
   } catch (err: unknown) {
@@ -281,9 +287,21 @@ async function pollMessages(): Promise<void> {
     const messages = await client.getMessages(session.id, 50);
 
     let newCount = 0;
-    for (let i = seenMessageCount; i < messages.length; i++) {
+    for (const msg of messages) {
+      // Skip user messages: the frontend already logged the user's input manually.
+      if (msg.role === "user") {
+        continue;
+      }
+      // For cumulative backends (opencode format) skip messages we've already shown.
+      if (msg.id && renderedMessageIds.has(msg.id)) {
+        continue;
+      }
+
+      if (msg.id) {
+        renderedMessageIds.add(msg.id);
+      }
+
       newCount++;
-      const msg = messages[i];
       for (const part of msg.parts) {
         if (part.type === MessagePartType.STEP_START || part.type === MessagePartType.STEP_FINISH) {
           continue;
@@ -291,12 +309,11 @@ async function pollMessages(): Promise<void> {
         // Print context usage bar if the part type changed (mirrors _print_transition_usage)
         maybePrintContextTransition(part.type);
         // Use a composite ID for deduplication
-        const pid = (part as unknown as Record<string, unknown>).id as string || `${msg.id}:${i}:${part.type}`;
+        const pid = (part as unknown as Record<string, unknown>).id as string || `${msg.id}:${newCount}:${part.type}`;
         const el = renderMessagePart(part);
         appendPart(el, pid);
       }
     }
-    seenMessageCount = messages.length;
 
     if (newCount === 0) {
       emptyPolls++;
@@ -311,9 +328,18 @@ async function pollMessages(): Promise<void> {
               `[SSE CLI] Session ${sessionStatus}, stream ended. Context usage: ${formatContextUsage()}`,
               "info"
             );
-            // Fetch final messages — deduplicate against already-rendered parts
+            // Fetch final messages — deduplicate against already-rendered messages/parts
             const finalMessages = await client.getMessages(session.id);
             for (const msg of finalMessages) {
+              if (msg.role === "user") {
+                continue;
+              }
+              if (msg.id && renderedMessageIds.has(msg.id)) {
+                continue;
+              }
+              if (msg.id) {
+                renderedMessageIds.add(msg.id);
+              }
               for (const part of msg.parts) {
                 if (part.type === MessagePartType.STEP_START || part.type === MessagePartType.STEP_FINISH) {
                   continue;
@@ -327,7 +353,6 @@ async function pollMessages(): Promise<void> {
                 }
               }
             }
-            seenMessageCount = 0;
             emptyPolls = 0;
             stopPolling();
             closeSSE();
@@ -364,6 +389,11 @@ function handleSSEEvent(data: string, eventType: string): void {
       const partData = parsed.part || parsed.properties?.part;
       if (!partData) return;
 
+      // Ignore events for other sessions when a sessionID is present.
+      if (partData.sessionID && partData.sessionID !== session.id) {
+        return;
+      }
+
       const partId = partData.id;
       if (!partId) return;
 
@@ -393,6 +423,11 @@ function handleSSEEvent(data: string, eventType: string): void {
       appendPart(el, partId);
     } else if (eventTypeInner === "session.status") {
       const statusData = parsed.status || parsed.properties?.status || {};
+      // Ignore status events for other sessions when a sessionID is present.
+      const statusSessionId = statusData.sessionID || statusData.session_id;
+      if (statusSessionId && statusSessionId !== session.id) {
+        return;
+      }
       const statusType = statusData.type || "";
       // Update context usage from SSE status event (backend always includes these fields)
       updateContextUsage({
@@ -447,8 +482,6 @@ async function sendPrompt(text: string): Promise<void> {
 
   // Connect to SSE for real-time streaming
   closeSSE();
-  renderedPartMap = new Map();
-  seenMessageCount = 0;
   emptyPolls = 0;
   startPolling();
   sseConnection = client.streamEvents(
@@ -490,9 +523,9 @@ async function handleCommand(cmd: string): Promise<void> {
         session = await client.createSession("SSE Web debug session");
         log(`[SSE CLI] New session: ${session.id}`, "info");
         sessionIdEl.textContent = session.id;
-        seenMessageCount = 0;
         emptyPolls = 0;
         renderedPartMap = new Map();
+        renderedMessageIds = new Set();
         outputEl.innerHTML = "";
         previousPartType = null;
         break;
@@ -533,8 +566,8 @@ async function handleCommand(cmd: string): Promise<void> {
           ok ? "info" : "error"
         );
         outputEl.innerHTML = "";
-        seenMessageCount = 0;
         renderedPartMap = new Map();
+        renderedMessageIds = new Set();
         closeSSE();
         previousPartType = null;
         break;
