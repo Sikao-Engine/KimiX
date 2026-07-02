@@ -147,7 +147,11 @@ def test_task_stop_description(task_stop_tool: TaskStop):
 def test_read_file_description(read_file_tool: ReadFile):
     """Test the description of ReadFile tool."""
     assert read_file_tool.base.description == snapshot(
-        "Read one or more text files. `path` may be a single file path or a list of paths. `line_offset`, `n_lines`, `max_char`, and `char_offset` may each be a single value applied to all files, or a list with one value per file path. Lines over 2000 chars truncated. Max 1000 lines per file. Bytes per file scale with the model's context window (at least 102400 bytes, up to 1MiB). Negative offset = tail mode."
+        """\
+Read one or more text files. `path` may be a single file path or a list of paths. `line_offset`, `n_lines`, `max_char`, and `char_offset` may each be a single value applied to all files, or a list with one value per file path. Lines over 4000 chars truncated. Max 5000 lines per file. Bytes per file scale with the model's context window (at least 102400 bytes, up to 1MiB). Negative offset = tail mode.
+
+Each `path` may also be a glob pattern such as `./*.md` to read all matching files in a directory. Glob patterns support `*`, `?`, and `[...]`. Patterns that start with `**` are not allowed. The total number of files read in one call cannot exceed 32.
+"""
     )
 
 

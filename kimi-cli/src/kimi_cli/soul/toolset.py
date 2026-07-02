@@ -218,7 +218,7 @@ def _canonical_tool_arguments(arguments: Any) -> str:
         return orjson.dumps(
             _sort_json_value(arguments),
         ).decode("utf-8")
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return str(arguments)
 
 
@@ -450,6 +450,9 @@ class KimiToolset:
                 )
                 return ToolResult(tool_call_id=tool_call.id, return_value=ToolParseError(str(e)))
 
+            if not isinstance(arguments, dict):
+                arguments = {}
+
             canonical_args = _canonical_tool_arguments(arguments)
             call_key = (tool_name, canonical_args)
             call_index = len(self._current_step_calls)
@@ -576,6 +579,20 @@ class KimiToolset:
                                 brief="Output too large",
                                 output=_truncate_content_parts(parts, max_bytes),
                             )
+                except (TypeError, ValueError) as e:
+                    if "dictionary update sequence" in str(e) or "argument" in str(e).lower():
+                        logger.exception(
+                            "Tool argument coercion failed: {tool_name} (call_id={call_id})",
+                            tool_name=tool_name,
+                            call_id=tool_call.id,
+                        )
+                        return ToolResult(
+                            tool_call_id=tool_call.id,
+                            return_value=ToolValidateError(
+                                f"Invalid arguments for tool `{tool_name}`: {e}"
+                            ),
+                        )
+                    raise
                 except Exception as e:
                     tool_elapsed = time.monotonic() - t0
                     logger.exception(

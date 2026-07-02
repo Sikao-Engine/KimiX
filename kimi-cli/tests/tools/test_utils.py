@@ -55,3 +55,21 @@ class TestRepairToolArguments:
         result = repair_tool_arguments(_SampleParams, args)
         assert result["count"] == 42
         assert result["items"] == [{"a": "b"}]
+
+    def test_none_returns_empty_dict(self):
+        assert repair_tool_arguments(_SampleParams, None) == {}
+
+    def test_list_returns_empty_dict(self):
+        assert repair_tool_arguments(_SampleParams, []) == {}
+
+    def test_tuple_like_returns_empty_dict(self):
+        """A malformed positional/tuple-like input must not raise a dict() error."""
+        assert repair_tool_arguments(_SampleParams, [("a", "b", "c")]) == {}
+
+    def test_json_string_object_parsed(self):
+        result = repair_tool_arguments(_SampleParams, '{"query": "hello"}')
+        assert result == {"query": "hello"}
+
+    def test_json_string_non_object_returns_empty(self):
+        result = repair_tool_arguments(_SampleParams, '"hello"')
+        assert result == {}

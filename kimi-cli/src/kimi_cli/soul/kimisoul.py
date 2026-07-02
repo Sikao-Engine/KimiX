@@ -77,8 +77,7 @@ from kimi_cli.soul.message import (
     tool_result_to_message,
 )
 from kimi_cli.soul.slash import registry as soul_slash_registry
-from kimi_cli.soul.invalid_args_records import InvalidArgRecord
-from kimi_cli.soul.invalid_args_recorder import InvalidArgsRecorder
+from kimi_cli.utils.invalid_args import InvalidArgRecord, InvalidArgsRecorder
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError

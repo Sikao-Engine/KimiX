@@ -1,4 +1,4 @@
-"""Tests for the Invalid Arguments Recorder."""
+"""Tests for the invalid-arguments recorder utility."""
 
 from __future__ import annotations
 
@@ -12,8 +12,7 @@ from kosong.tooling import ToolError, ToolResult
 from kosong.tooling.error import ToolParseError, ToolValidateError
 from pydantic import ValidationError
 
-from kimi_cli.soul.invalid_args_records import InvalidArgRecord
-from kimi_cli.soul.invalid_args_recorder import InvalidArgsRecorder
+from kimi_cli.utils.invalid_args import InvalidArgRecord, InvalidArgsRecorder
 
 
 # ═══════════════════════════════════════════════════════════════════════════

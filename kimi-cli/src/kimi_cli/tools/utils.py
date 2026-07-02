@@ -49,16 +49,27 @@ def _is_plain_string_annotation(annotation: Any) -> bool:
 
 
 def repair_tool_arguments(
-    params_model: type[BaseModel], arguments: dict[str, Any]
+    params_model: type[BaseModel], arguments: Any
 ) -> dict[str, Any]:
     """Repair JSON-string values in tool arguments based on the params schema.
 
     Only fields annotated as plain ``str`` (or optional str) are left untouched;
     all other fields are candidates for JSON-string repair when the value looks
     like JSON.
+
+    Non-dict inputs are coerced to an empty dict so callers never see a raw
+    ``dict()`` construction error.
     """
-    if not arguments:
-        return arguments
+    if arguments is None:
+        return {}
+    if isinstance(arguments, str):
+        parsed = repair_json_string(arguments)
+        if isinstance(parsed, dict):
+            arguments = parsed
+        else:
+            return {}
+    if not isinstance(arguments, dict):
+        return {}
     repaired = dict(arguments)
     fields = params_model.model_fields
     for key, value in list(repaired.items()):

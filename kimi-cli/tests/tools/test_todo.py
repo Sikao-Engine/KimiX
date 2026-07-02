@@ -1615,3 +1615,43 @@ class TestTodoListCallingJsonString:
         )
         assert result.is_error
         assert "todos must be a list of todos" in result.message
+
+
+class TestTodoListEmptyBody:
+    """Regression tests for empty or malformed tool arguments."""
+
+    async def test_empty_dict_returns_current_list(self, todo_list_tool: TodoList):
+        """Calling TodoList with an empty object should enter read mode."""
+        result = await todo_list_tool.call({})
+        assert not result.is_error
+        assert isinstance(result.output, str)
+
+    async def test_none_arguments_return_validation_error(
+        self, todo_list_tool: TodoList
+    ):
+        """A literal null/None argument should be a validation error, not a crash."""
+        from kosong.tooling.error import ToolValidateError
+
+        result = await todo_list_tool.call(None)
+        assert isinstance(result, ToolValidateError)
+        assert "JSON object" in result.message
+
+    async def test_list_arguments_return_validation_error(
+        self, todo_list_tool: TodoList
+    ):
+        """A list argument should be a validation error, not a crash."""
+        from kosong.tooling.error import ToolValidateError
+
+        result = await todo_list_tool.call([])
+        assert isinstance(result, ToolValidateError)
+        assert "JSON object" in result.message
+
+    async def test_tuple_like_arguments_return_validation_error(
+        self, todo_list_tool: TodoList
+    ):
+        """A tuple-like argument should be a validation error, not a raw dict() crash."""
+        from kosong.tooling.error import ToolValidateError
+
+        result = await todo_list_tool.call([("a", "b", "c")])
+        assert isinstance(result, ToolValidateError)
+        assert "JSON object" in result.message

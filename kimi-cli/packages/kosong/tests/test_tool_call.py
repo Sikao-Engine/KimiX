@@ -785,3 +785,54 @@ def test_callable_tool_2_clamp_on_call():
     tool = TestTool()
     result = asyncio.run(tool.call({"timeout": 600}))
     assert result == ToolOk(output="timeout=300")
+
+
+def test_callable_tool2_empty_dict():
+    """CallableTool2.call({}) should validate and call the tool successfully."""
+
+    class Params(BaseModel):
+        pass
+
+    class TestTool(CallableTool2[Params]):
+        name: str = "test"
+        description: str = "test"
+        params: type[Params] = Params
+
+        @override
+        async def __call__(self, params: Params) -> ToolReturnValue:
+            return ToolOk(output="called")
+
+    tool = TestTool()
+    assert asyncio.run(tool.call({})) == ToolOk(output="called")
+
+
+def test_callable_tool2_non_dict_arguments():
+    """CallableTool2.call() should return ToolValidateError for non-object inputs."""
+
+    class Params(BaseModel):
+        pass
+
+    class TestTool(CallableTool2[Params]):
+        name: str = "test"
+        description: str = "test"
+        params: type[Params] = Params
+
+        @override
+        async def __call__(self, params: Params) -> ToolReturnValue:
+            return ToolOk(output="called")
+
+    tool = TestTool()
+    for bad in (None, [], [("a", "b", "c")], "not an object"):
+        result = asyncio.run(tool.call(bad))
+        assert isinstance(result, ToolValidateError), f"unexpected result for {bad!r}: {result}"
+        assert "JSON object" in result.message
+
+
+def test_repair_dict_empty_input():
+    """_repair_dict_for_model short-circuits on empty or None input."""
+
+    class Params(BaseModel):
+        pass
+
+    assert _repair_dict_for_model({}, Params) == {}
+    assert _repair_dict_for_model(None, Params) == {}

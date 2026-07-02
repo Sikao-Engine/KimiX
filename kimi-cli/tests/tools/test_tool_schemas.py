@@ -412,7 +412,7 @@ def test_read_file_params_schema(read_file_tool: ReadFile):
                         {"type": "string"},
                         {"items": {"type": "string"}, "type": "array"},
                     ],
-                    "description": "File path, or a list of file paths. Absolute for files outside working directory.",
+                    "description": "File path, or a list of file paths. Each path may also be a glob pattern such as `*.py`; only the final path component may contain wildcards (`*`, `?`, `[...]`), and recursive patterns starting with `**` are not allowed. Absolute for files outside working directory.",
                 },
                 "line_offset": {
                     "anyOf": [
@@ -420,15 +420,15 @@ def test_read_file_params_schema(read_file_tool: ReadFile):
                         {"items": {"type": "integer"}, "type": "array"},
                     ],
                     "default": 1,
-                    "description": "Start line, 1-based. Negative reads from end. Max abs 1000. May be a single integer applied to all files, or a list with one integer per file path.",
+                    "description": "Start line, 1-based. Negative reads from end. Max abs 5000. May be a single integer applied to all files, or a list with one integer per file path.",
                 },
                 "n_lines": {
                     "anyOf": [
                         {"type": "integer"},
                         {"items": {"type": "integer"}, "type": "array"},
                     ],
-                    "default": 1000,
-                    "description": "Lines to read, max 1000. May be a single integer applied to all files, or a list with one integer per file path.",
+                    "default": 5000,
+                    "description": "Lines to read, max 5000. May be a single integer applied to all files, or a list with one integer per file path.",
                 },
                 "max_char": {
                     "anyOf": [

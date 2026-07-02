@@ -18,6 +18,7 @@ from kosong.tooling.error import (
     ToolNotFoundError,
     ToolParseError,
     ToolRuntimeError,
+    ToolValidateError,
 )
 from kosong.utils.typing import JsonType
 
@@ -129,6 +130,15 @@ class SimpleToolset:
             try:
                 ret = await tool.call(arguments)
                 return ToolResult(tool_call_id=tool_call.id, return_value=ret)
+            except (TypeError, ValueError) as e:
+                if "dictionary update sequence" in str(e) or "argument" in str(e).lower():
+                    return ToolResult(
+                        tool_call_id=tool_call.id,
+                        return_value=ToolValidateError(
+                            f"Invalid arguments for tool `{tool_call.function.name}`: {e}"
+                        ),
+                    )
+                raise
             except Exception as e:
                 return ToolResult(tool_call_id=tool_call.id, return_value=ToolRuntimeError(str(e)))
 

@@ -786,6 +786,11 @@ def _repair_dict_for_model(
        int↔float).
     8. Strip unmapped keys when the model has ``extra="forbid"``.
     """
+    if not isinstance(data, dict):
+        return {} if data is None else data  # type: ignore[return-value]
+    if not data:
+        return {}
+
     if common_aliases is None:
         common_aliases = _COMMON_FIELD_ALIASES
 
@@ -1223,6 +1228,17 @@ class CallableTool2[Params: BaseModel](ABC):
 
     async def call(self, arguments: JsonType) -> ToolReturnValue:
         from kosong.tooling.error import ToolValidateError
+
+        if arguments is None or arguments == "":
+            return ToolValidateError(
+                f"Invalid arguments for tool `{self.name}`: "
+                "expected a JSON object, got an empty value."
+            )
+        if not isinstance(arguments, dict):
+            return ToolValidateError(
+                f"Invalid arguments for tool `{self.name}`: "
+                f"expected a JSON object, got `{type(arguments).__name__}`."
+            )
 
         try:
             params = self.params.model_validate(arguments)
