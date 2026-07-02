@@ -29,6 +29,18 @@ def _load_project_mcp_config() -> dict[str, Any]:
     return {}
 
 
+
+def _extract_config_from_remaining(args: argparse.Namespace, remaining: list[str]) -> None:
+    """Extract ``--config <value>`` or ``--config=<value>`` from remaining args."""
+    for i, token in enumerate(remaining):
+        if token.startswith("--config="):
+            args.config = token.split("=", 1)[1]
+            return
+        if token == "--config" and i + 1 < len(remaining):
+            args.config = remaining[i + 1]
+            return
+
+
 def set_arg() -> tuple[str | None, argparse.Namespace]:
     parser = argparse.ArgumentParser(description="Kimi Agent CLI")
     subparsers = parser.add_subparsers(dest="command", required=False)
@@ -36,6 +48,13 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
     serve_parser = subparsers.add_parser("serve", description="Kimix HTTP server (opencode-style)")
     serve_parser.add_argument("--host", "--hostname", default="127.0.0.1", help="Host to bind to")
     serve_parser.add_argument("--port", type=int, default=4096, help="Port to bind to")
+
+    gui_parser = subparsers.add_parser("gui", description="Run Kimix backend + TypeScript/Vite frontend")
+    gui_parser.add_argument("--host", "--hostname", default="127.0.0.1", help="Host to bind to")
+    gui_parser.add_argument("--port", type=int, default=4096, help="Backend port")
+    gui_parser.add_argument("--fe-port", type=int, default=5173, help="Frontend dev-server port")
+    gui_parser.add_argument("--build", action="store_true", help="Run npm run build before starting the dev server")
+    gui_parser.add_argument("--no-fe", action="store_true", help="Skip the frontend and start only the backend (useful when Node.js/npm/Vite are unavailable)")
 
     sse_cli_parser = subparsers.add_parser("ssecli", description="Kimix SSE CLI for debug")
     sse_cli_parser.add_argument(
@@ -103,12 +122,7 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
         default=None,
         help="Specify custom skill directory(s)",
     )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default=None,
-        help="Path to a JSON config file to load as default provider",
-    )
+
     parser.add_argument(
         "--ralph",
         nargs="?",
@@ -117,20 +131,34 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
         default=None,
         help="Enable Ralph mode (unlimited iterations) or set to specific number",
     )
-    args = parser.parse_args()
+    # Parse args using parse_known_args first so we can detect a subcommand,
+    # then re-parse with the appropriate subparser so subcommand-specific
+    # arguments (e.g. --fe-port, --no-fe) are recognized.
+    known_args, remaining = parser.parse_known_args()
+
+    if known_args.command is not None:
+        # Subcommand detected — re-parse with its own parser so subcommand-specific
+        # arguments (e.g. --fe-port, --no-fe) are recognized.
+        subparser_lookup: dict[str, argparse.ArgumentParser] = {
+            "serve": serve_parser,
+            "gui": gui_parser,
+            "ssecli": sse_cli_parser,
+            "mcp": mcp_parser,
+        }
+        sub_parser = subparser_lookup.get(known_args.command)
+        if sub_parser is not None:
+            args, _ = sub_parser.parse_known_args(remaining, namespace=known_args)
+        else:
+            args = known_args
+    else:
+        args = known_args
+
+    # Extract --config from remaining args if not already set
+    # (handles the case where --config appears after the subcommand)
+    if getattr(args, "config", None) is None:
+        _extract_config_from_remaining(args, remaining)
+
     args.mcp_config = _load_project_mcp_config()
-
-    if args.command == "mcp":
-        print_debug(f"Starting kimix mcp {args.mcp_command}.")
-        return "mcp", args
-
-    if args.command == "serve":
-        print_debug("Starting kimix serve (opencode-style HTTP server).")
-        return "serve", args
-
-    if args.command == "ssecli":
-        print_debug("Starting kimix SSE cli (opencode-style HTTP CLI for debugging).")
-        return "ssecli", args
 
     if args.no_color:
         base._colorful_print = False
@@ -255,7 +283,7 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
                 base.set_default_provider(config_data)
                 if sub_provider and isinstance(sub_provider, dict):
                     base.set_default_sub_provider(sub_provider)
-            except orjson.JSONDecodeError, Exception:
+            except (orjson.JSONDecodeError, Exception):
                 pass
 
     if args.ralph is not None:
@@ -281,4 +309,19 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
             else:
                 print_warning(f"Skill dir not found: {str(skill_dir_path)}")
         base.set_default_skill_dirs(skill_dirs)
+    if args.command == "mcp":
+        print_debug(f"Starting kimix mcp {args.mcp_command}.")
+        return "mcp", args
+
+    if args.command == "serve":
+        print_debug("Starting kimix serve (opencode-style HTTP server).")
+        return "serve", args
+
+    if args.command == "gui":
+        print_debug("Starting kimix gui (backend + frontend).")
+        return "gui", args
+
+    if args.command == "ssecli":
+        print_debug("Starting kimix SSE cli (opencode-style HTTP CLI for debugging).")
+        return "ssecli", args
     return None, args

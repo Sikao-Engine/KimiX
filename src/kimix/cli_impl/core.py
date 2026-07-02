@@ -131,6 +131,12 @@ def _run_cli() -> None:
         serve_cli(args)
         return
 
+    if subcmd == "gui":
+        from .gui_cmd import run_gui
+
+        run_gui(args)
+        return
+
     if subcmd == "ssecli":
         print_debug("Launching SSE CLI debugger.")
         from .sse_cli import run_sse_cli

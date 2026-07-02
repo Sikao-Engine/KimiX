@@ -26,10 +26,12 @@ description: Guide for the Kimix HTTP serve system — FastAPI backend + TypeScr
 
 **Start**:
 ```bash
-uv run scripts/run_app.py                  # dummy backend + Vite dev
-uv run scripts/run_app.py --be-real        # real SessionManager (live SDK)
-uv run scripts/run_app.py --build          # build frontend before starting
-uv run scripts/run_app.py --port 8080 --fe-port 3000  # custom ports
+uv run kimix gui                           # dummy backend + Vite dev
+uv run kimix gui --build                   # build frontend before starting
+uv run kimix gui --port 8080 --fe-port 3000  # custom ports
+uv run kimix gui --no-fe                   # backend only (no Node.js/Vite required)
+# Backward-compatible wrapper:
+uv run scripts/run_app.py                  # delegates to `kimix gui`
 ```
 
 **Debug CLI**: `uv run kimix ssecli` — terminal client (same logic as the web UI, mirrors `sse_cli.py`). Connects to the running backend and interactively tests SSE streams.

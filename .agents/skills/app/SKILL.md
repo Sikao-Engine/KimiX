@@ -32,9 +32,12 @@ npm run preview    # Preview production build
 
 Or via the monorepo runner:
 ```bash
-uv run scripts/run_app.py                  # backend + Vite dev
-uv run scripts/run_app.py --build          # build frontend first
-uv run scripts/run_app.py --fe-port 3000   # custom frontend port
+uv run kimix gui                           # backend + Vite dev
+uv run kimix gui --build                   # build frontend first
+uv run kimix gui --fe-port 3000            # custom frontend port
+uv run kimix gui --no-fe                   # backend only (no Node.js/Vite required)
+# Backward-compatible wrapper:
+uv run scripts/run_app.py                  # delegates to `kimix gui`
 ```
 
 ## Environment Setup (Installation Experience)
