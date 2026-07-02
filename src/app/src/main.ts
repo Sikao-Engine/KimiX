@@ -3,7 +3,7 @@
 import { KimixClient } from "./client";
 import { renderMessagePart, fmtArg, fmtTs } from "./renderer";
 import { MessagePartType } from "./types";
-import type { Message, Session } from "./types";
+import type { Message, Session, SessionStatus } from "./types";
 
 // ── Application State ──────────────────────────────────────────────
 
@@ -15,6 +15,73 @@ let emptyPolls = 0;
 let connected = false;
 let debugMode = false;
 
+// Track rendered part IDs for deduplication, mapped to their DOM elements for in-place updates
+let renderedPartMap: Map<string, HTMLElement> = new Map();
+
+// ── Context Usage Tracking (mirrors _print_transition_usage from base.py) ─
+
+let previousPartType: string | null = null;
+let lastContextUsage: number = 0;
+let lastContextTokens: number = 0;
+
+/** Update the cached context usage from a SessionStatus object. */
+function updateContextUsage(status: SessionStatus): void {
+  if (status.context_usage !== undefined) {
+    lastContextUsage = status.context_usage;
+  }
+  if (status.token_count !== undefined) {
+    lastContextTokens = status.token_count;
+  }
+}
+
+/**
+ * Format the context usage string like base.py `percentage_and_token`.
+ * Returns e.g. "45.0% (1234 tokens)"
+ */
+function formatContextUsage(): string {
+  return `${(lastContextUsage * 100).toFixed(1)}% (${lastContextTokens} tokens)`;
+}
+
+/**
+ * Create a context-usage bar element mirroring `_print_transition_usage`.
+ * Format:  ==================== Context usage: 45.0% (1234 tokens) ====================
+ */
+function renderContextUsageBar(): HTMLElement | null {
+  if (lastContextTokens === 0 && lastContextUsage === 0) return null;
+  const splitStr = "=".repeat(20);
+  const usage = formatContextUsage();
+  const text = `Context usage: ${usage}`;
+  const targetWidth = 80;
+  const left = `${splitStr} ${text} `;
+  const rightLen = Math.max(targetWidth - left.length, 1);
+  const rightSplit = "=".repeat(rightLen);
+  const el = document.createElement("div");
+  el.className = "context-usage-bar";
+  el.textContent = `${left}${rightSplit}`;
+  return el;
+}
+
+/**
+ * Check if the part type has changed from the previous one and, if so,
+ * insert a context usage bar. Mirrors `_print_transition_usage`.
+ */
+function maybePrintContextTransition(partType: string): void {
+  if (previousPartType !== null && previousPartType !== partType) {
+    const bar = renderContextUsageBar();
+    if (bar) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "log-line";
+      wrapper.appendChild(bar);
+      outputEl.appendChild(wrapper);
+      scrollToBottom();
+    }
+  }
+  previousPartType = partType;
+}
+
+// SSE streaming state
+let sseConnection: { close: () => void } | null = null;
+
 // ── DOM Elements ──────────────────────────────────────────────────
 
 const hostInput = document.getElementById("host") as HTMLInputElement;
@@ -24,7 +91,7 @@ const disconnectBtn = document.getElementById("disconnect-btn") as HTMLButtonEle
 const statusEl = document.getElementById("status") as HTMLElement;
 const sessionIdEl = document.getElementById("session-id") as HTMLElement;
 const outputEl = document.getElementById("output") as HTMLElement;
-const promptInput = document.getElementById("prompt") as HTMLInputElement;
+const promptInput = document.getElementById("prompt") as HTMLTextAreaElement;
 const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
 const debugCheck = document.getElementById("debug-check") as HTMLInputElement;
 
@@ -37,6 +104,7 @@ const btnMessages = document.getElementById("btn-messages") as HTMLButtonElement
 const btnClear = document.getElementById("btn-clear") as HTMLButtonElement;
 const btnCompact = document.getElementById("btn-compact") as HTMLButtonElement;
 const btnExport = document.getElementById("btn-export") as HTMLButtonElement;
+const btnContext = document.getElementById("btn-context") as HTMLButtonElement;
 
 // ── Output Helpers ────────────────────────────────────────────────
 
@@ -56,7 +124,25 @@ function logHtml(html: string, cls: string = ""): void {
   scrollToBottom();
 }
 
-function appendPart(partEl: HTMLElement): void {
+function appendPart(partEl: HTMLElement, partId?: string): boolean {
+  if (partId) {
+    // Check if this part ID was already rendered
+    const existingEl = renderedPartMap.get(partId);
+    if (existingEl) {
+      // Part already exists — update text content in-place for streaming deltas
+      if (existingEl.classList.contains("part-text") || existingEl.classList.contains("part-thinking")) {
+        // Update text content from the new element
+        existingEl.textContent = partEl.textContent;
+      } else if (existingEl.classList.contains("part-tool-calling")) {
+        // For tool parts, replace the entire element content
+        existingEl.innerHTML = partEl.innerHTML;
+      }
+      scrollToBottom();
+      return true; // signal that we updated in-place
+    }
+    renderedPartMap.set(partId, partEl);
+  }
+
   // Append inline to the last log line if it's a text part, otherwise new line
   const lastLine = outputEl.lastElementChild;
   if (
@@ -77,6 +163,7 @@ function appendPart(partEl: HTMLElement): void {
     outputEl.appendChild(wrapper);
   }
   scrollToBottom();
+  return true;
 }
 
 function scrollToBottom(): void {
@@ -107,6 +194,7 @@ function setConnected(isConnected: boolean): void {
     btnClear,
     btnCompact,
     btnExport,
+    btnContext,
   ]) {
     (btn as HTMLButtonElement).disabled = !isConnected;
   }
@@ -142,11 +230,13 @@ async function doConnect(): Promise<void> {
     }
 
     log(
-      "[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /compact /export",
+      "[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /compact /export /context",
       "info"
     );
 
-    // Start SSE polling
+    // Reset state
+    renderedPartMap = new Map();
+    closeSSE();
     seenMessageCount = 0;
     emptyPolls = 0;
     startPolling();
@@ -160,6 +250,7 @@ async function doConnect(): Promise<void> {
 
 async function doDisconnect(): Promise<void> {
   stopPolling();
+  closeSSE();
   if (client) {
     await client.deleteSession(session?.id || "").catch(() => {});
     client = null;
@@ -194,8 +285,15 @@ async function pollMessages(): Promise<void> {
       newCount++;
       const msg = messages[i];
       for (const part of msg.parts) {
+        if (part.type === MessagePartType.STEP_START || part.type === MessagePartType.STEP_FINISH) {
+          continue;
+        }
+        // Print context usage bar if the part type changed (mirrors _print_transition_usage)
+        maybePrintContextTransition(part.type);
+        // Use a composite ID for deduplication
+        const pid = (part as unknown as Record<string, unknown>).id as string || `${msg.id}:${i}:${part.type}`;
         const el = renderMessagePart(part);
-        appendPart(el);
+        appendPart(el, pid);
       }
     }
     seenMessageCount = messages.length;
@@ -206,23 +304,33 @@ async function pollMessages(): Promise<void> {
         // 4 * 0.5s = 2s of no new messages
         try {
           const status = await client.getSessionStatus(session.id);
+          updateContextUsage(status);
           const sessionStatus = status.type || "idle";
           if (sessionStatus === "idle" || sessionStatus === "error") {
             log(
-              `[SSE CLI] Session ${sessionStatus}, stream ended.`,
+              `[SSE CLI] Session ${sessionStatus}, stream ended. Context usage: ${formatContextUsage()}`,
               "info"
             );
-            // Fetch final messages
+            // Fetch final messages — deduplicate against already-rendered parts
             const finalMessages = await client.getMessages(session.id);
             for (const msg of finalMessages) {
               for (const part of msg.parts) {
-                const el = renderMessagePart(part);
-                appendPart(el);
+                if (part.type === MessagePartType.STEP_START || part.type === MessagePartType.STEP_FINISH) {
+                  continue;
+                }
+                const pid = (part as unknown as Record<string, unknown>).id as string || `${msg.id}:0:${part.type}`;
+                // Only render if not already rendered via SSE
+                if (!renderedPartMap.has(pid)) {
+                  maybePrintContextTransition(part.type);
+                  const el = renderMessagePart(part);
+                  appendPart(el, pid);
+                }
               }
             }
             seenMessageCount = 0;
             emptyPolls = 0;
             stopPolling();
+            closeSSE();
           }
         } catch {
           // ignore
@@ -236,6 +344,83 @@ async function pollMessages(): Promise<void> {
     const msg = err instanceof Error ? err.message : String(err);
     log(`[SSE CLI] get_messages error: ${msg}`, "error");
   }
+}
+
+function closeSSE(): void {
+  if (sseConnection) {
+    sseConnection.close();
+    sseConnection = null;
+  }
+}
+
+function handleSSEEvent(data: string, eventType: string): void {
+  if (!client || !session) return;
+
+  try {
+    const parsed = JSON.parse(data);
+    const eventTypeInner = parsed.type || eventType;
+
+    if (eventTypeInner === "message.part.updated") {
+      const partData = parsed.part || parsed.properties?.part;
+      if (!partData) return;
+
+      const partId = partData.id;
+      if (!partId) return;
+
+      // Parse part data to MessagePart
+      const msgType = getMessagePartType(partData.type || "text");
+      if (msgType === MessagePartType.STEP_START || msgType === MessagePartType.STEP_FINISH) {
+        return;
+      }
+      const part = {
+        type: msgType,
+        text: partData.text || null,
+        tool_name: partData.tool || null,
+        tool_status: partData.state?.status || null,
+        tool_state: partData.state || null,
+        tool_result: null,
+        call_id: partData.callID || null,
+        reason: partData.reason || null,
+        cost: partData.cost || null,
+        tokens: partData.tokens || null,
+        raw_data: null as Record<string, unknown> | null,
+      };
+
+      // Print context usage bar if the part type changed
+      maybePrintContextTransition(msgType);
+
+      const el = renderMessagePart(part);
+      appendPart(el, partId);
+    } else if (eventTypeInner === "session.status") {
+      const statusData = parsed.status || parsed.properties?.status || {};
+      const statusType = statusData.type || "";
+      // Update context usage from SSE status event (backend always includes these fields)
+      updateContextUsage({
+        context_usage: statusData.context_usage ?? 0,
+        token_count: statusData.token_count ?? 0,
+      } as SessionStatus);
+      if (statusType === "idle" || statusType === "error") {
+        log(`[SSE CLI] Session ${statusType}, stream ended. Context usage: ${formatContextUsage()}`, "info");
+        stopPolling();
+        closeSSE();
+      }
+    }
+  } catch (e) {
+    if (debugMode) {
+      log(`[SSE CLI] SSE parse error: ${e}`, "error");
+    }
+  }
+}
+
+function getMessagePartType(typeStr: string): MessagePartType {
+  const map: Record<string, MessagePartType> = {
+    "text": MessagePartType.TEXT,
+    "reasoning": MessagePartType.THINKING,
+    "tool": MessagePartType.TOOL_CALLING,
+    "step-start": MessagePartType.STEP_START,
+    "step-finish": MessagePartType.STEP_FINISH,
+  };
+  return map[typeStr] || MessagePartType.UNKNOWN;
 }
 
 async function sendPrompt(text: string): Promise<void> {
@@ -256,9 +441,22 @@ async function sendPrompt(text: string): Promise<void> {
   }
 
   log("[SSE CLI] Streaming events...", "info");
+
+  // Reset context usage tracking for new prompt
+  previousPartType = null;
+
+  // Connect to SSE for real-time streaming
+  closeSSE();
+  renderedPartMap = new Map();
   seenMessageCount = 0;
   emptyPolls = 0;
   startPolling();
+  sseConnection = client.streamEvents(
+    (eventData, eventType) => handleSSEEvent(eventData, eventType),
+    () => {
+      if (debugMode) log("[SSE CLI] SSE error/close, fallback to polling", "debug");
+    }
+  );
 }
 
 // ── Command Handler ───────────────────────────────────────────────
@@ -281,19 +479,22 @@ async function handleCommand(cmd: string): Promise<void> {
     switch (command) {
       case "help":
         log(
-          "[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /compact /export",
+          "[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /compact /export /context",
           "info"
         );
         break;
 
       case "new":
         stopPolling();
+        closeSSE();
         session = await client.createSession("SSE Web debug session");
         log(`[SSE CLI] New session: ${session.id}`, "info");
         sessionIdEl.textContent = session.id;
         seenMessageCount = 0;
         emptyPolls = 0;
+        renderedPartMap = new Map();
         outputEl.innerHTML = "";
+        previousPartType = null;
         break;
 
       case "abort": {
@@ -333,6 +534,9 @@ async function handleCommand(cmd: string): Promise<void> {
         );
         outputEl.innerHTML = "";
         seenMessageCount = 0;
+        renderedPartMap = new Map();
+        closeSSE();
+        previousPartType = null;
         break;
       }
 
@@ -360,6 +564,13 @@ async function handleCommand(cmd: string): Promise<void> {
           `[SSE CLI] Export: ${result.count || 0} messages -> ${result.output || "n/a"}`,
           "info"
         );
+        break;
+      }
+
+      case "context": {
+        const status = await client.getSessionStatus(session.id);
+        updateContextUsage(status);
+        log(`[SSE CLI] Context usage: ${formatContextUsage()}`, "info");
         break;
       }
 
@@ -392,17 +603,41 @@ sendBtn.addEventListener("click", () => {
   if (text) {
     sendPrompt(text).catch(console.error);
     promptInput.value = "";
+    promptInput.style.height = ""; // reset textarea height
   }
 });
 
 promptInput.addEventListener("keydown", (e: KeyboardEvent) => {
   if (e.key === "Enter") {
+    if (e.ctrlKey || e.metaKey) {
+      // Ctrl+Enter (or Cmd+Enter on Mac): insert newline at cursor
+      e.preventDefault();
+      const start = promptInput.selectionStart ?? 0;
+      const end = promptInput.selectionEnd ?? 0;
+      const val = promptInput.value;
+      promptInput.value = val.slice(0, start) + "\n" + val.slice(end);
+      // Move cursor after the inserted newline
+      const newPos = start + 1;
+      promptInput.selectionStart = promptInput.selectionEnd = newPos;
+      // Trigger auto-resize
+      promptInput.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    // Enter alone: send message
+    e.preventDefault(); // prevent newline insertion
     const text = promptInput.value.trim();
     if (text) {
       sendPrompt(text).catch(console.error);
       promptInput.value = "";
+      promptInput.style.height = ""; // reset textarea height
     }
   }
+});
+
+// Auto-resize the textarea as content grows
+promptInput.addEventListener("input", () => {
+  promptInput.style.height = "auto";
+  promptInput.style.height = Math.min(promptInput.scrollHeight, 300) + "px";
 });
 
 // Command button listeners
@@ -414,8 +649,10 @@ btnMessages.addEventListener("click", () => handleCommand("/messages"));
 btnClear.addEventListener("click", () => handleCommand("/clear"));
 btnCompact.addEventListener("click", () => handleCommand("/compact"));
 btnExport.addEventListener("click", () => handleCommand("/export"));
+btnContext.addEventListener("click", () => handleCommand("/context"));
 
 // ── Initial State ─────────────────────────────────────────────────
 
 setConnected(false);
-log("[SSE CLI] Ready. Enter host/port and click Connect.", "info");
+log("[SSE CLI] Ready. Attempting initial connection...", "info");
+doConnect().catch(console.error);

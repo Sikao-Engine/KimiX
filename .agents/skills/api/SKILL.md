@@ -123,7 +123,7 @@ await prompt_async("Analyze this code", session=session)
 - File paths in the prompt are automatically detected and wrapped in backticks via `escape_file_paths()`.
 - Prompts longer than 65536 characters are automatically exported to a temp file and replaced with a `read and execute: <file>` instruction.
 - When `output_function` is provided, `merge_wire_messages` defaults to `True`.
-- Retries with exponential backoff (up to 60s) are performed on HTTP errors (429, 400, 500, 502, 503).
+- HTTP API errors are retried with exponential backoff at the underlying chat-provider layer; `prompt()` itself does not add an extra retry loop.
 - After a successful prompt, unfinished todos are collected and sent back as a system reminder (`_maybe_build_todo_reminder`).
 
 ### Cancel Prompt
@@ -208,6 +208,7 @@ SystemPromptType.TodoMaker        # Plan maker agent (creates implementation pla
 SystemPromptType.Thinker          # Thinker agent (thinks in <thinking> tags, self-verifies)
 SystemPromptType.TrivialSubAgent  # Read-only sub-agent (rejects write/edit tasks)
 SystemPromptType.Supervisor       # Supervisor agent (outlines, decomposes, dispatches, tracks, verifies)
+SystemPromptType.Reader           # Read-only agent for retrieval/analysis tasks
 
 # Build a custom system prompt callback
 class MyCallback(SystemPromptCallback):
@@ -345,7 +346,7 @@ from kimix.base import run_process_with_error, run_process_with_error_async
 # Run command and capture output with error detection
 error_output = run_process_with_error(
     command="npm run build",
-    keycode=("error", "failed"),     # Keywords to look for in output
+    keycode=("error", "failed"),     # Required: keywords to look for in output (or None)
     skip_success=True                # Return None if no error keywords found and code==0
 )
 
@@ -679,7 +680,7 @@ async def main():
         "Write a Python script that greets the user",
         work_dir="./workspace",
         thinking=True,
-        yolo=False,
+        yolo=True,
     ):
         print(msg)
 
@@ -795,9 +796,10 @@ print(results)  # {"A": "result A", "B": "result B using result A", ...}
 ### TCP Client / Server
 
 ```python
-# File: src/kimix/network/tcp_client.py, src/kimix/network/tcp_server.py
+# File: src/kimix/network/tcp_client.py, src/kimix/network/tcp_server.py, src/kimix/network/tcp_group_server.py
 from kimix.network.tcp_client import TCPClient
 from kimix.network.tcp_server import TCPServer
+from kimix.network.tcp_group_server import TcpGroupServer
 
 client = TCPClient(host="127.0.0.1", port=8888)
 await client.connect()
@@ -817,8 +819,8 @@ await server.stop()
 
 ### JSON-RPC
 
-- `JSONRPCClient(host=DEFAULT_HOST, port=DEFAULT_PORT)` — `connect()`, `disconnect()`, `is_connected()`, `call(method, *args, timeout=5.0)`
-- `JSONRPCServer(host=DEFAULT_HOST, port=DEFAULT_PORT, max_workers=10, ...)` — `register(name, func)`, `register_function(func)`, `start(blocking=True)`, `stop()`, `get_client_count()`, `wait_for_connection(timeout=5.0)`, `disconnect_client(client_id)`, `start_websocket_server(ws_port, blocking=False)`, `stop_websocket_server()`
+- `JSONRPCClient(host=DEFAULT_HOST, port=DEFAULT_PORT)` — `connect()`, `disconnect()`, `is_connected()`, `call(method, *args, timeout=5.0)` (from `kimix.network.rpc_client`)
+- `JSONRPCServer(host=DEFAULT_HOST, port=DEFAULT_PORT, max_workers=10, ...)` — `register(name, func)`, `register_function(func)`, `start(blocking=True)`, `stop()`, `get_client_count()`, `wait_for_connection(timeout=5.0)`, `disconnect_client(client_id)`, `start_websocket_server(ws_port, blocking=False)`, `stop_websocket_server()` (from `kimix.network.rpc_server`)
 
 ## `kimix.server` — Opencode-Style HTTP Server (FastAPI + SSE)
 
@@ -845,12 +847,14 @@ async def interact():
     await client.delete_session(sid)
 ```
 
-- `create_app()` — returns FastAPI with routes: health, SSE event stream, session CRUD, prompt, abort, permissions, clear, context, compact, export
-- `BusEvent(type, properties)` — `to_dict()`, `to_json()`
-- `EventBus` — `subscribe(callback)`, `create_async_queue()`, `remove_async_queue(q)`, `emit(event)`, `emit_type(event_type, **properties)`; global `bus = EventBus()`
-- `KimixAsyncClient(host="127.0.0.1", port=4096, timeout=30.0)` — `health_check()`, `create_session(title=None)`, `get_session(id)`, `list_sessions()`, `delete_session(id)`, `get_messages(id, limit=10)`, `send_prompt_async(id, text, agent=None)`, `abort_session(id)`, `clear_session(id)`, `compact_session(id, keep=None)`, `export_session(id, output_path=None)`, `stream_events(session_id, timeout=14400.0)`, `stream_events_robust(session_id, timeout=14400.0, max_reconnects=5, reconnect_delay=2.0, on_reconnect=None)`
-- `SessionManager` — `create_session(title=None)`, `get_session(id)`, `get_sdk_session(id)`, `list_sessions()`, `delete_session(id)`, `get_session_status()`, `get_messages(id, limit=None)`, `prompt(id, text, agent=None)`, `prompt_async(...)`, `abort_session(id)`, `clear_session(id)`, `compact_session(id, keep=None)`, `export_session(id, output_path=None)`, `get_session_context(id, keep=None)`; global `session_manager = SessionManager()`
-- `serve_cli(args)` — CLI entry point for `kimix serve`
+These classes are defined in submodules under `kimix.server` (the package `__init__.py` does not re-export them):
+
+- `create_app()` — returns FastAPI with routes: health, SSE event stream, session CRUD, prompt, abort, permissions, clear, context, compact, export (from `kimix.server.app`)
+- `BusEvent(type, properties)` — `to_dict()`, `to_json()` (from `kimix.server.bus`)
+- `EventBus` — `subscribe(callback)`, `create_async_queue()`, `remove_async_queue(q)`, `emit(event)`, `emit_type(event_type, **properties)`; global `bus = EventBus()` (from `kimix.server.bus`)
+- `KimixAsyncClient(host="127.0.0.1", port=4096, timeout=30.0)` — `health_check()`, `create_session(title=None)`, `get_session(id)`, `list_sessions()`, `delete_session(id)`, `get_messages(id, limit=10)`, `send_prompt_async(id, text, agent=None)`, `abort_session(id)`, `clear_session(id)`, `compact_session(id, keep=None)`, `export_session(id, output_path=None)`, `stream_events(session_id, timeout=14400.0)`, `stream_events_robust(session_id, timeout=14400.0, max_reconnects=5, reconnect_delay=2.0, on_reconnect=None)` (from `kimix.server.client`)
+- `SessionManager` — `create_session(title=None)`, `get_session(id)`, `get_sdk_session(id)`, `list_sessions()`, `delete_session(id)`, `get_session_status()`, `get_messages(id, limit=None)`, `prompt(id, text, agent=None)`, `prompt_async(...)`, `abort_session(id)`, `clear_session(id)`, `compact_session(id, keep=None)`, `export_session(id, output_path=None)`, `get_session_context(id, keep=None)`; global `session_manager = SessionManager()` (from `kimix.server.session_manager`)
+- `serve_cli(args)` — CLI entry point for `kimix serve` (from `kimix.server.serve`)
 
 ## `kimix.parser` — Source Code Comment Parsers
 
@@ -874,19 +878,19 @@ for c in result.comments:
 
 ## `kimix.tools` — Built-in Agent Tools
 
-All tools are `CallableTool2` subclasses. Key ones:
+All tools are `CallableTool2` subclasses. They are organized in subpackages under `kimix.tools` (the package `__init__.py` does not re-export them); import from the relevant submodule, e.g. `from kimix.tools.agent import Agent, AgentList, AgentClose, AskParent`. Key ones:
 
-- `Agent` — launch sub-agent; params: `prompt`, `session_id`, `close_session=True`, `return_history=False`, `response`
-- `AskParent` — ask parent clarifying question; params: `question`, `context`
-- `AgentList` — list active sub-agent sessions
-- `AgentClose` — close sub-agent session; params: `session_id`
+- `Agent` — launch sub-agent; params: `prompt`, `session_id`, `close_session=True`, `return_history=False`, `response` (from `kimix.tools.agent`)
+- `AskParent` — ask parent clarifying question; params: `question`, `context` (from `kimix.tools.agent`)
+- `AgentList` — list active sub-agent sessions (from `kimix.tools.agent`)
+- `AgentClose` — close sub-agent session; params: `session_id` (from `kimix.tools.agent`)
 - `TaskOutput` — get background task output; params: `task_id`, `block=True`, `timeout=60`, `output_path`, `kill=False`
 - `BackgroundStream` — `start(function, stop_function, input_function=None)`, `wait(timeout=None)`, `stop()`, `get_output()`, `pop_output()`, `input(data)`, `success()`
-- `Bash` / `Powershell` — shell execution; params: `cmd`, `timeout=10`
+- `Bash` / `Powershell` — shell execution; params: `cmd`, `timeout=10` (from `kimix.tools.file.bash.bash_tool`)
 - `Run` — run external executable; params: `command`, `timeout=10`, `output_path`, `cwd`, `env`, `run_in_background=False`
 - `FindStr` — search text in files; params: `content`, `path`, `case_sensitive=False`
 - `Mkdir` / `Rm` — create/remove directories
-- `Python` — execute Python code; params: `code`, `output_path`, `timeout=10`, `run_in_background=False`
+- `Python` — execute Python code; params: `code`, `output_path`, `timeout=10`, `run_in_background=False` (from `kimix.tools.py`)
 - `PySyntaxCheck` — check Python syntax with ruff; params: `file_path`
 - `SyntaxLint` — unified syntax lint dispatcher; params: `file_path`, `project_root=".", clangd_path="clangd", verbose=False`
 - `MypyCheck` — Python type check; params: `file_path`, `project_root=".", verbose=False`

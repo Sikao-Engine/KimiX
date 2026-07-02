@@ -44,6 +44,8 @@ export interface Session {
 export interface SessionStatus {
   type: string; // "idle" | "busy" | "error"
   time: number;
+  token_count?: number;
+  context_usage?: number;
 }
 
 // SSE Event (raw)

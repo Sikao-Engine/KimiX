@@ -77,7 +77,8 @@ label {
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+textarea {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -88,7 +89,8 @@ input[type="number"] {
 }
 
 input[type="text"]:focus,
-input[type="number"]:focus {
+input[type="number"]:focus,
+textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
@@ -256,18 +258,6 @@ code {
   color: var(--red);
 }
 
-.part-step-start {
-  color: var(--yellow);
-  display: block;
-  margin: 4px 0;
-}
-
-.part-step-finish {
-  color: var(--yellow);
-  display: block;
-  margin: 4px 0;
-}
-
 .part-unknown {
   color: var(--gray);
 }
@@ -291,6 +281,25 @@ code {
   color: var(--red);
 }
 
+/* ── Context Usage Bar ──────────────────────────────────────── */
+
+.context-usage-bar {
+  display: block;
+  color: var(--gray);
+  font-size: 0.8rem;
+  font-family: monospace;
+  margin: 6px 0;
+  padding: 2px 0;
+  white-space: pre;
+  letter-spacing: 0.5px;
+}
+
+.context-usage-bar.final {
+  border-top: 1px solid var(--border-color, #333);
+  padding-top: 6px;
+  margin-top: 10px;
+}
+
 /* ── Input Panel ───────────────────────────────────────────── */
 
 #input-panel {
@@ -303,6 +312,17 @@ code {
   padding: 8px 12px;
 }
 
+textarea#prompt {
+  resize: vertical;
+  min-height: 72px;
+  max-height: 300px;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  line-height: 1.4;
+  overflow-y: auto;
+}
+
 #send-btn {
   background: var(--accent);
   color: var(--bg);
@@ -313,6 +333,106 @@ code {
 
 #send-btn:hover:not(:disabled) {
   background: #74c7ec;
+}
+
+/* ── Markdown Rendered Content ──────────────────────────── */
+
+.msg-part.part-text h1,
+.msg-part.part-text h2,
+.msg-part.part-text h3,
+.msg-part.part-text h4 {
+  color: var(--accent);
+  margin: 12px 0 6px;
+  font-weight: 600;
+}
+.msg-part.part-text h1 { font-size: 1.3rem; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.msg-part.part-text h2 { font-size: 1.15rem; }
+.msg-part.part-text h3 { font-size: 1.05rem; }
+.msg-part.part-text h4 { font-size: 1rem; }
+
+.msg-part.part-text p {
+  margin: 6px 0;
+}
+
+.msg-part.part-text ul,
+.msg-part.part-text ol {
+  margin: 4px 0;
+  padding-left: 24px;
+}
+.msg-part.part-text li {
+  margin: 2px 0;
+}
+
+.msg-part.part-text code {
+  background: var(--surface2);
+  color: var(--yellow);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.msg-part.part-text pre {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  margin: 8px 0;
+  overflow-x: auto;
+}
+.msg-part.part-text pre code {
+  background: none;
+  color: var(--fg);
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.85rem;
+}
+
+.msg-part.part-text blockquote {
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: var(--gray);
+}
+
+.msg-part.part-text table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  width: 100%;
+}
+.msg-part.part-text th,
+.msg-part.part-text td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.msg-part.part-text th {
+  background: var(--surface2);
+  color: var(--accent);
+  font-weight: 600;
+}
+.msg-part.part-text td {
+  background: var(--surface);
+}
+
+.msg-part.part-text a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.msg-part.part-text a:hover {
+  text-decoration: underline;
+}
+
+.msg-part.part-text hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+.msg-part.part-text input[type="checkbox"] {
+  margin-right: 6px;
+  filter: hue-rotate(180deg) saturate(0.5);
+  cursor: default;
+  pointer-events: none;
 }
 
 /* ── Scrollbar ─────────────────────────────────────────────── */

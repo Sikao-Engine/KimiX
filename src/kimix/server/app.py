@@ -21,6 +21,7 @@ Routes (opencode-standard):
     GET  /session/{id}                     — Get session info
     DELETE /session/{id}                   — Delete session (returns bool)
     GET  /session/{id}/message             — Get messages (WithParts[])
+    GET  /session/{id}/status               — Get session status (idle/busy/retry)
     GET  /session/{id}/todo                — Session todo list
     POST /session/{id}/message             — Send message (sync, WithParts)
     POST /session/{id}/prompt_async        — Send message (fire-and-forget, 204)
@@ -354,7 +355,21 @@ def create_app() -> FastAPI:
         description="Returns a map of session ID to current status (idle/busy/error).",
     )
     async def session_status() -> Dict[str, Dict[str, Any]]:
-        return session_manager.get_session_status()
+        return session_manager.get_all_session_statuses()
+
+    @app.get(
+        "/session/{sessionID}/status",
+        response_model=SessionStatusResponse,
+        tags=["Session"],
+        summary="Get per-session status",
+        description="Returns running/idle status for a specific session.",
+        responses={404: {"model": ErrorResponse, "description": "Session not found"}},
+    )
+    async def session_status_id(sessionID: str) -> Dict[str, Any]:
+        try:
+            return session_manager.get_session_status(sessionID).to_dict()
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
 
     @app.get(
         "/session/{sessionID}",

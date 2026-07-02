@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from kimi_agent_sdk import Session
 from kaos.path import KaosPath
+from kimi_cli.soul import RunCancelled
 
 from kimix.server.bus import bus, BusEvent
 from kimix.utils import (
@@ -264,10 +265,15 @@ class SessionInfo:
 class SessionStatus:
     type: str = "idle"  # idle | busy | retry
     time: float = 0.0
+    token_count: int = 0
+    context_usage: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
-        # opencode SessionStatus.Info carries only `type` for idle/busy.
-        return {"type": self.type}
+        return {
+            "type": self.type,
+            "token_count": self.token_count,
+            "context_usage": self.context_usage,
+        }
 
 
 # ── Managed Session Entry ────────────────────────────────────────
@@ -517,7 +523,15 @@ class SessionManager:
         logger.info("[SessionManager] Deleted session %s", session_id)
         return True
 
-    def get_session_status(self) -> Dict[str, Dict[str, Any]]:
+    def get_session_status(self, session_id: str) -> SessionStatus:
+        """Get status for a specific session.
+
+        Returns :class:`SessionStatus` for the given session ID.
+        Raises KeyError if the session does not exist.
+        """
+        return self._get_entry(session_id).status
+
+    def get_all_session_statuses(self) -> Dict[str, Dict[str, Any]]:
         # opencode only tracks non-idle sessions in the status map.
         with self._lock:
             return {
@@ -745,7 +759,16 @@ class SessionManager:
 
         # ── Event emission helper ────────────────────────────────
         def _emit_part(part: MessagePart, delta: str = "") -> None:
-            asst_msg.parts.append(part)
+            # Replace existing part with same ID instead of always appending.
+            # This prevents duplicate accumulation of incremental chunks (reasoning, text).
+            found = False
+            for i, existing in enumerate(asst_msg.parts):
+                if existing.id == part.id:
+                    asst_msg.parts[i] = part
+                    found = True
+                    break
+            if not found:
+                asst_msg.parts.append(part)
             props: Dict[str, Any] = {"part": part.to_dict()}
             if delta:
                 props["delta"] = delta
@@ -1152,7 +1175,7 @@ class SessionManager:
 
                         if not todos or all(todo.status == 'done' for todo in todos):
                             break
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, RunCancelled):
             error_msg = "cancelled"
         except Exception as exc:
             error_msg = str(exc)
@@ -1328,7 +1351,21 @@ class SessionManager:
             return self._get_entry(session_id)
 
     def _set_status(self, entry: ManagedSession, status_type: str) -> None:
-        entry.status = SessionStatus(type=status_type, time=time.time())
+        token_count = 0
+        context_usage = 0.0
+        if entry.sdk_session is not None:
+            try:
+                sdk_status = entry.sdk_session.status
+                token_count = getattr(sdk_status, "context_tokens", 0)
+                context_usage = getattr(sdk_status, "context_usage", 0.0)
+            except Exception:
+                pass
+        entry.status = SessionStatus(
+            type=status_type,
+            time=time.time(),
+            token_count=token_count,
+            context_usage=context_usage,
+        )
         bus.emit_type(
             "session.status",
             sessionID=entry.info.id,

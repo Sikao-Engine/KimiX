@@ -2,6 +2,7 @@
 
 import { MessagePartType } from "./types";
 import type { MessagePart } from "./types";
+import { renderMarkdown } from "./markdown";
 
 /** Truncate long strings, keeping head and tail. */
 export function fmtArg(s: string, maxLen: number = 120): string {
@@ -30,10 +31,6 @@ function partTypeClass(type: MessagePartType): string {
       return "part-tool-calling-part";
     case MessagePartType.TOOL_RESULT:
       return "part-tool-result";
-    case MessagePartType.STEP_START:
-      return "part-step-start";
-    case MessagePartType.STEP_FINISH:
-      return "part-step-finish";
     default:
       return "part-unknown";
   }
@@ -47,7 +44,7 @@ export function renderMessagePart(part: MessagePart): HTMLElement {
   switch (part.type) {
     case MessagePartType.TEXT:
       if (part.text) {
-        el.textContent = part.text;
+        el.innerHTML = renderMarkdown(part.text);
       }
       break;
 
@@ -59,17 +56,21 @@ export function renderMessagePart(part: MessagePart): HTMLElement {
 
     case MessagePartType.TOOL_CALLING: {
       const toolName = part.tool_name || "unknown";
+      const status = part.tool_status || null;
+      const state = part.tool_state || {};
+
       const header = document.createElement("div");
       header.className = "tool-header";
-      header.textContent = `⚡ ${toolName}`;
+      let headerText = `⚡ ${toolName}`;
+      if (status) {
+        headerText += `  status=${status}`;
+      }
+      header.textContent = headerText;
       el.appendChild(header);
 
       const details = document.createElement("div");
       details.className = "tool-details";
-      const status = part.tool_status || "unknown";
-      details.appendChild(createDetailLine(`status=${status}`));
 
-      const state = part.tool_state || {};
       if (state.input) {
         details.appendChild(
           createDetailLine(`input: ${fmtArg(String(state.input))}`)
@@ -105,16 +106,6 @@ export function renderMessagePart(part: MessagePart): HTMLElement {
           el.classList.add("tool-error");
         }
       }
-      break;
-    }
-
-    case MessagePartType.STEP_START:
-      el.textContent = "[STEP START]";
-      break;
-
-    case MessagePartType.STEP_FINISH: {
-      const reason = part.reason || "";
-      el.textContent = `[STEP FINISH] reason=${reason}`;
       break;
     }
 
