@@ -318,6 +318,22 @@ code {
   margin-top: 10px;
 }
 
+/* ── Plan Output ────────────────────────────────────────────── */
+
+.plan-output {
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 16px;
+  margin: 8px 0;
+  white-space: pre-wrap;
+  font-family: var(--font);
+  font-size: 0.85rem;
+  color: var(--fg);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
 /* ── Input Panel ───────────────────────────────────────────── */
 
 #input-panel {

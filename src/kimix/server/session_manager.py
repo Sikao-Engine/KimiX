@@ -107,6 +107,11 @@ SERVER_FEATURES: Dict[str, Dict[str, Any]] = {
         "title": "Permissions",
         "description": "Interactive permission prompts for tool calls.",
     },
+    "plan": {
+        "enabled": True,
+        "title": "Plan Mode",
+        "description": "Generate implementation plans using a dedicated planner agent.",
+    },
 }
 
 
@@ -1310,6 +1315,99 @@ class SessionManager:
         # entry.info.updatedAt = time.time()
         # logger.info("[SessionManager] Get session  %s", session_id)
         # return {"sessionID": session_id, "context_usage": usage}
+
+    # ── Plan ──────────────────────────────────────────────────
+
+    async def plan_async(self, session_id: str, text: str) -> None:
+        """POST /session/{sessionID}/plan
+
+        Creates a dedicated planner session, generates a plan, saves to plan.md.
+        """
+        from kimix.base import _default_agent_file_dir
+        from kimix.tools.note import _enable_plan
+        from kimix.utils.system_prompt import SystemPromptType
+
+        entry = await self._get_entry_or_restore(session_id)
+
+        plan_file = Path("plan.md")
+        if plan_file.is_file():
+            plan_file.unlink()
+
+        # Create a planner SDK session
+        planner_session = await _create_session_async(
+            agent_type=SystemPromptType.TodoMaker,
+            agent_file=_default_agent_file_dir / "agent_planner.json",
+        )
+        planner_session.get_custom_data()["plan_writing_path"] = plan_file
+
+        # Enable plan tools
+        _enable_plan.value = True
+
+        # Emit plan generation started event
+        bus.emit(BusEvent(type="plan.started", properties={
+            "sessionID": session_id,
+            "text": text,
+        }))
+
+        self._set_status(entry, "busy")
+
+        # Run the planner
+        prompt_text = (
+            "read the following requirement carefully and generate a comprehensive plan. "
+            "save the complete plan to a file using the WritePlan tool.\n\n"
+            f"Requirement:\n{text.strip()}"
+        )
+
+        max_plan_attempts = 3
+        plan_generated = False
+        try:
+            for attempt in range(max_plan_attempts):
+                try:
+                    async for _message in planner_session.prompt(prompt_text):
+                        # We don't stream planner messages as SSE events for now;
+                        # the planner agent works behind the scenes and we only
+                        # report start/completed/failed.
+                        pass
+
+                    if plan_file.exists() and plan_file.stat().st_size > 0:
+                        plan_generated = True
+                        break
+
+                    if attempt < max_plan_attempts - 1:
+                        prompt_text = (
+                            "The plan file was not generated. "
+                            "Please generate the plan and save it using the WritePlan tool.\n\n"
+                            f"Requirement:\n{text.strip()}"
+                        )
+                except Exception as exc:
+                    logger.error("Plan generation attempt %d failed: %s", attempt + 1, exc)
+                    if attempt == max_plan_attempts - 1:
+                        raise
+                    await asyncio.sleep(1)
+
+            if plan_generated:
+                plan_content = plan_file.read_text(encoding="utf-8", errors="replace")
+                bus.emit(BusEvent(type="plan.completed", properties={
+                    "sessionID": session_id,
+                    "planFile": str(plan_file.absolute()),
+                    "planContent": plan_content,
+                    "planSize": len(plan_content),
+                }))
+            else:
+                bus.emit(BusEvent(type="plan.failed", properties={
+                    "sessionID": session_id,
+                    "error": "Plan file was not generated",
+                }))
+        except Exception as exc:
+            logger.error("Plan generation failed: %s", exc, exc_info=True)
+            bus.emit(BusEvent(type="plan.failed", properties={
+                "sessionID": session_id,
+                "error": str(exc),
+            }))
+        finally:
+            _enable_plan.value = False
+            await close_session_async(planner_session)
+            self._set_status(entry, "idle")
 
     # ── Special command handlers ─────────────────────────────────
 

@@ -85,6 +85,10 @@ class PromptInput(BaseModel):
     parts: List[PromptPart] = Field(default_factory=list, description="Message parts")
 
 
+class PlanInput(BaseModel):
+    parts: List[PromptPart] = Field(default_factory=list, description="Message parts")
+
+
 # ── OpenAPI Response Models ──────────────────────────────────────
 
 
@@ -480,6 +484,27 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+        return Response(status_code=204)
+
+    # ── Plan ───────────────────────────────────────────────
+
+    @app.post(
+        "/session/{sessionID}/plan",
+        status_code=204,
+        tags=["Plan"],
+        summary="Generate plan",
+        description="Generate an implementation plan using the planner agent. Returns 204 immediately. Plan events stream via SSE /event.",
+        responses={
+            404: {"model": ErrorResponse, "description": "Session not found"},
+            400: {"model": ErrorResponse, "description": "Invalid input"},
+        },
+    )
+    async def plan_session(sessionID: str, body: PlanInput) -> Response:
+        text = _extract_text(body)  # type: ignore[arg-type]
+        try:
+            await session_manager.plan_async(sessionID, text)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
         return Response(status_code=204)
 
     # ── Abort ────────────────────────────────────────────────

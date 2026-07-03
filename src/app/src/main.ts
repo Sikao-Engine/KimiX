@@ -19,6 +19,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 let emptyPolls = 0;
 let connected = false;
 let debugMode = false;
+let pendingPlanMode = false;
 
 // Track rendered part IDs for deduplication, mapped to their DOM elements for in-place updates
 let renderedPartMap: Map<string, HTMLElement> = new Map();
@@ -166,6 +167,7 @@ const btnClear = document.getElementById("btn-clear") as HTMLButtonElement;
 const btnCompact = document.getElementById("btn-compact") as HTMLButtonElement;
 const btnExport = document.getElementById("btn-export") as HTMLButtonElement;
 const btnContext = document.getElementById("btn-context") as HTMLButtonElement;
+const btnPlan = document.getElementById("btn-plan") as HTMLButtonElement;
 
 // ── Output Helpers ────────────────────────────────────────────────
 
@@ -259,6 +261,7 @@ function setConnected(isConnected: boolean): void {
     btnCompact,
     btnExport,
     btnContext,
+    btnPlan,
   ]) {
     (btn as HTMLButtonElement).disabled = !isConnected;
   }
@@ -294,7 +297,7 @@ async function doConnect(): Promise<void> {
     }
 
     log(
-      "[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /compact /export /context",
+      "[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /compact /export /context /plan",
       "info"
     );
 
@@ -573,6 +576,21 @@ function handleSSEEvent(data: string, eventType: string): void {
         stopPolling();
         closeSSE();
       }
+    } else if (eventTypeInner === "plan.started") {
+      log("[Plan] Generating plan...", "info");
+    } else if (eventTypeInner === "plan.completed") {
+      const planContent = parsed.properties?.planContent || "";
+      const planFile = parsed.properties?.planFile || "plan.md";
+      log(`[Plan] Plan saved to ${planFile}`, "info");
+      // Display plan content in output area
+      const planEl = document.createElement("pre");
+      planEl.className = "plan-output";
+      planEl.textContent = planContent;
+      outputEl.appendChild(planEl);
+      scrollToBottom();
+    } else if (eventTypeInner === "plan.failed") {
+      const error = parsed.properties?.error || "Unknown error";
+      log(`[Plan] Failed: ${error}`, "error");
     }
   } catch (e) {
     if (debugMode) {
@@ -598,6 +616,29 @@ async function sendPrompt(text: string): Promise<void> {
   // Check for slash commands
   if (text.startsWith("/")) {
     await handleCommand(text);
+    return;
+  }
+
+  // If plan mode is pending, send as plan request instead
+  if (pendingPlanMode) {
+    pendingPlanMode = false;
+    log(`> ${text}`, "user-input");
+    log("[Plan] Generating plan...", "info");
+
+    // Connect to SSE for real-time plan events
+    closeSSE();
+    emptyPolls = 0;
+    sseConnection = client.streamEvents(
+      (eventData, eventType) => handleSSEEvent(eventData, eventType),
+      () => {
+        if (debugMode) log("[SSE CLI] SSE error/close, fallback to polling", "debug");
+      }
+    );
+
+    const ok = await client.sendPlan(session.id, text);
+    if (!ok) {
+      log("[Plan] Failed to send plan request", "error");
+    }
     return;
   }
 
@@ -647,7 +688,7 @@ async function handleCommand(cmd: string): Promise<void> {
     switch (command) {
       case "help":
         log(
-          "[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /compact /export /context",
+          "[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /compact /export /context /plan",
           "info"
         );
         break;
@@ -748,6 +789,12 @@ async function handleCommand(cmd: string): Promise<void> {
         await doDisconnect();
         break;
 
+      case "plan": {
+        log("[SSE CLI] Plan mode: Type your requirement and send it", "info");
+        pendingPlanMode = true;
+        break;
+      }
+
       default:
         log(`[SSE CLI] Unrecognized command: ${command}`, "error");
         break;
@@ -820,6 +867,7 @@ btnClear.addEventListener("click", () => handleCommand("/clear"));
 btnCompact.addEventListener("click", () => handleCommand("/compact"));
 btnExport.addEventListener("click", () => handleCommand("/export"));
 btnContext.addEventListener("click", () => handleCommand("/context"));
+btnPlan.addEventListener("click", () => handleCommand("/plan"));
 
 // ── Initial State ─────────────────────────────────────────────────
 

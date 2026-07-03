@@ -107,6 +107,21 @@ export class KimixClient {
     return resp.status === 200;
   }
 
+  async sendPlan(sessionId: string, text: string): Promise<boolean> {
+    const body = {
+      parts: [{ type: "text", text }],
+    };
+    const resp = await fetch(
+      `${this.baseUrl}/session/${sessionId}/plan`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+    return resp.status === 204;
+  }
+
   async clearSession(sessionId: string): Promise<boolean> {
     const resp = await fetch(`${this.baseUrl}/session/${sessionId}/clear`);
     return resp.status === 200;

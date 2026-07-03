@@ -278,6 +278,31 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
         return Response(status_code=204)
 
+    # ── Plan ───────────────────────────────────────────────
+
+    @app.post(
+        "/session/{sessionID}/plan",
+        status_code=204,
+        tags=["Plan"],
+        summary="Generate plan",
+        description="Generate an implementation plan using the planner agent. Returns 204 immediately. Plan events stream via SSE /event.",
+        responses={
+            404: {"model": ErrorResponse, "description": "Session not found"},
+            400: {"model": ErrorResponse, "description": "Invalid input"},
+        },
+    )
+    async def plan_session(sessionID: str, body: PromptInput) -> Response:
+        text_parts = [p.text for p in body.parts if p.type == "text" and p.text]
+        text = "\n".join(text_parts)
+        if not text:
+            raise HTTPException(status_code=400, detail="No text content in parts")
+        text = text.strip()
+        try:
+            await session_manager.plan_async(sessionID, text)
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
+        return Response(status_code=204)
+
     # ── Abort ────────────────────────────────────────────────
 
     @app.post(
