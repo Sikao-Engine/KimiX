@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -71,11 +72,35 @@ def _build_frontend(npm: str) -> bool:
     return result.returncode == 0
 
 
+def _find_available_port(host: str, preferred: int, max_attempts: int = 100) -> int:
+    """Find an available port starting from ``preferred``.
+
+    Tries binding to ``preferred``, ``preferred + 1``, etc.
+    Returns the first available port or raises RuntimeError.
+    """
+    for offset in range(max_attempts):
+        port = preferred + offset
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind((host, port))
+                return port
+        except OSError:
+            continue
+    raise RuntimeError(
+        f"No available port found after {max_attempts} attempts "
+        f"starting from {preferred}"
+    )
+
+
 def run_gui(args: Any) -> None:
     """Launch the Kimix backend and (optionally) the Vite frontend dev server."""
     original_cwd = os.getcwd()
     host = getattr(args, "host", DEFAULT_HOST)
     port = getattr(args, "port", DEFAULT_PORT)
+    original_port = port
+    port = _find_available_port(host, port)
+    if port != original_port:
+        print_warning(f"[gui] Port {original_port} in use, shifting to {port}")
     fe_port = getattr(args, "fe_port", DEFAULT_FE_PORT)
     build_first = getattr(args, "build", False)
     no_fe = getattr(args, "no_fe", False)

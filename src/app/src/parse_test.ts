@@ -154,7 +154,7 @@ function renderText(part: MessagePart): string {
     case MessagePartType.THINKING:
       return part.text ? `[THINK] ${part.text}` : "[THINK] <empty/null>";
     case MessagePartType.TOOL_CALLING:
-      return `[TOOL] ${part.tool_name} status=${part.tool_status}`;
+      return `[TOOL] ${part.tool_name}`;
     case MessagePartType.TOOL_CALLING_PART:
       return `[TOOL_PART] ${part.text}`;
     case MessagePartType.TOOL_RESULT:
@@ -215,7 +215,7 @@ function assert(condition: boolean, label: string): void {
   assert(msg.parts.length === 1, "has 1 part");
   assert(msg.parts[0].type === MessagePartType.TOOL_CALLING, "part type is TOOL_CALLING");
   assert(msg.parts[0].tool_name === "read", "tool_name is correct");
-  assert(renderText(msg.parts[0]) === "[TOOL] read status=unknown", "renders correctly");
+        assert(renderText(msg.parts[0]) === "[TOOL] read", "renders correctly");
 }
 
 // Test 4: Dummy ToolResult message

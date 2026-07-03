@@ -268,16 +268,17 @@ code {
   color: var(--magenta);
 }
 
-.tool-details {
-  color: var(--gray);
+.tool-result-content {
+  color: var(--fg);
   font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-left: 0;
+  padding: 4px 0 4px 1.2em;
+  font-family: var(--font);
 }
 
-.detail-line {
-  color: var(--gray);
-}
-
-.detail-line.error {
+.tool-result-content.error {
   color: var(--red);
 }
 

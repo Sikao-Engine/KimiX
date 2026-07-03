@@ -56,37 +56,12 @@ export function renderMessagePart(part: MessagePart): HTMLElement {
 
     case MessagePartType.TOOL_CALLING: {
       const toolName = part.tool_name || "unknown";
-      const status = part.tool_status || null;
-      const state = part.tool_state || {};
+      const args = part.text ? ` ${part.text}` : "";
 
       const header = document.createElement("div");
       header.className = "tool-header";
-      let headerText = `⚡ ${toolName}`;
-      if (status) {
-        headerText += `  status=${status}`;
-      }
-      header.textContent = headerText;
+      header.textContent = `⚡ ${toolName}${args}`;
       el.appendChild(header);
-
-      const details = document.createElement("div");
-      details.className = "tool-details";
-
-      if (state.input) {
-        details.appendChild(
-          createDetailLine(`input: ${fmtArg(String(state.input))}`)
-        );
-      }
-      if (state.output) {
-        details.appendChild(
-          createDetailLine(`output: ${fmtArg(String(state.output))}`)
-        );
-      }
-      if (state.error) {
-        details.appendChild(
-          createDetailLine(`error: ${fmtArg(String(state.error))}`, "error")
-        );
-      }
-      el.appendChild(details);
       break;
     }
 
@@ -115,13 +90,6 @@ export function renderMessagePart(part: MessagePart): HTMLElement {
   }
 
   return el;
-}
-
-function createDetailLine(text: string, className?: string): HTMLElement {
-  const line = document.createElement("div");
-  line.className = "detail-line" + (className ? ` ${className}` : "");
-  line.textContent = `       ${text}`;
-  return line;
 }
 
 // ── Streaming Render Functions ────────────────────────────────────

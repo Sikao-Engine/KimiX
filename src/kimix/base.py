@@ -571,6 +571,10 @@ def _format_tool_args(name: str, args: str | None) -> str | None:
                 return ", ".join(parts)
             case "AskParent":
                 return ", ".join(_collect("question", "context"))
+            case "ContextUsage":
+                return ""
+            case "Compact":
+                return ", ".join(_collect("instruction", "mode"))
             case _:
                 return orjson.dumps(parsed).decode("utf-8")
     except TypeError:

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from kimi_agent_sdk import Session
-from kimix.base import MessageType, _default_agent_file_dir
+from kimix.base import MessageType, _default_agent_file_dir, _format_tool_args
 from kimix.server.bus import bus, BusEvent
 from kimix.utils.session import _create_session_async
 from kimix.utils.system_prompt import SystemPromptType
@@ -194,6 +194,10 @@ async def _process_prompt(
             name = chunk.split(" ", 1)[0] if chunk else ""
             if name:
                 item["tool_name"] = name
+            args = chunk.split(" ", 1)[1] if " " in chunk else ""
+            fmt_args = _format_tool_args(name, args)
+            if fmt_args is not None:
+                item["text"] = fmt_args
         elif msg_type == MessageType.ToolResult:
             prefix = "[ToolResult] "
             if chunk.startswith(prefix):
