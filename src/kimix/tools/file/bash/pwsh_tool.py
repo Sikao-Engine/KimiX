@@ -194,6 +194,11 @@ class Powershell(CallableTool2[PowershellParams]):
         if not _bash_tool._should_enable_powershell():
             raise SkipThisTool()
 
+        if sys.platform == "win32":
+            self.description += (
+                " Windows paths must use backslashes (`\\`) instead of forward slashes (`/`)."
+            )
+
         self._pwsh_path = find_pwsh()
         if self._pwsh_path is None:
             _print_warning(
