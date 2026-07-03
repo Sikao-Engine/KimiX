@@ -77,7 +77,6 @@ from kimi_cli.soul.message import (
     tool_result_to_message,
 )
 from kimi_cli.soul.slash import registry as soul_slash_registry
-from kimi_cli.utils.invalid_args import InvalidArgRecord, InvalidArgsRecorder
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError
@@ -1275,37 +1274,6 @@ class KimiSoul:
         # wait for all tool results (may be interrupted)
         results = await result.tool_results()
         logger.debug("Got tool results: {results}", results=results)
-
-        # ── Record invalid-argument errors ────────────────────────────────
-        # ToolParseError and ToolValidateError both have brief="Invalid arguments".
-        tool_calls = result.tool_calls or []
-        tool_call_map = {tc.id: tc for tc in tool_calls}
-        recorder = InvalidArgsRecorder(self._runtime.session.work_dir)
-        for tr in results:
-            if tr.return_value.is_error and tr.return_value.brief == "Invalid arguments":
-                tc = tool_call_map.get(tr.tool_call_id)
-                if tc is None:
-                    continue
-                # Determine error type from the concrete class name.
-                class_name = type(tr.return_value).__name__
-                error_type: Literal["parse_error", "validate_error"] = (
-                    "parse_error" if "Parse" in class_name else "validate_error"
-                )
-                record = InvalidArgRecord(
-                    role="_invalid_arg",
-                    timestamp=time.time(),
-                    session_id=self._runtime.session.id,
-                    tool_name=tc.function.name,
-                    tool_call_id=tc.id,
-                    arguments=tc.function.arguments or "",
-                    error_type=error_type,
-                    error_message=tr.return_value.message,
-                    turn_id=self._current_turn_id or None,
-                    step_no=self._current_step_no or None,
-                )
-                # Fire-and-forget so the main loop is not blocked.
-                asyncio.create_task(recorder.record(record))
-
         # Update dedup tracking for the next step
         if isinstance(self._agent.toolset, KimiToolset):
             self._last_tool_calls = self._agent.toolset.end_step()
