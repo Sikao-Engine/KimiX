@@ -20,6 +20,7 @@ from kimix.tools.file.bash import bash_tool as _bash_tool
 from kimix.tools.file.bash.proccess_pwsh import pwsh_transform
 from kimix.tools.common import (
     _build_session_output_block,
+    _env_with_rg_bin_path,
     _extract_export_path,
     _maybe_export_output_async,
     _summarize_long_output_async,
@@ -278,7 +279,7 @@ class Powershell(CallableTool2[PowershellParams]):
                 ps_args.extend(["-NoExit", "-Command", cmd])
             else:
                 ps_args.append("-NoExit")
-            process_task = ProcessTask(executable, ps_args, None, None, append_newline=True)
+            process_task = ProcessTask(executable, ps_args, None, _env_with_rg_bin_path(), append_newline=True)
             task_id = await process_task.start(self._session, "pwsh")
             if params.wait_for_pattern is not None and process_task.stream is not None:
                 output, matched, elapsed = await process_task.stream.wait_for_output(
@@ -306,7 +307,7 @@ class Powershell(CallableTool2[PowershellParams]):
             )
 
         # Build the command line to pass to PowerShell -Command
-        process_task = ProcessTask(executable, ["-NoP", "-NonI", "-Exec", "Bypass", "-NoL", "-C", "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;$OutputEncoding=[System.Text.Encoding]::UTF8;", cmd], None, None)
+        process_task = ProcessTask(executable, ["-NoP", "-NonI", "-Exec", "Bypass", "-NoL", "-C", "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;$OutputEncoding=[System.Text.Encoding]::UTF8;", cmd], None, _env_with_rg_bin_path())
         task_id = await process_task.start(self._session, "pwsh")
 
         wait_matched: bool | None = None

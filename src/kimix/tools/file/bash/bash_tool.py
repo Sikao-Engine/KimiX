@@ -22,6 +22,7 @@ from kimi_cli.tools.display import ShellDisplayBlock
 
 from kimix.tools.common import (
     _build_session_output_block,
+    _env_with_rg_bin_path,
     _extract_export_path,
     _maybe_export_output_async,
     _summarize_long_output_async,
@@ -675,7 +676,7 @@ class Bash(CallableTool2[BashParams]):
                 bash_args = ["-c", safe_cmd + "; exec bash -i"]
             else:
                 bash_args = ["-i"]
-            process_task = ProcessTask(self._bash, bash_args, None, None, append_newline=True)
+            process_task = ProcessTask(self._bash, bash_args, None, _env_with_rg_bin_path(), append_newline=True)
             task_id = await process_task.start(self._session, "bash")
             if params.wait_for_pattern is not None and process_task.stream is not None:
                 output, matched, elapsed = await process_task.stream.wait_for_output(
@@ -705,7 +706,7 @@ class Bash(CallableTool2[BashParams]):
         # Build the command line to pass to bash -c
         # On Windows, escape backslashes so bash preserves them in paths.
         safe_cmd = _prepare_bash_cmd(params.cmd)
-        process_task = ProcessTask(self._bash, ["-c", safe_cmd], None, None)
+        process_task = ProcessTask(self._bash, ["-c", safe_cmd], None, _env_with_rg_bin_path())
         task_id = await process_task.start(self._session, "bash")
 
         wait_matched: bool | None = None

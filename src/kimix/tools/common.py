@@ -339,6 +339,33 @@ def _build_session_output_block(
     return "\n".join(lines)
 
 
+def _env_with_rg_bin_path(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Return a copy of environment with rg shared bin dir prepended to PATH.
+
+    The rg binary is installed to ``get_share_dir() / "bin"`` by the Grep tool.
+    Adding this directory to PATH ensures subprocesses (Bash, PowerShell, Run)
+    can find ``rg`` without relying on the system PATH.
+
+    Args:
+        env: Optional base environment dict. If None, ``os.environ`` is used.
+
+    Returns:
+        A new dict with ``PATH`` updated to include the rg bin directory.
+    """
+    from kimi_cli.share import get_share_dir
+
+    rg_bin_dir = str(get_share_dir() / "bin")
+    result = os.environ.copy() if env is None else env.copy()
+
+    current_path = result.get("PATH", "")
+    path_sep = ";" if os.name == "nt" else ":"
+    path_entries = current_path.split(path_sep)
+    if rg_bin_dir not in path_entries:
+        result["PATH"] = f"{rg_bin_dir}{path_sep}{current_path}"
+
+    return result
+
+
 class ProcessTask:
     """Run a subprocess in the background with stream output and input support."""
 

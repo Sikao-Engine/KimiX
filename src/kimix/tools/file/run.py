@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.session import Session
 from kimix.tools.common import (
     _build_session_output_block,
+    _env_with_rg_bin_path,
     _extract_export_path,
     _maybe_export_output_async,
     _export_to_temp_file_async,
@@ -300,7 +301,7 @@ class Run(CallableTool2[RunParams]):
                             env_dict[key] = value
                         else:
                             env_dict[item] = '1'
-                task = ProcessTask(executable, args_list, params.cwd, env_dict)
+                task = ProcessTask(executable, args_list, params.cwd, _env_with_rg_bin_path(env_dict))
                 task_id = await task.start(self._session, "run", Path(executable).stem)
 
                 wait_matched: bool | None = None
