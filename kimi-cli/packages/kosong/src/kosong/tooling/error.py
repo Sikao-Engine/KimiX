@@ -4,11 +4,14 @@ from kosong.tooling import ToolError
 class ToolNotFoundError(ToolError):
     """The tool was not found."""
 
-    def __init__(self, tool_name: str):
-        super().__init__(
-            message=f"Tool `{tool_name}` not found",
-            brief=f"Tool `{tool_name}` not found",
-        )
+    def __init__(self, tool_name: str, suggestions: list[str] | None = None):
+        message = f"Tool `{tool_name}` not found"
+        brief = f"Tool `{tool_name}` not found"
+        if suggestions:
+            hint = "did you mean " + ", ".join(f"`{s}`" for s in suggestions) + "?"
+            message += f" - {hint}"
+            brief += f" - {hint}"
+        super().__init__(message=message, brief=brief)
 
 
 class ToolParseError(ToolError):

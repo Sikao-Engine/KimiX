@@ -123,42 +123,14 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
                                         "description": "Status",
                                         "enum": ["pending", "in_progress", "done"],
                                         "type": "string",
-                                    },
-                                    "priority": {
-                                        "anyOf": [
-                                            {"enum": ["low", "medium", "high"], "type": "string"},
-                                            {"type": "null"},
-                                        ],
-                                        "default": None,
-                                        "description": "Optional priority: low, medium, or high.",
-                                    },
-                                    "tags": {
-                                        "anyOf": [
-                                            {"items": {"type": "string"}, "type": "array"},
-                                            {"type": "null"},
-                                        ],
-                                        "default": None,
-                                        "description": "Optional list of tags.",
-                                    },
-                                    "notes": {
+                                    }, "notes": {
                                         "anyOf": [
                                             {"maxLength": 65536, "type": "string"},
                                             {"type": "null"},
                                         ],
                                         "default": None,
                                         "description": "Optional notes.",
-                                    },
-                                    "created_at": {
-                                        "anyOf": [{"type": "number"}, {"type": "null"}],
-                                        "default": None,
-                                        "description": "Optional creation timestamp (Unix epoch).",
-                                    },
-                                    "updated_at": {
-                                        "anyOf": [{"type": "number"}, {"type": "null"}],
-                                        "default": None,
-                                        "description": "Optional last-update timestamp (Unix epoch).",
-                                    },
-                                },
+                                    }},
                                 "required": ["title", "status"],
                                 "type": "object",
                             },
@@ -176,42 +148,14 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
                                     "description": "Status",
                                     "enum": ["pending", "in_progress", "done"],
                                     "type": "string",
-                                },
-                                "priority": {
-                                    "anyOf": [
-                                        {"enum": ["low", "medium", "high"], "type": "string"},
-                                        {"type": "null"},
-                                    ],
-                                    "default": None,
-                                    "description": "Optional priority: low, medium, or high.",
-                                },
-                                "tags": {
-                                    "anyOf": [
-                                        {"items": {"type": "string"}, "type": "array"},
-                                        {"type": "null"},
-                                    ],
-                                    "default": None,
-                                    "description": "Optional list of tags.",
-                                },
-                                "notes": {
+                                }, "notes": {
                                     "anyOf": [
                                         {"maxLength": 65536, "type": "string"},
                                         {"type": "null"},
                                     ],
                                     "default": None,
                                     "description": "Optional notes.",
-                                },
-                                "created_at": {
-                                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                                    "default": None,
-                                    "description": "Optional creation timestamp (Unix epoch).",
-                                },
-                                "updated_at": {
-                                    "anyOf": [{"type": "number"}, {"type": "null"}],
-                                    "default": None,
-                                    "description": "Optional last-update timestamp (Unix epoch).",
-                                },
-                            },
+                                }},
                             "required": ["title", "status"],
                             "type": "object",
                         },
@@ -225,76 +169,7 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
                     "description": "Write mode: 'overwrite' safely replaces the existing todo list only when all old todos are done; 'append' merges the provided todos into the existing list (existing titles are updated, new titles are appended); 'force_overwrite' replaces the existing todo list unconditionally.",
                     "enum": ["overwrite", "append", "force_overwrite"],
                     "type": "string",
-                },
-                "delete": {
-                    "anyOf": [
-                        {"items": {"type": "string"}, "type": "array"},
-                        {"type": "string"},
-                        {"type": "null"},
-                    ],
-                    "default": None,
-                    "description": "Remove todos by exact title. Accepts a single title or a list of titles.",
-                },
-                "reorder": {
-                    "anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}],
-                    "default": None,
-                    "description": "Reorder existing todos by listing every title in the desired order.",
-                },
-                "status_filter": {
-                    "anyOf": [
-                        {
-                            "items": {"enum": ["pending", "in_progress", "done"], "type": "string"},
-                            "type": "array",
-                        },
-                        {"enum": ["pending", "in_progress", "done"], "type": "string"},
-                        {"type": "null"},
-                    ],
-                    "default": None,
-                    "description": "Filter read output by status(es).",
-                },
-                "search": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "default": None,
-                    "description": "Fuzzy search todo titles when reading.",
-                },
-                "limit": {
-                    "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
-                    "default": None,
-                    "description": "Limit the number of todos returned when reading.",
-                },
-                "offset": {
-                    "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
-                    "default": None,
-                    "description": "Offset into the read results.",
-                },
-                "mark_all": {
-                    "anyOf": [
-                        {"enum": ["pending", "in_progress", "done"], "type": "string"},
-                        {"type": "null"},
-                    ],
-                    "default": None,
-                    "description": "Transition all existing todos to the given status.",
-                },
-                "mark_matching": {
-                    "anyOf": [
-                        {
-                            "additionalProperties": {
-                                "enum": ["pending", "in_progress", "done"],
-                                "type": "string",
-                            },
-                            "type": "object",
-                        },
-                        {"type": "null"},
-                    ],
-                    "default": None,
-                    "description": "Transition todos whose titles contain each key (case-insensitive) to the corresponding status.",
-                },
-                "archive_done": {
-                    "default": False,
-                    "description": "Move completed todos to a separate archive list.",
-                    "type": "boolean",
-                },
-            },
+                }},
             "type": "object",
         }
     )

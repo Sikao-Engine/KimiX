@@ -12,9 +12,6 @@ from kimi_cli.utils.logging import logger
 # Shared status type — single source of truth for valid todo statuses
 TodoStatus = Literal["pending", "in_progress", "done"]
 
-# Shared priority type for todos
-TodoPriority = Literal["low", "medium", "high"]
-
 STATE_FILE_NAME = "state.json"
 
 
@@ -29,11 +26,7 @@ class TodoItemState(BaseModel):
 
     title: str
     status: TodoStatus
-    priority: TodoPriority | None = None
-    tags: list[str] | None = None
     notes: str | None = None
-    created_at: float | None = None
-    updated_at: float | None = None
 
 
 class SessionState(BaseModel):

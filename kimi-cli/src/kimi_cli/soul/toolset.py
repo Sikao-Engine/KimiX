@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import difflib
 import importlib
 import inspect
 import json
@@ -73,6 +74,11 @@ _TOOL_OUTPUT_BYTES_PER_TOKEN = 4  # conservative UTF-8 bytes/token estimate
 _TOOL_OUTPUT_CONTEXT_FRACTION = 1.0  # budget derived from total context size
 _TOOL_OUTPUT_REMAINING_FRACTION = 0.9  # must stay strictly below remaining context
 _TOOL_OUTPUT_ABS_MAX_BYTES = 1 << 20  # 1 MiB hard ceiling
+
+# High similarity threshold for auto-correcting a mistyped tool name.
+# Only matches at or above this cutoff will be automatically redirected
+# to the real tool (with a warning appended to the output).
+_AUTO_CORRECT_CUTOFF = 0.75
 
 
 def _part_byte_size(part: ContentPart) -> int:
@@ -256,6 +262,29 @@ def _append_reminder_to_return_value(
     return return_value.model_copy(update={"output": new_output})
 
 
+def _fuzzy_match_tool_name(
+    tool_name: str,
+    valid_names: list[str],
+    n: int = 3,
+    cutoff: float = 0.5,
+) -> list[str]:
+    """Find close matches for a tool name, with case-insensitive fallback.
+
+    Returns up to *n* suggestions with similarity ratio >= *cutoff*.
+    Short names (< 3 chars) are skipped to avoid false positives.
+    """
+    if len(tool_name) < 3:
+        return []
+
+    # Case-insensitive exact match first (e.g. "writefile" -> "WriteFile")
+    lower_name = tool_name.lower()
+    exact_matches = [name for name in valid_names if name.lower() == lower_name]
+    if exact_matches:
+        return exact_matches
+
+    return difflib.get_close_matches(tool_name, valid_names, n=n, cutoff=cutoff)
+
+
 class KimiToolset:
     def __init__(
         self,
@@ -430,12 +459,36 @@ class KimiToolset:
         token = current_tool_call.set(tool_call)
         try:
             tool_name = tool_call.function.name
+            warning_text: str | None = None
 
             if tool_name not in self._tool_dict:
-                return ToolResult(
-                    tool_call_id=tool_call.id,
-                    return_value=ToolNotFoundError(tool_name),
+                valid_names = list(self._tool_dict.keys())
+
+                # Step 1 — try auto-correct with a restrictive cutoff
+                auto_correct = _fuzzy_match_tool_name(
+                    tool_name, valid_names, n=1, cutoff=_AUTO_CORRECT_CUTOFF
                 )
+                if auto_correct:
+                    target_name = auto_correct[0]
+                    logger.info(
+                        "Auto-corrected tool name: {original} -> {target}",
+                        original=tool_name,
+                        target=target_name,
+                    )
+                    warning_text = (
+                        f"\n\n<system-warning>\n"
+                        f"Tool `{tool_name}` was not found. "
+                        f"Auto-corrected to `{target_name}`.\n"
+                        f"</system-warning>"
+                    )
+                    tool_name = target_name
+                else:
+                    # Step 2 — no close enough match, return suggestions error
+                    suggestions = _fuzzy_match_tool_name(tool_name, valid_names)
+                    return ToolResult(
+                        tool_call_id=tool_call.id,
+                        return_value=ToolNotFoundError(tool_name, suggestions),
+                    )
 
             from kosong.utils.jsonx import loads_relaxed
 
@@ -651,9 +704,16 @@ class KimiToolset:
                 return ToolResult(tool_call_id=tool_call.id, return_value=ret)
 
             task = asyncio.create_task(_call())
-            if reminder_text is not None:
 
-                async def _wrap_with_reminder(
+            # Combine warning (auto-correct) and reminder (dedup) texts
+            append_text = ""
+            if warning_text is not None:
+                append_text += warning_text
+            if reminder_text is not None:
+                append_text += reminder_text
+
+            if append_text:
+                async def _wrap_with_text(
                     inner_task: asyncio.Task[ToolResult],
                     text: str,
                 ) -> ToolResult:
@@ -663,7 +723,7 @@ class KimiToolset:
                         return_value=_append_reminder_to_return_value(tr.return_value, text),
                     )
 
-                task = asyncio.create_task(_wrap_with_reminder(task, reminder_text))
+                task = asyncio.create_task(_wrap_with_text(task, append_text))
 
             self._current_step_tasks[call_key] = task
             return task

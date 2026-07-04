@@ -1,7 +1,7 @@
 from kosong.tooling import DisplayBlock
 from pydantic import BaseModel
 
-from kimi_cli.session_state import TodoPriority, TodoStatus
+from kimi_cli.session_state import TodoStatus
 
 
 class DiffDisplayBlock(DisplayBlock):
@@ -19,11 +19,7 @@ class DiffDisplayBlock(DisplayBlock):
 class TodoDisplayItem(BaseModel):
     title: str
     status: TodoStatus
-    priority: TodoPriority | None = None
-    tags: list[str] | None = None
     notes: str | None = None
-    created_at: float | None = None
-    updated_at: float | None = None
 
 
 class TodoDisplayBlock(DisplayBlock):

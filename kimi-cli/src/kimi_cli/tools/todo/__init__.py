@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,7 +13,7 @@ from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from kimi_cli import logger
-from kimi_cli.session_state import TodoItemState, TodoPriority, TodoStatus
+from kimi_cli.session_state import TodoItemState, TodoStatus
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
 from kimi_cli.tools.utils import repair_json_string
@@ -131,19 +130,6 @@ _STATUS_MAP: dict[str, TodoStatus] = {
 }
 
 
-# Priority synonyms
-_PRIORITY_MAP: dict[str, TodoPriority] = {
-    "low": "low",
-    "l": "low",
-    "medium": "medium",
-    "med": "medium",
-    "m": "medium",
-    "mid": "medium",
-    "high": "high",
-    "h": "high",
-    "urgent": "high",
-}
-
 
 def _canonical_status(v: Any) -> TodoStatus:
     """Normalize a status value to its canonical form."""
@@ -177,69 +163,16 @@ class _FuzzyResult:
 class Todo(BaseModel):
     title: str = Field(description="Title", min_length=1, max_length=65536)
     status: TodoStatus = Field(description="Status")
-    priority: TodoPriority | None = Field(
-        default=None,
-        description="Optional priority: low, medium, or high.",
-    )
-    tags: list[str] | None = Field(
-        default=None,
-        description="Optional list of tags.",
-    )
     notes: str | None = Field(
         default=None,
         description="Optional notes.",
         max_length=65536,
-    )
-    created_at: float | None = Field(
-        default=None,
-        description="Optional creation timestamp (Unix epoch).",
-    )
-    updated_at: float | None = Field(
-        default=None,
-        description="Optional last-update timestamp (Unix epoch).",
     )
 
     @field_validator("status", mode="before")
     @classmethod
     def _validate_status(cls, v: Any) -> str:
         return _canonical_status(v)
-
-    @field_validator("priority", mode="before")
-    @classmethod
-    def _validate_priority(cls, v: Any) -> TodoPriority | None:
-        if v is None:
-            return None
-        if not isinstance(v, str):
-            raise ValueError(
-                "Invalid priority. Must be one of: low, medium, high (or a known synonym)."
-            )
-        normalized = v.strip().lower()
-        canonical = _PRIORITY_MAP.get(normalized)
-        if canonical is None:
-            raise ValueError(
-                "Invalid priority. Must be one of: low, medium, high (or a known synonym)."
-            )
-        return canonical
-
-    @field_validator("tags", mode="before")
-    @classmethod
-    def _validate_tags(cls, v: Any) -> list[str] | None:
-        if v is None:
-            return None
-        if not isinstance(v, list):
-            raise ValueError("tags must be a list of strings")
-        cleaned: list[str] = []
-        seen: set[str] = set()
-        for item in v:
-            if not isinstance(item, str):
-                raise ValueError("tags must be a list of strings")
-            stripped = item.strip()
-            if not stripped:
-                continue
-            if stripped not in seen:
-                cleaned.append(stripped)
-                seen.add(stripped)
-        return cleaned or None
 
     @field_validator("notes")
     @classmethod
@@ -272,44 +205,6 @@ class Params(BaseModel):
             "'append' merges the provided todos into the existing list (existing titles are updated, new titles are appended); "
             "'force_overwrite' replaces the existing todo list unconditionally."
         ),
-    )
-    delete: list[str] | str | None = Field(
-        default=None,
-        description="Remove todos by exact title. Accepts a single title or a list of titles.",
-    )
-    reorder: list[str] | None = Field(
-        default=None,
-        description="Reorder existing todos by listing every title in the desired order.",
-    )
-    status_filter: list[TodoStatus] | TodoStatus | None = Field(
-        default=None,
-        description="Filter read output by status(es).",
-    )
-    search: str | None = Field(
-        default=None,
-        description="Fuzzy search todo titles when reading.",
-    )
-    limit: int | None = Field(
-        default=None,
-        ge=0,
-        description="Limit the number of todos returned when reading.",
-    )
-    offset: int | None = Field(
-        default=None,
-        ge=0,
-        description="Offset into the read results.",
-    )
-    mark_all: TodoStatus | None = Field(
-        default=None,
-        description="Transition all existing todos to the given status.",
-    )
-    mark_matching: dict[str, TodoStatus] | None = Field(
-        default=None,
-        description="Transition todos whose titles contain each key (case-insensitive) to the corresponding status.",
-    )
-    archive_done: bool = Field(
-        default=False,
-        description="Move completed todos to a separate archive list.",
     )
 
     @field_validator("mode", mode="before")
@@ -364,83 +259,6 @@ class Params(BaseModel):
             return out
         raise ValueError("todos must be a list of todos, a single todo dict/object, or None")
 
-    @field_validator("delete", mode="before")
-    @classmethod
-    def _validate_delete(cls, v: Any) -> list[str] | None:
-        if v is None:
-            return None
-        if isinstance(v, str):
-            stripped = v.strip()
-            if not stripped:
-                raise ValueError("delete title cannot be empty or whitespace only")
-            return [stripped]
-        if isinstance(v, list):
-            out: list[str] = []
-            for idx, item in enumerate(v):
-                if not isinstance(item, str):
-                    raise ValueError(
-                        f"delete item at index {idx} must be a string, got {type(item).__name__}"
-                    )
-                stripped = item.strip()
-                if not stripped:
-                    raise ValueError(
-                        f"delete title at index {idx} cannot be empty or whitespace only"
-                    )
-                out.append(stripped)
-            return out
-        raise ValueError("delete must be a string or a list of strings")
-
-    @field_validator("reorder", mode="before")
-    @classmethod
-    def _validate_reorder(cls, v: Any) -> list[str] | None:
-        if v is None:
-            return None
-        if not isinstance(v, list):
-            raise ValueError("reorder must be a list of titles")
-        out: list[str] = []
-        for idx, item in enumerate(v):
-            if not isinstance(item, str):
-                raise ValueError(
-                    f"reorder item at index {idx} must be a string, got {type(item).__name__}"
-                )
-            stripped = item.strip()
-            if not stripped:
-                raise ValueError(f"reorder title at index {idx} cannot be empty or whitespace only")
-            out.append(stripped)
-        return out
-
-    @field_validator("status_filter", mode="before")
-    @classmethod
-    def _validate_status_filter(cls, v: Any) -> list[TodoStatus] | None:
-        if v is None:
-            return None
-        if isinstance(v, str):
-            return [_canonical_status(v)]
-        if isinstance(v, list):
-            return [_canonical_status(x) for x in v]
-        raise ValueError("status_filter must be a status string or a list of status strings")
-
-    @field_validator("mark_all", mode="before")
-    @classmethod
-    def _validate_mark_all(cls, v: Any) -> TodoStatus | None:
-        if v is None:
-            return None
-        return _canonical_status(v)
-
-    @field_validator("mark_matching", mode="before")
-    @classmethod
-    def _validate_mark_matching(cls, v: Any) -> dict[str, TodoStatus] | None:
-        if v is None:
-            return None
-        if not isinstance(v, dict):
-            raise ValueError("mark_matching must be a dict mapping title substrings to statuses")
-        out: dict[str, TodoStatus] = {}
-        for key, val in v.items():
-            if not isinstance(key, str) or not key.strip():
-                raise ValueError("mark_matching keys must be non-empty strings")
-            out[key.strip()] = _canonical_status(val)
-        return out
-
 
 def _first_pydantic_message(exc: ValidationError) -> str:
     """Return the first human-readable message from a Pydantic ValidationError."""
@@ -476,18 +294,9 @@ class TodoList(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
-        write_requested = (
-            params.todos is not None
-            or params.delete is not None
-            or params.reorder is not None
-            or params.mark_all is not None
-            or params.mark_matching is not None
-            or params.archive_done
-        )
-        if not write_requested:
-            return self._read_todos(params)
-
-        return self._write_todos(params.todos, params)
+        if params.todos is not None:
+            return self._write_todos(params.todos, params)
+        return self._read_todos()
 
     # ---- Write mode --------------------------------------------------------
 
@@ -560,18 +369,7 @@ class TodoList(CallableTool2[Params]):
                 final_todos = result.todos or []
                 warnings.extend(result.warnings)
 
-        # 4. Apply explicit deletions
-        if params.delete:
-            final_todos, delete_warnings = self._apply_delete(final_todos, params.delete)
-            warnings.extend(delete_warnings)
-
-        # 5. Bulk status transitions
-        if params.mark_all is not None:
-            final_todos = [self._update_status(t, params.mark_all) for t in final_todos]
-        if params.mark_matching is not None:
-            final_todos = self._apply_mark_matching(final_todos, params.mark_matching)
-
-        # 6. Regression detection (before archive/reorder so errors leave state unchanged)
+        # 4. Regression detection
         if params.mode != "force_overwrite" and old_todos:
             final_todos, regressions = self._check_regressions(old_todos, final_todos)
             if regressions:
@@ -585,22 +383,8 @@ class TodoList(CallableTool2[Params]):
                     display=[self._build_display_block(final_todos)],
                 )
 
-        # 7. Reorder
-        if params.reorder is not None:
-            reorder_result, reorder_error = self._apply_reorder(final_todos, params.reorder)
-            if reorder_error is not None:
-                return reorder_error
-            final_todos = reorder_result
-
-        # 8. Archive completed todos
-        archived = list(old_archived)
-        if params.archive_done:
-            active, done = self._split_by_status(final_todos)
-            final_todos = active
-            archived.extend(self._item_states(done))
-
-        # 9. Persist exactly once
-        save_error = self._save_todos(final_todos, archived)
+        # 5. Persist exactly once
+        save_error = self._save_todos(final_todos, list(old_archived))
         if save_error:
             return ToolReturnValue(
                 is_error=True,
@@ -609,13 +393,8 @@ class TodoList(CallableTool2[Params]):
                 display=[],
             )
 
-        # 10. Build response
-        return self._build_success_response(
-            final_todos,
-            params=params,
-            warnings=warnings,
-            had_old_todos=bool(old_todos),
-        )
+        # 6. Build response
+        return self._build_success_response(final_todos, params.mode, bool(old_todos), warnings)
 
     @staticmethod
     def _find_duplicate_titles(todos: list[Todo]) -> list[str] | None:
@@ -790,91 +569,54 @@ class TodoList(CallableTool2[Params]):
         return warnings
 
     def _merge_by_title_update(self, old_todos: list[Todo], new_todos: list[Todo]) -> list[Todo]:
-        """Update existing titles and append brand-new ones, preserving metadata."""
+        """Update existing titles and append brand-new ones."""
         new_by_title = {t.title: t for t in new_todos}
-        now = time.time()
         merged: list[Todo] = []
         seen: set[str] = set()
 
         for old in old_todos:
             new = new_by_title.get(old.title)
             if new is not None:
-                merged.append(self._merge_one(old, new, now))
+                merged.append(self._merge_one(old, new))
             else:
                 merged.append(old)
             seen.add(old.title)
 
         for new in new_todos:
             if new.title not in seen:
-                merged.append(self._with_timestamp(new, now))
+                merged.append(new)
                 seen.add(new.title)
 
         return merged
 
     @staticmethod
-    def _merge_one(old: Todo, new: Todo, now: float) -> Todo:
-        """Produce an updated todo preserving old metadata when new omits it."""
+    def _merge_one(old: Todo, new: Todo) -> Todo:
+        """Produce an updated todo preserving old notes when new omits them."""
         return Todo(
             title=old.title,
             status=new.status,
-            priority=new.priority if new.priority is not None else old.priority,
-            tags=new.tags if new.tags is not None else old.tags,
             notes=new.notes if new.notes is not None else old.notes,
-            created_at=old.created_at,
-            updated_at=now,
         )
 
     @staticmethod
-    def _with_timestamp(todo: Todo, now: float) -> Todo:
-        """Return a copy of ``todo`` with timestamps initialized if missing."""
+    def _with_timestamp(todo: Todo) -> Todo:
+        """Return a copy of ``todo`` (no timestamp manipulation needed)."""
         return Todo(
             title=todo.title,
             status=todo.status,
-            priority=todo.priority,
-            tags=todo.tags,
             notes=todo.notes,
-            created_at=todo.created_at if todo.created_at is not None else now,
-            updated_at=now,
         )
 
     def _with_timestamps(self, todos: list[Todo]) -> list[Todo]:
-        now = time.time()
-        return [self._with_timestamp(t, now) for t in todos]
-
-    @staticmethod
-    def _apply_delete(todos: list[Todo], delete_titles: list[str]) -> tuple[list[Todo], list[str]]:
-        """Remove exact titles and return warnings for titles that did not exist."""
-        existing = {t.title for t in todos}
-        remaining = [t for t in todos if t.title not in delete_titles]
-        not_found = sorted(t for t in delete_titles if t not in existing)
-        warnings: list[str] = []
-        if not_found:
-            warnings.append(f"Note: delete titles not found: {', '.join(not_found)}")
-        return remaining, warnings
+        return [self._with_timestamp(t) for t in todos]
 
     @staticmethod
     def _update_status(todo: Todo, status: TodoStatus) -> Todo:
         return Todo(
             title=todo.title,
             status=status,
-            priority=todo.priority,
-            tags=todo.tags,
             notes=todo.notes,
-            created_at=todo.created_at,
-            updated_at=time.time(),
         )
-
-    def _apply_mark_matching(
-        self, todos: list[Todo], mark_matching: dict[str, TodoStatus]
-    ) -> list[Todo]:
-        result = list(todos)
-        for pattern, status in mark_matching.items():
-            pattern_lower = pattern.lower()
-            result = [
-                self._update_status(t, status) if pattern_lower in t.title.lower() else t
-                for t in result
-            ]
-        return result
 
     @staticmethod
     def _check_regressions(
@@ -896,55 +638,12 @@ class TodoList(CallableTool2[Params]):
                 clamped.append(t)
         return clamped, regressions
 
-    @staticmethod
-    def _apply_reorder(
-        todos: list[Todo], reorder: list[str]
-    ) -> tuple[list[Todo] | None, ToolReturnValue | None]:
-        """Validate and apply an explicit ordering to the todo list."""
-        current_titles = [t.title for t in todos]
-        current_set = set(current_titles)
-        reorder_set = set(reorder)
-
-        if current_set != reorder_set:
-            missing = sorted(current_set - reorder_set)
-            extra = sorted(reorder_set - current_set)
-            parts: list[str] = []
-            if missing:
-                parts.append(f"missing from reorder: {', '.join(missing)}")
-            if extra:
-                parts.append(f"extra in reorder: {', '.join(extra)}")
-            error_text = "Error: reorder list does not match existing todos. " + "; ".join(parts)
-            return None, ToolReturnValue(
-                is_error=True,
-                output=error_text,
-                message="reorder list does not match existing todos.",
-                display=[],
-            )
-
-        if len(reorder) != len(reorder_set):
-            return None, ToolReturnValue(
-                is_error=True,
-                output="Error: reorder list contains duplicate titles.",
-                message="reorder list contains duplicate titles.",
-                display=[],
-            )
-
-        order_index = {title: idx for idx, title in enumerate(reorder)}
-        return sorted(todos, key=lambda t: order_index[t.title]), None
-
-    @staticmethod
-    def _split_by_status(todos: list[Todo]) -> tuple[list[Todo], list[Todo]]:
-        active = [t for t in todos if t.status != "done"]
-        done = [t for t in todos if t.status == "done"]
-        return active, done
-
     def _build_success_response(
         self,
         todos: list[Todo],
-        *,
-        params: Params,
-        warnings: list[str],
+        mode: str,
         had_old_todos: bool,
+        warnings: list[str],
     ) -> ToolReturnValue:
         display_block = self._build_display_block(todos)
         active_summary = self._format_todos(todos)
@@ -953,7 +652,7 @@ class TodoList(CallableTool2[Params]):
             "append": "appended",
             "overwrite": "overwritten",
             "force_overwrite": "force overwritten",
-        }[params.mode]
+        }[mode]
 
         output_lines: list[str] = [f"Todo list {mode_msg}"]
         if active_summary:
@@ -961,7 +660,7 @@ class TodoList(CallableTool2[Params]):
         output = "\n".join(output_lines)
 
         message_lines: list[str] = [f"Todo list {mode_msg}."]
-        if params.mode == "force_overwrite" and had_old_todos:
+        if mode == "force_overwrite" and had_old_todos:
             message_lines.append(
                 "Warning: mode='force_overwrite' replaces the existing todo list and bypasses merge validation logic."
             )
@@ -983,11 +682,7 @@ class TodoList(CallableTool2[Params]):
                 TodoDisplayItem(
                     title=todo.title,
                     status=todo.status,
-                    priority=todo.priority,
-                    tags=todo.tags,
                     notes=todo.notes,
-                    created_at=todo.created_at,
-                    updated_at=todo.updated_at,
                 )
                 for todo in todos
             ]
@@ -995,37 +690,11 @@ class TodoList(CallableTool2[Params]):
 
     # ---- Read mode ---------------------------------------------------------
 
-    def _read_todos(self, params: Params) -> ToolReturnValue:
+    def _read_todos(self) -> ToolReturnValue:
         todos = self._load_todos()
         archived = self._load_archived_todos()
 
-        filtered = list(todos)
-        if params.status_filter:
-            allowed = set(params.status_filter)
-            filtered = [t for t in filtered if t.status in allowed]
-
-        if params.search:
-            title_list = [t.title for t in filtered]
-            if title_list:
-                matches = self._find_nearest_titles(
-                    [params.search],
-                    title_list,
-                    top_k=len(title_list),
-                    score_cutoff=self._FUZZY_TITLE_CUTOFF,
-                    processor=str.lower,
-                    scorer=rapidfuzz.fuzz.partial_ratio,
-                )
-                matched_titles = {m.choice for m in matches.get(params.search, [])}
-                filtered = [t for t in filtered if t.title in matched_titles]
-            else:
-                filtered = []
-
-        if params.offset:
-            filtered = filtered[params.offset :]
-        if params.limit is not None:
-            filtered = filtered[: params.limit]
-
-        if not filtered and not todos:
+        if not todos:
             return ToolReturnValue(
                 is_error=False,
                 output="Todo list is empty.",
@@ -1034,7 +703,7 @@ class TodoList(CallableTool2[Params]):
             )
 
         formatted = self._format_todos(
-            filtered,
+            todos,
             status_filter=("pending", "in_progress", "done"),
             display_status={
                 "pending": "pending",

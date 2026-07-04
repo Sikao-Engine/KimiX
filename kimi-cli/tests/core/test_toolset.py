@@ -35,10 +35,27 @@ class DummyToolB(CallableTool2[DummyParams]):
         return ToolOk(output="b")
 
 
+class DummyToolC(CallableTool2[DummyParams]):
+    name: str = "LongNamedTool"
+    description: str = "A tool with a longer name for typo tests"
+    params: type[DummyParams] = DummyParams
+
+    async def __call__(self, params: DummyParams) -> ToolReturnValue:
+        return ToolOk(output="long")
+
+
 def _make_toolset() -> KimiToolset:
     ts = KimiToolset()
     ts.add(DummyToolA())
     ts.add(DummyToolB())
+    return ts
+
+
+def _make_extended_toolset() -> KimiToolset:
+    ts = KimiToolset()
+    ts.add(DummyToolA())
+    ts.add(DummyToolB())
+    ts.add(DummyToolC())
     return ts
 
 
@@ -159,6 +176,98 @@ async def test_nonexistent_tool_returns_not_found():
         id="tc-2",
         function=ToolCall.FunctionBody(
             name="NoSuchTool",
+            arguments="{}",
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, ToolResult)
+    assert isinstance(result.return_value, KosongToolNotFoundError)
+    assert "not found" in result.return_value.message
+
+
+async def test_nonexistent_tool_with_fuzzy_suggestion():
+    """A non-existent tool name close to a registered one should include a hint."""
+    ts = _make_toolset()
+    tool_call = ToolCall(
+        id="tc-fuzzy",
+        function=ToolCall.FunctionBody(
+            name="TollX",  # similarity ~0.6 to ToolA/ToolB — below auto-correct but above suggestion cutoff
+            arguments="{}",
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, ToolResult)
+    assert isinstance(result.return_value, KosongToolNotFoundError)
+    assert "did you mean" in result.return_value.message
+    assert "ToolA" in result.return_value.message or "ToolB" in result.return_value.message
+
+
+async def test_nonexistent_tool_auto_corrects_case_insensitive():
+    """A case-insensitive match should auto-correct to the real tool."""
+    ts = _make_toolset()
+    tool_call = ToolCall(
+        id="tc-ci",
+        function=ToolCall.FunctionBody(
+            name="toola",  # lowercase version of "ToolA"
+            arguments="{}",
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, asyncio.Task)
+    tr = await result
+    output = tr.return_value.output
+    assert isinstance(output, str)
+    assert output.startswith("a")
+    assert "<system-warning>" in output
+
+
+async def test_nonexistent_tool_auto_correct_appends_warning():
+    """When auto-correcting, a system-warning should be appended to the output."""
+    ts = _make_toolset()
+    tool_call = ToolCall(
+        id="tc-warn",
+        function=ToolCall.FunctionBody(
+            name="toola",  # case-insensitive match to "ToolA"
+            arguments="{}",
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, asyncio.Task)
+    tr = await result
+    output = tr.return_value.output
+    assert isinstance(output, str)
+    assert "<system-warning>" in output
+    assert "toola" in output.lower() or "ToolA" in output
+    assert "Auto-corrected" in output
+
+
+async def test_nonexistent_tool_auto_corrects_close_typo():
+    """A tool name with a small typo (high similarity) should auto-correct."""
+    ts = _make_extended_toolset()
+    # "LongNamedTol" missing the last 'o' vs "LongNamedTool" (ratio ~0.96)
+    tool_call = ToolCall(
+        id="tc-typo",
+        function=ToolCall.FunctionBody(
+            name="LongNamedTol",
+            arguments="{}",
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, asyncio.Task)
+    tr = await result
+    output = tr.return_value.output
+    assert isinstance(output, str)
+    assert output.startswith("long")
+    assert "<system-warning>" in output
+
+
+async def test_nonexistent_tool_auto_correct_does_not_affect_distant_names():
+    """A distant name still returns ToolNotFoundError."""
+    ts = _make_extended_toolset()
+    tool_call = ToolCall(
+        id="tc-distant",
+        function=ToolCall.FunctionBody(
+            name="Xyzzy",  # no similarity to any registered tool, below 0.75 cutoff
             arguments="{}",
         ),
     )

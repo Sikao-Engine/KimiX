@@ -42,7 +42,7 @@ class TestTodoListOutputNotEmpty:
             "TodoList output must not be empty — this is the root cause of issue #1710. "
             "The model needs to see confirmation of the todo state it just set."
         )
-        assert result.message == "Todo list updated."
+        assert result.message == "Todo list appended."
 
     async def test_read_mode_returns_current_todos(self, todo_list_tool: TodoList):
         """When no todos are provided (None), the tool should return the current
@@ -106,7 +106,7 @@ class TestTodoListOutputNotEmpty:
         clear_params = Params(todos=[], mode="force_overwrite")
         result = await todo_list_tool(clear_params)
         assert not result.is_error
-        assert result.output == "Todo list updated"
+        assert result.output == "Todo list force overwritten"
         assert "mode='force_overwrite'" in result.message
 
         # Verify cleared
@@ -162,7 +162,7 @@ class TestTodoListOutputNotEmpty:
         clear_params = Params(todos=[])
         result = await todo_list_tool(clear_params)
         assert not result.is_error
-        assert result.output == "Todo list updated"
+        assert result.output == "Todo list appended"
 
         read_params = Params(todos=None)
         result = await todo_list_tool(read_params)
@@ -228,7 +228,7 @@ class TestTodoListActiveSummary:
         params = Params(todos=[Todo(title="Only done", status="done")])
         result = await todo_list_tool(params)
         assert not result.is_error
-        assert result.output == "Todo list updated"
+        assert result.output == "Todo list appended"
 
     async def test_write_summary_preserved_when_all_done(self, todo_list_tool: TodoList):
         """Marking all active todos as done removes the active summary."""
@@ -250,7 +250,7 @@ class TestTodoListActiveSummary:
             )
         )
         assert not result.is_error
-        assert result.output == "Todo list updated"
+        assert result.output == "Todo list appended"
 
     async def test_write_summary_with_overwrite_warning(self, todo_list_tool: TodoList):
         """Warning from mode='force_overwrite' is in message; active summary is in output."""
@@ -264,7 +264,7 @@ class TestTodoListActiveSummary:
         )
         result = await todo_list_tool(params)
         assert not result.is_error
-        assert result.output.startswith("Todo list updated")
+        assert result.output.startswith("Todo list force overwritten")
         assert "- [pending] Forced pending" in result.output
         assert "- [in progress] Forced in progress" in result.output
         assert "mode" not in result.output
@@ -1174,349 +1174,13 @@ class TestTodoListForceOverwriteMode:
         )
         assert not result.is_error
         assert "force_overwrite" not in result.message
-        assert result.message == "Todo list updated."
+        assert result.message == "Todo list force overwritten."
 
     async def test_force_param_rejected(self, todo_list_tool: TodoList):
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
             Params(todos=[Todo(title="Task", status="pending")], mode="overwrite", force=True)
-
-
-class TestTodoListDelete:
-    """Test explicit todo deletion."""
-
-    async def test_delete_single_title(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[Todo(title="Keep", status="pending"), Todo(title="Drop", status="pending")]
-            )
-        )
-
-        result = await todo_list_tool(Params(delete="Drop"))
-        assert not result.is_error
-
-        read = await todo_list_tool(Params(todos=None))
-        assert "Keep" in read.output
-        assert "Drop" not in read.output
-
-    async def test_delete_list_of_titles(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="A", status="pending"),
-                    Todo(title="B", status="pending"),
-                    Todo(title="C", status="pending"),
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(delete=["A", "C"]))
-        assert not result.is_error
-
-        read = await todo_list_tool(Params(todos=None))
-        assert "- [pending] A" not in read.output
-        assert "- [pending] B" in read.output
-        assert "- [pending] C" not in read.output
-
-    async def test_delete_not_found_warns(self, todo_list_tool: TodoList):
-        await todo_list_tool(Params(todos=[Todo(title="A", status="pending")]))
-
-        result = await todo_list_tool(Params(delete="Missing"))
-        assert not result.is_error
-        assert "not found" in result.message
-
-    async def test_delete_while_appending(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[Todo(title="Old", status="pending"), Todo(title="Drop", status="pending")]
-            )
-        )
-
-        result = await todo_list_tool(
-            Params(todos=[Todo(title="New", status="pending")], delete=["Drop"])
-        )
-        assert not result.is_error
-
-        read = await todo_list_tool(Params(todos=None))
-        assert "Old" in read.output
-        assert "New" in read.output
-        assert "Drop" not in read.output
-
-
-class TestTodoListReorder:
-    """Test explicit todo reordering."""
-
-    async def test_reorder_changes_order(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="First", status="pending"),
-                    Todo(title="Second", status="pending"),
-                    Todo(title="Third", status="pending"),
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(reorder=["Third", "First", "Second"]))
-        assert not result.is_error
-
-        read = await todo_list_tool(Params(todos=None))
-        lines = read.output.splitlines()
-        assert lines[1] == "- [pending] Third"
-        assert lines[2] == "- [pending] First"
-        assert lines[3] == "- [pending] Second"
-
-    async def test_reorder_missing_title_errors(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(todos=[Todo(title="A", status="pending"), Todo(title="B", status="pending")])
-        )
-
-        result = await todo_list_tool(Params(reorder=["A", "B", "C"]))
-        assert result.is_error
-        assert "reorder list does not match" in result.output
-
-    async def test_reorder_extra_title_errors(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(todos=[Todo(title="A", status="pending"), Todo(title="B", status="pending")])
-        )
-
-        result = await todo_list_tool(Params(reorder=["A"]))
-        assert result.is_error
-        assert "reorder list does not match" in result.output
-
-
-class TestTodoListMetadata:
-    """Test todo metadata fields (priority, tags, notes, timestamps)."""
-
-    async def test_metadata_persisted(self, todo_list_tool: TodoList):
-        result = await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(
-                        title="Meta task",
-                        status="pending",
-                        priority="high",
-                        tags=["core", "urgent"],
-                        notes="Important context",
-                    )
-                ]
-            )
-        )
-        assert not result.is_error
-        assert result.display[0].items[0].priority == "high"
-        assert result.display[0].items[0].tags == ["core", "urgent"]
-        assert result.display[0].items[0].notes == "Important context"
-        assert result.display[0].items[0].created_at is not None
-        assert result.display[0].items[0].updated_at is not None
-
-    async def test_metadata_preserved_on_status_update(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(
-                        title="Meta task",
-                        status="pending",
-                        priority="medium",
-                        tags=["keep"],
-                        notes="keep me",
-                    )
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(todos=[Todo(title="Meta task", status="done")]))
-        assert not result.is_error
-        item = result.display[0].items[0]
-        assert item.status == "done"
-        assert item.priority == "medium"
-        assert item.tags == ["keep"]
-        assert item.notes == "keep me"
-
-    async def test_metadata_overridden_when_provided(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(
-                        title="Meta task",
-                        status="pending",
-                        priority="low",
-                        tags=["old"],
-                        notes="old note",
-                    )
-                ]
-            )
-        )
-
-        result = await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(
-                        title="Meta task",
-                        status="in_progress",
-                        priority="high",
-                        tags=["new"],
-                    )
-                ]
-            )
-        )
-        assert not result.is_error
-        item = result.display[0].items[0]
-        assert item.status == "in_progress"
-        assert item.priority == "high"
-        assert item.tags == ["new"]
-        assert item.notes == "old note"
-
-
-class TestTodoListReadFilters:
-    """Test read-mode filtering, search, and pagination."""
-
-    async def test_status_filter(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="A", status="pending"),
-                    Todo(title="B", status="in_progress"),
-                    Todo(title="C", status="done"),
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(status_filter="done"))
-        assert not result.is_error
-        assert "C" in result.output
-        assert "A" not in result.output
-        assert "B" not in result.output
-
-    async def test_status_filter_list(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="A", status="pending"),
-                    Todo(title="B", status="in_progress"),
-                    Todo(title="C", status="done"),
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(status_filter=["pending", "in_progress"]))
-        assert not result.is_error
-        assert "- [pending] A" in result.output
-        assert "- [in_progress] B" in result.output
-        assert "- [done] C" not in result.output
-
-    async def test_search_fuzzy(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="Fix login bug", status="pending"),
-                    Todo(title="Write tests", status="pending"),
-                    Todo(title="Deploy app", status="pending"),
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(search="bug"))
-        assert not result.is_error
-        assert "Fix login bug" in result.output
-        assert "Write tests" not in result.output
-        assert "Deploy app" not in result.output
-
-    async def test_limit_and_offset(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="A", status="pending"),
-                    Todo(title="B", status="pending"),
-                    Todo(title="C", status="pending"),
-                    Todo(title="D", status="pending"),
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(limit=2, offset=1))
-        assert not result.is_error
-        lines = [line for line in result.output.splitlines() if line.startswith("- [")]
-        assert lines == ["- [pending] B", "- [pending] C"]
-
-
-class TestTodoListBulkTransitions:
-    """Test mark_all and mark_matching parameters."""
-
-    async def test_mark_all(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="A", status="pending"),
-                    Todo(title="B", status="in_progress"),
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(mark_all="done"))
-        assert not result.is_error
-
-        read = await todo_list_tool(Params(todos=None))
-        assert "[done] A" in read.output
-        assert "[done] B" in read.output
-
-    async def test_mark_matching(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="Fix login", status="pending"),
-                    Todo(title="Fix signup", status="pending"),
-                    Todo(title="Write docs", status="pending"),
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(mark_matching={"fix": "done", "docs": "in_progress"}))
-        assert not result.is_error
-
-        read = await todo_list_tool(Params(todos=None))
-        assert "[done] Fix login" in read.output
-        assert "[done] Fix signup" in read.output
-        assert "[in_progress] Write docs" in read.output
-
-
-class TestTodoListArchive:
-    """Test archiving completed todos."""
-
-    async def test_archive_done_moves_completed(self, todo_list_tool: TodoList):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="Done task", status="done"),
-                    Todo(title="Active task", status="pending"),
-                ]
-            )
-        )
-
-        result = await todo_list_tool(Params(archive_done=True))
-        assert not result.is_error
-
-        read = await todo_list_tool(Params(todos=None))
-        assert "Active task" in read.output
-        assert "Done task" not in read.output
-        assert "Archived: 1 completed todo(s)" in read.output
-
-    async def test_archive_done_persists_to_session_state(
-        self, todo_list_tool: TodoList, runtime: Runtime
-    ):
-        await todo_list_tool(
-            Params(
-                todos=[
-                    Todo(title="Done task", status="done"),
-                    Todo(title="Active task", status="pending"),
-                ]
-            )
-        )
-
-        await todo_list_tool(Params(archive_done=True))
-        assert len(runtime.session.state.archived_todos) == 1
-        assert runtime.session.state.archived_todos[0].title == "Done task"
-        assert runtime.session.state.archived_todos[0].status == "done"
 
 
 class TestTodoListPydanticValidation:
@@ -1534,18 +1198,6 @@ class TestTodoListPydanticValidation:
             )
         assert "index 1" in str(exc_info.value)
         assert "Invalid status" in str(exc_info.value)
-
-    async def test_invalid_priority_rejected(self, todo_list_tool: TodoList):
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            Params(todos=[{"title": "A", "status": "pending", "priority": "super_high"}])
-
-    async def test_delete_empty_string_rejected(self, todo_list_tool: TodoList):
-        from pydantic import ValidationError
-
-        with pytest.raises(ValidationError):
-            Params(delete="   ")
 
 
 class TestTodoListCallingJsonString:
