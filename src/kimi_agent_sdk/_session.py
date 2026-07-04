@@ -100,6 +100,15 @@ class Session:
             self._cancel_event.set()
         await self._cleanup_tools()
         await self._close_chat_provider()
+        # Close the KimiSoul's context storage (aiosqlite worker thread)
+        # before deleting files. On Windows the SQLite database file stays
+        # locked while the connection is open, causing PermissionError.
+        soul = getattr(self._cli, "soul", None)
+        if soul is not None:
+            try:
+                await soul.close()
+            except Exception:
+                pass
 
         # Close the session's ContextDB before deleting files
         await self._cli.session.close_context_db()
@@ -665,6 +674,8 @@ class Session:
             await self._cli.session.delete()
 
     def __del__(self):
+        if getattr(self, "_closed", False):
+            return
         if getattr(self, "_anonymous", False):
             self._cli.session.delete_sync()
 

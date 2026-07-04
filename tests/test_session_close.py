@@ -41,11 +41,16 @@ class _FakeAgent:
 class _FakeSoul:
     agent: _FakeAgent
     _runtime: _FakeRuntime
+    closed: bool = False
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 @dataclass
 class _FakePath:
     _exists: bool = False
+    suffix: str = ""
 
     def exists(self) -> bool:
         return self._exists
@@ -55,6 +60,9 @@ class _FakePath:
 
     def __truediv__(self, other: str) -> "_FakePath":
         return _FakePath()
+
+    def with_suffix(self, suffix: str) -> "_FakePath":
+        return _FakePath(suffix=suffix)
 
 
 @dataclass
@@ -75,6 +83,9 @@ class _FakeCLISession:
     @property
     def id(self) -> str:
         return self.session_id
+
+    async def close_context_db(self) -> None:
+        pass
 
 
 @dataclass
@@ -146,6 +157,32 @@ async def test_clear_calls_chat_provider_aclose(monkeypatch: pytest.MonkeyPatch)
     await session.clear()
     assert provider.closed
     assert called
+
+
+@pytest.mark.asyncio
+async def test_clear_closes_soul(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = _FakeChatProvider()
+    session = _make_session(provider)
+    soul = session._cli.soul
+
+    async def noop() -> None:
+        pass
+
+    monkeypatch.setattr(session, "_cleanup_tools", noop)
+
+    async def fake_recreate(*args: Any, **kwargs: Any) -> _FakeCLI:
+        return _FakeCLI(
+            soul=_FakeSoul(agent=_FakeAgent(), _runtime=_FakeRuntime(llm=None)),
+            session=_FakeCLISession(),
+        )
+
+    import kimi_agent_sdk._session as session_mod
+
+    monkeypatch.setattr(session_mod.CliSession, "create", classmethod(lambda cls, *a, **kw: fake_recreate(*a, **kw)))
+    monkeypatch.setattr(session_mod.KimiCLI, "create", classmethod(lambda cls, *a, **kw: fake_recreate(*a, **kw)))
+
+    await session.clear()
+    assert soul.closed
 
 
 @pytest.mark.asyncio

@@ -555,7 +555,7 @@ class SessionManager:
                 await close_session_async(entry.sdk_session)
             except Exception:
                 logger.debug("Error closing sdk session", exc_info=True)
-        elif entry.work_dir:
+        if entry.work_dir:
             try:
                 from kimi_cli.session import Session as CliSession
 
