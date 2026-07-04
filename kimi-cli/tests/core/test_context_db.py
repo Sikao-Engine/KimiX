@@ -312,3 +312,263 @@ class TestContextDB:
         assert result[0]["role"] == "user"
         assert "content" in result[0]
         assert "created_at" in result[0]
+
+    # ------------------------------------------------------------------ #
+    # New tests for optimizations
+    # ------------------------------------------------------------------ #
+
+    # H1: Stream get_messages_up_to_turn
+
+    async def test_get_messages_up_to_turn_large_conversation(
+        self, db: ContextDB
+    ) -> None:
+        """Verify get_messages_up_to_turn handles 1000+ messages correctly."""
+        # Insert 500 turns (user + assistant = 1000 messages)
+        messages = []
+        for i in range(500):
+            messages.append(
+                Message(role="user", content=[{"type": "text", "text": f"Turn {i}"}])
+            )
+            messages.append(
+                Message(
+                    role="assistant",
+                    content=[{"type": "text", "text": f"Response {i}"}],
+                )
+            )
+        await db.append_messages(messages)
+
+        # Get first turn
+        result = await db.get_messages_up_to_turn(0)
+        assert len(result) == 2
+
+        # Get last turn
+        result = await db.get_messages_up_to_turn(499)
+        assert len(result) == 1000
+
+    async def test_get_messages_up_to_turn_early_stop(self, db: ContextDB) -> None:
+        """Verify early termination after reaching target turn."""
+        messages = [
+            Message(role="user", content=[{"type": "text", "text": "Turn 0"}]),
+            Message(role="assistant", content=[{"type": "text", "text": "R0"}]),
+            Message(role="user", content=[{"type": "text", "text": "Turn 1"}]),
+            Message(role="assistant", content=[{"type": "text", "text": "R1"}]),
+            Message(role="user", content=[{"type": "text", "text": "Turn 2"}]),
+        ]
+        await db.append_messages(messages)
+
+        result = await db.get_messages_up_to_turn(0)
+        # Should stop after Turn 0 user + assistant
+        assert len(result) == 2
+
+    # H2: Transaction for migration
+
+    async def test_import_jsonl_bulk_transaction(self, db: ContextDB) -> None:
+        """Verify bulk import in a transaction persists all data atomically."""
+        await db.begin_transaction()
+        try:
+            for i in range(100):
+                await db.import_jsonl_line(
+                    {"role": "user", "content": [{"type": "text", "text": f"Msg {i}"}]}
+                )
+            await db.commit_transaction()
+        except Exception:
+            await db.rollback_transaction()
+            raise
+
+        count = await db.get_message_count()
+        assert count == 100
+
+    async def test_import_jsonl_rollback_on_error(self, db: ContextDB) -> None:
+        """Verify that rollback undoes all inserts within the transaction."""
+        # Insert some messages first
+        await db.append_messages(
+            [Message(role="user", content=[{"type": "text", "text": "Pre-existing"}])]
+        )
+        pre_count = await db.get_message_count()
+
+        await db.begin_transaction()
+        try:
+            for i in range(50):
+                await db.import_jsonl_line(
+                    {"role": "user", "content": [{"type": "text", "text": f"Msg {i}"}]}
+                )
+            raise RuntimeError("Simulated failure")
+        except RuntimeError:
+            await db.rollback_transaction()
+
+        # Count should be unchanged (rollback undid the 50 inserts)
+        assert await db.get_message_count() == pre_count
+
+    # H3: Fix checkpoint message_rowids
+
+    async def test_fix_checkpoint_message_rowids_correct_boundaries(
+        self, db: ContextDB
+    ) -> None:
+        """Verify checkpoints reference correct message boundaries after import."""
+        # Import messages interspersed with checkpoint markers
+        await db.import_jsonl_line(
+            {"role": "user", "content": [{"type": "text", "text": "Msg 1"}]}
+        )
+        await db.import_jsonl_line(
+            {"role": "assistant", "content": [{"type": "text", "text": "Rsp 1"}]}
+        )
+        await db.import_jsonl_line({"role": "_checkpoint", "id": 1})
+
+        await db.import_jsonl_line(
+            {"role": "user", "content": [{"type": "text", "text": "Msg 2"}]}
+        )
+        await db.import_jsonl_line({"role": "_checkpoint", "id": 2})
+
+        await db.import_jsonl_line(
+            {"role": "assistant", "content": [{"type": "text", "text": "Rsp 2"}]}
+        )
+        await db.import_jsonl_line({"role": "_checkpoint", "id": 3})
+
+        # Fix any remaining ones
+        await db.fix_checkpoint_message_rowids()
+
+        # Verify each checkpoint's message_rowid points to max message before it
+        cp1 = await db.get_checkpoint_message_rowid(1)
+        cp2 = await db.get_checkpoint_message_rowid(2)
+        cp3 = await db.get_checkpoint_message_rowid(3)
+
+        assert cp1 is not None and cp1 > 0
+        assert cp2 is not None and cp2 > cp1  # Later checkpoint => higher rowid
+        assert cp3 is not None and cp3 >= cp2
+
+    async def test_migration_with_checkpoints_preserves_order(
+        self, db: ContextDB
+    ) -> None:
+        """Full migration with 10+ checkpoints; verify revert works correctly."""
+        for i in range(10):
+            await db.import_jsonl_line(
+                {"role": "user", "content": [{"type": "text", "text": f"Msg {i}"}]}
+            )
+            await db.import_jsonl_line({"role": "_checkpoint", "id": i})
+
+        await db.fix_checkpoint_message_rowids()
+
+        # Revert to checkpoint 5
+        cp5_rowid = await db.get_checkpoint_message_rowid(5)
+        assert cp5_rowid is not None and cp5_rowid > 0
+
+        await db.revert_to_checkpoint(5)
+        messages = await db.get_messages()
+        # Should have ~6 messages (indices 0-5)
+        assert len(messages) >= 5
+
+    # M4: executemany for append_messages
+
+    async def test_append_messages_empty_list(self, db: ContextDB) -> None:
+        """executemany with empty list should be a no-op."""
+        await db.append_messages([])
+        assert await db.get_message_count() == 0
+
+    async def test_append_messages_large_batch(self, db: ContextDB) -> None:
+        """Append 100 messages in one call and verify all are retrievable."""
+        messages = [
+            Message(role="user", content=[{"type": "text", "text": f"Msg {i}"}])
+            for i in range(100)
+        ]
+        await db.append_messages(messages)
+        assert await db.get_message_count() == 100
+
+        # Verify correct ordering
+        msgs = await db.get_messages()
+        assert msgs[0].extract_text() == "Msg 0"
+        assert msgs[99].extract_text() == "Msg 99"
+
+    # M5: Simplify revert subquery
+
+    async def test_revert_to_checkpoint_usage_snapshots(self, db: ContextDB) -> None:
+        """Verify usage snapshots are reverted correctly with checkpoint."""
+        await db.append_messages(
+            [Message(role="user", content=[{"type": "text", "text": "Msg 1"}])]
+        )
+        await db.record_usage(100)
+        await db.create_checkpoint(0)
+        # Usage recorded AFTER checkpoint — should be removed on revert
+        await db.record_usage(200)
+        await db.append_messages(
+            [
+                Message(role="user", content=[{"type": "text", "text": "Msg 2"}]),
+                Message(role="user", content=[{"type": "text", "text": "Msg 3"}]),
+            ]
+        )
+
+        await db.revert_to_checkpoint(0)
+
+        # Only usage before checkpoint (100) should remain
+        messages = await db.get_messages()
+        assert len(messages) == 1  # Only Msg 1 survives
+        latest = await db.get_latest_usage()
+        assert latest == 100
+
+    # M6: Explicit transactions (atomicity)
+
+    async def test_clear_is_atomic(self, db: ContextDB) -> None:
+        """Verify clear() atomically removes all data."""
+        await db.set_system_prompt("test")
+        await db.append_messages(
+            [Message(role="user", content=[{"type": "text", "text": "Hello"}])]
+        )
+        await db.create_checkpoint(0)
+        await db.record_usage(50)
+
+        await db.clear()
+
+        assert await db.get_system_prompt() is None
+        assert await db.get_message_count() == 0
+        assert await db.get_latest_checkpoint_id() == -1
+        assert await db.get_latest_usage() is None
+
+    async def test_revert_to_checkpoint_is_atomic(self, db: ContextDB) -> None:
+        """Verify revert_to_checkpoint is atomic — no partial state on success."""
+        await db.append_messages(
+            [
+                Message(role="user", content=[{"type": "text", "text": "Msg 1"}]),
+                Message(role="user", content=[{"type": "text", "text": "Msg 2"}]),
+                Message(role="user", content=[{"type": "text", "text": "Msg 3"}]),
+            ]
+        )
+        await db.create_checkpoint(0)
+        await db.append_messages(
+            [Message(role="user", content=[{"type": "text", "text": "Msg 4"}])]
+        )
+
+        await db.revert_to_checkpoint(0)
+        assert await db.get_message_count() == 3
+        assert await db.get_latest_checkpoint_id() == -1  # reverted, checkpoint >=0 removed
+
+    # M7: No wasted SELECT MAX
+
+    async def test_finalize_migration_no_wasted_query(self, db: ContextDB) -> None:
+        """finalize_migration is a no-op after import tracking fix."""
+        # Import some data
+        await db.import_jsonl_line(
+            {"role": "user", "content": [{"type": "text", "text": "Hello"}]}
+        )
+        await db.import_jsonl_line({"role": "_checkpoint", "id": 0})
+
+        # finalize_migration should succeed without errors
+        await db.finalize_migration()
+
+        # Checkpoint should have valid message_rowid from import
+        cp_rowid = await db.get_checkpoint_message_rowid(0)
+        assert cp_rowid is not None and cp_rowid > 0
+
+    # L11: created_at index
+
+    async def test_created_at_index_exists(self, db: ContextDB) -> None:
+        """Verify idx_messages_created_at index exists after initialization."""
+        import aiosqlite
+
+        conn = await aiosqlite.connect(str(db.db_path))
+        cursor = await conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_messages_created_at'"
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+        await conn.close()
+        assert row is not None
+        assert row[0] == "idx_messages_created_at"

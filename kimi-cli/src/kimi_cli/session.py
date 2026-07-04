@@ -609,19 +609,26 @@ def _migrate_jsonl_to_sqlite(jsonl_path: Path) -> None:
             db = ContextDB(db_path)
             await db.initialize()
 
-            for line in lines:
-                try:
-                    line_json = loads_relaxed(line)
-                except json_module.JSONDecodeError:
-                    continue
-                if not isinstance(line_json, dict):
-                    continue
+            await db.begin_transaction()
+            try:
+                for line in lines:
+                    try:
+                        line_json = loads_relaxed(line)
+                    except json_module.JSONDecodeError:
+                        continue
+                    if not isinstance(line_json, dict):
+                        continue
 
-                await db.import_jsonl_line(line_json)
+                    await db.import_jsonl_line(line_json)
 
-            # Fix checkpoint message_rowid references
-            await db.fix_checkpoint_message_rowids()
-            await db.close()
+                # Fix checkpoint message_rowid references
+                await db.fix_checkpoint_message_rowids()
+                await db.commit_transaction()
+            except Exception:
+                await db.rollback_transaction()
+                raise
+            finally:
+                await db.close()
 
         asyncio.run(_do_migration())
 

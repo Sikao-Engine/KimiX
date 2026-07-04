@@ -416,32 +416,39 @@ async def _write_context_lines_to_db(db_path: Path, lines: list[str]) -> None:
     await db.initialize()
     await db.clear()
 
-    for line in lines:
-        if not line.strip():
-            continue
-        try:
-            line_json = json_module.loads(line)
-        except json_module.JSONDecodeError:
-            continue
-        if not isinstance(line_json, dict):
-            continue
-
-        role = line_json.get("role")
-        if not isinstance(role, str):
-            continue
-
-        if role.startswith("_"):
-            # Meta-record: import via dedicated method
-            await db.import_jsonl_line(line_json)
-        else:
-            # Message: parse and use append_messages for proper storage
+    await db.begin_transaction()
+    try:
+        for line in lines:
+            if not line.strip():
+                continue
             try:
-                message = Message.model_validate(line_json)
-                await db.append_messages([message])
-            except Exception:
+                line_json = json_module.loads(line)
+            except json_module.JSONDecodeError:
+                continue
+            if not isinstance(line_json, dict):
                 continue
 
-    await db.close()
+            role = line_json.get("role")
+            if not isinstance(role, str):
+                continue
+
+            if role.startswith("_"):
+                # Meta-record: import via dedicated method
+                await db.import_jsonl_line(line_json)
+            else:
+                # Message: parse and use append_messages for proper storage
+                try:
+                    message = Message.model_validate(line_json)
+                    await db.append_messages([message])
+                except Exception:
+                    continue
+
+        await db.commit_transaction()
+    except Exception:
+        await db.rollback_transaction()
+        raise
+    finally:
+        await db.close()
 
 
 def _copy_referenced_videos(
