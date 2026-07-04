@@ -266,7 +266,7 @@ class Params(BaseModel):
         description="Updated list, a single Todo item, or omit to return current list unchanged.",
     )
     mode: Literal["overwrite", "append", "force_overwrite"] = Field(
-        default="overwrite",
+        default="append",
         description=(
             "Write mode: 'overwrite' safely replaces the existing todo list only when all old todos are done; "
             "'append' merges the provided todos into the existing list (existing titles are updated, new titles are appended); "
@@ -949,12 +949,18 @@ class TodoList(CallableTool2[Params]):
         display_block = self._build_display_block(todos)
         active_summary = self._format_todos(todos)
 
-        output_lines: list[str] = ["Todo list updated"]
+        mode_msg = {
+            "append": "appended",
+            "overwrite": "overwritten",
+            "force_overwrite": "force overwritten",
+        }[params.mode]
+
+        output_lines: list[str] = [f"Todo list {mode_msg}"]
         if active_summary:
             output_lines.append(active_summary)
         output = "\n".join(output_lines)
 
-        message_lines: list[str] = ["Todo list updated."]
+        message_lines: list[str] = [f"Todo list {mode_msg}."]
         if params.mode == "force_overwrite" and had_old_todos:
             message_lines.append(
                 "Warning: mode='force_overwrite' replaces the existing todo list and bypasses merge validation logic."
