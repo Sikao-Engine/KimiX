@@ -11,7 +11,7 @@ from kimix.base import (
     sync_all,
 )
 from kimix.cot import cot_prompt
-from kimix.utils import _create_default_session, get_default_session, prompt
+from kimix.utils import _create_default_session, close_session, get_default_session, prompt
 
 from . import constants
 from .args import set_arg
@@ -117,6 +117,12 @@ def _client_cli() -> None:
 
             traceback.print_exc()
             print_error(str(e))
+
+    # Clean up the session's resources (aiosqlite background thread, etc.)
+    # so they do not block Python's threading._shutdown() on interpreter exit.
+    session = get_default_session()
+    if session is not None:
+        close_session(session)
 
 
 def _run_cli() -> None:

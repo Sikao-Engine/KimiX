@@ -521,7 +521,23 @@ class Session:
             )
             return None
 
-        old_session_dir.rename(new_session_dir)
+        # Rename the session directory.  On Windows the SQLite WAL file can
+        # remain locked for a short moment after the connection is closed, so
+        # retry a few times before giving up.
+        for attempt in range(5):
+            try:
+                old_session_dir.rename(new_session_dir)
+                break
+            except PermissionError:
+                if attempt == 4:
+                    raise
+                logger.debug(
+                    "Rename attempt {attempt} failed for {old} -> {new}, retrying",
+                    attempt=attempt,
+                    old=old_session_dir,
+                    new=new_session_dir,
+                )
+                await asyncio.sleep(0.05)
 
         if work_dir_meta.last_session_id == session_id:
             work_dir_meta.last_session_id = new_session_id

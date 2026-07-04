@@ -767,6 +767,15 @@ class Context:
     # Clear
     # ------------------------------------------------------------------ #
 
+    async def close(self) -> None:
+        """Close the context storage backend.
+
+        This ensures any background resources (e.g. aiosqlite worker threads)
+        are properly shut down before process exit.
+        """
+        logger.debug("Closing context storage")
+        await self._storage.close()
+
     async def clear(self) -> None:
         """Clear the context history."""
         logger.debug("Clearing context")

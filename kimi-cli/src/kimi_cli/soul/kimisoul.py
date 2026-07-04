@@ -1583,6 +1583,13 @@ class KimiSoul:
         with suppress(Exception):
             self._context._on_append = None
 
+        # Close the context storage backend (aiosqlite worker thread) so it
+        # does not block Python's threading._shutdown() on interpreter exit.
+        try:
+            await self._context.close()
+        except Exception:
+            logger.exception("Failed to close context storage")
+
         # Close the chat provider's underlying HTTP client before the event loop
         # shuts down.  This avoids noisy "Event loop is closed" RuntimeErrors from
         # the httpx/anyio transport teardown on Windows/Python 3.14.

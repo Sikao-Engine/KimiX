@@ -156,6 +156,19 @@ class Session:
                 self._cancel_event.set()
             await self._cleanup_tools()
             await self._close_chat_provider()
+            # Close the KimiSoul's context storage (and any other resources it
+            # holds) before renaming the session directory.  On Windows the
+            # aiosqlite worker thread keeps the SQLite database file locked
+            # while the connection is open, which would otherwise make
+            # os.rename() fail with PermissionError.
+            soul = getattr(self._cli, "soul", None)
+            if soul is not None:
+                try:
+                    await soul.close()
+                except Exception:
+                    pass
+            # Also close the CLI session's own cached ContextDB, if any.
+            await self._cli.session.close_context_db()
 
             old_session_id = self._cli.session.id
             cli_session = await CliSession.rename(work_dir, old_session_id, new_session_id)
@@ -640,6 +653,14 @@ class Session:
             self._cancel_event.set()
         await self._cleanup_tools()
         await self._close_chat_provider()
+        # Close the underlying KimiSoul so its context storage backend
+        # (aiosqlite worker thread) is shut down before process exit.
+        soul = getattr(self._cli, "soul", None)
+        if soul is not None:
+            try:
+                await soul.close()
+            except Exception:
+                pass
         if getattr(self, "_anonymous", False):
             await self._cli.session.delete()
 
