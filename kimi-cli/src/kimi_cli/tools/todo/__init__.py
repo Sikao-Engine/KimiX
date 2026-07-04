@@ -266,7 +266,7 @@ class Params(BaseModel):
         description="Updated list, a single Todo item, or omit to return current list unchanged.",
     )
     mode: Literal["overwrite", "append", "force_overwrite"] = Field(
-        default="append",
+        default="overwrite",
         description=(
             "Write mode: 'overwrite' safely replaces the existing todo list only when all old todos are done; "
             "'append' merges the provided todos into the existing list (existing titles are updated, new titles are appended); "
