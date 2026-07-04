@@ -376,12 +376,55 @@ class SessionManager:
 
     def _load_context_messages(self, session_id: str, context_file: Path) -> List[MessageWithParts]:
         messages: List[MessageWithParts] = []
+        created = self._mtime_ms(context_file)
+
+        # Try SQLite backend first (for .db files)
+        if context_file.suffix == ".db" and context_file.exists():
+            try:
+                import sqlite3
+
+                conn = sqlite3.connect(str(context_file))
+                conn.row_factory = sqlite3.Row
+                try:
+                    cursor = conn.execute(
+                        "SELECT role, content FROM messages WHERE role NOT IN "
+                        "('_system_prompt', '_usage', '_checkpoint') "
+                        "ORDER BY rowid DESC LIMIT 100"
+                    )
+                    rows = cursor.fetchall()
+                    cursor.close()
+
+                    for index, row in enumerate(reversed(rows)):
+                        role = row["role"]
+                        content_data = loads_relaxed(row["content"])
+                        content = self._context_content_text(content_data)
+                        if not content:
+                            continue
+
+                        message_id = f"msg_restored_{index}"
+                        messages.append(
+                            MessageWithParts(
+                                info=MessageInfo(
+                                    id=message_id,
+                                    role=role if role in {"user", "assistant", "system"} else "assistant",
+                                    sessionID=session_id,
+                                    time={"created": created},
+                                ),
+                                parts=[TextPart(content=content)],
+                            )
+                        )
+                finally:
+                    conn.close()
+            except Exception:
+                logger.exception("Failed to load context messages from SQLite")
+            return messages
+
+        # Fallback to JSONL parsing
         try:
             lines = context_file.read_text(encoding="utf-8", errors="replace").splitlines()
         except Exception:
             return messages
 
-        created = self._mtime_ms(context_file)
         for index, line in enumerate(lines[-100:]):
             if not line.strip():
                 continue

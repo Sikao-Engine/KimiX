@@ -245,6 +245,8 @@ def reasoning_effort_to_thinking_effort(effort: ReasoningEffort) -> ThinkingEffo
             return "high"
         case "xhigh":
             return "xhigh"
+        case "max":
+            return "max"
         case "none" | None:
             return "off"
 

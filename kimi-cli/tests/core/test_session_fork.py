@@ -82,8 +82,23 @@ def _write_wire_file(session_dir: Path, turns: list[str]) -> Path:
     return wire_path
 
 
-def _write_context_file(session_dir: Path, user_messages: list[str]) -> Path:
-    """Write a context.jsonl with user messages and dummy assistant responses."""
+async def _write_context_file(session_dir: Path, user_messages: list[str]) -> Path:
+    """Write context messages using the appropriate backend."""
+    from kimi_cli.soul.context_db import ContextDB
+
+    db_path = session_dir / "context.db"
+    if db_path.exists():
+        # Use SQLite backend
+        db = ContextDB(db_path)
+        await db.initialize()
+        for text in user_messages:
+            msg = Message(role="user", content=[TextPart(text=text)])
+            resp = Message(role="assistant", content="response")
+            await db.append_messages([msg, resp])
+        await db.close()
+        return db_path
+
+    # Fallback to JSONL
     context_path = session_dir / "context.jsonl"
     with context_path.open("w", encoding="utf-8") as f:
         for text in user_messages:
@@ -225,16 +240,14 @@ class TestTruncateWireAtTurn:
 
 
 class TestTruncateContextAtTurn:
-    def test_truncate_at_first_turn(self, session_dir: Path):
-        _write_context_file(session_dir, ["first msg", "second msg"])
-        context_path = session_dir / "context.jsonl"
+    async def test_truncate_at_first_turn(self, session_dir: Path):
+        context_path = await _write_context_file(session_dir, ["first msg", "second msg"])
         lines = truncate_context_at_turn(context_path, 0)
         # first user + first assistant = 2 lines
         assert len(lines) == 2
 
-    def test_truncate_at_last_turn(self, session_dir: Path):
-        _write_context_file(session_dir, ["first", "second"])
-        context_path = session_dir / "context.jsonl"
+    async def test_truncate_at_last_turn(self, session_dir: Path):
+        context_path = await _write_context_file(session_dir, ["first", "second"])
         lines = truncate_context_at_turn(context_path, 1)
         # all 4 lines
         assert len(lines) == 4
@@ -262,9 +275,8 @@ class TestTruncateContextAtTurn:
         # first user + first assistant + checkpoint = 3 lines
         assert len(lines) == 3
 
-    def test_best_effort_when_fewer_turns(self, session_dir: Path):
-        _write_context_file(session_dir, ["only one"])
-        context_path = session_dir / "context.jsonl"
+    async def test_best_effort_when_fewer_turns(self, session_dir: Path):
+        context_path = await _write_context_file(session_dir, ["only one"])
         # Request turn_index=5 but only 1 turn exists — returns all lines
         lines = truncate_context_at_turn(context_path, 5)
         assert len(lines) == 2
@@ -281,7 +293,7 @@ class TestForkSession:
 
         source = await Session.create(work_dir)
         _write_wire_file(source.dir, ["turn 0", "turn 1", "turn 2"])
-        _write_context_file(source.dir, ["turn 0", "turn 1", "turn 2"])
+        await _write_context_file(source.dir, ["turn 0", "turn 1", "turn 2"])
 
         new_id = await fork_session(
             source_session_dir=source.dir,
@@ -302,19 +314,22 @@ class TestForkSession:
         # metadata + 2 turns * (TurnBegin + TurnEnd) = 5
         assert len(wire_lines) == 5
 
-        # Verify context was truncated
-        ctx_lines = (
-            (new_session.dir / "context.jsonl").read_text(encoding="utf-8").strip().split("\n")
-        )
-        # 2 turns * (user + assistant) = 4
-        assert len(ctx_lines) == 4
+        # Verify context was truncated (using SQLite backend)
+        from kimi_cli.soul.context_db import ContextDB
+
+        db = ContextDB(new_session.dir / "context.db")
+        await db.initialize()
+        messages = await db.get_messages()
+        await db.close()
+        # 2 turns * (user + assistant) = 4 messages
+        assert len(messages) == 4, f"Expected 4 context messages, got {len(messages)}"
 
     async def test_fork_all_turns(self, isolated_share_dir: Path, work_dir: KaosPath):
         from kimi_cli.session import Session
 
         source = await Session.create(work_dir)
         _write_wire_file(source.dir, ["turn 0", "turn 1"])
-        _write_context_file(source.dir, ["turn 0", "turn 1"])
+        await _write_context_file(source.dir, ["turn 0", "turn 1"])
 
         new_id = await fork_session(
             source_session_dir=source.dir,
@@ -339,7 +354,7 @@ class TestForkSession:
 
         source = await Session.create(work_dir)
         _write_wire_file(source.dir, ["hello"])
-        _write_context_file(source.dir, ["hello"])
+        await _write_context_file(source.dir, ["hello"])
 
         new_id = await fork_session(
             source_session_dir=source.dir,
@@ -361,7 +376,7 @@ class TestForkSession:
 
         source = await Session.create(work_dir)
         _write_wire_file(source.dir, ["hello"])
-        _write_context_file(source.dir, ["hello"])
+        await _write_context_file(source.dir, ["hello"])
 
         # Set a custom title on the source session
         src_state = load_session_state(source.dir)
@@ -407,7 +422,7 @@ class TestForkSession:
             f.write(json.dumps(begin.model_dump(mode="json")) + "\n")
             f.write(json.dumps(end.model_dump(mode="json")) + "\n")
 
-        _write_context_file(source.dir, ["look at video"])
+        await _write_context_file(source.dir, ["look at video"])
 
         new_id = await fork_session(
             source_session_dir=source.dir,

@@ -76,7 +76,7 @@ class SubagentStore:
         return path
 
     def context_path(self, agent_id: str) -> Path:
-        return self.instance_dir(agent_id) / "context.jsonl"
+        return self.instance_dir(agent_id) / "context.db"
 
     def wire_path(self, agent_id: str) -> Path:
         return self.instance_dir(agent_id) / "wire.jsonl"
@@ -117,7 +117,7 @@ class SubagentStore:
 
     def _initialize_instance_files(self, agent_id: str) -> None:
         instance_dir = self.instance_dir(agent_id, create=True)
-        (instance_dir / "context.jsonl").touch(exist_ok=True)
+        (instance_dir / "context.db").touch(exist_ok=True)
         (instance_dir / "wire.jsonl").touch(exist_ok=True)
         (instance_dir / "prompt.txt").touch(exist_ok=True)
         (instance_dir / "output").touch(exist_ok=True)

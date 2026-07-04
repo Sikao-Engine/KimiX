@@ -298,7 +298,7 @@ class KimiCLI:
         )
         _phase_timings_ms["mcp_ms"] = int((time.monotonic() - _phase_t) * 1000)
 
-        context = Context(session.context_file)
+        context = Context.from_file_backend(session.context_file)
         await context.restore()
 
         if context.system_prompt is not None:

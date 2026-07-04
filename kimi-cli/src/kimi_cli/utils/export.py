@@ -622,7 +622,7 @@ async def resolve_import_source(
     if source_session is None:
         return f"'{target}' is not a valid file path or session ID."
 
-    source_context = Context(source_session.context_file)
+    source_context = Context.from_file_backend(source_session.context_file)
     try:
         restored = await source_context.restore()
     except Exception as e:

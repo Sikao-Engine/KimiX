@@ -86,8 +86,9 @@ class Session:
         """Clear the session by removing the context file and re-creating the CLI.
 
         This cancels any ongoing prompt, cleans up tool resources, deletes the
-        session's ``context.jsonl`` file, and re-creates the underlying CLI with
-        the same session ID and original creation parameters.
+        session's context file (``context.db`` or ``context.jsonl``), and
+        re-creates the underlying CLI with the same session ID and original
+        creation parameters.
 
         Raises:
             SessionStateError: When the session is closed.
@@ -100,11 +101,20 @@ class Session:
         await self._cleanup_tools()
         await self._close_chat_provider()
 
+        # Close the session's ContextDB before deleting files
+        await self._cli.session.close_context_db()
+
         work_dir = self._cli.session.work_dir
         session_id = self._cli.session.id
         context_file = self._cli.session.context_file
         if context_file.exists():
             context_file.unlink()
+        # Clean up SQLite WAL/SHM companion files
+        if context_file.suffix == ".db":
+            for companion_suffix in (".db-wal", ".db-shm"):
+                companion = context_file.with_suffix(companion_suffix)
+                if companion.exists():
+                    companion.unlink()
 
         # Clear persisted tool state (e.g. todos) and wire history
         session_dir = self._cli.session.dir
@@ -620,7 +630,8 @@ class Session:
 
         This cancels any ongoing prompt and cleans up tool resources.
         For anonymous sessions (created or resumed without a session_id),
-        this also deletes the session's context.jsonl and state.json files.
+        this also deletes the session's context file (context.db or context.jsonl)
+        and state.json files.
         """
         if self._closed:
             return

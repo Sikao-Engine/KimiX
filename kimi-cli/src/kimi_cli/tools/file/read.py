@@ -360,20 +360,42 @@ class ReadFile(CallableTool2[Params]):
                 char_offsets[i],
             )
             if not _is_glob_pattern(raw_path):
-                canonical = str(
-                    Path(str(kaos_path_from_user_input(raw_path))).resolve()
-                )
-                entries.append((raw_path, options, canonical))
+                try:
+                    canonical = str(
+                        Path(str(kaos_path_from_user_input(raw_path))).resolve()
+                    )
+                    entries.append((raw_path, options, canonical))
+                except Exception as e:
+                    logger.warning(
+                        "ReadFile path resolution failed: {path}: {error}",
+                        path=raw_path, error=e,
+                    )
+                    err = ToolError(
+                        message=f"Invalid path `{raw_path}`: {e}",
+                        brief="Invalid path",
+                    )
+                    entries.append((raw_path, options, err))
             else:
                 concrete, err = await self._expand_glob_path(raw_path, options)
                 if err is not None:
                     entries.append((raw_path, options, err))
                 else:
                     for path_str, opts in concrete:
-                        canonical = str(
-                            Path(str(kaos_path_from_user_input(path_str))).resolve()
-                        )
-                        entries.append((path_str, opts, canonical))
+                        try:
+                            canonical = str(
+                                Path(str(kaos_path_from_user_input(path_str))).resolve()
+                            )
+                            entries.append((path_str, opts, canonical))
+                        except Exception as e:
+                            logger.warning(
+                                "ReadFile path resolution failed: {path}: {error}",
+                                path=path_str, error=e,
+                            )
+                            err = ToolError(
+                                message=f"Invalid path `{path_str}`: {e}",
+                                brief="Invalid path",
+                            )
+                            entries.append((path_str, opts, err))
 
         # Deduplicate concrete files by canonical path, preserving order and the
         # first options tuple. Error entries are kept as-is.

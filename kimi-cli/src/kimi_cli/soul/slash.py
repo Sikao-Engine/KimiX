@@ -40,7 +40,7 @@ async def init(soul: KimiSoul, args: str):
     from kimi_cli.soul.kimisoul import KimiSoul
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        tmp_context = Context(file_backend=Path(temp_dir) / "context.jsonl")
+        tmp_context = Context(file_backend=Path(temp_dir) / "context.db")
         tmp_soul = KimiSoul(soul.agent, context=tmp_context)
         await tmp_soul.run(prompts.INIT)
 

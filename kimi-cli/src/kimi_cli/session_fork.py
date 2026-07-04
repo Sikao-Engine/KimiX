@@ -172,7 +172,9 @@ def _is_checkpoint_user_message(record: dict[str, Any]) -> bool:
 
 
 def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
-    """Read context.jsonl and return all lines up to and including the given turn.
+    """Read context file and return all lines up to and including the given turn.
+
+    Supports both SQLite (.db) and JSONL (.jsonl) backends.
 
     Turn detection is based on real user messages, excluding synthetic checkpoint
     user entries like ``<system>CHECKPOINT N</system>``.
@@ -184,6 +186,19 @@ def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
     if not context_path.exists():
         return []
 
+    # Use SQLite backend if .db file and it has the messages table
+    if context_path.suffix == ".db":
+        try:
+            return _truncate_context_sqlite(context_path, turn_index)
+        except Exception:
+            # Fallback to JSONL if DB is empty or tables don't exist
+            jsonl_path = context_path.with_suffix(".jsonl")
+            if jsonl_path.exists():
+                context_path = jsonl_path
+            else:
+                return []
+
+    # Fallback to JSONL parsing
     lines: list[str] = []
     current_turn = -1  # Will become 0 on first real user message
 
@@ -239,7 +254,10 @@ async def fork_session(
     from kimi_cli.session import Session as KimiCLISession
 
     wire_path = source_session_dir / "wire.jsonl"
-    context_path = source_session_dir / "context.jsonl"
+    # Check for .db first, fall back to .jsonl
+    context_path = source_session_dir / "context.db"
+    if not context_path.exists():
+        context_path = source_session_dir / "context.jsonl"
 
     if turn_index is not None:
         truncated_wire_lines = truncate_wire_at_turn(wire_path, turn_index)
@@ -247,7 +265,7 @@ async def fork_session(
     else:
         # Copy all content
         truncated_wire_lines = _read_all_lines(wire_path)
-        truncated_context_lines = _read_all_lines(context_path)
+        truncated_context_lines = _read_all_content(context_path)
 
     new_session = await KimiCLISession.create(work_dir=work_dir)
     new_session_dir = new_session.dir
@@ -261,11 +279,17 @@ async def fork_session(
         for line in truncated_wire_lines:
             f.write(line + "\n")
 
-    # Write truncated context.jsonl (overwrites the empty file from create())
-    new_context_path = new_session_dir / "context.jsonl"
-    with open(new_context_path, "w", encoding="utf-8") as f:
-        for line in truncated_context_lines:
-            f.write(line + "\n")
+    # Write truncated context to the new session's context file
+    new_context_path = new_session_dir / "context.db"
+    if not new_context_path.exists():
+        # Fallback to JSONL for legacy sessions
+        new_context_path = new_session_dir / "context.jsonl"
+        with open(new_context_path, "w", encoding="utf-8") as f:
+            for line in truncated_context_lines:
+                f.write(line + "\n")
+    else:
+        # Use SQLite for new sessions
+        await _write_context_lines_to_db(new_context_path, truncated_context_lines)
 
     # Set title
     if source_title is None:
@@ -283,8 +307,58 @@ async def fork_session(
     return new_session.id
 
 
+def _truncate_context_sqlite(db_path: Path, turn_index: int) -> list[str]:
+    """Read context from SQLite DB and return lines up to and including the given turn."""
+    import sqlite3
+    import re
+    import json
+
+    checkpoint_pattern = re.compile(r"^<system>CHECKPOINT \d+</system>$")
+
+    lines: list[str] = []
+    current_turn = -1
+
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute("SELECT rowid, role, content FROM messages ORDER BY rowid")
+        rows = cursor.fetchall()
+        cursor.close()
+
+        for row in rows:
+            role = row["role"]
+            content = row["content"]
+
+            # Detect user turn (excluding synthetic checkpoint markers)
+            if role == "user":
+                is_checkpoint = False
+                try:
+                    parsed = json.loads(content)
+                    if isinstance(parsed, str) and checkpoint_pattern.fullmatch(parsed.strip()):
+                        is_checkpoint = True
+                    elif isinstance(parsed, list) and len(parsed) == 1:
+                        first = parsed[0]
+                        if isinstance(first, dict) and isinstance(first.get("text"), str):
+                            if checkpoint_pattern.fullmatch(first["text"].strip()):
+                                is_checkpoint = True
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+                if not is_checkpoint:
+                    current_turn += 1
+                    if current_turn > turn_index:
+                        break
+
+            if current_turn <= turn_index:
+                lines.append(content)
+    finally:
+        conn.close()
+
+    return lines
+
+
 def _read_all_lines(path: Path) -> list[str]:
-    """Read all non-empty lines from a file."""
+    """Read all non-empty lines from a text file."""
     if not path.exists():
         return []
     lines: list[str] = []
@@ -294,6 +368,80 @@ def _read_all_lines(path: Path) -> list[str]:
             if stripped:
                 lines.append(stripped)
     return lines
+
+
+def _read_all_content(path: Path) -> list[str]:
+    """Read all content from a context file (.db or .jsonl)."""
+    if not path.exists():
+        return []
+    if path.suffix == ".db":
+        return _read_all_lines_from_db(path)
+    return _read_all_lines(path)
+
+
+def _read_all_lines_from_db(db_path: Path) -> list[str]:
+    """Read all JSON content lines from a SQLite context database."""
+    import sqlite3
+
+    lines: list[str] = []
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        cursor = conn.execute(
+            "SELECT content FROM messages ORDER BY rowid"
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        lines = [row["content"] for row in rows]
+    except sqlite3.OperationalError:
+        # Table doesn't exist yet
+        pass
+    finally:
+        conn.close()
+    return lines
+
+
+async def _write_context_lines_to_db(db_path: Path, lines: list[str]) -> None:
+    """Write context lines to a SQLite database.
+
+    This overwrites any existing data in the database.
+    """
+    import json as json_module
+
+    from kosong.message import Message
+
+    from kimi_cli.soul.context_db import ContextDB
+
+    db = ContextDB(db_path)
+    await db.initialize()
+    await db.clear()
+
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            line_json = json_module.loads(line)
+        except json_module.JSONDecodeError:
+            continue
+        if not isinstance(line_json, dict):
+            continue
+
+        role = line_json.get("role")
+        if not isinstance(role, str):
+            continue
+
+        if role.startswith("_"):
+            # Meta-record: import via dedicated method
+            await db.import_jsonl_line(line_json)
+        else:
+            # Message: parse and use append_messages for proper storage
+            try:
+                message = Message.model_validate(line_json)
+                await db.append_messages([message])
+            except Exception:
+                continue
+
+    await db.close()
 
 
 def _copy_referenced_videos(

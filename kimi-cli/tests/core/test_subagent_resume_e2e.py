@@ -100,19 +100,20 @@ async def test_resume_accumulates_context(agent_tool, runtime, monkeypatch):
     agent_id = _extract(result1.output, "agent_id")
     assert agent_id is not None
 
-    # Verify context.jsonl has content after turn 1.
+    # Verify context has content after turn 1.
     ctx_path = runtime.subagent_store.context_path(agent_id)
-    lines_after_turn1 = [
-        line for line in ctx_path.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
-    assert len(lines_after_turn1) > 0, "context.jsonl should have records after turn 1"
-    # Count assistant messages in turn 1.
-    assistant_msgs_t1 = [
-        json.loads(line)
-        for line in lines_after_turn1
-        if line.strip() and json.loads(line).get("role") == "assistant"
-    ]
-    assert len(assistant_msgs_t1) >= 1, "Turn 1 should have at least 1 assistant message"
+    from kimi_cli.soul.context_db import ContextDB
+
+    async def _count_msgs(db_path) -> tuple[int, int]:
+        db = ContextDB(db_path)
+        await db.initialize()
+        messages = await db.get_messages()
+        await db.close()
+        return len(messages), sum(1 for m in messages if m.role == "assistant")
+
+    total_t1, assistant_t1 = await _count_msgs(ctx_path)
+    assert total_t1 > 0, "context should have records after turn 1"
+    assert assistant_t1 >= 1, "Turn 1 should have at least 1 assistant message"
 
     # Instance should be idle (completed foreground).
     record = runtime.subagent_store.require_instance(agent_id)
@@ -130,22 +131,13 @@ async def test_resume_accumulates_context(agent_tool, runtime, monkeypatch):
     assert _extract(result2.output, "resumed") == "true"
     assert _extract(result2.output, "agent_id") == agent_id
 
-    # Verify context.jsonl grew — it should now have more lines.
-    lines_after_turn2 = [
-        line for line in ctx_path.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
-    assert len(lines_after_turn2) > len(lines_after_turn1), (
-        "context.jsonl should accumulate messages across resume turns"
+    # Verify context grew — it should now have more messages.
+    total_t2, assistant_t2 = await _count_msgs(ctx_path)
+    assert total_t2 > total_t1, (
+        "context should accumulate messages across resume turns"
     )
     # Turn 2 should have added at least a user message + assistant message.
-    assistant_msgs_t2 = [
-        json.loads(line)
-        for line in lines_after_turn2
-        if line.strip() and json.loads(line).get("role") == "assistant"
-    ]
-    assert len(assistant_msgs_t2) >= 2, (
-        "After two turns, context should have at least 2 assistant messages"
-    )
+    assert assistant_t2 >= assistant_t1 + 1
 
 
 # ---------------------------------------------------------------------------

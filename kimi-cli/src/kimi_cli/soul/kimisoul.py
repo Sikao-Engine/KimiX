@@ -1552,6 +1552,12 @@ class KimiSoul:
                 os.remove(str(compact_path))
         with suppress(Exception):
             os.remove(str(file_backend))
+        # Clean up SQLite WAL/SHM companion files (for .db backends)
+        if file_backend.suffix == ".db":
+            for companion_suffix in (".db-wal", ".db-shm"):
+                companion = file_backend.with_suffix(companion_suffix)
+                with suppress(Exception):
+                    os.remove(str(companion))
 
     async def __aenter__(self) -> KimiSoul:
         return self
@@ -1606,6 +1612,18 @@ class KimiSoul:
                 logger.debug("Context file already gone: {path}", path=self._context.file_backend)
             except Exception:
                 logger.exception("Failed to remove context file: {path}", path=self._context.file_backend)
+
+            # Clean up SQLite WAL/SHM companion files
+            fb = self._context.file_backend
+            if fb.suffix == ".db":
+                for companion_suffix in (".db-wal", ".db-shm"):
+                    companion = fb.with_suffix(companion_suffix)
+                    try:
+                        await asyncio.to_thread(os.remove, str(companion))
+                    except FileNotFoundError:
+                        pass
+                    except Exception:
+                        logger.exception("Failed to remove companion file: {path}", path=companion)
 
         # Cleanup already happened; detach the finalizer so it does not run again.
         self._finalizer.detach()

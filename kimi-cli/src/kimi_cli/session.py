@@ -17,6 +17,7 @@ from kosong.utils.jsonx import loads_relaxed
 from kimi_cli.file_mtine import FileMTime
 from kimi_cli.metadata import WorkDirMeta, load_metadata, save_metadata
 from kimi_cli.session_state import SessionState, load_session_state, save_session_state
+from kimi_cli.soul.context_db import ContextDB
 from kimi_cli.soul.context_records import ExportedContext
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.string import shorten
@@ -36,7 +37,7 @@ class Session:
     work_dir_meta: WorkDirMeta
     """The metadata of the work directory."""
     context_file: Path
-    """The absolute path to the file storing the message history."""
+    """The absolute path to the file storing the message history (backward compat)."""
     wire_file: WireFile
     """The wire message log file wrapper."""
 
@@ -55,6 +56,10 @@ class Session:
     custom_config: dict[str, Any]
 
     file_mtime: FileMTime = field(default_factory=FileMTime)
+
+    # Internal: lazy-loaded ContextDB for this session
+    _context_db: ContextDB | None = field(default=None, repr=False, compare=False)
+
     @property
     def dir(self) -> Path:
         """The absolute path of the session directory."""
@@ -69,12 +74,49 @@ class Session:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    @property
+    def context_db_file(self) -> Path:
+        """The absolute path to the SQLite database file."""
+        return self.dir / "context.db"
+
+    def _get_context_db(self) -> ContextDB:
+        """Get or create a ContextDB for this session."""
+        if self._context_db is None:
+            self._context_db = ContextDB(self.context_db_file)
+        return self._context_db
+
+    async def close_context_db(self) -> None:
+        """Close the internal ContextDB connection if open."""
+        if self._context_db is not None:
+            await self._context_db.close()
+            self._context_db = None
+
     def is_empty(self) -> bool:
         """Whether the session has any context history or a custom title."""
         if self.state.custom_title:
             return False
         if not self.wire_file.is_empty():
             return False
+
+        # Check SQLite first, fall back to JSONL
+        db_file = self.context_db_file
+        if db_file.exists():
+            try:
+                import sqlite3
+                conn = sqlite3.connect(str(db_file))
+                try:
+                    cursor = conn.execute(
+                        "SELECT 1 FROM messages WHERE role NOT IN ('_system_prompt', '_usage', '_checkpoint') LIMIT 1"
+                    )
+                    row = cursor.fetchone()
+                    cursor.close()
+                    return row is None
+                finally:
+                    conn.close()
+            except Exception:
+                pass
+
+        # Fallback to JSONL
         try:
             with self.context_file.open(encoding="utf-8") as f:
                 for line in f:
@@ -108,6 +150,7 @@ class Session:
 
     async def delete(self) -> None:
         """Delete the session directory."""
+        await self.close_context_db()
         session_dir = self.work_dir_meta.sessions_dir / self.id
         if not session_dir.exists():
             return
@@ -122,7 +165,16 @@ class Session:
 
     async def refresh(self) -> None:
         self.title = "Untitled"
-        self.updated_at = self.context_file.stat().st_mtime if self.context_file.exists() else 0.0
+
+        # Check mtime from context.db first, then context.jsonl
+        db_file = self.context_db_file
+        jsonl_file = self.context_file
+        if db_file.exists():
+            self.updated_at = db_file.stat().st_mtime
+        elif jsonl_file.exists():
+            self.updated_at = jsonl_file.stat().st_mtime
+        else:
+            self.updated_at = 0.0
 
         if self.state.custom_title:
             self.title = self.state.custom_title
@@ -144,7 +196,9 @@ class Session:
             )
 
     async def export(self) -> ExportedContext:
-        """Export all data from the session's context.jsonl file.
+        """Export all data from the session's context file.
+
+        Uses SQLite backend if available, falls back to JSONL.
 
         Returns:
             ExportedContext: Structured representation of the context file.
@@ -153,13 +207,24 @@ class Session:
 
         from kimi_cli.soul.context_records import (
             CheckpointRecord,
-            ExportedContext,
             SystemPromptRecord,
             UsageRecord,
         )
 
-        result = ExportedContext()
+        # Try SQLite first
+        db_file = self.context_db_file
+        if db_file.exists():
+            db = ContextDB(db_file)
+            try:
+                await db.initialize()
+                return await db.export()
+            except Exception:
+                logger.exception("Failed to export from SQLite, falling back to JSONL")
+            finally:
+                await db.close()
 
+        # Fallback to JSONL
+        result = ExportedContext()
         if not self.context_file.exists() or self.context_file.stat().st_size == 0:
             return result
 
@@ -224,9 +289,8 @@ class Session:
         session_dir = work_dir_meta.sessions_dir / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
-        if _context_file is None:
-            context_file = session_dir / "context.jsonl"
-        else:
+        if _context_file is not None:
+            # Custom context file provided (backward compat / tests)
             logger.warning(
                 "Using provided context file: {context_file}", context_file=_context_file
             )
@@ -234,14 +298,16 @@ class Session:
             if _context_file.exists():
                 assert _context_file.is_file()
             context_file = _context_file
-
-        if context_file.exists():
-            # truncate if exists
-            logger.warning(
-                "Context file already exists, truncating: {context_file}", context_file=context_file
-            )
-            context_file.unlink()
-        context_file.touch()
+            if context_file.exists():
+                logger.warning(
+                    "Context file already exists, truncating: {context_file}", context_file=context_file
+                )
+                context_file.unlink()
+            context_file.touch()
+        else:
+            # Default: use .db file for new sessions
+            context_file = session_dir / "context.db"
+            context_file.touch()
 
         save_metadata(metadata)
 
@@ -283,12 +349,15 @@ class Session:
             logger.debug("Session directory not found: {session_dir}", session_dir=session_dir)
             return None
 
-        context_file = session_dir / "context.jsonl"
+        # Look for .db first, then .jsonl
+        context_file = session_dir / "context.db"
         if not context_file.exists():
-            logger.debug(
-                "Session context file not found: {context_file}", context_file=context_file
-            )
-            return None
+            context_file = session_dir / "context.jsonl"
+            if not context_file.exists():
+                logger.debug(
+                    "Session context file not found: {context_file}", context_file=context_file
+                )
+                return None
 
         session = Session(
             id=session_id,
@@ -317,11 +386,13 @@ class Session:
             logger.debug("Work directory never been used")
             return []
 
-        session_ids = {
-            path.name if path.is_dir() else path.stem
-            for path in work_dir_meta.sessions_dir.iterdir()
-            if path.is_dir() or path.suffix == ".jsonl"
-        }
+        session_ids = set()
+        for path in work_dir_meta.sessions_dir.iterdir():
+            if path.is_dir():
+                session_ids.add(path.name)
+            elif path.suffix in (".jsonl", ".db") and path.stem not in session_ids:
+                # Legacy flat-file sessions
+                session_ids.add(path.stem)
 
         sessions: list[Session] = []
         for session_id in session_ids:
@@ -330,12 +401,17 @@ class Session:
             if not session_dir.is_dir():
                 logger.debug("Session directory not found: {session_dir}", session_dir=session_dir)
                 continue
-            context_file = session_dir / "context.jsonl"
+
+            # Look for .db first, then .jsonl
+            context_file = session_dir / "context.db"
             if not context_file.exists():
-                logger.debug(
-                    "Session context file not found: {context_file}", context_file=context_file
-                )
-                continue
+                context_file = session_dir / "context.jsonl"
+                if not context_file.exists():
+                    logger.debug(
+                        "Session context file not found: {context_file}", context_file=context_file
+                    )
+                    continue
+
             session = Session(
                 id=session_id,
                 work_dir=work_dir,
@@ -427,11 +503,13 @@ class Session:
             )
             return None
 
-        old_context_file = old_session_dir / "context.jsonl"
-        if not old_context_file.exists():
+        # Check for either .db or .jsonl
+        old_context_file_db = old_session_dir / "context.db"
+        old_context_file_jsonl = old_session_dir / "context.jsonl"
+        if not old_context_file_db.exists() and not old_context_file_jsonl.exists():
             logger.debug(
-                "Session context file not found: {context_file}",
-                context_file=old_context_file,
+                "Session context file not found (checked .db and .jsonl): {session_dir}",
+                session_dir=old_session_dir,
             )
             return None
 
@@ -453,13 +531,112 @@ class Session:
 
 
 def _migrate_session_context_file(work_dir_meta: WorkDirMeta, session_id: str) -> None:
-    old_context_file = work_dir_meta.sessions_dir / f"{session_id}.jsonl"
-    new_context_file = work_dir_meta.sessions_dir / session_id / "context.jsonl"
-    if old_context_file.exists() and not new_context_file.exists():
-        new_context_file.parent.mkdir(parents=True, exist_ok=True)
-        old_context_file.rename(new_context_file)
+    """Migrate legacy session context files.
+
+    Handles two migrations:
+    1. Flat JSONL file (session_id.jsonl) → session_dir/context.jsonl
+    2. context.jsonl → context.db (auto-migration on access)
+    """
+    session_dir = work_dir_meta.sessions_dir / session_id
+
+    # Migration 1: Flat JSONL → session dir
+    old_flat_file = work_dir_meta.sessions_dir / f"{session_id}.jsonl"
+    new_context_jsonl = session_dir / "context.jsonl"
+    if old_flat_file.exists() and not new_context_jsonl.exists():
+        new_context_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        old_flat_file.rename(new_context_jsonl)
         logger.info(
             "Migrated session context file from {old} to {new}",
-            old=old_context_file,
-            new=new_context_file,
+            old=old_flat_file,
+            new=new_context_jsonl,
         )
+
+    # Migration 2: JSONL → SQLite (only if JSONL exists and DB doesn't)
+    if new_context_jsonl.exists() and not (session_dir / "context.db").exists():
+        _migrate_jsonl_to_sqlite(new_context_jsonl)
+
+
+def _migrate_jsonl_to_sqlite(jsonl_path: Path) -> None:
+    """Migrate a context.jsonl file to SQLite context.db.
+
+    Reads the JSONL file line by line and inserts into the SQLite database.
+    On success, renames the JSONL file to .bak.
+    """
+    import json as json_module
+
+    db_path = jsonl_path.with_suffix(".db")
+    if db_path.exists():
+        logger.debug("SQLite DB already exists, skipping migration: {db}", db=db_path)
+        return
+
+    if not jsonl_path.exists():
+        return
+
+    logger.info("Migrating context from JSONL to SQLite: {jsonl} -> {db}", jsonl=jsonl_path, db=db_path)
+
+    try:
+        from kimi_cli.soul.context_db import ContextDB
+
+        # Read all lines from JSONL
+        with open(jsonl_path, encoding="utf-8", errors="replace") as f:
+            lines = [line for line in f if line.strip()]
+
+        if not lines:
+            logger.debug("Empty JSONL file, nothing to migrate")
+            # Still create an empty DB
+            db_path.touch()
+            return
+
+        import asyncio
+
+        async def _do_migration():
+            db = ContextDB(db_path)
+            await db.initialize()
+
+            for line in lines:
+                try:
+                    line_json = loads_relaxed(line)
+                except json_module.JSONDecodeError:
+                    continue
+                if not isinstance(line_json, dict):
+                    continue
+
+                await db.import_jsonl_line(line_json)
+
+            # Fix checkpoint message_rowid references
+            await db.fix_checkpoint_message_rowids()
+            await db.close()
+
+        asyncio.run(_do_migration())
+
+        # Verify row counts match
+        async def _verify():
+            db = ContextDB(db_path)
+            await db.initialize()
+            db_msg_count = await db.get_message_count()
+            await db.close()
+            return db_msg_count
+
+        db_msg_count = asyncio.run(_verify())
+
+        jsonl_line_count = len([l for l in lines if l.strip()])
+        logger.debug(
+            "Migration verification: JSONL lines={jsonl}, DB messages={db}",
+            jsonl=jsonl_line_count,
+            db=db_msg_count,
+        )
+
+        # Rename JSONL to .bak
+        backup_path = jsonl_path.with_suffix(".jsonl.bak")
+        jsonl_path.rename(backup_path)
+        logger.info("Migration complete. Backup at: {backup}", backup=backup_path)
+
+    except Exception:
+        logger.exception("Failed to migrate context from JSONL to SQLite: {jsonl}", jsonl=jsonl_path)
+        # Clean up partial DB on failure
+        if db_path.exists():
+            try:
+                db_path.unlink()
+            except Exception:
+                pass
+        raise

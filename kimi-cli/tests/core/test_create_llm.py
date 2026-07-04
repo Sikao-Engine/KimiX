@@ -470,7 +470,8 @@ def test_create_llm_default_thinking_effort_is_max_openai_legacy():
     llm = create_llm(provider, model, thinking=True)
     assert llm is not None
     assert isinstance(llm.chat_provider, OpenAILegacy)
-    assert llm.chat_provider.thinking_effort == "xhigh"
+    # Default thinking effort should be 'max' (the highest level)
+    assert llm.chat_provider.thinking_effort == "max"
 
 
 def test_create_llm_supported_efforts_clamps_xhigh():
@@ -533,7 +534,7 @@ def test_create_llm_supported_efforts_passes_max():
     )
     assert openai_llm is not None
     assert isinstance(openai_llm.chat_provider, OpenAILegacy)
-    assert openai_llm.chat_provider.thinking_effort == "xhigh"
+    assert openai_llm.chat_provider.thinking_effort == "max"
 
 
 def _make_kimi_plain_model() -> tuple[LLMProvider, LLMModel]:

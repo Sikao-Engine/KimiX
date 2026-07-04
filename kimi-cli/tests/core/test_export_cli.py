@@ -109,7 +109,7 @@ def test_export_previous_session_after_confirmation(
 
     with zipfile.ZipFile(output) as zf:
         names = set(zf.namelist())
-        assert "context.jsonl" in names
+        assert "context.db" in names
         assert "wire.jsonl" in names
         assert "manifest.json" in names
 
