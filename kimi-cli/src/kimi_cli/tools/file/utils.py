@@ -7,6 +7,7 @@ from typing import Literal
 
 from kaos.path import KaosPath
 
+from kimi_cli.utils.path import kaos_path_from_tool_input
 from kimi_cli.vfs import VFS
 
 MEDIA_SNIFF_BYTES = 512
@@ -261,18 +262,21 @@ def detect_file_type(path: str | PurePath, header: bytes | None = None) -> FileT
     return FileType(kind="text", mime_type="text/plain")
 
 
-async def resolve_vfs(path_str: str, vfs: VFS | None, *, for_write: bool = False) -> KaosPath:
+async def resolve_vfs(
+    path_str: str, vfs: VFS | None, *, for_write: bool = False, work_dir: KaosPath
+) -> KaosPath:
     """Resolve a user-provided path through VFS before I/O operations.
 
     Args:
         path_str: The original path string from user
         vfs: VFS instance or None
         for_write: If True, copies file to virtual layer and marks dirty
+        work_dir: Session work directory used to resolve relative paths
 
     Returns:
         KaosPath pointing to the physical location (virtual if dirty, else original)
     """
-    p = KaosPath(str(path_str)).expanduser().canonical()
+    p = kaos_path_from_tool_input(path_str, work_dir)
     if vfs is None:
         return p
     real = vfs.get(Path(str(p)), mark_dirty=True) if for_write else vfs.translate_path(Path(str(p)))

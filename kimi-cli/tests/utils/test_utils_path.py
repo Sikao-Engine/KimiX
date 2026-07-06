@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from kimi_cli.utils.path import next_available_rotation, sanitize_cli_path
+from kaos.path import KaosPath
+
+from kimi_cli.utils.path import (
+    kaos_path_from_tool_input,
+    local_path_for_cwd,
+    next_available_rotation,
+    sanitize_cli_path,
+)
 
 
 async def test_next_available_rotation_empty_dir(tmp_path):
@@ -226,11 +233,67 @@ async def test_next_available_rotation_concurrent_calls(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# kaos_path_from_tool_input tests
+# ---------------------------------------------------------------------------
+
+
+def test_kaos_path_from_tool_input_absolute(tmp_path):
+    """Absolute paths must be canonicalized as-is."""
+    work_dir = KaosPath(str(tmp_path))
+    absolute = tmp_path / "foo" / "bar.txt"
+    result = kaos_path_from_tool_input(str(absolute), work_dir)
+    assert result.is_absolute()
+    assert str(result.canonical()) == str(absolute.resolve())
+
+
+def test_kaos_path_from_tool_input_relative_to_work_dir(tmp_path):
+    """Relative paths must resolve against work_dir, not process cwd."""
+    work_dir = KaosPath(str(tmp_path / "project"))
+    Path(str(work_dir)).mkdir(parents=True, exist_ok=True)
+    result = kaos_path_from_tool_input("src/main.py", work_dir)
+    expected = (work_dir / "src" / "main.py").canonical()
+    assert result == expected
+
+
+def test_kaos_path_from_tool_input_dot_resolves_to_work_dir(tmp_path):
+    """A single dot must resolve to work_dir."""
+    work_dir = KaosPath(str(tmp_path))
+    result = kaos_path_from_tool_input(".", work_dir)
+    assert result == work_dir.canonical()
+
+
+def test_kaos_path_from_tool_input_expands_tilde(monkeypatch, tmp_path):
+    """Tilde must be expanded to the home directory before resolution."""
+    # Set both Unix and Windows home variables so the test is portable.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    work_dir = KaosPath(str(tmp_path / "wd"))
+    Path(str(work_dir)).mkdir(parents=True, exist_ok=True)
+    result = kaos_path_from_tool_input("~/file.txt", work_dir)
+    expected = KaosPath(str(tmp_path / "file.txt")).canonical()
+    assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# local_path_for_cwd tests
+# ---------------------------------------------------------------------------
+
+
+def test_local_path_for_cwd(tmp_path):
+    """local_path_for_cwd must return a pathlib.Path for subprocess cwd."""
+    work_dir = KaosPath(str(tmp_path))
+    result = local_path_for_cwd(work_dir)
+    assert isinstance(result, Path)
+    assert result == tmp_path
+
+
 @pytest.mark.parametrize(
     "raw, expected",
     [
         # macOS drag-and-drop: single quotes
         ("'/Users/me/file.txt'", "/Users/me/file.txt"),
+
         # double quotes
         ('"/Users/me/file.txt"', "/Users/me/file.txt"),
         # leading/trailing whitespace + quotes

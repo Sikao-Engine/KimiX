@@ -107,7 +107,8 @@ class TestPowershellArgumentBuilding:
             assert "-NonI" in args[0][1]
             assert "-NoExit" not in args[0][1]
             assert "-Command" in args[0][1] or "-C" in args[0][1]
-            assert args[0][3] is None  # append_newline default False
+            assert isinstance(args[0][3], dict) and "PATH" in args[0][3]
+            assert args.kwargs.get("append_newline", False) is False
 
     async def test_interactive_args_with_cmd(self, mock_session: MagicMock) -> None:
         with patch("kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):

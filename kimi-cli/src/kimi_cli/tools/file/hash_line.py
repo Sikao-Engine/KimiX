@@ -14,7 +14,12 @@ from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.utils import ToolResultBuilder, truncate_line
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.path import is_within_directory, is_within_workspace, kaos_path_from_user_input
+from kimi_cli.utils.path import (
+    is_within_directory,
+    is_within_workspace,
+    kaos_path_from_tool_input,
+    kaos_path_from_user_input,
+)
 from kimi_cli.utils.sensitive import is_sensitive_file
 from kimi_cli.vfs import VFS
 
@@ -662,17 +667,18 @@ class HashRead(CallableTool2[HashReadParams]):
         self._vfs = vfs
 
     async def _validate_path(
-        self, path: KaosPath
+        self, path: KaosPath, raw_path: str
     ) -> tuple[ToolError | None, bool]:
         resolved_path = path.canonical()
+        original_is_absolute = kaos_path_from_user_input(raw_path).is_absolute()
         inside = is_within_workspace(
             resolved_path, self._work_dir, self._additional_dirs
         )
-        if not inside and not path.is_absolute():
+        if not inside and not original_is_absolute:
             return (
                 ToolError(
                     message=(
-                        f"`{path}` is not an absolute path. "
+                        f"`{raw_path}` is not an absolute path. "
                         "You must provide an absolute path to access a file "
                         "outside the working directory."
                     ),
@@ -714,13 +720,13 @@ class HashRead(CallableTool2[HashReadParams]):
 
     async def _do_read(self, params: HashReadParams) -> ToolReturnValue:
         display_path = params.path.replace("\\", "/")
-        p = kaos_path_from_user_input(params.path)
+        p = kaos_path_from_tool_input(params.path, self._work_dir)
         logical_path = p
-        err, _ = await self._validate_path(p)
+        err, _ = await self._validate_path(p, params.path)
         if err:
             return err
 
-        p = await resolve_vfs(params.path, self._vfs, for_write=False)
+        p = await resolve_vfs(params.path, self._vfs, for_write=False, work_dir=self._work_dir)
 
         if is_sensitive_file(str(logical_path)):
             return ToolError(
@@ -843,17 +849,18 @@ class HashEdit(CallableTool2[HashEditParams]):
         self._vfs = vfs
 
     async def _validate_path(
-        self, path: KaosPath
+        self, path: KaosPath, raw_path: str
     ) -> tuple[ToolError | None, bool]:
         resolved_path = path.canonical()
+        original_is_absolute = kaos_path_from_user_input(raw_path).is_absolute()
         inside = is_within_workspace(
             resolved_path, self._work_dir, self._additional_dirs
         )
-        if not inside and not path.is_absolute():
+        if not inside and not original_is_absolute:
             return (
                 ToolError(
                     message=(
-                        f"`{path}` is not an absolute path. "
+                        f"`{raw_path}` is not an absolute path. "
                         "You must provide an absolute path to access a file "
                         "outside the working directory."
                     ),
@@ -901,19 +908,19 @@ class HashEdit(CallableTool2[HashEditParams]):
             )
 
         try:
-            p = kaos_path_from_user_input(params.path)
+            p = kaos_path_from_tool_input(params.path, self._work_dir)
             logical_path = p
             display_logical_path = str(logical_path).replace("\\", "/")
             _outside = not is_within_directory(
                 logical_path.canonical(), self._work_dir
             )
-            err, path_is_inside = await self._validate_path(p)
+            err, path_is_inside = await self._validate_path(p, params.path)
             if err:
                 if _outside:
                     err.message = f"[out of work-dir] {err.message}"
                 return err
 
-            p = await resolve_vfs(params.path, self._vfs, for_write=True)
+            p = await resolve_vfs(params.path, self._vfs, for_write=True, work_dir=self._work_dir)
 
             try:
                 st = await p.stat()
@@ -989,7 +996,7 @@ class HashEdit(CallableTool2[HashEditParams]):
             _outside_ex = False
             with contextlib.suppress(Exception):
                 _outside_ex = not is_within_directory(
-                    kaos_path_from_user_input(params.path).canonical(),
+                    kaos_path_from_tool_input(params.path, self._work_dir).canonical(),
                     self._work_dir,
                 )
             return ToolError(

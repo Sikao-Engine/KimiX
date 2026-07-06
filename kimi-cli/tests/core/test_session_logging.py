@@ -261,7 +261,7 @@ class TestFileToolLogging:
 
         with (
             patch("kimi_cli.tools.file.write.logger") as mock_logger,
-            patch("kimi_cli.tools.file.write.kaos_path_from_user_input") as mock_path,
+            patch("kimi_cli.tools.file.write.kaos_path_from_tool_input") as mock_path,
         ):
             mock_path.side_effect = RuntimeError("Unexpected")
             result = await write_file_tool(Params(path="/some/file", content="test"))
@@ -273,7 +273,7 @@ class TestFileToolLogging:
 
         with (
             patch("kimi_cli.tools.file.glob.logger") as mock_logger,
-            patch("kimi_cli.tools.file.glob.kaos_path_from_user_input") as mock_path,
+            patch("kimi_cli.tools.file.glob.kaos_path_from_tool_input") as mock_path,
         ):
             mock_path.side_effect = RuntimeError("Unexpected")
             result = await glob_tool(Params(pattern="*.py", directory="/some/dir"))
@@ -285,7 +285,7 @@ class TestFileToolLogging:
 
         with (
             patch("kimi_cli.tools.file.replace.logger") as mock_logger,
-            patch("kimi_cli.tools.file.replace.kaos_path_from_user_input") as mock_path,
+            patch("kimi_cli.tools.file.replace.kaos_path_from_tool_input") as mock_path,
         ):
             mock_path.side_effect = RuntimeError("Unexpected")
             result = await edit_file_tool(

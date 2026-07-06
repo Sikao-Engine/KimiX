@@ -39,7 +39,12 @@ from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.utils import ToolResultBuilder
 from kimi_cli.utils.aiohttp import new_client_session
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.path import is_within_workspace, normalize_user_path
+from kimi_cli.utils.path import (
+    is_within_workspace,
+    kaos_path_from_user_input,
+    local_path_for_cwd,
+    normalize_user_path,
+)
 from kimi_cli.utils.sensitive import is_sensitive_file, sensitive_file_warning
 from kimi_cli.vfs import VFS
 
@@ -646,15 +651,35 @@ class Grep(CallableTool2[Params]):
             builder = ToolResultBuilder()
             message = ""
 
+            # Resolve search path against the session work directory.
+            search_path = (
+                local_path_for_cwd(self._work_dir)
+                / Path(normalize_user_path(params.path)).expanduser()
+            ).resolve()
+
             # Windows reserved device names (NUL, CON, etc.) cause os error 1.
-            resolved_path = os.path.expanduser(normalize_user_path(params.path))
-            if _is_windows_reserved_name(resolved_path):
+            if _is_windows_reserved_name(str(search_path)):
                 return ToolError(
                     message=(
                         f"`{params.path}` is a reserved device name on Windows "
                         f"and cannot be searched."
                     ),
                     brief=f"Reserved device name | {_format_cmd(params)}",
+                )
+
+            # Validate workspace using the work-dir-resolved path.
+            logical_search_path = KaosPath(str(search_path)).canonical()
+            original_is_absolute = kaos_path_from_user_input(params.path).is_absolute()
+            if (
+                not is_within_workspace(
+                    logical_search_path, self._work_dir, self._additional_dirs
+                )
+                and not original_is_absolute
+            ):
+                display_path = params.path.replace("\\", "/")
+                return ToolError(
+                    message=f"`{display_path}` is outside the workspace.",
+                    brief=f"Path outside workspace | {_format_cmd(params)}",
                 )
 
             logger.debug("Using ripgrep binary: {rg_bin}", rg_bin=rg_path)
@@ -665,6 +690,7 @@ class Grep(CallableTool2[Params]):
                 *args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                cwd=str(self._work_dir),
             )
 
             # Stream stdout/stderr incrementally with buffer limit
@@ -760,9 +786,9 @@ class Grep(CallableTool2[Params]):
                     ]
 
             # Step 2: shorten paths to relative (prefix stripping)
-            search_base = os.path.abspath(os.path.expanduser(normalize_user_path(params.path)))
-            if os.path.isfile(search_base):
-                search_base = os.path.dirname(search_base)
+            search_base = str(search_path)
+            if search_path.is_file():
+                search_base = str(search_path.parent)
             lines = _strip_path_prefix(lines, search_base)
 
             # Step 3: filter sensitive files from output
@@ -897,7 +923,10 @@ class Grep(CallableTool2[Params]):
                     brief=f"Invalid pattern | {_format_cmd(params)}",
                 )
 
-            search_path = Path(os.path.expanduser(params.path)).resolve()
+            search_path = (
+                local_path_for_cwd(self._work_dir)
+                / Path(normalize_user_path(params.path)).expanduser()
+            ).resolve()
 
             # Windows reserved device names (NUL, CON, etc.) cause os error 1.
             if _is_windows_reserved_name(str(search_path)):
@@ -911,8 +940,12 @@ class Grep(CallableTool2[Params]):
                 )
 
             # Validate workspace
-            logical_search_path = KaosPath(params.path).expanduser().canonical()
-            if not is_within_workspace(logical_search_path, self._work_dir, self._additional_dirs):
+            logical_search_path = KaosPath(str(search_path)).canonical()
+            original_is_absolute = kaos_path_from_user_input(params.path).is_absolute()
+            if (
+                not is_within_workspace(logical_search_path, self._work_dir, self._additional_dirs)
+                and not original_is_absolute
+            ):
                 display_path = params.path.replace("\\", "/")
                 return ToolError(
                     message=f"`{display_path}` is outside the workspace.",

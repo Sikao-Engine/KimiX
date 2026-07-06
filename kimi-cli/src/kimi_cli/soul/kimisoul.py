@@ -746,7 +746,7 @@ class KimiSoul:
                     matcher_value=text_input_for_hook,
                     input_data=events.user_prompt_submit(
                         session_id=self._runtime.session.id,
-                        cwd=str(Path.cwd()),
+                        cwd=str(self._runtime.session.work_dir),
                         prompt=text_input_for_hook,
                     ),
                 )
@@ -790,7 +790,7 @@ class KimiSoul:
                     "Stop",
                     input_data=events.stop(
                         session_id=self._runtime.session.id,
-                        cwd=str(Path.cwd()),
+                        cwd=str(self._runtime.session.work_dir),
                         stop_hook_active=False,
                     ),
                 )
@@ -1063,7 +1063,7 @@ class KimiSoul:
                         matcher_value=type(e).__name__,
                         input_data=_hook_events.stop_failure(
                             session_id=self._runtime.session.id,
-                            cwd=str(Path.cwd()),
+                            cwd=str(self._runtime.session.work_dir),
                             error_type=type(e).__name__,
                             error_message=str(e),
                         ),
@@ -1141,7 +1141,7 @@ class KimiSoul:
                         matcher_value=view.event.type,
                         input_data=events.notification(
                             session_id=self._runtime.session.id,
-                            cwd=str(Path.cwd()),
+                            cwd=str(self._runtime.session.work_dir),
                             sink="llm",
                             notification_type=view.event.type,
                             title=view.event.title,
@@ -1426,7 +1426,7 @@ class KimiSoul:
             matcher_value=trigger_reason,
             input_data=events.pre_compact(
                 session_id=self._runtime.session.id,
-                cwd=str(Path.cwd()),
+                cwd=str(self._runtime.session.work_dir),
                 trigger=trigger_reason,
                 token_count=before_tokens,
             ),
@@ -1524,7 +1524,7 @@ class KimiSoul:
                 matcher_value=trigger_reason,
                 input_data=events.post_compact(
                     session_id=self._runtime.session.id,
-                    cwd=str(Path.cwd()),
+                    cwd=str(self._runtime.session.work_dir),
                     trigger=trigger_reason,
                     estimated_token_count=estimated_token_count,
                 ),

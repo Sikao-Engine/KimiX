@@ -139,17 +139,22 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
     if known_args.command is not None:
         # Subcommand detected — re-parse with its own parser so subcommand-specific
         # arguments (e.g. --fe-port, --no-fe) are recognized.
-        subparser_lookup: dict[str, argparse.ArgumentParser] = {
-            "serve": serve_parser,
-            "gui": gui_parser,
-            "ssecli": sse_cli_parser,
-            "mcp": mcp_parser,
-        }
-        sub_parser = subparser_lookup.get(known_args.command)
-        if sub_parser is not None:
-            args, _ = sub_parser.parse_known_args(remaining, namespace=known_args)
-        else:
+        # The ``mcp`` command has its own nested subparsers; the top-level parse
+        # already consumed ``mcp_command`` and its options, so re-parsing would
+        # fail with "required: mcp_command".
+        if known_args.command == "mcp":
             args = known_args
+        else:
+            subparser_lookup: dict[str, argparse.ArgumentParser] = {
+                "serve": serve_parser,
+                "gui": gui_parser,
+                "ssecli": sse_cli_parser,
+            }
+            sub_parser = subparser_lookup.get(known_args.command)
+            if sub_parser is not None:
+                args, _ = sub_parser.parse_known_args(remaining, namespace=known_args)
+            else:
+                args = known_args
     else:
         args = known_args
 

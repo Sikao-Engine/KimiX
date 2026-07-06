@@ -188,6 +188,34 @@ def kaos_path_from_user_input(raw: str) -> KaosPath:
     return KaosPath(normalize_user_path(raw)).expanduser()
 
 
+def kaos_path_from_tool_input(raw: str, work_dir: KaosPath) -> KaosPath:
+    """Convert a tool/user path string into a :class:`KaosPath` resolved against *work_dir*.
+
+    Resolution order:
+
+    1. Apply :func:`normalize_user_path` and ``KaosPath.expanduser()``.
+    2. If the result is absolute, canonicalize it (resolve ``.``/``..`` but not symlinks).
+    3. If the result is relative, prepend *work_dir* and then canonicalize.
+
+    This ensures that relative paths supplied by the model are always interpreted
+    relative to the session work directory instead of the process current directory.
+    """
+    p = kaos_path_from_user_input(raw)
+    if p.is_absolute():
+        return p.canonical()
+    return (work_dir / str(p)).canonical()
+
+
+def local_path_for_cwd(work_dir: KaosPath) -> Path:
+    """Return a local :class:`pathlib.Path` for use as a subprocess ``cwd``.
+
+    :class:`KaosPath` cannot be passed directly to APIs such as
+    ``asyncio.create_subprocess_exec(..., cwd=...)`` that expect a
+    :class:`pathlib.Path` or ``str``. This helper performs an explicit cast.
+    """
+    return Path(str(work_dir))
+
+
 def sanitize_cli_path(raw: str) -> str:
     """Strip surrounding quotes from a CLI path argument.
 

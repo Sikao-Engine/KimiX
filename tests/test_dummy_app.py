@@ -78,16 +78,13 @@ async def test_health_check(client: httpx.AsyncClient) -> None:
 
 
 def test_event_stream(app) -> None:
-    """Patch asyncio.sleep so the infinite heartbeat loop exits quickly."""
+    """Patch asyncio.wait_for so the event loop exits quickly after the connected event."""
     import asyncio
 
-    original_sleep = asyncio.sleep
-
-    async def _cancelling_sleep(delay):
-        await original_sleep(0.01)
+    async def _cancelling_wait_for(aw, timeout=None):
         raise asyncio.CancelledError()
 
-    with patch("kimix.server.dummy_app.asyncio.sleep", _cancelling_sleep):
+    with patch("kimix.server.dummy_app.asyncio.wait_for", _cancelling_wait_for):
         client = TestClient(app)
         resp = client.get("/event")
     assert resp.status_code == 200

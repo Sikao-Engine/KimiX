@@ -3,8 +3,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Self, override
 
-import kaos
-from kaos import AsyncReadable
 from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field, model_validator
 
@@ -233,7 +231,14 @@ class Shell(CallableTool2[Params]):
         # running, not an empty/stale value inherited from the parent (most visible
         # on Windows, where the parent's SHELL is typically empty or PowerShell).
         env["SHELL"] = str(self._shell_path)
-        process = await kaos.exec(*self._shell_args(command), env=env)
+        process = await asyncio.create_subprocess_exec(
+            *self._shell_args(command),
+            env=env,
+            cwd=str(self._runtime.session.work_dir),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
 
         # Close stdin immediately so interactive prompts (e.g. git password) get
         # EOF instead of hanging forever waiting for input that will never come.

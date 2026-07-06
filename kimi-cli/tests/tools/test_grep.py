@@ -1027,18 +1027,15 @@ async def test_backup_grep_invalid_pattern(grep_tool: Grep, temp_work_dir: KaosP
 
 
 async def test_backup_grep_path_outside_workspace(grep_tool: Grep):
-    """backup_grep rejects paths outside the workspace."""
-    import tempfile
+    """backup_grep rejects relative paths that resolve outside the workspace."""
+    grep_tool._rg_path = None
+    grep_tool._rg_path_task = None
 
-    with tempfile.TemporaryDirectory() as outside_dir:
-        grep_tool._rg_path = None
-        grep_tool._rg_path_task = None
-
-        result = await grep_tool(
-            Params(pattern="test", path=outside_dir, output_mode="files_with_matches")
-        )
-        assert result.is_error
-        assert "outside the workspace" in result.message.lower()
+    result = await grep_tool(
+        Params(pattern="test", path="../outside_workspace", output_mode="files_with_matches")
+    )
+    assert result.is_error
+    assert "outside the workspace" in result.message.lower()
 
 
 async def test_backup_grep_path_not_found(grep_tool: Grep, temp_work_dir: KaosPath):

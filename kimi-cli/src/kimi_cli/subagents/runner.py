@@ -273,7 +273,7 @@ class ForegroundSubagentRunner:
                 matcher_value=actual_type,
                 input_data=hook_events.subagent_start(
                     session_id=self._runtime.session.id,
-                    cwd=str(Path.cwd()),
+                    cwd=str(self._runtime.session.work_dir),
                     agent_name=actual_type,
                     prompt=req.prompt[:500],
                 ),
@@ -303,7 +303,7 @@ class ForegroundSubagentRunner:
                 matcher_value=actual_type,
                 input_data=hook_events.subagent_stop(
                     session_id=self._runtime.session.id,
-                    cwd=str(Path.cwd()),
+                    cwd=str(self._runtime.session.work_dir),
                     agent_name=actual_type,
                     response=(final_response or "")[:500],
                 ),

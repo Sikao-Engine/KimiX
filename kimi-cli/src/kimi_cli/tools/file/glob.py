@@ -14,9 +14,7 @@ from pydantic import BaseModel, Field
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.path import (
-    kaos_path_from_user_input,
-)
+from kimi_cli.utils.path import kaos_path_from_tool_input
 from kimi_cli.vfs import VFS
 
 from .utils import resolve_vfs
@@ -312,8 +310,11 @@ class Glob(CallableTool2[Params]):
             else:
                 pattern = params.pattern
 
-            dir_path = KaosPath(str(kaos_path_from_user_input(params.directory)) if params.directory else str(self._work_dir))
-            dir_path = await resolve_vfs(str(dir_path), self._vfs, for_write=False)
+            if params.directory:
+                dir_path = kaos_path_from_tool_input(params.directory, self._work_dir)
+            else:
+                dir_path = self._work_dir
+            dir_path = await resolve_vfs(str(dir_path), self._vfs, for_write=False, work_dir=self._work_dir)
             if not await dir_path.exists():
                 display_dir = str(dir_path)
                 return ToolError(

@@ -7,6 +7,7 @@ from contextvars import ContextVar
 import acp
 import streamingjson  # type: ignore[reportMissingTypeStubs]
 from kaos import Kaos, reset_current_kaos, set_current_kaos
+from kaos.path import KaosPath
 from kosong.chat_provider import APIStatusError, ChatProviderError
 
 from kimi_cli.acp.convert import (
@@ -78,10 +79,11 @@ def should_hide_terminal_output(tool_call_id: str) -> bool:
 class _ToolCallState:
     """Manages the state of a single tool call for streaming updates."""
 
-    def __init__(self, tool_call: ToolCall):
+    def __init__(self, tool_call: ToolCall, work_dir: KaosPath):
         self.tool_call = tool_call
         self.args = tool_call.function.arguments or ""
         self.lexer = streamingjson.Lexer()
+        self._work_dir = work_dir
         if tool_call.function.arguments is not None:
             self.lexer.append_string(tool_call.function.arguments)
 
@@ -103,7 +105,7 @@ class _ToolCallState:
     def get_title(self) -> str:
         """Get the current title with subtitle if available."""
         tool_name = self.tool_call.function.name
-        subtitle = extract_key_argument(self.lexer, tool_name)
+        subtitle = extract_key_argument(self.lexer, tool_name, self._work_dir)
         if subtitle:
             return f"{tool_name}: {subtitle}"
         return tool_name
@@ -373,7 +375,7 @@ class ACPSession:
             return
 
         # Create and store tool call state
-        state = _ToolCallState(tool_call)
+        state = _ToolCallState(tool_call, self._cli.session.work_dir)
         self._turn_state.tool_calls[tool_call.id] = state
         self._turn_state.last_tool_call = state
 

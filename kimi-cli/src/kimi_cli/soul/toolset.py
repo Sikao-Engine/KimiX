@@ -38,6 +38,7 @@ from kimi_cli.hooks.engine import HookEngine
 from kimi_cli.mcp.client import MCPClient
 from kimi_cli.mcp.prompts import MCPPromptManager
 from kimi_cli.mcp.resources import MCPResourceManager
+from kimi_cli.mcp.roots import MCPRootsHandler
 from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import repair_tool_arguments
@@ -318,6 +319,12 @@ class KimiToolset:
         self._tool_warned_at: dict[str, set[int]] = {}  # thresholds already warned
         self._turn_tool_warning_issued: bool = False  # avoid flooding multiple tools
 
+    def _hook_cwd(self) -> str:
+        """Return the cwd to report in lifecycle hook events."""
+        if self._runtime is not None:
+            return str(self._runtime.session.work_dir)
+        return str(Path.cwd())
+
     def set_hook_engine(self, engine: HookEngine) -> None:
         self._hook_engine = engine
 
@@ -566,7 +573,7 @@ class KimiToolset:
                     matcher_value=tool_name,
                     input_data=events.pre_tool_use(
                         session_id=_get_session_id(),
-                        cwd=str(Path.cwd()),
+                        cwd=self._hook_cwd(),
                         tool_name=tool_name,
                         tool_input=tool_input_dict,
                         tool_call_id=tool_call.id,
@@ -660,7 +667,7 @@ class KimiToolset:
                             matcher_value=tool_name,
                             input_data=events.post_tool_use_failure(
                                 session_id=_get_session_id(),
-                                cwd=str(Path.cwd()),
+                                cwd=self._hook_cwd(),
                                 tool_name=tool_name,
                                 tool_input=tool_input_dict,
                                 error=str(e),
@@ -691,7 +698,7 @@ class KimiToolset:
                         matcher_value=tool_name,
                         input_data=events.post_tool_use(
                             session_id=_get_session_id(),
-                            cwd=str(Path.cwd()),
+                            cwd=self._hook_cwd(),
                             tool_name=tool_name,
                             tool_input=tool_input_dict,
                             tool_output=str(ret)[:2000],
@@ -1008,6 +1015,7 @@ class KimiToolset:
                     MCPConfig(mcpServers={server_name: server_config}),
                     name=server_name,
                     timeout_ms=runtime.config.mcp.client.tool_call_timeout_ms,
+                    roots_handler=MCPRootsHandler(work_dir=runtime.session.work_dir),
                 )
                 self._mcp_servers[server_name] = MCPServerInfo(
                     status="pending", client=client, tools=[]

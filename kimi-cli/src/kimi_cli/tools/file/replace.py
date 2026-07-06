@@ -23,7 +23,12 @@ from kimi_cli.tools.file.check_fmt import (
 )
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.path import is_within_directory, is_within_workspace, kaos_path_from_user_input
+from kimi_cli.utils.path import (
+    is_within_directory,
+    is_within_workspace,
+    kaos_path_from_tool_input,
+    kaos_path_from_user_input,
+)
 from kimi_cli.vfs import VFS
 
 from .utils import resolve_vfs
@@ -57,20 +62,23 @@ class EditFile(CallableTool2[Params]):
         self._approval = approval
         self._session = session
         self._vfs = vfs
-    async def _validate_path(self, path: KaosPath) -> tuple[ToolError | None, bool]:
+    async def _validate_path(
+        self, path: KaosPath, raw_path: str
+    ) -> tuple[ToolError | None, bool]:
         """Validate that the path is safe to edit.
 
         Returns:
             A tuple of (error_or_none, is_inside_workspace).
         """
         resolved_path = path.canonical()
+        original_is_absolute = kaos_path_from_user_input(raw_path).is_absolute()
 
         inside = is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
-        if not inside and not path.is_absolute():
+        if not inside and not original_is_absolute:
             return (
                 ToolError(
                     message=(
-                        f"`{path}` is not an absolute path. "
+                        f"`{raw_path}` is not an absolute path. "
                         "You must provide an absolute path to edit a file "
                         "outside the working directory."
                     ),
@@ -259,17 +267,17 @@ class EditFile(CallableTool2[Params]):
             )
 
         try:
-            p = kaos_path_from_user_input(params.path)
+            p = kaos_path_from_tool_input(params.path, self._work_dir)
             logical_path = p
             display_logical_path = str(logical_path).replace("\\", "/")
             _outside = not is_within_directory(logical_path.canonical(), self._work_dir)
-            err, _ = await self._validate_path(p)
+            err, _ = await self._validate_path(p, params.path)
             if err:
                 if _outside:
                     err.message = f"[out of work-dir] {err.message}"
                 return err
 
-            p = await resolve_vfs(params.path, self._vfs, for_write=True)
+            p = await resolve_vfs(params.path, self._vfs, for_write=True, work_dir=self._work_dir)
 
             try:
                 st = await p.stat()
@@ -382,7 +390,10 @@ class EditFile(CallableTool2[Params]):
             logger.warning("EditFile failed: {path}: {error}", path=params.path, error=e)
             _outside_ex = False
             with contextlib.suppress(Exception):
-                _outside_ex = not is_within_directory(kaos_path_from_user_input(params.path).canonical(), self._work_dir)
+                _outside_ex = not is_within_directory(
+                    kaos_path_from_tool_input(params.path, self._work_dir).canonical(),
+                    self._work_dir,
+                )
             return ToolError(
                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to edit. Error: {e} Path: {display_path}",
                 brief="Failed to edit file",

@@ -40,6 +40,14 @@ _MODE_MAP: dict[str, Literal["overwrite", "append", "force_overwrite"]] = {
     "extend": "append",
     "concat": "append",
     "concatenate": "append",
+    # notes synonyms (common typos / misuses for append)
+    "notes": "append",
+    "note": "append",
+    "ntoes": "append",
+    "noets": "append",
+    "nots": "append",
+    "notes_append": "append",
+    "add_notes": "append",
     # force_overwrite synonyms
     "force_overwrite": "force_overwrite",
     "forceoverwrite": "force_overwrite",
@@ -130,7 +138,6 @@ _STATUS_MAP: dict[str, TodoStatus] = {
 }
 
 
-
 def _canonical_status(v: Any) -> TodoStatus:
     """Normalize a status value to its canonical form."""
     if not isinstance(v, str):
@@ -163,9 +170,9 @@ class _FuzzyResult:
 class Todo(BaseModel):
     title: str = Field(description="Title", min_length=1, max_length=65536)
     status: TodoStatus = Field(description="Status")
-    notes: str | None = Field(
-        default=None,
-        description="Optional notes.",
+    notes: str = Field(
+        default="",
+        description="Notes.",
         max_length=65536,
     )
 
@@ -174,13 +181,12 @@ class Todo(BaseModel):
     def _validate_status(cls, v: Any) -> str:
         return _canonical_status(v)
 
-    @field_validator("notes")
+    @field_validator("notes", mode="before")
     @classmethod
-    def _validate_notes(cls, v: str | None) -> str | None:
+    def _validate_notes(cls, v: Any) -> str:
         if v is None:
-            return None
-        stripped = v.strip()
-        return stripped if stripped else None
+            return ""
+        return str(v).strip()
 
     @field_validator("title")
     @classmethod
@@ -232,7 +238,9 @@ class Params(BaseModel):
         if isinstance(v, str):
             parsed = repair_json_string(v)
             if parsed is None:
-                raise ValueError("todos must be a list of todos, a single todo dict/object, or None")
+                raise ValueError(
+                    "todos must be a list of todos, a single todo dict/object, or None"
+                )
             v = parsed
         if isinstance(v, dict):
             try:
@@ -428,7 +436,14 @@ class TodoList(CallableTool2[Params]):
         selected = [t for t in todos if t.status in status_filter]
         if not selected:
             return ""
-        return "\n".join(f"- [{display_status[t.status]}] {t.title}" for t in selected)
+        lines: list[str] = []
+        for t in selected:
+            todo = f"- [{display_status[t.status]}] {t.title}"
+            if t.status == "in_progress" and t.notes:
+                todo += f"  Notes: {t.notes}"
+            lines.append(todo)
+
+        return "\n".join(lines)
 
     # Score threshold for user-facing title suggestions. rapidfuzz returns a
     # normalized similarity in [0, 100]; 60 catches minor typos while avoiding
@@ -595,7 +610,7 @@ class TodoList(CallableTool2[Params]):
         return Todo(
             title=old.title,
             status=new.status,
-            notes=new.notes if new.notes is not None else old.notes,
+            notes=new.notes if new.notes else old.notes,
         )
 
     @staticmethod
@@ -835,7 +850,7 @@ class TodoList(CallableTool2[Params]):
             return {}
         try:
             data = orjson.loads(path.read_text(encoding="utf-8"))
-        except (orjson.JSONDecodeError, OSError, UnicodeDecodeError):
+        except orjson.JSONDecodeError, OSError, UnicodeDecodeError:
             logger.warning("Corrupted subagent todo state, using defaults: {path}", path=path)
             return {}
         if not isinstance(data, dict):

@@ -15,13 +15,18 @@ from kimi_cli.mcp.config import (
 cli = typer.Typer(help="Manage MCP server configurations.")
 
 
+def _effective_work_dir(work_dir: Path | None) -> Path:
+    """Return the explicit work_dir or the process current directory."""
+    return work_dir if work_dir is not None else Path.cwd()
+
+
 def _load_mcp_config(work_dir: Path | None = None) -> dict[str, Any]:
     """Load MCP config from global and project mcp config files."""
     from fastmcp.mcp_config import MCPConfig
     from pydantic import ValidationError
 
     global_config = load_global_mcp_config()
-    project_config = load_project_mcp_config(work_dir)
+    project_config = load_project_mcp_config(_effective_work_dir(work_dir))
     merged = merge_mcp_configs(global_config, project_config)
 
     try:
@@ -46,7 +51,7 @@ def _get_mcp_server(
     name: str, *, require_remote: bool = False, work_dir: Path | None = None
 ) -> dict[str, Any]:
     """Get MCP server config by name."""
-    config = _load_mcp_config(work_dir)
+    config = _load_mcp_config(_effective_work_dir(work_dir))
     servers = config.get("mcpServers", {})
     if name not in servers:
         typer.echo(f"MCP server '{name}' not found.", err=True)
@@ -142,9 +147,16 @@ def mcp_add(
             help="Authorization type (e.g., 'oauth').",
         ),
     ] = None,
+    work_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--work-dir",
+            help="Project working directory for .kimix/mcp.json discovery.",
+        ),
+    ] = None,
 ):
     """Add an MCP server."""
-    config = _load_mcp_config()
+    config = _load_mcp_config(_effective_work_dir(work_dir))
     server_args = server_args or []
 
     if transport not in {"stdio", "http"}:
@@ -202,10 +214,17 @@ def mcp_remove(
         str,
         typer.Argument(help="Name of the MCP server to remove."),
     ],
+    work_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--work-dir",
+            help="Project working directory for .kimix/mcp.json discovery.",
+        ),
+    ] = None,
 ):
     """Remove an MCP server."""
-    _get_mcp_server(name)
-    config = _load_mcp_config()
+    _get_mcp_server(name, work_dir=_effective_work_dir(work_dir))
+    config = _load_mcp_config(_effective_work_dir(work_dir))
     del config["mcpServers"][name]
     _save_mcp_config(config)
     typer.echo(f"Removed MCP server '{name}' from {get_global_mcp_config_file()}.")
@@ -266,11 +285,18 @@ def mcp_auth(
         str,
         typer.Argument(help="Name of the MCP server to authorize."),
     ],
+    work_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--work-dir",
+            help="Project working directory for .kimix/mcp.json discovery.",
+        ),
+    ] = None,
 ):
     """Authorize with an OAuth-enabled MCP server."""
     import asyncio
 
-    server = _get_mcp_server(name, require_remote=True)
+    server = _get_mcp_server(name, require_remote=True, work_dir=_effective_work_dir(work_dir))
     if server.get("auth") != "oauth":
         typer.echo(f"MCP server '{name}' does not use OAuth. Add with --auth oauth.", err=True)
         raise typer.Exit(code=1)
@@ -302,11 +328,18 @@ def mcp_reset_auth(
         str,
         typer.Argument(help="Name of the MCP server to reset authorization."),
     ],
+    work_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--work-dir",
+            help="Project working directory for .kimix/mcp.json discovery.",
+        ),
+    ] = None,
 ):
     """Reset OAuth authorization for an MCP server (clear cached tokens)."""
     import asyncio
 
-    server = _get_mcp_server(name, require_remote=True)
+    server = _get_mcp_server(name, require_remote=True, work_dir=_effective_work_dir(work_dir))
 
     async def _reset_auth() -> None:
         from kimi_cli.mcp_oauth import create_mcp_oauth_token_storage
@@ -331,11 +364,18 @@ def mcp_test(
         str,
         typer.Argument(help="Name of the MCP server to test."),
     ],
+    work_dir: Annotated[
+        Path | None,
+        typer.Option(
+            "--work-dir",
+            help="Project working directory for .kimix/mcp.json discovery.",
+        ),
+    ] = None,
 ):
     """Test connection to an MCP server and list available tools."""
     import asyncio
 
-    server = _get_mcp_server(name)
+    server = _get_mcp_server(name, work_dir=_effective_work_dir(work_dir))
 
     async def _test() -> None:
         import fastmcp

@@ -4,22 +4,45 @@ from pathlib import Path
 from typing import Any
 
 import mcp.types
+from kaos.path import KaosPath
 from pydantic.networks import FileUrl
 
 
 class MCPRootsHandler:
     """Handler for MCP ``roots/list`` requests."""
 
-    def __init__(self, roots: list[Path] | None = None) -> None:
-        self._roots: list[Path] = list(roots or [])
+    def __init__(
+        self,
+        roots: list[Path] | None = None,
+        *,
+        work_dir: KaosPath | None = None,
+    ) -> None:
+        self._roots: list[Path] = []
+        if roots:
+            self.set_roots(roots, work_dir=work_dir)
 
-    def add_root(self, path: Path) -> None:
+    @staticmethod
+    def _resolve_root(root: Path, work_dir: KaosPath | None) -> Path:
+        """Resolve a single root to an absolute local Path.
+
+        Relative roots are resolved against *work_dir* when provided; otherwise
+        they are rejected so that callers cannot silently use the process cwd.
+        """
+        if root.is_absolute():
+            return root.resolve()
+        if work_dir is None:
+            raise ValueError("work_dir is required to resolve relative MCP roots")
+        return (Path(str(work_dir)) / root).resolve()
+
+    def add_root(self, path: Path, *, work_dir: KaosPath | None = None) -> None:
         """Add a workspace root."""
-        self._roots.append(path)
+        self._roots.append(self._resolve_root(path, work_dir))
 
-    def set_roots(self, roots: list[Path]) -> None:
+    def set_roots(
+        self, roots: list[Path], *, work_dir: KaosPath | None = None
+    ) -> None:
         """Replace the workspace roots."""
-        self._roots = list(roots)
+        self._roots = [self._resolve_root(root, work_dir) for root in roots]
 
     @property
     def roots(self) -> list[Path]:

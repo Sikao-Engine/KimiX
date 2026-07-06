@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import platform
+from pathlib import Path
 
 import pytest
 from inline_snapshot import snapshot
@@ -23,6 +25,22 @@ async def test_simple_command(shell_tool: Shell):
     assert not result.is_error
     assert result.output == snapshot("Hello World\n")
     assert result.message == snapshot("Command executed successfully.")
+
+
+async def test_command_uses_session_work_dir(
+    shell_tool: Shell, temp_work_dir: KaosPath, tmp_path: Path
+):
+    """Shell commands run with cwd set to the session work directory."""
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    original_cwd = Path.cwd()
+    try:
+        os.chdir(other_dir)
+        result = await shell_tool(Params(command="pwd"))
+        assert not result.is_error
+        assert result.output.strip() == str(temp_work_dir)
+    finally:
+        os.chdir(original_cwd)
 
 
 async def test_command_with_error(shell_tool: Shell):

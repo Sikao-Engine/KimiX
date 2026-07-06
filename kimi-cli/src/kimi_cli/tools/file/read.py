@@ -17,7 +17,11 @@ from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, detect_file_type
 from kimi_cli.tools.utils import load_desc, truncate_line
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.path import is_within_workspace, kaos_path_from_user_input
+from kimi_cli.utils.path import (
+    is_within_workspace,
+    kaos_path_from_tool_input,
+    kaos_path_from_user_input,
+)
 from kimi_cli.utils.sensitive import is_sensitive_file
 from kimi_cli.vfs import VFS
 
@@ -185,18 +189,21 @@ class ReadFile(CallableTool2[Params]):
         self._additional_dirs = runtime.additional_dirs
         self._vfs = vfs
 
-    async def _validate_path(self, path: KaosPath) -> ToolError | None:
+    async def _validate_path(
+        self, path: KaosPath, raw_path: str
+    ) -> ToolError | None:
         """Validate that the path is safe to read."""
         resolved_path = path.canonical()
+        original_is_absolute = kaos_path_from_user_input(raw_path).is_absolute()
 
         if (
             not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
-            and not path.is_absolute()
+            and not original_is_absolute
         ):
             # Outside files can only be read with absolute paths
             return ToolError(
                 message=(
-                    f"`{path}` is not an absolute path. "
+                    f"`{raw_path}` is not an absolute path. "
                     "You must provide an absolute path to read a file "
                     "outside the working directory."
                 ),
@@ -217,13 +224,15 @@ class ReadFile(CallableTool2[Params]):
         self,
         dir_path: KaosPath,
         raw_path: str,
+        base_str: str,
     ) -> ToolError | None:
         """Validate that the directory is safe to search for glob expansion."""
         resolved_path = dir_path.canonical()
+        original_is_absolute = kaos_path_from_user_input(base_str).is_absolute()
 
         if (
             not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
-            and not dir_path.is_absolute()
+            and not original_is_absolute
         ):
             return ToolError(
                 message=(
@@ -259,11 +268,13 @@ class ReadFile(CallableTool2[Params]):
             )
 
         try:
-            base = kaos_path_from_user_input(base_str)
-            if err := await self._validate_glob_directory(base, raw_path):
+            if base_str == ".":
+                base_str = str(self._work_dir)
+            base = kaos_path_from_tool_input(base_str, self._work_dir)
+            if err := await self._validate_glob_directory(base, raw_path, base_str):
                 return [], err
 
-            base = await resolve_vfs(str(base), self._vfs, for_write=False)
+            base = await resolve_vfs(str(base), self._vfs, for_write=False, work_dir=self._work_dir)
             if not await base.exists():
                 return [], ToolError(
                     message=f"Directory for `{raw_path}` does not exist.",
@@ -361,9 +372,7 @@ class ReadFile(CallableTool2[Params]):
             )
             if not _is_glob_pattern(raw_path):
                 try:
-                    canonical = str(
-                        Path(str(kaos_path_from_user_input(raw_path))).resolve()
-                    )
+                    canonical = str(kaos_path_from_tool_input(raw_path, self._work_dir).canonical())
                     entries.append((raw_path, options, canonical))
                 except Exception as e:
                     logger.warning(
@@ -382,9 +391,7 @@ class ReadFile(CallableTool2[Params]):
                 else:
                     for path_str, opts in concrete:
                         try:
-                            canonical = str(
-                                Path(str(kaos_path_from_user_input(path_str))).resolve()
-                            )
+                            canonical = str(kaos_path_from_tool_input(path_str, self._work_dir).canonical())
                             entries.append((path_str, opts, canonical))
                         except Exception as e:
                             logger.warning(
@@ -483,12 +490,12 @@ class ReadFile(CallableTool2[Params]):
             )
 
         try:
-            p = kaos_path_from_user_input(raw_path)
+            p = kaos_path_from_tool_input(raw_path, self._work_dir)
             logical_path = p
-            if err := await self._validate_path(p):
+            if err := await self._validate_path(p, raw_path):
                 return err
 
-            p = await resolve_vfs(raw_path, self._vfs, for_write=False)
+            p = await resolve_vfs(raw_path, self._vfs, for_write=False, work_dir=self._work_dir)
 
             if is_sensitive_file(str(logical_path)):
                 return ToolError(

@@ -19,7 +19,12 @@ from kimi_cli.tools.file.check_fmt import (
     check_yaml_text,
 )
 from kimi_cli.utils.diff import build_diff_blocks
-from kimi_cli.utils.path import is_within_directory, is_within_workspace, kaos_path_from_user_input
+from kimi_cli.utils.path import (
+    is_within_directory,
+    is_within_workspace,
+    kaos_path_from_tool_input,
+    kaos_path_from_user_input,
+)
 from kimi_cli.vfs import VFS
 
 from .utils import resolve_vfs
@@ -87,22 +92,25 @@ class WriteFile(CallableTool2[Params]):
         self._approval = approval
         self._session = session
         self._vfs = vfs
-    async def _validate_path(self, path: KaosPath) -> tuple[ToolError | None, bool]:
+    async def _validate_path(
+        self, path: KaosPath, raw_path: str
+    ) -> tuple[ToolError | None, bool]:
         """Validate that the path is safe to write.
 
         Returns:
             A tuple of (error_or_none, is_inside_workspace).
         """
         resolved_path = path.canonical()
+        original_is_absolute = kaos_path_from_user_input(raw_path).is_absolute()
 
         inside = is_within_workspace(
             resolved_path, self._work_dir, self._additional_dirs
         )
-        if not inside and not path.is_absolute():
+        if not inside and not original_is_absolute:
             return (
                 ToolError(
                     message=(
-                        f"`{path}` is not an absolute path. "
+                        f"`{raw_path}` is not an absolute path. "
                         "You must provide an absolute path to write a file "
                         "outside the working directory."
                     ),
@@ -143,16 +151,16 @@ class WriteFile(CallableTool2[Params]):
             )
 
         try:
-            p = kaos_path_from_user_input(params.path)
+            p = kaos_path_from_tool_input(params.path, self._work_dir)
             logical_path = p
             display_logical_path = str(logical_path).replace("\\", "/")
             _outside = not is_within_directory(logical_path.canonical(), self._work_dir)
-            err, path_is_inside = await self._validate_path(logical_path)
+            err, path_is_inside = await self._validate_path(logical_path, params.path)
             if err:
                 err.message = f"[out of work-dir] {err.message}" if _outside else err.message
                 return err
 
-            p = await resolve_vfs(params.path, self._vfs, for_write=True)
+            p = await resolve_vfs(params.path, self._vfs, for_write=True, work_dir=self._work_dir)
             display_p = str(p).replace("\\", "/")
 
             if await p.is_dir():
@@ -275,7 +283,10 @@ class WriteFile(CallableTool2[Params]):
             )
             _outside_ex = False
             with contextlib.suppress(Exception):
-                _outside_ex = not is_within_directory(kaos_path_from_user_input(params.path).canonical(), self._work_dir)
+                _outside_ex = not is_within_directory(
+                    kaos_path_from_tool_input(params.path, self._work_dir).canonical(),
+                    self._work_dir,
+                )
             return ToolError(
                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to write to {display_path}. Error: {e}.",
                 brief="Failed to write file",

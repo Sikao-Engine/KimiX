@@ -123,14 +123,14 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
                                         "description": "Status",
                                         "enum": ["pending", "in_progress", "done"],
                                         "type": "string",
-                                    }, "notes": {
-                                        "anyOf": [
-                                            {"maxLength": 65536, "type": "string"},
-                                            {"type": "null"},
-                                        ],
-                                        "default": None,
-                                        "description": "Optional notes.",
-                                    }},
+                                    },
+                                    "notes": {
+                                        "default": "",
+                                        "description": "Notes.",
+                                        "maxLength": 65536,
+                                        "type": "string",
+                                    },
+                                },
                                 "required": ["title", "status"],
                                 "type": "object",
                             },
@@ -148,14 +148,14 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
                                     "description": "Status",
                                     "enum": ["pending", "in_progress", "done"],
                                     "type": "string",
-                                }, "notes": {
-                                    "anyOf": [
-                                        {"maxLength": 65536, "type": "string"},
-                                        {"type": "null"},
-                                    ],
-                                    "default": None,
-                                    "description": "Optional notes.",
-                                }},
+                                },
+                                "notes": {
+                                    "default": "",
+                                    "description": "Notes.",
+                                    "maxLength": 65536,
+                                    "type": "string",
+                                },
+                            },
                             "required": ["title", "status"],
                             "type": "object",
                         },
@@ -169,7 +169,8 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
                     "description": "Write mode: 'overwrite' safely replaces the existing todo list only when all old todos are done; 'append' merges the provided todos into the existing list (existing titles are updated, new titles are appended); 'force_overwrite' replaces the existing todo list unconditionally.",
                     "enum": ["overwrite", "append", "force_overwrite"],
                     "type": "string",
-                }},
+                },
+            },
             "type": "object",
         }
     )

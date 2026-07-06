@@ -31,8 +31,15 @@ def load_global_mcp_config() -> dict[str, Any]:
 
 
 def load_project_mcp_config(work_dir: Path | str | None = None) -> dict[str, Any]:
-    """Load the project-level MCP config from ``.kimix/mcp.json``."""
-    work_dir = Path.cwd() if work_dir is None else Path(str(work_dir))
+    """Load the project-level MCP config from ``.kimix/mcp.json``.
+
+    The caller must provide the session work directory; this function no longer
+    falls back to ``Path.cwd()`` so that project-level discovery is deterministic
+    relative to the active session.
+    """
+    if work_dir is None:
+        raise ValueError("work_dir is required to load project-level MCP config")
+    work_dir = Path(str(work_dir))
     path = work_dir / PROJECT_MCP_DIR / PROJECT_MCP_FILE_NAME
     if not path.exists():
         return {"mcpServers": {}}

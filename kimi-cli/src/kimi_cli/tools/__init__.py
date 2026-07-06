@@ -14,7 +14,11 @@ class SkipThisTool(Exception):
     pass
 
 
-def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str) -> str | None:
+def extract_key_argument(
+    json_content: str | streamingjson.Lexer,
+    tool_name: str,
+    work_dir: KaosPath | None = None,
+) -> str | None:
     if isinstance(json_content, streamingjson.Lexer):
         json_str = json_content.complete_json()
     else:
@@ -60,11 +64,15 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
         case "ReadFile":
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
-            key_argument = _normalize_path(str(curr_args["path"]))
+            if work_dir is None:
+                return None
+            key_argument = _normalize_path(str(curr_args["path"]), work_dir)
         case "ReadMediaFile":
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
-            key_argument = _normalize_path(str(curr_args["path"]))
+            if work_dir is None:
+                return None
+            key_argument = _normalize_path(str(curr_args["path"]), work_dir)
         case "Glob":
             if not isinstance(curr_args, dict) or not curr_args.get("pattern"):
                 return None
@@ -76,11 +84,15 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
         case "WriteFile":
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
-            key_argument = _normalize_path(str(curr_args["path"]))
+            if work_dir is None:
+                return None
+            key_argument = _normalize_path(str(curr_args["path"]), work_dir)
         case "EditFile":
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None
-            key_argument = _normalize_path(str(curr_args["path"]))
+            if work_dir is None:
+                return None
+            key_argument = _normalize_path(str(curr_args["path"]), work_dir)
         case "SearchWeb":
             if not isinstance(curr_args, dict) or not curr_args.get("query"):
                 return None
@@ -100,8 +112,8 @@ def extract_key_argument(json_content: str | streamingjson.Lexer, tool_name: str
     return key_argument
 
 
-def _normalize_path(path: str) -> str:
-    cwd = str(KaosPath.cwd().canonical())
+def _normalize_path(path: str, work_dir: KaosPath) -> str:
+    cwd = str(work_dir.canonical())
     if path.startswith(cwd):
         path = path[len(cwd) :].lstrip("/\\")
     return path

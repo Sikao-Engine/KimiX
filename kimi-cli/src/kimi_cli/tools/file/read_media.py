@@ -14,7 +14,11 @@ from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, FileType, detect_file_t
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.media_tags import wrap_media_part
-from kimi_cli.utils.path import is_within_workspace, kaos_path_from_user_input
+from kimi_cli.utils.path import (
+    is_within_workspace,
+    kaos_path_from_tool_input,
+    kaos_path_from_user_input,
+)
 from kimi_cli.wire.types import ImageURLPart, VideoURLPart
 
 MAX_MEDIA_MEGABYTES = 100
@@ -67,18 +71,21 @@ class ReadMediaFile(CallableTool2[Params]):
         self._additional_dirs = runtime.additional_dirs
         self._capabilities = capabilities
 
-    async def _validate_path(self, path: KaosPath) -> ToolError | None:
+    async def _validate_path(
+        self, path: KaosPath, raw_path: str
+    ) -> ToolError | None:
         """Validate that the path is safe to read."""
         resolved_path = path.canonical()
+        original_is_absolute = kaos_path_from_user_input(raw_path).is_absolute()
 
         if (
             not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
-            and not path.is_absolute()
+            and not original_is_absolute
         ):
             # Outside files can only be read with absolute paths
             return ToolError(
                 message=(
-                    f"`{path}` is not an absolute path. "
+                    f"`{raw_path}` is not an absolute path. "
                     "You must provide an absolute path to read a file "
                     "outside the working directory."
                 ),
@@ -153,8 +160,8 @@ class ReadMediaFile(CallableTool2[Params]):
             )
 
         try:
-            p = kaos_path_from_user_input(params.path)
-            if err := await self._validate_path(p):
+            p = kaos_path_from_tool_input(params.path, self._work_dir)
+            if err := await self._validate_path(p, params.path):
                 return err
             p = p.canonical()
 

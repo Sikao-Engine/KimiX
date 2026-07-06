@@ -1,49 +1,73 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+from kaos.path import KaosPath
+
 from kimi_cli.tools import extract_key_argument
 
 
 class TestExtractKeyArgument:
     """Tests for extract_key_argument with string inputs."""
 
+    @pytest.fixture(autouse=True)
+    def _work_dir(self, tmp_path: Path):
+        self.work_dir = KaosPath(str(tmp_path))
+
     def test_fetchurl(self):
-        result = extract_key_argument('{"url": "https://example.com/a/b/c"}', "FetchURL")
+        result = extract_key_argument(
+            '{"url": "https://example.com/a/b/c"}', "FetchURL", self.work_dir
+        )
         assert result is not None
         assert "example.com" in result
 
     def test_shell(self):
-        result = extract_key_argument('{"command": "ls -la"}', "Shell")
+        result = extract_key_argument('{"command": "ls -la"}', "Shell", self.work_dir)
         assert result == "ls -la"
 
     def test_readfile(self):
-        result = extract_key_argument('{"path": "foo/bar.py"}', "ReadFile")
+        result = extract_key_argument(
+            '{"path": "foo/bar.py"}', "ReadFile", self.work_dir
+        )
         assert result is not None
         assert "foo/bar.py" in result
 
     def test_grep(self):
-        result = extract_key_argument('{"pattern": "hello"}', "Grep")
+        result = extract_key_argument('{"pattern": "hello"}', "Grep", self.work_dir)
         assert result == "hello"
 
     def test_invalid_json(self):
-        result = extract_key_argument("invalid", "Shell")
+        result = extract_key_argument("invalid", "Shell", self.work_dir)
         assert result is None
 
     def test_empty_json_object(self):
-        result = extract_key_argument("{}", "Shell")
+        result = extract_key_argument("{}", "Shell", self.work_dir)
         assert result is None
 
     def test_sendmail_returns_none(self):
-        result = extract_key_argument('{"to": "x"}', "SendDMail")
+        result = extract_key_argument('{"to": "x"}', "SendDMail", self.work_dir)
         assert result is None
 
     def test_long_content_truncated(self):
         long_url = "https://example.com/" + "a" * 200
-        result = extract_key_argument(f'{{"url": "{long_url}"}}', "FetchURL")
+        result = extract_key_argument(
+            f'{{"url": "{long_url}"}}', "FetchURL", self.work_dir
+        )
         assert result is not None
         # shorten_middle(text, width=50) -> text[:25] + "..." + text[-25:]  => length 53
         assert len(result) <= 53
 
     def test_unknown_tool_returns_raw_content(self):
-        result = extract_key_argument('{"a": 1}', "UnknownTool")
+        result = extract_key_argument('{"a": 1}', "UnknownTool", self.work_dir)
         assert result is not None
         assert result == '{"a": 1}'
+
+    def test_readfile_absolute_path_stripped(self):
+        """Absolute paths under work_dir should be shortened to relative."""
+        absolute = str(Path(str(self.work_dir)) / "foo" / "bar.py").replace("\\", "/")
+        result = extract_key_argument(
+            f'{{"path": "{absolute}"}}', "ReadFile", self.work_dir
+        )
+        assert result is not None
+        assert "foo/bar.py" in result.replace("\\", "/")
