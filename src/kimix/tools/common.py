@@ -76,7 +76,7 @@ from kimi_cli.session import Session
 
 if TYPE_CHECKING:
     from kimix.tools.background.utils import BackgroundStream
-OUTPUT_LIMIT = 65536
+OUTPUT_LIMIT = 16384
 _temp_folder = Path.home() / '.kimi' / 'sessions' / uuid.uuid4().hex
 _temp_folder.mkdir(parents=True, exist_ok=True)
 _temp_idx = 0

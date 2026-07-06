@@ -74,6 +74,7 @@ class Python(CallableTool2[Params]):
 
             if await task.thread_is_alive():
                 output = await task.stream.get_output() if task.stream else ""
+                output = await _maybe_export_output_async(output)
                 return ToolError(
                     output=output,
                     message=f"Running in background. task_id: `{task_id}`. use `TaskOutput`",

@@ -335,6 +335,7 @@ class Powershell(CallableTool2[PowershellParams]):
             from kimix.tools.background.utils import remove_task_id
             remove_task_id(self._session, task_id)
             output = await process_task.stream.get_output() if process_task.stream else ""
+            output = await _maybe_export_output_async(output)
             transform_warning = transform_warning or ""
             return ToolError(
                 output=output,
@@ -344,6 +345,7 @@ class Powershell(CallableTool2[PowershellParams]):
 
         if await process_task.thread_is_alive():
             output = await process_task.stream.get_output() if process_task.stream else ""
+            output = await _maybe_export_output_async(output)
             return ToolError(
                 output=output,
                 message=f"`{cmd}` Running in background. task_id: `{task_id}`. use `TaskOutput`." + transform_warning,
