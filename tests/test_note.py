@@ -21,6 +21,7 @@ from kimi_agent_sdk import ToolError, ToolOk
 from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
 
+import kimix.tools.note as _note_module
 from kimix.tools.note import (
     MAX_BYTES,
     MAX_LINES,
@@ -31,7 +32,6 @@ from kimix.tools.note import (
     ReadPlanParams,
     WritePlan,
     WritePlanParams,
-    _enable_plan,
 )
 
 
@@ -43,9 +43,9 @@ from kimix.tools.note import (
 @pytest.fixture(autouse=True)
 def enable_plan():
     """Enable plan tools for the current test thread."""
-    _enable_plan.value = True
+    _note_module._enable_plan = True
     yield
-    _enable_plan.value = False
+    _note_module._enable_plan = False
 
 
 @pytest.fixture
@@ -69,12 +69,12 @@ def plan_path(tmp_path: Path) -> Path:
 
 class TestWritePlanInit:
     def test_raises_SkipThisTool_when_not_enabled(self) -> None:
-        _enable_plan.value = False
+        _note_module._enable_plan = False
         session = MagicMock(spec=Session)
         session.custom_data = {}
         with pytest.raises(SkipThisTool):
             WritePlan(session=session)
-        _enable_plan.value = True
+        _note_module._enable_plan = True
 
 
 class TestWritePlanCall:
@@ -135,12 +135,12 @@ class TestWritePlanCall:
 
 class TestReadPlanInit:
     def test_raises_SkipThisTool_when_not_enabled(self) -> None:
-        _enable_plan.value = False
+        _note_module._enable_plan = False
         session = MagicMock(spec=Session)
         session.custom_data = {}
         with pytest.raises(SkipThisTool):
             ReadPlan(session=session)
-        _enable_plan.value = True
+        _note_module._enable_plan = True
 
 
 class TestReadPlanParams:
@@ -297,12 +297,12 @@ class TestReadPlanCall:
 
 class TestEditPlanInit:
     def test_raises_SkipThisTool_when_not_enabled(self) -> None:
-        _enable_plan.value = False
+        _note_module._enable_plan = False
         session = MagicMock(spec=Session)
         session.custom_data = {}
         with pytest.raises(SkipThisTool):
             EditPlan(session=session)
-        _enable_plan.value = True
+        _note_module._enable_plan = True
 
 
 class TestEditPlanParams:

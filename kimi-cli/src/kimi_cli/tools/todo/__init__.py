@@ -19,6 +19,14 @@ from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
 from kimi_cli.tools.utils import repair_json_string
 
 
+# Hard limits for harness safety.
+_MAX_TODOS = 4096
+# Maximum number of archived todos kept in state (oldest are dropped first).
+_MAX_ARCHIVED_TODOS = 500
+# Maximum number of items printed by read mode before truncating.
+_MAX_READ_ITEMS = 100
+
+
 # Fuzzy mode map — maps common synonyms to canonical write modes
 _MODE_MAP: dict[str, Literal["overwrite", "append", "force_overwrite"]] = {
     # overwrite synonyms
@@ -155,12 +163,7 @@ def _canonical_status(v: Any) -> TodoStatus:
 
 @dataclass(frozen=True)
 class _FuzzyResult:
-    """Typed wrapper for rapidfuzz match results.
-
-    rapidfuzz 3.x+ returns ``Result`` objects with ``choice``/``score``/``index``
-    attributes, while older versions return plain 3-tuples. This dataclass gives
-    us attribute access regardless of the underlying format.
-    """
+    """Typed wrapper for rapidfuzz>=3 ``(choice, score, index)`` match tuples."""
 
     choice: str
     score: float
@@ -293,7 +296,14 @@ class MergeResult:
 
 class TodoList(CallableTool2[Params]):
     name: str = "TodoList"
-    description: str = "Track progress with a todo list."
+    description: str = (
+        "Track progress with a todo list.\n"
+        "Call with no arguments to read the current list. "
+        "mode='append' (default) merges by exact title: existing titles are updated, new titles are appended.\n"
+        "mode='overwrite' replaces the list only when every existing todo is done; "
+        "use mode='force_overwrite' to intentionally discard unfinished items.\n"
+        "Keep exactly one item in_progress at a time and mark items done immediately after finishing them."
+    )
     params: type[Params] = Params
 
     def __init__(self, runtime: Runtime) -> None:
@@ -310,99 +320,101 @@ class TodoList(CallableTool2[Params]):
 
     def _write_todos(
         self,
-        raw_todos: list[Todo] | Todo | None,
+        raw_todos: list[Todo] | Todo,
         params: Params,
     ) -> ToolReturnValue:
         """Validate, merge, and persist todos, saving exactly once on success."""
-        # Normalize the todos input while preserving the distinction between
-        # "not provided" (None) and "explicitly empty" ([]).
-        if raw_todos is None:
-            new_todos: list[Todo] = []
-            todos_provided = False
-        elif isinstance(raw_todos, Todo):
-            new_todos = [raw_todos]
-            todos_provided = True
-        else:
-            new_todos = raw_todos
-            todos_provided = True
+        new_todos: list[Todo] = [raw_todos] if isinstance(raw_todos, Todo) else list(raw_todos)
 
         # 1. Validate new inputs
-        if todos_provided:
-            duplicates = self._find_duplicate_titles(new_todos)
-            if duplicates:
-                return ToolReturnValue(
-                    is_error=True,
-                    output=f"Error: Duplicate todo titles found: {duplicates}",
-                    message=f"Duplicate todo titles found: {duplicates}",
-                    display=[],
-                )
+        duplicates = self._find_duplicate_titles(new_todos)
+        if duplicates:
+            return self._error(
+                f"Error: Duplicate todo titles found: {duplicates}",
+                f"Duplicate todo titles found: {duplicates}",
+            )
 
-            if len(new_todos) > 4096:
-                return ToolReturnValue(
-                    is_error=True,
-                    output="Error: Todo list exceeds maximum limit of 4096 items.",
-                    message="Todo list exceeds maximum limit of 4096 items.",
-                    display=[],
-                )
+        if len(new_todos) > _MAX_TODOS:
+            return self._error(
+                f"Error: Todo list exceeds maximum limit of {_MAX_TODOS} items.",
+                f"Todo list exceeds maximum limit of {_MAX_TODOS} items.",
+            )
 
         # 2. Load existing state
         old_todos = self._load_todos()
         old_archived = self._load_archived_todos()
 
-        # 3. Branch on write mode
+        # 3. Branch on write mode. ``replaces_list`` marks modes that drop old
+        # items (overwrite/force_overwrite/clear) so completed ones get archived.
         warnings: list[str] = []
+        replaces_list = False
         if params.mode == "force_overwrite":
-            final_todos = self._with_timestamps(new_todos)
+            final_todos = list(new_todos)
+            replaces_list = True
         elif params.mode == "overwrite":
             if old_todos and not all(t.status == "done" for t in old_todos):
                 unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
-                return ToolReturnValue(
-                    is_error=True,
-                    output=(
-                        "Error: Cannot overwrite todos while old todos are not all done. "
-                        "Use mode='force_overwrite' if you really want to discard unfinished work.\n"
-                        f"Unfinished:\n{unfinished}"
-                    ),
-                    message="Cannot overwrite todos while old todos are not all done.",
-                    display=[],
+                return self._error(
+                    "Error: Cannot overwrite todos while old todos are not all done. "
+                    "Use mode='force_overwrite' if you really want to discard unfinished work.\n"
+                    f"Unfinished:\n{unfinished}",
+                    "Cannot overwrite todos while old todos are not all done.",
                 )
-            final_todos = self._with_timestamps(new_todos)
+            final_todos = list(new_todos)
+            replaces_list = True
         else:  # append
-            if not todos_provided and not new_todos:
-                final_todos = list(old_todos)
-            else:
-                result = self._merge_todos(old_todos, new_todos, todos_provided)
-                if result.error is not None:
-                    return result.error
-                final_todos = result.todos or []
-                warnings.extend(result.warnings)
+            result = self._merge_todos(old_todos, new_todos, clear_requested=True)
+            if result.error is not None:
+                return result.error
+            final_todos = result.todos or []
+            warnings.extend(result.warnings)
+            replaces_list = not new_todos  # explicit [] means clear
 
         # 4. Regression detection
         if params.mode != "force_overwrite" and old_todos:
             final_todos, regressions = self._check_regressions(old_todos, final_todos)
             if regressions:
-                return ToolReturnValue(
-                    is_error=True,
-                    output=(
-                        "Error: Cannot regress completed todos back to pending/in_progress: "
-                        + ", ".join(regressions)
-                    ),
-                    message="Cannot regress completed todos.",
+                return self._error(
+                    "Error: Cannot regress completed todos back to pending/in_progress: "
+                    + ", ".join(regressions)
+                    + "\nNext step: resend with these items kept as 'done', "
+                    "or use mode='force_overwrite' to restart them intentionally.",
+                    "Cannot regress completed todos.",
                     display=[self._build_display_block(final_todos)],
                 )
 
-        # 5. Persist exactly once
-        save_error = self._save_todos(final_todos, list(old_archived))
-        if save_error:
-            return ToolReturnValue(
-                is_error=True,
-                output=save_error,
-                message="Failed to save todos.",
-                display=[],
-            )
+        # 5. Archive completed todos dropped by overwrite/force_overwrite/clear
+        archived = list(old_archived)
+        if replaces_list and old_todos:
+            kept_titles = {t.title for t in final_todos}
+            newly_archived = [
+                t for t in old_todos if t.status == "done" and t.title not in kept_titles
+            ]
+            if newly_archived:
+                archived.extend(self._item_states(newly_archived))
+                archived = archived[-_MAX_ARCHIVED_TODOS:]
 
-        # 6. Build response
+        # 6. Persist exactly once
+        save_error = self._save_todos(final_todos, archived)
+        if save_error:
+            return self._error(save_error, "Failed to save todos.")
+
+        # 7. Build response
         return self._build_success_response(final_todos, params.mode, bool(old_todos), warnings)
+
+    @staticmethod
+    def _error(
+        output: str,
+        message: str,
+        display: list[Any] | None = None,
+    ) -> ToolReturnValue:
+        """Build an error ToolReturnValue with consistent shape."""
+        return ToolReturnValue(
+            is_error=True,
+            output=output,
+            message=message,
+            display=display if display is not None else [],
+        )
 
     @staticmethod
     def _find_duplicate_titles(todos: list[Todo]) -> list[str] | None:
@@ -500,19 +512,10 @@ class TodoList(CallableTool2[Params]):
                 score_cutoff=cutoff,
                 processor=processor,
             )
+            # rapidfuzz>=3 process.extract returns (choice, score, index) tuples.
             results[query] = [
-                _FuzzyResult(
-                    choice=str(match.choice if hasattr(match, "choice") else match[0]),
-                    score=float(match.score if hasattr(match, "score") else match[1]),
-                    index=int(
-                        match.index
-                        if hasattr(match, "choice")
-                        else match[2]
-                        if len(match) > 2
-                        else -1
-                    ),
-                )
-                for match in matches
+                _FuzzyResult(choice=str(choice), score=float(score), index=int(index))
+                for choice, score, index in matches
             ]
         return results
 
@@ -531,7 +534,7 @@ class TodoList(CallableTool2[Params]):
         * Fuzzy near-matches are reported as non-blocking warnings.
         """
         if not old_todos:
-            return MergeResult(todos=self._with_timestamps(new_todos))
+            return MergeResult(todos=list(new_todos))
 
         old_title_list = [t.title for t in old_todos]
         old_title_set = set(old_title_list)
@@ -543,14 +546,12 @@ class TodoList(CallableTool2[Params]):
             if not all(t.status == "done" for t in old_todos):
                 unfinished = ", ".join(t.title for t in old_todos if t.status != "done")
                 return MergeResult(
-                    error=ToolReturnValue(
-                        is_error=True,
-                        output=(
-                            "Error: Cannot clear todos while old todos are not all done. "
-                            f"Unfinished: {unfinished}"
-                        ),
-                        message="Cannot clear todos while old todos are not all done.",
-                        display=[],
+                    error=self._error(
+                        "Error: Cannot clear todos while old todos are not all done. "
+                        f"Unfinished: {unfinished}\n"
+                        "Next step: mark them done first, "
+                        "or use mode='force_overwrite' to discard them intentionally.",
+                        "Cannot clear todos while old todos are not all done.",
                     )
                 )
             return MergeResult(todos=[])
@@ -614,26 +615,6 @@ class TodoList(CallableTool2[Params]):
         )
 
     @staticmethod
-    def _with_timestamp(todo: Todo) -> Todo:
-        """Return a copy of ``todo`` (no timestamp manipulation needed)."""
-        return Todo(
-            title=todo.title,
-            status=todo.status,
-            notes=todo.notes,
-        )
-
-    def _with_timestamps(self, todos: list[Todo]) -> list[Todo]:
-        return [self._with_timestamp(t) for t in todos]
-
-    @staticmethod
-    def _update_status(todo: Todo, status: TodoStatus) -> Todo:
-        return Todo(
-            title=todo.title,
-            status=status,
-            notes=todo.notes,
-        )
-
-    @staticmethod
     def _check_regressions(
         old_todos: list[Todo], final_todos: list[Todo]
     ) -> tuple[list[Todo], list[str]]:
@@ -648,7 +629,7 @@ class TodoList(CallableTool2[Params]):
         for t in final_todos:
             if old_status_map.get(t.title) == "done" and t.status != "done":
                 regressions.append(t.title)
-                clamped.append(TodoList._update_status(t, "done"))
+                clamped.append(t.model_copy(update={"status": "done"}))
             else:
                 clamped.append(t)
         return clamped, regressions
@@ -662,6 +643,7 @@ class TodoList(CallableTool2[Params]):
     ) -> ToolReturnValue:
         display_block = self._build_display_block(todos)
         active_summary = self._format_todos(todos)
+        counts = self._status_counts(todos)
 
         mode_msg = {
             "append": "appended",
@@ -669,7 +651,11 @@ class TodoList(CallableTool2[Params]):
             "force_overwrite": "force overwritten",
         }[mode]
 
-        output_lines: list[str] = [f"Todo list {mode_msg}"]
+        stats = (
+            f"({len(todos)} total: {counts['done']} done, "
+            f"{counts['in_progress']} in progress, {counts['pending']} pending)"
+        )
+        output_lines: list[str] = [f"Todo list {mode_msg} {stats}"]
         if active_summary:
             output_lines.append(active_summary)
         output = "\n".join(output_lines)
@@ -678,6 +664,11 @@ class TodoList(CallableTool2[Params]):
         if mode == "force_overwrite" and had_old_todos:
             message_lines.append(
                 "Warning: mode='force_overwrite' replaces the existing todo list and bypasses merge validation logic."
+            )
+        if counts["in_progress"] > 1:
+            message_lines.append(
+                f"Note: {counts['in_progress']} items are in_progress; "
+                "prefer exactly one at a time."
             )
         if warnings:
             message_lines.extend(["", *warnings])
@@ -689,6 +680,14 @@ class TodoList(CallableTool2[Params]):
             message=message,
             display=[display_block],
         )
+
+    @staticmethod
+    def _status_counts(todos: list[Todo]) -> dict[TodoStatus, int]:
+        """Count todos by status."""
+        counts: dict[TodoStatus, int] = {"pending": 0, "in_progress": 0, "done": 0}
+        for t in todos:
+            counts[t.status] += 1
+        return counts
 
     @staticmethod
     def _build_display_block(todos: list[Todo]) -> TodoDisplayBlock:
@@ -710,15 +709,19 @@ class TodoList(CallableTool2[Params]):
         archived = self._load_archived_todos()
 
         if not todos:
+            empty_lines = ["Todo list is empty."]
+            if archived:
+                empty_lines.append(f"Archived: {len(archived)} completed todo(s).")
             return ToolReturnValue(
                 is_error=False,
-                output="Todo list is empty.",
+                output="\n".join(empty_lines),
                 message="Todo list is empty.",
                 display=[],
             )
 
+        shown = todos[:_MAX_READ_ITEMS]
         formatted = self._format_todos(
-            todos,
+            shown,
             status_filter=("pending", "in_progress", "done"),
             display_status={
                 "pending": "pending",
@@ -729,6 +732,13 @@ class TodoList(CallableTool2[Params]):
         output_lines = ["Current todo list:"]
         if formatted:
             output_lines.append(formatted)
+        if len(todos) > _MAX_READ_ITEMS:
+            counts = self._status_counts(todos)
+            output_lines.append(
+                f"... and {len(todos) - _MAX_READ_ITEMS} more "
+                f"({counts['pending']} pending, {counts['in_progress']} in_progress, "
+                f"{counts['done']} done total)"
+            )
         if archived:
             output_lines.append(f"Archived: {len(archived)} completed todo(s).")
         return ToolReturnValue(
@@ -796,7 +806,10 @@ class TodoList(CallableTool2[Params]):
         data = self._read_subagent_state(state_file)
         data["todos"] = [item.model_dump() for item in items]
         data["archived_todos"] = [item.model_dump() for item in archived]
-        self._write_subagent_state(state_file, data)
+        try:
+            self._write_subagent_state(state_file, data)
+        except Exception as exc:
+            return f"Error: Failed to save subagent todos: {exc}"
         return None
 
     def _load_subagent_todos(self) -> list[Todo]:
@@ -850,7 +863,7 @@ class TodoList(CallableTool2[Params]):
             return {}
         try:
             data = orjson.loads(path.read_text(encoding="utf-8"))
-        except orjson.JSONDecodeError, OSError, UnicodeDecodeError:
+        except (orjson.JSONDecodeError, OSError, UnicodeDecodeError):
             logger.warning("Corrupted subagent todo state, using defaults: {path}", path=path)
             return {}
         if not isinstance(data, dict):

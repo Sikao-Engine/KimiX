@@ -298,7 +298,13 @@ async def _ensure_rg_path() -> str:
         return str(downloaded)
 
 
-def _build_rg_args(rg_path: str, params: Params, *, single_threaded: bool = False) -> list[str]:
+def _build_rg_args(
+    rg_path: str,
+    params: Params,
+    *,
+    single_threaded: bool = False,
+    resolved_path: str | None = None,
+) -> list[str]:
     """Build ripgrep command-line arguments from Params."""
     args: list[str] = [rg_path]
 
@@ -353,7 +359,10 @@ def _build_rg_args(rg_path: str, params: Params, *, single_threaded: bool = Fals
     # Separate pattern from flags to avoid ambiguity (e.g. pattern starting with -)
     args.append("--")
     args.append(params.pattern)
-    args.append(os.path.expanduser(normalize_user_path(params.path)))
+    # Use the resolved path when available so ripgrep's output matches the
+    # search_base used for prefix stripping (fixes Windows short/long path
+    # mismatches with tempfile directories).
+    args.append(resolved_path or os.path.expanduser(normalize_user_path(params.path)))
 
     return args
 
@@ -683,7 +692,9 @@ class Grep(CallableTool2[Params]):
                 )
 
             logger.debug("Using ripgrep binary: {rg_bin}", rg_bin=rg_path)
-            args = _build_rg_args(rg_path, params, single_threaded=_retry)
+            args = _build_rg_args(
+                rg_path, params, single_threaded=_retry, resolved_path=str(search_path)
+            )
 
             # Execute search as async subprocess (non-blocking, cancellable)
             process = await asyncio.create_subprocess_exec(

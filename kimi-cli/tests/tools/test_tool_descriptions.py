@@ -62,7 +62,11 @@ def test_think_description(think_tool: Think):
 def test_todo_list_description(todo_list_tool: TodoList):
     """Test the description of TodoList tool."""
     assert todo_list_tool.base.description == snapshot(
-        "Track progress with a todo list."
+        """\
+Track progress with a todo list.
+Call with no arguments to read the current list. mode='append' (default) merges by exact title: existing titles are updated, new titles are appended.
+mode='overwrite' replaces the list only when every existing todo is done; use mode='force_overwrite' to intentionally discard unfinished items.
+Keep exactly one item in_progress at a time and mark items done immediately after finishing them."""
     )
 
 

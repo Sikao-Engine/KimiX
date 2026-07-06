@@ -108,7 +108,9 @@ class TestTodoListOutputNotEmpty:
         clear_params = Params(todos=[], mode="force_overwrite")
         result = await todo_list_tool(clear_params)
         assert not result.is_error
-        assert result.output == "Todo list force overwritten"
+        assert result.output == (
+            "Todo list force overwritten (0 total: 0 done, 0 in progress, 0 pending)"
+        )
         assert "mode='force_overwrite'" in result.message
 
         # Verify cleared
@@ -164,7 +166,7 @@ class TestTodoListOutputNotEmpty:
         clear_params = Params(todos=[])
         result = await todo_list_tool(clear_params)
         assert not result.is_error
-        assert result.output == "Todo list appended"
+        assert result.output == "Todo list appended (0 total: 0 done, 0 in progress, 0 pending)"
 
         read_params = Params(todos=None)
         result = await todo_list_tool(read_params)
@@ -230,7 +232,7 @@ class TestTodoListActiveSummary:
         params = Params(todos=[Todo(title="Only done", status="done", notes="")])
         result = await todo_list_tool(params)
         assert not result.is_error
-        assert result.output == "Todo list appended"
+        assert result.output == "Todo list appended (1 total: 1 done, 0 in progress, 0 pending)"
 
     async def test_write_summary_preserved_when_all_done(self, todo_list_tool: TodoList):
         """Marking all active todos as done removes the active summary."""
@@ -252,7 +254,7 @@ class TestTodoListActiveSummary:
             )
         )
         assert not result.is_error
-        assert result.output == "Todo list appended"
+        assert result.output == "Todo list appended (2 total: 2 done, 0 in progress, 0 pending)"
 
     async def test_write_summary_with_overwrite_warning(self, todo_list_tool: TodoList):
         """Warning from mode='force_overwrite' is in message; active summary is in output."""
@@ -1274,9 +1276,11 @@ class TestTodoListRegression:
         assert not result.is_error
 
         read = await todo_list_tool(Params(todos=None))
-        assert "C" in read.output
-        assert "A" not in read.output
-        assert "B" not in read.output
+        assert "[pending] C" in read.output
+        assert "[done] A" not in read.output
+        assert "[done] B" not in read.output
+        # The replaced done todos are archived rather than silently dropped
+        assert "Archived: 2 completed todo(s)." in read.output
 
 
 class TestTodoListForceOverwriteMode:
@@ -1446,3 +1450,264 @@ class TestTodoListEmptyBody:
         result = await todo_list_tool.call([("a", "b", "c")])
         assert isinstance(result, ToolValidateError)
         assert "JSON object" in result.message
+
+
+class TestTodoListProgressCounters:
+    """Tests for the progress-counter stats line on successful writes."""
+
+    async def test_success_output_contains_counts_line(self, todo_list_tool: TodoList):
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="A", status="done", notes=""),
+                    Todo(title="B", status="in_progress", notes=""),
+                    Todo(title="C", status="pending", notes=""),
+                    Todo(title="D", status="pending", notes=""),
+                ]
+            )
+        )
+        assert not result.is_error
+        assert result.output.startswith(
+            "Todo list appended (4 total: 1 done, 1 in progress, 2 pending)"
+        )
+
+    async def test_counts_correct_after_merge(self, todo_list_tool: TodoList):
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="A", status="pending", notes=""),
+                    Todo(title="B", status="pending", notes=""),
+                ]
+            )
+        )
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="A", status="done", notes=""),
+                    Todo(title="C", status="in_progress", notes=""),
+                ]
+            )
+        )
+        assert not result.is_error
+        assert result.output.startswith(
+            "Todo list appended (3 total: 1 done, 1 in progress, 1 pending)"
+        )
+
+
+class TestTodoListInProgressNudge:
+    """Tests for the non-blocking multiple-in_progress warning."""
+
+    async def test_multiple_in_progress_warns(self, todo_list_tool: TodoList):
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="A", status="in_progress", notes=""),
+                    Todo(title="B", status="in_progress", notes=""),
+                    Todo(title="C", status="in_progress", notes=""),
+                ]
+            )
+        )
+        assert not result.is_error
+        assert "Note: 3 items are in_progress; prefer exactly one at a time." in result.message
+
+    async def test_single_in_progress_no_warning(self, todo_list_tool: TodoList):
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="A", status="in_progress", notes=""),
+                    Todo(title="B", status="pending", notes=""),
+                ]
+            )
+        )
+        assert not result.is_error
+        assert "prefer exactly one at a time" not in result.message
+
+
+class TestTodoListActionableErrors:
+    """Tests for next-step hints appended to blocking errors."""
+
+    async def test_regression_error_contains_next_step(self, todo_list_tool: TodoList):
+        await todo_list_tool(Params(todos=[Todo(title="B", status="done", notes="")]))
+
+        result = await todo_list_tool(
+            Params(todos=[Todo(title="B", status="pending", notes="")])
+        )
+        assert result.is_error
+        assert "Cannot regress completed todos" in result.output
+        assert "Next step:" in result.output
+        assert "mode='force_overwrite'" in result.output
+
+    async def test_clear_error_contains_next_step(self, todo_list_tool: TodoList):
+        await todo_list_tool(Params(todos=[Todo(title="A", status="pending", notes="")]))
+
+        result = await todo_list_tool(Params(todos=[]))
+        assert result.is_error
+        assert "Cannot clear todos" in result.output
+        assert "Next step:" in result.output
+        assert "mode='force_overwrite'" in result.output
+
+
+class TestTodoListReadTruncation:
+    """Tests for read-mode output truncation on very long lists."""
+
+    async def test_read_truncates_after_100_items(self, todo_list_tool: TodoList):
+        todos = [Todo(title=f"Task {i:03d}", status="pending", notes="") for i in range(150)]
+        await todo_list_tool(Params(todos=todos, mode="force_overwrite"))
+
+        result = await todo_list_tool(Params(todos=None))
+        assert not result.is_error
+        shown = [line for line in result.output.splitlines() if line.startswith("- [")]
+        assert len(shown) == 100
+        assert shown[0] == "- [pending] Task 000"
+        assert shown[-1] == "- [pending] Task 099"
+        assert "... and 50 more (150 pending, 0 in_progress, 0 done total)" in result.output
+
+    async def test_read_no_truncation_at_100_items(self, todo_list_tool: TodoList):
+        todos = [Todo(title=f"Task {i:03d}", status="pending", notes="") for i in range(100)]
+        await todo_list_tool(Params(todos=todos, mode="force_overwrite"))
+
+        result = await todo_list_tool(Params(todos=None))
+        assert not result.is_error
+        shown = [line for line in result.output.splitlines() if line.startswith("- [")]
+        assert len(shown) == 100
+        assert "... and" not in result.output
+
+
+class TestTodoListArchive:
+    """Tests for auto-archiving of completed todos on overwrite/clear."""
+
+    async def test_overwrite_archives_done_todos(self, todo_list_tool: TodoList):
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Done A", status="done", notes=""),
+                    Todo(title="Done B", status="done", notes=""),
+                ]
+            )
+        )
+
+        result = await todo_list_tool(
+            Params(todos=[Todo(title="Fresh", status="pending", notes="")], mode="overwrite")
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "[pending] Fresh" in read.output
+        assert "Archived: 2 completed todo(s)." in read.output
+
+    async def test_clear_archives_done_todos(self, todo_list_tool: TodoList):
+        await todo_list_tool(Params(todos=[Todo(title="Done A", status="done", notes="")]))
+
+        result = await todo_list_tool(Params(todos=[]))
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "empty" in read.output.lower()
+        assert "Archived: 1 completed todo(s)." in read.output
+
+    async def test_force_overwrite_archives_only_dropped_done_todos(
+        self, todo_list_tool: TodoList
+    ):
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Done kept", status="done", notes=""),
+                    Todo(title="Done dropped", status="done", notes=""),
+                    Todo(title="Pending dropped", status="pending", notes=""),
+                ]
+            )
+        )
+
+        result = await todo_list_tool(
+            Params(
+                todos=[Todo(title="Done kept", status="pending", notes="")],
+                mode="force_overwrite",
+            )
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        # Only "Done dropped" is archived: kept titles and unfinished items are not.
+        assert "Archived: 1 completed todo(s)." in read.output
+
+    async def test_append_merge_does_not_archive(self, todo_list_tool: TodoList):
+        await todo_list_tool(Params(todos=[Todo(title="Done A", status="done", notes="")]))
+
+        result = await todo_list_tool(
+            Params(todos=[Todo(title="New B", status="pending", notes="")])
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Archived:" not in read.output
+
+    async def test_archive_capped_at_500(self, todo_list_tool: TodoList):
+        todos = [Todo(title=f"Old {i}", status="done", notes="") for i in range(550)]
+        await todo_list_tool(Params(todos=todos, mode="force_overwrite"))
+
+        result = await todo_list_tool(
+            Params(todos=[Todo(title="Fresh", status="pending", notes="")], mode="overwrite")
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Archived: 500 completed todo(s)." in read.output
+
+    async def test_archive_persisted_to_disk(self, todo_list_tool: TodoList, runtime: Runtime):
+        from kimi_cli.session_state import load_session_state
+
+        await todo_list_tool(Params(todos=[Todo(title="Done A", status="done", notes="")]))
+        await todo_list_tool(
+            Params(todos=[Todo(title="Fresh", status="pending", notes="")], mode="overwrite")
+        )
+
+        disk_state = load_session_state(runtime.session.dir)
+        assert len(disk_state.archived_todos) == 1
+        assert disk_state.archived_todos[0].title == "Done A"
+        assert disk_state.archived_todos[0].status == "done"
+
+    async def test_subagent_archive_on_overwrite(self, runtime: Runtime):
+        subagent_runtime = runtime.copy_for_subagent(
+            agent_id="test-sub-archive",
+            subagent_type="coder",
+        )
+        assert subagent_runtime.subagent_store is not None
+        subagent_runtime.subagent_store.instance_dir("test-sub-archive", create=True)
+
+        tool = TodoList(subagent_runtime)
+        await tool(Params(todos=[Todo(title="Sub done", status="done", notes="")]))
+        result = await tool(
+            Params(todos=[Todo(title="Sub fresh", status="pending", notes="")], mode="overwrite")
+        )
+        assert not result.is_error
+
+        read = await tool(Params(todos=None))
+        assert "[pending] Sub fresh" in read.output
+        assert "Archived: 1 completed todo(s)." in read.output
+
+
+class TestTodoListSubagentSaveFailure:
+    """Tests for graceful subagent persistence failures."""
+
+    async def test_subagent_write_failure_returns_error(
+        self, runtime: Runtime, monkeypatch: pytest.MonkeyPatch
+    ):
+        import kimi_cli.utils.io as io_utils
+
+        subagent_runtime = runtime.copy_for_subagent(
+            agent_id="test-sub-savefail",
+            subagent_type="coder",
+        )
+        assert subagent_runtime.subagent_store is not None
+        subagent_runtime.subagent_store.instance_dir("test-sub-savefail", create=True)
+
+        def _boom(*args: object, **kwargs: object) -> None:
+            raise OSError("disk full")
+
+        monkeypatch.setattr(io_utils, "atomic_json_write", _boom)
+
+        tool = TodoList(subagent_runtime)
+        result = await tool(Params(todos=[Todo(title="Doomed", status="pending", notes="")]))
+        assert result.is_error
+        assert "Failed to save subagent todos" in result.output
+        assert "disk full" in result.output
