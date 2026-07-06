@@ -15,8 +15,13 @@ MAX_LINES = 1000
 MAX_LINE_LENGTH = 2000
 MAX_BYTES = 100 << 10  # 100KB
 
-import threading
-_enable_plan = threading.local()
+_enable_plan: bool = False  # module-level flag (thread-safe via GIL)
+
+
+def _set_enable_plan(value: bool) -> None:
+    """Set the module-level _enable_plan flag for cross-thread access."""
+    global _enable_plan
+    _enable_plan = value
 
 
 # --- WritePlan ---
@@ -39,7 +44,7 @@ class WritePlan(CallableTool2):
     def __init__(self, session: Session):
         super().__init__()
         self._session = session
-        if getattr(_enable_plan, 'value', None) != True:
+        if not _enable_plan:
             raise SkipThisTool()
 
     async def __call__(self, params: WritePlanParams) -> ToolReturnValue:
@@ -118,7 +123,7 @@ class ReadPlan(CallableTool2):
     def __init__(self, session: Session):
         super().__init__()
         self._session = session
-        if getattr(_enable_plan, 'value', None) != True:
+        if not _enable_plan:
             raise SkipThisTool()
 
     async def __call__(self, params: ReadPlanParams) -> ToolReturnValue:
@@ -296,7 +301,7 @@ class EditPlan(CallableTool2):
     def __init__(self, session: Session):
         super().__init__()
         self._session = session
-        if getattr(_enable_plan, 'value', None) != True:
+        if not _enable_plan:
             raise SkipThisTool()
 
     def _normalize_line_endings(self, text: str) -> str:

@@ -48,6 +48,11 @@ class PromptInput(BaseModel):
     model: Optional[str] = Field(None, description="Model name to use")
 
 
+class PlanConfirmInput(BaseModel):
+    action: str = Field(..., description="Action: accept or revise")
+    feedback: Optional[str] = Field(None, description="Revision feedback when action=revise")
+
+
 # ── OpenAPI Response Models ──────────────────────────────────────
 
 
@@ -302,6 +307,23 @@ def create_app() -> FastAPI:
         except KeyError:
             raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
         return Response(status_code=204)
+
+    @app.post(
+        "/session/{sessionID}/plan/confirm",
+        tags=["Plan"],
+        summary="Confirm or revise plan",
+        description="Accept the generated plan or provide revision feedback.",
+        responses={
+            404: {"model": ErrorResponse, "description": "Session not found"},
+        },
+    )
+    async def confirm_plan(sessionID: str, body: PlanConfirmInput) -> bool:
+        try:
+            return await session_manager.confirm_plan_async(
+                sessionID, action=body.action, feedback=body.feedback
+            )
+        except KeyError:
+            raise HTTPException(status_code=404, detail=f"Session not found: {sessionID}")
 
     # ── Abort ────────────────────────────────────────────────
 

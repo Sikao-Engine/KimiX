@@ -294,7 +294,39 @@ class ManagedSession:
     status: SessionStatus = field(default_factory=SessionStatus)
     messages: List[MessageWithParts] = field(default_factory=list)
     _cancel_event: Optional[asyncio.Event] = field(default=None, repr=False)
+    _planner_task: Optional[asyncio.Task] = field(default=None, repr=False)
+    _planner_session: Optional[Session] = field(default=None, repr=False)
+    _plan_confirm_event: Optional[asyncio.Event] = field(default=None, repr=False)
+    _plan_feedback: Optional[str] = field(default=None, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+
+# ── Event Helper ─────────────────────────────────────────────────
+
+
+def _emit_part_to_message(
+    asst_msg: MessageWithParts,
+    session_id: str,
+    part: MessagePart,
+    delta: str = "",
+) -> None:
+    """Emit a message.part.updated SSE event and update the assistant message parts list.
+
+    Replaces an existing part with the same ID to prevent duplicate accumulation
+    of incremental chunks (reasoning, text).
+    """
+    found = False
+    for i, existing in enumerate(asst_msg.parts):
+        if existing.id == part.id:
+            asst_msg.parts[i] = part
+            found = True
+            break
+    if not found:
+        asst_msg.parts.append(part)
+    props: Dict[str, Any] = {"part": part.to_dict()}
+    if delta:
+        props["delta"] = delta
+    bus.emit(BusEvent(type="message.part.updated", properties=props))
 
 
 # ── Session Manager ──────────────────────────────────────────────
@@ -1297,6 +1329,14 @@ class SessionManager:
                 entry.sdk_session.cancel()
             except Exception:
                 pass
+        # Also cancel the planner session if running
+        if entry._planner_session:
+            try:
+                entry._planner_session.cancel()
+            except Exception:
+                pass
+        if entry._planner_task and not entry._planner_task.done():
+            entry._planner_task.cancel()
         self._set_status(entry, "idle")
         return True
 
@@ -1364,93 +1404,420 @@ class SessionManager:
     async def plan_async(self, session_id: str, text: str) -> None:
         """POST /session/{sessionID}/plan
 
-        Creates a dedicated planner session, generates a plan, saves to plan.md.
+        Fire-and-forget: run planner in background, events via SSE.
+        Follows the same design as prompt_async() — creates user/assistant
+        messages, emits message.part.updated events, and is abortable.
         """
-        from kimix.base import _default_agent_file_dir
-        from kimix.tools.note import _enable_plan
-        from kimix.utils.system_prompt import SystemPromptType
-
         entry = await self._get_entry_or_restore(session_id)
 
-        plan_file = Path("plan.md")
-        if plan_file.is_file():
-            plan_file.unlink()
+        async def _run_plan() -> None:
+            from kimix.base import _default_agent_file_dir
+            from kimix.tools.note import _set_enable_plan
+            from kimix.utils.system_prompt import SystemPromptType
 
-        # Create a planner SDK session
-        planner_session = await _create_session_async(
-            agent_type=SystemPromptType.TodoMaker,
-            agent_file=_default_agent_file_dir / "agent_planner.json",
-        )
-        planner_session.get_custom_data()["plan_writing_path"] = plan_file
+            planner_session = None
+            plan_file = Path("plan.md")
 
-        # Enable plan tools
-        _enable_plan.value = True
+            # ── Create user message ──────────────────────────────
+            user_msg_id = _gen_message_id()
+            now_ms = _now_ms()
+            user_msg = MessageWithParts(
+                info=MessageInfo(
+                    id=user_msg_id,
+                    role="user",
+                    sessionID=session_id,
+                    time={"created": now_ms},
+                ),
+                parts=[
+                    MessagePart(
+                        id=_gen_part_id(),
+                        type="text",
+                        text=text,
+                        sessionID=session_id,
+                        messageID=user_msg_id,
+                    )
+                ],
+            )
+            entry.messages.append(user_msg)
+            bus.emit_type(
+                "message.updated",
+                info=user_msg.info.to_dict(),
+            )
 
-        # Emit plan generation started event
-        bus.emit(BusEvent(type="plan.started", properties={
-            "sessionID": session_id,
-            "text": text,
-        }))
+            # ── Create assistant message placeholder ─────────────
+            asst_msg_id = _gen_message_id()
+            asst_msg = MessageWithParts(
+                info=MessageInfo(
+                    id=asst_msg_id,
+                    role="assistant",
+                    sessionID=session_id,
+                    parentID=user_msg_id,
+                    modelID="",
+                    providerID="",
+                    mode="plan",
+                    path={"cwd": os.getcwd(), "root": os.getcwd()},
+                    time={"created": _now_ms()},
+                ),
+                parts=[],
+            )
+            entry.messages.append(asst_msg)
 
-        self._set_status(entry, "busy")
+            # ── Emit initial step-start ──────────────────────────
+            step_snapshot = _snapshot_hash()
+            _emit_part_to_message(
+                asst_msg,
+                session_id,
+                MessagePart(
+                    id=_gen_part_id(),
+                    type="step-start",
+                    sessionID=session_id,
+                    messageID=asst_msg_id,
+                    snapshot=step_snapshot,
+                ),
+            )
 
-        # Run the planner
-        prompt_text = (
-            "read the following requirement carefully and generate a comprehensive plan. "
-            "save the complete plan to a file using the WritePlan tool.\n\n"
-            f"Requirement:\n{text.strip()}"
-        )
+            # ── Accumulation state ───────────────────────────────
+            text_buf: List[str] = []
+            text_part_id = _gen_part_id()
+            step_finish_reason = "stop"
+            plan_generated = False
 
-        max_plan_attempts = 3
-        plan_generated = False
-        try:
-            for attempt in range(max_plan_attempts):
-                try:
-                    async for _message in planner_session.prompt(prompt_text):
-                        # We don't stream planner messages as SSE events for now;
-                        # the planner agent works behind the scenes and we only
-                        # report start/completed/failed.
-                        pass
+            try:
+                self._set_status(entry, "busy")
+                entry._cancel_event = None
 
-                    if plan_file.exists() and plan_file.stat().st_size > 0:
-                        plan_generated = True
+                if plan_file.is_file():
+                    plan_file.unlink()
+
+                # Create a planner SDK session
+                planner_session = await _create_session_async(
+                    agent_type=SystemPromptType.TodoMaker,
+                    agent_file=_default_agent_file_dir / "agent_planner.json",
+                )
+                planner_session.get_custom_data()["plan_writing_path"] = plan_file
+                entry._planner_session = planner_session
+
+                # Enable plan tools
+                _set_enable_plan(True)
+
+                # Run the planner
+                prompt_text = (
+                    "read the following requirement carefully and generate a comprehensive plan. "
+                    "save the complete plan to a file using the WritePlan tool.\n\n"
+                    f"Requirement:\n{text.strip()}"
+                )
+
+                max_plan_attempts = 3
+
+                for attempt in range(max_plan_attempts):
+                    # Check cancellation before each attempt
+                    if entry._cancel_event is not None and entry._cancel_event.is_set():
+                        step_finish_reason = "cancelled"
                         break
 
-                    if attempt < max_plan_attempts - 1:
-                        prompt_text = (
-                            "The plan file was not generated. "
-                            "Please generate the plan and save it using the WritePlan tool.\n\n"
-                            f"Requirement:\n{text.strip()}"
-                        )
-                except Exception as exc:
-                    logger.error("Plan generation attempt %d failed: %s", attempt + 1, exc)
-                    if attempt == max_plan_attempts - 1:
-                        raise
-                    await asyncio.sleep(1)
+                    try:
+                        async for wire_msg in planner_session.prompt(prompt_text, merge_wire_messages=True):
+                            # Check cancellation during streaming
+                            if entry._cancel_event is not None and entry._cancel_event.is_set():
+                                step_finish_reason = "cancelled"
+                                break
 
-            if plan_generated:
-                plan_content = plan_file.read_text(encoding="utf-8", errors="replace")
-                bus.emit(BusEvent(type="plan.completed", properties={
-                    "sessionID": session_id,
-                    "planFile": str(plan_file.absolute()),
-                    "planContent": plan_content,
-                    "planSize": len(plan_content),
-                }))
-            else:
-                bus.emit(BusEvent(type="plan.failed", properties={
-                    "sessionID": session_id,
-                    "error": "Plan file was not generated",
-                }))
-        except Exception as exc:
-            logger.error("Plan generation failed: %s", exc, exc_info=True)
-            bus.emit(BusEvent(type="plan.failed", properties={
-                "sessionID": session_id,
-                "error": str(exc),
-            }))
-        finally:
-            _enable_plan.value = False
-            await close_session_async(planner_session)
-            self._set_status(entry, "idle")
+                            # Stream wire messages as standard message.part.updated events
+                            from kimi_cli.wire.types import (
+                                ContentPart,
+                                StepBegin,
+                                StepInterrupted,
+                                TextPart,
+                                ThinkPart,
+                                ToolCall,
+                                ToolCallPart,
+                                ToolResult,
+                            )
+
+                            # ── StepBegin: new step boundary ─────────────────
+                            if isinstance(wire_msg, StepBegin):
+                                _emit_part_to_message(
+                                    asst_msg,
+                                    session_id,
+                                    MessagePart(
+                                        id=_gen_part_id(),
+                                        type="step-start",
+                                        sessionID=session_id,
+                                        messageID=asst_msg_id,
+                                        snapshot=step_snapshot,
+                                    ),
+                                )
+                                continue
+
+                            # ── StepInterrupted ──────────────────────────────
+                            if isinstance(wire_msg, StepInterrupted):
+                                continue
+
+                            # ── ToolCall: emit tool event ────────────────────
+                            if isinstance(wire_msg, ToolCall):
+                                tool_name = (
+                                    wire_msg.function.name if wire_msg.function else "unknown"
+                                )
+                                tool_args_raw = (
+                                    wire_msg.function.arguments if wire_msg.function else ""
+                                )
+                                tool_part_id = _gen_part_id()
+                                _emit_part_to_message(
+                                    asst_msg,
+                                    session_id,
+                                    MessagePart(
+                                        id=tool_part_id,
+                                        type="tool",
+                                        tool=tool_name,
+                                        callID=wire_msg.id,
+                                        sessionID=session_id,
+                                        messageID=asst_msg_id,
+                                        state={
+                                            "status": "running",
+                                            "input": tool_args_raw,
+                                        },
+                                    ),
+                                )
+                                continue
+
+                            # ── ToolCallPart: streaming argument chunks ──────
+                            if isinstance(wire_msg, ToolCallPart):
+                                continue
+
+                            # ── ToolResult: emit tool_result event ───────────
+                            if isinstance(wire_msg, ToolResult):
+                                rv = wire_msg.return_value
+                                output = rv.output if isinstance(rv.output, str) else (rv.message or "")
+                                is_error = rv.is_error
+                                status = "error" if is_error else "completed"
+                                tool_part_id = _gen_part_id()
+                                _emit_part_to_message(
+                                    asst_msg,
+                                    session_id,
+                                    MessagePart(
+                                        id=tool_part_id,
+                                        type="tool",
+                                        tool="",
+                                        callID=wire_msg.tool_call_id,
+                                        sessionID=session_id,
+                                        messageID=asst_msg_id,
+                                        state={
+                                            "status": status,
+                                            "output": output[:4000] if output else "",
+                                        },
+                                    ),
+                                )
+                                continue
+
+                            # ── ContentPart (e.g. ImageURLPart) — emit as text ──
+                            if isinstance(wire_msg, ContentPart):
+                                try:
+                                    raw = wire_msg.model_dump()
+                                    part_text = orjson.dumps(raw).decode("utf-8")
+                                    text_buf.append(f"[{raw.get('type', 'unknown')}] {part_text}")
+                                    full_so_far = "".join(text_buf)
+                                    _emit_part_to_message(
+                                        asst_msg,
+                                        session_id,
+                                        MessagePart(
+                                            id=text_part_id,
+                                            type="text",
+                                            text=full_so_far,
+                                            sessionID=session_id,
+                                            messageID=asst_msg_id,
+                                        ),
+                                        delta=part_text,
+                                    )
+                                except Exception:
+                                    pass
+                                continue
+
+                            # ── ThinkPart (reasoning) — cumulative ───────────
+                            if isinstance(wire_msg, ThinkPart):
+                                chunk = wire_msg.think
+                                if chunk:
+                                    text_buf.append(chunk)
+                                    full_so_far = "".join(text_buf)
+                                    _emit_part_to_message(
+                                        asst_msg,
+                                        session_id,
+                                        MessagePart(
+                                            id=text_part_id,
+                                            type="text",
+                                            text=full_so_far,
+                                            sessionID=session_id,
+                                            messageID=asst_msg_id,
+                                        ),
+                                        delta=chunk,
+                                    )
+                                continue
+
+                            # ── TextPart — cumulative ────────────────────────
+                            if isinstance(wire_msg, TextPart):
+                                chunk = wire_msg.text
+                                if chunk:
+                                    text_buf.append(chunk)
+                                    full_so_far = "".join(text_buf)
+                                    _emit_part_to_message(
+                                        asst_msg,
+                                        session_id,
+                                        MessagePart(
+                                            id=text_part_id,
+                                            type="text",
+                                            text=full_so_far,
+                                            sessionID=session_id,
+                                            messageID=asst_msg_id,
+                                        ),
+                                        delta=chunk,
+                                    )
+
+                        if step_finish_reason == "cancelled":
+                            break
+
+                        if plan_file.exists() and plan_file.stat().st_size > 0:
+                            plan_generated = True
+                            # Read and display the plan content
+                            plan_content = plan_file.read_text(encoding="utf-8", errors="replace")
+                            plan_header = "\n\n--- Generated Plan ---\n"
+                            text_buf.append(plan_header)
+                            text_buf.append(plan_content)
+                            full_so_far = "".join(text_buf)
+                            _emit_part_to_message(
+                                asst_msg,
+                                session_id,
+                                MessagePart(
+                                    id=text_part_id,
+                                    type="text",
+                                    text=full_so_far,
+                                    sessionID=session_id,
+                                    messageID=asst_msg_id,
+                                ),
+                                delta=plan_header + plan_content,
+                            )
+
+                            # ── Confirmation flow ────────────────────────────────
+                            entry._plan_confirm_event = asyncio.Event()
+                            entry._plan_feedback = None
+
+                            # Emit plan.confirm event for frontend dialog
+                            _emit_part_to_message(
+                                asst_msg,
+                                session_id,
+                                MessagePart(
+                                    id=_gen_part_id(),
+                                    type="plan.confirm",
+                                    text=plan_content,
+                                    sessionID=session_id,
+                                    messageID=asst_msg_id,
+                                ),
+                            )
+
+                            # Wait for confirmation with timeout
+                            try:
+                                await asyncio.wait_for(entry._plan_confirm_event.wait(), timeout=300.0)
+                            except asyncio.TimeoutError:
+                                entry._plan_feedback = None
+                                pass
+
+                            confirm_event = entry._plan_confirm_event
+                            entry._plan_confirm_event = None
+
+                            if confirm_event is not None and confirm_event.is_set():
+                                feedback = entry._plan_feedback
+                                entry._plan_feedback = None
+                                if feedback is not None and feedback != "accept":
+                                    # Revise: loop back with revision feedback
+                                    prompt_text = (
+                                        "The user reviewed the plan and requests the following changes:\n"
+                                        f"{feedback}\n\n"
+                                        "Please revise the plan accordingly and save the updated plan "
+                                        "using the WritePlan tool. Overwrite the existing plan file."
+                                    )
+                                    plan_generated = False
+                                    continue
+
+                            # Accepted or timeout — proceed to finish
+                            break
+
+                        if attempt < max_plan_attempts - 1:
+                            prompt_text = (
+                                "The plan file was not generated. "
+                                "Please generate the plan and save it using the WritePlan tool.\n\n"
+                                f"Requirement:\n{text.strip()}"
+                            )
+                    except Exception as exc:
+                        logger.error("Plan generation attempt %d failed: %s", attempt + 1, exc)
+                        if attempt == max_plan_attempts - 1:
+                            step_finish_reason = str(exc)
+                            break
+                        await asyncio.sleep(1)
+
+                if not plan_generated and step_finish_reason == "stop":
+                    step_finish_reason = "Plan file was not generated after multiple attempts"
+
+            except (asyncio.CancelledError, RunCancelled):
+                step_finish_reason = "cancelled"
+            except Exception as exc:
+                step_finish_reason = str(exc)
+                logger.error("[SessionManager] Plan error: %s", exc, exc_info=True)
+            finally:
+                # Emit step-finish
+                _emit_part_to_message(
+                    asst_msg,
+                    session_id,
+                    MessagePart(
+                        id=_gen_part_id(),
+                        type="step-finish",
+                        sessionID=session_id,
+                        messageID=asst_msg_id,
+                        reason=step_finish_reason,
+                        snapshot=step_snapshot,
+                    ),
+                )
+
+                asst_msg.info.time["completed"] = _now_ms()
+                entry.info.updatedAt = _now_ms()
+                entry._cancel_event = None
+
+                bus.emit_type(
+                    "message.updated",
+                    info=asst_msg.info.to_dict(),
+                )
+
+                # Clean up planner session
+                _set_enable_plan(False)
+                if planner_session is not None:
+                    try:
+                        await close_session_async(planner_session)
+                    except Exception:
+                        pass
+                entry._planner_session = None
+                entry._planner_task = None
+
+                # Idle last
+                self._set_status(entry, "idle")
+
+        task = asyncio.create_task(_run_plan())
+        entry._planner_task = task
+
+    async def confirm_plan_async(self, session_id: str, action: str, feedback: Optional[str] = None) -> bool:
+        """POST /session/{sessionID}/plan/confirm
+
+        Confirm or revise a plan after generation.
+        "action" is "accept" or "revise".
+        "feedback" is revision instructions when action="revise".
+        """
+        logger.info(
+            "[SessionManager] confirm_plan_async("
+            "session_id=%s, action=%s, feedback=%s)",
+            session_id, action, feedback,
+        )
+        entry = self._get_entry(session_id)
+        if entry._plan_confirm_event is None:
+            return False  # No confirmation pending
+        entry._plan_feedback = action if action == "accept" else feedback
+        entry._plan_confirm_event.set()
+        return True
 
     # ── Special command handlers ─────────────────────────────────
 

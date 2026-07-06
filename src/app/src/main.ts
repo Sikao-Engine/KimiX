@@ -464,7 +464,17 @@ function handleSSEEvent(data: string, eventType: string): void {
       if (!partId) return;
 
       // Parse part data to MessagePart type
-      const msgType = getMessagePartType(partData.type || "text");
+      const partTypeStr = partData.type || "text";
+
+      // Handle plan.confirm event — show confirmation dialog
+      if (partTypeStr === "plan.confirm") {
+        finalizeAllStreamingParts();
+        log("[Plan] Plan generated. Please confirm or revise.", "info");
+        showPlanConfirmDialog(partData.text || "");
+        return;
+      }
+
+      const msgType = getMessagePartType(partTypeStr);
       if (msgType === MessagePartType.STEP_START || msgType === MessagePartType.STEP_FINISH) {
         return;
       }
@@ -576,27 +586,129 @@ function handleSSEEvent(data: string, eventType: string): void {
         stopPolling();
         closeSSE();
       }
-    } else if (eventTypeInner === "plan.started") {
-      log("[Plan] Generating plan...", "info");
-    } else if (eventTypeInner === "plan.completed") {
-      const planContent = parsed.properties?.planContent || "";
-      const planFile = parsed.properties?.planFile || "plan.md";
-      log(`[Plan] Plan saved to ${planFile}`, "info");
-      // Display plan content in output area
-      const planEl = document.createElement("pre");
-      planEl.className = "plan-output";
-      planEl.textContent = planContent;
-      outputEl.appendChild(planEl);
-      scrollToBottom();
-    } else if (eventTypeInner === "plan.failed") {
-      const error = parsed.properties?.error || "Unknown error";
-      log(`[Plan] Failed: ${error}`, "error");
     }
   } catch (e) {
     if (debugMode) {
       log(`[SSE CLI] SSE parse error: ${e}`, "error");
     }
   }
+}
+
+/** Show a confirmation dialog for plan acceptance/revision. */
+function showPlanConfirmDialog(planText: string): void {
+  // Remove any existing confirmation dialog
+  const existing = document.getElementById("plan-confirm-dialog");
+  if (existing) existing.remove();
+
+  const overlay = document.createElement("div");
+  overlay.id = "plan-confirm-dialog";
+  overlay.style.cssText = `
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5); z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+  `;
+
+  const dialog = document.createElement("div");
+  dialog.style.cssText = `
+    background: #1e1e1e; border: 1px solid #444; border-radius: 8px;
+    padding: 24px; max-width: 600px; width: 90%; max-height: 80vh;
+    overflow-y: auto; color: #e0e0e0; font-family: sans-serif;
+  `;
+
+  const title = document.createElement("h3");
+  title.textContent = "Plan Generated";
+  title.style.cssText = "margin: 0 0 12px 0; color: #fff;";
+  dialog.appendChild(title);
+
+  const summary = document.createElement("div");
+  summary.style.cssText = `
+    background: #2a2a2a; border: 1px solid #444; border-radius: 4px;
+    padding: 12px; margin-bottom: 16px; max-height: 300px;
+    overflow-y: auto; white-space: pre-wrap; font-size: 13px;
+  `;
+  summary.textContent = planText.slice(0, 2000) + (planText.length > 2000 ? "\n...(truncated)" : "");
+  dialog.appendChild(summary);
+
+  const btnRow = document.createElement("div");
+  btnRow.style.cssText = "display: flex; gap: 8px; margin-bottom: 12px;";
+
+  const acceptBtn = document.createElement("button");
+  acceptBtn.textContent = "Accept Plan";
+  acceptBtn.style.cssText = `
+    flex: 1; padding: 10px 16px; border: none; border-radius: 6px;
+    cursor: pointer; font-size: 14px; font-weight: 600;
+    background: #2d9a3e; color: #fff;
+  `;
+  acceptBtn.onclick = async () => {
+    acceptBtn.disabled = true;
+    reviseBtn.disabled = true;
+    if (client && session) {
+      const ok = await client.sendPlanConfirm(session.id, "accept");
+      if (ok) {
+        log("[Plan] Plan accepted. Implementing...", "info");
+      } else {
+        log("[Plan] Failed to send acceptance", "error");
+      }
+    }
+    overlay.remove();
+  };
+  btnRow.appendChild(acceptBtn);
+
+  const reviseBtn = document.createElement("button");
+  reviseBtn.textContent = "Revise Plan";
+  reviseBtn.style.cssText = `
+    flex: 1; padding: 10px 16px; border: none; border-radius: 6px;
+    cursor: pointer; font-size: 14px; font-weight: 600;
+    background: #d97706; color: #fff;
+  `;
+  reviseBtn.onclick = () => {
+    feedbackArea.style.display = "block";
+    reviseBtn.style.display = "none";
+    acceptBtn.style.display = "none";
+    sendRevisionBtn.style.display = "block";
+  };
+  btnRow.appendChild(reviseBtn);
+  dialog.appendChild(btnRow);
+
+  // Feedback textarea (hidden initially)
+  const feedbackArea = document.createElement("textarea");
+  feedbackArea.placeholder = "Describe the changes you want...";
+  feedbackArea.style.cssText = `
+    width: 100%; min-height: 80px; margin-bottom: 8px; padding: 8px;
+    border: 1px solid #555; border-radius: 4px; background: #2a2a2a;
+    color: #e0e0e0; font-family: sans-serif; font-size: 13px;
+    display: none; box-sizing: border-box;
+  `;
+  dialog.appendChild(feedbackArea);
+
+  const sendRevisionBtn = document.createElement("button");
+  sendRevisionBtn.textContent = "Send Revision";
+  sendRevisionBtn.style.cssText = `
+    padding: 10px 16px; border: none; border-radius: 6px;
+    cursor: pointer; font-size: 14px; font-weight: 600;
+    background: #2563eb; color: #fff; display: none;
+  `;
+  sendRevisionBtn.onclick = async () => {
+    const feedback = feedbackArea.value.trim();
+    if (!feedback) {
+      feedbackArea.focus();
+      return;
+    }
+    sendRevisionBtn.disabled = true;
+    if (client && session) {
+      const ok = await client.sendPlanConfirm(session.id, "revise", feedback);
+      if (ok) {
+        log("[Plan] Revision feedback sent. Regenerating plan...", "info");
+      } else {
+        log("[Plan] Failed to send revision feedback", "error");
+      }
+    }
+    overlay.remove();
+  };
+  dialog.appendChild(sendRevisionBtn);
+
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
 }
 
 function getMessagePartType(typeStr: string): MessagePartType {
@@ -606,6 +718,7 @@ function getMessagePartType(typeStr: string): MessagePartType {
     "tool": MessagePartType.TOOL_CALLING,
     "step-start": MessagePartType.STEP_START,
     "step-finish": MessagePartType.STEP_FINISH,
+    "plan.confirm": MessagePartType.UNKNOWN,
   };
   return map[typeStr] || MessagePartType.UNKNOWN;
 }
@@ -619,15 +732,20 @@ async function sendPrompt(text: string): Promise<void> {
     return;
   }
 
-  // If plan mode is pending, send as plan request instead
+  // If plan mode is pending, send as plan request
   if (pendingPlanMode) {
     pendingPlanMode = false;
     log(`> ${text}`, "user-input");
     log("[Plan] Generating plan...", "info");
 
-    // Connect to SSE for real-time plan events
+    // Reset context usage tracking and streaming state for new prompt
+    previousPartType = null;
+    streamingParts = new Map();
+
+    // Connect to SSE for real-time streaming (same as regular prompt)
     closeSSE();
     emptyPolls = 0;
+    startPolling();
     sseConnection = client.streamEvents(
       (eventData, eventType) => handleSSEEvent(eventData, eventType),
       () => {

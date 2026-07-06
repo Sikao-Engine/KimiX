@@ -122,6 +122,26 @@ export class KimixClient {
     return resp.status === 204;
   }
 
+  async sendPlanConfirm(
+    sessionId: string,
+    action: string,
+    feedback?: string
+  ): Promise<boolean> {
+    const body: Record<string, unknown> = { action };
+    if (feedback !== undefined) {
+      body.feedback = feedback;
+    }
+    const resp = await fetch(
+      `${this.baseUrl}/session/${sessionId}/plan/confirm`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+    return resp.ok;
+  }
+
   async clearSession(sessionId: string): Promise<boolean> {
     const resp = await fetch(`${this.baseUrl}/session/${sessionId}/clear`);
     return resp.status === 200;
