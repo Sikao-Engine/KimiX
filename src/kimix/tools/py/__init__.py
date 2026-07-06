@@ -70,7 +70,7 @@ class Python(CallableTool2[Params]):
 
             # Wait for completion with timeout (allow a small buffer for cleanup)
             wait_timeout = params.timeout
-            await task.wait(wait_timeout)
+            await task.wait_with_monitor(wait_timeout)
 
             if await task.thread_is_alive():
                 output = await task.stream.get_output() if task.stream else ""

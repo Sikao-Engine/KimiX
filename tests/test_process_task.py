@@ -244,6 +244,46 @@ async def test_wait_completes(mock_session: MagicMock) -> None:
     assert "done" in output
 
 
+async def test_wait_with_monitor_completes(mock_session: MagicMock) -> None:
+    task = ProcessTask(sys.executable, ["-c", "print('done')"])
+    await task.start(mock_session, kind="run")
+    completed, elapsed, inactivity_timed_out = await task.wait_with_monitor(timeout=5.0)
+    assert completed is True
+    assert inactivity_timed_out is False
+    assert elapsed < 5.0
+
+
+async def test_wait_with_monitor_inactivity_timeout(mock_session: MagicMock) -> None:
+    task = ProcessTask(sys.executable, ["-c", "import time; time.sleep(120)"])
+    await task.start(mock_session, kind="run")
+    completed, elapsed, inactivity_timed_out = await task.wait_with_monitor(
+        timeout=130.0, inactivity_timeout=2.0
+    )
+    assert completed is False
+    assert inactivity_timed_out is True
+    assert elapsed < 5.0
+    assert await task.thread_is_alive() is True
+    await task.stop()
+    await task.wait(timeout=2)
+
+
+async def test_wait_with_monitor_no_monitor_for_short_timeout(mock_session: MagicMock) -> None:
+    task = ProcessTask(sys.executable, ["-c", "import time; time.sleep(120)"])
+    await task.start(mock_session, kind="run")
+    start = asyncio.get_event_loop().time()
+    completed, elapsed, inactivity_timed_out = await task.wait_with_monitor(
+        timeout=1.0, inactivity_timeout=60.0
+    )
+    end = asyncio.get_event_loop().time()
+    assert completed is False
+    assert inactivity_timed_out is False
+    assert 0.9 <= elapsed <= 2.0
+    assert 0.9 <= (end - start) <= 2.0
+    assert await task.thread_is_alive() is True
+    await task.stop()
+    await task.wait(timeout=2)
+
+
 async def test_thread_is_alive_while_running(mock_session: MagicMock) -> None:
     task = ProcessTask(sys.executable, ["-c", "import time; time.sleep(0.5)"])
     await task.start(mock_session, kind="run")

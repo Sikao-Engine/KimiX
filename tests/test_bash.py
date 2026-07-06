@@ -19,6 +19,7 @@ from kimix.tools.file.bash import (
     BashParams,
     Powershell,
 )
+from kimix.tools.file.bash.pwsh_tool import PowershellParams
 from kimix.tools.file.bash.bash_tool import (
     find_bash,
     _prepare_bash_cmd,
@@ -42,6 +43,18 @@ def _bash_is_available() -> bool:
 
 
 BASH_AVAILABLE = _bash_is_available()
+
+
+def _pwsh_is_available() -> bool:
+    """Return True when Powershell can be instantiated on this platform."""
+    try:
+        Powershell(session=MagicMock(spec=Session))
+        return True
+    except SkipThisTool:
+        return False
+
+
+PWSH_AVAILABLE = _pwsh_is_available()
 
 
 # ============================================================================
@@ -902,6 +915,70 @@ class TestEdgeCases:
 
 
 # ============================================================================
+# Inactivity timeout behavior
+# ============================================================================
+
+@pytest.mark.skipif(
+    not BASH_AVAILABLE,
+    reason="Bash tool is not available on this platform",
+)
+class TestBashInactivityTimeout:
+    async def test_bash_inactivity_timeout_returns_background_error(
+        self, mock_session: MagicMock
+    ) -> None:
+        with patch(
+            "kimix.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
+        ):
+            bash = Bash(session=mock_session)
+            params = BashParams(cmd="sleep 120", timeout=90)
+            result = await bash(params)
+            assert isinstance(result, ToolError)
+            assert result.brief == "Timeout"
+            assert "Running in background" in result.message
+            assert "task_id" in result.message
+
+    async def test_bash_short_timeout_unchanged(self, mock_session: MagicMock) -> None:
+        bash = Bash(session=mock_session)
+        params = BashParams(cmd="sleep 5", timeout=3)
+        start = asyncio.get_event_loop().time()
+        result = await bash(params)
+        elapsed = asyncio.get_event_loop().time() - start
+        assert isinstance(result, ToolError)
+        assert result.brief == "Timeout"
+        assert 2.5 <= elapsed <= 4.0
+
+
+@pytest.mark.skipif(
+    not PWSH_AVAILABLE,
+    reason="PowerShell tool is not available on this platform",
+)
+class TestPowershellInactivityTimeout:
+    async def test_pwsh_inactivity_timeout_returns_background_error(
+        self, mock_session: MagicMock
+    ) -> None:
+        with patch(
+            "kimix.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
+        ):
+            pwsh = Powershell(session=mock_session)
+            params = PowershellParams(cmd="Start-Sleep -Seconds 120", timeout=90)
+            result = await pwsh(params)
+            assert isinstance(result, ToolError)
+            assert result.brief == "Timeout"
+            assert "Running in background" in result.message
+            assert "task_id" in result.message
+
+    async def test_pwsh_short_timeout_unchanged(self, mock_session: MagicMock) -> None:
+        pwsh = Powershell(session=mock_session)
+        params = PowershellParams(cmd="Start-Sleep -Seconds 5", timeout=3)
+        start = asyncio.get_event_loop().time()
+        result = await pwsh(params)
+        elapsed = asyncio.get_event_loop().time() - start
+        assert isinstance(result, ToolError)
+        assert result.brief == "Timeout"
+        assert 2.5 <= elapsed <= 4.0
+
+
+# ============================================================================
 # Complex bash commands — pipes, redirects, substitution, etc.
 # ============================================================================
 
@@ -1451,6 +1528,8 @@ class TestBashInteractiveArgumentBuilding:
             mock_instance.start.return_value.set_result("bash-test-id")
             mock_instance.wait = MagicMock(return_value=asyncio.Future())
             mock_instance.wait.return_value.set_result(None)
+            mock_instance.wait_with_monitor = MagicMock(return_value=asyncio.Future())
+            mock_instance.wait_with_monitor.return_value.set_result((False, 0.0, False))
             mock_instance.thread_is_alive = MagicMock(return_value=asyncio.Future())
             mock_instance.thread_is_alive.return_value.set_result(False)
             mock_instance.stream = MagicMock()

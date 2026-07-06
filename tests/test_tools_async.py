@@ -179,6 +179,20 @@ class TestPython:
         assert "dest_out" in dest.read_text(encoding="utf-8")
         assert "exported to" in str(result.output)
 
+    async def test_inactivity_timeout_returns_background_error(
+        self, mock_session: MagicMock
+    ) -> None:
+        with patch(
+            "kimix.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
+        ):
+            tool = Python(session=mock_session)
+            params = PyParams(code="import time; time.sleep(120)", timeout=90)
+            result = await tool(params)
+            assert isinstance(result, ToolError)
+            assert result.brief == "Timeout"
+            assert "Running in background" in result.message
+            assert "task_id" in result.message
+
 
 
 # ---------------------------------------------------------------------------

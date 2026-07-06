@@ -21,11 +21,11 @@ class TaskOutputParams(BaseModel):
         default=True,
         description='block and wait task.'
     )
-    timeout: int = Field(
-        default=60,
+    timeout: int | None = Field(
+        default=None,
         ge=3,
         le=900,
-        description="Timeout in seconds."
+        description="Timeout in seconds. Defaults to 60 when `kill` is False, or 0 when `kill` is True."
     )
     output_path: str | None = Field(
         default=None,
@@ -96,8 +96,11 @@ class TaskOutput(CallableTool2):
                     output="",
                     brief=f"Task '{params.task_id}' not found"
                 )
+            timeout = params.timeout
+            if timeout is None:
+                timeout = 0 if params.kill else 60
             if params.block:
-                await stream.wait(params.timeout)
+                await stream.wait(timeout)
             task_alive = await stream.thread_is_alive()
             if params.kill and task_alive:
                 await stream.stop()

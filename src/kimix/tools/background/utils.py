@@ -10,6 +10,9 @@ from typing import Any, Awaitable, Callable, cast
 from kimi_cli.session import Session
 
 
+DEFAULT_INACTIVITY_TIMEOUT = 60.0
+
+
 class TaskData:
     def __init__(self) -> None:
         self.task_names: dict[str, int] = {}
@@ -45,6 +48,7 @@ class BackgroundStream:
         self._lock = threading.Lock()
         self._success = False
         self._output = io.StringIO()
+        self._last_output_time = time.monotonic()
 
     async def success(self) -> bool:
         return self._success
@@ -106,11 +110,16 @@ class BackgroundStream:
         if self._queue is None:
             return self._output.getvalue()
 
+        new_data = False
         while True:
             try:
                 self._output.write(self._queue.get_nowait())
+                new_data = True
             except queue.Empty:
                 break
+        if new_data:
+            with self._lock:
+                self._last_output_time = time.monotonic()
         return self._output.getvalue()
 
     async def pop_output(self) -> str:
@@ -134,6 +143,57 @@ class BackgroundStream:
     async def is_stopped(self) -> bool:
         """Check if the stream has been stopped."""
         return self._stopped
+
+    async def wait_with_inactivity_timeout(
+        self,
+        timeout: float,
+        inactivity_timeout: float | None = None,
+    ) -> tuple[bool, float, bool]:
+        """Wait for the background thread, exiting early on output inactivity.
+
+        If ``timeout > inactivity_timeout``, the wait is interrupted when no
+        new output has been received for ``inactivity_timeout`` seconds.
+
+        Args:
+            timeout: Maximum total seconds to wait.
+            inactivity_timeout: Seconds of output inactivity that triggers an
+                early return. Only active when ``timeout`` exceeds it.
+                Defaults to ``DEFAULT_INACTIVITY_TIMEOUT`` at call time so
+                tests can patch the module constant.
+
+        Returns:
+            ``(completed, elapsed_seconds, inactivity_timed_out)``.
+            ``completed`` is ``True`` when the thread finished on its own.
+            ``inactivity_timed_out`` is ``True`` only when the early return was
+            caused by output inactivity.
+        """
+        if inactivity_timeout is None:
+            inactivity_timeout = DEFAULT_INACTIVITY_TIMEOUT
+
+        start = time.monotonic()
+
+        # Preserve exact original behavior for short timeouts.
+        if timeout <= inactivity_timeout:
+            await self.wait(timeout)
+            elapsed = time.monotonic() - start
+            return not await self.thread_is_alive(), elapsed, False
+
+        # Long-timeout mode: monitor output activity.
+        while True:
+            elapsed = time.monotonic() - start
+            if elapsed >= timeout:
+                return False, elapsed, False
+            if not await self.thread_is_alive():
+                return True, elapsed, False
+
+            # Drain any new output and refresh the activity timestamp.
+            await self.get_output()
+            with self._lock:
+                inactive_for = time.monotonic() - self._last_output_time
+            if inactive_for >= inactivity_timeout:
+                return False, elapsed, True
+
+            await asyncio.sleep(0.5)
 
     async def wait_for_output(
         self,

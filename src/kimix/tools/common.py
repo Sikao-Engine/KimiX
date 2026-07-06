@@ -675,6 +675,30 @@ class ProcessTask:
     async def wait(self, timeout: float | None = None) -> None:
         await self._stream.wait(timeout)
 
+    async def wait_with_monitor(
+        self,
+        timeout: float,
+        inactivity_timeout: float | None = None,
+    ) -> tuple[bool, float, bool]:
+        """Wait for the process, exiting early if output stalls too long.
+
+        Args:
+            timeout: Maximum total seconds to wait.
+            inactivity_timeout: Seconds of output inactivity that triggers an
+                early return when ``timeout`` is larger. Defaults to
+                ``DEFAULT_INACTIVITY_TIMEOUT`` at call time so tests can patch
+                the module constant.
+
+        Returns:
+            ``(completed, elapsed_seconds, inactivity_timed_out)``.
+        """
+        if inactivity_timeout is None:
+            from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+            inactivity_timeout = DEFAULT_INACTIVITY_TIMEOUT
+        if self._stream is None:
+            return True, 0.0, False
+        return await self._stream.wait_with_inactivity_timeout(timeout, inactivity_timeout)
+
     async def thread_is_alive(self) -> bool:
         return await self._stream.thread_is_alive()
 

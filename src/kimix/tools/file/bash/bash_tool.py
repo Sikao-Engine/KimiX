@@ -724,7 +724,7 @@ class Bash(CallableTool2[BashParams]):
                         brief="Pattern matched",
                     )
             else:
-                await process_task.wait(params.timeout)
+                await process_task.wait_with_monitor(params.timeout)
         except asyncio.CancelledError:
             # The tool call was cancelled (e.g. by a tool-level timeout or
             # shutdown). Stop the subprocess and return a tool error so the

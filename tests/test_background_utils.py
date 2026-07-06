@@ -338,6 +338,71 @@ async def test_wait_sets_thread_none_after_join(stream: BackgroundStream) -> Non
 
 
 # ---------------------------------------------------------------------------
+# BackgroundStream – wait_with_inactivity_timeout
+# ---------------------------------------------------------------------------
+async def test_wait_with_inactivity_timeout_short_timeout_uses_wait(stream: BackgroundStream) -> None:
+    def worker(q: queue.Queue[str]) -> None:
+        q.put("hello")
+        time.sleep(0.2)
+
+    await stream.start(worker, stop_function=lambda: None)
+    completed, elapsed, inactivity_timed_out = await stream.wait_with_inactivity_timeout(
+        timeout=0.5, inactivity_timeout=60.0
+    )
+    assert completed is True
+    assert inactivity_timed_out is False
+    assert elapsed < 1.0
+
+
+async def test_wait_with_inactivity_timeout_triggers_on_no_output(stream: BackgroundStream) -> None:
+    def worker(q: queue.Queue[str]) -> None:
+        time.sleep(10.0)
+
+    await stream.start(worker, stop_function=lambda: None)
+    completed, elapsed, inactivity_timed_out = await stream.wait_with_inactivity_timeout(
+        timeout=15.0, inactivity_timeout=2.0
+    )
+    assert completed is False
+    assert inactivity_timed_out is True
+    assert elapsed < 5.0
+
+
+async def test_wait_with_inactivity_timeout_does_not_trigger_when_output_flows(stream: BackgroundStream) -> None:
+    def worker(q: queue.Queue[str]) -> None:
+        for _ in range(10):
+            q.put(".")
+            time.sleep(0.3)
+
+    await stream.start(worker, stop_function=lambda: None)
+    completed, elapsed, inactivity_timed_out = await stream.wait_with_inactivity_timeout(
+        timeout=5.0, inactivity_timeout=1.0
+    )
+    assert completed is True
+    assert inactivity_timed_out is False
+    assert elapsed < 5.0
+
+
+async def test_get_output_updates_last_output_time(stream: BackgroundStream) -> None:
+    def worker(q: queue.Queue[str]) -> None:
+        time.sleep(0.1)
+        q.put("pulse")
+        time.sleep(0.5)
+
+    await stream.start(worker, stop_function=lambda: None)
+    # Wait for the worker to emit its first (and only) output chunk.
+    await asyncio.sleep(0.3)
+    await stream.get_output()
+    # The get_output call should have reset the activity timestamp. The worker
+    # finishes shortly afterwards, so the inactivity timeout must not fire.
+    completed, elapsed, inactivity_timed_out = await stream.wait_with_inactivity_timeout(
+        timeout=5.0, inactivity_timeout=1.0
+    )
+    assert completed is True
+    assert inactivity_timed_out is False
+    assert elapsed < 1.0
+
+
+# ---------------------------------------------------------------------------
 # BackgroundStream – threading safety (basic stress)
 # ---------------------------------------------------------------------------
 async def test_concurrent_get_output(stream: BackgroundStream) -> None:
