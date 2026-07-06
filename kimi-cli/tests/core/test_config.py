@@ -74,7 +74,6 @@ def test_default_config_dump():
             "hooks": [],
             "merge_all_available_skills": True,
             "extra_skill_dirs": [],
-            "telemetry": False,
             "max_tokens": 128000,
             "temperature": None,
             "top_p": None,

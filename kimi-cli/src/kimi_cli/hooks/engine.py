@@ -241,10 +241,6 @@ class HookEngine:
             logger.warning("Hook engine error for {}, failing open", event)
             return []
 
-        # Telemetry runs outside the fail-open try: a telemetry failure
-        # must NEVER discard hook results. For security-critical hooks
-        # (PreToolUse block), treating a sink failure as fail-open would
-        # silently bypass the block.
         return results
 
     async def _execute_hooks(

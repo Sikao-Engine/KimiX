@@ -58,10 +58,7 @@ async def test_compacted_hook_isolates_provider_failures(runtime: Runtime, tmp_p
 
 
 def _make_compactable_soul() -> Any:
-    """Minimal KimiSoul bypassing __init__, just enough for compact_context().
-
-    Mirrors the pattern used in tests/telemetry/test_instrumentation.py.
-    """
+    """Minimal KimiSoul bypassing __init__, just enough for compact_context()."""
     soul = object.__new__(KimiSoul)
 
     runtime = MagicMock()

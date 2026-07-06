@@ -12,7 +12,7 @@ lazy_cli_hiddenimports = [
 hiddenimports = (
     collect_submodules("kimi_cli.tools")
     + lazy_cli_hiddenimports
-    + ["setproctitle", "kimi_cli._build_info"]
+    + ["setproctitle"]
 )
 datas = (
     collect_data_files(

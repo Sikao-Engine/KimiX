@@ -159,9 +159,6 @@ _RETRY_WAIT = _RateLimitAwareWait()
 def classify_api_error(e: Exception) -> tuple[str, int | None]:
     """Classify an LLM API exception into (error_type, status_code).
 
-    Exposed at module level so telemetry tests can import the real function
-    instead of duplicating the classification table.
-
     Returns:
         (error_type, status_code) where status_code is None for non-HTTP errors.
     """
@@ -196,7 +193,7 @@ def classify_api_error(e: Exception) -> tuple[str, int | None]:
     return "other", None
 
 
-type StepStopReason = Literal["no_tool_calls", "tool_rejected"]
+type StepStopReason = Literal["no_tool_calls", "tool_rejected", "tool_call_repeat"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -582,8 +579,8 @@ class KimiSoul:
         """Notify all injection providers that the context has been compacted.
 
         Failures are isolated per-provider so a buggy third-party provider
-        cannot abort compaction (which would skip CompactionEnd wire events
-        and PostCompact telemetry).
+        cannot abort compaction (which would skip the CompactionEnd wire event
+        and PostCompact hook).
         """
         for provider in self._injection_providers:
             try:
@@ -1041,19 +1038,6 @@ class KimiSoul:
                 )
                 wire_send(StepInterrupted())
 
-                # Track API/step errors
-
-                error_type, status_code = classify_api_error(e)
-                track_kwargs: dict[str, Any] = {"error_type": error_type}
-                if status_code is not None:
-                    track_kwargs["status_code"] = status_code
-                # Enrich with context attached by _step() (model, duration, input_tokens)
-                _kimi_ctx = getattr(e, "_kimi_api_error_context", None)
-                if _kimi_ctx is not None:
-                    for key in ("model", "duration_ms", "input_tokens"):
-                        if key in _kimi_ctx:
-                            track_kwargs[key] = _kimi_ctx[key]
-
                 # --- StopFailure hook ---
                 from kimi_cli.hooks import events as _hook_events
 
@@ -1195,11 +1179,7 @@ class KimiSoul:
             """Single LLM invocation (wrapped by retry + connection recovery)."""
             # ── 2e.4.1. Toolset begin_step ────────────────────────────────────
             if isinstance(self._agent.toolset, KimiToolset):
-                self._agent.toolset.begin_step(
-                    self._last_tool_calls,
-                    step_no=self._current_step_no,
-                    turn_id=self._current_turn_id,
-                )
+                self._agent.toolset.begin_step(self._last_tool_calls)
             # ── 2e.4.2. kosong.step ───────────────────────────────────────────
             # run an LLM step (may be interrupted)
             return await kosong.step(
@@ -1232,18 +1212,7 @@ class KimiSoul:
             )
 
         t0 = time.monotonic()
-        try:
-            result = await _kosong_step_with_retry()
-        except Exception as _step_exc:
-            # Attach known context so the outer loop can enrich api_error telemetry
-            _ctx: dict[str, Any] = {
-                "model": self._runtime.llm.model_name,
-                "duration_ms": int((time.monotonic() - t0) * 1000),
-            }
-            if self._context.token_count > 0:
-                _ctx["input_tokens"] = self._context.token_count
-            _step_exc._kimi_api_error_context = _ctx  # type: ignore[attr-defined]
-            raise
+        result = await _kosong_step_with_retry()
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.5. USAGE & STATUS UPDATE
@@ -1324,6 +1293,9 @@ class KimiSoul:
                     )
                 ],
             )
+
+        if isinstance(self._agent.toolset, KimiToolset) and self._agent.toolset.force_stop_turn:
+            return StepOutcome(stop_reason="tool_call_repeat", assistant_message=result.message)
 
         if result.tool_calls:
             return None
@@ -1499,24 +1471,12 @@ class KimiSoul:
 
         # Notify dynamic injection providers that history has been rebuilt so
         # they can reset any one-shot throttling state. Failures are isolated
-        # per-provider so compaction completion (wire event + telemetry) is
-        # not affected by a buggy provider.
+        # per-provider so compaction completion (wire event) is not affected
+        # by a buggy provider.
         await self._notify_injection_providers_compacted()
 
         wire_send(CompactionEnd())
 
-
-        duration_ms = int((time.monotonic() - start_time) * 1000)
-        track_kwargs = dict(
-            trigger_type=trigger_reason,
-            before_tokens=before_tokens,
-            after_tokens=estimated_token_count,
-            duration_ms=duration_ms,
-            retry_count=retry_count,
-        )
-        if compaction_result.usage is not None:
-            track_kwargs["llm_input_tokens"] = compaction_result.usage.input
-            track_kwargs["llm_output_tokens"] = compaction_result.usage.output
 
         _hook_task = asyncio.create_task(
             self._hook_engine.trigger(

@@ -154,8 +154,9 @@ if TYPE_CHECKING:
 
 _REMINDER_TEXT_1 = (
     "\n\n<system-reminder>\n"
-    "You just repeated the same tool call with identical parameters. "
-    "Analyze the previous result and try a different approach or parameters instead."
+    "You are repeating the exact same tool call with identical parameters."
+    " Please carefully analyze the previous result. If the task is not yet complete,"
+    " try a different method or parameters instead of repeating the same call."
     "\n</system-reminder>"
 )
 
@@ -163,14 +164,51 @@ _REMINDER_TEXT_1 = (
 def _make_reminder_text_2(tool_name: str, repeat_count: int, canonical_args: str) -> str:
     return (
         "\n\n<system-reminder>\n"
-        f"You have called this tool with identical parameters {repeat_count} "
-        "times without progress:\n"
+        "You have repeatedly called the same tool with identical parameters many times.\n"
+        "Repeated tool call detected:\n"
         f"- tool: {tool_name}\n"
+        f"- repeated_times: {repeat_count}\n"
         f"- arguments: {canonical_args}\n"
-        "Do not repeat this call. Choose a different action, different "
-        "parameters, or finish the task."
+        "The previous repeated calls did not make progress. Do not call this exact same tool "
+        "with the exact same arguments again.\n"
+        "Carefully inspect the latest tool result and choose a different next action, "
+        "different parameters, or finish the task if enough evidence has been gathered."
         "\n</system-reminder>"
     )
+
+
+_REMINDER_TEXT_3 = (
+    "\n\n<system-reminder>\n"
+    "You are stuck in a dead end and have repeatedly made the same function call without "
+    "progress.\n"
+    "Stop all function calls immediately. Do not call any tool in your next response.\n"
+    "In analysis, review the current execution state and identify why progress is blocked.\n"
+    "Then return a text-only summary to the user that reports the current problem, what has "
+    "already been tried, and what information or decision is needed next."
+    "\n</system-reminder>"
+)
+
+
+_REPEAT_REMINDER_1_START = 3
+_REPEAT_REMINDER_2_START = 8
+_REPEAT_REMINDER_3_START = 12
+_REPEAT_FORCE_STOP_STREAK = 16
+
+type RepeatAction = Literal["none", "r1", "r2", "r3", "stop"]
+
+
+def _build_repeat_reminder(
+    streak: int, tool_name: str, canonical_args: str
+) -> tuple[RepeatAction, str | None]:
+    if streak >= _REPEAT_FORCE_STOP_STREAK:
+        return "stop", _REMINDER_TEXT_3
+    if streak >= _REPEAT_REMINDER_3_START:
+        return "r3", _REMINDER_TEXT_3
+    if streak >= _REPEAT_REMINDER_2_START:
+        return "r2", _make_reminder_text_2(tool_name, streak, canonical_args)
+    if streak >= _REPEAT_REMINDER_1_START:
+        return "r1", _REMINDER_TEXT_1
+    return "none", None
 
 
 # Different-args tool call repetition thresholds
@@ -311,8 +349,7 @@ class KimiToolset:
         self._consecutive_count: int = 0
         self._step_closed: bool = False
         self._dedup_triggered: bool = False
-        self._step_no: int = 0
-        self._turn_id: str = ""
+        self._force_stop_turn: bool = False
 
         # "Different-args" per-tool call tracking (relaxed limitation)
         self._tool_call_counts: dict[str, int] = {}  # tool_name → total calls this turn
@@ -397,13 +434,7 @@ class KimiToolset:
             tool.base for tool in self._tool_dict.values() if tool.name not in self._hidden_tools
         ]
 
-    def begin_step(
-        self,
-        previous_calls: list[tuple[str, str]],
-        *,
-        step_no: int = 0,
-        turn_id: str = "",
-    ) -> None:
+    def begin_step(self, previous_calls: list[tuple[str, str]]) -> None:
         """Called before each step to set up deduplication state."""
         self._previous_step_calls = [
             _normalize_call_key(tool_name, arguments) for tool_name, arguments in previous_calls
@@ -412,19 +443,15 @@ class KimiToolset:
         self._current_step_tasks = {}
         self._step_closed = False
         self._dedup_triggered = False
-        self._step_no = step_no
-
-        # Detect new turn and reset per-tool different-args tracking
-        if turn_id and turn_id != self._turn_id:
-            self._tool_call_counts.clear()
-            self._tool_warned_at.clear()
+        self._force_stop_turn = False
         self._turn_tool_warning_issued = False  # Reset per-step
-
-        self._turn_id = turn_id
         if not self._previous_step_calls:
             self._seen_call_keys = set()
             self._consecutive_key = None
             self._consecutive_count = 0
+            # New turn: reset per-tool different-args tracking
+            self._tool_call_counts.clear()
+            self._tool_warned_at.clear()
         else:
             self._seen_call_keys.update(self._previous_step_calls)
             if self._consecutive_key is None and self._consecutive_count == 0:
@@ -461,6 +488,10 @@ class KimiToolset:
     def dedup_triggered(self) -> bool:
         """Whether a cross-step duplicate was blocked in the current step."""
         return self._dedup_triggered
+
+    @property
+    def force_stop_turn(self) -> bool:
+        return self._force_stop_turn
 
     def handle(self, tool_call: ToolCall) -> HandleResult:
         token = current_tool_call.set(tool_call)
@@ -538,12 +569,13 @@ class KimiToolset:
             is_cross_step_dup = call_key in self._seen_call_keys
             reminder_text: str | None = None
             if is_cross_step_dup:
-                self._dedup_triggered = True
                 repeat_count = self._projected_streak_for_call(call_index)
-                if repeat_count == 3:
-                    reminder_text = _REMINDER_TEXT_1
-                elif repeat_count in (5, 8):
-                    reminder_text = _make_reminder_text_2(tool_name, repeat_count, canonical_args)
+                action, reminder_text = _build_repeat_reminder(
+                    repeat_count, tool_name, canonical_args
+                )
+                self._dedup_triggered = True
+                if action == "stop":
+                    self._force_stop_turn = True
 
             # Different-args per-tool overuse check (relaxed limitation)
             diff_args_reminder_text: str | None = None

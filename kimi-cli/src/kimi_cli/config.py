@@ -360,10 +360,6 @@ class Config(BaseModel):
     top_p: float | None = Field(default=None, description='LLM top_p')
     top_k: int | None = Field(default=None, description='LLM top_k')
     thinking_effort: Literal["off", "low", "medium", "high", "xhigh", "max"] | None = Field(default=None, description='LLM thinking effort')
-    telemetry: bool = Field(
-        default=False,
-        description="Enable anonymous telemetry to help improve kimi-cli. Set to false to disable.",
-    )
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:

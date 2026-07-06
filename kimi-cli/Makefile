@@ -107,8 +107,6 @@ test-kimi-sdk: ## Run kimi-sdk tests.
 .PHONY: build build-kimi-cli build-kosong build-pykaos build-kimi-sdk build-bin build-bin-onedir
 build: build-web build-kimi-cli build-kosong build-pykaos build-kimi-sdk ## Build Python packages for release.
 build-kimi-cli: build-web ## Build the kimi-cli and kimi-code sdists and wheels.
-	@echo "==> Injecting build SHA"
-	@uv run scripts/inject_build_sha.py
 	@echo "==> Building kimi-cli distributions"
 	@uv build --package kimi-cli --no-sources --out-dir dist
 	@echo "==> Building kimi-code distributions"
@@ -126,18 +124,14 @@ build-web: ## Build web UI and sync into kimi-cli package.
 	@echo "==> Building web UI"
 	@uv run scripts/build_web.py
 build-bin: build-web ## Build the standalone executable with PyInstaller (one-file mode).
-	@echo "==> Injecting build SHA"
-	@KIMI_BUILD_SHA=$$(git rev-parse HEAD 2>/dev/null | cut -c1-12) uv run scripts/inject_build_sha.py
 	@echo "==> Building PyInstaller binary (one-file)"
-	@KIMI_BUILD_SHA=$$(git rev-parse HEAD 2>/dev/null | cut -c1-12) uv run pyinstaller kimi.spec
+	@uv run pyinstaller kimi.spec
 	@mkdir -p dist/onefile
 	@if [ -f dist/kimi.exe ]; then mv dist/kimi.exe dist/onefile/; elif [ -f dist/kimi ]; then mv dist/kimi dist/onefile/; fi
 build-bin-onedir: build-web ## Build the standalone executable with PyInstaller (one-dir mode).
-	@echo "==> Injecting build SHA"
-	@KIMI_BUILD_SHA=$$(git rev-parse HEAD 2>/dev/null | cut -c1-12) uv run scripts/inject_build_sha.py
 	@echo "==> Building PyInstaller binary (one-dir)"
 	@rm -rf dist/onedir dist/kimi
-	@KIMI_BUILD_SHA=$$(git rev-parse HEAD 2>/dev/null | cut -c1-12) PYINSTALLER_ONEDIR=1 uv run pyinstaller kimi.spec
+	@PYINSTALLER_ONEDIR=1 uv run pyinstaller kimi.spec
 	@if [ -f dist/kimi/kimi-exe.exe ]; then mv dist/kimi/kimi-exe.exe dist/kimi/kimi.exe; elif [ -f dist/kimi/kimi-exe ]; then mv dist/kimi/kimi-exe dist/kimi/kimi; fi
 	@mkdir -p dist/onedir && mv dist/kimi dist/onedir/
 .PHONY: ai-test
