@@ -400,13 +400,13 @@ def prompt_path(path: Path, split_word: Optional[str] = None, session: Session |
 
 
 async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md") -> None:
-    from kimix.tools.note import _enable_plan
+    import kimix.tools.note as note
 
     plan_file = Path(plan_file)
     if plan_file.is_file():
         plan_file.unlink()
 
-    _enable_plan.value = True
+    note._enable_plan = True
     planner_session: Session | None = None
 
     try:
@@ -536,7 +536,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
                 )
                 # Continue the loop so the user can try again
 
-        _enable_plan.value = False
+        note._enable_plan = False
         if not execute_plan:
             return
 
@@ -579,7 +579,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
             require_new_line=True,
         )
     finally:
-        _enable_plan.value = False
+        note._enable_plan = False
         if planner_session:
             await close_session_async(planner_session)
 
