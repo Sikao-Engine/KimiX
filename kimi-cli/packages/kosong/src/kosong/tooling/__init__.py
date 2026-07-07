@@ -704,6 +704,12 @@ def _cached_model_field_info(model: type[BaseModel]) -> tuple[
     return known, field_meta, extra_forbid, frozenset(model.model_fields.keys())
 
 
+@lru_cache(maxsize=65536)
+def _sequence_ratio(a: str, b: str) -> float:
+    """Cached SequenceMatcher ratio for string pair (a, b)."""
+    return difflib.SequenceMatcher(None, a, b).ratio()
+
+
 def _fuzzy_match_keys(
     missing: set[str],
     available: set[str],
@@ -728,8 +734,6 @@ def _fuzzy_match_keys(
     available_lower: dict[str, str] = {}
     for key in available:
         lower = key.lower()
-        # If two keys differ only by case, keep the first encountered; this is
-        # deterministic and rare in practice.
         available_lower.setdefault(lower, key)
     available_list = list(available_lower.keys())
 
@@ -737,24 +741,30 @@ def _fuzzy_match_keys(
     for missing_field in missing:
         if len(missing_field) < min_length:
             continue
-        # Longer field names are harder to type exactly; allow a slightly lower cutoff.
+        m_lower = missing_field.lower()
         cutoff = cutoff_long if len(missing_field) >= 8 else cutoff_short
-        close = difflib.get_close_matches(
-            missing_field.lower(), available_list, n=1, cutoff=cutoff
-        )
-        if not close:
+        # Pre-filter candidates: skip items whose first character doesn't match,
+        # which eliminates most candidates early without expensive SequenceMatcher.
+        best_score = cutoff - 1e-9
+        best_match: str | None = None
+        if m_lower:
+            first_char = m_lower[0]
+            for candidate in available_list:
+                if not candidate or candidate[0] != first_char:
+                    continue
+                # Use cached ratio — repeated comparisons across iterations
+                # hit the LRU cache instead of recomputing.
+                ratio = _sequence_ratio(m_lower, candidate)
+                if ratio > best_score:
+                    best_score = ratio
+                    best_match = candidate
+
+        if best_match is None or best_score < cutoff:
             continue
-        matched_lower = close[0]
-        matched_key = available_lower[matched_lower]
+        matched_key = available_lower[best_match]
         if len(matched_key) < min_length:
             continue
-        # get_close_matches already applied the cutoff, but we need a numeric
-        # score to sort candidates across different missing fields. Compute the
-        # ratio once against the lowercased strings.
-        ratio = difflib.SequenceMatcher(
-            None, missing_field.lower(), matched_lower
-        ).ratio()
-        candidates.append((ratio, missing_field, matched_key))
+        candidates.append((best_score, missing_field, matched_key))
 
     # Apply strongest matches first; each unmapped key can only be used once.
     candidates.sort(key=lambda x: x[0], reverse=True)

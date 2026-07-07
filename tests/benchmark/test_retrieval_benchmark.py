@@ -20,6 +20,12 @@ from kimix.retrieval import (
     LevenshteinAutomaton,
     NgramTokenizer,
     Searcher,
+    SimHash,
+    SimHashLSH,
+    jaro_similarity,
+    jaro_winkler_similarity,
+    sorensen_dice_coefficient,
+    ngram_overlap,
 )
 
 pytestmark = pytest.mark.slow
@@ -560,6 +566,239 @@ class TestSearcherBenchmark:
             searcher.search("中文", top_k=10)
         elapsed = time.perf_counter() - start
         assert elapsed < 10.0
+
+
+# ---------------------------------------------------------------------------
+# SimHash – near-duplicate detection
+# ---------------------------------------------------------------------------
+
+
+class TestSimHashBenchmark:
+    """Benchmarks for SimHash near-duplicate detection."""
+
+    def test_compute_large(self) -> None:
+        """SimHash._compute() on large text (>1000 tokens)."""
+        large_text = _lorem(2000)
+        start = time.perf_counter()
+        for _ in range(5_000):
+            SimHash(large_text)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 10.0
+
+    def test_distance_throughput(self) -> None:
+        """SimHash.distance() throughput."""
+        h1 = SimHash("this is some sample text", hashbits=64)
+        h2 = SimHash("this is another sample text", hashbits=64)
+        start = time.perf_counter()
+        for _ in range(200_000):
+            h1.distance(h2)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 2.0
+
+    def test_is_near_duplicate_throughput(self) -> None:
+        """SimHash.is_near_duplicate() throughput."""
+        h1 = SimHash("this is some sample text", hashbits=64)
+        h2 = SimHash("this is another sample text", hashbits=64)
+        start = time.perf_counter()
+        for _ in range(200_000):
+            h1.is_near_duplicate(h2)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 2.0
+
+
+class TestSimHashLSHBenchmark:
+    """Benchmarks for SimHashLSH."""
+
+    def test_add_candidates_10k(self) -> None:
+        """SimHashLSH.add() + candidates() with 10000 docs."""
+        rng = random.Random(42)
+        lsh = SimHashLSH(hashbits=64, band_bits=4)
+        texts = [_lorem(50) + f" doc {i}" for i in range(10_000)]
+        start = time.perf_counter()
+        for i, text in enumerate(texts):
+            lsh.add(i, SimHash(text))
+        elapsed_add = time.perf_counter() - start
+        assert elapsed_add < 5.0
+
+        query = SimHash(_lorem(50))
+        start = time.perf_counter()
+        for _ in range(1_000):
+            lsh.candidates(query)
+        elapsed_candidates = time.perf_counter() - start
+        assert elapsed_candidates < 5.0
+
+    def test_candidates_throughput(self) -> None:
+        """SimHashLSH.candidates() throughput with small bucket."""
+        lsh = SimHashLSH(hashbits=64, band_bits=4)
+        for i in range(100):
+            lsh.add(i, SimHash(f"doc number {i}"))
+        query = SimHash("some query text")
+        start = time.perf_counter()
+        for _ in range(50_000):
+            lsh.candidates(query)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 3.0
+
+
+# ---------------------------------------------------------------------------
+# String similarity helpers (Jaro-Winkler, Sørensen-Dice, n-gram)
+# ---------------------------------------------------------------------------
+
+
+class TestStringSimilarityBenchmark:
+    """Benchmarks for string similarity functions."""
+
+    def test_jaro_similarity_100k(self) -> None:
+        """jaro_similarity() — 100k calls on varied strings."""
+        pairs = [
+            ("hello", "hallo"),
+            ("world", "world"),
+            ("abc", "xyz"),
+            ("", "test"),
+            ("same", "same"),
+            ("a" * 50, "a" * 50),
+            ("kitten", "sitting"),
+            ("saturday", "sunday"),
+            ("book", "back"),
+            ("algorithm", "logarithm"),
+        ] * 10_000
+        start = time.perf_counter()
+        for s, t in pairs:
+            jaro_similarity(s, t)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 8.0
+
+    def test_jaro_winkler_similarity_100k(self) -> None:
+        """jaro_winkler_similarity() — 100k calls."""
+        pairs = [
+            ("hello", "hallo"),
+            ("world", "world"),
+            ("abc", "xyz"),
+            ("", "test"),
+            ("same", "same"),
+            ("a" * 50, "a" * 50),
+            ("kitten", "sitting"),
+            ("saturday", "sunday"),
+            ("book", "back"),
+            ("algorithm", "logarithm"),
+        ] * 10_000
+        start = time.perf_counter()
+        for s, t in pairs:
+            jaro_winkler_similarity(s, t)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 8.0
+
+    def test_sorensen_dice_100k(self) -> None:
+        """sorensen_dice_coefficient() — 100k calls."""
+        pairs = [
+            ("hello", "hallo"),
+            ("world", "world"),
+            ("abc", "xyz"),
+            ("", "test"),
+            ("same", "same"),
+            ("a" * 50, "a" * 50),
+            ("kitten", "sitting"),
+            ("saturday", "sunday"),
+            ("book", "back"),
+            ("algorithm", "logarithm"),
+        ] * 10_000
+        start = time.perf_counter()
+        for s, t in pairs:
+            sorensen_dice_coefficient(s, t)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 8.0
+
+    def test_ngram_overlap_100k(self) -> None:
+        """ngram_overlap() — 100k calls."""
+        pairs = [
+            ("hello", "hallo"),
+            ("world", "world"),
+            ("abc", "xyz"),
+            ("", "test"),
+            ("same", "same"),
+            ("a" * 50, "a" * 50),
+            ("kitten", "sitting"),
+            ("saturday", "sunday"),
+            ("book", "back"),
+            ("algorithm", "logarithm"),
+        ] * 10_000
+        start = time.perf_counter()
+        for s, t in pairs:
+            ngram_overlap(s, t)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 8.0
+
+
+# ---------------------------------------------------------------------------
+# Additional InvertedIndex benchmarks
+# ---------------------------------------------------------------------------
+
+
+class TestInvertedIndexExtendedBenchmark:
+    """Extended benchmarks for InvertedIndex."""
+
+    def test_add_document_overwrite_path(self) -> None:
+        """InvertedIndex.add_document() with overwrite (same doc_id re-added)."""
+        idx = InvertedIndex()
+        words = _random_words(1_000)
+        rng = random.Random(42)
+        start = time.perf_counter()
+        for i in range(1_000):
+            tokens = [rng.choice(words) for _ in range(50)]
+            idx.add_document(i, tokens)
+        # Re-add same doc IDs (overwrite path)
+        for i in range(1_000):
+            tokens = [rng.choice(words) for _ in range(50)]
+            idx.add_document(i, tokens)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 5.0
+
+    def test_build_symmetric_delete_index_50k_terms(self) -> None:
+        """InvertedIndex._build_symmetric_delete_index() at scale (50000 terms)."""
+        idx = InvertedIndex()
+        words = _random_words(50_000)
+        for i, w in enumerate(words):
+            idx.add_document(i, [w])
+        idx.finalize(stop_threshold=1.0)
+        start = time.perf_counter()
+        idx._build_symmetric_delete_index()
+        elapsed = time.perf_counter() - start
+        assert elapsed < 10.0
+
+
+# ---------------------------------------------------------------------------
+# Additional Searcher benchmarks
+# ---------------------------------------------------------------------------
+
+
+class TestSearcherExtendedBenchmark:
+    """Extended benchmarks for Searcher."""
+
+    def test_search_multi_token_fuzzy_cjk(self) -> None:
+        """Searcher.search() with multi-token fuzzy CJK query."""
+        idx = InvertedIndex()
+        tokenizer = NgramTokenizer()
+        for i in range(1_000):
+            text = "中文测试文档 测试搜索 模糊匹配 " + str(i)
+            idx.add_document(i, tokenizer.tokenize(text))
+        idx.finalize(stop_threshold=1.0)
+        searcher = Searcher(idx, tokenizer=tokenizer, fuzziness="AUTO")
+        start = time.perf_counter()
+        for _ in range(500):
+            searcher.search("测试 文档 搜索", top_k=10)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 10.0
+
+    def test_search_cold_start(self) -> None:
+        """Searcher.search() with cold start (no cache, fuzzy='AUTO')."""
+        idx = _build_index(5_000, 50)
+        # Create fresh searcher each iteration to avoid caching
+        start = time.perf_counter()
+        for _ in range(500):
+            searcher = Searcher(idx, fuzziness="AUTO")
+            searcher.search("tok", top_k=10)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 15.0
 
 
 # ---------------------------------------------------------------------------

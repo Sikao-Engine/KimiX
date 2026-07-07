@@ -24,7 +24,14 @@ import rapidfuzz
 from pydantic import BaseModel
 
 from kimi_cli.tools.todo import TodoList
-from kosong.tooling import _fuzzy_match_keys, _repair_dict_for_model
+from kosong.tooling import (
+    _fuzzy_match_keys,
+    _repair_dict_for_model,
+    _cached_model_field_info,
+    _coerce_value,
+    _format_pydantic_validation_error,
+    _clean_error_loc,
+)
 
 pytestmark = pytest.mark.slow
 
@@ -295,3 +302,157 @@ class TestRapidfuzzVsDifflibBenchmark:
             f"rapidfuzz ({rapidfuzz_elapsed:.4f}s) should be >2x faster than "
             f"difflib ({difflib_elapsed:.4f}s)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Extended benchmarks: repair_dict_for_model, cached_model_field_info, coerce_value
+# ---------------------------------------------------------------------------
+
+
+class TestRepairDictForModelBenchmark:
+    """Benchmarks for _repair_dict_for_model at various scales."""
+
+    def test_large_nested_model_50_fields(self) -> None:
+        """_repair_dict_for_model() with large nested model with 50+ fields."""
+        from pydantic import BaseModel
+
+        class Inner(BaseModel):
+            field_01: str = ""
+            field_02: int = 0
+            field_03: float = 0.0
+            field_04: bool = False
+            field_05: list[str] = []
+
+        class Middle(BaseModel):
+            inner_01: Inner = Inner()
+            inner_02: Inner = Inner()
+            name: str = ""
+            count: int = 0
+            active: bool = True
+
+        class Outer(BaseModel):
+            middle_01: Middle = Middle()
+            middle_02: Middle = Middle()
+            middle_03: Middle = Middle()
+            title: str = "test"
+            version: int = 1
+
+        rng = random.Random(42)
+        raw_data: dict[str, object] = {
+            "title": "test",
+            "version": "1",  # wrong type
+            "unknown_key_01": "value1",
+            "unknown_key_02": "value2",
+            "MIDDLE_01": {"name": "test", "count": "5"},  # case mismatch
+        }
+
+        start = time.perf_counter()
+        for _ in range(2000):
+            _repair_dict_for_model(raw_data, Outer)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 15.0
+
+    def test_list_of_models_10x20(self) -> None:
+        """_repair_dict_for_model() with list-of-models (10 items x 20 fields)."""
+        from pydantic import BaseModel
+
+        class Item(BaseModel):
+            id: int = 0
+            name: str = ""
+            description: str = ""
+            price: float = 0.0
+            quantity: int = 0
+            tags: list[str] = []
+            active: bool = True
+            category: str = ""
+            sku: str = ""
+            rating: float = 0.0
+
+        items = [
+            {
+                "id": str(i),
+                "name": f"item_{i}",
+                "price": str(i * 1.5),
+                "quantity": str(i * 10),
+                "tags": ["tag1", "tag2"],
+                "active": "true",
+                "extra_field": "extra",
+            }
+            for i in range(10)
+        ]
+
+        start = time.perf_counter()
+        for _ in range(1000):
+            _repair_dict_for_model({"items": items, "unknown": "x"}, type("Wrapper", (BaseModel,), {"items": list[Item], "__annotations__": {"items": list[Item]}}))
+        elapsed = time.perf_counter() - start
+        assert elapsed < 15.0
+
+
+class TestCachedModelFieldInfoBenchmark:
+    """Benchmarks for _cached_model_field_info."""
+
+    def test_cache_hit_miss_ratio(self) -> None:
+        """_cached_model_field_info() cache hit/miss ratio benchmark."""
+        from pydantic import BaseModel
+
+        class ModelA(BaseModel):
+            field_01: str = ""
+            field_02: int = 0
+
+        class ModelB(BaseModel):
+            field_01: str = ""
+            field_02: int = 0
+            field_03: float = 0.0
+
+        class ModelC(BaseModel):
+            field_01: str = ""
+
+        models = [ModelA, ModelB, ModelC, ModelA, ModelB, ModelC]
+
+        # Warm-up to populate cache
+        for m in models:
+            _cached_model_field_info(m)
+
+        start = time.perf_counter()
+        for _ in range(10_000):
+            for m in models:
+                _cached_model_field_info(m)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 10.0
+
+
+class TestCoerceValueBenchmark:
+    """Benchmarks for _coerce_value."""
+
+    def test_all_type_combinations(self) -> None:
+        """_coerce_value() — all type combinations throughput."""
+        from pydantic import BaseModel
+        from typing import Optional
+
+        class SampleModel(BaseModel):
+            str_field: str = ""
+            int_field: int = 0
+            float_field: float = 0.0
+            bool_field: bool = False
+            list_field: list[str] = []
+            opt_str: Optional[str] = None
+            opt_int: Optional[int] = None
+
+        values = [
+            ("hello", str),
+            (42, int),
+            ("42", int),
+            (3.14, float),
+            ("3.14", float),
+            (True, bool),
+            ("true", bool),
+            ([1, 2, 3], list),
+            (123, str),  # wrong type
+            ("not_a_number", int),  # invalid
+        ] * 5_000
+
+        start = time.perf_counter()
+        for value, target_type in values:
+            _coerce_value(value, target_type)
+        elapsed = time.perf_counter() - start
+        assert elapsed < 10.0
