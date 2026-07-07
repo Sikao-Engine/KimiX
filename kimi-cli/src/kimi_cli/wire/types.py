@@ -175,6 +175,80 @@ class MCPStatusSnapshot(BaseModel):
     servers: tuple[MCPServerSnapshot, ...] = ()
 
 
+class LLMToolSchema(BaseModel):
+    """A single tool schema as sent to (or discovered for) the LLM."""
+
+    name: str
+    description: str
+    parameters: dict[str, JsonType]
+
+
+class LLMToolsSnapshot(BaseModel):
+    """
+    A content-addressed snapshot of the tool table sent to the LLM.
+    Emitted once per unique ``hash``; subsequent `LLMRequest` events
+    reference the snapshot by ``tools_hash``.
+
+    This is an observability record: it is persisted to wire.jsonl but
+    never replayed to UI clients (persisted != replayed).
+    """
+
+    hash: str
+    """sha256 over the canonicalized (sorted-keys JSON) tool schemas."""
+    tools: list[LLMToolSchema]
+
+
+class LLMRequest(BaseModel):
+    """
+    A trace record of one outbound LLM request.
+
+    This is an observability record: it is persisted to wire.jsonl but
+    never replayed to UI clients (persisted != replayed).
+    """
+
+    kind: Literal["loop", "compaction"] = "loop"
+    provider: str
+    """The chat provider name, e.g. "kimi"."""
+    model: str
+    thinking_effort: str | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    """The effective max completion tokens cap, when derivable."""
+    system_prompt_hash: str
+    system_prompt: str | None = None
+    """Inlined only on the first occurrence of ``system_prompt_hash``."""
+    tools_hash: str
+    """References the `LLMToolsSnapshot` with the same hash."""
+    message_count: int
+    turn_step: int | None = None
+    """The step number within the turn. None for compaction requests."""
+    attempt: int = 1
+    """1-based attempt number across retries of the same step."""
+    dropped_count: int | None = None
+    """Number of messages dropped from history. Compaction only."""
+
+
+class MCPToolsDiscovered(BaseModel):
+    """
+    The verbatim result of an MCP server ``tools/list`` discovery,
+    together with the registration outcome (enabled names and collisions).
+
+    This is an observability record: it is persisted to wire.jsonl but
+    never replayed to UI clients (persisted != replayed).
+    """
+
+    server_name: str
+    hash: str
+    """sha256 covering tools + enabled_names + collisions."""
+    tools: list[LLMToolSchema]
+    """The verbatim ``tools/list`` result."""
+    enabled_names: list[str]
+    """Names of tools actually registered into the toolset."""
+    collisions: list[str] = Field(default_factory=list)
+    """Names skipped because they clashed with already-registered tools."""
+
+
 class StatusUpdate(BaseModel):
     """
     An update on the current status of the soul.
@@ -518,6 +592,9 @@ type Event = (
     | MCPLoadingBegin
     | MCPLoadingEnd
     | StatusUpdate
+    | LLMToolsSnapshot
+    | LLMRequest
+    | MCPToolsDiscovered
     | Notification
     | ContentPart
     | ToolCall
@@ -604,6 +681,18 @@ def is_event(msg: Any) -> TypeGuard[Event]:
     return isinstance(msg, _EVENT_TYPES)
 
 
+_OBSERVABILITY_TYPES = (LLMToolsSnapshot, LLMRequest, MCPToolsDiscovered)
+
+
+def is_observability(msg: Any) -> bool:
+    """Check if the message is an observability-only record.
+
+    Observability records are persisted to wire.jsonl for debugging and
+    tracing, but are never replayed to UI clients (persisted != replayed).
+    """
+    return isinstance(msg, _OBSERVABILITY_TYPES)
+
+
 def is_request(msg: Any) -> TypeGuard[Request]:
     """Check if the message is a Request."""
     return isinstance(msg, _REQUEST_TYPES)
@@ -664,8 +753,12 @@ __all__ = [
     "MCPLoadingBegin",
     "MCPLoadingEnd",
     "StatusUpdate",
+    "LLMToolsSnapshot",
+    "LLMRequest",
+    "MCPToolsDiscovered",
     "MCPServerSnapshot",
     "MCPStatusSnapshot",
+    "LLMToolSchema",
     "Notification",
     "ContentPart",
     "ToolCall",
@@ -684,6 +777,7 @@ __all__ = [
     "QuestionNotSupported",
     # helpers
     "WireMessageEnvelope",
+    "is_observability",
     # `StatusUpdate`-related
     "TokenUsage",
     # `ContentPart` types

@@ -425,18 +425,18 @@ async def test_cross_step_duplicate_appends_reminder_at_three_consecutive():
     tr = await result
     output = tr.return_value.output
     assert isinstance(output, str)
-    assert "You just repeated the same tool call with identical parameters" in output
+    assert "You are repeating the exact same tool call with identical parameters" in output
     assert "repeated_times" not in output
 
 
 async def test_cross_step_duplicate_uses_sparse_stronger_reminders():
-    """The stronger reminder appears at the fifth repeat and includes canonical args."""
+    """The stronger reminder appears at the eighth repeat and includes canonical args."""
     ts = _make_toolset()
     args = '{"b": 2, "a": 1}'
     previous_calls: list[tuple[str, str]] = []
     last_output = ""
 
-    for i in range(5):
+    for i in range(8):
         ts.begin_step(previous_calls, step_no=i + 1)
         result = ts.handle(
             ToolCall(
@@ -450,9 +450,9 @@ async def test_cross_step_duplicate_uses_sparse_stronger_reminders():
         previous_calls = ts.end_step()
 
     assert isinstance(last_output, str)
-    assert "You have called this tool with identical parameters" in last_output
-    assert "5 times without progress" in last_output
+    assert "You have repeatedly called the same tool with identical parameters many times" in last_output
     assert "- tool: ToolA" in last_output
+    assert "repeated_times: 8" in last_output
     assert '- arguments: {"a":1,"b":2}' in last_output
 
 

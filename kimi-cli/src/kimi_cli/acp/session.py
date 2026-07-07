@@ -27,8 +27,11 @@ from kimi_cli.wire.types import (
     CompactionBegin,
     CompactionEnd,
     ContentPart,
+    LLMRequest,
+    LLMToolsSnapshot,
     MCPLoadingBegin,
     MCPLoadingEnd,
+    MCPToolsDiscovered,
     Notification,
     QuestionRequest,
     StatusUpdate,
@@ -278,6 +281,9 @@ class ACPSession:
                     case CompactionBegin() | CompactionEnd():
                         pass
                     case MCPLoadingBegin() | MCPLoadingEnd():
+                        pass
+                    case LLMToolsSnapshot() | LLMRequest() | MCPToolsDiscovered():
+                        # Observability records are persisted, not replayed.
                         pass
                     case StatusUpdate():
                         pass

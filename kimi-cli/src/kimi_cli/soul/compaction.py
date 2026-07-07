@@ -12,6 +12,7 @@ from kosong.tooling.empty import EmptyToolset
 
 import kimi_cli.prompts as prompts
 from kimi_cli.llm import LLM
+from kimi_cli.soul.llm_request_recorder import LLMRequestRecorder
 from kimi_cli.soul.message import system
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.tokens import count_message_tokens
@@ -240,6 +241,7 @@ class SimpleCompaction:
         *,
         custom_instruction: str = "",
         options: CompactionOptions | None = None,
+        recorder: LLMRequestRecorder | None = None,
     ) -> CompactionResult:
         options = options if options is not None else CompactionOptions()
         prepare_result = self.prepare(
@@ -259,10 +261,21 @@ class SimpleCompaction:
             )
         else:
             logger.debug("Compacting context...")
+        system_prompt = "You are a helpful assistant that compacts conversation context."
+        toolset = EmptyToolset()
+        if recorder is not None:
+            recorder.record(
+                llm.chat_provider,
+                system_prompt,
+                toolset.tools,
+                [compact_message],
+                kind="compaction",
+                dropped_count=len(messages) - len(prepare_result.to_preserve),
+            )
         result = await kosong.step(
             chat_provider=llm.chat_provider,
-            system_prompt="You are a helpful assistant that compacts conversation context.",
-            toolset=EmptyToolset(),
+            system_prompt=system_prompt,
+            toolset=toolset,
             history=[compact_message],
         )
         if result.usage:

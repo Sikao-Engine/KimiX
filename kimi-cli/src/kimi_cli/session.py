@@ -180,20 +180,23 @@ class Session:
             self.title = self.state.custom_title
             return
 
-        try:
-            async for record in self.wire_file.iter_records():
+        async for record in self.wire_file.iter_records():
+            try:
                 wire_msg = record.to_wire_message()
-                if isinstance(wire_msg, TurnBegin):
-                    self.title = shorten(
-                        Message(role="user", content=wire_msg.user_input).extract_text(" "),
-                        width=50,
-                    )
-                    return
-        except Exception:
-            logger.exception(
-                "Failed to derive session title from wire file {file}:",
-                file=self.wire_file.path,
-            )
+            except Exception:
+                # Unknown/unparseable records (e.g. observability records written
+                # by a newer binary) must not abort title derivation.
+                logger.debug(
+                    "Skipping unparseable wire record in {file} during title derivation",
+                    file=self.wire_file.path,
+                )
+                continue
+            if isinstance(wire_msg, TurnBegin):
+                self.title = shorten(
+                    Message(role="user", content=wire_msg.user_input).extract_text(" "),
+                    width=50,
+                )
+                return
 
     async def export(self) -> ExportedContext:
         """Export all data from the session's context file.

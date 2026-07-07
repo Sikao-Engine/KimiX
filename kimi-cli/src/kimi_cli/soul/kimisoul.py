@@ -69,6 +69,7 @@ from kimi_cli.soul.dynamic_injection import (
 )
 from kimi_cli.soul.dynamic_injections.compact_reminder import CompactReminderProvider
 from kimi_cli.soul.dynamic_injections.done_reminder import DoneReminderProvider
+from kimi_cli.soul.llm_request_recorder import LLMRequestRecorder
 from kimi_cli.soul.message import (
     check_message,
     strip_system_reminders,
@@ -282,6 +283,8 @@ class KimiSoul:
         else:
             self._checkpoint_with_user_message = False
 
+        self._llm_request_recorder = LLMRequestRecorder()
+        self._recorder_restored = False
         self._steer_queue: asyncio.Queue[str | list[ContentPart]] = asyncio.Queue()
         self._last_tool_calls: list[tuple[str, str]] = []
         self._current_turn_id: str = ""
@@ -648,6 +651,25 @@ class KimiSoul:
     def wire_file(self) -> WireFile:
         return self._runtime.session.wire_file
 
+    async def _ensure_recorder_restored(self) -> None:
+        """One-shot scan of the existing wire.jsonl to seed request-trace dedup state."""
+        if self._recorder_restored:
+            return
+        self._recorder_restored = True
+        await self._llm_request_recorder.restore_from(self.wire_file)
+
+    def _drain_mcp_discoveries(self) -> None:
+        """Feed parked MCP tool discoveries into the request-trace recorder."""
+        if not isinstance(self._agent.toolset, KimiToolset):
+            return
+        for discovery in self._agent.toolset.drain_pending_mcp_discoveries():
+            self._llm_request_recorder.record_mcp_discovery(
+                discovery.server_name,
+                discovery.tools,
+                discovery.enabled_names,
+                discovery.collisions,
+            )
+
     def _mcp_status_snapshot(self):
         if not isinstance(self._agent.toolset, KimiToolset):
             return None
@@ -974,6 +996,12 @@ class KimiSoul:
                     wire_send(StatusUpdate(mcp_status=self._mcp_status_snapshot()))
                     wire_send(MCPLoadingEnd())
 
+        # ── 1b. Request-trace bookkeeping ─────────────────────────────────────
+        # Restore dedup cursors from the existing wire.jsonl (resumed sessions),
+        # then drain any MCP discoveries parked by background connect tasks.
+        await self._ensure_recorder_restored()
+        self._drain_mcp_discoveries()
+
         # ═══════════════════════════════════════════════════════════════════════
         # 2. STEP LOOP
         # ═══════════════════════════════════════════════════════════════════════
@@ -1175,16 +1203,31 @@ class KimiSoul:
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.4. LLM CALL WITH RETRY
         # ═══════════════════════════════════════════════════════════════════════
+        step_attempt = 0
+
         async def _run_step_once() -> StepResult:
             """Single LLM invocation (wrapped by retry + connection recovery)."""
+            nonlocal step_attempt
+            step_attempt += 1
             # ── 2e.4.1. Toolset begin_step ────────────────────────────────────
             if isinstance(self._agent.toolset, KimiToolset):
                 self._agent.toolset.begin_step(self._last_tool_calls)
             # ── 2e.4.2. kosong.step ───────────────────────────────────────────
+            system_prompt = self._agent.get_system_prompt()
+            self._drain_mcp_discoveries()
+            self._llm_request_recorder.record(
+                chat_provider,
+                system_prompt,
+                self._agent.toolset.tools,
+                effective_history,
+                kind="loop",
+                turn_step=self._current_step_no,
+                attempt=step_attempt,
+            )
             # run an LLM step (may be interrupted)
             return await kosong.step(
                 chat_provider,
-                self._agent.get_system_prompt(),
+                system_prompt,
                 self._agent.toolset,
                 effective_history,
                 on_message_part=wire_send,
@@ -1355,11 +1398,13 @@ class KimiSoul:
         async def _run_compaction_once() -> CompactionResult:
             if self._runtime.llm is None:
                 raise LLMNotSet()
+            await self._ensure_recorder_restored()
             return await self._compaction.compact(
                 self._context.history,
                 self._runtime.llm,
                 custom_instruction=custom_instruction,
                 options=CompactionOptions(avoid_cascade=avoid_cascade, mode=mode),
+                recorder=self._llm_request_recorder,
             )
 
         start_time = time.monotonic()

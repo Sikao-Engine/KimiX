@@ -46,6 +46,7 @@ from kimi_cli.wire.types import (
     AudioURLPart,
     ContentPart,
     ImageURLPart,
+    LLMToolSchema,
     MCPServerSnapshot,
     MCPStatusSnapshot,
     TextPart,
@@ -324,6 +325,16 @@ def _fuzzy_match_tool_name(
     return difflib.get_close_matches(tool_name, valid_names, n=n, cutoff=cutoff)
 
 
+@dataclass(frozen=True, slots=True)
+class PendingMCPDiscovery:
+    """A verbatim MCP ``tools/list`` discovery parked until a wire is available."""
+
+    server_name: str
+    tools: list[LLMToolSchema]
+    enabled_names: list[str]
+    collisions: list[str]
+
+
 class KimiToolset:
     def __init__(
         self,
@@ -336,6 +347,7 @@ class KimiToolset:
         self._tool_dict: dict[str, ToolType] = {}
         self._hidden_tools: set[str] = set()
         self._mcp_servers: dict[str, MCPServerInfo] = {}
+        self._pending_mcp_discoveries: list[PendingMCPDiscovery] = []
         self._mcp_loading_task: asyncio.Task[None] | None = None
         self._deferred_mcp_load: tuple[list[MCPConfig], Runtime] | None = None
         self._hook_engine: HookEngine = HookEngine()
@@ -355,6 +367,8 @@ class KimiToolset:
         self._tool_call_counts: dict[str, int] = {}  # tool_name → total calls this turn
         self._tool_warned_at: dict[str, set[int]] = {}  # thresholds already warned
         self._turn_tool_warning_issued: bool = False  # avoid flooding multiple tools
+        self._turn_id: str = ""
+        self._step_no: int = 0
 
     def _hook_cwd(self) -> str:
         """Return the cwd to report in lifecycle hook events."""
@@ -434,8 +448,20 @@ class KimiToolset:
             tool.base for tool in self._tool_dict.values() if tool.name not in self._hidden_tools
         ]
 
-    def begin_step(self, previous_calls: list[tuple[str, str]]) -> None:
-        """Called before each step to set up deduplication state."""
+    def begin_step(
+        self,
+        previous_calls: list[tuple[str, str]],
+        *,
+        step_no: int = 0,
+        turn_id: str = "",
+    ) -> None:
+        """Called before each step to set up deduplication state.
+
+        Args:
+            previous_calls: Tool calls from the previous step.
+            step_no: The current step number (1-based).
+            turn_id: The current turn identifier.
+        """
         self._previous_step_calls = [
             _normalize_call_key(tool_name, arguments) for tool_name, arguments in previous_calls
         ]
@@ -444,14 +470,23 @@ class KimiToolset:
         self._step_closed = False
         self._dedup_triggered = False
         self._force_stop_turn = False
+        self._step_no = step_no
+
+        # Detect new turn and reset per-tool different-args tracking
+        if turn_id and turn_id != self._turn_id:
+            self._tool_call_counts.clear()
+            self._tool_warned_at.clear()
         self._turn_tool_warning_issued = False  # Reset per-step
+
+        self._turn_id = turn_id
         if not self._previous_step_calls:
             self._seen_call_keys = set()
             self._consecutive_key = None
             self._consecutive_count = 0
-            # New turn: reset per-tool different-args tracking
-            self._tool_call_counts.clear()
-            self._tool_warned_at.clear()
+            if not turn_id:
+                # No turn id provided: rely on previous_calls emptiness
+                self._tool_call_counts.clear()
+                self._tool_warned_at.clear()
         else:
             self._seen_call_keys.update(self._previous_step_calls)
             if self._consecutive_key is None and self._consecutive_count == 0:
@@ -956,6 +991,15 @@ class KimiToolset:
                 client = server_info.client.inner
                 async with client:
                     tools = await client.list_tools()
+                    # Capture the verbatim tools/list result for the request trace.
+                    discovered_schemas = [
+                        LLMToolSchema(
+                            name=tool.name,
+                            description=tool.description or "",
+                            parameters=dict(tool.inputSchema),
+                        )
+                        for tool in tools
+                    ]
                     for tool in tools:
                         server_info.tools.append(
                             MCPTool(server_name, tool, server_info.client, runtime=runtime)
@@ -982,8 +1026,29 @@ class KimiToolset:
                             error=exc,
                         )
 
+                enabled_names: list[str] = []
+                collisions: list[str] = []
                 for tool in server_info.tools:
+                    if tool.name in self._tool_dict:
+                        # Name clash with an already-registered tool: skip it
+                        # (previously an implicit overwrite; now explicit).
+                        collisions.append(tool.name)
+                        continue
                     self.add(tool)
+                    enabled_names.append(tool.name)
+                server_info.tools = [
+                    tool for tool in server_info.tools if tool.name not in collisions
+                ]
+                # Park the discovery: MCP connect may run in a background task
+                # where no wire is active. The soul drains this at loop start.
+                self._pending_mcp_discoveries.append(
+                    PendingMCPDiscovery(
+                        server_name=server_name,
+                        tools=discovered_schemas,
+                        enabled_names=enabled_names,
+                        collisions=collisions,
+                    )
+                )
 
                 server_info.status = "connected"
                 logger.info("Connected MCP server: {server_name}", server_name=server_name)
@@ -1057,6 +1122,12 @@ class KimiToolset:
             self._mcp_loading_task = asyncio.create_task(_connect())
         else:
             await _connect()
+
+    def drain_pending_mcp_discoveries(self) -> list[PendingMCPDiscovery]:
+        """Pop all parked MCP tool discoveries (see `PendingMCPDiscovery`)."""
+        drained = self._pending_mcp_discoveries
+        self._pending_mcp_discoveries = []
+        return drained
 
     def has_pending_mcp_tools(self) -> bool:
         """Return True if the background MCP tool-loading task is still running."""

@@ -40,8 +40,15 @@ from kimi_cli.wire.types import (
     WireMessage,
     WireMessageEnvelope,
     is_event,
+    is_observability,
     is_request,
     is_wire_message,
+)
+from kimi_cli.wire.types import (
+    LLMRequest,
+    LLMToolSchema,
+    LLMToolsSnapshot,
+    MCPToolsDiscovered,
 )
 
 
@@ -424,6 +431,122 @@ async def test_wire_message_serde():
     _test_serde(msg)
 
 
+async def test_observability_wire_message_serde():
+    """Envelope round-trip for the request-trace observability records."""
+    schema = LLMToolSchema(
+        name="bash",
+        description="Run a command",
+        parameters={"type": "object", "properties": {}},
+    )
+
+    msg = LLMToolsSnapshot(hash="abc123", tools=[schema])
+    assert serialize_wire_message(msg) == snapshot(
+        {
+            "type": "LLMToolsSnapshot",
+            "payload": {
+                "hash": "abc123",
+                "tools": [
+                    {
+                        "name": "bash",
+                        "description": "Run a command",
+                        "parameters": {"type": "object", "properties": {}},
+                    }
+                ],
+            },
+        }
+    )
+    _test_serde(msg)
+
+    msg = LLMRequest(
+        kind="loop",
+        provider="kimi",
+        model="kimi-for-coding",
+        thinking_effort="high",
+        temperature=1.0,
+        top_p=0.9,
+        max_tokens=32000,
+        system_prompt_hash="p1",
+        system_prompt="You are Kimi.",
+        tools_hash="abc123",
+        message_count=5,
+        turn_step=2,
+        attempt=1,
+    )
+    assert serialize_wire_message(msg) == snapshot(
+        {
+            "type": "LLMRequest",
+            "payload": {
+                "kind": "loop",
+                "provider": "kimi",
+                "model": "kimi-for-coding",
+                "thinking_effort": "high",
+                "temperature": 1.0,
+                "top_p": 0.9,
+                "max_tokens": 32000,
+                "system_prompt_hash": "p1",
+                "system_prompt": "You are Kimi.",
+                "tools_hash": "abc123",
+                "message_count": 5,
+                "turn_step": 2,
+                "attempt": 1,
+                "dropped_count": None,
+            },
+        }
+    )
+    _test_serde(msg)
+
+    msg = MCPToolsDiscovered(
+        server_name="context7",
+        hash="h1",
+        tools=[schema],
+        enabled_names=["bash"],
+        collisions=["clash"],
+    )
+    assert serialize_wire_message(msg) == snapshot(
+        {
+            "type": "MCPToolsDiscovered",
+            "payload": {
+                "server_name": "context7",
+                "hash": "h1",
+                "tools": [
+                    {
+                        "name": "bash",
+                        "description": "Run a command",
+                        "parameters": {"type": "object", "properties": {}},
+                    }
+                ],
+                "enabled_names": ["bash"],
+                "collisions": ["clash"],
+            },
+        }
+    )
+    _test_serde(msg)
+
+
+async def test_is_observability_classification():
+    schema = LLMToolSchema(name="t", description="d", parameters={})
+
+    for msg in (
+        LLMToolsSnapshot(hash="h", tools=[schema]),
+        LLMRequest(
+            provider="kimi",
+            model="m",
+            system_prompt_hash="p",
+            tools_hash="t",
+            message_count=1,
+        ),
+        MCPToolsDiscovered(server_name="s", hash="h", tools=[], enabled_names=[]),
+    ):
+        assert is_observability(msg)
+        assert is_wire_message(msg)
+        assert is_event(msg)
+        assert not is_request(msg)
+
+    assert not is_observability(TurnBegin(user_input="hi"))
+    assert not is_observability(StepBegin(n=1))
+    assert not is_observability(StatusUpdate())
+
+
 async def test_approval_request_deserialize_without_display():
     msg = deserialize_wire_message(
         {
@@ -616,10 +739,13 @@ def test_wire_message_type_alias():
     # Helper types that are BaseModel subclasses but not WireMessage types
     from kimi_cli.wire.types import HookResponse
 
+    from kimi_cli.wire.types import LLMToolSchema
+
     _NON_WIRE_TYPES = {
         WireMessageEnvelope,
         MCPServerSnapshot,
         MCPStatusSnapshot,
+        LLMToolSchema,
         QuestionOption,
         QuestionItem,
         QuestionResponse,
@@ -638,76 +764,3 @@ def test_wire_message_type_alias():
         assert type_ in module._WIRE_MESSAGE_TYPES
 
 
-def test_read_wire_lines_request_id(tmp_path: Path):
-    """Verify _read_wire_lines emits a top-level JSON-RPC ``id`` for request messages.
-
-    wire.jsonl stores messages as ``{"type": "QuestionRequest", "payload": {"id": ..., ...}}``.
-    The ``id`` lives inside ``payload``, NOT at the top of ``message``.  _read_wire_lines
-    must extract it to the top-level ``id`` field of the JSON-RPC envelope so that the
-    frontend client can correlate responses.
-
-    Regression test for a bug where ``message_raw.get("id")`` was used instead of
-    ``message.id``, always producing an empty string.
-    """
-    pytest.skip("kimi_cli.web.api.sessions module not yet implemented")
-    import json
-    import time
-
-    from kimi_cli.web.api.sessions import _read_wire_lines
-
-    # Build a realistic wire.jsonl with request and event messages
-    wire_file = tmp_path / "wire.jsonl"
-
-    question_req = QuestionRequest(
-        id="q-abc-123",
-        tool_call_id="tc-1",
-        questions=[
-            QuestionItem(
-                question="Pick one?",
-                options=[
-                    QuestionOption(label="A", description="Option A"),
-                    QuestionOption(label="B", description="Option B"),
-                ],
-            )
-        ],
-    )
-    approval_req = ApprovalRequest(
-        id="a-def-456",
-        action="write",
-        description="Write to file.txt",
-        sender="Agent",
-        tool_call_id="tc-2",
-    )
-    step_begin = StepBegin(n=1)
-
-    records = []
-    for msg in [step_begin, question_req, approval_req]:
-        envelope = WireMessageEnvelope.from_wire_message(msg)
-        record = {"timestamp": time.time(), "message": envelope.model_dump(mode="json")}
-        records.append(json.dumps(record, ensure_ascii=False))
-
-    wire_file.write_text("\n".join(records) + "\n")
-
-    # Parse
-    lines = _read_wire_lines(wire_file)
-    assert len(lines) == 3
-
-    parsed = [json.loads(line) for line in lines]
-
-    # StepBegin is an event — should have method=event and NO id
-    event_msg = parsed[0]
-    assert event_msg["method"] == "event"
-    assert "id" not in event_msg
-
-    # QuestionRequest — must have method=request and correct top-level id
-    question_msg = parsed[1]
-    assert question_msg["method"] == "request"
-    assert question_msg["id"] == "q-abc-123", (
-        f"Expected top-level id='q-abc-123', got '{question_msg.get('id')}'. "
-        "The id must come from the deserialized request object, not message_raw dict."
-    )
-
-    # ApprovalRequest — same check
-    approval_msg = parsed[2]
-    assert approval_msg["method"] == "request"
-    assert approval_msg["id"] == "a-def-456"

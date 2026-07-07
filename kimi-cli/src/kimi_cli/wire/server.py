@@ -31,6 +31,7 @@ from kimi_cli.wire.types import (
     Request,
     ToolCallRequest,
     is_event,
+    is_observability,
     is_request,
 )
 
@@ -770,6 +771,10 @@ class WireServer:
                         "Failed to deserialize wire record for replay: {file}",
                         file=wire_file.path,
                     )
+                    continue
+
+                if is_observability(wire_msg):
+                    # Observability records are persisted, not replayed.
                     continue
 
                 if is_request(wire_msg):
