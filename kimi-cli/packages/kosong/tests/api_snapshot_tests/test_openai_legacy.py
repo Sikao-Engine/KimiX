@@ -1,15 +1,12 @@
 """Snapshot tests for OpenAI Legacy (Chat Completions API) chat provider."""
 
 import json
-from pathlib import Path
 
-import pytest
 import respx
 from common import COMMON_CASES, Case, make_chat_completion_response, run_test_cases
 from httpx import Response
 from inline_snapshot import snapshot
 
-from kosong.chat_provider import APIStatusError
 from kosong.contrib.chat_provider.openai_legacy import OpenAILegacy
 from kosong.message import Message, TextPart, ThinkPart, ToolCall
 
@@ -281,42 +278,6 @@ async def test_openai_legacy_reasoning_content():
         )
 
 
-async def test_openai_legacy_logs_missing_reasoning_content_400(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """When the backend returns the 'reasoning_content must be passed back' 400,
-    the provider logs request context to ./error.log before re-raising.
-    """
-    monkeypatch.chdir(tmp_path)
-    error_body = {
-        "error": {
-            "message": "The reasoning_content in the thinking mode must be passed back to the API.",
-            "type": "invalid_request_error",
-            "code": "400001",
-        }
-    }
-    with respx.mock(base_url="https://api.openai.com") as mock:
-        mock.post("/v1/chat/completions").mock(return_value=Response(400, json=error_body))
-        provider = OpenAILegacy(
-            model="kimi-k2.5",
-            api_key="test-key",
-            stream=False,
-            reasoning_key="reasoning_content",
-        )
-        history = [Message(role="user", content="What is 2+2?")]
-        with pytest.raises(APIStatusError) as exc_info:
-            await provider.generate("", [], history)
-        assert exc_info.value.status_code == 400
-
-    log_path = tmp_path / "error.log"
-    assert log_path.exists()
-    entry = json.loads(log_path.read_text(encoding="utf-8").strip().splitlines()[0])
-    assert entry["provider"] == "openai"
-    assert entry["model"] == "kimi-k2.5"
-    assert entry["error"]["code"] == "400001"
-    assert entry["messages"] == [{"role": "user", "content": "What is 2+2?"}]
-
-
 async def test_openai_legacy_empty_reasoning_content_is_round_tripped():
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
@@ -351,10 +312,11 @@ async def test_openai_legacy_empty_reasoning_content_is_round_tripped():
         ]
 
 
-async def test_openai_legacy_no_reasoning_content_without_think_part():
-    """When no message contains reasoning, reasoning_content is omitted even if
-    reasoning_key is configured. This avoids validation errors on backends that
-    reject empty reasoning_content in thinking mode."""
+async def test_openai_legacy_reasoning_content_on_all_assistant_messages():
+    """When reasoning_key is configured, every assistant message carries
+    reasoning_content (empty string when the message has no reasoning) so that
+    DeepSeek/Moonshot-compatible backends see a consistent field across
+    assistant turns. User/tool messages must not carry the field."""
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             return_value=Response(200, json=make_chat_completion_response())
@@ -379,9 +341,78 @@ async def test_openai_legacy_no_reasoning_content_without_think_part():
             {
                 "role": "assistant",
                 "content": "4.",
+                "reasoning_content": "",
             },
             {"role": "user", "content": "Thanks!"},
         ]
+
+
+async def test_openai_legacy_reasoning_content_on_all_assistant_messages_when_thinking_enabled():
+    """When thinking mode is enabled (history contains ThinkPart), every assistant
+    message carries reasoning_content so Moonshot-compatible backends see a
+    consistent field across thinking-mode assistant turns.
+    """
+    with respx.mock(base_url="https://api.openai.com") as mock:
+        mock.post("/v1/chat/completions").mock(
+            return_value=Response(200, json=make_chat_completion_response())
+        )
+        provider = OpenAILegacy(
+            model="deepseek-reasoner",
+            api_key="test-key",
+            stream=False,
+            reasoning_key="reasoning_content",
+        )
+        history = [
+            Message(role="user", content="What is 2+2?"),
+            Message(
+                role="assistant",
+                content=[ThinkPart(think="Thinking..."), TextPart(text="4.")],
+            ),
+            Message(role="user", content="And 3+3?"),
+            Message(role="assistant", content="6."),
+        ]
+        stream = await provider.generate("", [], history)
+        async for _ in stream:
+            pass
+        body = json.loads(mock.calls.last.request.content.decode())
+        assert body["messages"] == [
+            {"role": "user", "content": "What is 2+2?"},
+            {
+                "role": "assistant",
+                "content": "4.",
+                "reasoning_content": "Thinking...",
+            },
+            {"role": "user", "content": "And 3+3?"},
+            {
+                "role": "assistant",
+                "content": "6.",
+                "reasoning_content": "",
+            },
+        ]
+
+
+async def test_openai_legacy_moonshot_disables_auto_extra_body():
+    """Moonshot models use the standard OpenAI reasoning wire format; the
+    provider-specific extra_body keys are disabled by default.
+    """
+    with respx.mock(base_url="https://api.moonshot.ai") as mock:
+        mock.post("/v1/chat/completions").mock(
+            return_value=Response(200, json=make_chat_completion_response())
+        )
+        provider = OpenAILegacy(
+            model="kimi-k2.5",
+            api_key="test-key",
+            base_url="https://api.moonshot.ai/v1",
+            stream=False,
+            reasoning_key="reasoning_content",
+        )
+        stream = await provider.generate("", [], [Message(role="user", content="Hi")])
+        async for _ in stream:
+            pass
+        body = json.loads(mock.calls.last.request.content.decode())
+        assert "thinking" not in body
+        assert "reasoning" not in body
+        assert "chat_template_kwargs" not in body
 
 
 async def test_openai_legacy_assistant_tool_call_omits_empty_content():

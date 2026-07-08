@@ -30,13 +30,11 @@ from kosong.chat_provider.openai_common import (
     convert_error,
     extract_reasoning_from_content,
     is_effectively_empty_content_parts,
-    maybe_log_reasoning_content_error,
+    maybe_log_reasoning_content_error,  # noqa: F401
     tool_to_openai,
 )
 from kosong.message import (
-    ContentPart,
     Message,
-    TextPart,
     ThinkPart,
     VideoURLPart,
 )
@@ -45,7 +43,7 @@ from kosong.utils.jsonschema import JsonDict, ensure_property_types
 
 if TYPE_CHECKING:
 
-    def type_check(kimi: "Kimi"):
+    def type_check(kimi: Kimi):
         _: ChatProvider = kimi
         _: RetryableChatProvider = kimi
 
@@ -143,17 +141,30 @@ class Kimi(OpenAICompatibleProviderMixin):
         system_prompt: str,
         tools: Sequence[Tool],
         history: Sequence[Message],
-    ) -> "KimiStreamedMessage":
-        messages: list[ChatCompletionMessageParam] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.extend(_convert_message(message) for message in history)
-
+    ) -> KimiStreamedMessage:
         generation_kwargs: dict[str, Any] = {
             # default kimi generation kwargs
             "max_tokens": 32000,
         }
         generation_kwargs.update(self._generation_kwargs)
+
+        extra_body = cast(dict[str, Any], generation_kwargs.get("extra_body") or {})
+        thinking_enabled = (
+            extra_body.get("thinking", {}).get("type") == "enabled"
+            or generation_kwargs.get("reasoning_effort") is not None
+        )
+        has_think_part = any(
+            isinstance(part, ThinkPart) for message in history for part in message.content
+        )
+        include_reasoning_content = thinking_enabled or has_think_part
+
+        messages: list[ChatCompletionMessageParam] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.extend(
+            _convert_message(message, include_reasoning_content=include_reasoning_content)
+            for message in history
+        )
 
         try:
             response = await self.client.chat.completions.create(
@@ -166,13 +177,15 @@ class Kimi(OpenAICompatibleProviderMixin):
             )
             return KimiStreamedMessage(response)
         except (OpenAIError, httpx.HTTPError) as e:
-            maybe_log_reasoning_content_error(
-                e,
-                provider_name=self.name,
-                model=self.model,
-                messages=messages,
-                generation_kwargs=generation_kwargs,
-            )
+            # Debug logging for the Moonshot/Kimi "reasoning_content must be passed back"
+            # 400 is disabled by default. Uncomment the block below to enable it.
+            # maybe_log_reasoning_content_error(
+            #     e,
+            #     provider_name=self.name,
+            #     model=self.model,
+            #     messages=messages,
+            #     generation_kwargs=generation_kwargs,
+            # )
             raise convert_error(e) from e
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
@@ -227,7 +240,7 @@ class Kimi(OpenAICompatibleProviderMixin):
         return new_self
 
     @property
-    def files(self) -> "KimiFiles":
+    def files(self) -> KimiFiles:
         return KimiFiles(self.client)
 
 
@@ -242,7 +255,7 @@ class KimiFiles:
         url = await self._upload_file(data=data, mime_type=mime_type, purpose="video")
         return VideoURLPart(video_url=VideoURLPart.VideoURL(url=url))
 
-    async def _upload_file(self, *, data: bytes, mime_type: str, purpose: "KimiFilePurpose") -> str:
+    async def _upload_file(self, *, data: bytes, mime_type: str, purpose: KimiFilePurpose) -> str:
         filename = _guess_filename(mime_type)
         files: RequestFiles = {"file": (filename, data, mime_type)}
         options: RequestOptions = {"headers": {"Content-Type": "multipart/form-data"}}
@@ -271,10 +284,11 @@ def _guess_filename(mime_type: str) -> str:
     return f"upload{extension}"
 
 
-def _convert_message(message: Message) -> ChatCompletionMessageParam:
+def _convert_message(
+    message: Message, *, include_reasoning_content: bool = False
+) -> ChatCompletionMessageParam:
     message = message.model_copy(deep=True)
     reasoning_content, visible_content = extract_reasoning_from_content(message.content)
-    has_reasoning = any(isinstance(part, ThinkPart) for part in message.content)
     message.content = visible_content
     dumped_message = message.model_dump(exclude_none=True)
     if (
@@ -289,7 +303,11 @@ def _convert_message(message: Message) -> ChatCompletionMessageParam:
         # Dropping `content` entirely is always accepted, so do that whenever
         # the visible content is effectively empty alongside a tool call.
         dumped_message.pop("content", None)
-    if has_reasoning:
+    # Moonshot/DeepSeek-compatible backends require reasoning_content to be
+    # passed back on every assistant message in a thinking-mode conversation.
+    # Include it (empty string when there is no reasoning) whenever thinking is
+    # enabled or the history already contains reasoning content.
+    if include_reasoning_content and message.role == "assistant":
         dumped_message["reasoning_content"] = reasoning_content
     return cast(ChatCompletionMessageParam, dumped_message)
 

@@ -411,6 +411,46 @@ async def test_kimi_with_thinking():
         assert body["reasoning_effort"] == snapshot("high")
 
 
+async def test_kimi_reasoning_content_on_all_assistant_messages_when_thinking_enabled():
+    """When thinking mode is enabled, every assistant message carries
+    reasoning_content (empty string when the message has no reasoning) so that
+    Moonshot-compatible backends see a consistent field across turns."""
+    with respx.mock(base_url="https://api.moonshot.ai") as mock:
+        mock.post("/v1/chat/completions").mock(
+            return_value=Response(200, json=make_chat_completion_response())
+        )
+        provider = Kimi(
+            model="kimi-k2-turbo-preview", api_key="test-key", stream=False
+        ).with_thinking("high")
+        history = [
+            Message(role="user", content="What is 2+2?"),
+            Message(
+                role="assistant",
+                content=[ThinkPart(think="Thinking..."), TextPart(text="4.")],
+            ),
+            Message(role="user", content="And 3+3?"),
+            Message(role="assistant", content="6."),
+        ]
+        stream = await provider.generate("", [], history)
+        async for _ in stream:
+            pass
+        body = json.loads(mock.calls.last.request.content.decode())
+        assert body["messages"] == [
+            {"role": "user", "content": "What is 2+2?"},
+            {
+                "role": "assistant",
+                "content": "4.",
+                "reasoning_content": "Thinking...",
+            },
+            {"role": "user", "content": "And 3+3?"},
+            {
+                "role": "assistant",
+                "content": "6.",
+                "reasoning_content": "",
+            },
+        ]
+
+
 async def test_kimi_with_extra_body_thinking_deep_merge():
     """with_extra_body must deep-merge the ``thinking`` sub-dict so that
     a later call adding ``thinking.keep`` does not erase ``thinking.type``

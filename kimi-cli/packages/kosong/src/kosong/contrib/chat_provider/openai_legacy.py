@@ -1,5 +1,4 @@
 import copy
-
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Self, Unpack, cast
 
@@ -11,7 +10,6 @@ from openai.types.chat import (
     ChatCompletionChunk,
     ChatCompletionMessageParam,
 )
-from typing_extensions import TypedDict
 
 from kosong.chat_provider import (
     ChatProvider,
@@ -27,7 +25,7 @@ from kosong.chat_provider.openai_common import (
     convert_error,
     extract_reasoning_from_content,
     is_effectively_empty_content_parts,
-    maybe_log_reasoning_content_error,
+    maybe_log_reasoning_content_error,  # noqa: F401
     reasoning_effort_to_thinking_effort,
     thinking_effort_to_reasoning_effort,
     tool_to_openai,
@@ -37,12 +35,12 @@ from kosong.contrib.chat_provider.common import (
     check_tool_call_id,
     validate_tool_call_arguments,
 )
-from kosong.message import ContentPart, Message, TextPart, ThinkPart
+from kosong.message import Message, TextPart, ThinkPart
 from kosong.tooling import Tool
 
 if TYPE_CHECKING:
 
-    def type_check(openai_legacy: "OpenAILegacy"):
+    def type_check(openai_legacy: OpenAILegacy):
         _: ChatProvider = openai_legacy
         _: RetryableChatProvider = openai_legacy
 
@@ -124,10 +122,16 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
             if supported_efforts is not None
             else self._DEFAULT_SUPPORTED_EFFORTS
         )
+        # Moonshot's own API uses the standard OpenAI reasoning_effort/reasoning_content
+        # wire format; the extra_body keys (thinking/reasoning/chat_template_kwargs) are
+        # meant for other OpenAI-compatible backends and can confuse Moonshot.
+        is_moonshot = model.startswith("kimi-") or (
+            base_url is not None and "moonshot" in base_url.lower()
+        )
         self._openai_settings: dict[str, Any] = {
-            "thinking": True,
-            "reasoning": True,
-            "chat_template_kwargs": True,
+            "thinking": not is_moonshot,
+            "reasoning": not is_moonshot,
+            "chat_template_kwargs": not is_moonshot,
         }
         if openai_settings is not None:
             self._openai_settings.update(openai_settings)
@@ -149,13 +153,7 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
         system_prompt: str,
         tools: Sequence[Tool],
         history: Sequence[Message],
-    ) -> "OpenAILegacyStreamedMessage":
-        messages: list[ChatCompletionMessageParam] = []
-        if system_prompt:
-            # `system` vs `developer`: see `message_to_openai` comments
-            messages.append({"role": "system", "content": system_prompt})
-        messages.extend(self._convert_message(message) for message in history)
-
+    ) -> OpenAILegacyStreamedMessage:
         generation_kwargs: dict[str, Any] = {}
         generation_kwargs.update(self._generation_kwargs)
 
@@ -170,9 +168,15 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
             )
             if has_think_part:
                 reasoning_effort = "medium"
+        reasoning_enabled = reasoning_effort is not None and reasoning_effort is not omit
+
+        messages: list[ChatCompletionMessageParam] = []
+        if system_prompt:
+            # `system` vs `developer`: see `message_to_openai` comments
+            messages.append({"role": "system", "content": system_prompt})
+        messages.extend(self._convert_message(message) for message in history)
 
         if self._reasoning_key is not None:
-            reasoning_enabled = reasoning_effort is not None and reasoning_effort is not omit
             extra_body_level = _reasoning_effort_to_extra_body_level(reasoning_effort)
             extra_body: dict[str, Any] = {}
             if self._openai_settings.get("thinking", True):
@@ -216,13 +220,15 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
             )
             return OpenAILegacyStreamedMessage(response, self._reasoning_key)
         except (OpenAIError, httpx.HTTPError) as e:
-            maybe_log_reasoning_content_error(
-                e,
-                provider_name=self.name,
-                model=self.model,
-                messages=messages,
-                generation_kwargs=generation_kwargs,
-            )
+            # Debug logging for the Moonshot/Kimi "reasoning_content must be passed back"
+            # 400 is disabled by default. Uncomment the block below to enable it.
+            # maybe_log_reasoning_content_error(
+            #     e,
+            #     provider_name=self.name,
+            #     model=self.model,
+            #     messages=messages,
+            #     generation_kwargs=generation_kwargs,
+            # )
             raise convert_error(e) from e
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
@@ -286,14 +292,15 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
 
         # Tool message without tool_call_id would cause a 400 from OpenAI.
         # Return the error to the LLM instead of crashing.
-        if message.role == "tool":
-            if error_msg := check_tool_call_id(
+        if message.role == "tool" and (
+            error_msg := check_tool_call_id(
                 message.tool_call_id, message.extract_text(sep="\n")
-            ):
-                return cast(
-                    ChatCompletionMessageParam,
-                    {"role": "user", "content": error_msg},
-                )
+            )
+        ):
+            return cast(
+                ChatCompletionMessageParam,
+                {"role": "user", "content": error_msg},
+            )
 
         # Validate tool call arguments in assistant messages to avoid API 400s.
         if message.role == "assistant" and message.tool_calls:
@@ -302,7 +309,6 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
                 message.content = [TextPart(text="\n".join(error_texts)), *message.content]
 
         reasoning_content, visible_content = extract_reasoning_from_content(message.content)
-        has_reasoning = any(isinstance(part, ThinkPart) for part in message.content)
         # if tool message and `tool_result_conversion` is `extract_text`, patch all text parts into
         # one so that we can make use of the serialization process of `Message` to output string
         if message.role == "tool" and self._tool_message_conversion == "extract_text":
@@ -323,10 +329,11 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
             # the visible content is effectively empty alongside a tool call.
             dumped_message.pop("content", None)
         # reasoning_content is required by several OpenAI-compatible APIs (DeepSeek/Kimi/
-        # MiniMax/Qwen) whenever thinking mode is enabled. Only include it for messages that
-        # actually contain reasoning (a ThinkPart); sending an empty field on every message
-        # causes validation errors on backends such as Moonshot's.
-        if self._reasoning_key and has_reasoning:
+        # MiniMax/Qwen) whenever thinking mode is enabled. Pass it back on every assistant
+        # message when a reasoning key is configured, so the backend sees a consistent
+        # reasoning_content field across assistant turns. User/tool messages must not
+        # carry the field.
+        if self._reasoning_key and message.role == "assistant":
             dumped_message[self._reasoning_key] = reasoning_content
         return cast(ChatCompletionMessageParam, dumped_message)
 

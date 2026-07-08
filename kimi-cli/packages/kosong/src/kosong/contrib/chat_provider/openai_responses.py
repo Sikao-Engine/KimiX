@@ -1,7 +1,6 @@
 import uuid
-
 from collections.abc import AsyncIterator, Sequence
-from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack, cast, get_args
+from typing import TYPE_CHECKING, Any, Self, Unpack, cast, get_args
 
 import httpx
 from openai import AsyncStream, OpenAIError
@@ -42,7 +41,7 @@ from kosong.chat_provider.openai_common import (
     apply_generation_kwargs,
     clamp_thinking_effort,
     convert_error,
-    maybe_log_reasoning_content_error,
+    maybe_log_reasoning_content_error,  # noqa: F401
     reasoning_effort_to_thinking_effort,
     thinking_effort_to_reasoning_effort,
 )
@@ -66,7 +65,7 @@ from kosong.tooling import Tool
 
 if TYPE_CHECKING:
 
-    def type_check(openai_responses: "OpenAIResponses"):
+    def type_check(openai_responses: OpenAIResponses):
         _: ChatProvider = openai_responses
         _: RetryableChatProvider = openai_responses
 
@@ -164,7 +163,7 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
         system_prompt: str,
         tools: Sequence[Tool],
         history: Sequence[Message],
-    ) -> "OpenAIResponsesStreamedMessage":
+    ) -> OpenAIResponsesStreamedMessage:
         inputs: ResponseInputParam = []
         if system_prompt:
             system_message: ResponseInputItemParam = {"role": "system", "content": system_prompt}
@@ -197,13 +196,15 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
             )
             return OpenAIResponsesStreamedMessage(response)
         except (OpenAIError, httpx.HTTPError) as e:
-            maybe_log_reasoning_content_error(
-                e,
-                provider_name=self.name,
-                model=self._model,
-                messages=inputs,
-                generation_kwargs=generation_kwargs,
-            )
+            # Debug logging for the Moonshot/Kimi "reasoning_content must be passed back"
+            # 400 is disabled by default. Uncomment the block below to enable it.
+            # maybe_log_reasoning_content_error(
+            #     e,
+            #     provider_name=self.name,
+            #     model=self._model,
+            #     messages=inputs,
+            #     generation_kwargs=generation_kwargs,
+            # )
             raise convert_error(e) from e
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
