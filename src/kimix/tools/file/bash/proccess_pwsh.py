@@ -16,7 +16,7 @@ new syntax in the first place.
 
 from __future__ import annotations
 
-import re
+import regex as re
 from collections.abc import Callable
 
 

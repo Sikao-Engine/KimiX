@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import re
+import regex as re
 import time
 import uuid
 from collections.abc import Awaitable, Callable

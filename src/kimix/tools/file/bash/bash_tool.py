@@ -6,7 +6,7 @@ import contextlib
 import functools
 import ntpath
 import os
-import re
+import regex as re
 import shutil
 import subprocess
 import sys

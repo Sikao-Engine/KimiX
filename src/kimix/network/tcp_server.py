@@ -7,7 +7,6 @@ and handling low-level I/O operations.
 """
 
 import socket
-import struct
 import threading
 import time
 from typing import Optional, Callable, Tuple
@@ -128,7 +127,7 @@ class TCPServer:
                 if length_bytes is None:
                     break
                 
-                length = struct.unpack('!I', length_bytes)[0]
+                length = int.from_bytes(length_bytes, 'big')
                 
                 # Sanity check
                 if length == 0 or length > 10 * 1024 * 1024:  # Max 10MB
@@ -195,7 +194,7 @@ class TCPServer:
                 length = len(payload)
                 
                 # Send length prefix
-                length_bytes = struct.pack('!I', length)
+                length_bytes = length.to_bytes(4, 'big')
                 self._client_socket.sendall(length_bytes)
                 
                 # Send payload

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
-import re
+import orjson
+import regex as re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -387,7 +387,7 @@ class ContextDB:
                 # Fast-path: only attempt JSON parsing if content contains checkpoint marker
                 if "CHECKPOINT" in content:
                     try:
-                        parsed = json.loads(content)
+                        parsed = orjson.loads(content)
                         if isinstance(parsed, str) and _CHECKPOINT_PATTERN.fullmatch(parsed.strip()):
                             # Checkpoint user message — don't count as real turn
                             pass
@@ -403,7 +403,7 @@ class ContextDB:
                                 current_turn += 1
                         else:
                             current_turn += 1
-                    except (json.JSONDecodeError, TypeError):
+                    except (orjson.JSONDecodeError, TypeError):
                         current_turn += 1
                 else:
                     current_turn += 1
@@ -452,7 +452,7 @@ class ContextDB:
         else:
             cursor = await conn.execute(
                 "INSERT INTO messages (role, content) VALUES (?, ?)",
-                (role, json.dumps(line_json)),
+                (role, orjson.dumps(line_json).decode()),
             )
             self._last_message_rowid = cursor.lastrowid or self._last_message_rowid
 

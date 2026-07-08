@@ -4,6 +4,12 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+try:
+    import uvloop
+    uvloop.install()
+except ImportError:
+    pass
+
 
 def _prog_name() -> str:
     return Path(sys.argv[0]).name or "kimi"

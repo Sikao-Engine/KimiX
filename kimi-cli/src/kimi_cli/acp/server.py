@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import sys
 import time
-from datetime import datetime
+import pendulum
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -309,7 +309,7 @@ class ACPServer:
                     cwd=cwd,
                     session_id=s.id,
                     title=s.title,
-                    updated_at=datetime.fromtimestamp(s.updated_at).astimezone().isoformat(),
+                    updated_at=pendulum.from_timestamp(s.updated_at).isoformat(),
                 )
                 for s in sessions
             ],

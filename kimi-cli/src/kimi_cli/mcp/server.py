@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import base64
+import pybase64
 import inspect
 import mimetypes
 from pathlib import Path, PurePosixPath
@@ -218,7 +218,7 @@ class MCPKimixServer:
                 ):
                     return file_path.read_text(encoding="utf-8")
                 data = file_path.read_bytes()
-                return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
+                return f"data:{mime_type};base64,{pybase64.b64encode(data).decode('ascii')}"
             except Exception as exc:
                 return f"Error reading file: {exc}"
 

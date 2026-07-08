@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-import difflib
 from typing import Annotated, Literal, override
 
 import xxhash
+from rapidfuzz.distance import Levenshtein
 from kaos.path import KaosPath
 from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field, model_validator
@@ -546,23 +546,19 @@ def generate_hash_aware_diff(
         new_line_hashes.append(hash_str)
         prev_hash = hash_str
 
-    # Use SequenceMatcher to find changes
-    sm = difflib.SequenceMatcher(None, old_lines, new_lines)
+    # Use RapidFuzz Levenshtein to find changes
+    ops = Levenshtein.editops(old_lines, new_lines)
     changed_new_lines: set[int] = set()
     deleted_old_lines: set[int] = set()
 
-    for tag, i1, i2, j1, j2 in sm.get_opcodes():
-        if tag == "insert":
-            for idx in range(j1, j2):
-                changed_new_lines.add(idx + 1)
-        elif tag == "delete":
-            for idx in range(i1, i2):
-                deleted_old_lines.add(idx + 1)
-        elif tag == "replace":
-            for idx in range(j1, j2):
-                changed_new_lines.add(idx + 1)
-            for idx in range(i1, i2):
-                deleted_old_lines.add(idx + 1)
+    for op in ops:
+        if op.tag == "insert":
+            changed_new_lines.add(op.dest_pos + 1)
+        elif op.tag == "delete":
+            deleted_old_lines.add(op.src_pos + 1)
+        elif op.tag == "replace":
+            changed_new_lines.add(op.dest_pos + 1)
+            deleted_old_lines.add(op.src_pos + 1)
 
     # Calculate display range: +/- 5 lines around changes
     display_ranges: list[tuple[int, int]] = []

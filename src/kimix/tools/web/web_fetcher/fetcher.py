@@ -1,5 +1,5 @@
 import asyncio
-import re
+import regex as re
 import ssl
 
 import httpx

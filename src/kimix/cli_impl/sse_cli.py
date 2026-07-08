@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime
+import pendulum
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -84,7 +84,7 @@ async def _sse_cli_main(host: str, port: int, debug: bool = False) -> None:
     client = KimixAsyncClient(host=host, port=port)
     log_file: TextIO | None = None
     if debug:
-        log_name = f"sse_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        log_name = f"sse_log_{pendulum.now().strftime('%Y%m%d_%H%M%S')}.txt"
         log_path = Path.cwd() / log_name
         log_file = open(log_path, "w", encoding="utf-8")
         print(f"[SSE CLI] Debug mode ON, logging to {log_path}")

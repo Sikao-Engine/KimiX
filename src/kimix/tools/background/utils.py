@@ -1,7 +1,7 @@
 import asyncio
 import inspect
 import io
-import re
+import regex as re
 import threading
 import time
 import queue

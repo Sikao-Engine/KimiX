@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from datetime import datetime
+import pendulum
 
 import kimix.base as base
 
@@ -154,7 +154,7 @@ def _cmd_sessions(task_split: list[str], text_arr: list[str]) -> tuple[None, boo
     print_info(f'{" ":1}  {"session id":<{id_width}}  {"updated at":<19}  title')
     for item in sessions:
         marker = '*' if item.id == current_id else ' '
-        updated_at = datetime.fromtimestamp(item.updated_at).strftime('%Y-%m-%d %H:%M:%S')
+        updated_at = pendulum.from_timestamp(item.updated_at).strftime('%Y-%m-%d %H:%M:%S')
         print(f'{marker}  {item.id:<{id_width}}  {updated_at}  {item.title}')
     return None, False
 

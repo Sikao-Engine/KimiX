@@ -4,7 +4,7 @@ import asyncio
 import inspect
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime
+import pendulum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -305,7 +305,7 @@ class Runtime:
             llm=llm,
             session=session,
             builtin_args=BuiltinSystemPromptArgs(
-                KIMI_NOW=datetime.now().astimezone().isoformat(),
+                KIMI_NOW=pendulum.now().isoformat(),
                 KIMI_WORK_DIR=session.work_dir,
                 KIMI_WORK_DIR_LS=ls_output,
                 KIMI_AGENTS_MD=agents_md or "",

@@ -1,4 +1,4 @@
-import re
+import regex as re
 from pathlib import Path
 from typing import Any, Union, get_args, get_origin
 

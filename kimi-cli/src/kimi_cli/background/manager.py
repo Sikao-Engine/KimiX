@@ -6,8 +6,8 @@ import signal
 import subprocess
 import sys
 import time
-from datetime import datetime
-from pathlib import Path
+import pendulum
+from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
 from kaos.local import local_kaos
@@ -521,7 +521,7 @@ class BackgroundTaskManager:
 
             status_details: list[str] = []
             if finished_at is not None:
-                finished_text = datetime.fromtimestamp(finished_at).strftime("%Y-%m-%d %H:%M:%S")
+                finished_text = pendulum.from_timestamp(finished_at, tz="local").strftime("%Y-%m-%d %H:%M:%S")
                 status_details.append(f"{finished_label}: {finished_text}")
             if duration_s is not None:
                 status_details.append(f"Duration: {format_elapsed(duration_s)}")

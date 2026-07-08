@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import json
+import pendulum
 from collections.abc import Sequence
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import aiofiles
 import orjson
-from kaos.path import KaosPath
 from kosong.message import Message
 from kosong.utils.jsonx import loads_relaxed
 
@@ -63,7 +61,7 @@ def _extract_tool_call_hint(args_json: str) -> str:
     """
     try:
         parsed: object = loads_relaxed(args_json)
-    except (json.JSONDecodeError, TypeError):
+    except (orjson.JSONDecodeError, TypeError):
         return ""
     if not isinstance(parsed, dict):
         return ""
@@ -113,7 +111,7 @@ def _format_tool_call_md(tool_call: ToolCall) -> str:
     try:
         parsed = loads_relaxed(args_raw)
         args_formatted = orjson.dumps(parsed, option=orjson.OPT_INDENT_2).decode()
-    except json.JSONDecodeError:
+    except orjson.JSONDecodeError:
         args_formatted = args_raw
 
     return f"{title}\n<!-- call_id: {tool_call.id} -->\n```json\n{args_formatted}\n```"
@@ -261,7 +259,7 @@ def build_export_markdown(
     work_dir: str,
     history: Sequence[Message],
     token_count: int,
-    now: datetime,
+    now: pendulum.DateTime,
 ) -> str:
     """Build the full export markdown string."""
     lines: list[str] = [
@@ -414,7 +412,7 @@ def _stringify_tool_calls(tool_calls: Sequence[ToolCall]) -> str:
         try:
             args = loads_relaxed(args_raw)
             args_str = orjson.dumps(args).decode()
-        except (json.JSONDecodeError, TypeError):
+        except (orjson.JSONDecodeError, TypeError):
             args_str = args_raw
         lines.append(f"Tool Call: {tc.function.name}({args_str})")
     return "\n".join(lines)
@@ -475,7 +473,7 @@ async def perform_export(
     if not history:
         return "No messages to export."
 
-    now = datetime.now().astimezone()
+    now = pendulum.now()
     short_id = session_id[:8]
     default_name = f"kimi-export-{short_id}-{now.strftime('%Y%m%d-%H%M%S')}.md"
 

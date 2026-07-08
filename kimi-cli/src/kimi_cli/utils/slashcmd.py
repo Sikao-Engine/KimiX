@@ -1,4 +1,4 @@
-import re
+import regex as re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import overload

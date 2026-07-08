@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import difflib
-from difflib import SequenceMatcher
+from difflib import SequenceMatcher, unified_diff
 
 from kosong.tooling import DisplayBlock
 
@@ -46,7 +45,7 @@ def format_unified_diff(
     tofile = f"b/{path}" if path else "b/file"
 
     diff = list(
-        difflib.unified_diff(
+        unified_diff(
             old_lines,
             new_lines,
             fromfile=fromfile,

@@ -49,14 +49,14 @@ class PySyntaxCheck(CallableTool2):
                 text=True
             )
 
-            import json
+            import orjson
             errors = []
             warnings = []
             hints = []
 
             if result.stdout:
                 try:
-                    diagnostics = json.loads(result.stdout)
+                    diagnostics = orjson.loads(result.stdout)
                     for diag in diagnostics:
                         message = diag.get('message', '')
                         code = diag.get('code', '')
@@ -71,7 +71,7 @@ class PySyntaxCheck(CallableTool2):
                             warnings.append(item)
                         else:
                             hints.append(item)
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     pass
 
             # Also check for formatting issues as hints
@@ -84,12 +84,12 @@ class PySyntaxCheck(CallableTool2):
 
             if fmt_result.stdout:
                 try:
-                    fmt_diagnostics = json.loads(fmt_result.stdout)
+                    fmt_diagnostics = orjson.loads(fmt_result.stdout)
                     for diag in fmt_diagnostics:
                         message = diag.get('message', 'Formatting issue')
                         location = f"Line {diag.get('start_location', {}).get('row', '?')}"
                         hints.append(f"[format] {message} ({location})")
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     pass
 
             output_parts = []

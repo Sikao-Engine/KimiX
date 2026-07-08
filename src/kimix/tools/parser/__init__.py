@@ -17,14 +17,7 @@ from kimix.parser import (
     BaseParser,
 )
 
-try:
-    import orjson
-
-    _HAS_ORJSON = True
-except ImportError:
-    import json
-
-    _HAS_ORJSON = False
+import orjson
 
 
 # ── Language → Parser mapping ──────────────────────────────────────────────────
@@ -66,10 +59,8 @@ _LANGUAGE_MAP: dict[str, BaseParser] = {
 
 
 def _to_json(data: Any) -> str:
-    """Serialize *data* to a JSON string using orjson (preferred) or stdlib json."""
-    if _HAS_ORJSON:
-        return orjson.dumps(data, option=orjson.OPT_INDENT_2).decode("utf-8")
-    return json.dumps(data, indent=2, ensure_ascii=False, default=str)
+    """Serialize *data* to a JSON string using orjson."""
+    return orjson.dumps(data, option=orjson.OPT_INDENT_2).decode("utf-8")
 
 
 # ── Params ─────────────────────────────────────────────────────────────────────

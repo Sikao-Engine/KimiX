@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import random
-import re
+import regex as re
 import string
 
 _NEWLINE_RE = re.compile(r"[\r\n]+")

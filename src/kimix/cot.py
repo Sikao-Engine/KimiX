@@ -7,7 +7,7 @@ self-verification and continuation from prior reasoning.
 
 from __future__ import annotations
 
-import re
+import regex as re
 from dataclasses import dataclass
 from typing import Optional
 

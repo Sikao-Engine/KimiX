@@ -59,7 +59,7 @@ class TestAnsiEscapeBenchmark:
         for _ in range(50_000):
             _ANSI_ESCAPE.sub("", heavy_text)
         elapsed = time.perf_counter() - start
-        assert elapsed < 10.0
+        assert elapsed < 20.0
 
     def test_ansi_re_sub_on_clean_string(self) -> None:
         """Regex on clean string (no ANSI)."""

@@ -351,7 +351,7 @@ def test_glob_params_schema(glob_tool: Glob):
         {
             "properties": {
                 "pattern": {
-                    "description": "Glob pattern. Never start with `**`.",
+                    "description": "Glob pattern.",
                     "type": "string",
                 },
                 "directory": {

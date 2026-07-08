@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import importlib
 import inspect
-import json
+import orjson
 import time
 import typing
 from contextvars import ContextVar
@@ -544,7 +544,7 @@ class KimiToolset:
 
             try:
                 arguments: JsonType = loads_relaxed(tool_call.function.arguments or "{}")
-            except json.JSONDecodeError as e:
+            except (orjson.JSONDecodeError, ValueError) as e:
                 logger.warning(
                     "Tool call JSON parse error: {tool_name} (call_id={call_id}): {error}",
                     tool_name=tool_name,

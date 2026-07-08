@@ -1,4 +1,4 @@
-import json
+import orjson
 from typing import cast
 
 import streamingjson  # type: ignore[reportMissingTypeStubs]
@@ -27,7 +27,7 @@ def extract_key_argument(
 
     try:
         curr_args: JsonType = loads_relaxed(json_str)
-    except json.JSONDecodeError:
+    except orjson.JSONDecodeError:
         return None
     if not curr_args:
         return None

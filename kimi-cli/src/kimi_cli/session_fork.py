@@ -6,9 +6,8 @@ for both the Web API and CLI slash commands (/undo, /fork).
 
 from __future__ import annotations
 
-import json
 import mimetypes
-import re
+import regex as re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -309,31 +308,31 @@ async def fork_session(
 
 def _truncate_context_sqlite(db_path: Path, turn_index: int) -> list[str]:
     """Read context from SQLite DB and return lines up to and including the given turn."""
-    import sqlite3
     import re
-    import json
+    import orjson
+
+    import apsw
 
     checkpoint_pattern = re.compile(r"^<system>CHECKPOINT \d+</system>$")
 
     lines: list[str] = []
     current_turn = -1
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = apsw.Connection(str(db_path))
     try:
-        cursor = conn.execute("SELECT rowid, role, content FROM messages ORDER BY rowid")
-        rows = cursor.fetchall()
-        cursor.close()
+        cursor = conn.cursor()
+        cursor.execute("SELECT rowid, role, content FROM messages ORDER BY rowid")
+        rows = list(cursor)
 
         for row in rows:
-            role = row["role"]
-            content = row["content"]
+            role = row[1]  # role is index 1
+            content = row[2]  # content is index 2
 
             # Detect user turn (excluding synthetic checkpoint markers)
             if role == "user":
                 is_checkpoint = False
                 try:
-                    parsed = json.loads(content)
+                    parsed = orjson.loads(content)
                     if isinstance(parsed, str) and checkpoint_pattern.fullmatch(parsed.strip()):
                         is_checkpoint = True
                     elif isinstance(parsed, list) and len(parsed) == 1:
@@ -341,7 +340,7 @@ def _truncate_context_sqlite(db_path: Path, turn_index: int) -> list[str]:
                         if isinstance(first, dict) and isinstance(first.get("text"), str):
                             if checkpoint_pattern.fullmatch(first["text"].strip()):
                                 is_checkpoint = True
-                except (json.JSONDecodeError, TypeError):
+                except (orjson.JSONDecodeError, TypeError):
                     pass
 
                 if not is_checkpoint:
@@ -381,19 +380,18 @@ def _read_all_content(path: Path) -> list[str]:
 
 def _read_all_lines_from_db(db_path: Path) -> list[str]:
     """Read all JSON content lines from a SQLite context database."""
-    import sqlite3
+    import apsw
 
     lines: list[str] = []
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = apsw.Connection(str(db_path))
     try:
-        cursor = conn.execute(
+        cursor = conn.cursor()
+        cursor.execute(
             "SELECT content FROM messages ORDER BY rowid"
         )
-        rows = cursor.fetchall()
-        cursor.close()
-        lines = [row["content"] for row in rows]
-    except sqlite3.OperationalError:
+        rows = list(cursor)
+        lines = [row[0] for row in rows]
+    except apsw.OperationalError:
         # Table doesn't exist yet
         pass
     finally:
@@ -406,7 +404,7 @@ async def _write_context_lines_to_db(db_path: Path, lines: list[str]) -> None:
 
     This overwrites any existing data in the database.
     """
-    import json as json_module
+    import orjson as json_module
 
     from kosong.message import Message
 
@@ -479,4 +477,4 @@ def _copy_referenced_videos(
         for vf in files_to_copy:
             shutil.copy2(vf, new_uploads / vf.name)
             copied_names.append(vf.name)
-        (new_uploads / ".sent").write_text(json.dumps(copied_names), encoding="utf-8")
+        (new_uploads / ".sent").write_text(orjson.dumps(copied_names).decode(), encoding="utf-8")

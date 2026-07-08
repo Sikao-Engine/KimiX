@@ -6,7 +6,6 @@ connections. Each client is served by a dedicated thread from a thread pool.
 """
 
 import socket
-import struct
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -132,7 +131,7 @@ class TcpGroupServer:
                 if length_bytes is None:
                     break
 
-                length = struct.unpack("!I", length_bytes)[0]
+                length = int.from_bytes(length_bytes, "big")
 
                 # Sanity check
                 if length == 0 or length > 10 * 1024 * 1024:  # Max 10MB
@@ -206,7 +205,7 @@ class TcpGroupServer:
                 length = len(payload)
 
                 # Send length prefix
-                length_bytes = struct.pack("!I", length)
+                length_bytes = length.to_bytes(4, "big")
                 client_sock.sendall(length_bytes)
 
                 # Send payload

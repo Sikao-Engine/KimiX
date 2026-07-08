@@ -1,6 +1,6 @@
 """Utilities for prompt string manipulation."""
 
-import re
+import regex as re
 import unicodedata
 from pathlib import Path
 

@@ -10,18 +10,19 @@ Emits opencode-style SSE events that match the protocol specification:
 """
 
 from __future__ import annotations
-
 import asyncio
-import hashlib
-import orjson
 import logging
 import os
 import threading
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
+import orjson
+import xxhash
 from kimi_agent_sdk import Session
 from kaos.path import KaosPath
 from kimi_cli.soul import RunCancelled
@@ -56,7 +57,7 @@ def _gen_id(prefix: str) -> str:
     cnt_hex = format(counter, "04x")
     # Add some entropy from hash
     raw = f"{ts_hex}{cnt_hex}{os.getpid()}{time.monotonic_ns()}"
-    h = hashlib.md5(raw.encode()).hexdigest()[:12]
+    h = xxhash.xxh64(raw.encode()).hexdigest()[:12]
     return f"{prefix}_{ts_hex}{h}"
 
 
@@ -75,7 +76,7 @@ def _gen_part_id() -> str:
 def _snapshot_hash() -> str:
     """Generate a snapshot hash for step-start/step-finish."""
     raw = f"{time.time()}{time.monotonic_ns()}{os.getpid()}"
-    return hashlib.md5(raw.encode()).hexdigest()[:16]
+    return xxhash.xxh64(raw.encode()).hexdigest()[:16]
 
 
 def _now_ms() -> int:
@@ -413,22 +414,21 @@ class SessionManager:
         # Try SQLite backend first (for .db files)
         if context_file.suffix == ".db" and context_file.exists():
             try:
-                import sqlite3
+                import apsw
 
-                conn = sqlite3.connect(str(context_file))
-                conn.row_factory = sqlite3.Row
+                conn = apsw.Connection(str(context_file))
                 try:
-                    cursor = conn.execute(
+                    cursor = conn.cursor()
+                    cursor.execute(
                         "SELECT role, content FROM messages WHERE role NOT IN "
                         "('_system_prompt', '_usage', '_checkpoint') "
                         "ORDER BY rowid DESC LIMIT 100"
                     )
-                    rows = cursor.fetchall()
-                    cursor.close()
+                    rows = list(cursor)
 
                     for index, row in enumerate(reversed(rows)):
-                        role = row["role"]
-                        content_data = loads_relaxed(row["content"])
+                        role = row[0]
+                        content_data = loads_relaxed(row[1])
                         content = self._context_content_text(content_data)
                         if not content:
                             continue

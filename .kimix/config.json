@@ -47,6 +47,7 @@
     "Stop-Process",
     "Restart-Computer",
     "Stop-Computer",
-    "Clear-Content -Path"
+    "Clear-Content -Path",
+    "taskkill"
   ]
 }

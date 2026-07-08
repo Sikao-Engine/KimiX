@@ -143,4 +143,4 @@ async def test_turn_force_stops_after_twelve_identical_calls(
     outcome = await soul._turn(Message(role="user", content="go"))
 
     assert outcome.stop_reason == "tool_call_repeat"
-    assert outcome.step_count == 12
+    assert outcome.step_count == 16

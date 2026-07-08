@@ -1,4 +1,4 @@
-import base64
+import pybase64
 from io import BytesIO
 from pathlib import Path
 from typing import override
@@ -25,7 +25,7 @@ MAX_MEDIA_MEGABYTES = 100
 
 
 def _to_data_url(mime_type: str, data: bytes) -> str:
-    encoded = base64.b64encode(data).decode("ascii")
+    encoded = pybase64.b64encode(data).decode("ascii")
     return f"data:{mime_type};base64,{encoded}"
 
 

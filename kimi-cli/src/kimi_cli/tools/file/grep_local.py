@@ -10,7 +10,7 @@ import fnmatch
 import heapq
 import os
 import platform
-import re
+import regex as re
 import shlex
 import shutil
 import stat

@@ -1,6 +1,6 @@
 """JSON file validator tool."""
 import xml.etree.ElementTree as ET
-import json
+import orjson
 
 
 def check_json(file_path: str, json_callback = None) -> str | None:
@@ -15,12 +15,12 @@ def check_json(file_path: str, json_callback = None) -> str | None:
     try:
         js = None
         with open(file_path, 'r', encoding='utf-8') as f:
-            js = json.load(f)
+            js = orjson.loads(f.read())
         if json_callback:
             json_callback(js)
         return None
 
-    except json.JSONDecodeError as exc:
+    except orjson.JSONDecodeError as exc:
         return f"JSON decode error at line {exc.lineno}, column {exc.colno}: {exc.msg}"
     except Exception as exc:
         return f"Failed to validate JSON file: {str(exc)}"
@@ -61,12 +61,12 @@ def check_json_str(content: str, json_callback=None) -> str | None:
         None if the JSON string is valid, error message string otherwise.
     """
     try:
-        js = json.loads(content)
+        js = orjson.loads(content)
         if json_callback:
             json_callback(js)
         return None
 
-    except json.JSONDecodeError as exc:
+    except orjson.JSONDecodeError as exc:
         return f"JSON decode error at line {exc.lineno}, column {exc.colno}: {exc.msg}"
     except Exception as exc:
         return f"Failed to validate JSON content: {str(exc)}"

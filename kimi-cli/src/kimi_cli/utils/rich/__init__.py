@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import re
+import regex as re
 from typing import Final
 
 from rich import _wrap

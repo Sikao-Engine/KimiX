@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import re
+import regex as re
+
+import orjson
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Protocol, cast, runtime_checkable
 
 import aiofiles
 import aiofiles.os
-import orjson
 from kosong.message import Message
 from kosong.utils.jsonx import loads_relaxed
 from pydantic import ValidationError
@@ -98,7 +98,7 @@ class JsonlContextStorage:
                     continue
                 try:
                     line_json = loads_relaxed(line)
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     continue
                 if isinstance(line_json, dict) and line_json.get("role") == "_system_prompt":
                     content = line_json.get("content")
@@ -154,7 +154,7 @@ class JsonlContextStorage:
                     continue
                 try:
                     line_json = loads_relaxed(line)
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     continue
                 if not isinstance(line_json, dict):
                     continue
@@ -193,7 +193,7 @@ class JsonlContextStorage:
                 role = None
                 try:
                     role = loads_relaxed(line).get("role")
-                except (json.JSONDecodeError, ValueError, TypeError):
+                except (orjson.JSONDecodeError, ValueError, TypeError):
                     continue
                 if isinstance(role, str) and not role.startswith("_"):
                     return True
@@ -219,7 +219,7 @@ class JsonlContextStorage:
                     continue
                 try:
                     line_json = loads_relaxed(line)
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     continue
                 if isinstance(line_json, dict) and line_json.get("role") == "_checkpoint":
                     cpid = line_json.get("id")
@@ -248,7 +248,7 @@ class JsonlContextStorage:
                         continue
                     try:
                         line_json = loads_relaxed(stripped)
-                    except json.JSONDecodeError:
+                    except orjson.JSONDecodeError:
                         continue
                     if not isinstance(line_json, dict):
                         continue
@@ -287,7 +287,7 @@ class JsonlContextStorage:
                     continue
                 try:
                     line_json = loads_relaxed(line)
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     continue
                 if isinstance(line_json, dict) and line_json.get("role") == "_usage":
                     tc = line_json.get("token_count")
@@ -322,7 +322,7 @@ class JsonlContextStorage:
                     continue
                 try:
                     line_json = loads_relaxed(line)
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     continue
                 if not isinstance(line_json, dict):
                     continue
@@ -373,7 +373,7 @@ class JsonlContextStorage:
                     continue
                 try:
                     line_json = loads_relaxed(line)
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     continue
                 if not isinstance(line_json, dict):
                     continue

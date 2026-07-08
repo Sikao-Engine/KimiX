@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
+import regex as re
 from collections.abc import Sequence
 from pathlib import Path, PurePath
 from stat import S_ISDIR

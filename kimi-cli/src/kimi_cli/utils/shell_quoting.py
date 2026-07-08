@@ -12,7 +12,7 @@ before the command reaches the shell.
 
 from __future__ import annotations
 
-import re
+import regex as re
 
 # Match `>nul`, `> NUL`, `2>nul`, `&>nul`, `>>nul` (case-insensitive),
 # but NOT `>null`, `>nullable`, `>nul.txt`, `cat nul.txt`.

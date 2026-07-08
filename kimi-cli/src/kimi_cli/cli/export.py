@@ -8,7 +8,7 @@ import io
 import platform
 import time
 import zipfile
-from datetime import UTC, datetime
+import pendulum
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -203,7 +203,7 @@ def _build_manifest(session_id: str, session_dir: Path) -> dict[str, str | None]
     try:
         from kimi_cli.constant import get_version
 
-        manifest["exported_at"] = datetime.now(UTC).isoformat()
+        manifest["exported_at"] = pendulum.now("UTC").isoformat()
         manifest["kimi_cli_version"] = get_version()
         manifest["python_version"] = platform.python_version()
         manifest["os"] = f"{platform.system()} {platform.release()}"
@@ -211,9 +211,9 @@ def _build_manifest(session_id: str, session_dir: Path) -> dict[str, str | None]
 
         first_ts, last_ts = _session_time_range(session_dir)
         if first_ts is not None:
-            manifest["session_first_activity"] = datetime.fromtimestamp(first_ts, UTC).isoformat()
+            manifest["session_first_activity"] = pendulum.from_timestamp(first_ts, "UTC").isoformat()
         if last_ts is not None:
-            manifest["session_last_activity"] = datetime.fromtimestamp(last_ts, UTC).isoformat()
+            manifest["session_last_activity"] = pendulum.from_timestamp(last_ts, "UTC").isoformat()
     except Exception:
         pass
     return manifest
@@ -222,7 +222,7 @@ def _build_manifest(session_id: str, session_dir: Path) -> dict[str, str | None]
 def _format_message_timestamp(timestamp: float | None) -> str:
     if timestamp is None:
         return "(no user message)"
-    return datetime.fromtimestamp(timestamp, UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return pendulum.from_timestamp(timestamp, "UTC").strftime("%Y-%m-%d %H:%M:%S UTC")
 
 
 def _confirm_previous_session(session: Session) -> bool:

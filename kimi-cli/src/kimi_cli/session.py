@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import builtins
-import json
 import shutil
 import uuid
+
+import orjson
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -102,14 +103,14 @@ class Session:
         db_file = self.context_db_file
         if db_file.exists():
             try:
-                import sqlite3
-                conn = sqlite3.connect(str(db_file))
+                import apsw
+                conn = apsw.Connection(str(db_file))
                 try:
-                    cursor = conn.execute(
+                    cursor = conn.cursor()
+                    cursor.execute(
                         "SELECT 1 FROM messages WHERE role NOT IN ('_system_prompt', '_usage', '_checkpoint') LIMIT 1"
                     )
                     row = cursor.fetchone()
-                    cursor.close()
                     return row is None
                 finally:
                     conn.close()
@@ -237,7 +238,7 @@ class Session:
                     continue
                 try:
                     line_json = loads_relaxed(line)
-                except json.JSONDecodeError:
+                except orjson.JSONDecodeError:
                     continue
                 if not isinstance(line_json, dict):
                     continue
@@ -581,7 +582,7 @@ def _migrate_jsonl_to_sqlite(jsonl_path: Path) -> None:
     Reads the JSONL file line by line and inserts into the SQLite database.
     On success, renames the JSONL file to .bak.
     """
-    import json as json_module
+    import orjson as json_module
 
     db_path = jsonl_path.with_suffix(".db")
     if db_path.exists():

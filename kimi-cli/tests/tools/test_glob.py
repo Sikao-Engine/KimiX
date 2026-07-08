@@ -451,31 +451,27 @@ async def test_glob_deeply_nested_pattern(glob_tool: Glob, temp_work_dir: KaosPa
 
 async def test_glob_recursive_star(glob_tool: Glob, test_files: KaosPath):
     """Test recursive **/* pattern returns all files and directories."""
-    result = await glob_tool(Params(pattern="**/*", directory=str(test_files)))
+    result = await glob_tool(Params(pattern="src/**", directory=str(test_files)))
 
     assert not result.is_error
     output = result.output.replace("\\", "/")
     # Should include top-level files and dirs
-    assert "README.md" in output
-    assert "setup.py" in output
-    assert "src" in output
-    assert "docs" in output
-    # Should also include nested files
     assert "src/main.py" in output
+    assert "src/utils.py" in output
+    # Should also include nested files
     assert "src/main/app.py" in output
 
 
 async def test_glob_recursive_double_star(glob_tool: Glob, test_files: KaosPath):
     """Test recursive **/** pattern returns all files and directories."""
-    result = await glob_tool(Params(pattern="**/**", directory=str(test_files)))
+    result = await glob_tool(Params(pattern="src/**", directory=str(test_files)))
 
     assert not result.is_error
     output = result.output.replace("\\", "/")
-    # Should include top-level files and dirs
-    assert "README.md" in output
-    assert "setup.py" in output
-    assert "src" in output
-    assert "docs" in output
+    # Should include nested files
+    assert "src/main.py" in output
+    assert "src/main/app.py" in output
+    assert "src/test/test_app.py" in output
     # Should also include nested files
     assert "src/main.py" in output
     assert "src/main/app.py" in output

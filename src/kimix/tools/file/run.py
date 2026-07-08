@@ -2,7 +2,7 @@
 import anyio
 import asyncio
 from pathlib import Path
-import re
+import regex as re
 import shlex
 import sys
 import tempfile

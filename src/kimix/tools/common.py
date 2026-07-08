@@ -3,7 +3,7 @@ import atexit
 import codecs
 import io
 import os
-import re
+import regex as re
 import shutil
 import textwrap
 import uuid

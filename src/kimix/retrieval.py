@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 import functools
-import hashlib
 import heapq
 import math
 import operator
-import struct
 import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Iterable
 
+import msgspec
 import numpy as np
+import xxhash
 from numpy.typing import NDArray
 
 _EMPTY_DOCS: NDArray[np.int32] = np.array([], dtype=np.int32)
@@ -135,6 +135,22 @@ class InvertedIndex:
 
     _MAGIC = b"KIMX"
     _VERSION = 3
+
+    # msgspec Structs for index metadata serialization
+    class _IndexMeta(msgspec.Struct):
+        """Serializable index metadata, replacing struct-based header."""
+        version: int
+        N: int
+        num_docs: int
+        avgdl: float
+        terms: list[str]
+        doc_lengths: list[int]
+        symmetric_delete: dict[int, dict[str, list[str]]]
+
+    class _ForwardIndex(msgspec.Struct):
+        """Forward index (document -> term frequencies)."""
+        doc_term_freqs: list[dict[str, int]]
+        doc_token_strs: list[list[str]]
 
     def __init__(self) -> None:
         self._term_to_id: dict[str, int] = {}
@@ -400,182 +416,156 @@ class InvertedIndex:
         return self._term_to_id.keys()
 
     def save(self, path: str | Path, include_forward_index: bool = False) -> None:
-        """Persist the index to disk in a compact binary format."""
+        """Persist the index to disk using msgspec for metadata."""
         if not self._finalized:
             self.finalize()
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
         terms = list(self._term_to_id.keys())
-        term_ids = self._term_to_id
-        num_terms = len(terms)
         num_docs = len(self._doc_lengths)
 
+        # Build symmetric delete index (convert tuples to lists for msgspec)
+        sym_delete: dict[int, dict[str, list[str]]] = {}
+        for k, v in self._symmetric_delete_index.items():
+            sym_delete[k] = {vk: list(vv) for vk, vv in v.items()}
+
+        # Serialize metadata with msgspec
+        meta = self._IndexMeta(
+            version=self._VERSION,
+            N=self._N,
+            num_docs=num_docs,
+            avgdl=self._avgdl,
+            terms=terms,
+            doc_lengths=self._doc_lengths,
+            symmetric_delete=sym_delete,
+        )
+        meta_bytes = msgspec.msgpack.encode(meta)
+
+        # Build numpy posting data (efficient binary)
+        num_terms = len(terms)
+        docs_data_list: list[NDArray[np.int32]] = []
+        tfs_data_list: list[NDArray[np.uint16]] = []
+        df_list: list[int] = []
+        for tid in range(num_terms):
+            start = self._posting_docs_ptr[tid]
+            end = self._posting_docs_ptr[tid + 1]
+            docs = self._posting_docs_data[start:end]
+            tfs = self._posting_tfs_data[start:end]
+            docs_data_list.append(docs)
+            tfs_data_list.append(tfs)
+            df_list.append(len(docs))
+
+        all_docs = np.concatenate(docs_data_list) if docs_data_list else np.array([], dtype=np.int32)
+        all_tfs = np.concatenate(tfs_data_list) if tfs_data_list else np.array([], dtype=np.uint16)
+
         with open(path, "wb") as f:
-            # Header: magic(4) + version(1) + N(4) + num_docs(4) + avgdl(8) + num_terms(4)
+            # Magic
             f.write(self._MAGIC)
-            f.write(struct.pack("<B", self._VERSION))
-            f.write(struct.pack("<I", self._N))
-            f.write(struct.pack("<I", num_docs))
-            f.write(struct.pack("<d", self._avgdl))
-            f.write(struct.pack("<I", num_terms))
+            # msgspec-metadata length prefix (for fast skip during load)
+            f.write(len(meta_bytes).to_bytes(4, 'big'))
+            f.write(meta_bytes)
+            # Posting list metadata
+            f.write(np.array(df_list, dtype='<i4').tobytes())
+            # Posting docs and tfs
+            f.write(all_docs.astype('<i4').tobytes())
+            f.write(all_tfs.astype('<u2').tobytes())
 
-            # Term table
-            for term in terms:
-                term_bytes = term.encode("utf-8")
-                f.write(struct.pack("<H", len(term_bytes)))
-                f.write(term_bytes)
-
-            # Doc lengths
-            if num_docs:
-                f.write(np.array(self._doc_lengths, dtype='<i4').tobytes())
-
-            # Posting lists (in term_id order)
-            for i, term in enumerate(terms):
-                tid = term_ids[term]
-                start = self._posting_docs_ptr[tid]
-                end = self._posting_docs_ptr[tid + 1]
-                docs = self._posting_docs_data[start:end]
-                tfs = self._posting_tfs_data[start:end]
-                df = len(docs)
-                f.write(struct.pack("<I", df))
-                if df:
-                    f.write(docs.astype('<i4').tobytes())
-                    f.write(tfs.astype('<u2').tobytes())
-
-            # Optional forward-index chunk for fast load
-            f.write(struct.pack("<B", 1 if include_forward_index else 0))
-            if include_forward_index:
-                for doc_id in range(num_docs):
-                    term_freqs = (
-                        self._doc_term_freqs[doc_id]
-                        if doc_id < len(self._doc_term_freqs)
-                        else {}
-                    )
-                    f.write(struct.pack("<H", len(term_freqs)))
-                    for term, tf in term_freqs.items():
-                        tid = term_ids[term]
-                        f.write(struct.pack("<I", tid))
-                        f.write(struct.pack("<H", tf))
-
-            # Symmetric delete index (v3)
-            if self._VERSION >= 3:
-                for edit_dist in (1, 2):
-                    sd = self._symmetric_delete_index.get(edit_dist, {})
-                    f.write(struct.pack("<I", len(sd)))
-                    for variant, terms_tuple in sd.items():
-                        v_bytes = variant.encode("utf-8")
-                        f.write(struct.pack("<H", len(v_bytes)))
-                        f.write(v_bytes)
-                        f.write(struct.pack("<I", len(terms_tuple)))
-                        for term in terms_tuple:
-                            t_bytes = term.encode("utf-8")
-                            f.write(struct.pack("<H", len(t_bytes)))
-                            f.write(t_bytes)
+            # Optional forward index
+            if include_forward_index and self._doc_term_freqs:
+                fi = self._ForwardIndex(
+                    doc_term_freqs=[dict(d) for d in self._doc_term_freqs],
+                    doc_token_strs=[list(s) for s in self._doc_token_strs],
+                )
+                fi_bytes = msgspec.msgpack.encode(fi)
+                f.write(b"\x01")
+                f.write(len(fi_bytes).to_bytes(4, 'big'))
+                f.write(fi_bytes)
+            else:
+                f.write(b"\x00")
 
     def load(self, path: str | Path) -> None:
-        """Load a persisted index from disk."""
+        """Load a persisted index from disk using msgspec for metadata."""
         path = Path(path)
         with open(path, "rb") as f:
             magic = f.read(4)
             if magic != self._MAGIC:
                 raise ValueError(f"Invalid file format: expected {self._MAGIC!r}, got {magic!r}")
-            version = struct.unpack("<B", f.read(1))[0]
-            if version not in (1, 2, self._VERSION):
-                raise ValueError(f"Unsupported version: {version}")
 
-            self._N = struct.unpack("<I", f.read(4))[0]
-            num_docs = struct.unpack("<I", f.read(4))[0]
-            self._avgdl = struct.unpack("<d", f.read(8))[0]
-            num_terms = struct.unpack("<I", f.read(4))[0]
+            # Read msgspec-metadata
+            meta_len = int.from_bytes(f.read(4), 'big')
+            meta_bytes = f.read(meta_len)
+            meta: InvertedIndex._IndexMeta = msgspec.msgpack.decode(meta_bytes, type=self._IndexMeta)
 
-            terms: list[str] = []
-            term_to_id: dict[str, int] = {}
-            for i in range(num_terms):
-                term_len = struct.unpack("<H", f.read(2))[0]
-                term = f.read(term_len).decode("utf-8")
-                terms.append(term)
-                term_to_id[term] = i
+            self._N = meta.N
+            self._avgdl = meta.avgdl
+            num_docs = meta.num_docs
+            num_terms = len(meta.terms)
 
-            self._term_to_id = term_to_id
+            self._term_to_id = {term: i for i, term in enumerate(meta.terms)}
+            self._doc_lengths = meta.doc_lengths
+            self._sum_doc_lengths = sum(meta.doc_lengths)
+            self._doc_lengths_arr = np.array(meta.doc_lengths, dtype=np.int32)
 
-            if num_docs:
-                dl_data = f.read(num_docs * 4)
-                if len(dl_data) != num_docs * 4:
-                    raise ValueError("Truncated file: doc lengths")
-                dl_buf = np.frombuffer(dl_data, dtype='<i4').copy()
-                self._doc_lengths = dl_buf.tolist()
-            else:
-                self._doc_lengths = []
-            self._sum_doc_lengths = sum(self._doc_lengths)
-            self._doc_lengths_arr = np.array(self._doc_lengths, dtype=np.int32)
+            # Read df list (num_terms * 4 bytes)
+            df_data = f.read(num_terms * 4)
+            df_list = list(np.frombuffer(df_data, dtype='<i4'))
 
-            docs_data_list: list[NDArray[np.int32]] = []
-            tfs_data_list: list[NDArray[np.uint16]] = []
+            total_postings = sum(df_list)
+            # Read posting docs (total_postings * 4 bytes)
+            docs_data = f.read(total_postings * 4) if total_postings else b''
+            # Read posting tfs (total_postings * 2 bytes)
+            tfs_data = f.read(total_postings * 2) if total_postings else b''
+
+            # Build posting arrays
             docs_ptr = [0]
             tfs_ptr = [0]
-            for _ in range(num_terms):
-                df = struct.unpack("<I", f.read(4))[0]
-                if df:
-                    docs_data = f.read(df * 4)
-                    if len(docs_data) != df * 4:
-                        raise ValueError("Truncated file: posting docs")
-                    docs = np.frombuffer(docs_data, dtype='<i4').copy()
-                    tfs_data = f.read(df * 2)
-                    if len(tfs_data) != df * 2:
-                        raise ValueError("Truncated file: posting tfs")
-                    tfs = np.frombuffer(tfs_data, dtype='<u2').copy()
+            docs_data_list: list[NDArray[np.int32]] = []
+            tfs_data_list: list[NDArray[np.uint16]] = []
+            offset_docs = 0
+            offset_tfs = 0
+            for df in df_list:
+                df_int = int(df)
+                if df_int:
+                    chunk_docs = np.frombuffer(docs_data[offset_docs:offset_docs + df_int * 4], dtype='<i4').copy()
+                    chunk_tfs = np.frombuffer(tfs_data[offset_tfs:offset_tfs + df_int * 2], dtype='<u2').copy()
+                    offset_docs += df_int * 4
+                    offset_tfs += df_int * 2
                 else:
-                    docs = np.array([], dtype=np.int32)
-                    tfs = np.array([], dtype=np.uint16)
-                docs_data_list.append(docs)
-                tfs_data_list.append(tfs)
-                docs_ptr.append(docs_ptr[-1] + df)
-                tfs_ptr.append(tfs_ptr[-1] + df)
+                    chunk_docs = np.array([], dtype=np.int32)
+                    chunk_tfs = np.array([], dtype=np.uint16)
+                docs_data_list.append(chunk_docs)
+                tfs_data_list.append(chunk_tfs)
+                docs_ptr.append(docs_ptr[-1] + df_int)
+                tfs_ptr.append(tfs_ptr[-1] + df_int)
+
             self._posting_docs_data = np.concatenate(docs_data_list) if docs_data_list else np.array([], dtype=np.int32)
             self._posting_tfs_data = np.concatenate(tfs_data_list) if tfs_data_list else np.array([], dtype=np.uint16)
             self._posting_docs_ptr = np.array(docs_ptr, dtype=np.int32)
             self._posting_tfs_ptr = np.array(tfs_ptr, dtype=np.int32)
 
-            # Try to read optional forward-index chunk (v2+)
-            has_forward_chunk = False
+            # Forward index flag
+            flag_byte = f.read(1)
+            has_forward_chunk = bool(flag_byte[0]) if flag_byte else False
+
             doc_token_strs_chunk: list[set[str]] = []
             doc_term_freqs_chunk: list[dict[str, int]] = []
-            if version >= 2:
-                if version >= 3:
-                    flag_data = f.read(1)
-                    has_forward_chunk = bool(struct.unpack("<B", flag_data)[0]) if len(flag_data) == 1 else False
-                else:
-                    pos = f.tell()
-                    f.seek(0, 2)
-                    end = f.tell()
-                    f.seek(pos)
-                    has_forward_chunk = end > pos
-                if has_forward_chunk:
-                    doc_token_strs_chunk = [set() for _ in range(num_docs)]
-                    doc_term_freqs_chunk = [dict() for _ in range(num_docs)]
-                    try:
-                        for d in range(num_docs):
-                            num_terms_data = f.read(2)
-                            if len(num_terms_data) < 2:
-                                raise ValueError("Truncated forward index")
-                            num_terms_doc = struct.unpack("<H", num_terms_data)[0]
-                            for _ in range(num_terms_doc):
-                                tid_data = f.read(4)
-                                if len(tid_data) < 4:
-                                    raise ValueError("Truncated forward index")
-                                tid = struct.unpack("<I", tid_data)[0]
-                                tf_data = f.read(2)
-                                if len(tf_data) < 2:
-                                    raise ValueError("Truncated forward index")
-                                tf = struct.unpack("<H", tf_data)[0]
-                                term = terms[tid]
-                                doc_token_strs_chunk[d].add(term)
-                                doc_term_freqs_chunk[d][term] = tf
-                    except (struct.error, ValueError):
-                        has_forward_chunk = False
-                        doc_token_strs_chunk = []
-                        doc_term_freqs_chunk = []
+            if has_forward_chunk:
+                try:
+                    fi_len = int.from_bytes(f.read(4), 'big')
+                    fi_bytes = f.read(fi_len)
+                    fi: InvertedIndex._ForwardIndex = msgspec.msgpack.decode(fi_bytes, type=self._ForwardIndex)
+                    doc_term_freqs_chunk = fi.doc_term_freqs
+                    doc_token_strs_chunk = [set(s) for s in fi.doc_token_strs]
+                except (msgspec.DecodeError, ValueError):
+                    has_forward_chunk = False
+                    doc_token_strs_chunk = []
+                    doc_term_freqs_chunk = []
+
+            # Rebuild _IndexMeta.symmetric_delete (convert lists back to tuples)
+            self._symmetric_delete_index = {}
+            for k, v in meta.symmetric_delete.items():
+                self._symmetric_delete_index[k] = {vk: tuple(vv) for vk, vv in v.items()}
 
             by_len: dict[int, list[str]] = defaultdict(list)
             by_len_prefix: dict[tuple[int, str], list[str]] = defaultdict(list)
@@ -589,10 +579,7 @@ class InvertedIndex:
             n_docs = len(self._doc_lengths)
             self._term_collection_freqs = [0] * num_terms
             total_tokens = self._sum_doc_lengths
-            if total_tokens > 0:
-                self._collection_lm_cache = {}
-            else:
-                self._collection_lm_cache = {}
+            self._collection_lm_cache = {} if total_tokens > 0 else {}
 
             self._doc_id_to_idx = {i: i for i in range(n_docs)}
             self._idx_to_doc_id = list(range(n_docs))
@@ -603,61 +590,29 @@ class InvertedIndex:
                 for term, tid in self._term_to_id.items():
                     start = self._posting_tfs_ptr[tid]
                     end = self._posting_tfs_ptr[tid + 1]
-                    tfs = self._posting_tfs_data[start:end]
-                    cf = int(tfs.sum()) if len(tfs) else 0
+                    tfs_arr = self._posting_tfs_data[start:end]
+                    cf = int(tfs_arr.sum()) if len(tfs_arr) else 0
                     self._term_collection_freqs[tid] = cf
                     if total_tokens > 0:
                         self._collection_lm_cache[term] = cf / total_tokens
             else:
-                # Rebuild forward index and collection LM from loaded postings
                 self._doc_token_strs = [set() for _ in range(n_docs)]
                 self._doc_term_freqs = [dict() for _ in range(n_docs)]
                 for term, tid in self._term_to_id.items():
                     start = self._posting_docs_ptr[tid]
                     end = self._posting_docs_ptr[tid + 1]
-                    docs = self._posting_docs_data[start:end]
-                    tfs = self._posting_tfs_data[start:end]
-                    cf = int(tfs.sum()) if len(tfs) else 0
+                    docs_arr = self._posting_docs_data[start:end]
+                    tfs_arr = self._posting_tfs_data[start:end]
+                    cf = int(tfs_arr.sum()) if len(tfs_arr) else 0
                     self._term_collection_freqs[tid] = cf
                     if total_tokens > 0:
                         self._collection_lm_cache[term] = cf / total_tokens
-                    docs_list = docs.tolist()
-                    tfs_list = tfs.tolist()
+                    docs_list = docs_arr.tolist()
+                    tfs_list = tfs_arr.tolist()
                     for d_int, tf_int in zip(docs_list, tfs_list):
                         if d_int < n_docs:
                             self._doc_token_strs[d_int].add(term)
                             self._doc_term_freqs[d_int][term] = tf_int
-
-            self._symmetric_delete_index = {}
-            if version >= 3:
-                try:
-                    for edit_dist in (1, 2):
-                        sd_len_data = f.read(4)
-                        if len(sd_len_data) < 4:
-                            raise ValueError("Truncated SD index")
-                        sd_len = struct.unpack("<I", sd_len_data)[0]
-                        sd: dict[str, tuple[str, ...]] = {}
-                        for _ in range(sd_len):
-                            v_len_data = f.read(2)
-                            if len(v_len_data) < 2:
-                                raise ValueError("Truncated SD index")
-                            v_len = struct.unpack("<H", v_len_data)[0]
-                            variant = f.read(v_len).decode("utf-8")
-                            terms_len_data = f.read(4)
-                            if len(terms_len_data) < 4:
-                                raise ValueError("Truncated SD index")
-                            terms_len = struct.unpack("<I", terms_len_data)[0]
-                            term_list = []
-                            for _ in range(terms_len):
-                                t_len_data = f.read(2)
-                                if len(t_len_data) < 2:
-                                    raise ValueError("Truncated SD index")
-                                t_len = struct.unpack("<H", t_len_data)[0]
-                                term_list.append(f.read(t_len).decode("utf-8"))
-                            sd[variant] = tuple(term_list)
-                        self._symmetric_delete_index[edit_dist] = sd
-                except (struct.error, ValueError, UnicodeDecodeError):
-                    self._symmetric_delete_index = {}
 
             self._finalized = True
 
@@ -1316,8 +1271,7 @@ class SimHash:
     @staticmethod
     def _hash_token(token: str) -> int:
         """Stable 64-bit hash for a token."""
-        digest = hashlib.md5(token.encode("utf-8")).digest()[:8]
-        return struct.unpack("<Q", digest)[0]
+        return xxhash.xxh64(token.encode("utf-8")).intdigest()
 
     def _compute(self, text: str) -> int:
         v = [0] * self.hashbits

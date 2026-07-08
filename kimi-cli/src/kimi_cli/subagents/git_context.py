@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import re
+import regex as re
 from urllib.parse import urlparse
 
 import kaos

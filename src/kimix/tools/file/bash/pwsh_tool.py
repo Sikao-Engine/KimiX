@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import functools
 import os
-import re
+import regex as re
 import shutil
 import subprocess
 import sys

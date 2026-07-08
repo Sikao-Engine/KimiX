@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import hashlib
 import shutil
 import threading
 from functools import lru_cache
 from pathlib import Path
 
+import xxhash
+
 
 def _file_digest(path: Path) -> str:
-    """Return blake2b hex digest of file contents using chunked reads."""
-    h = hashlib.blake2b(digest_size=16)
+    """Return xxhash hex digest of file contents using chunked reads."""
+    h = xxhash.xxh64()
     with open(path, "rb") as f:
         while True:
             chunk = f.read(65536)
