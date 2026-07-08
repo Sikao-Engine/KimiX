@@ -22,6 +22,32 @@ from .utils import resolve_vfs
 MAX_MATCHES = 1000
 MAX_BYTES = 100 << 10  # 100KB
 GLOB_DESC_PATH = Path(__file__).parent / "glob.md"
+
+
+def _is_unsafe_recursive_pattern(pattern: str) -> bool:
+    """Check if a glob pattern would recursively match all files/dirs.
+
+    Blocks patterns like ``**``, ``**/*``, ``**/**``, ``**\\*`` (Windows),
+    or any pattern consisting only of wildcard segments (``*``, ``**``)
+    that contains at least one ``**`` segment — these are meaningless
+    and can be extremely slow.
+    """
+    # Normalize Windows backslashes to forward slashes
+    p = pattern.replace("\\", "/")
+    # Strip leading ./
+    p = p.lstrip("./")
+
+    # Split into segments
+    parts = p.split("/")
+
+    # Must have at least one ** segment to be recursive-all
+    if "**" not in parts:
+        return False
+
+    # If every segment is a bare wildcard (* or **), it recurses everything
+    return all(part in ("*", "**") for part in parts)
+
+
 WINDOWS_PATH_HINT = (
     "Windows: `directory` accepts native (`C:\\Users\\foo`) and POSIX-style "
     "(`/c/Users/foo`) paths. Results use backslashes — convert to forward "
@@ -303,6 +329,18 @@ class Glob(CallableTool2[Params]):
     async def __call__(self, params: Params) -> ToolReturnValue:
         try:
             pattern = params.pattern
+
+            # Reject patterns that would recursively match everything under root
+            if _is_unsafe_recursive_pattern(pattern):
+                return ToolError(
+                    message=(
+                        f"Unsafe pattern `{pattern}` — this would recursively "
+                        "match all files/dirs under the search root, which is "
+                        "meaningless and can be extremely slow. "
+                        "Use a more specific pattern (e.g. `src/**/*.py`)."
+                    ),
+                    brief=f"Unsafe pattern: {pattern}",
+                )
 
             if params.directory:
                 dir_path = kaos_path_from_tool_input(params.directory, self._work_dir)
