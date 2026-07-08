@@ -55,16 +55,17 @@ async def test_glob_multiple_matches(glob_tool: Glob, test_files: KaosPath):
     assert "Found 1 matches" in result.message
 
 
-async def test_glob_recursive_pattern_prohibited(glob_tool: Glob, test_files: KaosPath):
-    """Test that recursive glob pattern starting with **/ falls back to root-level search."""
+async def test_glob_recursive_pattern(glob_tool: Glob, test_files: KaosPath):
+    """Test that recursive glob pattern starting with **/ works."""
     result = await glob_tool(Params(pattern="**/*.py", directory=str(test_files)))
 
-    assert result.is_error
-    assert "starts with `**`, which is disallowed" in result.message
-    assert "Fallback result" in result.message
-    assert "Unsafe pattern" in result.brief
-    # Fallback is *.py at root
-    assert "setup.py" in result.output
+    assert not result.is_error
+    output = result.output.replace("\\", "/")
+    assert "setup.py" in output
+    assert "src/main.py" in output
+    assert "src/main/app.py" in output
+    assert "src/test/test_app.py" in output
+    assert "Found 7 matches" in result.message
 
 
 async def test_glob_safe_recursive_pattern(glob_tool: Glob, test_files: KaosPath):
@@ -232,8 +233,8 @@ async def test_glob_max_matches_limit(glob_tool: Glob, temp_work_dir: KaosPath):
     assert f"Showing first {MAX_MATCHES} matches" in result.message
 
 
-async def test_glob_enhanced_double_star_validation(glob_tool: Glob, temp_work_dir: KaosPath):
-    """Test enhanced ** pattern validation returns fallback glob result."""
+async def test_glob_enhanced_double_star(glob_tool: Glob, temp_work_dir: KaosPath):
+    """Test enhanced ** pattern works recursively."""
     # Create some top-level files and directories for listing
     await (temp_work_dir / "file1.txt").write_text("content1")
     await (temp_work_dir / "file2.py").write_text("content2")
@@ -242,15 +243,10 @@ async def test_glob_enhanced_double_star_validation(glob_tool: Glob, temp_work_d
 
     result = await glob_tool(Params(pattern="**/*.txt", directory=str(temp_work_dir)))
 
-    assert result.is_error
-    assert "starts with `**`, which is disallowed" in result.message
-    assert "Fallback result" in result.message
-    # Fallback is *.txt at root
+    assert not result.is_error
     assert isinstance(result.output, str)
     assert "file1.txt" in result.output
     assert "file2.py" not in result.output
-    assert "src" not in result.output
-    assert "docs" not in result.output
 
 
 async def test_glob_exactly_max_matches(glob_tool: Glob, temp_work_dir: KaosPath):
@@ -294,13 +290,13 @@ async def test_glob_complex_pattern(glob_tool: Glob, test_files: KaosPath):
 
 async def test_glob_wildcard_with_double_star_patterns(glob_tool: Glob, test_files: KaosPath):
     """Test various patterns with ** that are allowed."""
-    # Test unsafe pattern with ** at start falls back to main/*.py (no matches at root)
+    # Test pattern with ** at start works recursively
     result = await glob_tool(Params(pattern="**/main/*.py", directory=str(test_files)))
 
-    assert result.is_error
-    assert "starts with `**`, which is disallowed" in result.message
-    assert "Fallback result" in result.message
-    assert result.output == ""
+    assert not result.is_error
+    output = result.output.replace("\\", "/")
+    assert "src/main/app.py" in output
+    assert "src/main/config.py" in output
 
     # Test pattern with ** not at the beginning
     result = await glob_tool(Params(pattern="src/**/test_*.py", directory=str(test_files)))
@@ -322,12 +318,11 @@ async def test_glob_pattern_edge_cases(glob_tool: Glob, test_files: KaosPath):
     result = await glob_tool(Params(pattern="*.py", directory=str(test_files)))
     assert not result.is_error
 
-    # Test pattern that starts with **/ falls back to *.txt (no .txt files at root)
+    # Test pattern that starts with **/ works recursively (no .txt files anywhere)
     result = await glob_tool(Params(pattern="**/*.txt", directory=str(test_files)))
-    assert result.is_error
-    assert "starts with `**`, which is disallowed" in result.message
-    assert "Fallback result" in result.message
+    assert not result.is_error
     assert result.output == ""
+    assert "No matches found" in result.message
 
 
 async def test_glob_hidden_files(glob_tool: Glob, temp_work_dir: KaosPath):
@@ -454,48 +449,47 @@ async def test_glob_deeply_nested_pattern(glob_tool: Glob, temp_work_dir: KaosPa
     assert "deep.txt" in result.output
 
 
-async def test_glob_unsafe_fallback_star(glob_tool: Glob, test_files: KaosPath):
-    """Test unsafe **/* falls back to * and returns root-level items as ToolError."""
+async def test_glob_recursive_star(glob_tool: Glob, test_files: KaosPath):
+    """Test recursive **/* pattern returns all files and directories."""
     result = await glob_tool(Params(pattern="**/*", directory=str(test_files)))
 
-    assert result.is_error
-    assert "starts with `**`, which is disallowed" in result.message
-    assert "Fallback result" in result.message
-    assert "Unsafe pattern" in result.brief
-    # Fallback * at root should include top-level files and dirs
-    assert "README.md" in result.output
-    assert "setup.py" in result.output
-    assert "src" in result.output
-    assert "docs" in result.output
+    assert not result.is_error
+    output = result.output.replace("\\", "/")
+    # Should include top-level files and dirs
+    assert "README.md" in output
+    assert "setup.py" in output
+    assert "src" in output
+    assert "docs" in output
+    # Should also include nested files
+    assert "src/main.py" in output
+    assert "src/main/app.py" in output
 
 
-async def test_glob_unsafe_fallback_double_star(glob_tool: Glob, test_files: KaosPath):
-    """Test unsafe **/** falls back to * and returns root-level items as ToolError."""
+async def test_glob_recursive_double_star(glob_tool: Glob, test_files: KaosPath):
+    """Test recursive **/** pattern returns all files and directories."""
     result = await glob_tool(Params(pattern="**/**", directory=str(test_files)))
 
-    assert result.is_error
-    assert "starts with `**`, which is disallowed" in result.message
-    assert "Fallback result" in result.message
-    # Fallback * at root should include top-level files and dirs
-    assert "README.md" in result.output
-    assert "setup.py" in result.output
-    assert "src" in result.output
-    assert "docs" in result.output
+    assert not result.is_error
+    output = result.output.replace("\\", "/")
+    # Should include top-level files and dirs
+    assert "README.md" in output
+    assert "setup.py" in output
+    assert "src" in output
+    assert "docs" in output
+    # Should also include nested files
+    assert "src/main.py" in output
+    assert "src/main/app.py" in output
 
 
-async def test_glob_unsafe_fallback_md(glob_tool: Glob, test_files: KaosPath):
-    """Test unsafe **/*.md falls back to *.md and returns root-level .md files as ToolError."""
+async def test_glob_recursive_md(glob_tool: Glob, test_files: KaosPath):
+    """Test recursive **/*.md returns all .md files."""
     result = await glob_tool(Params(pattern="**/*.md", directory=str(test_files)))
 
-    assert result.is_error
-    assert "starts with `**`, which is disallowed" in result.message
-    assert "Fallback result" in result.message
-    assert "Unsafe pattern" in result.brief
-    # Fallback *.md at root should only match README.md
-    assert "README.md" in result.output
-    # Should not match docs/*.md since fallback is not recursive
-    assert "guide.md" not in result.output
-    assert "api.md" not in result.output
+    assert not result.is_error
+    output = result.output.replace("\\", "/")
+    assert "README.md" in output
+    assert "docs/guide.md" in output
+    assert "docs/api.md" in output
 
 
 # --- [out of work-dir] warning tests ---

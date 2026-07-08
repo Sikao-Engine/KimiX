@@ -247,7 +247,7 @@ def _get_gitignore_rules(root: Path) -> list[_GitignoreRule]:
 
 
 class Params(BaseModel):
-    pattern: str = Field(description="Glob pattern. Never start with `**`.")
+    pattern: str = Field(description="Glob pattern.")
     directory: str | None = Field(
         description="Absolute search path. Defaults to working directory.",
         default=None,
@@ -302,13 +302,7 @@ class Glob(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         try:
-            # Detect unsafe patterns and compute fallback
-            norm = params.pattern.replace("\\", "/")
-            is_unsafe = norm.startswith("**")
-            if is_unsafe:
-                pattern = (norm[3:] if norm[3:] else "*") if norm.startswith("**/") else "*"
-            else:
-                pattern = params.pattern
+            pattern = params.pattern
 
             if params.directory:
                 dir_path = kaos_path_from_tool_input(params.directory, self._work_dir)
@@ -384,16 +378,6 @@ class Glob(CallableTool2[Params]):
                     break
 
             output = "\n".join(output_lines)
-
-            if is_unsafe:
-                return ToolError(
-                    output=output,
-                    message=(
-                        f"Pattern `{params.pattern}` starts with `**`, which is disallowed. "
-                        f"Fallback result for `{pattern}`:"
-                    ),
-                    brief=f"Unsafe pattern: {params.pattern}",
-                )
 
             # Build message
             shown_count = len(output_lines)
