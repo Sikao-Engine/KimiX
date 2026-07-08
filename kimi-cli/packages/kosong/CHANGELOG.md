@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- OpenAI Legacy: Fix `reasoning_content` validation errors on Moonshot/Kimi-compatible backends by only emitting the field for messages that actually contain reasoning (`ThinkPart`). Sending an empty `reasoning_content` on every message when `reasoning_key` is configured was causing 400 "reasoning_content must be passed back" errors.
+- OpenAI Legacy: When an assistant message has `tool_calls` and no visible text content, omit the `content` field entirely. This matches the dedicated Kimi provider behavior and avoids Moonshot's 400 "text content is empty" error for tool-call messages.
+- OpenAI/Kimi: When a Moonshot/Kimi-compatible backend returns the 400 "reasoning_content in the thinking mode must be passed back to the API" error, log the request context (provider, model, messages, generation kwargs, and error details) to `./error.log` for debugging. Applies to OpenAI Legacy, OpenAI Responses, and Kimi providers.
+- OpenAI: Upgrade `openai` SDK from `>=2.14.0,<2.15.0` to `>=2.44.0`.
+- OpenAI: Forward Kosong's "max" thinking effort verbatim for OpenAI Legacy and OpenAI Responses providers by sending it through `extra_body`, so backends that accept `reasoning_effort=max` / `reasoning.effort=max` receive it instead of having it clamped to `xhigh`.
+
 ## 0.53.0 (2026-04-28)
 
 - Kimi: Fix stale API key after OAuth token refresh — `on_retryable_error` now reads the current `api_key` from the live client instead of the cached `_api_key`, so that OAuth token refreshes applied via `client.api_key` are preserved when the client is rebuilt after a retryable error

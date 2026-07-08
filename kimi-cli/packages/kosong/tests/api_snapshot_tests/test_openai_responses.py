@@ -515,9 +515,9 @@ async def test_openai_responses_with_parallel_tool_calls_enabled():
         assert "max_tool_calls" not in body
 
 
-async def test_openai_responses_with_thinking_max_clamps_to_xhigh():
-    """Kosong's "max" is Anthropic-specific; for OpenAI it clamps to xhigh
-    (their highest level) rather than falling back to high."""
+async def test_openai_responses_with_thinking_max_passes_through():
+    """OpenAI providers forward Kosong's "max" thinking effort verbatim via
+    extra_body so backends that accept it receive reasoning.effort=max."""
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/responses").mock(return_value=Response(200, json=make_response()))
         provider = OpenAIResponses(
@@ -527,4 +527,4 @@ async def test_openai_responses_with_thinking_max_clamps_to_xhigh():
         async for _ in stream:
             pass
         body = json.loads(mock.calls.last.request.content.decode())
-        assert body["reasoning"] == snapshot({"effort": "xhigh", "summary": "auto"})
+        assert body["reasoning"] == snapshot({"effort": "max", "summary": "auto"})

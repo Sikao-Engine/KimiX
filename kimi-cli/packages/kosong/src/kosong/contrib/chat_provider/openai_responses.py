@@ -26,7 +26,6 @@ from openai.types.responses.response_input_file_param import ResponseInputFilePa
 from openai.types.responses.response_input_message_content_list_param import (
     ResponseInputMessageContentListParam,
 )
-from openai.types.shared.reasoning import Reasoning
 from openai.types.shared.reasoning_effort import ReasoningEffort
 from openai.types.shared_params.responses_model import ResponsesModel
 
@@ -43,6 +42,7 @@ from kosong.chat_provider.openai_common import (
     apply_generation_kwargs,
     clamp_thinking_effort,
     convert_error,
+    maybe_log_reasoning_content_error,
     reasoning_effort_to_thinking_effort,
     thinking_effort_to_reasoning_effort,
 )
@@ -180,10 +180,10 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
         generation_kwargs.update(self._generation_kwargs)
         reasoning_effort = generation_kwargs.pop("reasoning_effort", None)
         if reasoning_effort is not None:
-            generation_kwargs["reasoning"] = Reasoning(
-                effort=reasoning_effort,
-                summary="auto",
-            )
+            # Bypass SDK-side Reasoning model validation so non-standard effort
+            # values such as "max" can be forwarded to backends that accept them.
+            extra_body = generation_kwargs.setdefault("extra_body", {})
+            extra_body["reasoning"] = {"effort": reasoning_effort, "summary": "auto"}
             generation_kwargs["include"] = ["reasoning.encrypted_content"]
 
         try:
@@ -197,6 +197,13 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
             )
             return OpenAIResponsesStreamedMessage(response)
         except (OpenAIError, httpx.HTTPError) as e:
+            maybe_log_reasoning_content_error(
+                e,
+                provider_name=self.name,
+                model=self._model,
+                messages=inputs,
+                generation_kwargs=generation_kwargs,
+            )
             raise convert_error(e) from e
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:

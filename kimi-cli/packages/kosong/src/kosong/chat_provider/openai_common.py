@@ -1,11 +1,14 @@
 import asyncio
 import contextlib
 import copy
+import json
 import re
 import ssl
+import time
 import traceback
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
+from pathlib import Path
 from typing import Any, cast
 
 import certifi
@@ -186,6 +189,63 @@ def convert_error(error: OpenAIError | httpx.HTTPError) -> ChatProviderError:
             return ChatProviderError(f"Error: {error}")
 
 
+_MISSING_REASONING_CONTENT_RE = re.compile(
+    r"reasoning_content\s+in\s+the\s+thinking\s+mode\s+must\s+be\s+passed\s+back\s+to\s+the\s+api",
+    re.IGNORECASE,
+)
+
+
+def _is_missing_reasoning_content_error(error: openai.APIStatusError) -> bool:
+    """Detect the Moonshot/Kimi 400 when thinking-mode reasoning_content is omitted."""
+    if error.status_code != 400:
+        return False
+    # Backends vary in whether they quote `reasoning_content` with backticks.
+    message = (error.message or "").replace("`", "")
+    return bool(_MISSING_REASONING_CONTENT_RE.search(message))
+
+
+def maybe_log_reasoning_content_error(
+    error: OpenAIError | httpx.HTTPError,
+    *,
+    provider_name: str,
+    model: str,
+    messages: Sequence[Any],
+    generation_kwargs: Mapping[str, Any],
+) -> None:
+    """Log details of a missing-reasoning_content 400 to ./error.log.
+
+    This is a debugging aid for the specific Moonshot/Kimi-compatible backend
+    error that occurs when thinking mode is enabled but a previous assistant
+    reasoning block was not passed back in the request messages.
+    """
+    if not isinstance(error, openai.APIStatusError):
+        return
+    if not _is_missing_reasoning_content_error(error):
+        return
+
+    log_path = Path("error.log")
+    entry = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "provider": provider_name,
+        "model": model,
+        "error": {
+            "status_code": error.status_code,
+            "message": error.message,
+            "code": getattr(error, "code", None),
+            "type": getattr(error, "type", None),
+            "body": error.body,
+        },
+        "messages": list(messages),
+        "generation_kwargs": dict(generation_kwargs),
+    }
+    try:
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+    except Exception:
+        # Logging is best-effort; never let it break the actual error handling.
+        pass
+
+
 _NETWORK_RE = re.compile(r"network|connection|connect|disconnect", re.IGNORECASE)
 _TIMEOUT_RE = re.compile(r"timed?\s*out|timeout|deadline", re.IGNORECASE)
 
@@ -362,6 +422,22 @@ def extract_reasoning_from_content(
         else:
             visible.append(part)
     return reasoning, visible
+
+
+def is_effectively_empty_content_parts(content: Sequence[ContentPart]) -> bool:
+    """Return True if *content* contains no visible text.
+
+    A message whose visible content is empty or consists only of whitespace
+    text parts is treated as having no visible content. This is used when
+    deciding whether to omit the ``content`` field for assistant tool-call
+    messages, which some backends reject when paired with an empty text part.
+    """
+    for part in content:
+        if not isinstance(part, TextPart):
+            return False
+        if part.text.strip():
+            return False
+    return True
 
 
 def extract_usage_from_chunk(chunk: ChatCompletionChunk) -> CompletionUsage | None:

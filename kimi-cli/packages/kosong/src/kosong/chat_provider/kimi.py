@@ -29,6 +29,8 @@ from kosong.chat_provider.openai_common import (
     apply_generation_kwargs,
     convert_error,
     extract_reasoning_from_content,
+    is_effectively_empty_content_parts,
+    maybe_log_reasoning_content_error,
     tool_to_openai,
 )
 from kosong.message import (
@@ -164,6 +166,13 @@ class Kimi(OpenAICompatibleProviderMixin):
             )
             return KimiStreamedMessage(response)
         except (OpenAIError, httpx.HTTPError) as e:
+            maybe_log_reasoning_content_error(
+                e,
+                provider_name=self.name,
+                model=self.model,
+                messages=messages,
+                generation_kwargs=generation_kwargs,
+            )
             raise convert_error(e) from e
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
@@ -271,7 +280,7 @@ def _convert_message(message: Message) -> ChatCompletionMessageParam:
     if (
         message.role == "assistant"
         and message.tool_calls
-        and _is_effectively_empty_content_parts(visible_content)
+        and is_effectively_empty_content_parts(visible_content)
     ):
         # OpenAI-compatible APIs allow assistant tool-call messages to omit
         # `content`, but the Kimi-for-Coding compat layer rejects a content
@@ -283,15 +292,6 @@ def _convert_message(message: Message) -> ChatCompletionMessageParam:
     if has_reasoning:
         dumped_message["reasoning_content"] = reasoning_content
     return cast(ChatCompletionMessageParam, dumped_message)
-
-
-def _is_effectively_empty_content_parts(content: Sequence[ContentPart]) -> bool:
-    for part in content:
-        if not isinstance(part, TextPart):
-            return False
-        if part.text.strip():
-            return False
-    return True
 
 
 def _convert_tool(tool: Tool) -> ChatCompletionToolParam:

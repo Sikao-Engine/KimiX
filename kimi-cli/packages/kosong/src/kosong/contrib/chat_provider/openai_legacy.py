@@ -26,6 +26,8 @@ from kosong.chat_provider.openai_common import (
     clamp_thinking_effort,
     convert_error,
     extract_reasoning_from_content,
+    is_effectively_empty_content_parts,
+    maybe_log_reasoning_content_error,
     reasoning_effort_to_thinking_effort,
     thinking_effort_to_reasoning_effort,
     tool_to_openai,
@@ -195,6 +197,13 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
                 extra_body = merged_extra_body
             if extra_body:
                 generation_kwargs["extra_body"] = extra_body
+        # Bypass SDK-side ReasoningEffort validation so non-standard effort values
+        # such as "max" can be forwarded to OpenAI-compatible backends that accept
+        # them. The value is still sent in the request body via extra_body.
+        if reasoning_effort is not omit:
+            extra_body = generation_kwargs.setdefault("extra_body", {})
+            extra_body["reasoning_effort"] = reasoning_effort
+            reasoning_effort = omit
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
@@ -207,6 +216,13 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
             )
             return OpenAILegacyStreamedMessage(response, self._reasoning_key)
         except (OpenAIError, httpx.HTTPError) as e:
+            maybe_log_reasoning_content_error(
+                e,
+                provider_name=self.name,
+                model=self.model,
+                messages=messages,
+                generation_kwargs=generation_kwargs,
+            )
             raise convert_error(e) from e
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
@@ -286,6 +302,7 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
                 message.content = [TextPart(text="\n".join(error_texts)), *message.content]
 
         reasoning_content, visible_content = extract_reasoning_from_content(message.content)
+        has_reasoning = any(isinstance(part, ThinkPart) for part in message.content)
         # if tool message and `tool_result_conversion` is `extract_text`, patch all text parts into
         # one so that we can make use of the serialization process of `Message` to output string
         if message.role == "tool" and self._tool_message_conversion == "extract_text":
@@ -293,11 +310,23 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
         else:
             message.content = visible_content
         dumped_message = message.model_dump(exclude_none=True)
+        if (
+            message.role == "assistant"
+            and message.tool_calls
+            and is_effectively_empty_content_parts(visible_content)
+        ):
+            # OpenAI-compatible APIs allow assistant tool-call messages to omit
+            # `content`, but some backends (e.g. Moonshot's) reject a content
+            # list that contains an empty text part (observed: `content:
+            # [{"type": "text", "text": ""}]` -> 400 "text content is empty").
+            # Dropping `content` entirely is always accepted, so do that whenever
+            # the visible content is effectively empty alongside a tool call.
+            dumped_message.pop("content", None)
         # reasoning_content is required by several OpenAI-compatible APIs (DeepSeek/Kimi/
-        # MiniMax/Qwen) whenever thinking mode is enabled. Remove the old design that only
-        # sent it when the message contained a tool call; always include it when a
-        # reasoning key is configured so the API sees the field it expects.
-        if self._reasoning_key:
+        # MiniMax/Qwen) whenever thinking mode is enabled. Only include it for messages that
+        # actually contain reasoning (a ThinkPart); sending an empty field on every message
+        # causes validation errors on backends such as Moonshot's.
+        if self._reasoning_key and has_reasoning:
             dumped_message[self._reasoning_key] = reasoning_content
         return cast(ChatCompletionMessageParam, dumped_message)
 

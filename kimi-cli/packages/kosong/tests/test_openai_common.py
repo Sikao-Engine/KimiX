@@ -1,4 +1,6 @@
 import asyncio
+import json
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -15,6 +17,7 @@ from kosong.chat_provider import (
 from kosong.chat_provider.openai_common import (
     clamp_thinking_effort,
     convert_error,
+    maybe_log_reasoning_content_error,
     reasoning_effort_to_thinking_effort,
     thinking_effort_to_reasoning_effort,
 )
@@ -52,10 +55,11 @@ class TestClampThinkingEffort:
 
 
 class TestThinkingEffortMapping:
-    """OpenAI's reasoning_effort accepts: none, minimal, low, medium, high, xhigh
-    (xhigh added for models after gpt-5.1-codex-max). Kosong's ThinkingEffort
-    is: off, low, medium, high, xhigh, max. The bidirectional mapping must
-    preserve xhigh round-trip and clamp max sensibly.
+    """OpenAI's standard reasoning_effort accepts: none, minimal, low, medium,
+    high, xhigh. Kosong's ThinkingEffort is: off, low, medium, high, xhigh, max.
+    In this implementation OpenAI providers forward "max" verbatim (via
+    extra_body) for backends that accept it, so the mapping preserves max and
+    xhigh round-trips.
     """
 
     @pytest.mark.parametrize(
@@ -68,9 +72,9 @@ class TestThinkingEffortMapping:
             # xhigh must pass through — OpenAI supports it natively for
             # gpt-5.1-codex-max and later models.
             ("xhigh", "xhigh"),
-            # max is Anthropic-specific; OpenAI's highest is xhigh, so we
-            # clamp max -> xhigh (not -> high, which would lose a level).
-            ("max", "xhigh"),
+            # max is forwarded as-is. The SDK's typed ReasoningEffort/Reasoning
+            # models reject it, so providers send it through extra_body instead.
+            ("max", "max"),
         ],
     )
     def test_thinking_to_reasoning(
@@ -269,6 +273,121 @@ class TestConvertErrorBaseAPIError:
         assert result.request_id == "req-openai"
         assert result.headers == response.headers
         assert result.retry_after == 7
+
+
+# ---------------------------------------------------------------------------
+# missing reasoning_content 400 logging
+# ---------------------------------------------------------------------------
+
+
+class TestMaybeLogReasoningContentError:
+    """Debug logging for the Moonshot/Kimi 400 that occurs when thinking-mode
+    reasoning_content is not passed back to the API.
+    """
+
+    _DUMMY_REQUEST = httpx.Request("POST", "https://api.test")
+
+    @pytest.fixture
+    def log_dir(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+        monkeypatch.chdir(tmp_path)
+        return tmp_path
+
+    def _make_api_status_error(
+        self,
+        status_code: int = 400,
+        message: str = "The reasoning_content in the thinking mode must be passed back to the API.",
+        body: dict[str, Any] | None = None,
+    ) -> openai.APIStatusError:
+        response = httpx.Response(status_code, request=self._DUMMY_REQUEST)
+        return openai.APIStatusError(
+            response=response,
+            body=body
+            or {
+                "error": {
+                    "message": message,
+                    "type": "invalid_request_error",
+                    "code": "400001",
+                }
+            },
+            message=message,
+        )
+
+    def test_logs_target_400_error(self, log_dir: Path) -> None:
+        err = self._make_api_status_error()
+        maybe_log_reasoning_content_error(
+            err,
+            provider_name="openai",
+            model="gpt-test",
+            messages=[{"role": "user", "content": "hi"}],
+            generation_kwargs={"temperature": 0.5},
+        )
+        log_path = log_dir / "error.log"
+        assert log_path.exists()
+        lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        entry = json.loads(lines[0])
+        assert entry["provider"] == "openai"
+        assert entry["model"] == "gpt-test"
+        assert entry["error"]["status_code"] == 400
+        assert entry["messages"] == [{"role": "user", "content": "hi"}]
+        assert entry["generation_kwargs"] == {"temperature": 0.5}
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "The reasoning_content in the thinking mode must be passed back to the API.",
+            "The `reasoning_content` in the thinking mode must be passed back to the API.",
+        ],
+    )
+    def test_matches_various_message_forms(self, log_dir: Path, message: str) -> None:
+        err = self._make_api_status_error(message=message)
+        maybe_log_reasoning_content_error(
+            err,
+            provider_name="openai",
+            model="gpt-test",
+            messages=[],
+            generation_kwargs={},
+        )
+        assert (log_dir / "error.log").exists()
+
+    def test_does_not_log_other_400_errors(self, log_dir: Path) -> None:
+        err = self._make_api_status_error(
+            message="Bad request",
+            body={"error": {"message": "Bad request", "type": "invalid_request_error"}},
+        )
+        maybe_log_reasoning_content_error(
+            err,
+            provider_name="openai",
+            model="gpt-test",
+            messages=[],
+            generation_kwargs={},
+        )
+        assert not (log_dir / "error.log").exists()
+
+    def test_does_not_log_non_400_status(self, log_dir: Path) -> None:
+        err = self._make_api_status_error(
+            status_code=401,
+            message="The reasoning_content in the thinking mode must be passed back to the API.",
+        )
+        maybe_log_reasoning_content_error(
+            err,
+            provider_name="openai",
+            model="gpt-test",
+            messages=[],
+            generation_kwargs={},
+        )
+        assert not (log_dir / "error.log").exists()
+
+    def test_does_not_log_non_api_status_error(self, log_dir: Path) -> None:
+        err = openai.APIConnectionError(request=self._DUMMY_REQUEST)
+        maybe_log_reasoning_content_error(
+            err,
+            provider_name="openai",
+            model="gpt-test",
+            messages=[],
+            generation_kwargs={},
+        )
+        assert not (log_dir / "error.log").exists()
 
 
 # ---------------------------------------------------------------------------

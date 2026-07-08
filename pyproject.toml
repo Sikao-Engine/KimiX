@@ -58,6 +58,7 @@ all = [
     "pytest-cov>=7.1.0",
     "pytest-xdist>=3.0.0",
     "inline-snapshot>=0.33.0",
+    "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
     "pyreadline3>=3.5.6",
