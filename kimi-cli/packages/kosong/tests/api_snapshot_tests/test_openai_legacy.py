@@ -267,13 +267,13 @@ async def test_openai_legacy_reasoning_content():
         body = json.loads(mock.calls.last.request.content.decode())
         assert body["messages"] == snapshot(
             [
-                {"role": "user", "content": "What is 2+2?"},
+                {"role": "user", "content": "What is 2+2?", "reasoning_content": ""},
                 {
                     "role": "assistant",
                     "content": "4.",
                     "reasoning_content": "Thinking...",
                 },
-                {"role": "user", "content": "Thanks!"},
+                {"role": "user", "content": "Thanks!", "reasoning_content": ""},
             ]
         )
 
@@ -302,13 +302,45 @@ async def test_openai_legacy_empty_reasoning_content_is_round_tripped():
             pass
         body = json.loads(mock.calls.last.request.content.decode())
         assert body["messages"] == [
-            {"role": "user", "content": "What is 2+2?"},
+            {"role": "user", "content": "What is 2+2?", "reasoning_content": ""},
             {
                 "role": "assistant",
                 "content": "4.",
                 "reasoning_content": "",
             },
-            {"role": "user", "content": "Thanks!"},
+            {"role": "user", "content": "Thanks!", "reasoning_content": ""},
+        ]
+
+
+async def test_openai_legacy_all_messages_carry_reasoning_content_when_key_configured():
+    """When reasoning_key is configured, every message carries reasoning_content."""
+    with respx.mock(base_url="https://api.openai.com") as mock:
+        mock.post("/v1/chat/completions").mock(
+            return_value=Response(200, json=make_chat_completion_response())
+        )
+        provider = OpenAILegacy(
+            model="deepseek-reasoner",
+            api_key="test-key",
+            stream=False,
+            reasoning_key="reasoning_content",
+        )
+        history = [
+            Message(role="user", content="What is 2+2?"),
+            Message(role="assistant", content="4."),
+            Message(role="user", content="Thanks!"),
+        ]
+        stream = await provider.generate("", [], history)
+        async for _ in stream:
+            pass
+        body = json.loads(mock.calls.last.request.content.decode())
+        assert body["messages"] == [
+            {"role": "user", "content": "What is 2+2?", "reasoning_content": ""},
+            {
+                "role": "assistant",
+                "content": "4.",
+                "reasoning_content": "",
+            },
+            {"role": "user", "content": "Thanks!", "reasoning_content": ""},
         ]
 
 

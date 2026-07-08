@@ -276,6 +276,69 @@ async def test_nonexistent_tool_auto_correct_does_not_affect_distant_names():
     assert isinstance(result.return_value, KosongToolNotFoundError)
 
 
+# --- snake_case / kebab-case / SCREAMING_SNAKE_CASE auto-correction ---
+
+
+async def _assert_misformatted_autocorrects_to_long(sent: str) -> None:
+    """A mis-formatted spelling of ``LongNamedTool`` auto-corrects and runs it."""
+    ts = _make_extended_toolset()
+    tool_call = ToolCall(
+        id=f"tc-{sent}",
+        function=ToolCall.FunctionBody(
+            name=sent,
+            arguments="{}",
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, asyncio.Task)
+    tr = await result
+    output = tr.return_value.output
+    assert isinstance(output, str)
+    assert output.startswith("long")
+    assert "<system-warning>" in output
+    assert "Auto-corrected" in output
+
+
+async def test_nonexistent_tool_auto_corrects_snake_case():
+    """snake_case spelling of a multi-word tool auto-corrects to CamelCase."""
+    await _assert_misformatted_autocorrects_to_long("long_named_tool")
+
+
+async def test_nonexistent_tool_auto_corrects_kebab_case():
+    """kebab-case spelling of a multi-word tool auto-corrects to CamelCase."""
+    await _assert_misformatted_autocorrects_to_long("long-named-tool")
+
+
+async def test_nonexistent_tool_auto_corrects_screaming_snake_case():
+    """SCREAMING_SNAKE_CASE spelling of a multi-word tool auto-corrects."""
+    await _assert_misformatted_autocorrects_to_long("LONG_NAMED_TOOL")
+
+
+async def test_nonexistent_tool_auto_corrects_mixed_separators():
+    """Mixed CamelCase + separator spelling of a multi-word tool auto-corrects."""
+    await _assert_misformatted_autocorrects_to_long("Long_Named_Tool")
+
+
+async def test_nonexistent_tool_auto_corrects_snake_case_with_typo():
+    """A snake_case spelling that also contains a typo still auto-corrects."""
+    await _assert_misformatted_autocorrects_to_long("long_named_tol")
+
+
+async def test_snake_case_non_tool_returns_not_found():
+    """A snake_case name not close to any tool still yields ToolNotFoundError."""
+    ts = _make_extended_toolset()
+    tool_call = ToolCall(
+        id="tc-unrelated",
+        function=ToolCall.FunctionBody(
+            name="totally_unrelated",
+            arguments="{}",
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, ToolResult)
+    assert isinstance(result.return_value, KosongToolNotFoundError)
+
+
 # --- hide/unhide cycle ---
 
 

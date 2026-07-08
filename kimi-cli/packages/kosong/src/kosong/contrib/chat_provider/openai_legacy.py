@@ -286,7 +286,6 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
                 message.content = [TextPart(text="\n".join(error_texts)), *message.content]
 
         reasoning_content, visible_content = extract_reasoning_from_content(message.content)
-        has_reasoning = any(isinstance(part, ThinkPart) for part in message.content)
         # if tool message and `tool_result_conversion` is `extract_text`, patch all text parts into
         # one so that we can make use of the serialization process of `Message` to output string
         if message.role == "tool" and self._tool_message_conversion == "extract_text":
@@ -295,9 +294,10 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
             message.content = visible_content
         dumped_message = message.model_dump(exclude_none=True)
         # reasoning_content is required by several OpenAI-compatible APIs (DeepSeek/Kimi/
-        # MiniMax/Qwen) whenever the history contains a ThinkPart. Include it whenever a
-        # reasoning key is configured and a ThinkPart was present.
-        if self._reasoning_key and has_reasoning:
+        # MiniMax/Qwen) whenever thinking mode is enabled. Remove the old design that only
+        # sent it when the message contained a tool call; always include it when a
+        # reasoning key is configured so the API sees the field it expects.
+        if self._reasoning_key:
             dumped_message[self._reasoning_key] = reasoning_content
         return cast(ChatCompletionMessageParam, dumped_message)
 

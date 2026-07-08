@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import difflib
 import importlib
 import inspect
 import json
@@ -23,6 +22,7 @@ from kosong.tooling import (
     ToolError,
     ToolOk,
     Toolset,
+    resolve_tool_name,
 )
 from kosong.tooling.error import (
     ToolNotFoundError,
@@ -302,29 +302,6 @@ def _append_reminder_to_return_value(
     return return_value.model_copy(update={"output": new_output})
 
 
-def _fuzzy_match_tool_name(
-    tool_name: str,
-    valid_names: list[str],
-    n: int = 3,
-    cutoff: float = 0.5,
-) -> list[str]:
-    """Find close matches for a tool name, with case-insensitive fallback.
-
-    Returns up to *n* suggestions with similarity ratio >= *cutoff*.
-    Short names (< 3 chars) are skipped to avoid false positives.
-    """
-    if len(tool_name) < 3:
-        return []
-
-    # Case-insensitive exact match first (e.g. "writefile" -> "WriteFile")
-    lower_name = tool_name.lower()
-    exact_matches = [name for name in valid_names if name.lower() == lower_name]
-    if exact_matches:
-        return exact_matches
-
-    return difflib.get_close_matches(tool_name, valid_names, n=n, cutoff=cutoff)
-
-
 @dataclass(frozen=True, slots=True)
 class PendingMCPDiscovery:
     """A verbatim MCP ``tools/list`` discovery parked until a wire is available."""
@@ -535,33 +512,33 @@ class KimiToolset:
             warning_text: str | None = None
 
             if tool_name not in self._tool_dict:
-                valid_names = list(self._tool_dict.keys())
-
-                # Step 1 — try auto-correct with a restrictive cutoff
-                auto_correct = _fuzzy_match_tool_name(
-                    tool_name, valid_names, n=1, cutoff=_AUTO_CORRECT_CUTOFF
+                # Delegate the auto-correct-vs-suggest decision to the reusable
+                # kosong matcher; only the side effects (audit log + warning)
+                # stay here (they depend on kimi_cli's logger / UX convention).
+                resolution = resolve_tool_name(
+                    tool_name,
+                    self._tool_dict.keys(),
+                    auto_correct_cutoff=_AUTO_CORRECT_CUTOFF,
                 )
-                if auto_correct:
-                    target_name = auto_correct[0]
+                if resolution.name is None:
+                    # No close enough match — return suggestions error.
+                    return ToolResult(
+                        tool_call_id=tool_call.id,
+                        return_value=ToolNotFoundError(tool_name, resolution.suggestions),
+                    )
+                if resolution.corrected:
                     logger.info(
                         "Auto-corrected tool name: {original} -> {target}",
                         original=tool_name,
-                        target=target_name,
+                        target=resolution.name,
                     )
                     warning_text = (
                         f"\n\n<system-warning>\n"
                         f"Tool `{tool_name}` was not found. "
-                        f"Auto-corrected to `{target_name}`.\n"
+                        f"Auto-corrected to `{resolution.name}`.\n"
                         f"</system-warning>"
                     )
-                    tool_name = target_name
-                else:
-                    # Step 2 — no close enough match, return suggestions error
-                    suggestions = _fuzzy_match_tool_name(tool_name, valid_names)
-                    return ToolResult(
-                        tool_call_id=tool_call.id,
-                        return_value=ToolNotFoundError(tool_name, suggestions),
-                    )
+                tool_name = resolution.name
 
             from kosong.utils.jsonx import loads_relaxed
 

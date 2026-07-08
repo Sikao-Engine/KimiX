@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from asyncio import Future
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 import difflib
 from functools import lru_cache
 import orjson
@@ -776,6 +778,167 @@ def _fuzzy_match_keys(
         used.add(matched_key)
         result[missing_field] = matched_key
     return result
+
+
+@lru_cache(maxsize=2048)
+def normalize_tool_name(name: str) -> str:
+    """Canonical comparison key for a tool name.
+
+    Removes ``-`` and ``_`` separators and casefolds, so CamelCase, snake_case,
+    kebab-case and SCREAMING_SNAKE_CASE spellings of the same logical name
+    collapse to a single string (e.g. ``write_file`` / ``write-file`` /
+    ``WRITE_FILE`` / ``WriteFile`` all -> ``writefile``).
+    """
+    return name.replace("-", "").replace("_", "").casefold()
+
+
+@lru_cache(maxsize=256)
+def _prepared_candidates(
+    valid_names: tuple[str, ...],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Precompute ``(lowercase, normalized)`` forms for a fixed candidate set.
+
+    The candidate tool set is normally stable across calls, so caching keyed on
+    the candidate tuple lets the per-candidate ``str.lower()`` /
+    ``normalize_tool_name`` work run once per tool set instead of on every call.
+    """
+    lowers = tuple(c.lower() for c in valid_names)
+    norms = tuple(normalize_tool_name(c) for c in valid_names)
+    return lowers, norms
+
+
+def fuzzy_match_tool_name(
+    tool_name: str,
+    valid_names: Iterable[str],
+    n: int = 3,
+    cutoff: float = 0.5,
+    min_length: int = 3,
+) -> list[str]:
+    """Return up to *n* likely-intended real tool names for *tool_name*.
+
+    Resolution order (highest confidence first):
+      1. Case-insensitive exact match (e.g. ``writefile`` -> ``WriteFile``).
+      2. Separator-insensitive normalized exact match, covering snake_case,
+         kebab-case and SCREAMING_SNAKE_CASE spellings of a CamelCase tool.
+      3. Fuzzy similarity on the normalized forms (handles separators *and*
+         typos), keeping candidates with ratio >= *cutoff*.
+
+    Names shorter than *min_length* are skipped to avoid false positives.
+    Steps 1-2 are high confidence and returned regardless of *cutoff*.
+    Results are deterministic: ties are broken by the raw (case-insensitive)
+    similarity ratio and then by candidate name, and the original candidate
+    strings are returned.
+    """
+    if len(tool_name) < min_length:
+        return []
+
+    valid_tuple = tuple(valid_names)
+    lower = tool_name.lower()
+
+    # Lowercase and normalized forms of the (stable) candidate set are cached
+    # per tool set, so the per-candidate work is not repeated on every call.
+    lowers, norms = _prepared_candidates(valid_tuple)
+
+    # 1. Case-insensitive exact match (preserves prior behavior).
+    ci_exact = [c for c, cl in zip(valid_tuple, lowers) if cl == lower]
+    if ci_exact:
+        return ci_exact
+
+    # 2. Separator-insensitive normalized exact match
+    #    (snake/kebab/SCREAMING/mixed -> CamelCase).
+    norm = normalize_tool_name(tool_name)
+    norm_exact = [(c, cl) for c, cl, cn in zip(valid_tuple, lowers, norms) if cn == norm]
+    if norm_exact:
+        # Deterministic order for the rare multi-candidate (collision) case.
+        norm_exact.sort(key=lambda t: (-_sequence_ratio(lower, t[1]), t[0]))
+        return [c for c, _ in norm_exact[:n]]
+
+    # 3. Normalized fuzzy match (separator + typo tolerant). ``_sequence_ratio``
+    #    is memoized, so repeated (query, candidate) pairs collapse to a cache
+    #    hit across calls.
+    scored: list[tuple[float, float, str]] = []
+    for c, cl, cn in zip(valid_tuple, lowers, norms):
+        ratio = _sequence_ratio(norm, cn)
+        if ratio >= cutoff:
+            scored.append((ratio, _sequence_ratio(lower, cl), c))
+    scored.sort(key=lambda t: (-t[0], -t[1], t[2]))
+    return [c for _, _, c in scored[:n]]
+
+
+@dataclass(frozen=True, slots=True)
+class ToolNameResolution:
+    """The result of resolving a (possibly mis-formatted) tool name.
+
+    ``name`` is the resolved real tool name, or ``None`` when no tool matched.
+    ``corrected`` is ``True`` when the resolved name differs from the requested
+    ``original`` (i.e. an auto-correction happened). ``suggestions`` is only
+    populated when ``name`` is ``None``.
+    """
+
+    name: str | None
+    original: str
+    corrected: bool = False
+    suggestions: list[str] = field(default_factory=list)
+
+
+def resolve_tool_name(
+    name: str,
+    valid_names: Iterable[str],
+    *,
+    auto_correct_cutoff: float = 0.75,
+    suggest_cutoff: float = 0.5,
+    n_suggestions: int = 3,
+    min_length: int = 3,
+) -> ToolNameResolution:
+    """Resolve a possibly mis-formatted tool name to a real tool.
+
+    Pure and side-effect free. Resolution order:
+      1. Exact match -> returned unchanged (``corrected=False``).
+      2. High-confidence fuzzy match at or above *auto_correct_cutoff* ->
+         auto-corrected (``corrected=True``).
+      3. Otherwise ``name`` is ``None`` and *suggestions* (matches at or above
+         *suggest_cutoff*) are populated for an error message.
+
+    Names shorter than *min_length* are never matched.
+    """
+    # Materialize once as a tuple: accepts dict.keys()/generators and lets the
+    # inner fuzzy_match_tool_name call reuse the cached per-candidate prep.
+    valid_tuple = tuple(valid_names)
+    if name in valid_tuple:
+        return ToolNameResolution(name=name, original=name)
+
+    if auto_correct_cutoff >= suggest_cutoff:
+        # Fast path (the normal regime): a single scan at the lower suggestion
+        # cutoff yields the ranked candidates, and the auto-correct decision is
+        # derived from the top candidate instead of a second full scan. This is
+        # behaviour-identical to the two-call form because the fuzzy ranking is
+        # monotonic in *cutoff* and the exact-match steps ignore *cutoff*.
+        matches = fuzzy_match_tool_name(
+            name, valid_tuple, n=n_suggestions, cutoff=suggest_cutoff, min_length=min_length
+        )
+        if not matches:
+            return ToolNameResolution(name=None, original=name)
+        top = matches[0]
+        if (
+            top.lower() == name.lower()
+            or normalize_tool_name(top) == normalize_tool_name(name)
+            or _sequence_ratio(normalize_tool_name(name), normalize_tool_name(top))
+            >= auto_correct_cutoff
+        ):
+            return ToolNameResolution(name=top, original=name, corrected=True)
+        return ToolNameResolution(name=None, original=name, suggestions=matches)
+
+    # General fallback for the degenerate case where the auto-correct cutoff is
+    # below the suggestion cutoff: keep the exact two-scan semantics.
+    auto = fuzzy_match_tool_name(
+        name, valid_tuple, n=1, cutoff=auto_correct_cutoff, min_length=min_length
+    )
+    if auto:
+        return ToolNameResolution(name=auto[0], original=name, corrected=True)
+    suggestions = fuzzy_match_tool_name(
+        name, valid_tuple, n=n_suggestions, cutoff=suggest_cutoff, min_length=min_length
+    )
+    return ToolNameResolution(name=None, original=name, suggestions=suggestions)
 
 
 def _repair_dict_for_model(
