@@ -30,6 +30,29 @@ class SystemPromptCallback:
     role_callback: Callable[[SystemPromptType, list[str]], None] | None = None
 
 
+def _available_interactive_tool_names() -> list[str]:
+    """Return shell-like tools actually available on this platform.
+
+    Mirrors the enablement checks in ``kimix.tools.file.bash.bash_tool`` and
+    ``kimix.tools.file.bash.pwsh_tool`` so the system prompt only mentions
+    tools the current agent can call.
+    """
+    from kimix.tools.file.bash.bash_tool import (
+        USE_SYSTEM_SHELL,
+        _should_enable_bash,
+        _should_enable_powershell,
+    )
+
+    names: list[str] = []
+    if _should_enable_bash():
+        names.append('Bash')
+    if _should_enable_powershell():
+        names.append('Powershell')
+    if USE_SYSTEM_SHELL and not names:
+        names.append('Run')
+    return names
+
+
 def get_system_prompt(
         yolo: bool | None = None,
         work_dir: Optional[KaosPath] = None,
@@ -61,7 +84,19 @@ def get_system_prompt(
             items.append('DO NOT use your own knowledge. Read the provided references, skills, and files first, then judge and act strictly from the evidence you read.')
             items.append('Persist: finish all requirements, keep trying until done.')
             items.append('One action per turn: each response = exactly one tool call, edit, or verification.')
-            items.append('For interactive tasks, reuse the same tool (Bash/Powershell/Run): start with interactive=True/run_in_background=True, then call it again with task_id=<id> to send input and read output in one step. Use wait_for_pattern to wait for a prompt. Use TaskOutput to list or monitor background tasks.')
+            interactive_tools = _available_interactive_tool_names()
+            if interactive_tools:
+                tool_names = '/'.join(interactive_tools)
+                start_arg = (
+                    'run_in_background=True'
+                    if 'Run' in interactive_tools
+                    else 'interactive=True'
+                )
+                items.append(
+                    f'For interactive tasks, reuse the same tool ({tool_names}): '
+                    f'start with {start_arg}, then call it again with task_id=<id> to send input and read output in one step. '
+                    'Use wait_for_pattern to wait for a prompt. Use TaskOutput to list or monitor background tasks.'
+                )
             items.append('Error recovery: retry, adjust approach, or break into sub-tasks. Never give up.')
             items.append('Verification gate: run all tests/checks and confirm they pass before finishing.')
             items.append('After completing an independent task or finishing one part of the schedule, check `ContextUsage`; if usage is high, call `Compact` before the next step.')
