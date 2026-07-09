@@ -10,14 +10,36 @@ import aiosqlite
 from kosong.message import Message
 
 from kimi_cli.soul.context_records import ExportedContext
-from kimi_cli.utils.logging import logger
-
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 _CHECKPOINT_PATTERN = re.compile(r"^<system>CHECKPOINT \d+</system>$")
+
+
+def _is_checkpoint_content(content: Any) -> bool:
+    """Check if message content contains a synthetic checkpoint marker.
+
+    Handles both string content (``"<system>CHECKPOINT N</system>"``) and
+    list content (``[{"type": "text", "text": "..."}, ...]``).
+    """
+    if isinstance(content, str):
+        return bool(_CHECKPOINT_PATTERN.fullmatch(content.strip()))
+    if isinstance(content, list):
+        return any(_is_checkpoint_part(part) for part in content)
+    return False
+
+
+def _is_checkpoint_part(part: Any) -> bool:
+    """Check if a single content part is a synthetic checkpoint marker."""
+    if isinstance(part, dict):
+        text = part.get("text")
+        if isinstance(text, str) and _CHECKPOINT_PATTERN.fullmatch(text.strip()):
+            return True
+    elif isinstance(part, str) and _CHECKPOINT_PATTERN.fullmatch(part.strip()):
+        return True
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +114,9 @@ class ContextDB:
         self._conn.row_factory = aiosqlite.Row
         await self._conn.execute("PRAGMA journal_mode=WAL")
         await self._conn.execute("PRAGMA foreign_keys=ON")
+        await self._conn.execute("PRAGMA synchronous=NORMAL")
+        await self._conn.execute("PRAGMA cache_size=-32000")  # 32 MB cache
+        await self._conn.execute("PRAGMA temp_store=MEMORY")
         await self._conn.executescript(_SCHEMA_SQL)
         await self._conn.commit()
 
@@ -231,15 +256,19 @@ class ContextDB:
     # ------------------------------------------------------------------ #
 
     async def create_checkpoint(self, checkpoint_id: int) -> int:
-        """Record a checkpoint and return the current max message rowid."""
-        max_rowid = await self.get_last_message_rowid()
+        """Record a checkpoint and return the current max message rowid.
+
+        Uses a single SQL subquery for efficiency instead of SELECT + INSERT.
+        """
         conn = await self._ensure_open()
-        await conn.execute(
-            "INSERT INTO checkpoints (id, message_rowid) VALUES (?, ?)",
-            (checkpoint_id, max_rowid),
+        cursor = await conn.execute(
+            "INSERT INTO checkpoints (id, message_rowid) VALUES (?, (SELECT MAX(rowid) FROM messages))",
+            (checkpoint_id,),
         )
         await self._maybe_commit(conn)
-        return max_rowid
+        # Fetch the actual max rowid that was stored
+        cp = await self.get_checkpoint_message_rowid(checkpoint_id)
+        return cp or 0
 
     async def get_latest_checkpoint_id(self) -> int:
         conn = await self._ensure_open()
@@ -270,15 +299,11 @@ class ContextDB:
         try:
             await conn.execute("DELETE FROM messages WHERE rowid > ?", (message_rowid,))
             await conn.execute("DELETE FROM checkpoints WHERE id >= ?", (checkpoint_id,))
-
-            # Find the boundary usage_snapshot rowid — usage rowids correlate with message rowids
-            cursor = await conn.execute(
-                "SELECT MAX(rowid) FROM usage_snapshots WHERE rowid <= ?", (message_rowid,)
+            # Delete usage snapshots whose rowid exceeds the max that maps to the surviving messages
+            await conn.execute(
+                "DELETE FROM usage_snapshots WHERE rowid > COALESCE((SELECT MAX(rowid) FROM usage_snapshots WHERE rowid <= ?), 0)",
+                (message_rowid,),
             )
-            boundary = await cursor.fetchone()
-            await cursor.close()
-            boundary_rowid = boundary[0] if boundary[0] else 0
-            await conn.execute("DELETE FROM usage_snapshots WHERE rowid > ?", (boundary_rowid,))
 
             if not already_in_tx:
                 await conn.execute("COMMIT")
@@ -330,31 +355,44 @@ class ContextDB:
             raise
 
     async def export(self) -> ExportedContext:
-        """Export all context data. Acquires the connection once for all queries."""
-        # Ensure connection is open (subsequent _ensure_open calls are no-ops)
-        await self._ensure_open()
+        """Export all context data atomically in a transaction."""
+        conn = await self._ensure_open()
 
         result = ExportedContext()
 
-        # system prompt
-        sp = await self.get_system_prompt()
-        if sp:
-            result.system_prompt = sp
+        # Use a transaction to get a consistent snapshot across all tables
+        if not self._in_transaction:
+            await conn.execute("BEGIN")
+        try:
+            # system prompt
+            cursor = await conn.execute("SELECT content FROM system_prompt WHERE id = 1")
+            row = await cursor.fetchone()
+            await cursor.close()
+            if row:
+                result.system_prompt = row["content"]
 
-        # messages
-        result.messages = await self.get_messages()
+            # messages
+            cursor = await conn.execute("SELECT content FROM messages ORDER BY rowid")
+            rows = await cursor.fetchall()
+            await cursor.close()
+            result.messages = [Message.model_validate_json(row["content"]) for row in rows]
 
-        # checkpoints
-        cursor = await self._conn.execute("SELECT id FROM checkpoints ORDER BY id")  # type: ignore[union-attr]
-        rows = await cursor.fetchall()
-        await cursor.close()
-        result.checkpoints = [row["id"] for row in rows]
+            # checkpoints
+            cursor = await conn.execute("SELECT id FROM checkpoints ORDER BY id")
+            rows = await cursor.fetchall()
+            await cursor.close()
+            result.checkpoints = [row["id"] for row in rows]
 
-        # usage snapshots
-        cursor = await self._conn.execute("SELECT token_count FROM usage_snapshots ORDER BY rowid")  # type: ignore[union-attr]
-        rows = await cursor.fetchall()
-        await cursor.close()
-        result.usages = [row["token_count"] for row in rows]
+            # usage snapshots
+            cursor = await conn.execute("SELECT token_count FROM usage_snapshots ORDER BY rowid")
+            rows = await cursor.fetchall()
+            await cursor.close()
+            result.usages = [row["token_count"] for row in rows]
+
+            await conn.execute("COMMIT")
+        except Exception:
+            await conn.execute("ROLLBACK")
+            raise
 
         return result
 
@@ -386,24 +424,32 @@ class ContextDB:
             if role == "user":
                 # Fast-path: only attempt JSON parsing if content contains checkpoint marker
                 if "CHECKPOINT" in content:
-                    try:
-                        parsed = orjson.loads(content)
-                        if isinstance(parsed, str) and _CHECKPOINT_PATTERN.fullmatch(parsed.strip()):
-                            # Checkpoint user message — don't count as real turn
-                            pass
-                        elif isinstance(parsed, list) and len(parsed) == 1:
-                            first = parsed[0]
-                            if isinstance(first, dict) and isinstance(first.get("text"), str):
-                                text = first["text"]
-                                if _CHECKPOINT_PATTERN.fullmatch(text.strip()):
+                    # Fast sub-string check before JSON parsing
+                    if '"<system>CHECKPOINT' in content:
+                        try:
+                            parsed = orjson.loads(content)
+                            # Case 1: content is a plain string
+                            if isinstance(parsed, str) and _CHECKPOINT_PATTERN.fullmatch(parsed.strip()):
+                                pass  # skip checkpoint
+                            # Case 2: content is a list (legacy format — raw content array)
+                            elif isinstance(parsed, list):
+                                if _is_checkpoint_content(parsed):
+                                    pass
+                                else:
+                                    current_turn += 1
+                            # Case 3: content is a full Message dict (SQLite storage format)
+                            elif isinstance(parsed, dict):
+                                msg_content = parsed.get("content")
+                                if _is_checkpoint_content(msg_content):
                                     pass  # skip checkpoint
                                 else:
                                     current_turn += 1
                             else:
                                 current_turn += 1
-                        else:
+                        except (orjson.JSONDecodeError, TypeError):
                             current_turn += 1
-                    except (orjson.JSONDecodeError, TypeError):
+                    else:
+                        # Contains 'CHECKPOINT' but not '<system>CHECKPOINT' — real user message
                         current_turn += 1
                 else:
                     current_turn += 1
