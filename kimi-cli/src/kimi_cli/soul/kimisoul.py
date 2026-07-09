@@ -61,6 +61,7 @@ from kimi_cli.soul.compaction import (
     estimate_text_tokens,
     should_auto_compact,
 )
+from kimi_cli.soul.context_pruning import ContextPruner, is_pruned_stub
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.dynamic_injection import (
     DynamicInjection,
@@ -321,6 +322,27 @@ class KimiSoul:
         # We keep an explicit list of exported pre-compact markdown files so
         # anonymous sessions can remove each file individually instead of
         # wiping a whole directory (which could affect unrelated files).
+        # Phase 2: Context pruner for smart history removal
+        self._pruner = ContextPruner(
+            enabled=self._loop_control.context_pruning_enabled,
+            trigger_ratio=self._loop_control.prune_trigger_ratio,
+            target_ratio=self._loop_control.prune_target_ratio,
+            stable_prefix_messages=self._loop_control.prune_stable_prefix_messages,
+            recent_messages_protected=self._loop_control.prune_recent_messages_protected,
+            min_free_tokens=self._loop_control.prune_min_free_tokens,
+            cooldown_steps=self._loop_control.prune_cooldown_steps,
+            min_usage_growth=self._loop_control.prune_min_usage_growth,
+            max_fraction_per_pass=self._loop_control.prune_max_fraction_per_pass,
+            ephemeral_enabled=self._loop_control.prune_ephemeral_enabled,
+            ephemeral_notifications=self._loop_control.prune_ephemeral_notifications,
+            ephemeral_task_snapshots=self._loop_control.prune_ephemeral_task_snapshots,
+            ephemeral_dmail_notices=self._loop_control.prune_ephemeral_dmail_notices,
+            ephemeral_checkpoint_markers=self._loop_control.prune_ephemeral_checkpoint_markers,
+            substantive_enabled=self._loop_control.prune_substantive_enabled,
+            tool_output_min_tokens=self._loop_control.prune_tool_output_min_tokens,
+        )
+        self._recently_restored_refs: set[str] = set()
+
         self._compact_cache_dir: list[Path] = []
         self._finalizer = weakref.finalize(
             self,
@@ -640,6 +662,16 @@ class KimiSoul:
     @property
     def context(self) -> Context:
         return self._context
+
+    @property
+    def pruner(self) -> ContextPruner:
+        """The context pruner for smart history removal."""
+        return self._pruner
+
+    @property
+    def current_step_no(self) -> int:
+        """Current step number in the agent loop."""
+        return self._current_step_no
 
     @property
     def _context_usage(self) -> float:
@@ -1023,12 +1055,32 @@ class KimiSoul:
 
             try:
                 # ── 2c. Context Compaction ──────────────────────────────────────
-                if should_auto_compact(
+                # Check if pruning can free enough space to avoid compaction
+                _should_compact = should_auto_compact(
                     self._context.token_count_with_pending,
                     self._runtime.llm.max_context_size,
                     trigger_ratio=self._loop_control.compaction_trigger_ratio,
                     reserved_context_size=self._loop_control.reserved_context_size,
-                ):
+                )
+                if _should_compact and self._loop_control.context_pruning_enabled:
+                    # Estimate tokens after pruning — if still over trigger, compact
+                    llm = self._runtime.llm
+                    model_name = llm.chat_provider.model_name if llm else None
+                    estimated = self._pruner.estimate_after_prune(
+                        self._context.history,
+                        context_usage=self.status.context_usage,
+                        max_context_size=self._runtime.llm.max_context_size,
+                        current_step=self._current_step_no,
+                        model=model_name,
+                    )
+                    if estimated < self._runtime.llm.max_context_size * self._loop_control.compaction_trigger_ratio:
+                        # Pruning will free enough space — skip compaction
+                        _should_compact = False
+                        logger.debug(
+                            "Pruning estimated to free enough space ({est} tokens), skipping compaction",
+                            est=estimated,
+                        )
+                if _should_compact:
                     logger.info("Context too long, compacting...")
                     try:
                         await self.compact_context()
@@ -1196,9 +1248,53 @@ class KimiSoul:
             )
 
         # ═══════════════════════════════════════════════════════════════════════
-        # 2e.3. HISTORY NORMALIZATION
+        # 2e.3. CONTEXT PRUNING (smart history removal, Layer 1)
         # ═══════════════════════════════════════════════════════════════════════
-        effective_history = normalize_history(self._context.history)
+        # Run pruner on the LLM-visible history (non-destructive; storage intact).
+        # Tier A drops consumed ephemera; Tier B (if enabled) elides stale content.
+        history_for_llm = list(self._context.history)
+        if self._loop_control.context_pruning_enabled and (
+            self.is_root or self._loop_control.prune_subagents
+        ):
+            llm = self._runtime.llm
+            max_context = llm.max_context_size if llm else 128_000
+            model_name = llm.chat_provider.model_name if llm else None
+            prune_result = self._pruner.prune(
+                history_for_llm,
+                current_step=self._current_step_no,
+                context_usage=self.status.context_usage,
+                max_context_size=max_context,
+                model=model_name,
+            )
+            if prune_result.earliest_removed_index is not None:
+                logger.info(
+                    "Context pruner freed {freed} tokens, earliest_removed_index={idx}, "
+                    "Tier B count={tier_b}",
+                    freed=prune_result.freed_tokens,
+                    idx=prune_result.earliest_removed_index,
+                    tier_b=len(prune_result.elided),
+                )
+                # Feed Tier B elided records into HistoryIndex for retrieval
+                if prune_result.elided:
+                    elided_messages = []
+                    for rec in prune_result.elided:
+                        # Reconstruct a Message from the elided record
+                        msg = Message(
+                            role=rec.role,
+                            content=[TextPart(text=rec.original_text)],
+                        )
+                        elided_messages.append(msg)
+                    self._history_index.index_messages(elided_messages)
+                    self._history_index.save()
+                # Track restored refs to avoid re-pruning restored content
+                for rec in prune_result.elided:
+                    self._recently_restored_refs.add(rec.ref)
+                history_for_llm = prune_result.messages
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # 2e.4. HISTORY NORMALIZATION
+        # ═══════════════════════════════════════════════════════════════════════
+        effective_history = normalize_history(history_for_llm)
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.4. LLM CALL WITH RETRY
@@ -1482,6 +1578,7 @@ class KimiSoul:
             compact_export_path = None
 
         self._recently_retrieved_turn_ids.clear()
+        self._pruner.reset_cooldown()
         await self._context.clear()
         await self._context.write_system_prompt(
             self._agent.get_system_prompt(is_compacting=True, compact_export_path=compact_export_path)

@@ -9,8 +9,9 @@ from kimi_cli.soul.history_index import HistoryIndex
 
 
 class Params(BaseModel):
-    query: str = Field(description="Natural-language query to search past conversation turns.")
+    query: str = Field(default="", description="Natural-language query to search past conversation turns.")
     k: int = Field(default=3, ge=1, le=10, description="Number of top matching turns to return.")
+    id: str | None = Field(default=None, description="Optional stable reference ID to retrieve a specific elided turn by ID.")
 
 
 class ContextRetrieval(CallableTool2[Params]):
@@ -19,7 +20,8 @@ class ContextRetrieval(CallableTool2[Params]):
         "Search archived conversation history for past turns matching a query. "
         "Returns verbatim excerpts from user/assistant exchanges that were compacted or rotated "
         "out of the active context window. Use to recall decisions, file paths, or error messages "
-        "no longer visible in the current conversation."
+        "no longer visible in the current conversation. "
+        "If an ``id`` is provided instead of a query, the exact turn with that reference ID is returned."
     )
     params: type[Params] = Params
 
@@ -29,6 +31,33 @@ class ContextRetrieval(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
+        # If an explicit id is given, retrieve by reference
+        if params.id is not None:
+            turn = self._history_index.get_by_id(params.id)
+            if turn is None:
+                return ToolOk(
+                    output=f"No turn found with id={params.id!r}.",
+                    message="No results",
+                )
+            role = turn["role"]
+            text = turn["text"]
+            compacted_marker = " [compacted]" if turn.get("is_compacted") else ""
+            return ToolOk(
+                output=(
+                    f"Retrieved turn id={params.id!r}:\n"
+                    f"> **{role}**{compacted_marker}\n"
+                    f"> {text.replace(chr(10), chr(10) + '> ')}"
+                ),
+                message=f"Found turn id={params.id!r}",
+            )
+
+        # Otherwise search by query
+        if not params.query.strip():
+            return ToolOk(
+                output="No query provided. Pass a ``query`` string or an ``id``.",
+                message="No query",
+            )
+
         results = self._history_index.search(params.query, top_k=params.k)
         if not results:
             return ToolOk(

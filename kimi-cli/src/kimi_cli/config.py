@@ -198,6 +198,99 @@ class LoopControl(BaseModel):
     If the cumulative token count of selected injections exceeds this budget,
     additional injections are skipped. Default is 2,000."""
 
+    # ── Context pruning (smart history removal) ──────────────────────────────
+
+    context_pruning_enabled: bool = Field(default=True)
+    """When true, enable the context pruner to dynamically reclaim context
+    space by removing historical information the LLM no longer needs,
+    without harshly breaking the KV cache. Default is true."""
+
+    prune_trigger_ratio: float = Field(default=0.0, ge=0.0, le=0.95)
+    """Context usage ratio threshold for triggering a prune pass.
+    Default is 0.0 — always prune regardless of context usage, so
+    ephemeral content is cleaned up eagerly from the very first step.
+    Must be lower than ``compaction_trigger_ratio``."""
+
+    prune_target_ratio: float = Field(default=0.0, ge=0.0, le=0.9)
+    """Target context usage ratio after a prune pass.
+    Default is 0.0 — prune as aggressively as allowed by other limits
+    (``prune_max_fraction_per_pass``, ``prune_min_free_tokens``, etc.).
+    Must not exceed ``prune_trigger_ratio``. Default is 0.0 (0%)."""
+
+    prune_stable_prefix_messages: int = Field(default=4, ge=1)
+    """Number of initial messages to always keep as a stable cached prefix.
+    Default is 4."""
+
+    prune_recent_messages_protected: int = Field(default=6, ge=1)
+    """Number of recent user/assistant turns (plus their tool messages)
+    to protect from pruning. Default is 6."""
+
+    prune_min_free_tokens: int = Field(default=2_000, ge=0)
+    """Minimum token savings required to justify a prune pass.
+    If the pass would free fewer tokens, it is skipped.
+    Default is 2,000."""
+
+    prune_cooldown_steps: int = Field(default=4, ge=1)
+    """Minimum number of steps between consecutive prune passes.
+    Default is 4."""
+
+    prune_min_usage_growth: float = Field(default=0.05)
+    """Minimum ratio of usage growth since the last prune to allow
+    re-pruning. Default is 0.05 (5%)."""
+
+    prune_max_fraction_per_pass: float = Field(default=0.5, ge=0.1, le=0.9)
+    """Maximum fraction of effective tokens to prune in a single pass.
+    Default is 0.5 (50%)."""
+
+    # Tier A — ephemeral injected messages (primary, safest)
+    prune_ephemeral_enabled: bool = Field(default=True)
+    """When true, enable Tier A removal of consumed ephemeral messages.
+    Default is true."""
+    prune_ephemeral_notifications: bool = Field(default=True)
+    """When true, drop consumed notification messages older than the
+    recency window. Default is true."""
+    prune_ephemeral_task_snapshots: bool = Field(default=True)
+    """When true, keep only the most recent active-task snapshot and
+    drop older ones. Default is true."""
+    prune_ephemeral_dmail_notices: bool = Field(default=True)
+    """When true, drop spent D-Mail notices once they are older than
+    the turn they applied to. Default is true."""
+    prune_ephemeral_checkpoint_markers: bool = Field(default=False)
+    """When true, optionally drop CHECKPOINT markers. Default is false
+    (keep them, since some flows correlate D-Mail by these)."""
+
+    # Tier B — substantive content elision (escalation only)
+    prune_substantive_enabled: bool = Field(default=True)
+    """When true, enable Tier B elision of stale/oversized substantive
+    content when Tier A is insufficient. Default is true."""
+    prune_tool_output_min_tokens: int = Field(default=512, ge=64)
+    """Minimum token count for a tool output to be considered oversized
+    and eligible for elision. Default is 512."""
+    prune_elide_thinking: bool = Field(default=True)
+    """When true, elide old reasoning (ThinkPart) content outside the
+    recency window. Default is true."""
+    prune_dedupe_near_duplicates: bool = Field(default=True)
+    """When true, detect and elide near-duplicate large blobs.
+    Default is true."""
+
+    prune_persist: bool = Field(default=False)
+    """When true, persist prune operations to storage (Layer 2).
+    Default is false — Layer 1 only (request-time pruning, history intact)."""
+    prune_subagents: bool = Field(default=True)
+    """When true, apply pruning to subagent sessions as well.
+    Default is true."""
+
+    @model_validator(mode="after")
+    def validate_prune_ratios(self) -> Self:
+        """Enforce: prune_target_ratio <= prune_trigger_ratio < compaction_trigger_ratio."""
+        if not (self.prune_target_ratio <= self.prune_trigger_ratio < self.compaction_trigger_ratio):
+            raise ValueError(
+                f"Prune ratios must satisfy: prune_target_ratio ({self.prune_target_ratio}) <= "
+                f"prune_trigger_ratio ({self.prune_trigger_ratio}) < "
+                f"compaction_trigger_ratio ({self.compaction_trigger_ratio})"
+            )
+        return self
+
 
 class BackgroundConfig(BaseModel):
     """Background task runtime configuration."""

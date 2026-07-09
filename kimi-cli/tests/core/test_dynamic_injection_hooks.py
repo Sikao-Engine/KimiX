@@ -101,6 +101,8 @@ def _make_compactable_soul() -> Any:
     soul._injection_providers = []
     soul._rotated_paths = []
     soul._compact_cache_dir = []
+    soul._pruner = MagicMock()
+    soul._recently_restored_refs = set()
     return soul
 
 

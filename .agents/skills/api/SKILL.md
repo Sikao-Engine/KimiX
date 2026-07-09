@@ -1082,6 +1082,102 @@ Register it on an existing soul:
 soul.add_injection_provider(MyReminderProvider())
 ```
 
+## Context Pruning (Smart History Removal)
+
+The agent runtime includes a **context pruner** that dynamically frees context space
+by removing historical information the LLM no longer needs, without harshly breaking
+the LLM backend's prefix KV cache.
+
+### Architecture
+
+- **Module:** `kimi_cli/soul/context_pruning.py` — `ContextPruner`, `PruningResult`, `ElidedRecord`
+- **Integration point:** `_step()` in `kimisoul.py`, between dynamic injection and history normalization
+- **Layer 1 (default, request-time only):** prunes a *copy* of history for the LLM call;
+  storage, checkpoints, and notification ack are unaffected
+- **Layer 2 (opt-in, `prune_persist=True`):** persists removals to storage
+
+### Two Tiers
+
+**Tier A — Ephemeral injected messages (primary, safest)**
+Drops consumed/superseded accumulating ephemera outright (no stub, no retrieval ref):
+- Superseded active-task snapshots (`<active-background-tasks>`) — only the most recent kept
+- Consumed notifications (`<notification ...>`) — older than the recency window
+- Spent D-Mail notices — older than the turn they applied to
+- CHECKPOINT markers — config-gated (default off)
+- System reminders — already handled by `strip_system_reminders`
+
+**Tier B — Stale/oversized substantive content (escalation only)**
+Elides content (keeps `role`/`tool_call_id`, replaces body with a compact stub):
+- Superseded tool reads (e.g. read followed by write/edit)
+- Oversized tool outputs (> `prune_tool_output_min_tokens`)
+- Resolved errors (error followed by same-tool success)
+- Old reasoning (`ThinkPart`) — gated by `prune_elide_thinking`
+- Near-duplicate large blobs — gated by `prune_dedupe_near_duplicates`
+
+### Elision Stub Format
+
+```
+<system>[context-elided: {kind} — {short_summary}. ~{tokens} tokens freed.
+Retrieve full content with ContextRetrieval(id={ref})]</system>
+```
+
+### Cache-Conservative Policy
+
+1. **Protect the recent tail** — never prune the last `K` turns and their tool messages
+2. **Protect a stable head** — first `P` messages never removed
+3. **Prune only the middle band**, tail-inward (largest index first → shallowest recompute)
+4. **Rare + batched** — cooldown (steps + usage growth) between passes
+5. **Min-payoff gate** — skip if savings < `prune_min_free_tokens`
+6. **Deterministic + idempotent** — same input → same output; already-pruned regions untouched
+7. **Prefer Tier A over Tier B** — cheapest, safest space first
+8. **Piggyback the existing break** — runs at `strip_system_reminders` point (one cache-break event)
+
+### Configuration (LoopControl)
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `context_pruning_enabled` | `True` | Master switch |
+| `prune_trigger_ratio` | `0.70` | Usage ratio to trigger a prune pass |
+| `prune_target_ratio` | `0.55` | Target usage after pruning |
+| `prune_stable_prefix_messages` | `4` | Head messages kept as cached prefix |
+| `prune_recent_messages_protected` | `6` | Recent turns protected from pruning |
+| `prune_min_free_tokens` | `2000` | Minimum payoff for a prune pass |
+| `prune_cooldown_steps` | `4` | Hysteresis between passes |
+| `prune_min_usage_growth` | `0.05` | Growth required before re-pruning |
+| `prune_max_fraction_per_pass` | `0.5` | Max fraction of tokens pruned per pass |
+| `prune_ephemeral_enabled` | `True` | Enable Tier A ephemeral removal |
+| `prune_ephemeral_notifications` | `True` | Drop consumed notifications |
+| `prune_ephemeral_task_snapshots` | `True` | Keep only latest task snapshot |
+| `prune_ephemeral_dmail_notices` | `True` | Drop spent D-Mail notices |
+| `prune_ephemeral_checkpoint_markers` | `False` | Drop CHECKPOINT markers |
+| `prune_substantive_enabled` | `True` | Enable Tier B substantive elision |
+| `prune_tool_output_min_tokens` | `512` | Min token count for oversized output |
+| `prune_elide_thinking` | `True` | Elide old ThinkPart content |
+| `prune_dedupe_near_duplicates` | `True` | Elide near-duplicate large blobs |
+| `prune_persist` | `False` | Persist removals to storage (Layer 2) |
+| `prune_subagents` | `True` | Apply pruning to subagent sessions |
+
+Defaults enforce: `prune_target_ratio < prune_trigger_ratio < compaction_trigger_ratio`.
+
+### Retrieval of Elided Content
+
+Tier B elided content stays reachable via `ContextRetrieval`:
+- Tool results are now indexed in `HistoryIndex` (previously only user/assistant turns)
+- `HistoryIndex.get_by_id(ref)` resolves the stub's reference deterministically
+- `ContextRetrieval` accepts an optional `id` parameter for direct retrieval
+- Auto-retrieval (`_maybe_auto_retrieve_history`) resurfaces relevant elided turns automatically
+
+### Slash Command
+
+- `/prune` — manually trigger a prune pass (analogous to `/compact`)
+
+### Observability
+
+Each prune pass logs:
+- `freed_tokens` — estimated tokens reclaimed
+- `earliest_removed_index` — cache-break depth (index of earliest change)
+- `tier_b` count — number of elided records indexed
+
 ## Complete Package Index
 
 | Package / Module | Description |

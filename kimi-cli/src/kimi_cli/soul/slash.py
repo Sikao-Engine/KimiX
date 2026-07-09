@@ -75,6 +75,49 @@ async def compact(soul: KimiSoul, args: str):
     )
 
 
+@registry.command
+async def prune(soul: KimiSoul, args: str):
+    """Manually trigger context pruning (smart history removal)"""
+    logger.info("Running `/prune`")
+
+    if not soul.runtime.config.loop_control.context_pruning_enabled:
+        wire_send(TextPart(text="Context pruning is disabled in config."))
+        return
+
+    llm = soul.runtime.llm
+    max_context = llm.max_context_size if llm else 128_000
+    model_name = llm.chat_provider.model_name if llm else None
+
+    # Copy the history and run the pruner
+    history = list(soul.context.history)
+    result = soul.pruner.prune(
+        history,
+        current_step=soul.current_step_no,
+        context_usage=soul.status.context_usage,
+        max_context_size=max_context,
+        model=model_name,
+    )
+
+    if result.earliest_removed_index is None:
+        wire_send(TextPart(text="No prunable content found."))
+        return
+
+    wire_send(
+        TextPart(
+            text=f"Context pruned: freed {result.freed_tokens} tokens, "
+            f"earliest change at index {result.earliest_removed_index}."
+        )
+    )
+    snap = soul.status
+    wire_send(
+        StatusUpdate(
+            context_usage=snap.context_usage,
+            context_tokens=snap.context_tokens,
+            max_context_tokens=snap.max_context_tokens,
+        )
+    )
+
+
 @registry.command(aliases=["reset"])
 async def clear(soul: KimiSoul, args: str):
     """Clear the context"""

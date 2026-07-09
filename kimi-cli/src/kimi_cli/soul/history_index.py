@@ -44,7 +44,7 @@ class HistoryIndex:
         return "\n".join(parts)
 
     def index_messages(self, messages: Sequence[Message]) -> None:
-        """Add *messages* to the index, skipping system/tool roles."""
+        """Add *messages* to the index, including tool role messages."""
         # If the index has been finalized (e.g. after a search), rebuild it
         # from the existing turns so new documents can be added.
         if self._index._finalized:
@@ -55,7 +55,7 @@ class HistoryIndex:
                 self._index.add_document(turn["turn_id"], tokens)
 
         for msg in messages:
-            if msg.role not in {"user", "assistant"}:
+            if msg.role not in {"user", "assistant", "tool"}:
                 continue
             text = self._message_to_text(msg)
             if not text.strip():
@@ -109,6 +109,27 @@ class HistoryIndex:
                     out.append({**turn, "score": score})
                     break
         return out
+
+    def get_by_id(self, ref: str) -> dict[str, Any] | None:
+        """Retrieve a turn by its reference ID (turn_id).
+
+        The *ref* may be a plain integer string (``"42"``) or a prefixed
+        reference like ``"prune_42"`` — both ``"42"`` and the numeric
+        suffix are tried.
+        """
+        # Parse the numeric part
+        ref_str = str(ref)
+        if ref_str.startswith("prune_"):
+            ref_str = ref_str[len("prune_"):]
+        try:
+            turn_id = int(ref_str)
+        except ValueError:
+            return None
+
+        for turn in self._turns:
+            if turn["turn_id"] == turn_id:
+                return dict(turn)
+        return None
 
     def search_with_recency(
         self,

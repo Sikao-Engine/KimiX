@@ -52,6 +52,26 @@ def test_default_config_dump():
                 "auto_retrieve_recency_weight": 1.0,
                 "auto_retrieve_max_injections_per_turn": 3,
                 "auto_retrieve_max_tokens_per_turn": 2000,
+                "context_pruning_enabled": True,
+                "prune_trigger_ratio": 0.0,
+                "prune_target_ratio": 0.0,
+                "prune_stable_prefix_messages": 4,
+                "prune_recent_messages_protected": 6,
+                "prune_min_free_tokens": 2000,
+                "prune_cooldown_steps": 4,
+                "prune_min_usage_growth": 0.05,
+                "prune_max_fraction_per_pass": 0.5,
+                "prune_ephemeral_enabled": True,
+                "prune_ephemeral_notifications": True,
+                "prune_ephemeral_task_snapshots": True,
+                "prune_ephemeral_dmail_notices": True,
+                "prune_ephemeral_checkpoint_markers": False,
+                "prune_substantive_enabled": True,
+                "prune_tool_output_min_tokens": 512,
+                "prune_elide_thinking": True,
+                "prune_dedupe_near_duplicates": True,
+                "prune_persist": False,
+                "prune_subagents": True,
             },
             "background": {
                 "max_running_tasks": 4,
@@ -183,4 +203,35 @@ def test_load_config_supported_efforts_rejects_off():
     with pytest.raises(ConfigError, match="supported_efforts|off"):
         load_config_from_string(
             '{"models": {"m": {"provider": "p", "model": "m", "max_context_size": 1000, "supported_efforts": ["low", "off"]}}, "providers": {"p": {"type": "anthropic", "base_url": "https://example.com", "api_key": "k"}}}'
+        )
+
+
+def test_load_config_prune_ratios_valid():
+    """Default prune ratios satisfy: prune_target <= prune_trigger < compaction_trigger."""
+    config = load_config_from_string("{}")
+    assert config.loop_control.prune_target_ratio <= config.loop_control.prune_trigger_ratio < config.loop_control.compaction_trigger_ratio
+
+
+def test_load_config_prune_ratios_invalid_target_gte_trigger():
+    """Reject prune_target_ratio > prune_trigger_ratio."""
+    with pytest.raises(ConfigError, match="Prune ratios must satisfy"):
+        load_config_from_string(
+            '{"loop_control": {"prune_target_ratio": 0.8, "prune_trigger_ratio": 0.7}}'
+        )
+
+
+def test_load_config_prune_ratios_equal_allowed():
+    """Allow prune_target_ratio == prune_trigger_ratio (both zero by default)."""
+    config = load_config_from_string(
+        '{"loop_control": {"prune_target_ratio": 0.0, "prune_trigger_ratio": 0.0}}'
+    )
+    assert config.loop_control.prune_target_ratio == 0.0
+    assert config.loop_control.prune_trigger_ratio == 0.0
+
+
+def test_load_config_prune_ratios_invalid_trigger_gte_compaction():
+    """Reject prune_trigger_ratio >= compaction_trigger_ratio."""
+    with pytest.raises(ConfigError, match="Prune ratios must satisfy"):
+        load_config_from_string(
+            '{"loop_control": {"prune_trigger_ratio": 0.85, "compaction_trigger_ratio": 0.75}}'
         )
