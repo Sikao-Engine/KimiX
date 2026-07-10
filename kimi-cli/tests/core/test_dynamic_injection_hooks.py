@@ -63,6 +63,7 @@ def _make_compactable_soul() -> Any:
 
     runtime = MagicMock()
     runtime.llm = MagicMock()
+    runtime.llm.chat_provider.model_name = None
     runtime.session.id = "test-session"
     runtime.role = "non-root"  # skip active-task-snapshot branch
     runtime.background_tasks = MagicMock()
@@ -84,6 +85,7 @@ def _make_compactable_soul() -> Any:
 
     soul._agent = MagicMock()
     soul._agent.system_prompt = "sys"
+    soul._agent.get_system_prompt.return_value = "sys"
 
     loop_control = MagicMock()
     loop_control.max_retries_per_step = 1

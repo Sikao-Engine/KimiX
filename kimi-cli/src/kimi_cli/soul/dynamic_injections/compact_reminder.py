@@ -43,7 +43,14 @@ class CompactReminderProvider(DynamicInjectionProvider):
         if soul.is_subagent:
             return []
 
-        context_usage = soul.status.context_usage
+        # Use the pending-inclusive token count so the reminder fires based on
+        # the real context size (tool results appended since the last LLM call
+        # are counted), matching the auto-compaction trigger.
+        max_tokens = soul.status.max_context_tokens
+        if max_tokens:
+            context_usage = soul.context.token_count_with_pending / max_tokens
+        else:
+            context_usage = soul.status.context_usage
 
         if context_usage < self._threshold:
             return []

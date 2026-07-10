@@ -25,6 +25,11 @@ def _mock_soul(
     status.context_tokens = context_tokens
     status.max_context_tokens = max_context_tokens
     soul.status = status
+    # The provider now reads the pending-inclusive token count from the context,
+    # so derive it from the requested usage for a consistent mock.
+    context = MagicMock()
+    context.token_count_with_pending = int(context_usage * max_context_tokens)
+    soul.context = context
     return soul
 
 

@@ -1596,12 +1596,12 @@ class KimiSoul:
         self._recently_retrieved_turn_ids.clear()
         self._pruner.reset_cooldown()
         await self._context.clear()
-        await self._context.write_system_prompt(
-            self._agent.get_system_prompt(is_compacting=True, compact_export_path=compact_export_path)
+        system_prompt_text = self._agent.get_system_prompt(
+            is_compacting=True, compact_export_path=compact_export_path
         )
+        await self._context.write_system_prompt(system_prompt_text)
         await self._checkpoint()
         await self._context.append_message(compaction_result.messages)
-        estimated_token_count = compaction_result.estimated_token_count
 
         if self.is_root:
             active_task_snapshot = build_active_task_snapshot(self._runtime.background_tasks)
@@ -1617,12 +1617,19 @@ class KimiSoul:
                     ],
                 )
                 await self._context.append_message(active_task_message)
-                model_name = (
-                    self._runtime.llm.model_config.model
-                    if self._runtime.llm and self._runtime.llm.model_config
-                    else None
-                )
-                estimated_token_count += estimate_text_tokens([active_task_message], model=model_name)
+
+        # Recompute the token estimate from the rebuilt context so it reflects
+        # the checkpoint marker, preserved messages, compaction summary, and any
+        # active-task snapshot. Also account for the system prompt, because the
+        # pre-compaction usage snapshots that callers compare against also
+        # include the system prompt.
+        estimated_token_count = estimate_text_tokens(
+            self._context.history, model=self.model_name
+        )
+        if system_prompt_text:
+            estimated_token_count += count_tokens(
+                system_prompt_text, model=self.model_name
+            )
 
         # Estimate token count so context_usage is not reported as 0%
         await self._context.update_token_count(estimated_token_count)
