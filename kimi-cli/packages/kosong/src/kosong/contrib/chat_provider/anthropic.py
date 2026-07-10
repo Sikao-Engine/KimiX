@@ -155,6 +155,26 @@ _FAMILY_VERSION_RE = re.compile(r"(?:opus|sonnet|haiku)[.-](\d+)[.-](\d{1,2})(?!
 # Adaptive thinking was introduced with Opus 4.6 / Sonnet 4.6.
 _ADAPTIVE_MIN_VERSION: tuple[int, int] = (4, 6)
 
+# Anthropic models currently top out at 128k output tokens.  The Python SDK
+# additionally refuses non-streaming requests whose expected duration exceeds
+# 10 minutes; that threshold is 128_000 * 10 / 60 = 21_333 tokens.
+_MAX_OUTPUT_TOKENS_STREAMING = 128_000
+_MAX_OUTPUT_TOKENS_NONSTREAMING = 21_333
+
+
+def _clamp_max_tokens(kwargs: dict[str, Any], *, streaming: bool) -> None:
+    """Clamp ``max_tokens`` to a safe upper bound for Anthropic models.
+
+    The bound depends on whether streaming is enabled, because the SDK rejects
+    large non-streaming requests upfront to keep them under 10 minutes.
+    """
+    raw = kwargs.get("max_tokens")
+    if raw is None:
+        return
+    upper = _MAX_OUTPUT_TOKENS_STREAMING if streaming else _MAX_OUTPUT_TOKENS_NONSTREAMING
+    if raw > upper:
+        kwargs["max_tokens"] = upper
+
 
 def _supports_adaptive_thinking(model: str) -> bool:
     """Whether the given model id accepts `thinking: {type: "adaptive"}`.
@@ -169,22 +189,6 @@ def _supports_adaptive_thinking(model: str) -> bool:
     if match := _FAMILY_VERSION_RE.search(m):
         major, minor = int(match.group(1)), int(match.group(2))
         return (major, minor) >= _ADAPTIVE_MIN_VERSION
-    return False
-
-
-def _is_opus_4_7(model: str) -> bool:
-    """Opus 4.7 specifically supports the ``xhigh`` effort level.
-
-    The docs explicitly enumerate ``xhigh`` support as "Available on Claude
-    Opus 4.7" — not "4.7 and later". We keep the check exact so that a
-    future Opus 4.8 that silently drops xhigh doesn't start returning 400.
-    Future versions fall back to the 4.6-family effort set (which still
-    covers ``max``) until this table is updated.
-    """
-    m = model.lower()
-    if match := re.search(r"opus[.-](\d+)[.-](\d{1,2})(?!\d)", m):
-        major, minor = int(match.group(1)), int(match.group(2))
-        return (major, minor) == (4, 7)
     return False
 
 
@@ -242,7 +246,7 @@ class Anthropic:
     name = "anthropic"
 
     class GenerationKwargs(TypedDict, total=False):
-        max_tokens: int | None
+        max_tokens: int
         temperature: float | None
         top_k: int | None
         top_p: float | None
@@ -260,8 +264,11 @@ class Anthropic:
         beta_features: list[BetaFeatures] | None
         extra_headers: Mapping[str, str] | None
 
+    # ``xhigh`` is documented as Opus 4.7-only, so it is excluded from the
+    # default set. Callers that know their model supports ``xhigh`` can opt in
+    # by passing ``supported_efforts`` explicitly.
     _DEFAULT_SUPPORTED_EFFORTS: frozenset["ThinkingEffort"] = frozenset(
-        {"low", "medium", "high", "xhigh", "max"}
+        {"low", "medium", "high", "max"}
     )
 
     def __init__(
@@ -399,10 +406,18 @@ class Anthropic:
                         pass
         generation_kwargs: dict[str, Any] = {}
         generation_kwargs.update(self._generation_kwargs)
-        betas = generation_kwargs.pop("beta_features", [])
+
+        # ``max_tokens`` is required by Anthropic and may be defaulted to the
+        # model's full context size by upper layers. Clamp and validate it.
+        if generation_kwargs.get("max_tokens") is None:
+            raise ValueError("max_tokens must be provided for Anthropic")
+        _clamp_max_tokens(generation_kwargs, streaming=self._stream)
+
+        betas = generation_kwargs.pop("beta_features", []) or []
+        extra_headers = generation_kwargs.pop("extra_headers", {}) or {}
         extra_headers = {
             **{"anthropic-beta": ",".join(str(e) for e in betas)},
-            **(generation_kwargs.pop("extra_headers", {})),
+            **extra_headers,
         }
 
         tools_ = [_convert_tool(tool) for tool in tools]

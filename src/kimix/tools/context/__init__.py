@@ -73,7 +73,6 @@ class Compact(CallableTool2):
                 output="",
                 brief="No active soul",
             )
-        before = soul.status
         try:
             await soul.compact_context(
                 manual=True,
@@ -87,11 +86,4 @@ class Compact(CallableTool2):
                 output="",
                 brief="Compaction failed",
             )
-        after = soul.status
-        return ToolOk(
-            output=(
-                f"Context compacted from {before.context_tokens:,} tokens "
-                f"({before.context_usage:.1%}) to {after.context_tokens:,} tokens "
-                f"({after.context_usage:.1%})."
-            )
-        )
+        return ToolOk(output='Compaction success. [WARNING] DO NOT call `Compact` frequently.')

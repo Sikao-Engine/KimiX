@@ -485,6 +485,53 @@ async def test_anthropic_generation_kwargs():
         )
 
 
+async def test_anthropic_generation_kwargs_none_extras():
+    """None values for optional list/mapping extras must be treated as empty."""
+    with respx.mock(base_url="https://api.anthropic.com") as mock:
+        mock.post("/v1/messages").mock(return_value=Response(200, json=make_anthropic_response()))
+        provider = Anthropic(
+            model="claude-sonnet-4-20250514",
+            api_key="test-key",
+            default_max_tokens=1024,
+            stream=False,
+        ).with_generation_kwargs(beta_features=None, extra_headers=None)
+        stream = await provider.generate("", [], [Message(role="user", content="Hi")])
+        async for _ in stream:
+            pass
+        body = json.loads(mock.calls.last.request.content.decode())
+        assert body["max_tokens"] == 1024
+
+
+async def test_anthropic_max_tokens_clamped():
+    """Over-large max_tokens values are clamped to the Anthropic upper bound."""
+    with respx.mock(base_url="https://api.anthropic.com") as mock:
+        mock.post("/v1/messages").mock(return_value=Response(200, json=make_anthropic_response()))
+        provider = Anthropic(
+            model="claude-sonnet-4-20250514",
+            api_key="test-key",
+            default_max_tokens=1024,
+            stream=False,
+        ).with_generation_kwargs(max_tokens=10_000_000)
+        stream = await provider.generate("", [], [Message(role="user", content="Hi")])
+        async for _ in stream:
+            pass
+        body = json.loads(mock.calls.last.request.content.decode())
+        # Non-streaming requests are clamped to the SDK's 10-minute threshold.
+        assert body["max_tokens"] == 21_333
+
+
+async def test_anthropic_max_tokens_none_raises():
+    """max_tokens is required; setting it to None must raise a clear error."""
+    provider = Anthropic(
+        model="claude-sonnet-4-20250514",
+        api_key="test-key",
+        default_max_tokens=1024,
+        stream=False,
+    ).with_generation_kwargs(max_tokens=None)  # type: ignore[typeddict-item]
+    with pytest.raises(ValueError, match="max_tokens must be provided"):
+        await provider.generate("", [], [Message(role="user", content="Hi")])
+
+
 async def test_anthropic_with_thinking():
     with respx.mock(base_url="https://api.anthropic.com") as mock:
         mock.post("/v1/messages").mock(return_value=Response(200, json=make_anthropic_response()))
@@ -691,7 +738,7 @@ async def test_anthropic_opus_45_legacy_xhigh_clamps_to_high():
 
 
 async def test_anthropic_opus_47_xhigh():
-    """Opus 4.7 + xhigh should pass xhigh through (Opus 4.7-specific level)."""
+    """Opus 4.7 + xhigh should pass xhigh through when explicitly enabled."""
     with respx.mock(base_url="https://api.anthropic.com") as mock:
         mock.post("/v1/messages").mock(return_value=Response(200, json=make_anthropic_response()))
         provider = Anthropic(
@@ -699,6 +746,7 @@ async def test_anthropic_opus_47_xhigh():
             api_key="test-key",
             default_max_tokens=1024,
             stream=False,
+            supported_efforts={"low", "medium", "high", "xhigh", "max"},
         ).with_thinking("xhigh")
         stream = await provider.generate("", [], [Message(role="user", content="Think")])
         async for _ in stream:
@@ -838,6 +886,7 @@ async def test_anthropic_opus_47_thinking_effort_property():
             api_key="test-key",
             default_max_tokens=1024,
             stream=False,
+            supported_efforts={"low", "medium", "high", "xhigh", "max"},
         ).with_thinking(effort)  # type: ignore[arg-type]
         assert provider.thinking_effort == effort
 
