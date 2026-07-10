@@ -449,6 +449,11 @@ def mcp_serve(
     from kimi_cli.session import Session
 
     async def _run() -> None:
+        # Use daemon threads for asyncio.to_thread() so Ctrl+C does not
+        # block interpreter shutdown.
+        from kimi_cli.utils.executor import install_daemon_thread_pool_executor
+
+        install_daemon_thread_pool_executor()
         resolved_work_dir = KaosPath(str(work_dir or Path.cwd()))
         cli_session = await Session.create(resolved_work_dir)
         cli = await KimiCLI.create(

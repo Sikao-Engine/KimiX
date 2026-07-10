@@ -378,6 +378,12 @@ def kimi(
         Returns:
             The session and the exit code (0 = success, 1 = failure, 75 = retryable).
         """
+        # Use daemon threads for asyncio.to_thread() so Ctrl+C does not
+        # block interpreter shutdown with "Exception ignored while joining a
+        # thread in _thread._shutdown()".
+        from kimi_cli.utils.executor import install_daemon_thread_pool_executor
+
+        install_daemon_thread_pool_executor()
         # Track if we're resuming an existing session (vs creating new)
         resumed = False
         anonymous = False

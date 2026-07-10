@@ -124,7 +124,7 @@ class LoopControl(BaseModel):
     """Agent loop control configuration."""
 
     max_steps_per_turn: int = Field(
-        default=5000,
+        default=15000,
         ge=1,
         validation_alias=AliasChoices("max_steps_per_turn", "max_steps_per_run"),
     )
@@ -307,8 +307,8 @@ class BackgroundConfig(BaseModel):
         default=False,
         description="Keep background tasks alive when CLI exits. Default: kill on exit.",
     )
-    agent_task_timeout_s: int = Field(default=900, ge=60)
-    """Maximum runtime in seconds for a background agent task. Default: 900 (15 min)."""
+    agent_task_timeout_s: int = Field(default=28800, ge=60)
+    """Maximum runtime in seconds for a background agent task. Default: 28800 (8 hours)."""
     print_wait_ceiling_s: int = Field(default=3600, ge=1)
     """Hard ceiling for how long ``--print`` mode waits for background tasks before
     killing them and exiting. The effective wait is
