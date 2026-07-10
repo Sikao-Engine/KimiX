@@ -170,8 +170,17 @@ def create_llm(
                 gen_kwargs["top_p"] = float(top_p)
             if max_tokens is None:
                 max_tokens = os.getenv("KIMI_MODEL_MAX_TOKENS")
+            if max_tokens is None:
+                max_tokens = model.max_context_size
             if max_tokens is not None:
-                gen_kwargs["max_tokens"] = int(max_tokens)
+                max_tokens_int = int(max_tokens)
+                gen_kwargs["max_tokens"] = max_tokens_int
+                # ``max_completion_tokens`` is the modern replacement for
+                # ``max_tokens`` recommended by OpenAI for reasoning models.
+                # It accounts for both reasoning tokens and visible output
+                # tokens.  Set both for broad compatibility — the provider's
+                # ``clamp_max_tokens()`` ensures neither exceeds the safe cap.
+                gen_kwargs["max_completion_tokens"] = max_tokens_int
 
             if gen_kwargs:
                 chat_provider = chat_provider.with_generation_kwargs(**gen_kwargs)
@@ -197,6 +206,24 @@ def create_llm(
                 default_headers=_kimi_default_headers(provider, oauth),
                 supported_efforts=model.supported_efforts,
             ).with_parallel_tool_calls(enabled=True)
+
+            gen_kwargs: OpenAILegacy.GenerationKwargs = {}
+            if max_tokens is None:
+                max_tokens = os.getenv("KIMI_MODEL_MAX_TOKENS")
+            if max_tokens is None:
+                max_tokens = model.max_context_size
+            if max_tokens is not None:
+                max_tokens_int = int(max_tokens)
+                gen_kwargs["max_tokens"] = max_tokens_int
+                gen_kwargs["max_completion_tokens"] = max_tokens_int
+            if temperature is not None:
+                gen_kwargs["temperature"] = float(temperature)
+            if top_p is None:
+                top_p = os.getenv("KIMI_MODEL_TOP_P")
+            if top_p is not None:
+                gen_kwargs["top_p"] = float(top_p)
+            if gen_kwargs:
+                chat_provider = chat_provider.with_generation_kwargs(**gen_kwargs)
         case "openai_responses":
             from kosong.contrib.chat_provider.openai_responses import OpenAIResponses
 

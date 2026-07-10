@@ -448,7 +448,7 @@ class Config(BaseModel):
         ),
     )
     # LLM override settings
-    max_tokens: int | None = Field(default=128_000, description='LLM max output tokens')
+    max_tokens: int | None = Field(default=384_000, description='LLM max output tokens')
     temperature: float | None = Field(default=None, description='LLM Temperature')
     top_p: float | None = Field(default=None, description='LLM top_p')
     top_k: int | None = Field(default=None, description='LLM top_k')

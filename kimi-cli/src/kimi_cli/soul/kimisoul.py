@@ -1335,6 +1335,22 @@ class KimiSoul:
         def _before_step_retry_sleep(retry_state: RetryCallState) -> None:
             self._retry_log("step", retry_state)
             self._emit_step_retry(retry_state, max_attempts=max_attempts)
+            # When retrying a think-only response (token budget exhaustion during reasoning),
+            # increase max_tokens progressively so the model has room to emit text after
+            # completing its reasoning chain.
+            if retry_state.outcome and retry_state.outcome.exception():
+                exc = retry_state.outcome.exception()
+                if isinstance(exc, APIEmptyResponseError):
+                    current = getattr(chat_provider, '_generation_kwargs', {}).get('max_tokens') or 8192
+                    new_max = int(current * 1.5)
+                    logger.info(
+                        "Think-only response (attempt {attempt}), increasing max_tokens "
+                        "from {old} to {new} for retry",
+                        attempt=retry_state.attempt_number,
+                        old=current,
+                        new=new_max,
+                    )
+                    chat_provider._generation_kwargs['max_tokens'] = new_max
 
         @tenacity.retry(
             retry=retry_if_exception(self._is_retryable_error),

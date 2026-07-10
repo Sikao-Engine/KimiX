@@ -55,8 +55,33 @@ class CommonGenerationKwargs(TypedDict, total=False):
     """
 
     max_tokens: int | None
+    max_completion_tokens: int | None
     temperature: float | None
     top_p: float | None
+
+
+# Safe upper bound for ``max_tokens`` / ``max_completion_tokens`` in
+# OpenAI-compatible APIs.  Some backends (e.g. Moonshot) accept up to
+# ~393k, while others have lower caps.  384k is generous enough to
+# prevent "think-only" errors (token budget exhaustion during reasoning)
+# while remaining well within the limits of every mainstream API.
+_MAX_OUTPUT_TOKENS = 384_000
+
+
+def clamp_max_tokens(kwargs: dict[str, Any]) -> None:
+    """Clamp output-token budgets in *kwargs* to a safe upper bound.
+
+    Covers both ``max_tokens`` (the legacy field) and
+    ``max_completion_tokens`` (the modern field recommended for reasoning
+    models).  The ``llm.py`` layer may default these to the model's total
+    context size (which can be 1 M+ tokens), but the API's output budget
+    is typically capped far below that.  Sending an over-large value
+    causes a ``400 BadRequest``.
+    """
+    for key in ("max_tokens", "max_completion_tokens"):
+        raw = kwargs.get(key)
+        if raw is not None and raw > _MAX_OUTPUT_TOKENS:
+            kwargs[key] = _MAX_OUTPUT_TOKENS
 
 
 _SSL_CONTEXT: ssl.SSLContext | None = None

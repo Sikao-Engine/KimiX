@@ -78,14 +78,16 @@ async def generate(
     # abnormal termination — typically a stream interruption or max_tokens
     # exhaustion during reasoning.  The model should always produce visible
     # output after thinking; a think-only response is never intentional.
-    has_think = any(isinstance(p, ThinkPart) for p in message.content)
+    think_parts = [p for p in message.content if isinstance(p, ThinkPart)]
+    has_think = bool(think_parts)
     has_text = any(isinstance(p, TextPart) and p.text.strip() for p in message.content)
     if has_think and not has_text and not message.tool_calls:
+        reason_len = sum(len(p.think) for p in think_parts)
         raise APIEmptyResponseError(
             "The API returned a response containing only thinking content "
             "without any text or tool calls. This usually indicates the "
             "stream was interrupted or the output token budget was exhausted "
-            "during reasoning."
+            f"during reasoning. (reasoning text length: {reason_len} characters)"
         )
 
     return GenerateResult(

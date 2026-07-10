@@ -39,6 +39,7 @@ from kosong.chat_provider.openai_common import (
     CommonGenerationKwargs,
     OpenAICompatibleProviderMixin,
     apply_generation_kwargs,
+    clamp_max_tokens,
     clamp_thinking_effort,
     convert_error,
     maybe_log_reasoning_content_error,  # noqa: F401
@@ -177,6 +178,7 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
 
         generation_kwargs: dict[str, Any] = {}
         generation_kwargs.update(self._generation_kwargs)
+        clamp_max_tokens(generation_kwargs)
         reasoning_effort = generation_kwargs.pop("reasoning_effort", None)
         if reasoning_effort is not None:
             # Bypass SDK-side Reasoning model validation so non-standard effort

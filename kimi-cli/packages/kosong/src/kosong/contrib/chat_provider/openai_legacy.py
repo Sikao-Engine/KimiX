@@ -20,6 +20,7 @@ from kosong.chat_provider.openai_common import (
     CommonGenerationKwargs,
     OpenAICompatibleProviderMixin,
     OpenAICompatibleStreamedMessage,
+    clamp_max_tokens,
     apply_generation_kwargs,
     clamp_thinking_effort,
     convert_error,
@@ -156,6 +157,10 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
     ) -> OpenAILegacyStreamedMessage:
         generation_kwargs: dict[str, Any] = {}
         generation_kwargs.update(self._generation_kwargs)
+        # Clamp max_tokens to a safe upper bound so that an over-large default
+        # from the config layer (e.g. max_context_size = 1 M) doesn't trigger
+        # a 400 from the API, which enforces its own per-model output limit.
+        clamp_max_tokens(generation_kwargs)
 
         reasoning_effort = self._reasoning_effort
         # Auto-enable reasoning_effort when the history contains ThinkPart but reasoning
