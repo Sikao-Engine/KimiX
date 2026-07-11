@@ -120,6 +120,19 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
                 if hasattr(bc, key):
                     setattr(bc, key, value)
             cfg.background = bc
-        # The provider_dict contract no longer includes model_name/name.
-        provider_dict = {k: v for k, v in provider_dict.items() if k not in ("model_name", "name")}
+        # Warn about unrecognized keys in provider_dict.
+        # recognized_keys must contain every key that is explicitly consumed above
+        # this point (including nested-dict keys handled via getattr checks), plus
+        # legacy keys that are accepted but ignored (model_name/name).
+        # When a new top-level key is added to the config contract, add it here.
+        recognized_keys = {
+            "model", "max_context_size", "capabilities", "url", "type", "env",
+            "api_key", "oauth", "openai_settings", "custom_headers", "loop_control",
+            "show_thinking_stream", "notifications", "mcp", "max_tokens",
+            "thinking_effort", "temperature", "top_p", "top_k", "background",
+            "model_name", "name",
+        }
+        unrecognized_keys = [k for k in provider_dict if k not in recognized_keys]
+        if unrecognized_keys:
+            print_warning(f"Unrecognized keys in provider_dict: {unrecognized_keys}")
     return cfg, provider_dict

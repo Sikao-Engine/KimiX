@@ -116,6 +116,7 @@ Triggered when context token ratio hits `compaction_trigger_ratio` or free space
 | [`docs/tutorials/3_builtin_tools_en.md`](docs/tutorials/3_builtin_tools_en.md) | Complete built-in tool guide: file I/O, search, code execution, process management, doc conversion, plan mode, sub-agents, plus prompt strategies and best practices. |
 | [`docs/tutorials/4_skills_en.md`](docs/tutorials/4_skills_en.md) | Custom skill authoring: design principles, directory structure, `SKILL.md` spec, resource organization, testing, packaging, and installation. |
 | [`docs/tutorials/5_server_en.md`](docs/tutorials/5_server_en.md) | HTTP server tutorial: FastAPI + SSE, OpenCode-compatible REST API, session management, event streaming, SSE CLI debugger, dummy mode, and client implementation. |
+| [`docs/tutorials/6_multi_provider_en.md`](docs/tutorials/6_multi_provider_en.md) | Multi-provider configuration: route sub-agents and planner to different LLM providers with role-tagged `sub_providers`. |
 
 ### Config Reference
 

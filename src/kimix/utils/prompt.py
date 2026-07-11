@@ -410,7 +410,12 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
     planner_session: Session | None = None
 
     try:
-        planner_session = await _create_session_async(agent_type=SystemPromptType.TodoMaker, agent_file='agent_planner.json')
+        planner_provider = base.get_default_sub_provider("planner")
+        planner_session = await _create_session_async(
+            agent_type=SystemPromptType.TodoMaker,
+            agent_file='agent_planner.json',
+            provider_dict=planner_provider,
+        )
         planner_session.get_custom_data()["plan_writing_path"] = plan_file
 
         reminder = (

@@ -216,9 +216,8 @@ async def _summarize_long_output_async(session: Session, command: str, output: s
     custom_config = session.custom_config
     chat_provider = custom_config.get("chat_provider")
     default_sub_provider = (
-        base._default_sub_provider
-        if base._default_sub_provider is not None
-        else custom_config.get("provider_dict", base._default_provider)
+        base.get_default_sub_provider("sub_agent")
+        or custom_config.get("provider_dict", base._default_provider)
     )
 
     sub_session_id = str(uuid.uuid4())

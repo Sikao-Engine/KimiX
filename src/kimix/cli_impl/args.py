@@ -12,6 +12,53 @@ from kimix.base import print_debug, print_error, print_warning
 from . import constants, utils  # noqa: F401
 
 
+_REQUIRED_PROVIDER_KEYS = ("type", "max_context_size", "model", "url")
+
+
+def _normalize_sub_providers(
+    sub_provider: Any,
+    sub_providers: Any,
+) -> list[dict[str, Any]]:
+    """Normalize ``sub_provider`` and ``sub_providers`` into a flat list.
+
+    Each entry is validated to be a dict with required provider keys.
+    Missing or empty ``role`` defaults to ``sub_agent``.
+    """
+    raw_entries: list[Any] = []
+    for src in (sub_provider, sub_providers):
+        if src is None:
+            continue
+        if isinstance(src, dict):
+            raw_entries.append(src)
+        elif isinstance(src, list):
+            raw_entries.extend(src)
+        else:
+            print_warning(f"Ignoring invalid sub_provider value of type {type(src).__name__}")
+
+    normalized: list[dict[str, Any]] = []
+    seen_roles: set[str] = set()
+    for entry in raw_entries:
+        if not isinstance(entry, dict):
+            print_warning("Ignoring invalid sub_provider entry: expected dict")
+            continue
+        missing = [k for k in _REQUIRED_PROVIDER_KEYS if k not in entry]
+        if missing:
+            print_warning(
+                f"Ignoring invalid sub_provider entry (missing keys: {', '.join(missing)})"
+            )
+            continue
+        role = entry.get("role")
+        if not role:
+            entry = dict(entry)
+            entry["role"] = "sub_agent"
+        role = entry["role"]
+        if role in seen_roles:
+            print_debug(f"Multiple sub_providers with role '{role}'; using first match")
+        seen_roles.add(role)
+        normalized.append(entry)
+    return normalized
+
+
 def _load_project_mcp_config() -> dict[str, Any]:
     """Load project-level MCP config from ``.kimix/mcp.json``."""
     mcp_json_path = constants.curr_dir / ".kimix" / "mcp.json"
@@ -264,12 +311,15 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
             with open(config_path, "r", encoding="utf-8") as f:
                 config_data = orjson.loads(f.read())
             sub_provider = config_data.pop("sub_provider", None)
+            sub_providers = config_data.pop("sub_providers", None)
+            normalized_providers = _normalize_sub_providers(sub_provider, sub_providers)
             base.set_default_provider(config_data)
             print_debug(f"{str(config_path)} loaded.")
             print_debug(f"Provider model: {config_data.get('model', 'None')}")
-            if sub_provider and isinstance(sub_provider, dict):
-                base.set_default_sub_provider(sub_provider)
-                print_debug(f"Sub-provider model: {sub_provider.get('model', 'None')}")
+            if normalized_providers:
+                base.set_default_sub_providers(normalized_providers)
+                roles = [p.get("role", "sub_agent") for p in normalized_providers]
+                print_debug(f"Sub-provider roles loaded: {', '.join(roles)}")
 
         except orjson.JSONDecodeError as e:
             print_warning(f"Invalid JSON in config file: {str(config_path)} ({e})")
@@ -285,9 +335,11 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
             try:
                 config_data = orjson.loads(default_config_path.read_text(encoding="utf-8"))
                 sub_provider = config_data.pop("sub_provider", None)
+                sub_providers = config_data.pop("sub_providers", None)
+                normalized_providers = _normalize_sub_providers(sub_provider, sub_providers)
                 base.set_default_provider(config_data)
-                if sub_provider and isinstance(sub_provider, dict):
-                    base.set_default_sub_provider(sub_provider)
+                if normalized_providers:
+                    base.set_default_sub_providers(normalized_providers)
             except (orjson.JSONDecodeError, Exception):
                 pass
 

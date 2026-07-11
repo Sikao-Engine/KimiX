@@ -856,7 +856,7 @@ _default_agent_file_dir: Path = Path(__file__).parent
 _default_agent_file: Path = _default_agent_file_dir / "agent_worker.json"
 _default_skill_dirs: list[Any] = []
 _default_provider: dict[str, Any] | None = None
-_default_sub_provider: dict[str, Any] | None = None
+_default_sub_providers: list[dict[str, Any]] = []
 _default_manually_cot: bool = False
 _default_ralph: int | None = None
 
@@ -905,9 +905,16 @@ def set_default_provider(value: dict[str, Any] | None) -> None:
     _default_provider = value
 
 
-def set_default_sub_provider(value: dict[str, Any] | None) -> None:
-    global _default_sub_provider
-    _default_sub_provider = value
+def set_default_sub_providers(providers: list[dict[str, Any]] | None) -> None:
+    global _default_sub_providers
+    _default_sub_providers = list(providers or [])
+
+
+def get_default_sub_provider(role: str = "sub_agent") -> dict[str, Any] | None:
+    for p in _default_sub_providers:
+        if p.get("role", "sub_agent") == role:
+            return p
+    return None
 
 
 # The failed-list for tool call that

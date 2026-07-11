@@ -461,7 +461,7 @@ from kimix.base import (
     _default_agent_file_dir, # Directory containing agent_worker.json
     _default_skill_dirs,     # List of skill directories
     _default_provider,       # Custom provider dict or None
-    _default_sub_provider,   # Custom sub-agent provider dict or None
+    _default_sub_providers,  # List of role-tagged auxiliary provider dicts
     _default_ralph,          # Max Ralph iterations override or None
     _default_manually_cot,   # Manual chain-of-thought mode (default: False)
     _quiet,                  # If True, suppresses print_debug
@@ -482,7 +482,8 @@ from kimix.base import (
     set_default_agent_file,
     set_default_skill_dirs,
     set_default_provider,
-    set_default_sub_provider,
+    set_default_sub_providers,
+    get_default_sub_provider,
     set_default_manually_cot,
 )
 
@@ -493,7 +494,8 @@ set_default_agent_file_dir(Path("./custom_agents"))
 set_default_agent_file(Path("./custom_agent.yaml"))
 set_default_skill_dirs(["./skills", "./more_skills"])
 set_default_provider({"name": "custom", "api_key": "..."})
-set_default_sub_provider({"name": "sub-custom", "api_key": "..."})
+set_default_sub_providers([{"name": "sub-custom", "api_key": "...", "role": "sub_agent"}])
+planner_provider = get_default_sub_provider("planner")
 set_default_manually_cot(False)
 ```
 
@@ -655,7 +657,8 @@ from kimix.base import (
     COMMON_SKILL_DIRS,
     set_default_thinking, set_default_yolo,
     set_default_agent_file_dir, set_default_agent_file,
-    set_default_skill_dirs, set_default_provider, set_default_sub_provider,
+    set_default_skill_dirs, set_default_provider,
+    set_default_sub_providers, get_default_sub_provider,
     set_default_manually_cot,
 )
 
