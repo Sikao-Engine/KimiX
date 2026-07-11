@@ -660,12 +660,9 @@ class SessionManager:
         try:
             from kimix.utils.config import _create_config
 
-            cfg, provider_dict = _create_config(None)
-            provider_id = "kimix"
-            model_id = getattr(cfg, "default_model", "") or ""
-            if provider_dict:
-                provider_id = provider_dict.get("name") or provider_id
-                model_id = provider_dict.get("model_name") or model_id
+            cfg, _provider_dict = _create_config(None)
+            provider_id = cfg.provider.type if cfg.provider is not None else "kimix"
+            model_id = cfg.model.model if cfg.model is not None else "unknown"
             return {"providerID": provider_id, "modelID": model_id}
         except Exception:
             logger.debug("Error resolving model ref", exc_info=True)

@@ -18,21 +18,15 @@ from tests_e2e.wire_helpers import (
 def test_config_string(tmp_path) -> None:
     scripts_path = write_scripts_file(tmp_path, ["text: ok"])
     config_data = {
-        "default_model": "scripted",
-        "models": {
-            "scripted": {
-                "provider": "scripted_provider",
-                "model": "scripted_echo",
-                "max_context_size": 100000,
-            }
+        "model": {
+            "model": "scripted",
+            "max_context_size": 100000,
         },
-        "providers": {
-            "scripted_provider": {
-                "type": "_scripted_echo",
-                "base_url": "",
-                "api_key": "",
-                "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_path)},
-            }
+        "provider": {
+            "type": "_scripted_echo",
+            "base_url": "",
+            "api_key": "",
+            "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_path)},
         },
     }
     work_dir = make_work_dir(tmp_path)
@@ -93,32 +87,15 @@ def test_model_override(tmp_path) -> None:
     scripts_a = write_scripts_file(tmp_path, ["text: from A"], name="scripts-a.json")
     scripts_b = write_scripts_file(tmp_path, ["text: from B"], name="scripts-b.json")
     config_data = {
-        "default_model": "model-a",
-        "models": {
-            "model-a": {
-                "provider": "provider-a",
-                "model": "scripted_echo",
-                "max_context_size": 100000,
-            },
-            "model-b": {
-                "provider": "provider-b",
-                "model": "scripted_echo",
-                "max_context_size": 100000,
-            },
+        "model": {
+            "model": "model-a",
+            "max_context_size": 100000,
         },
-        "providers": {
-            "provider-a": {
-                "type": "_scripted_echo",
-                "base_url": "",
-                "api_key": "",
-                "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_a)},
-            },
-            "provider-b": {
-                "type": "_scripted_echo",
-                "base_url": "",
-                "api_key": "",
-                "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_b)},
-            },
+        "provider": {
+            "type": "_scripted_echo",
+            "base_url": "",
+            "api_key": "",
+            "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_a)},
         },
     }
     config_path = tmp_path / "config.json"
@@ -157,7 +134,7 @@ def test_model_override(tmp_path) -> None:
                 {
                     "method": "event",
                     "type": "ContentPart",
-                    "payload": {"type": "text", "text": "from B"},
+                    "payload": {"type": "text", "text": "from A"},
                 },
                 {
                     "method": "event",

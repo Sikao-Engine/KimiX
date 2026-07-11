@@ -20,7 +20,6 @@ def test_augment_provider_with_env_vars_kimi(monkeypatch):
         api_key=SecretStr("orig-key"),
     )
     model = LLMModel(
-        provider="kimi",
         model="kimi-base",
         max_context_size=4096,
         capabilities=None,
@@ -49,7 +48,6 @@ def test_create_llm_kimi_model_parameters(monkeypatch):
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="kimi",
         model="kimi-base",
         max_context_size=4096,
         capabilities=None,
@@ -70,14 +68,13 @@ def test_create_llm_kimi_model_parameters(monkeypatch):
             "base_url": "https://api.test/v1/",
             "temperature": 0.6,
             "top_p": 0.8,
-            "max_tokens": 1234,
-        }
+            "max_tokens": 1234, "max_completion_tokens": 1234}
     )
 
 
 def test_create_llm_echo_provider():
     provider = LLMProvider(type="_echo", base_url="", api_key=SecretStr(""))
-    model = LLMModel(provider="_echo", model="echo", max_context_size=1234)
+    model = LLMModel(model="echo", max_context_size=1234)
 
     llm = create_llm(provider, model)
     assert llm is not None
@@ -94,7 +91,6 @@ def test_create_llm_anthropic_with_session_id():
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="anthropic",
         model="claude-sonnet-4-20250514",
         max_context_size=200000,
     )
@@ -114,7 +110,6 @@ def test_create_llm_anthropic_without_session_id():
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="anthropic",
         model="claude-sonnet-4-20250514",
         max_context_size=200000,
     )
@@ -127,7 +122,7 @@ def test_create_llm_anthropic_without_session_id():
 
 def test_create_llm_requires_base_url_for_kimi():
     provider = LLMProvider(type="kimi", base_url="", api_key=SecretStr("test-key"))
-    model = LLMModel(provider="kimi", model="kimi-base", max_context_size=4096)
+    model = LLMModel(model="kimi-base", max_context_size=4096)
 
     assert create_llm(provider, model) is None
 
@@ -142,7 +137,6 @@ def test_create_llm_openai_legacy_custom_headers():
         custom_headers={"X-Custom": "value", "X-Canary": "always"},
     )
     model = LLMModel(
-        provider="openai",
         model="gpt-4o",
         max_context_size=128000,
     )
@@ -165,7 +159,6 @@ def test_create_llm_openai_legacy_default_reasoning_key():
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="openai_legacy",
         model="deepseek-reasoner",
         max_context_size=128000,
     )
@@ -186,7 +179,6 @@ def test_create_llm_openai_legacy_custom_reasoning_key():
         reasoning_key="reasoning",
     )
     model = LLMModel(
-        provider="openai_legacy",
         model="some-reasoner",
         max_context_size=128000,
     )
@@ -207,7 +199,6 @@ def test_create_llm_openai_legacy_disabled_reasoning_key():
         reasoning_key="",
     )
     model = LLMModel(
-        provider="openai_legacy",
         model="plain-model",
         max_context_size=128000,
     )
@@ -228,7 +219,6 @@ def test_create_llm_openai_legacy_openai_settings():
         openai_settings=OpenAISettings(thinking=False, chat_template_kwargs=False),
     )
     model = LLMModel(
-        provider="openai",
         model="gpt-4o",
         max_context_size=128000,
     )
@@ -251,7 +241,6 @@ def test_create_llm_openai_responses_custom_headers():
         custom_headers={"X-Custom": "value"},
     )
     model = LLMModel(
-        provider="openai",
         model="gpt-4o",
         max_context_size=128000,
     )
@@ -274,7 +263,6 @@ def test_create_llm_anthropic_custom_headers():
         custom_headers={"X-Custom": "value"},
     )
     model = LLMModel(
-        provider="anthropic",
         model="claude-sonnet-4-20250514",
         max_context_size=200000,
     )
@@ -296,7 +284,6 @@ def test_create_llm_google_genai_custom_headers():
         custom_headers={"X-Custom": "value"},
     )
     model = LLMModel(
-        provider="google_genai",
         model="gemini-2.5-pro",
         max_context_size=1000000,
     )
@@ -320,7 +307,6 @@ def test_create_llm_vertexai_custom_headers():
         custom_headers={"X-Custom": "value"},
     )
     model = LLMModel(
-        provider="vertexai",
         model="gemini-2.5-pro",
         max_context_size=1000000,
     )
@@ -344,7 +330,6 @@ def test_create_llm_custom_headers_isolated_between_instances():
         custom_headers={"X-Custom": "original"},
     )
     model = LLMModel(
-        provider="openai",
         model="gpt-4o",
         max_context_size=128000,
     )
@@ -376,7 +361,6 @@ def test_create_llm_no_custom_headers_has_empty_headers():
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="openai",
         model="gpt-4o",
         max_context_size=128000,
     )
@@ -395,7 +379,6 @@ def test_create_llm_openai_responses_thinking_false_no_reasoning_in_params():
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="openrouter_custom",
         model="minimax/minimax-m2.5",
         max_context_size=128000,
         capabilities=None,
@@ -423,7 +406,6 @@ def _make_kimi_thinking_model() -> tuple[LLMProvider, LLMModel]:
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="kimi",
         model="kimi-k2-thinking-turbo",
         max_context_size=4096,
         capabilities=None,
@@ -440,7 +422,6 @@ def test_create_llm_default_thinking_effort_is_max_anthropic():
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="anthropic",
         model="claude-opus-4-7",
         max_context_size=200000,
         capabilities={"thinking"},
@@ -461,7 +442,6 @@ def test_create_llm_default_thinking_effort_is_max_openai_legacy():
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="openai",
         model="gpt-5.1-codex-max",
         max_context_size=128000,
         capabilities={"thinking"},
@@ -483,7 +463,6 @@ def test_create_llm_supported_efforts_clamps_xhigh():
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="anthropic",
         model="claude-opus-4-7",
         max_context_size=200000,
         capabilities={"thinking"},
@@ -506,7 +485,6 @@ def test_create_llm_supported_efforts_passes_max():
         api_key=SecretStr("test-key"),
     )
     anthropic_model = LLMModel(
-        provider="anthropic",
         model="claude-opus-4-7",
         max_context_size=200000,
         capabilities={"thinking"},
@@ -524,7 +502,6 @@ def test_create_llm_supported_efforts_passes_max():
         api_key=SecretStr("test-key"),
     )
     openai_model = LLMModel(
-        provider="openai",
         model="gpt-5.1-codex-max",
         max_context_size=128000,
         capabilities={"thinking"},
@@ -545,7 +522,6 @@ def _make_kimi_plain_model() -> tuple[LLMProvider, LLMModel]:
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="kimi",
         model="kimi-k2-turbo-preview",
         max_context_size=4096,
         capabilities=None,
@@ -739,7 +715,6 @@ def test_create_llm_non_kimi_not_affected_by_kimi_temperature_forcing():
         api_key=SecretStr("test-key"),
     )
     model = LLMModel(
-        provider="openai",
         model="gpt-4o",
         max_context_size=128000,
     )

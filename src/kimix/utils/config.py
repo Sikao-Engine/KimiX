@@ -15,10 +15,6 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
     provider_dict = provider_dict if provider_dict is not None else base._default_provider
     cfg = Config()
 
-    def _check_legal(value: str | None, start_with: str) -> bool:
-        if value is None or type(value) != str:
-            return False
-        return value.startswith(start_with)
     if provider_dict is None:
         try:
             provider_dict = orjson.loads(
@@ -28,8 +24,6 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
         except:
             pass
     if provider_dict is not None:
-        model_name = provider_dict.get('model_name', 'unknown_model')
-        name = provider_dict.get('name', 'unknown')
         model = provider_dict.get('model')
         max_context_size = provider_dict.get('max_context_size')
         capabilities = set(provider_dict.get('capabilities', set()))
@@ -39,7 +33,7 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
         assert max_context_size is not None, "`max_context_size` must be provided in  config"
         assert type(model) == str, "model(str) must be provided in config"
         assert url is not None, "url must be provided in config"
-        
+
         env: dict | None =  provider_dict.get('env')
         if env is not None:
             for k, v in env.items():
@@ -67,7 +61,7 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
         openai_settings: OpenAISettings | None = None
         if isinstance(openai_settings_dict, dict):
             openai_settings = OpenAISettings(**openai_settings_dict)
-        provider = LLMProvider(
+        cfg.provider = LLMProvider(
             type=provider_type,
             # example: "https://api.minimaxi.com/anthropic"
             base_url=url,
@@ -76,14 +70,11 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
             oauth=oath,
             openai_settings=openai_settings,
         )
-        cfg.default_model = model_name
-        cfg.models = {
-            model_name: LLMModel(
-                provider=name, model=model, max_context_size=max_context_size, capabilities=capabilities)
-        }
-        cfg.providers = {
-            name: provider
-        }
+        cfg.model = LLMModel(
+            model=model,
+            max_context_size=max_context_size,
+            capabilities=capabilities,
+        )
         # Set loop control
         loop_control = provider_dict.get('loop_control')
         lc = LoopControl()
@@ -129,4 +120,6 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
                 if hasattr(bc, key):
                     setattr(bc, key, value)
             cfg.background = bc
+        # The provider_dict contract no longer includes model_name/name.
+        provider_dict = {k: v for k, v in provider_dict.items() if k not in ("model_name", "name")}
     return cfg, provider_dict

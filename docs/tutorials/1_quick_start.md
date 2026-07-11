@@ -164,13 +164,16 @@ Kimix 通过 JSON 配置文件初始化 LLM Provider。若启动时未通过 `--
 
 ```json
 {
-    "model_name": "kimi-for-coding",
-    "name": "moonshot",
-    "model": "kimi-for-coding",
-    "max_context_size": 262144,
-    "capabilities": ["thinking"],
-    "url": "https://api.kimi.com/coding/v1",
-    "type": "kimi",
+    "model": {
+        "model": "kimi-for-coding",
+        "max_context_size": 262144,
+        "capabilities": ["thinking"]
+    },
+    "provider": {
+        "type": "kimi",
+        "base_url": "https://api.kimi.com/coding/v1",
+        "api_key": "your-api-key"
+    },
     "loop_control": {
         "max_steps_per_turn": 5000,
         "max_retries_per_step": 3,
@@ -206,8 +209,6 @@ Kimix 通过 JSON 配置文件初始化 LLM Provider。若启动时未通过 `--
 | `model` | 是 | 实际请求的模型名称 |
 | `url` | 是 | API 基础地址 |
 | `max_context_size` | 是 | 最大上下文长度（token 数），可选 `128k`、`200k`、`256k`、`512k`、`1M` |
-| `model_name` | 否 | 模型别名，默认为 `unknown_model` |
-| `name` | 否 | Provider 名称，默认为 `unknown` |
 | `capabilities` | 否 | 模型能力列表，可选值：`thinking`、`always_thinking`、`image_in`、`video_in`。如 `["thinking"]` |
 | `api_key` | 否 | API 密钥。若省略，将依次读取环境变量 `KIMI_API_KEY`、`KIMIX_API_KEY` |
 | `custom_headers` | 否 | 自定义 HTTP 请求头 |
@@ -221,38 +222,24 @@ Kimix 通过 JSON 配置文件初始化 LLM Provider。若启动时未通过 `--
 | `notifications` | 否 | 通知配置 |
 | `mcp` | 否 | MCP (Model Context Protocol) 配置 |
 | `env` | 否 | 启动时注入的额外环境变量（dict） |
-| `sub_provider` | 否 | 子代理 (sub-agent) 的 Provider 配置。结构与主配置相同，但 `loop_control.max_ralph_iterations` 固定为 `0`。可在 `/init` 中配置或手动添加 |
 
 **自定义配置示例（参考 `docs/anthropic.json` 等）：**
 
 ```json
 {
-    "model_name": "my-model",
-    "name": "my-name",
-    "model": "minimax-m2.7",
-    "max_context_size": 200000,
-    "capabilities": ["thinking"],
-    "url": "https://api.minimaxi.com/anthropic",
-    "type": "anthropic",
-    "api_key": "your-api-key",
-    "custom_headers": {},
-    "oauth": {
-        "storage": "file",
-        "key": "my-key"
+    "model": {
+        "model": "minimax-m2.7",
+        "max_context_size": 200000,
+        "capabilities": ["thinking"]
     },
-    "sub_provider": {
-        "model_name": "my-sub-model",
-        "name": "my-name",
-        "model": "kimi-for-coding",
-        "max_context_size": 262144,
-        "capabilities": ["thinking"],
-        "url": "https://api.kimi.com/coding/v1",
-        "type": "kimi",
+    "provider": {
+        "type": "anthropic",
+        "base_url": "https://api.minimaxi.com/anthropic",
         "api_key": "your-api-key",
-        "max_tokens": 128000,
-        "thinking_effort": "low",
-        "loop_control": {
-            "max_ralph_iterations": 0
+        "custom_headers": {},
+        "oauth": {
+            "storage": "file",
+            "key": "my-key"
         }
     }
 }

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import SecretStr
 
+from kimi_cli.config import Config, LLMModel, LLMProvider, OAuthRef
 from kimi_cli.plugin import PluginError
 from kimi_cli.plugin.manager import (
     collect_host_values,
@@ -222,21 +223,16 @@ async def test_skill_discovery_includes_plugins_dir(tmp_path: Path, monkeypatch)
 # --- collect_host_values tests ---
 
 
-def _make_config(*, api_key: str = "sk-test", oauth: object = None):
-    """Build a minimal mock Config with a default model and provider."""
-    provider = MagicMock()
-    provider.api_key = SecretStr(api_key)
-    provider.oauth = oauth
-    provider.base_url = "https://api.example.com/v1"
-
-    model = MagicMock()
-    model.provider = "test-provider"
-
-    config = MagicMock()
-    config.default_model = "test-model"
-    config.models = {"test-model": model}
-    config.providers = {"test-provider": provider}
-    return config
+def _make_config(*, api_key: str = "sk-test", oauth: OAuthRef | None = None):
+    """Build a minimal Config with a model and provider."""
+    provider = LLMProvider(
+        type="kimi",
+        base_url="https://api.example.com/v1",
+        api_key=SecretStr(api_key),
+        oauth=oauth,
+    )
+    model = LLMModel(model="test-model", max_context_size=4096)
+    return Config(provider=provider, model=model)
 
 
 def test_collect_host_values_static_key():
@@ -252,7 +248,7 @@ def test_collect_host_values_static_key():
 
 def test_collect_host_values_oauth_token():
     """OAuth token is returned when provider has OAuth configured."""
-    oauth_ref = MagicMock()
+    oauth_ref = OAuthRef(storage="file", key="oauth/test")
     config = _make_config(api_key="", oauth=oauth_ref)
     oauth = MagicMock()
     oauth.resolve_api_key.return_value = "eyJ-oauth-token"
@@ -262,10 +258,9 @@ def test_collect_host_values_oauth_token():
     oauth.resolve_api_key.assert_called_once()
 
 
-def test_collect_host_values_no_default_model():
-    """Returns empty dict when no default_model is configured."""
-    config = MagicMock()
-    config.default_model = None
+def test_collect_host_values_no_model():
+    """Returns empty dict when no model/provider is configured."""
+    config = Config()
     oauth = MagicMock()
 
     values = collect_host_values(config, oauth)

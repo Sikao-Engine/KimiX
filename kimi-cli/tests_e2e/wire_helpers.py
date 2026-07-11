@@ -92,23 +92,19 @@ def write_scripted_config(
 ) -> Path:
     scripts_path = write_scripts_file(tmp_path, scripts)
     model_config: dict[str, Any] = {
-        "provider": provider_name,
-        "model": "scripted_echo",
+        "model": model_name,
         "max_context_size": 100000,
     }
     if capabilities:
         model_config["capabilities"] = capabilities
 
     config_data: dict[str, Any] = {
-        "default_model": model_name,
-        "models": {model_name: model_config},
-        "providers": {
-            provider_name: {
-                "type": "_scripted_echo",
-                "base_url": "",
-                "api_key": "",
-                "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_path)},
-            }
+        "model": model_config,
+        "provider": {
+            "type": "_scripted_echo",
+            "base_url": "",
+            "api_key": "",
+            "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_path)},
         },
     }
     if loop_control:

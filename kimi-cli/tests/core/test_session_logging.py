@@ -320,7 +320,7 @@ class TestLLMLogging:
 
             result = create_llm(
                 LLMProvider(type="kimi", base_url="", api_key=SecretStr("")),
-                LLMModel(provider="kimi", model="", max_context_size=100_000),
+                LLMModel(model="", max_context_size=100_000),
             )
             assert result is None
             mock_logger.warning.assert_called_once()

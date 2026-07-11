@@ -104,6 +104,18 @@ class AgentTool(CallableTool2[Params]):
                 names.append(name)
         return names
 
+    def _validate_model_alias(self, model: str | None) -> ToolError | None:
+        """Reject a model alias that does not match the single configured model."""
+        if model is None:
+            return None
+        current_model = self._runtime.config.model.model if self._runtime.config.model else None
+        if current_model is None or model != current_model:
+            return ToolError(
+                message=f"Unknown model alias: {model}",
+                brief="Invalid model alias",
+            )
+        return None
+
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         if self._runtime.role != "root":
@@ -111,11 +123,8 @@ class AgentTool(CallableTool2[Params]):
                 message="Subagents cannot launch other subagents.",
                 brief="Agent unavailable",
             )
-        if params.model is not None and params.model not in self._runtime.config.models:
-            return ToolError(
-                message=f"Unknown model alias: {params.model}",
-                brief="Invalid model alias",
-            )
+        if error := self._validate_model_alias(params.model):
+            return error
         if params.run_in_background:
             return await self._run_in_background(params)
         timeout = params.effective_timeout
@@ -175,14 +184,9 @@ class AgentTool(CallableTool2[Params]):
                 # stored in the launch spec may have been removed from config since
                 # the instance was created.  params.model is already validated in
                 # __call__, so only check the stored effective_model fallback here.
-                if params.model is None:
-                    type_def = self._runtime.labor_market.require_builtin_type(actual_type)
-                    effective = record.launch_spec.effective_model or type_def.default_model
-                    if effective is not None and effective not in self._runtime.config.models:
-                        return ToolError(
-                            message=f"Unknown model alias: {effective}",
-                            brief="Invalid model alias",
-                        )
+                if not params.model:
+                    if error := self._validate_model_alias(record.launch_spec.effective_model):
+                        return error
             else:
                 actual_type = requested_type
                 import uuid

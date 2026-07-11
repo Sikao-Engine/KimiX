@@ -249,10 +249,8 @@ def install_cmd(
         from kimi_cli.plugin.manager import collect_host_values
 
         # Apply env var overrides (install runs outside normal startup)
-        if config.default_model and config.default_model in config.models:
-            model = config.models[config.default_model]
-            if model.provider in config.providers:
-                augment_provider_with_env_vars(config.providers[model.provider], model)
+        if config.model is not None and config.provider is not None:
+            augment_provider_with_env_vars(config.provider, config.model)
 
         oauth = OAuthManager(config)
         host_values = collect_host_values(config, oauth)

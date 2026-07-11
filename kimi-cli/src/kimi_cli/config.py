@@ -98,8 +98,6 @@ def _validate_supported_efforts(v: set[ThinkingEffort]) -> set[ThinkingEffort]:
 class LLMModel(BaseModel):
     """LLM model configuration."""
 
-    provider: str
-    """Provider name"""
     model: str
     """Model name"""
     max_context_size: int
@@ -393,7 +391,6 @@ class Config(BaseModel):
         description="Path to the loaded config file. None when loaded from --config text.",
         exclude=True,
     )
-    default_model: str = Field(default="", description="Default model to use")
     default_thinking: bool = Field(default=False, description="Default thinking mode")
     default_yolo: bool = Field(default=False, description="Default yolo (auto-approve) mode")
     default_editor: str = Field(
@@ -414,9 +411,11 @@ class Config(BaseModel):
             "trace summary."
         ),
     )
-    models: dict[str, LLMModel] = Field(default_factory=dict, description="List of LLM models")
-    providers: dict[str, LLMProvider] = Field(
-        default_factory=dict, description="List of LLM providers"
+    model: LLMModel | None = Field(
+        default=None, description="Active LLM model configuration"
+    )
+    provider: LLMProvider | None = Field(
+        default=None, description="Active LLM provider configuration"
     )
     loop_control: LoopControl = Field(default_factory=LoopControl, description="Agent loop control")
     background: BackgroundConfig = Field(
@@ -456,11 +455,8 @@ class Config(BaseModel):
 
     @model_validator(mode="after")
     def validate_model(self) -> Self:
-        if self.default_model and self.default_model not in self.models:
-            raise ValueError(f"Default model {self.default_model} not found in models")
-        for model in self.models.values():
-            if model.provider not in self.providers:
-                raise ValueError(f"Provider {model.provider} not found in providers")
+        if self.model is not None and self.provider is None:
+            raise ValueError("Active model configured without a provider")
         return self
 
 
@@ -471,12 +467,7 @@ def get_config_file() -> Path:
 
 def get_default_config() -> Config:
     """Get the default configuration."""
-    return Config(
-        default_model="",
-        models={},
-        providers={},
-        services=Services(),
-    )
+    return Config()
 
 
 def load_config(config_file: Path | None = None) -> Config:

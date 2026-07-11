@@ -23,20 +23,18 @@ def _make_config_with_model(
 ) -> Config:
     provider = LLMProvider(
         type="kimi",
-        base_url="https://api.test/v1",
+        base_url="https://api.kimi.com/coding/v1",
         api_key=SecretStr(api_key),
         oauth=OAuthRef(storage="file", key="oauth/kimi-code"),
     )
     model = LLMModel(
-        provider="managed:kimi-code",
         model="kimi-for-coding",
         max_context_size=100_000,
         display_name=display_name,
     )
     return Config(
-        default_model="kimi-code/kimi-for-coding",
-        providers={"managed:kimi-code": provider},
-        models={"kimi-code/kimi-for-coding": model},
+        provider=provider,
+        model=model,
         services=Services(),
     )
 
@@ -127,11 +125,10 @@ def test_apply_models_writes_display_name_on_insert():
         )
     ]
 
-    changed = _apply_models(config, "managed:kimi-code", "kimi-code", models)
+    changed = _apply_models(config, models)
 
     assert changed is True
-    entry = config.models["kimi-code/kimi-for-coding"]
-    assert entry.display_name == "k2.6-code-preview"
+    assert config.model.display_name == "k2.6-code-preview"
 
 
 def test_apply_models_updates_display_name_on_change():
@@ -148,10 +145,10 @@ def test_apply_models_updates_display_name_on_change():
         )
     ]
 
-    changed = _apply_models(config, "managed:kimi-code", "kimi-code", models)
+    changed = _apply_models(config, models)
 
     assert changed is True
-    assert config.models["kimi-code/kimi-for-coding"].display_name == "k2.6-code-preview"
+    assert config.model.display_name == "k2.6-code-preview"
 
 
 def test_apply_models_clears_display_name_when_api_drops_it():
@@ -168,10 +165,10 @@ def test_apply_models_clears_display_name_when_api_drops_it():
         )
     ]
 
-    changed = _apply_models(config, "managed:kimi-code", "kimi-code", models)
+    changed = _apply_models(config, models)
 
     assert changed is True
-    assert config.models["kimi-code/kimi-for-coding"].display_name is None
+    assert config.model.display_name is None
 
 
 # ── model_display_name: prefers LLMModel.display_name ────────────
@@ -180,7 +177,6 @@ def test_apply_models_clears_display_name_when_api_drops_it():
 def test_model_display_name_prefers_config_display_name():
     """When LLMModel has a display_name, use it instead of hard-coded mapping."""
     model = LLMModel(
-        provider="managed:kimi-code",
         model="kimi-for-coding",
         max_context_size=100_000,
         display_name="k2.6-code-preview",
@@ -191,7 +187,6 @@ def test_model_display_name_prefers_config_display_name():
 def test_model_display_name_falls_back_to_hardcoded_when_missing():
     """Without display_name, fall back to the legacy hard-coded mapping."""
     model = LLMModel(
-        provider="managed:kimi-code",
         model="kimi-for-coding",
         max_context_size=100_000,
     )

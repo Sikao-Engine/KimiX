@@ -301,5 +301,5 @@ class TestConfigIntegration:
         """Existing config without default_editor should default to empty."""
         from kimi_cli.config import load_config_from_string
 
-        config = load_config_from_string('default_model = ""\n')
+        config = load_config_from_string("{}")
         assert config.default_editor == ""

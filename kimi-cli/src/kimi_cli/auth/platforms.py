@@ -137,116 +137,102 @@ async def refresh_managed_models(config: Config) -> bool:
     if not config.is_from_default_location:
         return False
 
-    managed_providers = {
-        key: provider for key, provider in config.providers.items() if is_managed_provider_key(key)
-    }
-    if not managed_providers:
+    provider = config.provider
+    if provider is None or provider.oauth is None:
         return False
 
-    changed = False
-    updates: list[tuple[str, str, list[ModelInfo]]] = []
+    platform = next(
+        (p for p in PLATFORMS if p.base_url.rstrip("/") == provider.base_url.rstrip("/")),
+        None,
+    )
+    if platform is None:
+        return False
+
+    fallback_api_key = provider.api_key.get_secret_value()
+    api_key = fallback_api_key
     oauth_manager = None
-    for provider_key, provider in managed_providers.items():
-        platform_id = parse_managed_provider_key(provider_key)
-        if not platform_id:
-            continue
-        platform = get_platform_by_id(platform_id)
-        if platform is None:
-            logger.warning("Managed platform not found: {platform}", platform=platform_id)
-            continue
+    if provider.oauth:
+        from kimi_cli.auth.oauth import OAuthManager
 
-        fallback_api_key = provider.api_key.get_secret_value()
-        api_key = fallback_api_key
-        if provider.oauth:
-            if oauth_manager is None:
-                from kimi_cli.auth.oauth import OAuthManager
-
-                oauth_manager = OAuthManager(config)
-            try:
-                await oauth_manager.ensure_fresh()
-            except Exception as exc:
-                logger.warning(
-                    "Failed to refresh OAuth token before model sync for {platform}: {error}",
-                    platform=platform_id,
-                    error=exc,
-                )
-            api_key = oauth_manager.resolve_api_key(provider.api_key, provider.oauth)
-        if not api_key:
-            logger.warning(
-                "Missing API key for managed provider: {provider}",
-                provider=provider_key,
-            )
-            continue
+        oauth_manager = OAuthManager(config)
         try:
-            models = await list_models(platform, api_key)
-        except aiohttp.ClientResponseError as exc:
-            if exc.status != 401 or provider.oauth is None or oauth_manager is None:
-                logger.error(
-                    "Failed to refresh models for {platform}: {error}",
-                    platform=platform_id,
-                    error=exc,
-                )
-                continue
-            logger.warning(
-                "Received 401 while refreshing models for {platform}; attempting token refresh",
-                platform=platform_id,
-            )
-            refresh_exc: Exception | None = None
-            try:
-                await oauth_manager.ensure_fresh(force=True)
-            except Exception as exc2:
-                refresh_exc = exc2
-                logger.warning(
-                    "Failed to refresh OAuth token after 401 for {platform}: {error}",
-                    platform=platform_id,
-                    error=exc2,
-                )
-
-            retry_api_keys = _select_retry_api_keys(
-                attempted_api_key=api_key,
-                resolved_api_key=oauth_manager.resolve_api_key(provider.api_key, provider.oauth),
-                fallback_api_key=fallback_api_key,
-            )
-            if not retry_api_keys:
-                logger.error(
-                    "Failed to refresh models for {platform}: {error}",
-                    platform=platform_id,
-                    error=refresh_exc or exc,
-                )
-                continue
-            retry_exc: Exception | None = None
-            for retry_api_key in retry_api_keys:
-                try:
-                    models = await list_models(platform, retry_api_key)
-                    break
-                except Exception as exc3:
-                    retry_exc = exc3
-            else:
-                logger.error(
-                    "Failed to refresh models for {platform}: {error}",
-                    platform=platform_id,
-                    error=retry_exc or refresh_exc or exc,
-                )
-                continue
+            await oauth_manager.ensure_fresh()
         except Exception as exc:
-            logger.error(
-                "Failed to refresh models for {platform}: {error}",
-                platform=platform_id,
+            logger.warning(
+                "Failed to refresh OAuth token before model sync for {platform}: {error}",
+                platform=platform.id,
                 error=exc,
             )
-            continue
+        api_key = oauth_manager.resolve_api_key(provider.api_key, provider.oauth)
+    if not api_key:
+        logger.warning(
+            "Missing API key for managed provider: {provider}",
+            provider=platform.id,
+        )
+        return False
+    try:
+        models = await list_models(platform, api_key)
+    except aiohttp.ClientResponseError as exc:
+        if exc.status != 401 or provider.oauth is None or oauth_manager is None:
+            logger.error(
+                "Failed to refresh models for {platform}: {error}",
+                platform=platform.id,
+                error=exc,
+            )
+            return False
+        logger.warning(
+            "Received 401 while refreshing models for {platform}; attempting token refresh",
+            platform=platform.id,
+        )
+        refresh_exc: Exception | None = None
+        try:
+            await oauth_manager.ensure_fresh(force=True)
+        except Exception as exc2:
+            refresh_exc = exc2
+            logger.warning(
+                "Failed to refresh OAuth token after 401 for {platform}: {error}",
+                platform=platform.id,
+                error=exc2,
+            )
 
-        updates.append((provider_key, platform_id, models))
-        if _apply_models(config, provider_key, platform_id, models):
-            changed = True
+        retry_api_keys = _select_retry_api_keys(
+            attempted_api_key=api_key,
+            resolved_api_key=oauth_manager.resolve_api_key(provider.api_key, provider.oauth),
+            fallback_api_key=fallback_api_key,
+        )
+        if not retry_api_keys:
+            logger.error(
+                "Failed to refresh models for {platform}: {error}",
+                platform=platform.id,
+                error=refresh_exc or exc,
+            )
+            return False
+        retry_exc: Exception | None = None
+        for retry_api_key in retry_api_keys:
+            try:
+                models = await list_models(platform, retry_api_key)
+                break
+            except Exception as exc3:
+                retry_exc = exc3
+        else:
+            logger.error(
+                "Failed to refresh models for {platform}: {error}",
+                platform=platform.id,
+                error=retry_exc or refresh_exc or exc,
+            )
+            return False
+    except Exception as exc:
+        logger.error(
+            "Failed to refresh models for {platform}: {error}",
+            platform=platform.id,
+            error=exc,
+        )
+        return False
 
+    changed = _apply_models(config, models)
     if changed:
         config_for_save = load_config()
-        save_changed = False
-        for provider_key, platform_id, models in updates:
-            if _apply_models(config_for_save, provider_key, platform_id, models):
-                save_changed = True
-        if save_changed:
+        if _apply_models(config_for_save, models):
             save_config(config_for_save)
     return changed
 
@@ -305,70 +291,62 @@ async def _list_models(
     return result
 
 
-def _apply_models(
-    config: Config,
-    provider_key: str,
-    platform_id: str,
+def _select_default_model_and_thinking(
     models: list[ModelInfo],
-) -> bool:
+) -> tuple[ModelInfo, bool] | None:
+    """Pick a default model from a managed platform list and whether thinking is enabled."""
+    if not models:
+        return None
+    selected = next(
+        (m for m in models if "thinking" in m.capabilities or "always_thinking" in m.capabilities),
+        models[0],
+    )
+    thinking = "thinking" in selected.capabilities or "always_thinking" in selected.capabilities
+    return selected, thinking
+
+
+def _apply_models(config: Config, models: list[ModelInfo]) -> bool:
     changed = False
-    model_keys: list[str] = []
+    if not models:
+        return changed
 
-    for model in models:
-        model_key = managed_model_key(platform_id, model.id)
-        model_keys.append(model_key)
+    current_id = config.model.model if config.model is not None else None
+    model_by_id = {m.id: m for m in models}
+    selected = model_by_id.get(current_id)
+    if selected is None:
+        selection = _select_default_model_and_thinking(models)
+        if selection is None:
+            return changed
+        selected, thinking = selection
+    else:
+        thinking = "thinking" in selected.capabilities or "always_thinking" in selected.capabilities
 
-        existing = config.models.get(model_key)
-        capabilities = model.capabilities or None  # empty set -> None
+    capabilities = selected.capabilities or None  # empty set -> None
 
-        if existing is None:
-            config.models[model_key] = LLMModel(
-                provider=provider_key,
-                model=model.id,
-                max_context_size=model.context_length,
-                capabilities=capabilities,
-                display_name=model.display_name,
-            )
-            changed = True
-            continue
-
-        if existing.provider != provider_key:
-            existing.provider = provider_key
-            changed = True
-        if existing.model != model.id:
-            existing.model = model.id
-            changed = True
-        if existing.max_context_size != model.context_length:
-            existing.max_context_size = model.context_length
-            changed = True
-        if existing.capabilities != capabilities:
-            existing.capabilities = capabilities
-            changed = True
-        if existing.display_name != model.display_name:
-            existing.display_name = model.display_name
-            changed = True
-
-    removed_default = False
-    model_keys_set = set(model_keys)
-    for key, model in list(config.models.items()):
-        if model.provider != provider_key:
-            continue
-        if key in model_keys_set:
-            continue
-        del config.models[key]
-        if config.default_model == key:
-            removed_default = True
+    if config.model is None:
+        config.model = LLMModel(
+            model=selected.id,
+            max_context_size=selected.context_length,
+            capabilities=capabilities,
+            display_name=selected.display_name,
+        )
         changed = True
+    else:
+        if config.model.model != selected.id:
+            config.model.model = selected.id
+            changed = True
+        if config.model.max_context_size != selected.context_length:
+            config.model.max_context_size = selected.context_length
+            changed = True
+        if config.model.capabilities != capabilities:
+            config.model.capabilities = capabilities
+            changed = True
+        if config.model.display_name != selected.display_name:
+            config.model.display_name = selected.display_name
+            changed = True
 
-    if removed_default:
-        if model_keys:
-            config.default_model = model_keys[0]
-        else:
-            config.default_model = next(iter(config.models), "")
-        changed = True
-
-    if config.default_model and config.default_model not in config.models:
-        config.default_model = next(iter(config.models), "")
+    if config.default_thinking != thinking:
+        config.default_thinking = thinking
         changed = True
 
     return changed

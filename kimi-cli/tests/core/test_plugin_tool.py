@@ -125,15 +125,12 @@ print(json.dumps({"key": os.environ.get("myApiKey", ""), "url": os.environ.get("
     )
 
     config = Config(
-        default_model="test",
-        models={"test": LLMModel(provider="p", model="m", max_context_size=1000)},
-        providers={
-            "p": LLMProvider(
-                type="openai_responses",
-                base_url="https://test.api/v1",
-                api_key=SecretStr("sk-fresh-token"),
-            )
-        },
+        model=LLMModel(model="m", max_context_size=1000),
+        provider=LLMProvider(
+            type="openai_responses",
+            base_url="https://test.api/v1",
+            api_key=SecretStr("sk-fresh-token"),
+        ),
     )
 
     tool_spec = PluginToolSpec(

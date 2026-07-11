@@ -1,27 +1,9 @@
 {
-    "model_name": "my-model",
-    "name": "my-name",
-    "model": "gemini-2.5-pro",
-    "max_context_size": 200000,
-    "capabilities": [
-        "thinking"
-    ],
-    "url": "https://generativelanguage.googleapis.com",
-    "type": "google_genai",
-    "api_key": "sk-xxx",
-    "custom_headers": {},
-    "oauth": {
-        "storage": "file",
-        "key": "my-key"
-    },
     "loop_control": {
         "max_steps_per_turn": 5000,
         "max_retries_per_step": 3,
         "reserved_context_size": 50000,
         "compaction_trigger_ratio": 0.85
-    },
-    "env": {
-        "GOOGLE_API_KEY": "sk-xxx"
     },
     "max_tokens": 65536,
     "thinking_effort": "max",
@@ -37,5 +19,25 @@
     "mcp": {
         "enabled": true,
         "servers": []
+    },
+    "model": {
+        "model": "gemini-2.5-pro",
+        "max_context_size": 200000,
+        "capabilities": [
+            "thinking"
+        ]
+    },
+    "provider": {
+        "base_url": "https://generativelanguage.googleapis.com",
+        "type": "google_genai",
+        "api_key": "sk-xxx",
+        "custom_headers": {},
+        "oauth": {
+            "storage": "file",
+            "key": "my-key"
+        },
+        "env": {
+            "GOOGLE_API_KEY": "sk-xxx"
+        }
     }
 }

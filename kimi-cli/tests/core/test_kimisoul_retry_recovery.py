@@ -456,12 +456,11 @@ async def test_step_connection_recovery_then_401_triggers_oauth_refresh(
         oauth=OAuthRef(storage="file", key="oauth/kimi-code"),
     )
     oauth_model = LLMModel(
-        provider="managed:kimi-code",
         model="kimi-for-coding",
         max_context_size=100_000,
     )
-    runtime.config.providers[oauth_model.provider] = oauth_provider
-    runtime.config.models["kimi-code/kimi-for-coding"] = oauth_model
+    runtime.config.provider = oauth_provider
+    runtime.config.model = oauth_model
 
     provider = ConnectionThen401ThenSuccessProvider()
     llm = LLM(

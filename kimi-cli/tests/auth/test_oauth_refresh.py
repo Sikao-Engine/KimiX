@@ -53,11 +53,10 @@ def _make_config() -> Config:
         api_key=SecretStr(""),
         oauth=OAuthRef(storage="file", key="oauth/kimi-code"),
     )
-    model = LLMModel(provider="managed:kimi-code", model="test-model", max_context_size=100_000)
+    model = LLMModel(model="test-model", max_context_size=100_000)
     return Config(
-        default_model="managed:kimi-code/test-model",
-        providers={"managed:kimi-code": provider},
-        models={"managed:kimi-code/test-model": model},
+        provider=provider,
+        model=model,
         services=Services(),
     )
 

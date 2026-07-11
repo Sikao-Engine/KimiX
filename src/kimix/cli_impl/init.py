@@ -11,8 +11,6 @@ import orjson
 from kimix.base import print_info, print_success, print_warning
 deepseek_default_config = '''
 {
-    "model_name": "ds-model",
-    "name": "ds",
     "model": "deepseek-v4-pro",
     "max_context_size": 1048576,
     "capabilities": ["thinking"],
@@ -24,8 +22,6 @@ deepseek_default_config = '''
 '''
 minimax_default_config = '''
 {
-    "model_name": "minimax-model",
-    "name": "minimax",
     "model": "minimax-m2.7",
     "max_context_size": 204800,
     "capabilities": ["thinking"],
@@ -37,8 +33,6 @@ minimax_default_config = '''
 '''
 kimi_default_config = '''
 {
-    "model_name": "kimi-for-coding",
-    "name": "moonshot",
     "model": "kimi-for-coding",
     "max_context_size": 262144,
     "capabilities": ["thinking"],
@@ -266,8 +260,6 @@ def _ask_sub_provider(defaults: dict[str, Any] | None = None) -> dict[str, Any] 
         "max_ralph_iterations": 0,
     }
 
-    sub["name"] = model_type
-    sub["model_name"] = model
 
     print_success("Sub-provider configuration complete.")
     return sub
@@ -294,11 +286,9 @@ def init(initialize: bool = True) -> None:
         if initialize:
             model = _ask_model_name(config.get("model", "kimi-for-coding"))
             config["model"] = model
-            config["model_name"] = model
 
             model_type = _ask_model_type(config.get("type", "kimi"))
             config["type"] = model_type
-            config["name"] = model_type
 
             api_key = _ask_api_key()
             config["api_key"] = api_key

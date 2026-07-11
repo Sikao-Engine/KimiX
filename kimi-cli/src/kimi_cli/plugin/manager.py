@@ -38,12 +38,9 @@ def collect_host_values(config: Config, oauth: OAuthManager) -> dict[str, str]:
     this function; the main app startup already does that.
     """
     values: dict[str, str] = {}
-    if not config.default_model or config.default_model not in config.models:
+    if config.model is None or config.provider is None:
         return values
-    model = config.models[config.default_model]
-    if model.provider not in config.providers:
-        return values
-    provider = config.providers[model.provider]
+    provider = config.provider
     api_key = oauth.resolve_api_key(provider.api_key, provider.oauth)
     if api_key:
         values["api_key"] = api_key

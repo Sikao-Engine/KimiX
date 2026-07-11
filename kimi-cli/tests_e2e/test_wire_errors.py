@@ -176,21 +176,15 @@ def test_llm_not_supported(tmp_path) -> None:
 def test_llm_not_set(tmp_path) -> None:
     scripts_path = write_scripts_file(tmp_path, ["text: ok"])
     config_data = {
-        "default_model": "bad-model",
-        "models": {
-            "bad-model": {
-                "provider": "bad-provider",
-                "model": "",
-                "max_context_size": 100000,
-            }
+        "model": {
+            "model": "",
+            "max_context_size": 100000,
         },
-        "providers": {
-            "bad-provider": {
-                "type": "kimi",
-                "base_url": "",
-                "api_key": "",
-                "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_path)},
-            }
+        "provider": {
+            "type": "kimi",
+            "base_url": "",
+            "api_key": "",
+            "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_path)},
         },
     }
     config_path = tmp_path / "config.json"

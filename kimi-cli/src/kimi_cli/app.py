@@ -199,21 +199,19 @@ class KimiCLI:
 
         bg_refresh_task = asyncio.create_task(_refresh_managed_models_silent(config))
 
-        model: LLMModel | None = None
-        provider: LLMProvider | None = None
+        model: LLMModel | None = config.model
+        provider: LLMProvider | None = config.provider
 
-        # try to use config file
-        if not model_name and config.default_model:
-            # no --model specified && default model is set in config
-            model = config.models[config.default_model]
-            provider = config.providers[model.provider]
-        if model_name and model_name in config.models:
-            # --model specified && model is set in config
-            model = config.models[model_name]
-            provider = config.providers[model.provider]
+        # --model overrides the active model name while preserving the provider.
+        if model_name:
+            if model is None:
+                model = LLMModel(model=model_name, max_context_size=100_000)
+            else:
+                model = model.model_copy(update={"model": model_name})
 
-        if not model:
-            model = LLMModel(provider="", model="", max_context_size=100_000)
+        if model is None:
+            model = LLMModel(model="", max_context_size=100_000)
+        if provider is None:
             provider = LLMProvider(type="kimi", base_url="", api_key=SecretStr(""))
 
         # try overwrite with environment variables

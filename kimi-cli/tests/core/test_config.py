@@ -21,16 +21,15 @@ def test_default_config_dump():
     config = get_default_config()
     assert config.model_dump() == snapshot(
         {
-            "default_model": "",
             "default_thinking": False,
             "default_yolo": False,
             "default_editor": "",
             "theme": "dark",
             "show_thinking_stream": True,
-            "models": {},
-            "providers": {},
+            "model": None,
+            "provider": None,
             "loop_control": {
-                "max_steps_per_turn": 5000,
+                "max_steps_per_turn": 15000,
                 "max_retries_per_step": 3,
                 "max_ralph_iterations": 0,
                 "reserved_context_size": 75000,
@@ -83,7 +82,7 @@ def test_default_config_dump():
                 "worker_stale_after_ms": 15000,
                 "kill_grace_period_ms": 2000,
                 "keep_alive_on_exit": False,
-                "agent_task_timeout_s": 900,
+                "agent_task_timeout_s": 28800,
                 "print_wait_ceiling_s": 3600,
             },
             "notifications": {
@@ -94,7 +93,7 @@ def test_default_config_dump():
             "hooks": [],
             "merge_all_available_skills": True,
             "extra_skill_dirs": [],
-            "max_tokens": 128000,
+            "max_tokens": 384000,
             "temperature": None,
             "top_p": None,
             "top_k": None,
@@ -104,12 +103,12 @@ def test_default_config_dump():
 
 
 def test_load_config_text_toml():
-    config = load_config_from_string('default_model = ""\n')
+    config = load_config_from_string('theme = "dark"\n')
     assert config == get_default_config()
 
 
 def test_load_config_text_json():
-    config = load_config_from_string('{"default_model": ""}')
+    config = load_config_from_string("{}")
     assert config == get_default_config()
 
 
@@ -123,7 +122,7 @@ def test_load_config_sets_source_file(tmp_path):
 
 
 def test_load_config_text_has_no_source_file():
-    config = load_config_from_string('{"default_model": ""}')
+    config = load_config_from_string("{}")
 
     assert config.source_file is None
 
@@ -180,29 +179,29 @@ def test_load_config_compaction_trigger_ratio_too_high():
 
 def test_load_config_supported_efforts():
     config = load_config_from_string(
-        '{"models": {"m": {"provider": "p", "model": "m", "max_context_size": 1000, "supported_efforts": ["low", "high"]}}, "providers": {"p": {"type": "anthropic", "base_url": "https://example.com", "api_key": "k"}}}'
+        '{"model": {"model": "m", "max_context_size": 1000, "supported_efforts": ["low", "high"]}, "provider": {"type": "anthropic", "base_url": "https://example.com", "api_key": "k"}}'
     )
-    assert config.models["m"].supported_efforts == {"low", "high"}
+    assert config.model.supported_efforts == {"low", "high"}
 
 
 def test_load_config_supported_efforts_defaults_to_full_set():
     config = load_config_from_string(
-        '{"models": {"m": {"provider": "p", "model": "m", "max_context_size": 1000}}, "providers": {"p": {"type": "anthropic", "base_url": "https://example.com", "api_key": "k"}}}'
+        '{"model": {"model": "m", "max_context_size": 1000}, "provider": {"type": "anthropic", "base_url": "https://example.com", "api_key": "k"}}'
     )
-    assert config.models["m"].supported_efforts == {"low", "medium", "high", "xhigh", "max"}
+    assert config.model.supported_efforts == {"low", "medium", "high", "xhigh", "max"}
 
 
 def test_load_config_invalid_supported_efforts():
     with pytest.raises(ConfigError, match="supported_efforts"):
         load_config_from_string(
-            '{"models": {"m": {"provider": "p", "model": "m", "max_context_size": 1000, "supported_efforts": ["low", "invalid"]}}, "providers": {"p": {"type": "anthropic", "base_url": "https://example.com", "api_key": "k"}}}'
+            '{"model": {"model": "m", "max_context_size": 1000, "supported_efforts": ["low", "invalid"]}, "provider": {"type": "anthropic", "base_url": "https://example.com", "api_key": "k"}}'
         )
 
 
 def test_load_config_supported_efforts_rejects_off():
     with pytest.raises(ConfigError, match="supported_efforts|off"):
         load_config_from_string(
-            '{"models": {"m": {"provider": "p", "model": "m", "max_context_size": 1000, "supported_efforts": ["low", "off"]}}, "providers": {"p": {"type": "anthropic", "base_url": "https://example.com", "api_key": "k"}}}'
+            '{"model": {"model": "m", "max_context_size": 1000, "supported_efforts": ["low", "off"]}, "provider": {"type": "anthropic", "base_url": "https://example.com", "api_key": "k"}}'
         )
 
 

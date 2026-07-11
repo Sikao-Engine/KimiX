@@ -163,7 +163,9 @@ class ACPServer:
         config = cli_instance.soul.runtime.config
         acp_kaos = ACPKaos(self.conn, session.id, self.client_capabilities)
         acp_session = ACPSession(session.id, cli_instance, self.conn, kaos=acp_kaos)
-        model_id_conv = _ModelIDConv(config.default_model, config.default_thinking)
+        model_id_conv = _ModelIDConv(
+            config.model.model if config.model else "", config.default_thinking
+        )
         self.sessions[session.id] = (acp_session, model_id_conv)
 
         if isinstance(cli_instance.soul.agent.toolset, KimiToolset):
@@ -201,7 +203,7 @@ class ACPServer:
                 current_mode_id="default",
             ),
             models=acp.schema.SessionModelState(
-                available_models=_expand_llm_models(config.models),
+                available_models=_expand_llm_model(config.model),
                 current_model_id=model_id_conv.to_acp_model_id(),
             ),
         )
@@ -234,7 +236,9 @@ class ACPServer:
         config = cli_instance.soul.runtime.config
         acp_kaos = ACPKaos(self.conn, session.id, self.client_capabilities)
         acp_session = ACPSession(session.id, cli_instance, self.conn, kaos=acp_kaos)
-        model_id_conv = _ModelIDConv(config.default_model, config.default_thinking)
+        model_id_conv = _ModelIDConv(
+            config.model.model if config.model else "", config.default_thinking
+        )
         self.sessions[session.id] = (acp_session, model_id_conv)
 
         if isinstance(cli_instance.soul.agent.toolset, KimiToolset):
@@ -285,7 +289,7 @@ class ACPServer:
                 current_mode_id="default",
             ),
             models=acp.schema.SessionModelState(
-                available_models=_expand_llm_models(config.models),
+                available_models=_expand_llm_model(config.model),
                 current_model_id=model_id_conv.to_acp_model_id(),
             ),
         )
@@ -336,18 +340,11 @@ class ACPServer:
             return
 
         config = cli_instance.soul.runtime.config
-        new_model = config.models.get(model_id_conv.model_key)
-        if new_model is None:
-            logger.error("Model not found: {model_key}", model_key=model_id_conv.model_key)
-            raise acp.RequestError.invalid_params({"model_id": "Model not found"})
-        new_provider = config.providers.get(new_model.provider)
-        if new_provider is None:
-            logger.error(
-                "Provider not found: {provider} for model: {model_key}",
-                provider=new_model.provider,
-                model_key=model_id_conv.model_key,
-            )
-            raise acp.RequestError.invalid_params({"model_id": "Model's provider not found"})
+        if config.model is None or config.provider is None:
+            logger.error("No active model/provider configured")
+            raise acp.RequestError.invalid_params({"model_id": "No active model/provider configured"})
+        new_model = config.model.model_copy(update={"model": model_id_conv.model_key})
+        new_provider = config.provider
 
         new_llm = create_llm(
             new_provider,
@@ -373,11 +370,17 @@ class ACPServer:
 
         cli_instance.soul.runtime.llm = new_llm
 
-        config.default_model = model_id_conv.model_key
+        if config.model is None:
+            config.model = LLMModel(model=model_id_conv.model_key, max_context_size=0)
+        else:
+            config.model.model = model_id_conv.model_key
         config.default_thinking = model_id_conv.thinking
         assert config.is_from_default_location, "`kimi acp` must use the default config location"
         config_for_save = load_config()
-        config_for_save.default_model = model_id_conv.model_key
+        if config_for_save.model is None:
+            config_for_save.model = LLMModel(model=model_id_conv.model_key, max_context_size=0)
+        else:
+            config_for_save.model.model = model_id_conv.model_key
         config_for_save.default_thinking = model_id_conv.thinking
         save_config(config_for_save)
 
@@ -448,31 +451,32 @@ class _ModelIDConv(NamedTuple):
         return self.model_key
 
 
-def _expand_llm_models(models: dict[str, LLMModel]) -> list[acp.schema.ModelInfo]:
+def _expand_llm_model(model: LLMModel | None) -> list[acp.schema.ModelInfo]:
+    if model is None:
+        return []
     expanded_models: list[acp.schema.ModelInfo] = []
-    for model_key, model in models.items():
-        capabilities = derive_model_capabilities(model)
-        if "thinking" in model.model or "reason" in model.model:
-            # always-thinking models
+    capabilities = derive_model_capabilities(model)
+    if "thinking" in model.model or "reason" in model.model:
+        # always-thinking models
+        expanded_models.append(
+            acp.schema.ModelInfo(
+                model_id=_ModelIDConv(model.model, True).to_acp_model_id(),
+                name=f"{model.model}",
+            )
+        )
+    else:
+        expanded_models.append(
+            acp.schema.ModelInfo(
+                model_id=model.model,
+                name=model.model,
+            )
+        )
+        if "thinking" in capabilities:
+            # add thinking variant
             expanded_models.append(
                 acp.schema.ModelInfo(
-                    model_id=_ModelIDConv(model_key, True).to_acp_model_id(),
-                    name=f"{model.model}",
+                    model_id=_ModelIDConv(model.model, True).to_acp_model_id(),
+                    name=f"{model.model} (thinking)",
                 )
             )
-        else:
-            expanded_models.append(
-                acp.schema.ModelInfo(
-                    model_id=model_key,
-                    name=model.model,
-                )
-            )
-            if "thinking" in capabilities:
-                # add thinking variant
-                expanded_models.append(
-                    acp.schema.ModelInfo(
-                        model_id=_ModelIDConv(model_key, True).to_acp_model_id(),
-                        name=f"{model.model} (thinking)",
-                    )
-                )
     return expanded_models

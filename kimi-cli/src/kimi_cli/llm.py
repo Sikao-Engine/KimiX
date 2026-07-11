@@ -346,10 +346,14 @@ def clone_llm_with_model_alias(
 ) -> LLM | None:
     if model_alias is None:
         return llm
-    if model_alias not in config.models:
-        raise KeyError(f"Unknown model alias: {model_alias}")
-    model = config.models[model_alias]
-    provider = config.providers[model.provider]
+    model = config.model
+    provider = config.provider
+    if model is not None:
+        model = model.model_copy(update={"model": model_alias})
+    else:
+        model = LLMModel(model=model_alias, max_context_size=100_000)
+    if provider is None:
+        provider = LLMProvider(type="kimi", base_url="", api_key=SecretStr(""))
     thinking: bool | None = None
     if llm is not None:
         effort = getattr(llm.chat_provider, "thinking_effort", None)

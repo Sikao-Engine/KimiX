@@ -103,8 +103,6 @@ async def test_multiple_hooks_same_event():
 def test_config_roundtrip_toml():
     """Hooks survive TOML serialize/deserialize."""
     toml_str = """
-default_model = ""
-
 [[hooks]]
 event = "PreToolUse"
 matcher = "Shell"

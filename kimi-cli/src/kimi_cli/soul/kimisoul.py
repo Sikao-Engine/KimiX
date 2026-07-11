@@ -1792,7 +1792,7 @@ class KimiSoul:
             # uses OAuth.  For plain API-key providers there is nothing
             # to refresh and retrying would just add latency.
             active_provider = (
-                self._runtime.config.providers.get(self._runtime.llm.model_config.provider)
+                self._runtime.config.provider
                 if self._runtime.llm and self._runtime.llm.model_config
                 else None
             )

@@ -28,8 +28,6 @@ def test_all_event_types_defined():
 
 def test_config_with_hooks():
     toml_str = """
-default_model = ""
-
 [[hooks]]
 event = "PreToolUse"
 matcher = "Shell"
@@ -50,5 +48,5 @@ command = "prettier --write"
 
 
 def test_config_without_hooks():
-    config = Config.model_validate({"default_model": ""})
+    config = Config.model_validate({})
     assert config.hooks == []

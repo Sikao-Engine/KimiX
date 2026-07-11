@@ -578,29 +578,20 @@ def _apply_kimi_code_config(
     if platform is None:
         raise OAuthError("Kimi Code platform not found.")
 
-    provider_key = managed_provider_key(platform.id)
-    config.providers[provider_key] = LLMProvider(
+    config.provider = LLMProvider(
         type="kimi",
         base_url=platform.base_url,
         api_key=SecretStr(""),
         oauth=oauth_ref,
     )
 
-    for key, model in list(config.models.items()):
-        if model.provider == provider_key:
-            del config.models[key]
-
-    for model_info in models:
-        capabilities = model_info.capabilities or None
-        config.models[managed_model_key(platform.id, model_info.id)] = LLMModel(
-            provider=provider_key,
-            model=model_info.id,
-            max_context_size=model_info.context_length,
-            capabilities=capabilities,
-            display_name=model_info.display_name,
-        )
-
-    config.default_model = managed_model_key(platform.id, selected_model.id)
+    capabilities = selected_model.capabilities or None
+    config.model = LLMModel(
+        model=selected_model.id,
+        max_context_size=selected_model.context_length,
+        capabilities=capabilities,
+        display_name=selected_model.display_name,
+    )
     config.default_thinking = thinking
 
     if platform.search_url:
@@ -735,20 +726,10 @@ async def logout_kimi_code(config: Config) -> AsyncIterator[OAuthEvent]:
     delete_tokens(OAuthRef(storage="keyring", key=KIMI_CODE_OAUTH_KEY))
     delete_tokens(OAuthRef(storage="file", key=KIMI_CODE_OAUTH_KEY))
 
-    provider_key = managed_provider_key(KIMI_CODE_PLATFORM_ID)
-    if provider_key in config.providers:
-        del config.providers[provider_key]
-
-    removed_default = False
-    for key, model in list(config.models.items()):
-        if model.provider != provider_key:
-            continue
-        del config.models[key]
-        if config.default_model == key:
-            removed_default = True
-
-    if removed_default:
-        config.default_model = ""
+    provider = config.provider
+    if provider is not None and provider.oauth is not None and provider.oauth.key == KIMI_CODE_OAUTH_KEY:
+        config.provider = None
+        config.model = None
 
     config.services.moonshot_search = None
     config.services.moonshot_fetch = None
@@ -769,9 +750,9 @@ class OAuthManager:
 
     def _iter_oauth_refs(self) -> list[OAuthRef]:
         refs: list[OAuthRef] = []
-        for provider in self._config.providers.values():
-            if provider.oauth:
-                refs.append(provider.oauth)
+        provider = self._config.provider
+        if provider is not None and provider.oauth:
+            refs.append(provider.oauth)
         for service in (
             self._config.services.moonshot_search,
             self._config.services.moonshot_fetch,
@@ -794,9 +775,9 @@ class OAuthManager:
             changed = True
             return OAuthRef(storage="file", key=ref.key)
 
-        for provider in self._config.providers.values():
-            if provider.oauth:
-                provider.oauth = _migrate_ref(provider.oauth)
+        provider = self._config.provider
+        if provider is not None and provider.oauth:
+            provider.oauth = _migrate_ref(provider.oauth)
 
         for service in (
             self._config.services.moonshot_search,
@@ -874,9 +855,8 @@ class OAuthManager:
         return api_key.get_secret_value()
 
     def _kimi_code_ref(self) -> OAuthRef | None:
-        provider_key = managed_provider_key(KIMI_CODE_PLATFORM_ID)
-        provider = self._config.providers.get(provider_key)
-        if provider and provider.oauth:
+        provider = self._config.provider
+        if provider is not None and provider.oauth:
             return provider.oauth
         for service in (
             self._config.services.moonshot_search,
@@ -1078,16 +1058,15 @@ class OAuthManager:
     def _apply_access_token(self, runtime: Runtime | None, access_token: str) -> None:
         if runtime is None:
             return
-        provider_key = managed_provider_key(KIMI_CODE_PLATFORM_ID)
         if runtime.llm is None or runtime.llm.model_config is None:
             return
-        if runtime.llm.model_config.provider != provider_key:
+        provider = runtime.config.provider
+        if provider is None or provider.oauth is None or provider.oauth.key != KIMI_CODE_OAUTH_KEY:
             return
         from kosong.chat_provider.kimi import Kimi
 
         assert isinstance(runtime.llm.chat_provider, Kimi), "Expected Kimi chat provider"
-        provider = runtime.config.providers.get(provider_key)
-        fallback_api_key = provider.api_key.get_secret_value() if provider else ""
+        fallback_api_key = provider.api_key.get_secret_value()
         runtime.llm.chat_provider.client.api_key = access_token or fallback_api_key
 
 

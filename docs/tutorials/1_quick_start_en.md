@@ -103,8 +103,6 @@ Run `/init` in the interactive terminal to create the default config interactive
 | `model` | Yes | Model name for API requests |
 | `url` | Yes | API base URL |
 | `max_context_size` | Yes | Max context length (`128k`, `200k`, `256k`, `512k`, `1M`) |
-| `model_name` | No | Model alias (default `unknown_model`) |
-| `name` | No | Provider name (default `unknown`) |
 | `capabilities` | No | Model capabilities: `thinking`, `always_thinking`, `image_in`, `video_in` |
 | `api_key` | No | API key (falls back to env vars) |
 | `custom_headers` | No | Custom HTTP headers |
@@ -118,7 +116,6 @@ Run `/init` in the interactive terminal to create the default config interactive
 | `notifications` | No | Notification settings |
 | `mcp` | No | MCP (Model Context Protocol) config |
 | `env` | No | Extra env vars (dict) |
-| `sub_provider` | No | Sub-agent provider config (same structure, `loop_control.max_ralph_iterations` fixed to `0`) |
 
 Load custom config:
 ```bash
