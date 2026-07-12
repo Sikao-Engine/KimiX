@@ -24,8 +24,8 @@ class TaskOutputParams(BaseModel):
     timeout: int | None = Field(
         default=None,
         ge=3,
-        le=900,
-        description="Timeout in seconds. Defaults to 60 when `kill` is False, or 0 when `kill` is True."
+        le=7200,
+        description="Timeout in seconds. Defaults to 60 when `kill` is False, or 0 when `kill` is True. When blocking, if no stdout/stderr output is received for longer than min(900, timeout) seconds, the current output is returned immediately."
     )
     output_path: str | None = Field(
         default=None,
@@ -99,9 +99,15 @@ class TaskOutput(CallableTool2):
             timeout = params.timeout
             if timeout is None:
                 timeout = 0 if params.kill else 60
+            inactivity_timed_out = False
             if params.block:
-                await stream.wait(timeout)
-            task_alive = await stream.thread_is_alive()
+                inactivity_timeout = min(900, timeout)
+                completed, _elapsed, inactivity_timed_out = await stream.wait_with_inactivity_timeout(
+                    timeout, inactivity_timeout
+                )
+                task_alive = not completed
+            else:
+                task_alive = await stream.thread_is_alive()
             if params.kill and task_alive:
                 await stream.stop()
                 task_alive = False
