@@ -549,6 +549,51 @@ class Session:
 
         return await Session.find(work_dir, new_session_id)
 
+    @staticmethod
+    async def copy(
+        work_dir: KaosPath, source_session_id: str, target_session_id: str
+    ) -> Session:
+        """Copy an existing session directory to a new session ID.
+
+        Args:
+            work_dir: Working directory containing the sessions.
+            source_session_id: ID of the session to copy.
+            target_session_id: ID for the new copied session.
+
+        Returns:
+            Session: The newly created target session.
+
+        Raises:
+            ValueError: If the source session does not exist, the target ID is empty,
+                or a session with the target ID already exists.
+        """
+        work_dir = work_dir.canonical()
+        if not target_session_id:
+            raise ValueError("Target session ID cannot be empty")
+        if source_session_id == target_session_id:
+            raise ValueError("Target session ID must differ from source session ID")
+
+        metadata = load_metadata()
+        work_dir_meta = metadata.get_work_dir_meta(work_dir)
+        if work_dir_meta is None:
+            raise ValueError(f"Source session not found: {source_session_id}")
+
+        _migrate_session_context_file(work_dir_meta, source_session_id)
+        source_dir = work_dir_meta.sessions_dir / source_session_id
+        if not source_dir.is_dir():
+            raise ValueError(f"Source session not found: {source_session_id}")
+
+        target_dir = work_dir_meta.sessions_dir / target_session_id
+        if target_dir.exists():
+            raise ValueError(f"Target session already exists: {target_session_id}")
+
+        await asyncio.to_thread(shutil.copytree, source_dir, target_dir)
+
+        copied = await Session.find(work_dir, target_session_id)
+        if copied is None:
+            raise RuntimeError(f"Failed to open copied session: {target_session_id}")
+        return copied
+
 
 def _migrate_session_context_file(work_dir_meta: WorkDirMeta, session_id: str) -> None:
     """Migrate legacy session context files.

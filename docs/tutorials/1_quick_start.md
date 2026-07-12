@@ -290,7 +290,8 @@ uv run kimix --clean --manually-cot
 | `/compact` | 压缩当前会话的对话上下文 |
 | `/export:<path>` | 将当前会话的消息导出到指定文件 |
 | `/resume:<id>` | 关闭当前会话并按 ID 恢复已有会话 |
-| `/rename:<id>` | 将当前会话重命名为新 ID |
+| `/store:<id>` | 将当前会话复制为一个新的命名会话 |
+| `/load:<id>` | 将指定命名会话复制到一个新的匿名会话并切换 |
 | `/ralph:on` / `/ralph:off` / `/ralph:<num>` | 设置 Ralph 模式循环次数 |
 | `/supervisor` | 进入多行输入模式，以 Supervisor 角色创建会话并执行一次任务（以 `/end` 结束，`/cancel` 取消） |
 | `/cot:on` / `/cot:off` | 开启 / 关闭手动 CoT 模式 |

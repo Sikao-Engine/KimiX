@@ -759,3 +759,86 @@ async def test_rename_target_exists(isolated_share_dir: Path, work_dir: KaosPath
     # Both directories should still exist unchanged
     assert old_session.dir.exists()
     assert new_session.dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Session.copy
+# ---------------------------------------------------------------------------
+
+
+async def test_copy_success(isolated_share_dir: Path, work_dir: KaosPath):
+    """Copying a session should duplicate its directory and preserve content."""
+    source = await Session.create(work_dir, "source-session")
+    _write_context_message(source.context_file, "hello copy")
+    _write_wire_turn(source.dir, "copy title")
+
+    target = await Session.copy(work_dir, source.id, "target-session")
+
+    assert target is not None
+    assert target.id == "target-session"
+    assert target.dir.name == "target-session"
+    assert target.context_file.exists()
+    assert (target.dir / "wire.jsonl").exists()
+    assert target.title == "copy title"
+    # Original directory must remain intact.
+    assert source.dir.exists()
+    assert source.context_file.exists()
+
+
+async def test_copy_source_not_found(isolated_share_dir: Path, work_dir: KaosPath):
+    """Copying a non-existent session should raise ValueError."""
+    with pytest.raises(ValueError, match="Source session not found"):
+        await Session.copy(work_dir, "nonexistent", "target-session")
+
+
+async def test_copy_target_exists(isolated_share_dir: Path, work_dir: KaosPath):
+    """Copying to an existing session ID should raise ValueError."""
+    source = await Session.create(work_dir, "source-session")
+    target = await Session.create(work_dir, "target-session")
+    _write_context_message(source.context_file, "hello")
+    _write_context_message(target.context_file, "world")
+
+    with pytest.raises(ValueError, match="Target session already exists"):
+        await Session.copy(work_dir, source.id, target.id)
+
+    # Both directories should remain unchanged.
+    assert source.dir.exists()
+    assert target.dir.exists()
+
+
+async def test_copy_same_id(isolated_share_dir: Path, work_dir: KaosPath):
+    """Copying a session onto itself should raise ValueError."""
+    source = await Session.create(work_dir, "source-session")
+    with pytest.raises(ValueError, match="must differ"):
+        await Session.copy(work_dir, source.id, source.id)
+
+
+async def test_copy_empty_target_id(isolated_share_dir: Path, work_dir: KaosPath):
+    """Copying to an empty ID should raise ValueError."""
+    source = await Session.create(work_dir, "source-session")
+    with pytest.raises(ValueError, match="cannot be empty"):
+        await Session.copy(work_dir, source.id, "")
+
+
+async def test_copy_preserves_last_session_id(
+    isolated_share_dir: Path, work_dir: KaosPath
+):
+    """Copying should not alter the work-dir last_session_id metadata."""
+    from kimi_cli.metadata import load_metadata, save_metadata
+
+    source = await Session.create(work_dir, "source-session")
+    _write_context_message(source.context_file, "hello")
+
+    meta = load_metadata()
+    wdm = meta.get_work_dir_meta(work_dir)
+    assert wdm is not None
+    wdm.last_session_id = source.id
+    save_metadata(meta)
+
+    target = await Session.copy(work_dir, source.id, "target-session")
+    assert target is not None
+
+    meta = load_metadata()
+    wdm = meta.get_work_dir_meta(work_dir)
+    assert wdm is not None
+    assert wdm.last_session_id == source.id

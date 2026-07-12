@@ -13,7 +13,7 @@ from kimi_cli.tools import SkipThisTool
 
 from kimix.tools.common import ProcessTask
 from kimix.tools.file.bash import Powershell
-from kimix.tools.file.bash.pwsh_tool import PowershellParams, find_pwsh
+from kimix.tools.file.bash.pwsh_tool import PowershellParams, _PWSH_CONSOLE_INIT, find_pwsh
 from kimix.tools.background.utils import TaskData, _pop_task_data
 
 
@@ -129,7 +129,7 @@ class TestPowershellArgumentBuilding:
             assert "-NonI" not in ps_args
             assert "-NoExit" in ps_args
             assert "-Command" in ps_args or "-C" in ps_args
-            assert "Read-Host 'Name'" in ps_args
+            assert any("Read-Host 'Name'" in arg for arg in ps_args)
             assert args.kwargs.get("append_newline") is True or args[0][4] is True
 
     async def test_interactive_args_without_cmd(self, mock_session: MagicMock) -> None:
@@ -148,7 +148,7 @@ class TestPowershellArgumentBuilding:
             assert isinstance(result, ToolOk)
             args = mock_pt.call_args
             ps_args = args[0][1]
-            assert ps_args == ["-NoP", "-Exec", "Bypass", "-NoL", "-NoExit"]
+            assert ps_args == ["-NoP", "-Exec", "Bypass", "-NoL", "-NoExit", "-Command", _PWSH_CONSOLE_INIT]
 
     async def test_interactive_returns_immediately(self, mock_session: MagicMock) -> None:
         with patch("kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):

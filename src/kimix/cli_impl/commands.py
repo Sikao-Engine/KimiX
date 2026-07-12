@@ -1,4 +1,5 @@
 import os
+import uuid
 from pathlib import Path
 import pendulum
 
@@ -108,22 +109,139 @@ def _cmd_resume(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]
     return None, False
 
 
-def _cmd_rename(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
+async def _release_session_resources(session: Any) -> None:
+    """Release file/network resources of an SDK session without deleting it."""
+    if session._cancel_event is not None:
+        session._cancel_event.set()
+    await session._cleanup_tools()
+    soul = getattr(session._cli, "soul", None)
+    if soul is not None:
+        try:
+            await soul.close()
+        except Exception:
+            pass
+    await session._cli.session.close_context_db()
+    try:
+        await session._close_chat_provider()
+    except Exception:
+        pass
+
+
+def _cmd_store(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     if len(task_split) < 2:
-        print_error('Command must be /rename:session_id')
+        print_error('Command must be /store:session_id')
         return None, False
-    new_session_id = ':'.join(task_split[1:])
+    target_id = ':'.join(task_split[1:])
     session = get_default_session()
     if session is None:
-        print_error('No active session to rename.')
+        print_error('No active session to store.')
         return None, False
+
+    source_id = session.id
+    if target_id == source_id:
+        print_error('Target session name must be different from current session name.')
+        return None, False
+
+    work_dir = session._cli.session.work_dir
+    old_anonymous = session._anonymous
+
+    async def _do_copy() -> Any:
+        from kimi_cli.session import Session as CliSession
+        await _release_session_resources(session)
+        return await CliSession.copy(work_dir, source_id, target_id)
+
     try:
-        asyncio.run(session.rename(new_session_id))
-        print_success(f'Session renamed to {new_session_id}')
+        target = asyncio.run(_do_copy())
     except Exception as e:
         import traceback
-        print_error(f'Rename failed: {e}')
+        print_error(f'Store failed: {e}')
         print_error(traceback.format_exc())
+        # Attempt to recover the original session so the CLI is not left broken.
+        try:
+            new_session = create_session(
+                session_id=source_id,
+                work_dir=work_dir,
+                resume=True,
+                anonymous=old_anonymous,
+            )
+            _globals._default_session = new_session
+            _globals._default_role = SystemPromptType.Worker
+        except Exception as resume_err:
+            print_error(f'Failed to resume original session: {resume_err}')
+        return None, False
+
+    # Prevent the old anonymous SDK object from deleting the original directory on GC.
+    session._closed = True
+
+    try:
+        new_session = create_session(
+            session_id=source_id,
+            work_dir=work_dir,
+            resume=True,
+            anonymous=old_anonymous,
+        )
+        _globals._default_session = new_session
+        _globals._default_role = SystemPromptType.Worker
+    except Exception as e:
+        import traceback
+        print_error(f'Store succeeded but failed to resume original session: {e}')
+        print_error(traceback.format_exc())
+        return None, False
+
+    print_success(f'Session stored as {target.id}')
+    return None, False
+
+
+def _cmd_load(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
+    if len(task_split) < 2:
+        print_error('Command must be /load:session_id')
+        return None, False
+    source_id = ':'.join(task_split[1:])
+
+    from kaos.path import KaosPath
+    from kimi_cli.session import Session as CliSession
+
+    current = get_default_session()
+    work_dir = KaosPath('.')
+    if current is not None:
+        work_dir = current._cli.session.work_dir
+
+    async def _do_copy() -> str:
+        new_id = uuid.uuid4().hex
+        if current is not None and current.id == source_id:
+            # The source is the active session: release its locks first.
+            await _release_session_resources(current)
+        await CliSession.copy(work_dir, source_id, new_id)
+        return new_id
+
+    try:
+        new_id = asyncio.run(_do_copy())
+    except Exception as e:
+        import traceback
+        print_error(f'Load failed: {e}')
+        print_error(traceback.format_exc())
+        return None, False
+
+    # Close the previous current session now that the copy is safely on disk.
+    if current is not None:
+        close_session(current)
+
+    try:
+        new_session = create_session(
+            session_id=new_id,
+            work_dir=work_dir,
+            resume=True,
+            anonymous=True,
+        )
+        _globals._default_session = new_session
+        _globals._default_role = SystemPromptType.Worker
+    except Exception as e:
+        import traceback
+        print_error(f'Loaded session but failed to resume copy: {e}')
+        print_error(traceback.format_exc())
+        return None, False
+
+    print_success(f'Loaded session {source_id} into anonymous session {new_id}')
     return None, False
 
 
@@ -492,7 +610,8 @@ _command_map = {
     'compact': _cmd_compact,
     'export': _cmd_export,
     'resume': _cmd_resume,
-    'rename': _cmd_rename,
+    'store': _cmd_store,
+    'load': _cmd_load,
     'sessions': _cmd_sessions,
     'ralph': _cmd_ralph,
     'cot': _cmd_cot,

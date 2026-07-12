@@ -155,7 +155,8 @@ uv run kimix --config <path>
 | `/compact` | Compact the current session's conversation context |
 | `/export:<path>` | Export the current session's messages to the specified file |
 | `/resume:<id>` | Close current session and resume a session by ID |
-| `/rename:<id>` | Rename the current session to a new ID |
+| `/store:<id>` | Copy the current session to a new named session |
+| `/load:<id>` | Copy a named session into a new anonymous session |
 | `/ralph:on/off/<num>` | Set Ralph mode |
 | `/supervisor` | Enter multi-line input mode to create a session with the Supervisor role and execute one task (end with `/end`, cancel with `/cancel`) |
 | `/cot:on/off` | Toggle manual CoT mode |
