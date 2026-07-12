@@ -31,6 +31,9 @@ minimax_default_config = '''
     "thinking_effort": "max"
 }
 '''
+# Kimi coding models: both `kimi-for-coding` and `kimi-for-coding-highspeed`
+# are supported. The default below follows the same shape as
+# `src/kimix/default_config.json`.
 kimi_default_config = '''
 {
     "model": "kimi-for-coding",
@@ -103,6 +106,10 @@ def _ask_template() -> str:
 
 
 def _ask_model_name(default: str = "kimi-for-coding") -> str:
+    """Prompt for the model name.
+
+    Both `kimi-for-coding` and `kimi-for-coding-highspeed` are supported.
+    """
     return _ask("Enter model name", default)
 
 

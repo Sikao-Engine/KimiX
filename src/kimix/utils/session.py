@@ -47,8 +47,6 @@ async def _create_session_async(
     session_id: Optional[str] = None,
     work_dir: Optional[KaosPath] = None,
     skills_dir: Optional[KaosPath] = None,
-    thinking: Optional[bool] = None,
-    yolo: Optional[bool] = None,
     agent_file: Optional[Path] = None,
     resume: bool = False,
     provider_dict: dict[str, Any] | None = None,
@@ -56,10 +54,9 @@ async def _create_session_async(
     agent_type: SystemPromptType = SystemPromptType.Worker,
     vfs_path: Path | None = None,
     extra_system_prompt: SystemPromptCallback | None = None,
-    max_steps_per_turn: int | None = None,
-    max_retries_per_step: int | None = None,
     max_ralph_iterations: int | None = None,
     anonymous: bool = False,
+    custom_data: dict[str, Any] | None = None,
 ) -> Session:
     # create cache dir
     if work_dir:
@@ -81,10 +78,9 @@ async def _create_session_async(
     system_prompts: Callable[[Runtime, bool], str] | None = None
     if system_prompts is None:
         system_prompts = get_system_prompt(
-            yolo,
-            work_dir,
-            extra_system_prompt,
-            agent_type,
+            work_dir=work_dir,
+            extra_system_prompt=extra_system_prompt,
+            agent_role=agent_type,
             max_system_prompt_tokens=cfg.loop_control.max_system_prompt_tokens,
         )
     if resume:
@@ -92,18 +88,17 @@ async def _create_session_async(
             session_id=session_id,
             work_dir=work_dir,
             skills_dirs=skills_dirs,
-            yolo=yolo if yolo is not None else base._default_yolo,
-            thinking=thinking if thinking is not None else base._default_thinking,
+            yolo=base._default_yolo,
+            thinking=base._default_thinking,
             config=cfg,
             agent_file=agent_file,
             # custom arguments
             custom_system_prompt=system_prompts,
             chat_provider=chat_provider,
             vfs_path=vfs_path,
-            max_steps_per_turn=max_steps_per_turn,
-            max_retries_per_step=max_retries_per_step,
             max_ralph_iterations=max_ralph_iterations,
             anonymous=anonymous,
+            custom_data=custom_data,
         )
         if not session:
             if not base._quiet:
@@ -113,18 +108,17 @@ async def _create_session_async(
             session_id=session_id,
             work_dir=work_dir,
             skills_dirs=skills_dirs,
-            yolo=yolo if yolo is not None else base._default_yolo,
-            thinking=thinking if thinking is not None else base._default_thinking,
+            yolo=base._default_yolo,
+            thinking=base._default_thinking,
             config=cfg,
             agent_file=agent_file,
             # custom arguments
             custom_system_prompt=system_prompts,
             chat_provider=chat_provider,
             vfs_path=vfs_path,
-            max_steps_per_turn=max_steps_per_turn,
-            max_retries_per_step=max_retries_per_step,
             max_ralph_iterations=max_ralph_iterations,
             anonymous=anonymous,
+            custom_data=custom_data,
         )
     # save config
     custom_config = session.get_custom_config()
@@ -138,8 +132,6 @@ def create_session(
     session_id: Optional[str] = None,
     work_dir: Optional[KaosPath] = None,
     skills_dir: Optional[KaosPath] = None,
-    thinking: Optional[bool] = None,
-    yolo: Optional[bool] = None,
     agent_file: Optional[Path] = None,
     resume: bool = False,
     provider_dict: dict[str, Any] | None = None,
@@ -147,17 +139,14 @@ def create_session(
     agent_type: SystemPromptType = SystemPromptType.Worker,
     vfs_path: Path | None = None,
     extra_system_prompt: SystemPromptCallback | None = None,
-    max_steps_per_turn: int | None = None,
-    max_retries_per_step: int | None = None,
     max_ralph_iterations: int | None = None,
     anonymous: bool = False,
+    custom_data: dict[str, Any] | None = None,
 ) -> Session:
     return asyncio.run(_create_session_async(
         session_id=session_id,
         work_dir=work_dir,
         skills_dir=skills_dir,
-        thinking=thinking,
-        yolo=yolo,
         agent_file=agent_file,
         resume=resume,
         provider_dict=provider_dict,
@@ -165,10 +154,9 @@ def create_session(
         agent_type=agent_type,
         vfs_path=vfs_path,
         extra_system_prompt=extra_system_prompt,
-        max_steps_per_turn=max_steps_per_turn,
-        max_retries_per_step=max_retries_per_step,
         max_ralph_iterations=max_ralph_iterations,
         anonymous=anonymous,
+        custom_data=custom_data,
     ))
 
 
@@ -176,24 +164,19 @@ def create_supervisor_session(
     session_id: Optional[str] = None,
     work_dir: Optional[KaosPath] = None,
     skills_dir: Optional[KaosPath] = None,
-    thinking: Optional[bool] = None,
-    yolo: Optional[bool] = None,
     resume: bool = False,
     provider_dict: dict[str, Any] | None = None,
     chat_provider: ChatProvider | None = None,
     vfs_path: Path | None = None,
     extra_system_prompt: SystemPromptCallback | None = None,
-    max_steps_per_turn: int | None = None,
-    max_retries_per_step: int | None = None,
     max_ralph_iterations: int | None = None,
     anonymous: bool = False,
+    custom_data: dict[str, Any] | None = None,
 ) -> Session:
     return create_session(
         session_id=session_id,
         work_dir=work_dir,
         skills_dir=skills_dir,
-        thinking=thinking,
-        yolo=yolo,
         agent_file=base._default_agent_file_dir / 'agent_boss.json',
         resume=resume,
         provider_dict=provider_dict,
@@ -201,10 +184,9 @@ def create_supervisor_session(
         agent_type=SystemPromptType.Supervisor,
         vfs_path=vfs_path,
         extra_system_prompt=extra_system_prompt,
-        max_steps_per_turn=max_steps_per_turn,
-        max_retries_per_step=max_retries_per_step,
         max_ralph_iterations=max_ralph_iterations,
         anonymous=anonymous,
+        custom_data=custom_data,
     )
 
 

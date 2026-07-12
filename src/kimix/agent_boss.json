@@ -12,6 +12,7 @@
       "kimix.tools.agent:Agent",
       "kimix.tools.agent:AgentList",
       "kimix.tools.agent:AgentClose",
+      "kimix.tools.swarm:AgentSwarm",
       "kimi_cli.tools.todo:TodoList",
       "kimix.tools.context:ContextUsage",
       "kimix.tools.context:Compact"

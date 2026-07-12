@@ -356,6 +356,40 @@ def _cmd_supervisor(task_split: list[str], text_arr: list[str]) -> tuple[None, b
     return None, False
 
 
+def _cmd_swarm(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
+    """Start a swarm session with multi-line input text."""
+    print(
+        f'\n>>>> Start input for swarm, end with {colorful_text("/end", Color.YELLOW)}, '
+        f'cancel with {colorful_text("/cancel", Color.YELLOW)}')
+    text, cancelled = _read_multi_line(text_arr)
+    if cancelled:
+        return None, False
+    swarm_prompt = '\n'.join(text).strip()
+    if not swarm_prompt:
+        print_warning('No input provided for swarm.')
+        return None, False
+
+    print_debug('Creating swarm session...')
+    try:
+        swarm_session = create_session(
+            agent_file=base._default_agent_file_dir / 'agent_worker.json',
+            agent_type=SystemPromptType.SwarmLeader,
+            custom_data={'is_swarm_session': True},
+        )
+    except Exception as e:
+        print_error(f'Failed to create swarm session: {e}')
+        return None, False
+
+    try:
+        prompt(prompt_str=swarm_prompt, session=swarm_session)
+    except Exception as e:
+        print_error(f'Swarm prompt failed: {e}')
+    finally:
+        close_session(swarm_session)
+
+    return None, False
+
+
 def _cmd_todo(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     if len(task_split) < 2:
         print_error('Command must be /todo:<path>')
@@ -463,6 +497,7 @@ _command_map = {
     'ralph': _cmd_ralph,
     'cot': _cmd_cot,
     'supervisor': _cmd_supervisor,
+    'swarm': _cmd_swarm,
     'init': _cmd_init,
     'todo': _cmd_todo
 }
@@ -477,4 +512,5 @@ _command_arg_types: dict[str, str] = {
     "plan": "file",
     "ralph": "ralph",
     "cot": "bool_on_off",
+    "swarm": "swarm",
 }

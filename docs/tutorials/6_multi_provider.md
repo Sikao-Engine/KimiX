@@ -49,8 +49,9 @@ Kimix 现在支持将不同 Agent 角色路由到不同的 LLM Provider。你不
 }
 ```
 
-### 支持的角色
+`model` 字段可以是 `kimi-for-coding` 或 `kimi-for-coding-highspeed`，两者均受支持。
 
+### 支持的角色
 | 角色 | 使用者 |
 |------|--------|
 | `sub_agent` | `Agent` 工具、超长输出总结 |

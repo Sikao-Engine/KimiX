@@ -471,6 +471,10 @@ async def load_agent(
         LaborMarket: runtime.labor_market,
         Environment: runtime.environment,
     }
+    custom_data = custom_arguments.get('custom_data')
+    if custom_data is not None:
+        runtime.session.custom_data.update(custom_data)
+
     vfs_path: Path | None = custom_arguments.get('vfs_path')
     if vfs_path is not None:
         vfs = VFS(

@@ -106,7 +106,6 @@ max_retries_per_step = 1
 
         session = await _create_session_async(
             work_dir=work_dir,
-            yolo=True,
             chat_provider=provider,
         )
         try:
@@ -153,7 +152,6 @@ max_retries_per_step = 1
 
         session = await _create_session_async(
             work_dir=work_dir,
-            yolo=True,
             chat_provider=provider,
         )
         try:
@@ -207,7 +205,6 @@ max_retries_per_step = 1
 
         session = await _create_session_async(
             work_dir=work_dir,
-            yolo=True,
             chat_provider=provider,
         )
         try:

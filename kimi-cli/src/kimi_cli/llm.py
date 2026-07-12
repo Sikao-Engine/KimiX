@@ -32,6 +32,14 @@ type ProviderType = Literal[
 type ModelCapability = Literal["image_in", "video_in", "thinking", "always_thinking"]
 ALL_MODEL_CAPABILITIES: set[ModelCapability] = set(get_args(ModelCapability.__value__))
 
+# Recognized names for the Kimi coding model. Both `kimi-for-coding` and
+# `kimi-for-coding-highspeed` are supported; `kimi-code` is kept as an alias.
+_KIMI_FOR_CODING_NAMES = {
+    "kimi-for-coding",
+    "kimi-for-coding-highspeed",
+    "kimi-code",
+}
+
 
 @dataclass(slots=True)
 class LLM:
@@ -51,8 +59,11 @@ def model_display_name(model_name: str | None, model: LLMModel | None = None) ->
         return model.display_name
     if not model_name:
         return ""
-    if model_name in ("kimi-for-coding", "kimi-code"):
-        return "kimi-for-coding"
+    if model_name in _KIMI_FOR_CODING_NAMES:
+        # `kimi-code` is an alias; the other names are used verbatim.
+        if model_name == "kimi-code":
+            return "kimi-for-coding"
+        return model_name
     return model_name
 
 
@@ -379,7 +390,7 @@ def derive_model_capabilities(model: LLMModel) -> set[ModelCapability]:
     if "thinking" in model.model.lower() or "reason" in model.model.lower():
         capabilities.update(("thinking", "always_thinking"))
     # These models support thinking but can be toggled on/off
-    elif model.model in {"kimi-for-coding", "kimi-code"}:
+    elif model.model in _KIMI_FOR_CODING_NAMES:
         capabilities.update(("thinking", "image_in", "video_in"))
     return capabilities
 

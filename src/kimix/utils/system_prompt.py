@@ -23,6 +23,7 @@ class SystemPromptType(Enum):
     TrivialSubAgent = 3
     Supervisor = 4
     Reader = 5
+    SwarmLeader = 6
 
 
 class SystemPromptCallback:
@@ -150,6 +151,15 @@ def get_system_prompt(
                 items.append('Track with `TodoList`. Accept or inquire/reject each result against criteria.')
                 items.append('After all accepted and merged, run one overall verification suited to task type.')
                 items.append('Final: report tasks, deliverables, verification result, unresolved work, merged conclusion.')
+            case SystemPromptType.SwarmLeader:
+                use_agent_md = True
+                use_skills = True
+                role_doc = 'You are a swarm orchestrator'
+                items.append('The user wants to parallelize a request across multiple homogeneous sub-agents.')
+                items.append('Analyze the request and decide how to split it into independent, homogeneous sub-tasks.')
+                items.append('Call the `AgentSwarm` tool with: a clear description, subagent_type (coder/explore/plan), a prompt_template containing the placeholder {{item}}, and a list of items.')
+                items.append('Do not implement the tasks yourself; only dispatch and summarize the aggregated result.')
+                items.append('If the request cannot be parallelized, explain why and stop.')
 
         def _build_agent_md_doc() -> str:
             if use_agent_md and agent_md.is_file():

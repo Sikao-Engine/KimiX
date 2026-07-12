@@ -49,8 +49,9 @@ Add a `sub_providers` array to your config file. Each entry is a complete provid
 }
 ```
 
-### Supported roles
+The `model` field can be either `kimi-for-coding` or `kimi-for-coding-highspeed`; both are supported.
 
+### Supported roles
 | Role | Used by |
 |------|---------|
 | `sub_agent` | `Agent` tool, long-output summarization |

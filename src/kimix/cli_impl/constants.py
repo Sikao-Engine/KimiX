@@ -45,6 +45,8 @@ Available commands:
   {colorful_text('/ralph:<num>', fg=Color.YELLOW)}    - Set Ralph iterations
   {colorful_text('/cot:on', fg=Color.YELLOW)}         - Enable manually CoT mode
   {colorful_text('/cot:off', fg=Color.YELLOW)}        - Disable manually CoT mode
+  {colorful_text('/supervisor', fg=Color.YELLOW)}   - Start a supervisor session with multi-line input text
+  {colorful_text('/swarm', fg=Color.YELLOW)}          - Start a swarm session with multi-line input text
   {colorful_text('/plan', fg=Color.YELLOW)}           - Plan a long-term task, step-by-step, then execute
   {colorful_text('/script', fg=Color.YELLOW)}         - Write python script
   {colorful_text('/cmd:<command>', fg=Color.YELLOW)}  - Execute system command

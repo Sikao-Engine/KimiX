@@ -162,10 +162,12 @@ Kimix 通过 JSON 配置文件初始化 LLM Provider。若启动时未通过 `--
 /init
 ```
 
+示例中的模型名称为 `kimi-for-coding-highspeed`，`kimi-for-coding` 同样受支持，可根据需要选择：
+
 ```json
 {
     "model": {
-        "model": "kimi-for-coding",
+        "model": "kimi-for-coding-highspeed",
         "max_context_size": 262144,
         "capabilities": ["thinking"]
     },

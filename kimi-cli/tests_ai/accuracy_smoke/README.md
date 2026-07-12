@@ -74,7 +74,7 @@ variable at runtime. Do not commit API keys into this repository.
 
 Model selection:
 
-- `HARBOR_MODEL` (default: `kimi/kimi-for-coding`)
+- `HARBOR_MODEL` (default: `kimi/kimi-for-coding`; `kimi/kimi-for-coding-highspeed` is also supported)
 
 ## Use current kimi-cli source (not release build)
 

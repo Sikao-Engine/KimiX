@@ -24,8 +24,6 @@ session = create_session(
     session_id="my_session",           # Optional: unique session identifier
     work_dir=KaosPath("./workspace"),  # Optional: working directory
     skills_dir=None,                   # Optional: KaosPath to skills directory
-    thinking=True,                     # Optional: enable deep thinking
-    yolo=True,                         # Optional: enable yolo mode (auto-approve)
     agent_file=None,                   # Optional: Path to custom agent_worker.json
     resume=False,                      # Optional: resume existing session
     provider_dict=None,                # Optional: custom LLM provider config dict
@@ -33,8 +31,6 @@ session = create_session(
     agent_type=SystemPromptType.Worker, # Optional: Worker, TodoMaker, Thinker, etc.
     vfs_path=None,                     # Optional: Path for virtual file system
     extra_system_prompt=None,          # Optional: additional system prompt text
-    max_steps_per_turn=None,           # Optional: max steps per turn
-    max_retries_per_step=None,         # Optional: max retries per step
     max_ralph_iterations=None,         # Optional: max Ralph loop iterations
     anonymous=False,                   # Optional: anonymous session mode
 )
@@ -57,8 +53,6 @@ from kimix.utils.session import _create_session_async
 session = await _create_session_async(
     session_id="my_session",
     resume=True,
-    max_steps_per_turn=None,
-    max_retries_per_step=None,
     max_ralph_iterations=None,
     anonymous=False,
     # ... same parameters as create_session
@@ -586,8 +580,6 @@ from kimix.base import print_success, print_error, print_info
 # Create session
 session = create_session(
     session_id="example",
-    thinking=True,
-    yolo=True
 )
 
 try:
