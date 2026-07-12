@@ -18,8 +18,14 @@ from kimi_cli.wire.protocol import WIRE_PROTOCOL_VERSION
 from kimi_cli.wire.types import TextPart, TurnBegin
 
 
-def _fake_session(session_id: str = "current", work_dir: KaosPath | None = None, anonymous: bool = False):
+def _fake_session(
+    session_id: str = "current",
+    work_dir: KaosPath | None = None,
+    anonymous: bool = False,
+    empty: bool = True,
+):
     work_dir = work_dir or KaosPath(".")
+    token_count = 0 if empty else 123
     return SimpleNamespace(
         id=session_id,
         _anonymous=anonymous,
@@ -29,8 +35,14 @@ def _fake_session(session_id: str = "current", work_dir: KaosPath | None = None,
         _close_chat_provider=AsyncMock(),
         _cli=SimpleNamespace(
             session=SimpleNamespace(
-                work_dir=work_dir, id=session_id, close_context_db=AsyncMock()
-            )
+                work_dir=work_dir,
+                id=session_id,
+                close_context_db=AsyncMock(),
+                is_empty=lambda: empty,
+            ),
+            soul=SimpleNamespace(
+                context=SimpleNamespace(token_count=token_count)
+            ),
         ),
     )
 
@@ -304,6 +316,90 @@ def test_load_command_closes_current_only_after_successful_copy(monkeypatch, cap
     out = capsys.readouterr().out
     assert "Target session already exists" in out
     assert len(closed_sessions) == 0
+
+
+def test_load_command_warns_and_cancels_on_non_empty_current(monkeypatch, capsys):
+    current = _fake_session(session_id="current", empty=False)
+    monkeypatch.setattr(commands, "get_default_session", lambda: current)
+
+    copy_mock = AsyncMock(return_value=SimpleNamespace(id="anon123"))
+    monkeypatch.setattr("kimi_cli.session.Session.copy", copy_mock)
+
+    closed_sessions = []
+    monkeypatch.setattr(commands, "close_session", lambda s: closed_sessions.append(s))
+    monkeypatch.setattr(
+        commands, "_globals", SimpleNamespace(_default_session=current, _default_role=None)
+    )
+
+    commands._cmd_load(["load", "saved"], ["n"])
+
+    out = capsys.readouterr().out
+    assert "has 123 context tokens" in out
+    assert "Load cancelled" in out
+    copy_mock.assert_not_awaited()
+    assert len(closed_sessions) == 0
+    assert commands._globals._default_session is current
+
+
+def test_load_command_warns_and_confirms_on_non_empty_current(monkeypatch, capsys):
+    current = _fake_session(session_id="current", empty=False)
+    monkeypatch.setattr(commands, "get_default_session", lambda: current)
+    monkeypatch.setattr(commands.uuid, "uuid4", lambda: SimpleNamespace(hex="anon123"))
+    monkeypatch.setattr(
+        "kimi_cli.session.Session.copy",
+        AsyncMock(return_value=SimpleNamespace(id="anon123")),
+    )
+
+    fake_new = _fake_new_session("anon123")
+    created_calls = []
+
+    def _create_session(**kw):
+        created_calls.append(kw)
+        return fake_new
+
+    monkeypatch.setattr(commands, "create_session", _create_session)
+    monkeypatch.setattr(
+        commands, "_globals", SimpleNamespace(_default_session=current, _default_role=None)
+    )
+
+    closed_sessions = []
+    monkeypatch.setattr(commands, "close_session", lambda s: closed_sessions.append(s))
+
+    commands._cmd_load(["load", "saved"], ["y"])
+
+    out = capsys.readouterr().out
+    assert "has 123 context tokens" in out
+    assert "Loaded session saved into anonymous session anon123" in out
+    assert len(created_calls) == 1
+    assert created_calls[0]["session_id"] == "anon123"
+    assert created_calls[0]["anonymous"] is True
+    assert len(closed_sessions) == 1
+    assert closed_sessions[0] is current
+    assert commands._globals._default_session is fake_new
+
+
+def test_load_command_rejects_invalid_confirmation_input(monkeypatch, capsys):
+    current = _fake_session(session_id="current", empty=False)
+    monkeypatch.setattr(commands, "get_default_session", lambda: current)
+    monkeypatch.setattr(commands.uuid, "uuid4", lambda: SimpleNamespace(hex="anon123"))
+    monkeypatch.setattr(
+        "kimi_cli.session.Session.copy",
+        AsyncMock(return_value=SimpleNamespace(id="anon123")),
+    )
+
+    fake_new = _fake_new_session("anon123")
+    monkeypatch.setattr(commands, "create_session", lambda **kw: fake_new)
+    monkeypatch.setattr(
+        commands, "_globals", SimpleNamespace(_default_session=current, _default_role=None)
+    )
+    monkeypatch.setattr(commands, "close_session", lambda s: None)
+
+    commands._cmd_load(["load", "saved"], ["maybe", "", "y"])
+
+    out = capsys.readouterr().out
+    assert "Please enter y or n." in out
+    assert "Loaded session saved into anonymous session anon123" in out
+    assert commands._globals._default_session is fake_new
 
 
 # ---------------------------------------------------------------------------

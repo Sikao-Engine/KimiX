@@ -206,6 +206,25 @@ def _cmd_load(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     if current is not None:
         work_dir = current._cli.session.work_dir
 
+    # Confirm replacing a current session that has used context tokens.
+    if current is not None:
+        try:
+            current_token_count = current._cli.soul.context.token_count
+        except Exception:
+            current_token_count = 0
+        if current_token_count > 0:
+            print_warning(
+                f'Current session "{current.id}" has {current_token_count} context tokens. '
+                'Loading will release it. Continue? (y/n)'
+            )
+            answer = _input('', text_arr).strip().lower()
+            while answer not in ('y', 'n'):
+                print_warning('Please enter y or n.')
+                answer = _input('', text_arr).strip().lower()
+            if answer != 'y':
+                print_info('Load cancelled.')
+                return None, False
+
     async def _do_copy() -> str:
         new_id = uuid.uuid4().hex
         if current is not None and current.id == source_id:
