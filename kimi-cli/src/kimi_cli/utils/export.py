@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pendulum
 from collections.abc import Sequence
 from pathlib import Path
@@ -61,7 +63,7 @@ def _extract_tool_call_hint(args_json: str) -> str:
     """
     try:
         parsed: object = loads_relaxed(args_json)
-    except (orjson.JSONDecodeError, TypeError):
+    except (orjson.JSONDecodeError, json.JSONDecodeError, TypeError):
         return ""
     if not isinstance(parsed, dict):
         return ""
@@ -111,7 +113,7 @@ def _format_tool_call_md(tool_call: ToolCall) -> str:
     try:
         parsed = loads_relaxed(args_raw)
         args_formatted = orjson.dumps(parsed, option=orjson.OPT_INDENT_2).decode()
-    except orjson.JSONDecodeError:
+    except (orjson.JSONDecodeError, json.JSONDecodeError):
         args_formatted = args_raw
 
     return f"{title}\n<!-- call_id: {tool_call.id} -->\n```json\n{args_formatted}\n```"

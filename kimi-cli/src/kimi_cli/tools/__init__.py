@@ -1,3 +1,5 @@
+import json
+
 import orjson
 from typing import cast
 
@@ -27,7 +29,7 @@ def extract_key_argument(
 
     try:
         curr_args: JsonType = loads_relaxed(json_str)
-    except orjson.JSONDecodeError:
+    except (orjson.JSONDecodeError, json.JSONDecodeError):
         return None
     if not curr_args:
         return None

@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from kaos.path import KaosPath
-from kosong.message import Message
+from kosong.message import Message, ToolCall
 from typer.testing import CliRunner
 
 from kimi_cli.cli import cli
 from kimi_cli.cli.export import _format_message_timestamp
+from kimi_cli.utils.export import (
+    _extract_tool_call_hint,
+    _format_tool_call_md,
+)
 from kimi_cli.metadata import load_metadata, save_metadata
 from kimi_cli.session import Session
 from kimi_cli.wire.types import TextPart, TurnBegin
@@ -177,4 +183,30 @@ def test_export_help_is_leaf_command() -> None:
 
     assert result.exit_code == 0, result.output
     assert "Usage: root export [OPTIONS] [SESSION_ID]" in result.output
+
+
+def test_extract_tool_call_hint_handles_stdlib_json_decode_error() -> None:
+    """_extract_tool_call_hint must swallow stdlib json.JSONDecodeError from
+    loads_relaxed and return an empty hint instead of leaking the exception."""
+    with patch(
+        "kimi_cli.utils.export.loads_relaxed",
+        side_effect=json.JSONDecodeError("Extra data", "doc", 0),
+    ):
+        assert _extract_tool_call_hint('{"path": "x"}') == ""
+
+
+def test_format_tool_call_md_falls_back_to_raw_args_on_stdlib_json_error() -> None:
+    """_format_tool_call_md must fall back to raw arguments when loads_relaxed
+    raises stdlib json.JSONDecodeError."""
+    with patch(
+        "kimi_cli.utils.export.loads_relaxed",
+        side_effect=json.JSONDecodeError("Extra data", "doc", 0),
+    ):
+        tool_call = ToolCall(
+            id="call_1",
+            function=ToolCall.FunctionBody(name="ReadFile", arguments='{"path": "x"}'),
+        )
+        md = _format_tool_call_md(tool_call)
+    assert "ReadFile" in md
+    assert '{"path": "x"}' in md
     assert "COMMAND [ARGS]..." not in result.output

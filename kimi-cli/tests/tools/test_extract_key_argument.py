@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from kaos.path import KaosPath
@@ -71,3 +73,14 @@ class TestExtractKeyArgument:
         )
         assert result is not None
         assert "foo/bar.py" in result.replace("\\", "/")
+
+    def test_json_decode_error_returns_none(self):
+        """loads_relaxed may raise stdlib json.JSONDecodeError for some malformed
+        inputs; extract_key_argument must treat it like any other parse failure
+        and return None instead of leaking the exception."""
+        with patch(
+            "kosong.utils.jsonx.loads_relaxed",
+            side_effect=json.JSONDecodeError("Extra data", "doc", 0),
+        ):
+            result = extract_key_argument('{"command": "ls"}', "Shell", self.work_dir)
+        assert result is None
