@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import functools
 import os
+from pathlib import Path
 import regex as re
 import shutil
 import subprocess
@@ -15,6 +16,7 @@ from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field, model_validator
 from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
+from kimi_cli.tools.utils import load_desc
 from kimi_cli.tools.display import ShellDisplayBlock
 from kimix.tools.file.bash import bash_tool as _bash_tool
 from kimix.tools.file.bash.proccess_pwsh import pwsh_transform
@@ -190,33 +192,12 @@ class PowershellParams(BaseModel):
 class Powershell(CallableTool2[PowershellParams]):
 
     name: str = "Powershell"
-    description: str = (
-        "Run a simple PowerShell command. Prefer Python for complex or stateful tasks. "
-        "Start a persistent session with interactive=True, then reuse the same tool with "
-        "task_id=<id> to send input and read output in one step. Use wait_for_pattern to wait "
-        "for a prompt. TaskOutput remains available as a fallback for listing/monitoring tasks. "
-        "Send 'exit' to close the session.\n"
-        "PowerShell quick reference:\n"
-        "- Cmdlets use Verb-Noun names: Get-ChildItem (list files), Get-Content (read file), "
-        "Set-Location (cd), Copy-Item, Move-Item, Remove-Item, New-Item, "
-        "Select-String (grep), Get-Command, Get-Help.\n"
-        "- The pipeline `|` passes .NET objects, not plain text; shape results with "
-        "Where-Object, Select-Object, ForEach-Object, Sort-Object, Measure-Object.\n"
-        "- Comparison operators: -eq -ne -gt -ge -lt -le, -like (wildcard), -match (regex), "
-        "-contains (collection membership), -replace (regex replace). "
-        "Logical operators: -and -or -not (alias `!`).\n"
-        "- Chain commands with `;` (always run next) or `&&` / `||` "
-        "(PowerShell 7+: run next only on success / only on failure).\n"
-        "- Strings: 'single quotes' are literal; \"double quotes\" expand $variables and "
-        "$(subexpressions).\n"
-        "- Redirection: `>` overwrite file, `>>` append, `2>&1` merge error stream into output.\n"
-        "- $LASTEXITCODE holds the exit code of the last native command; "
-        "$? is $true if the last command succeeded."
-    )
+    description: str = ""
     params: type[PowershellParams] = PowershellParams
 
     def __init__(self, session: Session):
-        super().__init__()
+        desc = load_desc(Path(__file__).parent / "pwsh_tool.md")
+        super().__init__(description=desc)
         self._session = session
         if not _bash_tool._should_enable_powershell():
             raise SkipThisTool()
