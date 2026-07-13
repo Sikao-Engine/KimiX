@@ -252,7 +252,7 @@ class TestPowershellSessionContinuation:
         data = TaskData()
         stream = AsyncMock()
         stream.is_started = AsyncMock(return_value=True)
-        stream.pop_output = AsyncMock(return_value="")
+        stream.drain = AsyncMock(return_value=None)
         stream.input = AsyncMock(return_value=True)
         stream.wait_for_output = AsyncMock(return_value=("hello output", True, 0.12))
         stream.thread_is_alive = AsyncMock(return_value=True)

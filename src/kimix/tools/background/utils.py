@@ -128,6 +128,22 @@ class BackgroundStream:
         self._output.seek(0)
         return output
 
+    async def drain(self) -> None:
+        """Discard all accumulated output without returning it.
+
+        Drains any pending data from the thread-safe queue into the internal
+        buffer, then truncates the buffer — the content is gone. This is
+        semantically equivalent to ``await pop_output()`` but expresses the
+        intent to discard rather than consume the data.
+        """
+        while True:
+            try:
+                self._output.write(self._queue.get_nowait())
+            except queue.Empty:
+                break
+        self._output.truncate(0)
+        self._output.seek(0)
+
     async def get_queue(self) -> queue.Queue[str] | None:
         """Get the thread-safe queue for retrieving messages.
 

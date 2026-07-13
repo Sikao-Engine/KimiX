@@ -343,7 +343,7 @@ class Run(CallableTool2[RunParams]):
                     await task.wait(wait_timeout)
 
                 if await task.thread_is_alive():
-                    output = await task.stream.get_output() if task.stream else ""
+                    output = await task.stream.pop_output() if task.stream else ""
                     output = await _maybe_export_output_async(output)
                     return ToolError(
                         output=output,
@@ -483,7 +483,7 @@ class Run(CallableTool2[RunParams]):
             return pattern
 
         # Discard prior output so we only report new output produced after this input.
-        await stream.pop_output()
+        await stream.drain()
 
         input_text = params.command
         if not input_text.endswith("\n"):
