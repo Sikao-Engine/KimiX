@@ -119,6 +119,16 @@ class TokenUsage(BaseModel):
         return self.input_other + self.input_cache_read + self.input_cache_creation
 
 
+DEFAULT_MAX_RETRIES = 3
+"""Default number of SDK-level retries for chat providers.
+
+The OpenAI and Anthropic SDKs retry idempotent transient failures such as
+429 Rate Limit and 5xx server errors with exponential backoff.  This default
+is applied when the caller does not supply ``max_retries`` explicitly via
+``client_kwargs``.
+"""
+
+
 type ThinkingEffort = Literal["off", "low", "medium", "high", "xhigh", "max"]
 """The effort level for thinking.
 

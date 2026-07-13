@@ -12,6 +12,7 @@ from kosong.chat_provider import (
     APIStatusError,
     APITimeoutError,
     ChatProviderError,
+    DEFAULT_MAX_RETRIES,
     openai_common,
 )
 from kosong.chat_provider.openai_common import (
@@ -130,6 +131,34 @@ def test_create_openai_client_does_not_inject_max_retries(monkeypatch: pytest.Mo
     assert captured["base_url"] == "https://example.com/v1"
     assert captured["timeout"] == 3
     assert "max_retries" not in captured
+
+
+def test_openai_legacy_applies_default_max_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(openai_common, "AsyncOpenAI", FakeAsyncOpenAI)
+
+    OpenAILegacy(model="gpt-4.1", api_key="test-key")
+
+    assert captured["max_retries"] == DEFAULT_MAX_RETRIES
+
+
+def test_openai_legacy_respects_explicit_max_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(openai_common, "AsyncOpenAI", FakeAsyncOpenAI)
+
+    OpenAILegacy(model="gpt-4.1", api_key="test-key", max_retries=7)
+
+    assert captured["max_retries"] == 7
 
 
 @pytest.mark.asyncio

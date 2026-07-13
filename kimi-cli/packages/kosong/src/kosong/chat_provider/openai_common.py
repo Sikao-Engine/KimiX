@@ -29,6 +29,7 @@ from kosong.chat_provider import (
     APIStatusError,
     APITimeoutError,
     ChatProviderError,
+    DEFAULT_MAX_RETRIES,
     StreamedMessagePart,
     ThinkingEffort,
     TokenUsage,
@@ -385,6 +386,10 @@ class OpenAICompatibleProviderMixin:
         self._api_key = api_key
         self._base_url = base_url
         self._client_kwargs: dict[str, Any] = dict(client_kwargs)
+        # Apply a default SDK-level retry budget for transient errors such as
+        # 429 Rate Limit and 5xx server errors.  Callers may override this by
+        # passing ``max_retries`` explicitly in ``client_kwargs``.
+        self._client_kwargs.setdefault("max_retries", DEFAULT_MAX_RETRIES)
         self.client: AsyncOpenAI = create_openai_client(
             api_key=self._api_key,
             base_url=self._base_url,

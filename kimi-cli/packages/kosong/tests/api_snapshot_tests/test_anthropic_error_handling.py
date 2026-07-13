@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import anthropic
 import httpx
 import pytest
 
@@ -30,6 +31,7 @@ from kosong.chat_provider import (
     APIStatusError,
     APITimeoutError,
     ChatProviderError,
+    DEFAULT_MAX_RETRIES,
     convert_httpx_error,
 )
 from kosong.contrib.chat_provider.anthropic import (
@@ -311,3 +313,49 @@ class TestGracefulDataErrors:
         result = _image_url_part_to_anthropic(part)
         assert result["type"] == "text"
         assert "Unsupported media type for base64 image" in result["text"]
+
+
+# ---------------------------------------------------------------------------
+# SDK retry policy defaults
+# ---------------------------------------------------------------------------
+
+
+class TestAnthropicRetryPolicy:
+    """The Anthropic provider must configure a default SDK-level retry budget
+    for transient errors such as 429 Rate Limit and 5xx server errors, while
+    still allowing callers to override it explicitly."""
+
+    def test_anthropic_applies_default_max_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, Any] = {}
+
+        class FakeAsyncAnthropic:
+            def __init__(self, **kwargs: Any) -> None:
+                captured.update(kwargs)
+
+        monkeypatch.setattr(
+            "kosong.contrib.chat_provider.anthropic.AsyncAnthropic", FakeAsyncAnthropic
+        )
+
+        Anthropic(model="claude-sonnet-4-20250514", api_key="test-key", default_max_tokens=1024)
+
+        assert captured["max_retries"] == DEFAULT_MAX_RETRIES
+
+    def test_anthropic_respects_explicit_max_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        captured: dict[str, Any] = {}
+
+        class FakeAsyncAnthropic:
+            def __init__(self, **kwargs: Any) -> None:
+                captured.update(kwargs)
+
+        monkeypatch.setattr(
+            "kosong.contrib.chat_provider.anthropic.AsyncAnthropic", FakeAsyncAnthropic
+        )
+
+        Anthropic(
+            model="claude-sonnet-4-20250514",
+            api_key="test-key",
+            default_max_tokens=1024,
+            max_retries=9,
+        )
+
+        assert captured["max_retries"] == 9

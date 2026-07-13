@@ -75,6 +75,7 @@ from kosong.chat_provider import (
     APITimeoutError,
     ChatProvider,
     ChatProviderError,
+    DEFAULT_MAX_RETRIES,
     StreamedMessagePart,
     ThinkingEffort,
     TokenUsage,
@@ -299,8 +300,13 @@ class Anthropic:
         # Windows/Python 3.14, if the loop is torn down before the task finishes,
         # the unretrieved exception surfaces as a noisy
         # ``RuntimeError: Event loop is closed`` traceback.
+        client_kwargs = dict(client_kwargs)
+        # Apply a default SDK-level retry budget for transient errors such as
+        # 429 Rate Limit and 5xx server errors.  Callers may override this by
+        # passing ``max_retries`` explicitly in ``client_kwargs``.
+        client_kwargs.setdefault("max_retries", DEFAULT_MAX_RETRIES)
         if "http_client" not in client_kwargs:
-            client_kwargs = {**client_kwargs, "http_client": httpx.AsyncClient()}
+            client_kwargs["http_client"] = httpx.AsyncClient()
         self._client = AsyncAnthropic(api_key=api_key, base_url=base_url, **client_kwargs)
         self._tool_message_conversion: ToolMessageConversion | None = tool_message_conversion
         self._metadata = metadata
