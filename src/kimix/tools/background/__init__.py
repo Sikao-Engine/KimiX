@@ -35,20 +35,12 @@ class TaskOutputParams(BaseModel):
         default=False,
         description="Force stop the process after timeout."
     )
-    echo: bool = Field(
-        default=False,
-        description="If True, return the current accumulated output without clearing the buffer. Default False pops (consumes) the output."
-    )
 
 
 class TaskOutput(CallableTool2):
     """Get output from a background task, or list all tasks if no task_id is provided."""
     name: str = "TaskOutput"
-    description: str = (
-        "Get background task output or list tasks. "
-        "By default, each call consumes (pops) the output so the next call sees only new data. "
-        "Pass echo=True to re-read the current accumulated output without clearing the buffer."
-    )
+    description: str = "Get background task output or list tasks."
     params: type[BaseModel] = TaskOutputParams
 
     def __del__(self):
@@ -119,10 +111,7 @@ class TaskOutput(CallableTool2):
             if params.kill and task_alive:
                 await stream.stop()
                 task_alive = False
-            if params.echo:
-                output = await stream.get_output()
-            else:
-                output = await stream.pop_output()
+            output = await stream.get_output() if task_alive else await stream.pop_output()
             if not task_alive:
                 remove_task_id(self._session, params.task_id)
             if params.output_path:

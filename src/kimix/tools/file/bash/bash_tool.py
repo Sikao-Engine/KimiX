@@ -733,7 +733,7 @@ class Bash(CallableTool2[BashParams]):
                 await process_task.stop()
             from kimix.tools.background.utils import remove_task_id
             remove_task_id(self._session, task_id)
-            output = await process_task.stream.pop_output() if process_task.stream else ""
+            output = await process_task.stream.get_output() if process_task.stream else ""
             output = await _maybe_export_output_async(output)
             return ToolError(
                 output=output,
@@ -742,7 +742,7 @@ class Bash(CallableTool2[BashParams]):
             )
 
         if await process_task.thread_is_alive():
-            output = await process_task.stream.pop_output() if process_task.stream else ""
+            output = await process_task.stream.get_output() if process_task.stream else ""
             output = await _maybe_export_output_async(output)
             return ToolError(
                 output=output,
@@ -829,7 +829,7 @@ class Bash(CallableTool2[BashParams]):
             return pattern
 
         # Discard prior output so we only report new output produced after this input.
-        await stream.drain()
+        await stream.pop_output()
 
         input_text = params.cmd
         if not input_text.endswith("\n"):

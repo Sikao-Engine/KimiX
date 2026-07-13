@@ -341,7 +341,7 @@ class Powershell(CallableTool2[PowershellParams]):
                 await process_task.stop()
             from kimix.tools.background.utils import remove_task_id
             remove_task_id(self._session, task_id)
-            output = await process_task.stream.pop_output() if process_task.stream else ""
+            output = await process_task.stream.get_output() if process_task.stream else ""
             output = await _maybe_export_output_async(output)
             transform_warning = transform_warning or ""
             return ToolError(
@@ -351,7 +351,7 @@ class Powershell(CallableTool2[PowershellParams]):
             )
 
         if await process_task.thread_is_alive():
-            output = await process_task.stream.pop_output() if process_task.stream else ""
+            output = await process_task.stream.get_output() if process_task.stream else ""
             output = await _maybe_export_output_async(output)
             return ToolError(
                 output=output,
@@ -437,7 +437,7 @@ class Powershell(CallableTool2[PowershellParams]):
         if isinstance(pattern, ToolError):
             return pattern
 
-        await stream.drain()
+        await stream.pop_output()
 
         input_text = params.cmd
         if not input_text.endswith("\n"):

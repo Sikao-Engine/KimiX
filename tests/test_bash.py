@@ -1655,7 +1655,7 @@ class TestBashSessionContinuation:
         data = TaskData()
         stream = AsyncMock()
         stream.is_started = AsyncMock(return_value=True)
-        stream.drain = AsyncMock(return_value=None)
+        stream.pop_output = AsyncMock(return_value="")
         stream.input = AsyncMock(return_value=True)
         stream.wait_for_output = AsyncMock(return_value=("hello output", True, 0.12))
         stream.thread_is_alive = AsyncMock(return_value=True)
@@ -1672,7 +1672,7 @@ class TestBashSessionContinuation:
         assert "status: running" in result.output
         assert "wait_matched: true" in result.output
         assert "elapsed_seconds: 0.12" in result.output
-        stream.drain.assert_awaited_once()
+        stream.pop_output.assert_awaited_once()
         stream.input.assert_awaited_once_with("echo hello\n")
         stream.wait_for_output.assert_awaited_once()
 
