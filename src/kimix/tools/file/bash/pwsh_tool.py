@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 _PWSH_CONSOLE_INIT = (
     "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
     "$OutputEncoding=[System.Text.Encoding]::UTF8;"
-    "[Console]::TreatControlCAsInput=$true;"
+    "try{[Console]::TreatControlCAsInput=$true}catch{};"
 )
 
 def _print_warning(message: str) -> None:
