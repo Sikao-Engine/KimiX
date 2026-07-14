@@ -1,13 +1,27 @@
 {
+    "model": "gpt-4o",
+    "max_context_size": 200000,
+    "capabilities": [
+        "thinking"
+    ],
+    "url": "https://api.openai.com/v1/chat/completions",
+    "type": "openai_legacy",
+    "api_key": "sk-xxx",
+    "custom_headers": {},
+    "oauth": {
+        "storage": "file",
+        "key": "my-key"
+    },
+    "env": {},
+    "max_tokens": 65536,
+    "temperature": 0.7,
+    "top_p": 0.9,
     "loop_control": {
         "max_steps_per_turn": 5000,
         "max_retries_per_step": 3,
         "reserved_context_size": 50000,
         "compaction_trigger_ratio": 0.85
     },
-    "max_tokens": 65536,
-    "temperature": 0.7,
-    "top_p": 0.9,
     "notifications": {
         "enabled": true,
         "sound": true,
@@ -17,22 +31,15 @@
         "enabled": true,
         "servers": []
     },
-    "model": {
-        "model": "gpt-4o",
-        "max_context_size": 200000,
-        "capabilities": [
-            "thinking"
-        ]
-    },
-    "provider": {
-        "base_url": "https://api.openai.com/v1/chat/completions",
-        "type": "openai_legacy",
-        "api_key": "sk-xxx",
-        "custom_headers": {},
-        "oauth": {
-            "storage": "file",
-            "key": "my-key"
-        },
-        "env": {}
-    }
+    "sub_providers": [
+        {
+            "role": "sub_agent",
+            "model": "gpt-4o",
+            "max_context_size": 200000,
+            "capabilities": ["thinking"],
+            "url": "https://api.openai.com/v1/chat/completions",
+            "type": "openai_legacy",
+            "api_key": "sk-xxx"
+        }
+    ]
 }

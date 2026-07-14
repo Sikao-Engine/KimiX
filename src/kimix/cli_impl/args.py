@@ -15,6 +15,11 @@ from . import constants, utils  # noqa: F401
 _REQUIRED_PROVIDER_KEYS = ("type", "max_context_size", "model", "url")
 
 
+# Priority for picking a sub_provider as the main provider when root lacks 'model'.
+# Earlier values in the tuple have higher priority.
+_SUB_PROVIDER_PICK_PRIORITY: tuple[str | None, ...] = (None, "sub_agent", "planner")
+
+
 def _normalize_sub_providers(
     sub_provider: Any,
     sub_providers: Any,
@@ -57,6 +62,60 @@ def _normalize_sub_providers(
         seen_roles.add(role)
         normalized.append(entry)
     return normalized
+
+
+def _pick_main_from_sub_providers(
+    config_data: dict[str, Any],
+    sub_provider: Any,
+    sub_providers: Any,
+) -> None:
+    """If ``config_data`` lacks a ``model`` key, pick a sub_provider as the main provider.
+
+    Priority (highest first):
+      1. Entry with no ``role`` key (or empty role)
+      2. Entry with ``role = "sub_agent"``
+      3. Entry with ``role = "planner"``
+
+    Mutates ``config_data`` in place by copying all non-``role`` keys from the winner.
+    """
+    if "model" in config_data:
+        return
+
+    # Collect raw entries (pre-normalization) to distinguish "no role" from explicit roles.
+    raw_entries: list[dict[str, Any]] = []
+    for src in (sub_provider, sub_providers):
+        if src is None:
+            continue
+        if isinstance(src, dict):
+            raw_entries.append(src)
+        elif isinstance(src, list):
+            raw_entries.extend(src)
+
+    picked: dict[str, Any] | None = None
+    for role_priority in _SUB_PROVIDER_PICK_PRIORITY:
+        if picked is not None:
+            break
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
+            if role_priority is None:
+                # no-role: entry has no 'role' key or role is empty/falsy
+                if not entry.get("role"):
+                    picked = entry
+                    break
+            else:
+                if entry.get("role") == role_priority:
+                    picked = entry
+                    break
+
+    if picked is not None:
+        for k, v in picked.items():
+            if k != "role":
+                config_data[k] = v
+        print_debug(
+            f"Picked sub_provider (role='{picked.get('role', '')}') "
+            f"as main provider (no 'model' in root)."
+        )
 
 
 def _load_project_mcp_config() -> dict[str, Any]:
@@ -313,6 +372,7 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
             sub_provider = config_data.pop("sub_provider", None)
             sub_providers = config_data.pop("sub_providers", None)
             normalized_providers = _normalize_sub_providers(sub_provider, sub_providers)
+            _pick_main_from_sub_providers(config_data, sub_provider, sub_providers)
             base.set_default_provider(config_data)
             print_debug(f"{str(config_path)} loaded.")
             print_debug(f"Provider model: {config_data.get('model', 'None')}")
@@ -337,6 +397,7 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
                 sub_provider = config_data.pop("sub_provider", None)
                 sub_providers = config_data.pop("sub_providers", None)
                 normalized_providers = _normalize_sub_providers(sub_provider, sub_providers)
+                _pick_main_from_sub_providers(config_data, sub_provider, sub_providers)
                 base.set_default_provider(config_data)
                 if normalized_providers:
                     base.set_default_sub_providers(normalized_providers)

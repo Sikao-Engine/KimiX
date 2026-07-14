@@ -1,16 +1,30 @@
 {
-    "loop_control": {
-        "max_steps_per_turn": 5000,
-        "max_retries_per_step": 3,
-        "reserved_context_size": 50000,
-        "compaction_trigger_ratio": 0.85
+    "model": "kimi-k2.6",
+    "max_context_size": 200000,
+    "capabilities": [
+        "thinking"
+    ],
+    "url": "https://api.moonshot.cn/v1/chat/completions",
+    "type": "kimi",
+    "api_key": "sk-xxx",
+    "custom_headers": {},
+    "oauth": {
+        "storage": "file",
+        "key": "my-key"
     },
+    "env": {},
     "max_tokens": 65536,
     "thinking_effort": "max",
     "show_thinking_stream": true,
     "temperature": 0.7,
     "top_p": 0.9,
     "top_k": 50,
+    "loop_control": {
+        "max_steps_per_turn": 5000,
+        "max_retries_per_step": 3,
+        "reserved_context_size": 50000,
+        "compaction_trigger_ratio": 0.85
+    },
     "notifications": {
         "enabled": true,
         "sound": true,
@@ -20,22 +34,15 @@
         "enabled": true,
         "servers": []
     },
-    "model": {
-        "model": "kimi-k2.6",
-        "max_context_size": 200000,
-        "capabilities": [
-            "thinking"
-        ]
-    },
-    "provider": {
-        "base_url": "https://api.moonshot.cn/v1/chat/completions",
-        "type": "kimi",
-        "api_key": "sk-xxx",
-        "custom_headers": {},
-        "oauth": {
-            "storage": "file",
-            "key": "my-key"
-        },
-        "env": {}
-    }
+    "sub_providers": [
+        {
+            "role": "sub_agent",
+            "model": "kimi-k2.6",
+            "max_context_size": 200000,
+            "capabilities": ["thinking"],
+            "url": "https://api.moonshot.cn/v1/chat/completions",
+            "type": "kimi",
+            "api_key": "sk-xxx"
+        }
+    ]
 }

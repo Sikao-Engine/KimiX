@@ -1,0 +1,28 @@
+{
+    "sub_providers": [
+        {
+            "role": "other1",
+            "model": "model-alpha",
+            "max_context_size": 100000,
+            "url": "https://api.example.com/v1",
+            "type": "openai_legacy",
+            "api_key": "sk-alpha"
+        },
+        {
+            "role": "other2",
+            "model": "model-beta",
+            "max_context_size": 100000,
+            "url": "https://api.example.com/v1",
+            "type": "openai_legacy",
+            "api_key": "sk-beta"
+        },
+        {
+            "role": "planner",
+            "model": "model-gamma",
+            "max_context_size": 100000,
+            "url": "https://api.example.com/v1",
+            "type": "openai_legacy",
+            "api_key": "sk-gamma"
+        }
+    ]
+}

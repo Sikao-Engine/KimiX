@@ -1,4 +1,22 @@
 {
+    "model": "gpt-5.2",
+    "max_context_size": 200000,
+    "capabilities": [
+        "thinking"
+    ],
+    "url": "https://api.openai.com/v1/responses",
+    "type": "openai_responses",
+    "api_key": "sk-xxx",
+    "custom_headers": {},
+    "oauth": {
+        "storage": "file",
+        "key": "my-key"
+    },
+    "env": {},
+    "max_tokens": 65536,
+    "thinking_effort": "high",
+    "temperature": 0.7,
+    "top_p": 0.9,
     "loop_control": {
         "max_steps_per_turn": 5000,
         "max_retries_per_step": 3,
@@ -14,26 +32,15 @@
         "enabled": true,
         "servers": []
     },
-    "max_tokens": 65536,
-    "thinking_effort": "high",
-    "temperature": 0.7,
-    "top_p": 0.9,
-    "model": {
-        "model": "gpt-5.2",
-        "max_context_size": 200000,
-        "capabilities": [
-            "thinking"
-        ]
-    },
-    "provider": {
-        "base_url": "https://api.openai.com/v1/responses",
-        "type": "openai_responses",
-        "env": {},
-        "api_key": "sk-xxx",
-        "oauth": {
-            "storage": "file",
-            "key": "my-key"
-        },
-        "custom_headers": {}
-    }
+    "sub_providers": [
+        {
+            "role": "sub_agent",
+            "model": "gpt-5.2",
+            "max_context_size": 200000,
+            "capabilities": ["thinking"],
+            "url": "https://api.openai.com/v1/responses",
+            "type": "openai_responses",
+            "api_key": "sk-xxx"
+        }
+    ]
 }
