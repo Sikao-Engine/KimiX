@@ -1367,7 +1367,19 @@ class KimiSoul:
             )
 
         t0 = time.monotonic()
-        result = await _kosong_step_with_retry()
+        try:
+            result = await _kosong_step_with_retry()
+        except APIEmptyResponseError:
+            # All retries exhausted — the model keeps producing only thinking
+            # content (output token budget exhausted during reasoning).
+            # Instead of crashing the conversation, return None to let the
+            # agent loop try another step.
+            logger.warning(
+                "All retries exhausted for think-only response at step {step_no}, "
+                "continuing to next step",
+                step_no=self._current_step_no,
+            )
+            return None
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.5. USAGE & STATUS UPDATE
