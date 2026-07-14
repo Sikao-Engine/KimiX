@@ -15,4 +15,3 @@ PowerShell quick reference:
 - Environment variables: Use `$env:NAME` for session-scoped read/write. Use `[Environment]::SetEnvironmentVariable('NAME', 'value', 'Scope')` for persistence. Resolution priority: Process > User > Machine. List with `Get-ChildItem Env:`. Append PATH with `$env:PATH += ';new\path'` — never overwrite, check for duplicates first. Do not use `%NAME%` inside PowerShell. Child process changes do not propagate back to parent.
 - $LASTEXITCODE holds the exit code of the last native command; $? is $true if the last command succeeded. Note: $LASTEXITCODE may not be set if native output is piped to a cmdlet; capture it before piping.
 - Parameter value expressions must be parenthesized: `-Index (100..120)` not `-Index 100..120`.
-- Ternary (`? :`), null-coalescing (`??`), null-assign (`??=`), pipeline chains (`&&` / `||`), and null-conditional (`?.` / `?[`) are PowerShell 7+ only. Downgraded automatically on PS 5.1.
