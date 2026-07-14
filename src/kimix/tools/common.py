@@ -732,3 +732,10 @@ class ProcessTask:
         """The underlying BackgroundStream if the process has been started."""
         return self._stream
 
+    @property
+    def completed_event(self) -> threading.Event | None:
+        """The threading.Event that is set when the background thread completes."""
+        if self._stream is not None:
+            return self._stream._completed_event
+        return None
+

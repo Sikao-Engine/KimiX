@@ -679,8 +679,10 @@ class Bash(CallableTool2[BashParams]):
             process_task = ProcessTask(self._bash, bash_args, None, _env_with_rg_bin_path(), append_newline=True)
             task_id = await process_task.start(self._session, "bash")
             if params.wait_for_pattern is not None and process_task.stream is not None:
+                inactivity_timeout = min(30.0, float(params.timeout))
                 output, matched, elapsed = await process_task.stream.wait_for_output(
-                    timeout=params.timeout, pattern=pattern
+                    timeout=params.timeout, pattern=pattern,
+                    inactivity_timeout=inactivity_timeout,
                 )
                 alive = await process_task.thread_is_alive()
                 status = "running" if alive else "completed"
@@ -713,8 +715,10 @@ class Bash(CallableTool2[BashParams]):
         elapsed_seconds: float | None = None
         try:
             if params.wait_for_pattern is not None and process_task.stream is not None:
+                inactivity_timeout = min(30.0, float(params.timeout))
                 output, wait_matched, elapsed_seconds = await process_task.stream.wait_for_output(
-                    timeout=params.timeout, pattern=pattern
+                    timeout=params.timeout, pattern=pattern,
+                    inactivity_timeout=inactivity_timeout,
                 )
                 if await process_task.thread_is_alive():
                     return await self._format_session_result(
@@ -841,8 +845,10 @@ class Bash(CallableTool2[BashParams]):
                 brief="Send input failed",
             )
 
+        inactivity_timeout = min(30.0, float(params.timeout))
         output, matched, elapsed = await stream.wait_for_output(
-            timeout=params.timeout, pattern=pattern
+            timeout=params.timeout, pattern=pattern,
+            inactivity_timeout=inactivity_timeout,
         )
         alive = await stream.thread_is_alive()
         status = "running" if alive else "completed"

@@ -114,6 +114,13 @@ class TaskOutput(CallableTool2):
             output = await stream.get_output() if task_alive else await stream.pop_output()
             if not task_alive:
                 remove_task_id(self._session, params.task_id)
+                # If the process failed (non-zero return), return error message
+                if not await stream.success():
+                    return ToolError(
+                        message=output if output else "Task process failed (non-zero exit)",
+                        output=output if output else "",
+                        brief=f"Task '{params.task_id}' failed"
+                    )
             if params.output_path:
                 from pathlib import Path
                 import anyio

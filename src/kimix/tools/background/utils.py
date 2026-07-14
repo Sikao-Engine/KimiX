@@ -10,7 +10,7 @@ from typing import Any, Awaitable, Callable, cast
 from kimi_cli.session import Session
 
 
-DEFAULT_INACTIVITY_TIMEOUT = 60.0
+DEFAULT_INACTIVITY_TIMEOUT = 30.0
 
 
 class TaskData:
@@ -49,6 +49,7 @@ class BackgroundStream:
         self._success = False
         self._output = io.StringIO()
         self._last_output_time = time.monotonic()
+        self._completed_event = threading.Event()
 
     async def success(self) -> bool:
         return self._success
@@ -73,9 +74,11 @@ class BackgroundStream:
                         result = asyncio.run(function(q))
                     else:
                         result = function(q)
+                    v._success = False if result == False else True # defaultly success
                 except Exception:
-                    result = False
-                v._success = False if result == False else True # defaultly success
+                    v._success = False
+                finally:
+                    v._completed_event.set()
             self._thread = threading.Thread(
                 target=func, args=(self, function), daemon=True)
             self._stop_function = stop_function
@@ -188,6 +191,9 @@ class BackgroundStream:
 
             # Drain any new output and refresh the activity timestamp.
             await self.get_output()
+            # Check clean completion signal before inactivity timeout.
+            if self._completed_event.is_set():
+                return True, elapsed, False
             with self._lock:
                 inactive_for = time.monotonic() - self._last_output_time
             if inactive_for >= inactivity_timeout:
@@ -200,6 +206,7 @@ class BackgroundStream:
         *,
         timeout: float,
         pattern: re.Pattern[str] | None = None,
+        inactivity_timeout: float | None = None,
     ) -> tuple[str, bool, float]:
         """Wait for output, optionally until ``pattern`` matches.
 
@@ -208,6 +215,10 @@ class BackgroundStream:
                 checking the current accumulated output.
             pattern: Compiled regex pattern. When provided, the loop stops as
                 soon as the pattern is found in the accumulated output.
+            inactivity_timeout: Seconds of output inactivity that triggers an
+                early return. When set, if no new output has been received for
+                this many seconds, the wait ends early. Also checks the
+                internal ``_completed_event`` to detect thread completion.
 
         Returns:
             ``(output, matched, elapsed_seconds)``. ``matched`` is ``True`` only
@@ -226,11 +237,23 @@ class BackgroundStream:
                 break
             if timeout <= 0 or elapsed >= timeout:
                 break
+            # Check if the background thread has finished (process completed).
+            if self._completed_event.is_set():
+                output = await self.get_output()
+                break
             if not await self.thread_is_alive():
                 # Process finished; grab any final data that arrived since the
                 # last poll before leaving the loop.
                 output = await self.get_output()
                 break
+            # Check inactivity timeout: if enabled and no output for too long, exit early.
+            if inactivity_timeout is not None and inactivity_timeout > 0:
+                with self._lock:
+                    inactive_for = time.monotonic() - self._last_output_time
+                if inactive_for >= inactivity_timeout:
+                    # Drain any final output before returning.
+                    output = await self.get_output()
+                    break
             await asyncio.sleep(0.1)
 
         return output, matched, elapsed
