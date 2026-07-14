@@ -18,12 +18,13 @@ from kimi_cli.soul.context_pruning import (
     _is_superseded_read,
     _is_oversized_output,
     _is_resolved_error,
+    _protect_tool_pair_indices,
     _tier_a_candidates,
     _tier_b_candidates,
     is_pruned_stub,
 )
 from kimi_cli.soul.message import system, system_reminder
-from kimi_cli.wire.types import TextPart
+from kimi_cli.wire.types import TextPart, ThinkPart
 
 
 # ======================================================================
@@ -645,3 +646,210 @@ class TestContextPruner:
             # Either original text or stub
             text = "".join(p.text for p in tm.content if isinstance(p, TextPart))
             assert len(text) > 0, "Elided tool message has empty content"
+
+
+# ======================================================================
+# Tool-pair protection helper
+# ======================================================================
+
+
+class TestProtectToolPairIndices:
+    def test_protects_matching_tool_results(self):
+        history = [
+            _assistant(
+                "Let me read",
+                tool_calls=[
+                    {"id": "call_1", "function": {"name": "ReadFile", "arguments": "{}"}}
+                ],
+            ),
+            _tool("content", tool_call_id="call_1"),
+        ]
+        protected = _protect_tool_pair_indices(history, {0})
+        assert 1 in protected
+
+    def test_skips_unmatched_tool_results(self):
+        history = [
+            _assistant("No tools here", tool_calls=[]),
+            _tool("content", tool_call_id="call_1"),
+        ]
+        protected = _protect_tool_pair_indices(history, {0})
+        assert 1 not in protected
+
+    def test_does_not_unprotect_existing(self):
+        history = [
+            _assistant(
+                "Let me read",
+                tool_calls=[
+                    {"id": "call_1", "function": {"name": "ReadFile", "arguments": "{}"}}
+                ],
+            ),
+            _tool("content", tool_call_id="call_1"),
+        ]
+        protected = _protect_tool_pair_indices(history, {0, 1})
+        assert 0 in protected
+        assert 1 in protected
+
+
+# ======================================================================
+# Policy-driven pruning
+# ======================================================================
+
+
+class TestPruneWithPolicy:
+    def test_default_same_as_prune_with_equivalent_knobs(self):
+        pruner = ContextPruner(
+            trigger_ratio=0.0,
+            target_ratio=0.5,
+            stable_prefix_messages=1,
+            recent_messages_protected=6,
+            min_free_tokens=0,
+            cooldown_steps=0,
+        )
+        history = [
+            _user("hello"),
+            _notification("old notification"),
+            _user("work"),
+            _user("tail"),
+        ]
+        policy_result = pruner.prune_with_policy(history)
+        direct_result = pruner.prune(history, context_usage=1.0, max_context_size=128_000)
+        assert policy_result.earliest_removed_index == direct_result.earliest_removed_index
+
+    def test_keep_recent_turns_protects_last_two(self):
+        pruner = ContextPruner(
+            trigger_ratio=0.0,
+            target_ratio=0.0,
+            stable_prefix_messages=0,
+            recent_messages_protected=6,
+            min_free_tokens=0,
+            cooldown_steps=0,
+        )
+        history = [
+            _system_reminder("old reminder"),
+            _user("a"),
+            _user("b"),
+            _user("tail"),
+        ]
+        result = pruner.prune_with_policy(
+            history,
+            keep_recent_turns=2,
+            target_token_count=1,
+            max_context_size=128_000,
+        )
+        # Last two user turns (indices 2,3) protected; index 0 dropped
+        assert result.earliest_removed_index == 0
+        result_roles = [m.role for m in result.messages]
+        assert result_roles == ["user", "user", "user"]
+
+    def test_remove_tool_results_false_disables_tier_b(self):
+        pruner = ContextPruner(
+            trigger_ratio=0.0,
+            target_ratio=0.0,
+            stable_prefix_messages=0,
+            recent_messages_protected=0,
+            min_free_tokens=0,
+            cooldown_steps=0,
+            ephemeral_enabled=False,
+            substantive_enabled=True,
+            tool_output_min_tokens=50,
+        )
+        history = [
+            _user("hello"),
+            _tool("x" * 500),
+        ]
+        result = pruner.prune_with_policy(history, remove_tool_results=False)
+        assert result.earliest_removed_index is None
+        assert result.messages == list(history)
+
+    def test_target_token_count_lowers_ratio(self):
+        pruner = ContextPruner(
+            trigger_ratio=0.0,
+            target_ratio=0.0,
+            stable_prefix_messages=0,
+            recent_messages_protected=0,
+            min_free_tokens=0,
+            cooldown_steps=0,
+            tool_output_min_tokens=50,
+            max_fraction_per_pass=1.0,
+        )
+        # Create a large tool result that must be elided to hit the target
+        large_tool = _tool("x" * 4000)
+        history = [
+            _user("hello"),
+            large_tool,
+        ]
+        result = pruner.prune_with_policy(
+            history,
+            target_token_count=1000,
+            max_context_size=128_000,
+        )
+        assert result.earliest_removed_index is not None
+        assert result.freed_tokens > 0
+
+    def test_protects_tool_pairs(self):
+        pruner = ContextPruner(
+            trigger_ratio=0.0,
+            target_ratio=0.0,
+            stable_prefix_messages=0,
+            recent_messages_protected=1,
+            min_free_tokens=0,
+            cooldown_steps=0,
+            tool_output_min_tokens=20,
+            max_fraction_per_pass=1.0,
+        )
+        history = [
+            _user("read"),
+            _assistant(
+                "Reading",
+                tool_calls=[
+                    {"id": "call_1", "function": {"name": "ReadFile", "arguments": "{}"}}
+                ],
+            ),
+            _tool("x" * 200, tool_call_id="call_1"),  # oversized but paired
+            _user("tail"),
+        ]
+        result = pruner.prune_with_policy(history, keep_recent_turns=1)
+        # The assistant+tool pair must survive because the assistant is in the tail
+        assert any(m.role == "assistant" and m.tool_calls for m in result.messages)
+        tool_msgs = [m for m in result.messages if m.role == "tool" and m.tool_call_id == "call_1"]
+        assert len(tool_msgs) == 1
+
+    def test_remove_reasoning_false_keeps_assistant_thinking(self):
+        pruner = ContextPruner(
+            trigger_ratio=0.0,
+            target_ratio=0.0,
+            stable_prefix_messages=0,
+            recent_messages_protected=0,
+            min_free_tokens=0,
+            cooldown_steps=0,
+            ephemeral_enabled=False,
+            substantive_enabled=True,
+            tool_output_min_tokens=20,
+        )
+        history = [
+            Message(role="assistant", content=[ThinkPart(think="deep reasoning")]),
+            _tool("x" * 200),
+        ]
+        result = pruner.prune_with_policy(history, remove_reasoning=False)
+        # Current Tier-B only elides tool messages, so assistant reasoning is untouched
+        assert result.messages[0].role == "assistant"
+        assert any(isinstance(p, ThinkPart) for p in result.messages[0].content)
+
+    def test_bypasses_cooldown_and_trigger(self):
+        pruner = ContextPruner(
+            trigger_ratio=1.0,  # would normally never trigger
+            target_ratio=0.0,
+            stable_prefix_messages=0,
+            recent_messages_protected=0,
+            min_free_tokens=10000,  # would normally block small savings
+            cooldown_steps=1000,
+        )
+        history = [_system_reminder("old reminder"), _user("hello")]
+        result = pruner.prune_with_policy(
+            history,
+            keep_recent_turns=0,
+            target_token_count=1,
+            max_context_size=128_000,
+        )
+        # Manual policy invocation should ignore hysteresis
+        assert result.earliest_removed_index is not None

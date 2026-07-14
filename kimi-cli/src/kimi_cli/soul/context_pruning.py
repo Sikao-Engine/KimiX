@@ -123,6 +123,39 @@ def _is_ephemeral_message(
 # ---------------------------------------------------------------------------
 
 
+def _protect_tool_pair_indices(
+    history: Sequence[Message],
+    protected: set[int],
+) -> set[int]:
+    """Extend *protected* so every tool-call pair in it is kept as a unit.
+
+    For any protected assistant message with ``tool_calls``, the matching
+    ``role="tool"`` result messages (by ``tool_call_id``) are also protected.
+    This preserves provider invariants (OpenAI, Anthropic, Kimi) that require
+    every assistant tool call to have a corresponding tool result.
+    """
+    protected = set(protected)
+    n = len(history)
+    assistant_tool_ids: dict[int, set[str]] = {}
+
+    for idx in protected:
+        msg = history[idx]
+        if msg.role == "assistant" and msg.tool_calls:
+            assistant_tool_ids[idx] = {tc.id for tc in msg.tool_calls}
+
+    for idx, tool_ids in assistant_tool_ids.items():
+        # Tool results normally follow immediately after the assistant call,
+        # but scan the whole history to be robust to reordering/normalization.
+        for j in range(n):
+            if j in protected:
+                continue
+            candidate = history[j]
+            if candidate.role == "tool" and candidate.tool_call_id in tool_ids:
+                protected.add(j)
+
+    return protected
+
+
 def _compute_protected_indices(
     history: Sequence[Message],
     *,
@@ -155,16 +188,12 @@ def _compute_protected_indices(
         if history[i].role in ("user", "assistant"):
             tail_turn_indices.append(i)
 
-    # Add tail turn indices and their tool messages
+    # Add tail turn indices
     for idx in tail_turn_indices:
         protected.add(idx)
-        # Also protect tool messages that belong to these turns
-        msg = history[idx]
-        if msg.role == "assistant" and msg.tool_calls:
-            # Find tool responses that follow this assistant message
-            for j in range(idx + 1, min(idx + 1 + len(msg.tool_calls), n)):
-                if history[j].role == "tool":
-                    protected.add(j)
+
+    # Protect tool-call pairs for any protected assistant message
+    protected = _protect_tool_pair_indices(history, protected)
 
     # Current turn protection
     if current_turn_index is not None:
@@ -693,6 +722,116 @@ class ContextPruner:
         if result.earliest_removed_index is None:
             return count_message_tokens(history, model=model)
         return count_message_tokens(result.messages, model=model)
+
+    def prune_with_policy(
+        self,
+        history: Sequence[Message],
+        *,
+        remove_reasoning: bool = True,
+        remove_tool_results: bool = True,
+        keep_recent_turns: int = 6,
+        target_token_count: int | None = None,
+        max_context_size: int = 128_000,
+        current_step: int = 0,
+        model: str | None = None,
+    ) -> PruningResult:
+        """Run a policy-driven prune pass suitable for manual invocation.
+
+        This method configures a fresh :class:`ContextPruner` instance from the
+        high-level parameters and runs ``prune()``.  It bypasses hysteresis so
+        that a manual ``ContextPrune`` tool call always acts when content is
+        available to drop/elide.
+
+        Args:
+            history: The full message history.
+            remove_reasoning: For ``mode="prune"`` this is a no-op because the
+                existing Tier-B detector only elides ``role="tool"`` messages;
+                reasoning removal is handled by ``strip_reasoning`` mode.
+            remove_tool_results: When ``False``, disable Tier-B substantive
+                elision entirely (only ephemeral Tier-A drops are performed).
+            keep_recent_turns: Number of recent user/assistant turns to protect.
+            target_token_count: Optional explicit token target.  When supplied,
+                the pruner's ``target_ratio`` is derived as
+                ``target_token_count / max_context_size``.
+            max_context_size: Maximum context size in tokens.
+            current_step: Current step number (passed through for logging).
+            model: Model name for token estimation.
+
+        Returns:
+            A ``PruningResult`` with the modified message list.
+        """
+        if target_token_count is not None:
+            target_ratio = max(0.0, min(1.0, target_token_count / max_context_size))
+        else:
+            target_ratio = self._target_ratio if self._target_ratio > 0 else 0.5
+
+        ephemeral_enabled = self._ephemeral_enabled
+        substantive_enabled = self._substantive_enabled and remove_tool_results
+
+        # Build a fresh pruner so manual invocation does not disturb the soul's
+        # hysteresis state (cooldowns, last usage, etc.).
+        pruner = ContextPruner(
+            enabled=True,
+            trigger_ratio=0.0,  # manual invocation always runs
+            target_ratio=target_ratio,
+            stable_prefix_messages=self._stable_prefix_messages,
+            recent_messages_protected=keep_recent_turns,
+            min_free_tokens=1,  # manual invocation bypasses min-payoff gate
+            cooldown_steps=0,  # manual invocation bypasses cooldown
+            min_usage_growth=0.0,
+            max_fraction_per_pass=self._max_fraction_per_pass,
+            ephemeral_enabled=ephemeral_enabled,
+            ephemeral_notifications=self._ephemeral_notifications,
+            ephemeral_task_snapshots=self._ephemeral_task_snapshots,
+            ephemeral_dmail_notices=self._ephemeral_dmail_notices,
+            ephemeral_checkpoint_markers=self._ephemeral_checkpoint_markers,
+            substantive_enabled=substantive_enabled,
+            tool_output_min_tokens=self._tool_output_min_tokens,
+        )
+        pruner._ref_counter = self._ref_counter
+
+        result = pruner.prune(
+            history,
+            current_step=current_step,
+            context_usage=1.0 if target_ratio > 0 else 0.0,
+            max_context_size=max_context_size,
+            model=model,
+        )
+
+        # Propagate the ref counter back so elided IDs stay unique across calls.
+        self._ref_counter = pruner._ref_counter
+
+        # Guard: even though the current Tier-B detector only elides tool
+        # messages, if remove_reasoning is False we restore any assistant
+        # message that might have been elided (e.g. future detectors).
+        if not remove_reasoning and result.elided:
+            elided_indices = {rec.index for rec in result.elided if rec.role == "assistant"}
+            if elided_indices:
+                elided_by_index = {rec.index: rec for rec in result.elided}
+                restored_messages: list[Message] = []
+                for i, msg in enumerate(history):
+                    if i in elided_indices:
+                        rec = elided_by_index[i]
+                        restored_messages.append(
+                            Message(
+                                role=rec.role,
+                                content=[TextPart(text=rec.original_text)],
+                                tool_call_id=msg.tool_call_id,
+                            )
+                        )
+                    else:
+                        restored_messages.append(msg)
+                kept_elided = [rec for rec in result.elided if rec.role != "assistant"]
+                freed = sum(max(len(rec.original_text) // 4, 1) for rec in kept_elided)
+                earliest = min({rec.index for rec in kept_elided}) if kept_elided else None
+                return PruningResult(
+                    messages=restored_messages,
+                    elided=kept_elided,
+                    freed_tokens=freed,
+                    earliest_removed_index=earliest,
+                )
+
+        return result
 
     # ------------------------------------------------------------------
     # Hysteresis helpers

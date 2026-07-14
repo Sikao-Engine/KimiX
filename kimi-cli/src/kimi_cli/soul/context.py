@@ -703,6 +703,31 @@ class Context:
 
         await self._storage.append_messages(messages)
 
+    async def replace_history(self, messages: Sequence[Message]) -> None:
+        """Atomically replace the persisted message history.
+
+        Clears storage and rewrites the system prompt plus the given messages.
+        Checkpoints and usage records are reset; callers should re-create a
+        checkpoint if checkpoint semantics are required.
+        """
+        logger.debug(
+            "Replacing context history with {count} messages", count=len(messages)
+        )
+        await self._storage.clear()
+        if self._system_prompt is not None:
+            await self._storage.set_system_prompt(self._system_prompt)
+        if messages:
+            await self._storage.append_messages(messages)
+        self._history = list(messages)
+        new_token_estimate = estimate_text_tokens(messages, model=self._model_name)
+        # The persisted usage records were cleared, so the in-memory count can
+        # only be safely lowered to the estimate.  A higher value is left for
+        # the next API usage update to correct.
+        if new_token_estimate < self._token_count:
+            self._token_count = new_token_estimate
+        self._pending_token_estimate = 0
+        self._next_checkpoint_id = 0
+
     # ------------------------------------------------------------------ #
     # Checkpoints
     # ------------------------------------------------------------------ #

@@ -80,6 +80,7 @@ from kimi_cli.soul.message import (
 )
 from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
+from kimi_cli.tools.context_prune import ContextPrune
 from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.export import perform_export
@@ -243,6 +244,7 @@ class KimiSoul:
         # Phase 3: History index for semantic retrieval over past turns
         # Lazy import to avoid circular dependency with kimix.retrieval
         from kimi_cli.soul.history_index import HistoryIndex
+        from kimi_cli.tools.context_prune import ContextPrune
         from kimi_cli.tools.context_retrieval import ContextRetrieval
 
         history_index_path = (
@@ -273,9 +275,10 @@ class KimiSoul:
                 max_preserved_messages=self._loop_control.max_preserved_messages,
             )
 
-        # Register ContextRetrieval tool if the toolset supports it
+        # Register context-management tools if the toolset supports it
         if isinstance(agent.toolset, KimiToolset):
             agent.toolset.add(ContextRetrieval(self._history_index))
+            agent.toolset.add(ContextPrune(self))
 
         for tool in agent.toolset.tools:
             if tool.name == SendDMail_NAME:

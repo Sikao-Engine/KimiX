@@ -444,3 +444,144 @@ async def test_system_prompt_is_first_line_in_file(tmp_path: Path) -> None:
     assert lines[1]["role"] == "user"
     assert lines[2]["role"] == "_checkpoint"
     assert lines[3]["role"] == "_usage"
+
+
+# --- replace_history tests ---
+
+
+@pytest.mark.asyncio
+async def test_replace_history_rewrites_storage(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    path.touch()
+
+    ctx = Context(file_backend=path)
+    await ctx.append_message(Message(role="user", content=[TextPart(text="keep me")]))
+    await ctx.append_message(Message(role="assistant", content=[TextPart(text="drop me")]))
+
+    await ctx.replace_history([Message(role="user", content=[TextPart(text="only me")])])
+
+    assert len(ctx.history) == 1
+    assert ctx.history[0].role == "user"
+    assert ctx.history[0].content[0].text == "only me"
+
+    lines = _read_lines(path)
+    assert len(lines) == 1
+    assert lines[0]["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_replace_history_preserves_system_prompt(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    path.touch()
+
+    ctx = Context(file_backend=path)
+    await ctx.write_system_prompt("Frozen system prompt")
+    await ctx.append_message(Message(role="user", content=[TextPart(text="Hello")]))
+
+    await ctx.replace_history([Message(role="assistant", content=[TextPart(text="Hi")])])
+
+    assert ctx.system_prompt == "Frozen system prompt"
+    lines = _read_lines(path)
+    assert lines[0] == {"role": "_system_prompt", "content": "Frozen system prompt"}
+    assert lines[1]["role"] == "assistant"
+
+
+@pytest.mark.asyncio
+async def test_replace_history_resets_pending_tokens(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    path.touch()
+
+    ctx = Context(file_backend=path)
+    await ctx.append_message(Message(role="user", content=[TextPart(text="a" * 400)]))
+    old_pending = ctx.token_count_with_pending
+    assert old_pending > 0
+
+    await ctx.replace_history([])
+
+    assert ctx.token_count_with_pending == 0
+
+
+@pytest.mark.asyncio
+async def test_replace_history_clears_checkpoints(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    path.touch()
+
+    ctx = Context(file_backend=path)
+    await ctx.append_message(Message(role="user", content=[TextPart(text="msg")]))
+    await ctx.checkpoint(add_user_message=False)
+    assert ctx.n_checkpoints == 1
+
+    await ctx.replace_history([Message(role="user", content=[TextPart(text="msg2")])])
+
+    assert ctx.n_checkpoints == 0
+
+
+@pytest.mark.asyncio
+async def test_replace_history_empty(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    path.touch()
+
+    ctx = Context(file_backend=path)
+    await ctx.write_system_prompt("System prompt")
+    await ctx.append_message(Message(role="user", content=[TextPart(text="Hello")]))
+
+    await ctx.replace_history([])
+
+    assert len(ctx.history) == 0
+    lines = _read_lines(path)
+    assert len(lines) == 1
+    assert lines[0] == {"role": "_system_prompt", "content": "System prompt"}
+
+
+@pytest.mark.asyncio
+async def test_replace_history_sqlite_backend(tmp_path: Path) -> None:
+    db_path = tmp_path / "context.db"
+
+    ctx = Context.from_db(db_path)
+    await ctx.write_system_prompt("SQLite prompt")
+    await ctx.append_message(Message(role="user", content=[TextPart(text="keep")]))
+    await ctx.append_message(Message(role="assistant", content=[TextPart(text="drop")]))
+
+    await ctx.replace_history([Message(role="user", content=[TextPart(text="only")])])
+
+    assert len(ctx.history) == 1
+    assert ctx.history[0].content[0].text == "only"
+    assert ctx.system_prompt == "SQLite prompt"
+
+    stored = await ctx.storage.get_messages()
+    assert len(stored) == 1
+    assert stored[0].content[0].text == "only"
+
+
+@pytest.mark.asyncio
+async def test_replace_history_lowers_token_count(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    path.touch()
+
+    ctx = Context(file_backend=path)
+    await ctx.append_message(Message(role="user", content=[TextPart(text="a" * 400)]))
+    await ctx.update_token_count(10_000)
+    assert ctx.token_count == 10_000
+
+    await ctx.replace_history([Message(role="user", content=[TextPart(text="b" * 100)])])
+
+    assert ctx.token_count < 10_000
+    assert ctx.token_count > 0
+    assert ctx.token_count_with_pending == ctx.token_count
+
+
+@pytest.mark.asyncio
+async def test_replace_history_does_not_raise_token_count(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    path.touch()
+
+    ctx = Context(file_backend=path)
+    await ctx.append_message(Message(role="user", content=[TextPart(text="a" * 100)]))
+    # No usage recorded yet, so token_count stays at 0 even though the new
+    # message has a positive token estimate.
+    assert ctx.token_count == 0
+
+    await ctx.replace_history([Message(role="user", content=[TextPart(text="b" * 400)])])
+
+    assert ctx.token_count == 0
+    assert ctx.token_count_with_pending == 0
