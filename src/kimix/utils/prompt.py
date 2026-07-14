@@ -319,7 +319,7 @@ async def prompt_async(
                         merge_wire_messages,
                         info_print,
                         label=label,
-                        format_output=False,
+                        format_output=True,
                     )
                 except Exception as reminder_exc:
                     base._stream.colorful_print_word(
