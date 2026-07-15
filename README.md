@@ -16,7 +16,7 @@ kimix
 python -m kimix
 ```
 
-> **Note:** This repo supports not only KIMI LLM but also various API keys! Like OpenAI, Anthropic, etc. Default config templates are in `docs/`; use `kimix --config xx.json` after setup.
+> **Note:** This repo supports not only KIMI LLM but also various API keys! Like OpenAI, Anthropic, etc. Default config templates are in `docs/`; use `kimix --config=xx.json` after setup.
 
 ![teasor](teasor.png)
 

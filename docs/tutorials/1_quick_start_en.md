@@ -119,7 +119,7 @@ Run `/init` in the interactive terminal to create the default config interactive
 
 Load custom config:
 ```bash
-uv run kimix --config <path>
+uv run kimix --config=<path>
 ```
 
 ### Launch Options
