@@ -114,7 +114,7 @@ def test_truncate_max_lines_zero():
 async def test_token_filter_no_params_passthrough():
     out = "line1\nline2\nline3"
     result, orig_path = await _token_filter_output(
-        out, dedup=False, grep=None, max_lines=None
+        out, dedup=False, max_lines=None
     )
     assert result == out
     assert orig_path is None  # no filter active → no original saved
@@ -124,7 +124,7 @@ async def test_token_filter_no_params_passthrough():
 async def test_token_filter_dedup_only():
     out = "ERROR\n" * 10
     result, orig_path = await _token_filter_output(
-        out, dedup=True, grep=None, max_lines=None
+        out, dedup=True, max_lines=None
     )
     assert "ERROR  (10 repeats)" in result
     assert orig_path is not None  # filter active → original saved
@@ -134,20 +134,10 @@ async def test_token_filter_dedup_only():
 async def test_token_filter_dedup_disabled():
     out = "ERROR\n" * 10
     result, orig_path = await _token_filter_output(
-        out, dedup=False, grep=None, max_lines=None
+        out, dedup=False, max_lines=None
     )
     assert result == out  # unchanged
     assert orig_path is None
-
-
-@pytest.mark.asyncio
-async def test_token_filter_grep_only():
-    out = "keep\nignore\nkeep_too"
-    result, orig_path = await _token_filter_output(
-        out, dedup=False, grep=r"keep", max_lines=None
-    )
-    assert result == "keep\nkeep_too"
-    assert orig_path is not None
 
 
 @pytest.mark.asyncio
@@ -155,7 +145,7 @@ async def test_token_filter_truncate_only():
     lines = [f"L{i}" for i in range(500)]
     out = "\n".join(lines)
     result, orig_path = await _token_filter_output(
-        out, dedup=False, grep=None, max_lines=50
+        out, dedup=False, max_lines=50
     )
     assert "lines omitted" in result
     assert orig_path is not None
@@ -165,16 +155,20 @@ async def test_token_filter_truncate_only():
 
 @pytest.mark.asyncio
 async def test_token_filter_all_stages():
-    # dedup → grep → truncate
-    lines = (["ERROR: timeout"] * 100 + ["INFO: ok"] * 50 + ["ERROR: retry"] * 5)
+    # dedup → truncate
+    lines = (
+        ["ERROR: timeout"] * 100
+        + ["INFO: ok"] * 50
+        + ["WARN: check"] * 10
+        + ["ERROR: retry"] * 5
+    )
     out = "\n".join(lines)
     result, orig_path = await _token_filter_output(
-        out, dedup=True, grep=r"ERROR", max_lines=5
+        out, dedup=True, max_lines=3
     )
-    assert "ERROR: timeout  (100 repeats)" in result
-    assert "ERROR: retry  (5 repeats)" in result
-    assert "INFO" not in result  # grepped out
-    assert "lines omitted" not in result  # only 2 grep-matched lines → no truncation needed
+    assert "ERROR: timeout  (100 repeats)" in result  # first deduped line
+    assert "ERROR: retry  (5 repeats)" in result  # last deduped line
+    assert "lines omitted" in result  # 4 deduped lines → truncated
     assert orig_path is not None
 
 
@@ -182,7 +176,7 @@ async def test_token_filter_all_stages():
 async def test_token_filter_saves_original_content():
     out = "original content here\nsecond line"
     result, orig_path = await _token_filter_output(
-        out, dedup=True, grep=None, max_lines=None
+        out, dedup=True, max_lines=None
     )
     # Read the saved file
     import anyio
@@ -194,7 +188,7 @@ async def test_token_filter_saves_original_content():
 @pytest.mark.asyncio
 async def test_token_filter_empty_output():
     result, orig_path = await _token_filter_output(
-        "", dedup=True, grep="x", max_lines=10
+        "", dedup=True, max_lines=10
     )
     assert result == ""
     # When filter is active, original is saved even for empty output
@@ -206,7 +200,7 @@ async def test_token_filter_ansi_stripped_when_dedup_enabled():
     """ANSI escape codes are stripped via rich when dedup=True (merged behavior)."""
     out = "\x1B[31mHello\x1B[0m"
     result, orig_path = await _token_filter_output(
-        out, dedup=True, grep=None, max_lines=None
+        out, dedup=True, max_lines=None
     )
     assert result == "Hello"
     assert orig_path is not None  # dedup=True → filter active → original saved
@@ -217,7 +211,7 @@ async def test_token_filter_ansi_left_intact_when_dedup_disabled():
     """ANSI codes are left intact when dedup=False (ANSI stripping is merged with dedup)."""
     out = "\x1B[31mHello\x1B[0m"
     result, orig_path = await _token_filter_output(
-        out, dedup=False, grep=None, max_lines=None
+        out, dedup=False, max_lines=None
     )
     assert result == out  # unchanged
     assert orig_path is None
@@ -228,7 +222,7 @@ async def test_token_filter_ansi_no_ansi_unchanged():
     """dedup=True with no ANSI codes leaves plain text unchanged."""
     out = "plain text without any escape codes\nsecond line"
     result, orig_path = await _token_filter_output(
-        out, dedup=True, grep=None, max_lines=None
+        out, dedup=True, max_lines=None
     )
     assert result == out
     assert orig_path is not None
@@ -239,7 +233,7 @@ async def test_token_filter_ansi_stripped_before_dedup():
     """ANSI stripping runs BEFORE dedup, so same text with different ANSI wrappers collapses."""
     out = "\x1B[31mERROR\x1B[0m\n\x1B[32mERROR\x1B[0m\n\x1B[31mERROR\x1B[0m\n\x1B[32mERROR\x1B[0m"
     result, orig_path = await _token_filter_output(
-        out, dedup=True, grep=None, max_lines=None
+        out, dedup=True, max_lines=None
     )
     # After ANSI stripping, all 4 lines become "ERROR" -> dedup collapses to "ERROR  (4 repeats)"
     assert "ERROR  (4 repeats)" in result
@@ -253,7 +247,6 @@ def test_powershell_params_new_fields_defaults():
     p = PowershellParams(cmd="echo hi")
     assert p.dedup is True
     assert p.max_lines is None
-    assert p.grep is None
 
 
 def test_powershell_params_max_lines_min():
@@ -268,7 +261,6 @@ def test_bash_params_new_fields():
     p = BashParams(cmd="echo hi", dedup=False, max_lines=50)
     assert p.dedup is False
     assert p.max_lines == 50
-    assert p.grep is None
 
 
 def test_run_params_new_fields():
@@ -276,4 +268,4 @@ def test_run_params_new_fields():
     p = RunParams(command="echo hi", dedup=False, max_lines=50)
     assert p.dedup is False
     assert p.max_lines == 50
-    assert p.grep is None
+

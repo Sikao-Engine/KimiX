@@ -25,7 +25,6 @@ from kimix.tools.common import (
     _env_with_rg_bin_path,
     _extract_export_path,
     _maybe_export_output_async,
-    _save_and_filter_output,
     _summarize_long_output_async,
     _token_filter_output,
     ProcessTask,
@@ -176,10 +175,6 @@ class PowershellParams(BaseModel):
             "Optional regex pattern. After starting or sending input, the tool blocks up "
             "to 'timeout' seconds until the pattern appears in output."
         ),
-    )
-    grep: str | None = Field(
-        default=None,
-        description="Regex pattern to filter output lines. Original full output is always saved to a temp file.",
     )
     max_lines: int | None = Field(
         default=None,
@@ -483,11 +478,10 @@ class Powershell(CallableTool2[PowershellParams]):
         self, command: str, params: PowershellParams, output: str
     ) -> tuple[str, str | None, bool, str | None]:
         """Summarize/export long output. Returns (display_output, path, truncated, original_path)."""
-        # Run token filter pipeline (dedup, grep, truncate)
+        # Run token filter pipeline (dedup, truncate)
         output, original_path = await _token_filter_output(
             output,
             dedup=params.dedup,
-            grep=params.grep,
             max_lines=params.max_lines,
         )
         output_truncated = False

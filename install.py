@@ -164,6 +164,44 @@ def _install_ripgrep() -> tuple[bool, bool]:
         return False, False
 
 
+def _install_rtk() -> tuple[bool, bool]:
+    """Prompt for and install rtk if needed (cross-platform).
+
+    Returns (was_installed, should_restart_shell).
+    """
+    bin_name = "rtk.exe" if sys.platform == "win32" else "rtk"
+    if command_exists(bin_name):
+        print("✅ rtk is already installed, skipping.")
+        return False, False
+
+    if not _ask_yes_no("rtk (reasoning toolkit) was not found. Install rtk?"):
+        print("⏭️  Skipping rtk installation.")
+        return False, False
+
+    rtk_script = Path(__file__).parent / "scripts" / "install_rtk.py"
+    if not rtk_script.exists():
+        print(f"⚠️  install_rtk.py not found at {rtk_script}, skipping.")
+        return False, False
+
+    try:
+        scripts_dir = str(rtk_script.parent)
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import install_rtk
+
+        print("\n▶ Installing rtk ...")
+        result = install_rtk.install_rtk()
+        if result:
+            print(f"✅ rtk installed at {result}.")
+            return True, True
+        else:
+            print("⚠️  rtk installation was not successful (non-fatal).")
+            return False, False
+    except Exception as e:
+        print(f"⚠️  Could not install rtk: {e}")
+        return False, False
+
+
 def main() -> int:
     # 1. Check if python or uv exists
     has_python = command_exists("python") or command_exists("python3")
@@ -187,9 +225,10 @@ def main() -> int:
     coreutils_installed, cu_restart = _install_coreutils()
     git_installed, git_restart = _install_git()
     rg_installed, rg_restart = _install_ripgrep()
+    rtk_installed, rtk_restart = _install_rtk()
 
-    any_binary_installed = coreutils_installed or git_installed or rg_installed
-    needs_restart = cu_restart or git_restart or rg_restart
+    any_binary_installed = coreutils_installed or git_installed or rg_installed or rtk_installed
+    needs_restart = cu_restart or git_restart or rg_restart or rtk_restart
 
     if any_binary_installed and needs_restart:
         print(
