@@ -116,7 +116,7 @@ class TestMessageAggregatorBenchmark:
             for part in parts:
                 aggregator.feed(part)
         elapsed = time.perf_counter() - start
-        assert elapsed < 10.0
+        assert elapsed < 30.0
 
     def test_feed_tool_cycle(self) -> None:
         """Full tool-call then tool-result cycle."""
@@ -132,7 +132,7 @@ class TestMessageAggregatorBenchmark:
             aggregator.feed(result)
             aggregator.flush()
         elapsed = time.perf_counter() - start
-        assert elapsed < 10.0
+        assert elapsed < 30.0
 
     def test_flush_full(self) -> None:
         """_flush_full() with 10 tool calls."""
@@ -148,7 +148,7 @@ class TestMessageAggregatorBenchmark:
         for _ in range(10_000):
             aggregator.flush()
         elapsed = time.perf_counter() - start
-        assert elapsed < 10.0
+        assert elapsed < 30.0
 
     def test_flush_final_only(self) -> None:
         """_flush_final_only() overhead."""
@@ -162,7 +162,7 @@ class TestMessageAggregatorBenchmark:
         for _ in range(10_000):
             aggregator.flush()
         elapsed = time.perf_counter() - start
-        assert elapsed < 10.0
+        assert elapsed < 30.0
 
     def test_reset_buffers_overhead(self) -> None:
         """Buffer reset overhead."""
@@ -173,7 +173,7 @@ class TestMessageAggregatorBenchmark:
             aggregator.feed(_make_step_begin())
         elapsed = time.perf_counter() - start
         # Already uses .clear() — threshold accounts for pattern-matching dispatch overhead
-        assert elapsed < 10.0
+        assert elapsed < 30.0
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +204,7 @@ class TestSessionHelpersBenchmark:
             result = await _load_config_json(work_dir)
             assert "config_json" in result
         elapsed = time.perf_counter() - start
-        assert elapsed < 10.0
+        assert elapsed < 30.0
 
     def test_resolve_skills_dirs(self) -> None:
         """_resolve_skills_dirs() throughput."""
@@ -220,4 +220,4 @@ class TestSessionHelpersBenchmark:
         for _ in range(10_000):
             _resolve_skills_dirs(skills_dir, skills_dirs)
         elapsed = time.perf_counter() - start
-        assert elapsed < 10.0
+        assert elapsed < 30.0

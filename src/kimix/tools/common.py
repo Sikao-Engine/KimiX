@@ -358,23 +358,156 @@ def _apply_grep_filter(output: str, pattern: str) -> str:
         return output  # invalid pattern returns unfiltered output
 
 
+def _dedup_output(output: str, threshold: int = 3) -> str:
+    """Collapse identical repeated lines.
+
+    Lines appearing more than ``threshold`` times are collapsed:
+        "ERROR: timeout" x 500  ->  "ERROR: timeout  (500 repeats)"
+
+    The first occurrence of a repeated line is kept with the count annotation;
+    all subsequent duplicates are dropped. Unique lines and lines appearing
+    <= threshold times pass through unchanged. Line order is preserved.
+
+    Args:
+        output: The output string to deduplicate.
+        threshold: Minimum repeat count before collapsing (default 3).
+
+    Returns:
+        Deduplicated output string.
+    """
+    if not output:
+        return ""
+    lines = output.splitlines()
+    # Count occurrences per line (preserving original form)
+    from collections import Counter
+    counts = Counter(lines)
+    emitted: set[str] = set()
+    result: list[str] = []
+    for line in lines:
+        cnt = counts[line]
+        if cnt > threshold:
+            if line not in emitted:
+                emitted.add(line)
+                result.append(f"{line}  ({cnt} repeats)")
+        else:
+            result.append(line)
+    return "\n".join(result)
+
+
+def _truncate_lines(output: str, max_lines: int) -> str:
+    """Truncate to max_lines with head/tail fold.
+
+    Preserves first floor(max_lines/2) lines and last ceil(max_lines/2)-1 lines.
+    The middle is replaced with a fold marker indicating how many lines
+    were omitted and referencing the original file if available.
+
+    If total_lines <= max_lines, returns output unchanged.
+
+    Args:
+        output: The output string to truncate.
+        max_lines: Maximum number of lines to keep (min 3).
+
+    Returns:
+        Truncated output string with fold marker.
+    """
+    if not output or max_lines <= 0:
+        return output
+    lines = output.splitlines()
+    n = len(lines)
+    if n <= max_lines:
+        return output
+    head_n = max_lines // 2
+    tail_n = max_lines - head_n - 1  # -1 reserves one line for fold marker
+    omitted = n - head_n - tail_n
+    head = "\n".join(lines[:head_n])
+    tail = "\n".join(lines[-tail_n:]) if tail_n > 0 else ""
+    fold = f"\n\n[... {omitted} lines omitted ...]\n\n"
+    if tail:
+        return head + fold + tail
+    return head + fold
+
+
+async def _token_filter_output(
+    output: str,
+    *,
+    dedup: bool = True,
+    grep: str | None = None,
+    max_lines: int | None = None,
+) -> tuple[str, str | None]:
+    """Run the token filter pipeline on shell output.
+
+    Stages run in order:
+      1. Strip ANSI escape codes (via rich, merged with dedup step)
+      2. Save original to temp file (if any filter is active)
+      3. Dedup (collapse repeated lines, preceded by ANSI stripping when dedup=True)
+      4. Grep (filter by regex pattern)
+      5. Truncate (head/tail fold to max_lines)
+
+    Args:
+        output: Raw output string (ANSI already stripped by ProcessTask).
+        dedup: Enable line deduplication. When True, also strips ANSI via
+            ``rich.text.Text.from_ansi`` as a robust fallback for regex edge
+            cases (default True).
+        grep: Optional regex pattern to filter lines.
+        max_lines: Optional max line count for head/tail truncation.
+
+    Returns:
+        (filtered_output, original_path).
+        original_path is None if no filters were active.
+    """
+    # Determine if any filter is active
+    has_filter = (
+        (dedup is True) or
+        (grep is not None and grep != "") or
+        (max_lines is not None)
+    )
+
+    # Step 1: Strip ANSI escape codes (via rich, merged with dedup step)
+    # When dedup is enabled, first strip any remaining ANSI codes using rich's
+    # robust ANSI parser to catch edge cases the regex-based filter_output missed.
+    if dedup and output:
+        from rich.text import Text
+        output = Text.from_ansi(output).plain
+
+    # Step 2: Save original before any destructive transform
+    # Even if output is empty, save the file when a filter is active
+    # (backward compat with existing _save_and_filter_output behavior)
+    original_path: str | None = None
+    if has_filter:
+        original_path, _ = await _export_to_temp_file_async(
+            key=None, content=output, ext=".txt"
+        )
+
+    if not output:
+        return output, original_path
+
+    # Step 3: Dedup (preserves line order)
+    if dedup:
+        output = _dedup_output(output)
+
+    # Step 4: Grep (regex line filter)
+    if grep:
+        output = _apply_grep_filter(output, grep)
+
+    # Step 5: Truncate (head/tail fold)
+    if max_lines is not None:
+        output = _truncate_lines(output, max_lines)
+
+    return output, original_path
+
+
 async def _save_and_filter_output(
     output: str,
     grep: str | None = None,
 ) -> tuple[str, str | None]:
-    """Save original output to a temp file, then apply grep filter.
+    """Deprecated: use _token_filter_output instead.
+
+    Save original output to a temp file, then apply grep filter.
 
     Returns ``(filtered_output, original_file_path)``.
     When ``grep`` is None, returns ``(output, None)`` unchanged.
     """
-    if not grep:
-        return output, None
-    # Save original *before* filtering so the LLM can always access it.
-    original_path, _ = await _export_to_temp_file_async(
-        key=None, content=output, ext=".txt"
-    )
-    filtered = _apply_grep_filter(output, grep)
-    return filtered, original_path
+    return await _token_filter_output(output, dedup=False, grep=grep, max_lines=None)
 
 
 def _env_with_rg_bin_path(env: dict[str, str] | None = None) -> dict[str, str]:

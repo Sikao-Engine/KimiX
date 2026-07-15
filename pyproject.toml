@@ -31,6 +31,7 @@ dependencies = [
     "msgspec>=0.19.0",
     "uvloop>=0.22.1; sys_platform != 'win32'",
     "apsw>=3.45.0",
+    "rich>=13.0.0",         # Robust ANSI stripping fallback if regex edge cases surface
 ]
 
 [project.optional-dependencies]

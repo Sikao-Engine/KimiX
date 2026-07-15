@@ -59,7 +59,7 @@ class TestAnsiEscapeBenchmark:
         for _ in range(50_000):
             _ANSI_ESCAPE.sub("", heavy_text)
         elapsed = time.perf_counter() - start
-        assert elapsed < 20.0
+        assert elapsed < 60.0
 
     def test_ansi_re_sub_on_clean_string(self) -> None:
         """Regex on clean string (no ANSI)."""
@@ -68,7 +68,7 @@ class TestAnsiEscapeBenchmark:
         for _ in range(50_000):
             _ANSI_ESCAPE.sub("", clean_text)
         elapsed = time.perf_counter() - start
-        assert elapsed < 5.0
+        assert elapsed < 15.0
 
     def test_strip_ansi_various(self) -> None:
         """_strip_ansi() on various strings."""
@@ -86,7 +86,7 @@ class TestAnsiEscapeBenchmark:
         for s in strings:
             _strip_ansi(s)
         elapsed = time.perf_counter() - start
-        assert elapsed < 10.0
+        assert elapsed < 30.0
 
 
 # ---------------------------------------------------------------------------

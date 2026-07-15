@@ -183,21 +183,9 @@ def _sanitize_text(text: str) -> str:
     """
     text, placeholders = _extract_code(text)
 
-    # From normalize_encoding
+    # From normalize_encoding — NFKC converts full-width ASCII (U+FF01-U+FF5E)
+    # to half-width (U+0021-U+007E) and full-width space (U+3000) to regular space.
     text = unicodedata.normalize("NFKC", text)
-
-    # Full-width to half-width for remaining chars
-    result: list[str] = []
-    append = result.append
-    for ch in text:
-        code = ord(ch)
-        if _FULLWIDTH_START <= code <= _FULLWIDTH_END:
-            append(chr(code - _FULLWIDTH_OFFSET))
-        elif ch == _FULLWIDTH_SPACE:
-            append(" ")
-        else:
-            append(ch)
-    text = "".join(result)
 
     # Traditional to Simplified (optional)
     try:
@@ -211,7 +199,7 @@ def _sanitize_text(text: str) -> str:
     # From remove_meaningless_symbols
     trans = str.maketrans("", "", _ZW_CHARS)
     text = text.translate(trans)
-    text = _EMOJI_RE.sub("", text)
+    text = _remove_emoji(text)
     text = _REPEAT_PUNCT_RE.sub(r"\1", text)
     # From remove_redundant_whitespace – keep newlines, collapse horizontal
     # whitespace only.
@@ -273,27 +261,43 @@ def escape_file_paths(
 
 # ---- helpers for text cleaning ----
 
-_FULLWIDTH_SPACE = "\u3000"
-_FULLWIDTH_START = 0xFF01
-_FULLWIDTH_END = 0xFF5E
-_FULLWIDTH_OFFSET = 0xFEE0
+def _remove_emoji(text: str) -> str:
+    """Remove emoji characters using rich's emoji codepoint database.
 
-_EMOJI_RE = re.compile(
-    r"["
-    r"\U0001F600-\U0001F64F"
-    r"\U0001F300-\U0001F5FF"
-    r"\U0001F680-\U0001F6FF"
-    r"\U0001F700-\U0001F77F"
-    r"\U0001F780-\U0001F7FF"
-    r"\U0001F800-\U0001F8FF"
-    r"\U0001F900-\U0001F9FF"
-    r"\U0001FA00-\U0001FA6F"
-    r"\U0001FA70-\U0001FAFF"
-    r"\U00002702-\U000027B0"
-    r"\U000024C2"
-    r"\U0001F201-\U0001F251"
-    r"]+"
-)
+    Uses a lazily-built ``str.translate()`` table from
+    ``rich._emoji_codes.EMOJI``, covering all named emoji, regional
+    indicators, skin-tone modifiers, VS-16, and ZWJ — so multi-codepoint
+    sequences (flags, ZWJ families, skin-tone variants) are fully removed.
+
+    More maintainable than a hardcoded regex — the codepoint set auto-updates
+    when rich is upgraded.
+    """
+    if not text:
+        return text
+    if _EMOJI_TRANSLATE is None:
+        _init_emoji_translate()
+    return text.translate(_EMOJI_TRANSLATE)
+
+
+_EMOJI_TRANSLATE: dict[int, None] | None = None
+
+
+def _init_emoji_translate() -> None:
+    """Build the emoji-strip translate table from rich's emoji database.
+
+    Only codepoints >= 0x2000 are included to avoid stripping ASCII digits,
+    ``#``, ``*``, ``©``, ``®`` (which appear as base chars for keycap/sequence
+    emoji in rich's data but must not be removed from general text).
+    """
+    global _EMOJI_TRANSLATE
+    from rich._emoji_codes import EMOJI
+    codepoints: set[int] = set()
+    for char in EMOJI.values():
+        for c in char:
+            cp = ord(c)
+            if cp >= 0x2000:
+                codepoints.add(cp)
+    _EMOJI_TRANSLATE = {cp: None for cp in codepoints}
 
 _PUNCT_CHARS = r"!?.。，,、;；:：…~～·\"\"''（）()【】\[\]{}《》<>「」『』〖〗｛｝［］\\|｜—–―"
 _REPEAT_PUNCT_RE = re.compile(

@@ -18,6 +18,7 @@ from kimix.tools.common import (
     _export_to_temp_file_async,
     _save_and_filter_output,
     _summarize_long_output_async,
+    _token_filter_output,
     ProcessTask,
 )
 from kimi_cli.tools.display import ShellDisplayBlock
@@ -99,11 +100,6 @@ class RunParams(BaseModel):
         default=False,
         description="Run the process in the background and return immediately."
     )
-    max_output_length: int = Field(
-        default=65536,
-        ge=0,
-        description="Output length threshold. Exceeding it sends the output to an anonymous sub-agent for summarization. 0 disables."
-    )
     task_id: str | None = Field(
         default=None,
         description=(
@@ -121,6 +117,15 @@ class RunParams(BaseModel):
     grep: str | None = Field(
         default=None,
         description="Regex pattern to filter output lines. Original full output is always saved to a temp file.",
+    )
+    max_lines: int | None = Field(
+        default=None,
+        ge=3,
+        description="Max lines to return via head+tail fold. <N> head lines + <N> tail lines kept; middle collapsed. None = unlimited.",
+    )
+    dedup: bool = Field(
+        default=True,
+        description="Collapse identical repeated lines into '<line>  (N repeats)' form. Set False to disable.",
     )
 
 
@@ -362,18 +367,17 @@ class Run(CallableTool2[RunParams]):
                 # Get output
                 output = await task.stream.pop_output() if task.stream else ""
 
-                # Apply grep filter (if set) and save original to temp file
-                original_path: str | None = None
-                if params.grep:
-                    output, original_path = await _save_and_filter_output(output, params.grep)
+                # Apply token filter pipeline (dedup, grep, truncate)
+                output, original_path = await _token_filter_output(
+                    output,
+                    dedup=params.dedup,
+                    grep=params.grep,
+                    max_lines=params.max_lines,
+                )
 
                 # Optionally offload a very long output to a sub-agent
                 output_truncated = False
-                if (
-                    params.max_output_length > 0
-                    and len(output) > params.max_output_length
-                    and not params.output_path
-                ):
+                if len(output) > 65536 and not params.output_path:
                     output = await _summarize_long_output_async(
                         self._session, params.command, output
                     )
@@ -393,7 +397,7 @@ class Run(CallableTool2[RunParams]):
 
                 if not success:
                     if output and not params.output_path:
-                        if params.max_output_length > 0 and len(output) > params.max_output_length:
+                        if len(output) > 65536:
                             output = await _summarize_long_output_async(
                                 self._session, params.command, output
                             )
@@ -523,11 +527,15 @@ class Run(CallableTool2[RunParams]):
         self, params: RunParams, output: str
     ) -> tuple[str, str | None, bool, str | None]:
         """Summarize/export long output. Returns (display_output, path, truncated, original_path)."""
-        original_path: str | None = None
-        if params.grep:
-            output, original_path = await _save_and_filter_output(output, params.grep)
+        # Run token filter pipeline (dedup, grep, truncate)
+        output, original_path = await _token_filter_output(
+            output,
+            dedup=params.dedup,
+            grep=params.grep,
+            max_lines=params.max_lines,
+        )
         output_truncated = False
-        if params.max_output_length > 0 and len(output) > params.max_output_length:
+        if len(output) > 65536:
             output = await _summarize_long_output_async(
                 self._session, params.command, output
             )

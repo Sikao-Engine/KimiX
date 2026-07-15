@@ -27,6 +27,7 @@ from kimix.tools.common import (
     _maybe_export_output_async,
     _save_and_filter_output,
     _summarize_long_output_async,
+    _token_filter_output,
     ProcessTask,
 )
 
@@ -154,11 +155,6 @@ class PowershellParams(BaseModel):
         le=900,
         description="Timeout in seconds."
     )
-    max_output_length: int = Field(
-        default=65536,
-        ge=0,
-        description="Output length threshold. Exceeding it sends the output to an anonymous sub-agent for summarization. 0 disables."
-    )
     interactive: bool = Field(
         default=False,
         description=(
@@ -184,6 +180,15 @@ class PowershellParams(BaseModel):
     grep: str | None = Field(
         default=None,
         description="Regex pattern to filter output lines. Original full output is always saved to a temp file.",
+    )
+    max_lines: int | None = Field(
+        default=None,
+        ge=3,
+        description="Max lines to return via head+tail fold. <N> head lines + <N> tail lines kept; middle collapsed. None = unlimited.",
+    )
+    dedup: bool = Field(
+        default=True,
+        description="Collapse identical repeated lines into '<line>  (N repeats)' form. Set False to disable.",
     )
 
     @model_validator(mode="after")
@@ -478,11 +483,15 @@ class Powershell(CallableTool2[PowershellParams]):
         self, command: str, params: PowershellParams, output: str
     ) -> tuple[str, str | None, bool, str | None]:
         """Summarize/export long output. Returns (display_output, path, truncated, original_path)."""
-        original_path: str | None = None
-        if params.grep:
-            output, original_path = await _save_and_filter_output(output, params.grep)
+        # Run token filter pipeline (dedup, grep, truncate)
+        output, original_path = await _token_filter_output(
+            output,
+            dedup=params.dedup,
+            grep=params.grep,
+            max_lines=params.max_lines,
+        )
         output_truncated = False
-        if params.max_output_length > 0 and len(output) > params.max_output_length:
+        if len(output) > 65536:
             output = await _summarize_long_output_async(self._session, command, output)
             output_truncated = True
         output = await _maybe_export_output_async(output)
