@@ -14,8 +14,10 @@ from kimix.tools.common import (
     _build_session_output_block,
     _env_with_rg_bin_path,
     _extract_export_path,
+    _is_known_rtk_command,
     _maybe_export_output_async,
     _export_to_temp_file_async,
+    _rtk_binary_path,
     _summarize_long_output_async,
     _token_filter_output,
     ProcessTask,
@@ -118,9 +120,9 @@ class RunParams(BaseModel):
         ge=3,
         description="Max lines to return via head+tail fold. <N> head lines + <N> tail lines kept; middle collapsed. None = unlimited.",
     )
-    dedup: bool = Field(
+    token_kill: bool = Field(
         default=True,
-        description="Collapse identical repeated lines into '<line>  (N repeats)' form. Set False to disable.",
+        description="Run known commands through token killer when available.",
     )
 
 
@@ -222,12 +224,6 @@ class Run(CallableTool2[RunParams]):
             args_list = list(args_raw)
 
         try:
-            display_args = [
-                arg[:100] + '...' if len(arg) > 100 else arg for arg in args_list]
-            cmd_str = shlex.join([executable] + display_args)
-            display_cmd = executable if len(
-                cmd_str) > _HUGE_CMD_THRESHOLD else cmd_str
-
             # Check forbidden commands (pre-normalized in __init__)
             if self._forbidden_keywords:
                 full_cmd = params.command
@@ -270,6 +266,26 @@ class Run(CallableTool2[RunParams]):
                     message=error_msg,
                     brief='Bash not supported.'
                 )
+
+            # Rewrite known commands through RTK using the share-bin binary only.
+            rtk_rewritten = False
+            rtk_path = _rtk_binary_path()
+            if (
+                params.token_kill
+                and rtk_path is not None
+                and _is_known_rtk_command(Path(executable).stem)
+                and executable not in ("rtk", "rtk.exe")
+            ):
+                args_list = [executable] + args_list
+                executable = str(rtk_path)
+                rtk_rewritten = True
+
+            display_executable = "rtk" if rtk_rewritten else executable
+            display_args = [
+                arg[:100] + '...' if len(arg) > 100 else arg for arg in args_list]
+            cmd_str = shlex.join([display_executable] + display_args)
+            display_cmd = display_executable if len(
+                cmd_str) > _HUGE_CMD_THRESHOLD else cmd_str
 
             # Handle extremely long python -c scripts via temp file (Windows CreateProcessW ~32767 limit)
             if is_py:
@@ -320,12 +336,13 @@ class Run(CallableTool2[RunParams]):
                         return await self._format_session_result(
                             task_id, task.stream, params, output, "running",
                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-                            message=f"`{display_cmd}` running in background. task_id: `{task_id}`.",
+                            message=(f"[rtk] `{display_cmd}` running in background. task_id: `{task_id}`." if rtk_rewritten else f"`{display_cmd}` running in background. task_id: `{task_id}`."),
                             brief="Background task started",
+                            rtk_rewritten=rtk_rewritten,
                         )
                     return ToolOk(
                         output="",
-                        message=f"`{display_cmd}` running in background. task_id: `{task_id}`. Use `TaskOutput` tool to retrieve output.",
+                        message=(f"[rtk] `{display_cmd}` running in background. task_id: `{task_id}`. Use `TaskOutput` tool to retrieve output." if rtk_rewritten else f"`{display_cmd}` running in background. task_id: `{task_id}`. Use `TaskOutput` tool to retrieve output."),
                         brief="Background task started",
                         display_block=ShellDisplayBlock(
                             language="shell", command=display_cmd),
@@ -340,8 +357,9 @@ class Run(CallableTool2[RunParams]):
                         return await self._format_session_result(
                             task_id, task.stream, params, output, "running",
                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-                            message=f"`{display_cmd}` matched pattern and is still running.",
+                            message=(f"[rtk] `{display_cmd}` matched pattern and is still running." if rtk_rewritten else f"`{display_cmd}` matched pattern and is still running."),
                             brief="Pattern matched",
+                            rtk_rewritten=rtk_rewritten,
                         )
                 else:
                     wait_timeout = params.timeout
@@ -365,8 +383,9 @@ class Run(CallableTool2[RunParams]):
                 # Apply token filter pipeline (dedup, truncate)
                 output, original_path = await _token_filter_output(
                     output,
-                    dedup=params.dedup,
+                    token_kill=params.token_kill,
                     max_lines=params.max_lines,
+                    rtk_rewritten=rtk_rewritten,
                 )
 
                 # Optionally offload a very long output to a sub-agent
@@ -414,7 +433,7 @@ class Run(CallableTool2[RunParams]):
                     )
                     return ToolError(
                         output=block,
-                        message=f"`{display_cmd}` failed",
+                        message=(f"[rtk] `{display_cmd}` failed" if rtk_rewritten else f"`{display_cmd}` failed"),
                         brief="Command execution failed",
                     )
 
@@ -434,7 +453,7 @@ class Run(CallableTool2[RunParams]):
                 )
                 return ToolOk(
                     output=block,
-                    message=f"`{display_cmd}` success",
+                    message=(f"[rtk] `{display_cmd}` success" if rtk_rewritten else f"`{display_cmd}` success"),
                     brief="Command executed successfully",
                     display_block=ShellDisplayBlock(
                         language="shell", command=display_cmd),
@@ -518,14 +537,15 @@ class Run(CallableTool2[RunParams]):
         )
 
     async def _process_output(
-        self, params: RunParams, output: str
+        self, params: RunParams, output: str, rtk_rewritten: bool = False
     ) -> tuple[str, str | None, bool, str | None]:
         """Summarize/export long output. Returns (display_output, path, truncated, original_path)."""
         # Run token filter pipeline (dedup, truncate)
         output, original_path = await _token_filter_output(
             output,
-            dedup=params.dedup,
+            token_kill=params.token_kill,
             max_lines=params.max_lines,
+            rtk_rewritten=rtk_rewritten,
         )
         output_truncated = False
         if len(output) > 65536:
@@ -549,9 +569,12 @@ class Run(CallableTool2[RunParams]):
         elapsed_seconds: float | None,
         message: str,
         brief: str,
+        rtk_rewritten: bool = False,
     ) -> ToolReturnValue:
         """Build a ToolOk response with a structured output block."""
-        processed, output_path, output_truncated, original_path = await self._process_output(params, output)
+        processed, output_path, output_truncated, original_path = await self._process_output(
+            params, output, rtk_rewritten=rtk_rewritten
+        )
         block = _build_session_output_block(
             task_id=task_id,
             status=status,

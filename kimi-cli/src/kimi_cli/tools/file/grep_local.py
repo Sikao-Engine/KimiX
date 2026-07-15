@@ -33,7 +33,6 @@ from kosong.tooling import (
 )
 from pydantic import BaseModel, Field, field_validator
 
-import kimi_cli
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.utils import ToolResultBuilder
@@ -179,19 +178,14 @@ def _rg_binary_name() -> str:
 
 
 def _find_existing_rg(bin_name: str) -> Path | None:
-    """Find rg binary: share dir, bundled deps, then PATH."""
+    """Find rg binary in the share bin directory only.
+
+    The global PATH rg is intentionally ignored because it can be broken or
+    incompatible; Kimi always uses the binary it manages in ``share/bin``.
+    """
     share_bin = get_share_dir() / "bin" / bin_name
     if share_bin.is_file():
         return share_bin
-
-    assert kimi_cli.__file__ is not None
-    local_dep = Path(kimi_cli.__file__).parent / "deps" / "bin" / bin_name
-    if local_dep.is_file():
-        return local_dep
-
-    system_rg = shutil.which("rg")
-    if system_rg:
-        return Path(system_rg)
 
     return None
 

@@ -25,6 +25,7 @@ from kimix.tools.common import (
     _env_with_rg_bin_path,
     _extract_export_path,
     _maybe_export_output_async,
+    _maybe_rewrite_shell_command_with_rtk,
     _summarize_long_output_async,
     _token_filter_output,
     ProcessTask,
@@ -588,9 +589,9 @@ class BashParams(BaseModel):
         ge=3,
         description="Max lines to return via head+tail fold. <N> head lines + <N> tail lines kept; middle collapsed. None = unlimited.",
     )
-    dedup: bool = Field(
+    token_kill: bool = Field(
         default=True,
-        description="Collapse identical repeated lines into '<line>  (N repeats)' form. Set False to disable.",
+        description="Run known commands through token killer when available.",
     )
 
     @model_validator(mode="after")
@@ -676,9 +677,13 @@ class Bash(CallableTool2[BashParams]):
             refresh_env_from_registry()
 
         if params.interactive:
+            rtk_rewritten = False
             if params.cmd:
                 safe_cmd = _prepare_bash_cmd(params.cmd)
-                bash_args = ["-c", safe_cmd + "; exec bash -i"]
+                rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
+                    safe_cmd, params.token_kill, exclude_read=True
+                )
+                bash_args = ["-c", rtk_cmd + "; exec bash -i"]
             else:
                 bash_args = ["-i"]
             process_task = ProcessTask(self._bash, bash_args, None, _env_with_rg_bin_path(), append_newline=True)
@@ -713,7 +718,10 @@ class Bash(CallableTool2[BashParams]):
         # Build the command line to pass to bash -c
         # On Windows, escape backslashes so bash preserves them in paths.
         safe_cmd = _prepare_bash_cmd(params.cmd)
-        process_task = ProcessTask(self._bash, ["-c", safe_cmd], None, _env_with_rg_bin_path())
+        rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
+            safe_cmd, params.token_kill, exclude_read=True
+        )
+        process_task = ProcessTask(self._bash, ["-c", rtk_cmd], None, _env_with_rg_bin_path())
         task_id = await process_task.start(self._session, "bash")
 
         wait_matched: bool | None = None
@@ -766,7 +774,9 @@ class Bash(CallableTool2[BashParams]):
         success = await process_task.stream.success() if process_task.stream else False
 
         if not success:
-            processed, output_path, output_truncated, original_path = await self._process_output(params, output)
+            processed, output_path, output_truncated, original_path = await self._process_output(
+                params, output, rtk_rewritten=rtk_rewritten
+            )
             block = _build_session_output_block(
                 task_id=task_id,
                 status="completed",
@@ -780,7 +790,9 @@ class Bash(CallableTool2[BashParams]):
             )
             return ToolError(output=block, message=f"`{params.cmd}` failed", brief="Command execution failed")
 
-        processed, output_path, output_truncated, original_path = await self._process_output(params, output)
+        processed, output_path, output_truncated, original_path = await self._process_output(
+            params, output, rtk_rewritten=rtk_rewritten
+        )
         block = _build_session_output_block(
             task_id=task_id,
             status="completed",
@@ -794,7 +806,7 @@ class Bash(CallableTool2[BashParams]):
         )
         return ToolOk(
             output=block,
-            message=f'`{params.cmd}` success',
+            message=(f"[rtk] `{params.cmd}` success" if rtk_rewritten else f"`{params.cmd}` success"),
             brief="Command executed successfully",
             display_block=ShellDisplayBlock(language="shell", command=params.cmd),
         )
@@ -842,7 +854,10 @@ class Bash(CallableTool2[BashParams]):
         # Discard prior output so we only report new output produced after this input.
         await stream.pop_output()
 
-        input_text = params.cmd
+        rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
+            params.cmd, params.token_kill, exclude_read=True
+        )
+        input_text = rtk_cmd
         if not input_text.endswith("\n"):
             input_text += "\n"
         if not await stream.input(input_text):
@@ -862,19 +877,21 @@ class Bash(CallableTool2[BashParams]):
         return await self._format_session_result(
             task_id, stream, params, output, status,
             wait_matched=matched, elapsed_seconds=elapsed,
-            message=f"Data sent to `{task_id}`. Status: {status}.",
+            message=(f"[rtk] Data sent to `{task_id}`. Status: {status}." if rtk_rewritten else f"Data sent to `{task_id}`. Status: {status}."),
             brief="Data sent and output retrieved",
+            rtk_rewritten=rtk_rewritten,
         )
 
     async def _process_output(
-        self, params: BashParams, output: str
+        self, params: BashParams, output: str, rtk_rewritten: bool = False
     ) -> tuple[str, str | None, bool, str | None]:
         """Summarize/export long output. Returns (display_output, path, truncated, original_path)."""
         # Run token filter pipeline (dedup, truncate)
         output, original_path = await _token_filter_output(
             output,
-            dedup=params.dedup,
+            token_kill=params.token_kill,
             max_lines=params.max_lines,
+            rtk_rewritten=rtk_rewritten,
         )
         output_truncated = False
         if len(output) > 65536:
@@ -896,9 +913,12 @@ class Bash(CallableTool2[BashParams]):
         elapsed_seconds: float | None,
         message: str,
         brief: str,
+        rtk_rewritten: bool = False,
     ) -> ToolReturnValue:
         """Build a ToolOk response with a structured output block."""
-        processed, output_path, output_truncated, original_path = await self._process_output(params, output)
+        processed, output_path, output_truncated, original_path = await self._process_output(
+            params, output, rtk_rewritten=rtk_rewritten
+        )
         block = _build_session_output_block(
             task_id=task_id,
             status=status,

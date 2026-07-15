@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Install script for the project using uv."""
 
+import os
 import shutil
 import subprocess
 import sys
@@ -126,14 +127,23 @@ def _install_git() -> tuple[bool, bool]:
         return False, False
 
 
+def _shared_bin_path(bin_name: str) -> Path:
+    """Return the expected shared bin path for *bin_name*."""
+    if share_dir := os.getenv("KIMI_SHARE_DIR"):
+        return Path(share_dir) / "bin" / bin_name
+    return Path.home() / ".kimi" / "bin" / bin_name
+
+
 def _install_ripgrep() -> tuple[bool, bool]:
     """Prompt for and install ripgrep if needed (cross-platform).
 
     Returns (was_installed, should_restart_shell).
     """
     bin_name = "rg.exe" if sys.platform == "win32" else "rg"
-    if command_exists(bin_name):
-        print("✅ Ripgrep is already installed, skipping.")
+    share_bin = _shared_bin_path(bin_name)
+
+    if share_bin.is_file():
+        print("✅ Ripgrep is already installed in shared bin, skipping.")
         return False, False
 
     if not _ask_yes_no("Ripgrep was not found. Install Ripgrep?"):
@@ -170,8 +180,10 @@ def _install_rtk() -> tuple[bool, bool]:
     Returns (was_installed, should_restart_shell).
     """
     bin_name = "rtk.exe" if sys.platform == "win32" else "rtk"
-    if command_exists(bin_name):
-        print("✅ rtk is already installed, skipping.")
+    share_bin = _shared_bin_path(bin_name)
+
+    if share_bin.is_file():
+        print("✅ rtk is already installed in shared bin, skipping.")
         return False, False
 
     if not _ask_yes_no("rtk (reasoning toolkit) was not found. Install rtk?"):

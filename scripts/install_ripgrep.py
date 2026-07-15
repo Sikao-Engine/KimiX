@@ -89,51 +89,6 @@ def _download_file(url: str, dest: Path) -> None:
     print()  # newline after progress
 
 
-def _ensure_in_user_path(dirpath: str) -> None:
-    """Add *dirpath* to the current user's PATH environment variable (persistent).
-
-    Updates both the registry (Windows, for new processes) and the current
-    process's ``os.environ`` so that ``shutil.which`` picks it up immediately.
-    """
-    # --- current process (immediate) ---
-    current_path = os.environ.get("PATH", "")
-    current_entries = [p.strip() for p in current_path.split(os.pathsep) if p.strip()]
-    if dirpath not in current_entries:
-        current_entries.append(dirpath)
-        os.environ["PATH"] = os.pathsep.join(current_entries)
-
-    # --- registry (persistent, Windows only) ---
-    if sys.platform != "win32":
-        return
-
-    import winreg
-
-    try:
-        key = winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Environment",
-            0,
-            winreg.KEY_READ | winreg.KEY_WRITE,
-        )
-    except FileNotFoundError:
-        return
-
-    try:
-        path_val, _ = winreg.QueryValueEx(key, "Path")
-    except FileNotFoundError:
-        path_val = ""
-
-    entries = [p.strip() for p in path_val.split(";") if p.strip()]
-    if dirpath in entries:
-        winreg.CloseKey(key)
-        return
-
-    entries.append(dirpath)
-    new_path = ";".join(entries)
-    winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, new_path)
-    winreg.CloseKey(key)
-
-
 # ---------------------------------------------------------------------------
 # public API
 # ---------------------------------------------------------------------------
@@ -164,13 +119,6 @@ def install_ripgrep(
     # Already installed in the target directory?
     if destination.is_file():
         print(f"Ripgrep is already installed at {destination}.")
-        _ensure_in_user_path(str(target_dir))
-        return str(target_dir)
-
-    # Already on PATH?  Still add target dir so the share binary takes priority.
-    if shutil.which(bin_name):
-        print(f"Ripgrep is already on PATH ({shutil.which(bin_name)}).")
-        _ensure_in_user_path(str(target_dir))
         return str(target_dir)
 
     target = _detect_target()
@@ -225,7 +173,6 @@ def install_ripgrep(
         return None
 
     destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    _ensure_in_user_path(str(target_dir))
     print(f"Ripgrep installed at {destination}.")
     return str(target_dir)
 

@@ -1611,6 +1611,89 @@ class TestBashInteractiveArgumentBuilding:
 
 
 # ============================================================================
+# RTK rewrite path
+# ============================================================================
+
+class TestBashRtkRewrite:
+    @pytest.fixture
+    def mock_session(self) -> MagicMock:
+        session = MagicMock(spec=Session)
+        session.custom_data = {}
+        session.custom_config.get.return_value = {}
+        return session
+
+    async def test_bash_rewrites_known_command_when_rtk_available(
+        self, mock_session: MagicMock
+    ) -> None:
+        with patch(
+            "kimix.tools.common._rtk_available", return_value=True
+        ), patch(
+            "kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"
+        ), patch(
+            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        ):
+            bash = Bash(session=mock_session)
+
+            with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+                mock_instance = MagicMock()
+                mock_instance.start = MagicMock(return_value=asyncio.Future())
+                mock_instance.start.return_value.set_result("bash-rtk-id")
+                mock_instance.wait = MagicMock(return_value=asyncio.Future())
+                mock_instance.wait.return_value.set_result(None)
+                mock_instance.wait_with_monitor = MagicMock(return_value=asyncio.Future())
+                mock_instance.wait_with_monitor.return_value.set_result((False, 0.0, False))
+                mock_instance.thread_is_alive = MagicMock(return_value=asyncio.Future())
+                mock_instance.thread_is_alive.return_value.set_result(False)
+                mock_instance.stream = MagicMock()
+                mock_instance.stream.pop_output = MagicMock(return_value=asyncio.Future())
+                mock_instance.stream.pop_output.return_value.set_result("mock output")
+                mock_instance.stream.success = MagicMock(return_value=asyncio.Future())
+                mock_instance.stream.success.return_value.set_result(True)
+                mock_pt.return_value = mock_instance
+
+                params = BashParams(cmd="git status")
+                result = await bash(params)
+
+                assert isinstance(result, ToolOk)
+                args = mock_pt.call_args
+                assert args[0][1] == ["-c", "rtk git status"]
+
+    async def test_bash_read_builtin_not_rewritten(
+        self, mock_session: MagicMock
+    ) -> None:
+        with patch("kimix.tools.common._rtk_available", return_value=True), patch(
+            "kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"
+        ), patch(
+            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        ):
+            bash = Bash(session=mock_session)
+
+        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+            mock_instance = MagicMock()
+            mock_instance.start = MagicMock(return_value=asyncio.Future())
+            mock_instance.start.return_value.set_result("bash-read-id")
+            mock_instance.wait = MagicMock(return_value=asyncio.Future())
+            mock_instance.wait.return_value.set_result(None)
+            mock_instance.wait_with_monitor = MagicMock(return_value=asyncio.Future())
+            mock_instance.wait_with_monitor.return_value.set_result((False, 0.0, False))
+            mock_instance.thread_is_alive = MagicMock(return_value=asyncio.Future())
+            mock_instance.thread_is_alive.return_value.set_result(False)
+            mock_instance.stream = MagicMock()
+            mock_instance.stream.pop_output = MagicMock(return_value=asyncio.Future())
+            mock_instance.stream.pop_output.return_value.set_result("mock output")
+            mock_instance.stream.success = MagicMock(return_value=asyncio.Future())
+            mock_instance.stream.success.return_value.set_result(True)
+            mock_pt.return_value = mock_instance
+
+            params = BashParams(cmd="read var")
+            result = await bash(params)
+
+            assert isinstance(result, ToolOk)
+            args = mock_pt.call_args
+            assert args[0][1] == ["-c", "read var"]
+
+
+# ============================================================================
 # Bash session continuation / wait_for_pattern
 # ============================================================================
 

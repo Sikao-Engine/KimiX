@@ -25,6 +25,7 @@ from kimix.tools.common import (
     _env_with_rg_bin_path,
     _extract_export_path,
     _maybe_export_output_async,
+    _maybe_rewrite_shell_command_with_rtk,
     _summarize_long_output_async,
     _token_filter_output,
     ProcessTask,
@@ -181,9 +182,9 @@ class PowershellParams(BaseModel):
         ge=3,
         description="Max lines to return via head+tail fold. <N> head lines + <N> tail lines kept; middle collapsed. None = unlimited.",
     )
-    dedup: bool = Field(
+    token_kill: bool = Field(
         default=True,
-        description="Collapse identical repeated lines into '<line>  (N repeats)' form. Set False to disable.",
+        description="Run known commands through token killer when available.",
     )
 
     @model_validator(mode="after")
@@ -251,14 +252,18 @@ class Powershell(CallableTool2[PowershellParams]):
                 brief="Empty command",
             )
 
+        # Rewrite known commands through RTK before any PS5.1 syntax transform.
+        rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
+            params.cmd, params.token_kill
+        )
         if self._pwsh_path is not None:
             # PowerShell 7 is available: run the command as-is without syntax transforms.
-            cmd = params.cmd
+            cmd = rtk_cmd
             transform_warning = ""
             executable = self._pwsh_path
         else:
             # Fall back to Windows PowerShell 5.1 and downgrade PS7 syntax.
-            cmd, transform_warnings = pwsh_transform(params.cmd)
+            cmd, transform_warnings = pwsh_transform(rtk_cmd)
             transform_warning = ""
             if transform_warnings:
                 warning_lines = "\n".join(w for w in transform_warnings)
@@ -375,7 +380,9 @@ class Powershell(CallableTool2[PowershellParams]):
         success = await process_task.stream.success() if process_task.stream else False
 
         if not success:
-            processed, output_path, output_truncated, original_path = await self._process_output(cmd, params, output)
+            processed, output_path, output_truncated, original_path = await self._process_output(
+                cmd, params, output, rtk_rewritten=rtk_rewritten
+            )
             block = _build_session_output_block(
                 task_id=task_id,
                 status="completed",
@@ -389,7 +396,9 @@ class Powershell(CallableTool2[PowershellParams]):
             )
             return ToolError(output=block, message=f"`{cmd}` failed." + transform_warning, brief="Command execution failed")
 
-        processed, output_path, output_truncated, original_path = await self._process_output(cmd, params, output)
+        processed, output_path, output_truncated, original_path = await self._process_output(
+            cmd, params, output, rtk_rewritten=rtk_rewritten
+        )
         block = _build_session_output_block(
             task_id=task_id,
             status="completed",
@@ -403,7 +412,7 @@ class Powershell(CallableTool2[PowershellParams]):
         )
         return ToolOk(
             output=block,
-            message=f'`{cmd}` success.' + transform_warning,
+            message=(f"[rtk] `{cmd}` success." if rtk_rewritten else f"`{cmd}` success.") + transform_warning,
             brief=f"Command executed successfully",
             display_block=ShellDisplayBlock(language="powershell", command=cmd),
         )
@@ -450,7 +459,10 @@ class Powershell(CallableTool2[PowershellParams]):
 
         await stream.pop_output()
 
-        input_text = params.cmd
+        rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
+            params.cmd, params.token_kill
+        )
+        input_text = rtk_cmd
         if not input_text.endswith("\n"):
             input_text += "\n"
         if not await stream.input(input_text):
@@ -470,19 +482,21 @@ class Powershell(CallableTool2[PowershellParams]):
         return await self._format_session_result(
             task_id, stream, params, output, status,
             wait_matched=matched, elapsed_seconds=elapsed,
-            message=f"Data sent to `{task_id}`. Status: {status}.",
+            message=(f"[rtk] Data sent to `{task_id}`. Status: {status}." if rtk_rewritten else f"Data sent to `{task_id}`. Status: {status}."),
             brief="Data sent and output retrieved",
+            rtk_rewritten=rtk_rewritten,
         )
 
     async def _process_output(
-        self, command: str, params: PowershellParams, output: str
+        self, command: str, params: PowershellParams, output: str, rtk_rewritten: bool = False
     ) -> tuple[str, str | None, bool, str | None]:
         """Summarize/export long output. Returns (display_output, path, truncated, original_path)."""
         # Run token filter pipeline (dedup, truncate)
         output, original_path = await _token_filter_output(
             output,
-            dedup=params.dedup,
+            token_kill=params.token_kill,
             max_lines=params.max_lines,
+            rtk_rewritten=rtk_rewritten,
         )
         output_truncated = False
         if len(output) > 65536:
@@ -504,9 +518,12 @@ class Powershell(CallableTool2[PowershellParams]):
         elapsed_seconds: float | None,
         message: str,
         brief: str,
+        rtk_rewritten: bool = False,
     ) -> ToolReturnValue:
         """Build a ToolOk response with a structured output block."""
-        processed, output_path, output_truncated, original_path = await self._process_output(params.cmd, params, output)
+        processed, output_path, output_truncated, original_path = await self._process_output(
+            params.cmd, params, output, rtk_rewritten=rtk_rewritten
+        )
         block = _build_session_output_block(
             task_id=task_id,
             status=status,

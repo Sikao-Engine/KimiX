@@ -1,6 +1,7 @@
 import asyncio
 import atexit
 import codecs
+import functools
 import io
 import os
 import regex as re
@@ -39,6 +40,102 @@ def _find_error_line_index(output: str) -> int | None:
         if _ERROR_PATTERN.search(line):
             return idx
     return None
+
+
+# RTK (token killer) supported top-level commands.  Subcommands are handled by
+# RTK itself, so matching the executable name is sufficient.
+_RTK_KNOWN_COMMANDS: frozenset[str] = frozenset(
+    [
+        # File
+        "ls",
+        "tree",
+        "read",
+        "smart",
+        "find",
+        "grep",
+        "rg",
+        "diff",
+        "wc",
+        "json",
+        "log",
+        "env",
+        "deps",
+        # Git
+        "git",
+        # Rust
+        "cargo",
+        # JS/TS
+        "vitest",
+        "jest",
+        "tsc",
+        "lint",
+        "prettier",
+        "format",
+        "next",
+        "prisma",
+        "playwright",
+        "npm",
+        "npx",
+        "pnpm",
+        # Python
+        "pytest",
+        "ruff",
+        "mypy",
+        "pip",
+        "uv",
+        # Go
+        "go",
+        "golangci-lint",
+        # Ruby
+        "rspec",
+        "rubocop",
+        "rake",
+        # .NET
+        "dotnet",
+        # Docker/K8s
+        "docker",
+        "kubectl",
+        "oc",
+        # Cloud/CLI
+        "aws",
+        "gh",
+        "glab",
+        "gt",
+        "curl",
+        "wget",
+        "psql",
+        # Other
+        "php",
+        "phpunit",
+        "phpstan",
+        "pest",
+        "paratest",
+        "ecs",
+        "pint",
+        "gradlew",
+        "mvn",
+    ]
+)
+
+
+def _rtk_binary_path() -> Path | None:
+    """Return the path to the RTK binary in the share ``bin`` directory, if present."""
+    from kimi_cli.share import get_share_dir
+    bin_name = "rtk.exe" if os.name == "nt" else "rtk"
+    candidate = get_share_dir() / "bin" / bin_name
+    return candidate if candidate.is_file() else None
+
+
+@functools.lru_cache(maxsize=1)
+def _rtk_available() -> bool:
+    return _rtk_binary_path() is not None
+
+
+def _is_known_rtk_command(name: str) -> bool:
+    # Strip Windows .exe extension before lookup, then normalize case.
+    if name.lower().endswith(".exe"):
+        name = name[:-4]
+    return name.lower() in _RTK_KNOWN_COMMANDS
 
 
 # ANSI escape sequences (colored text, cursor movement, OSC/DCS/PM/APC strings)
@@ -411,41 +508,367 @@ def _truncate_lines(output: str, max_lines: int) -> str:
     return head + fold
 
 
+def _find_ansi_c_end(cmd: str, start: int) -> int:
+    """Return the index AFTER the closing ``'`` of a ``$'...'`` region."""
+    i = start
+    length = len(cmd)
+    while i < length:
+        c = cmd[i]
+        if c == "\\" and i + 1 < length:
+            i += 2
+        elif c == "'":
+            return i + 1
+        else:
+            i += 1
+    return -1
+
+
+def _find_backtick_end(cmd: str, start: int) -> int:
+    """Return the index AFTER the closing backtick of a `` `...` `` region."""
+    i = start
+    length = len(cmd)
+    while i < length:
+        c = cmd[i]
+        if c == "\\" and i + 1 < length:
+            i += 2
+        elif c == "`":
+            return i + 1
+        else:
+            i += 1
+    return -1
+
+
+def _find_dq_end(cmd: str, start: int) -> int:
+    """Return the index AFTER the closing ``"`` of a double-quoted region."""
+    i = start
+    length = len(cmd)
+    while i < length:
+        c = cmd[i]
+        if c == "\\" and i + 1 < length and cmd[i + 1] in ('"', "\\", "$", "`"):
+            i += 2
+        elif c == '"':
+            return i + 1
+        elif c == "$" and i + 1 < length and cmd[i + 1] == "(":
+            end = _find_matching_paren(cmd, i + 1)
+            if end == -1:
+                return -1
+            i = end + 1
+        elif c == "$" and i + 1 < length and cmd[i + 1] == "'":
+            end = _find_ansi_c_end(cmd, i + 2)
+            if end == -1:
+                return -1
+            i = end
+        elif c == "`":
+            end = _find_backtick_end(cmd, i + 1)
+            if end == -1:
+                return -1
+            i = end
+        else:
+            i += 1
+    return -1
+
+
+def _find_matching_paren(cmd: str, open_pos: int) -> int:
+    """Return the index of the ``)`` matching the ``(`` at ``cmd[open_pos]``."""
+    assert cmd[open_pos] == "("
+    depth = 1
+    i = open_pos + 1
+    length = len(cmd)
+    while i < length:
+        c = cmd[i]
+        if c == "'":
+            end = cmd.find("'", i + 1)
+            if end == -1:
+                return -1
+            i = end + 1
+        elif c == '"':
+            end = _find_dq_end(cmd, i + 1)
+            if end == -1:
+                return -1
+            i = end
+        elif c == "`":
+            end = _find_backtick_end(cmd, i + 1)
+            if end == -1:
+                return -1
+            i = end
+        elif c == "$" and i + 1 < length and cmd[i + 1] == "'":
+            end = _find_ansi_c_end(cmd, i + 2)
+            if end == -1:
+                return -1
+            i = end
+        elif c == "$" and i + 1 < length and cmd[i + 1] == "(":
+            depth += 1
+            i += 2
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+            i += 1
+        else:
+            i += 1
+    return -1
+
+
+def _split_shell_segments(command: str) -> list[tuple[str, str]]:
+    """Split a shell command on ``;``, ``&&``, ``||``, and ``|``.
+
+    Quoted regions and command substitutions are protected so that separators
+    inside them do not create spurious segments.  A single ``&`` (background)
+    is left inside its segment.
+    """
+    segments: list[tuple[str, str]] = []
+    current: list[str] = []
+    i = 0
+    n = len(command)
+    while i < n:
+        c = command[i]
+        if c == "'":
+            end = command.find("'", i + 1)
+            if end == -1:
+                current.append(command[i:])
+                i = n
+                continue
+            current.append(command[i : end + 1])
+            i = end + 1
+        elif c == '"':
+            end = _find_dq_end(command, i + 1)
+            if end == -1:
+                current.append(command[i:])
+                i = n
+                continue
+            current.append(command[i:end])
+            i = end
+        elif c == "$" and i + 1 < n and command[i + 1] == "'":
+            end = _find_ansi_c_end(command, i + 2)
+            if end == -1:
+                current.append(command[i:])
+                i = n
+                continue
+            current.append(command[i:end])
+            i = end
+        elif c == "$" and i + 1 < n and command[i + 1] == "(":
+            end = _find_matching_paren(command, i + 1)
+            if end == -1:
+                current.append(command[i:])
+                i = n
+                continue
+            current.append(command[i : end + 1])
+            i = end + 1
+        elif c == "`":
+            end = _find_backtick_end(command, i + 1)
+            if end == -1:
+                current.append(command[i:])
+                i = n
+                continue
+            current.append(command[i:end])
+            i = end
+        elif c == ";":
+            segments.append(("".join(current), ";"))
+            current = []
+            i += 1
+        elif c == "|":
+            if i + 1 < n and command[i + 1] == "|":
+                segments.append(("".join(current), "||"))
+                current = []
+                i += 2
+            else:
+                # Keep single `|` inside the segment; the per-segment rewriter
+                # only rewrites the leftmost command in the pipeline.
+                current.append(c)
+                i += 1
+        elif c == "&":
+            if i + 1 < n and command[i + 1] == "&":
+                segments.append(("".join(current), "&&"))
+                current = []
+                i += 2
+            else:
+                current.append(c)
+                i += 1
+        else:
+            current.append(c)
+            i += 1
+    segments.append(("".join(current), ""))
+    return segments
+
+
+def _read_shell_word(
+    cmd: str, i: int
+) -> tuple[str, int, int] | tuple[None, None, None]:
+    """Read the next shell word starting at or after ``i``.
+
+    Returns ``(word, word_start, next_index)``.  Quoted regions and command
+    substitutions are consumed as part of the word.  An unquoted ``|`` ends
+    the word so callers can identify the leftmost command in a pipeline.
+    """
+    n = len(cmd)
+    while i < n and cmd[i].isspace():
+        i += 1
+    if i >= n:
+        return None, None, None
+    start = i
+    chars: list[str] = []
+    while i < n:
+        c = cmd[i]
+        if c.isspace():
+            break
+        if c == "|":
+            break
+        if c == "'":
+            end = cmd.find("'", i + 1)
+            if end == -1:
+                chars.append(cmd[i:])
+                i = n
+                break
+            chars.append(cmd[i : end + 1])
+            i = end + 1
+        elif c == '"':
+            end = _find_dq_end(cmd, i + 1)
+            if end == -1:
+                chars.append(cmd[i:])
+                i = n
+                break
+            chars.append(cmd[i:end])
+            i = end
+        elif c == "$" and i + 1 < n and cmd[i + 1] == "'":
+            end = _find_ansi_c_end(cmd, i + 2)
+            if end == -1:
+                chars.append(cmd[i:])
+                i = n
+                break
+            chars.append(cmd[i:end])
+            i = end
+        elif c == "$" and i + 1 < n and cmd[i + 1] == "(":
+            end = _find_matching_paren(cmd, i + 1)
+            if end == -1:
+                chars.append(cmd[i:])
+                i = n
+                break
+            chars.append(cmd[i : end + 1])
+            i = end + 1
+        elif c == "`":
+            end = _find_backtick_end(cmd, i + 1)
+            if end == -1:
+                chars.append(cmd[i:])
+                i = n
+                break
+            chars.append(cmd[i:end])
+            i = end
+        else:
+            chars.append(c)
+            i += 1
+    return "".join(chars), start, i
+
+
+_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _is_shell_assignment(word: str) -> bool:
+    return bool(_ASSIGNMENT_RE.match(word))
+
+
+def _rewrite_shell_segment(segment: str, exclude_read: bool) -> tuple[str, bool]:
+    """Rewrite the leftmost command in a single shell segment, if known to RTK."""
+    i = 0
+    while True:
+        word, start, end = _read_shell_word(segment, i)
+        if word is None:
+            return segment, False
+        if word == "RTK_DISABLED=1":
+            return segment, False
+        if _is_shell_assignment(word):
+            i = end
+            continue
+        # First real executable token in this segment/pipeline.
+        token = word
+        token_start = start
+        break
+
+    name = Path(token).stem
+    if name.lower() in ("rtk", "rtk.exe"):
+        return segment, False
+    if exclude_read and name.lower() == "read":
+        return segment, False
+    if not _is_known_rtk_command(name):
+        return segment, False
+
+    return segment[:token_start] + "rtk " + segment[token_start:], True
+
+
+def _maybe_rewrite_shell_command_with_rtk(
+    command: str, token_kill: bool, exclude_read: bool = False
+) -> tuple[str, bool]:
+    """Return ``(rewritten_command, did_rewrite)``.
+
+    Performs robust, quote-aware matching on bash/pwsh style command strings
+    that may contain ``&&``, ``||``, ``|``, ``;``.  Commands inside quotes or
+    command substitutions are not rewritten.  Segments already starting with
+    ``rtk`` or prefixed with ``RTK_DISABLED=1`` are left untouched.
+    """
+    if not token_kill:
+        return command, False
+    if not _rtk_available():
+        return command, False
+    if not command or command.isspace():
+        return command, False
+
+    stripped = command.lstrip()
+    if (
+        stripped.startswith("rtk ")
+        or stripped.startswith("rtk\t")
+        or stripped == "rtk"
+        or stripped.startswith("rtk.exe")
+    ):
+        return command, False
+
+    segments = _split_shell_segments(command)
+    new_segments: list[tuple[str, str]] = []
+    changed = False
+    for seg, sep in segments:
+        new_seg, seg_changed = _rewrite_shell_segment(seg, exclude_read)
+        new_segments.append((new_seg, sep))
+        changed |= seg_changed
+
+    if not changed:
+        return command, False
+
+    return "".join(seg + sep for seg, sep in new_segments), True
+
+
 async def _token_filter_output(
     output: str,
     *,
-    dedup: bool = True,
+    token_kill: bool = True,
     max_lines: int | None = None,
+    rtk_rewritten: bool = False,
 ) -> tuple[str, str | None]:
     """Run the token filter pipeline on shell output.
 
     Stages run in order:
       1. Strip ANSI escape codes (via rich, merged with dedup step)
       2. Save original to temp file (if any filter is active)
-      3. Dedup (collapse repeated lines, preceded by ANSI stripping when dedup=True)
+      3. Dedup (collapse repeated lines, when token_kill=True and RTK was not used)
       4. Truncate (head/tail fold to max_lines)
 
     Args:
         output: Raw output string (ANSI already stripped by ProcessTask).
-        dedup: Enable line deduplication. When True, also strips ANSI via
-            ``rich.text.Text.from_ansi`` as a robust fallback for regex edge
-            cases (default True).
+        token_kill: Enable token-saving processing. When True and the command
+            was not rewritten to RTK, the legacy Python dedup/ANSI pipeline is
+            run.  When the command was rewritten to RTK, local dedup is skipped
+            because RTK already collapses repeats.
         max_lines: Optional max line count for head/tail truncation.
+        rtk_rewritten: Whether the producing command was rewritten to ``rtk``.
 
     Returns:
         (filtered_output, original_path).
         original_path is None if no filters were active.
     """
-    # Determine if any filter is active
-    has_filter = (
-        (dedup is True) or
-        (max_lines is not None)
-    )
+    apply_dedup = token_kill and not rtk_rewritten
+    has_filter = apply_dedup or (max_lines is not None)
 
     # Step 1: Strip ANSI escape codes (via rich, merged with dedup step)
     # When dedup is enabled, first strip any remaining ANSI codes using rich's
     # robust ANSI parser to catch edge cases the regex-based filter_output missed.
-    if dedup and output:
+    if apply_dedup and output:
         from rich.text import Text
         output = Text.from_ansi(output).plain
 
@@ -461,7 +884,7 @@ async def _token_filter_output(
         return output, original_path
 
     # Step 3: Dedup (preserves line order)
-    if dedup:
+    if apply_dedup:
         output = _dedup_output(output)
 
     # Step 4: Truncate (head/tail fold)

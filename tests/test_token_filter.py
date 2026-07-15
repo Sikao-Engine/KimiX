@@ -1,8 +1,13 @@
 """Tests for token filter pipeline: _dedup_output, _truncate_lines, _token_filter_output."""
 
+import os
 import pytest
+from unittest.mock import patch
 from kimix.tools.common import (
     _dedup_output,
+    _is_known_rtk_command,
+    _maybe_rewrite_shell_command_with_rtk,
+    _rtk_available,
     _truncate_lines,
     _token_filter_output,
 )
@@ -114,7 +119,7 @@ def test_truncate_max_lines_zero():
 async def test_token_filter_no_params_passthrough():
     out = "line1\nline2\nline3"
     result, orig_path = await _token_filter_output(
-        out, dedup=False, max_lines=None
+        out, token_kill=False, max_lines=None
     )
     assert result == out
     assert orig_path is None  # no filter active → no original saved
@@ -124,7 +129,7 @@ async def test_token_filter_no_params_passthrough():
 async def test_token_filter_dedup_only():
     out = "ERROR\n" * 10
     result, orig_path = await _token_filter_output(
-        out, dedup=True, max_lines=None
+        out, token_kill=True, max_lines=None
     )
     assert "ERROR  (10 repeats)" in result
     assert orig_path is not None  # filter active → original saved
@@ -134,7 +139,7 @@ async def test_token_filter_dedup_only():
 async def test_token_filter_dedup_disabled():
     out = "ERROR\n" * 10
     result, orig_path = await _token_filter_output(
-        out, dedup=False, max_lines=None
+        out, token_kill=False, max_lines=None
     )
     assert result == out  # unchanged
     assert orig_path is None
@@ -145,7 +150,7 @@ async def test_token_filter_truncate_only():
     lines = [f"L{i}" for i in range(500)]
     out = "\n".join(lines)
     result, orig_path = await _token_filter_output(
-        out, dedup=False, max_lines=50
+        out, token_kill=False, max_lines=50
     )
     assert "lines omitted" in result
     assert orig_path is not None
@@ -164,7 +169,7 @@ async def test_token_filter_all_stages():
     )
     out = "\n".join(lines)
     result, orig_path = await _token_filter_output(
-        out, dedup=True, max_lines=3
+        out, token_kill=True, max_lines=3
     )
     assert "ERROR: timeout  (100 repeats)" in result  # first deduped line
     assert "ERROR: retry  (5 repeats)" in result  # last deduped line
@@ -176,7 +181,7 @@ async def test_token_filter_all_stages():
 async def test_token_filter_saves_original_content():
     out = "original content here\nsecond line"
     result, orig_path = await _token_filter_output(
-        out, dedup=True, max_lines=None
+        out, token_kill=True, max_lines=None
     )
     # Read the saved file
     import anyio
@@ -188,7 +193,7 @@ async def test_token_filter_saves_original_content():
 @pytest.mark.asyncio
 async def test_token_filter_empty_output():
     result, orig_path = await _token_filter_output(
-        "", dedup=True, max_lines=10
+        "", token_kill=True, max_lines=10
     )
     assert result == ""
     # When filter is active, original is saved even for empty output
@@ -200,10 +205,10 @@ async def test_token_filter_ansi_stripped_when_dedup_enabled():
     """ANSI escape codes are stripped via rich when dedup=True (merged behavior)."""
     out = "\x1B[31mHello\x1B[0m"
     result, orig_path = await _token_filter_output(
-        out, dedup=True, max_lines=None
+        out, token_kill=True, max_lines=None
     )
     assert result == "Hello"
-    assert orig_path is not None  # dedup=True → filter active → original saved
+    assert orig_path is not None  # token_kill=True → filter active → original saved
 
 
 @pytest.mark.asyncio
@@ -211,7 +216,7 @@ async def test_token_filter_ansi_left_intact_when_dedup_disabled():
     """ANSI codes are left intact when dedup=False (ANSI stripping is merged with dedup)."""
     out = "\x1B[31mHello\x1B[0m"
     result, orig_path = await _token_filter_output(
-        out, dedup=False, max_lines=None
+        out, token_kill=False, max_lines=None
     )
     assert result == out  # unchanged
     assert orig_path is None
@@ -219,10 +224,10 @@ async def test_token_filter_ansi_left_intact_when_dedup_disabled():
 
 @pytest.mark.asyncio
 async def test_token_filter_ansi_no_ansi_unchanged():
-    """dedup=True with no ANSI codes leaves plain text unchanged."""
+    """token_kill=True with no ANSI codes leaves plain text unchanged."""
     out = "plain text without any escape codes\nsecond line"
     result, orig_path = await _token_filter_output(
-        out, dedup=True, max_lines=None
+        out, token_kill=True, max_lines=None
     )
     assert result == out
     assert orig_path is not None
@@ -233,7 +238,7 @@ async def test_token_filter_ansi_stripped_before_dedup():
     """ANSI stripping runs BEFORE dedup, so same text with different ANSI wrappers collapses."""
     out = "\x1B[31mERROR\x1B[0m\n\x1B[32mERROR\x1B[0m\n\x1B[31mERROR\x1B[0m\n\x1B[32mERROR\x1B[0m"
     result, orig_path = await _token_filter_output(
-        out, dedup=True, max_lines=None
+        out, token_kill=True, max_lines=None
     )
     # After ANSI stripping, all 4 lines become "ERROR" -> dedup collapses to "ERROR  (4 repeats)"
     assert "ERROR  (4 repeats)" in result
@@ -245,7 +250,7 @@ async def test_token_filter_ansi_stripped_before_dedup():
 def test_powershell_params_new_fields_defaults():
     from kimix.tools.file.bash.pwsh_tool import PowershellParams
     p = PowershellParams(cmd="echo hi")
-    assert p.dedup is True
+    assert p.token_kill is True
     assert p.max_lines is None
 
 
@@ -258,14 +263,181 @@ def test_powershell_params_max_lines_min():
 
 def test_bash_params_new_fields():
     from kimix.tools.file.bash.bash_tool import BashParams
-    p = BashParams(cmd="echo hi", dedup=False, max_lines=50)
-    assert p.dedup is False
+    p = BashParams(cmd="echo hi", token_kill=False, max_lines=50)
+    assert p.token_kill is False
     assert p.max_lines == 50
 
 
 def test_run_params_new_fields():
     from kimix.tools.file.run import RunParams
-    p = RunParams(command="echo hi", dedup=False, max_lines=50)
-    assert p.dedup is False
+    p = RunParams(command="echo hi", token_kill=False, max_lines=50)
+    assert p.token_kill is False
     assert p.max_lines == 50
+
+
+# ── RTK helper tests ─────────────────────────────────────────────────
+
+def test_rtk_available_when_present(tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    bin_name = "rtk.exe" if os.name == "nt" else "rtk"
+    (bin_dir / bin_name).touch()
+    with patch("kimi_cli.share.get_share_dir", return_value=tmp_path):
+        _rtk_available.cache_clear()
+        assert _rtk_available() is True
+
+
+def test_rtk_available_when_missing(tmp_path):
+    with patch("kimi_cli.share.get_share_dir", return_value=tmp_path):
+        _rtk_available.cache_clear()
+        assert _rtk_available() is False
+
+
+def test_is_known_rtk_command_known_names():
+    assert _is_known_rtk_command("git") is True
+    assert _is_known_rtk_command("cargo") is True
+    assert _is_known_rtk_command("pytest") is True
+
+
+def test_is_known_rtk_command_exe_extension():
+    assert _is_known_rtk_command("git.exe") is True
+    assert _is_known_rtk_command("GIT.EXE") is True
+
+
+def test_is_known_rtk_command_unknown():
+    assert _is_known_rtk_command("unknown-cmd") is False
+    assert _is_known_rtk_command("echo") is False
+
+
+@pytest.fixture
+def rtk_available():
+    with patch("kimix.tools.common._rtk_available", return_value=True):
+        yield
+
+
+def test_rewrite_known_single_command(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk("git status", token_kill=True)
+    assert changed is True
+    assert rewritten == "rtk git status"
+
+
+def test_rewrite_compound_command(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        "git status && cargo test", token_kill=True
+    )
+    assert changed is True
+    assert rewritten == "rtk git status && rtk cargo test"
+
+
+def test_rewrite_already_prefixed(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        "rtk git status", token_kill=True
+    )
+    assert changed is False
+    assert rewritten == "rtk git status"
+
+
+def test_rewrite_rtk_disabled(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        "RTK_DISABLED=1 git status", token_kill=True
+    )
+    assert changed is False
+    assert rewritten == "RTK_DISABLED=1 git status"
+
+
+def test_rewrite_unknown_command(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        "unknown-cmd arg", token_kill=True
+    )
+    assert changed is False
+    assert rewritten == "unknown-cmd arg"
+
+
+def test_rewrite_quoted_command(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        'echo "git status"', token_kill=True
+    )
+    assert changed is False
+    assert rewritten == 'echo "git status"'
+
+
+def test_rewrite_respects_token_kill_false(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        "git status", token_kill=False
+    )
+    assert changed is False
+    assert rewritten == "git status"
+
+
+def test_rewrite_no_rtk():
+    with patch("kimix.tools.common._rtk_available", return_value=False):
+        rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+            "git status", token_kill=True
+        )
+    assert changed is False
+    assert rewritten == "git status"
+
+
+def test_rewrite_excludes_read_for_shell(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        "read var", token_kill=True, exclude_read=True
+    )
+    assert changed is False
+    assert rewritten == "read var"
+
+
+def test_rewrite_leftmost_pipeline(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        "git status | grep x", token_kill=True
+    )
+    assert changed is True
+    assert rewritten == "rtk git status | grep x"
+
+
+def test_rewrite_with_env_assignment(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        "VAR=value git status", token_kill=True
+    )
+    assert changed is True
+    assert rewritten == "VAR=value rtk git status"
+
+
+def test_rewrite_command_substitution_unchanged(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        'echo "$(git status)"', token_kill=True
+    )
+    assert changed is False
+    assert rewritten == 'echo "$(git status)"'
+
+
+def test_rewrite_backtick_substitution_unchanged(rtk_available):
+    rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
+        "echo `git status`", token_kill=True
+    )
+    assert changed is False
+    assert rewritten == "echo `git status`"
+
+
+@pytest.mark.asyncio
+async def test_rewrite_rtk_rewritten_skips_dedup():
+    """When rtk_rewritten=True, token_kill=True skips the local dedup pipeline."""
+    out = "ERROR\n" * 10
+    result, orig_path = await _token_filter_output(
+        out, token_kill=True, max_lines=None, rtk_rewritten=True
+    )
+    assert result == out  # no dedup
+    # No dedup means filter is not active unless max_lines is set
+    assert orig_path is None
+
+
+@pytest.mark.asyncio
+async def test_token_filter_rtk_rewritten_with_max_lines_still_truncates():
+    lines = [f"L{i}" for i in range(500)]
+    out = "\n".join(lines)
+    result, orig_path = await _token_filter_output(
+        out, token_kill=True, max_lines=50, rtk_rewritten=True
+    )
+    assert "lines omitted" in result
+    # truncation active -> original saved
+    assert orig_path is not None
 

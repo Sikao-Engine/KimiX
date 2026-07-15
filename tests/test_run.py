@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -41,6 +42,88 @@ class TestRunParams:
     def test_wait_for_pattern_optional(self) -> None:
         p = RunParams(command="hello", wait_for_pattern="done")
         assert p.wait_for_pattern == "done"
+
+    def test_token_kill_defaults_true(self) -> None:
+        p = RunParams(command="hello")
+        assert p.token_kill is True
+
+    def test_token_kill_can_be_disabled(self) -> None:
+        p = RunParams(command="hello", token_kill=False)
+        assert p.token_kill is False
+
+
+class TestRunRtkRewrite:
+    async def test_run_prepends_rtk_for_known_command(self, mock_session: MagicMock) -> None:
+        run = _run_instance(mock_session)
+        with (
+            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimix.tools.file.run._rtk_binary_path", return_value=Path("/fake/share/bin/rtk")),
+            patch("kimix.tools.file.run.shutil.which") as mock_which,
+        ):
+            mock_which.side_effect = lambda name: f"/fake/{name}"
+            instance = MagicMock()
+            instance.start = AsyncMock(return_value="run_rtk")
+            instance.wait = AsyncMock(return_value=None)
+            instance.thread_is_alive = AsyncMock(return_value=False)
+            instance.stream = AsyncMock()
+            instance.stream.pop_output = AsyncMock(return_value="mock output")
+            instance.stream.success = AsyncMock(return_value=True)
+            mock_pt.return_value = instance
+
+            result = await run(RunParams(command="git status", token_kill=True))
+
+            assert isinstance(result, ToolOk)
+            args = mock_pt.call_args[0]
+            assert args[0] == str(Path("/fake/share/bin/rtk"))
+            assert args[1] == ["git", "status"]
+
+    async def test_run_does_not_prepend_rtk_for_unknown_command(self, mock_session: MagicMock) -> None:
+        run = _run_instance(mock_session)
+        with (
+            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimix.tools.file.run._rtk_binary_path", return_value=Path("/fake/share/bin/rtk")),
+            patch("kimix.tools.file.run.shutil.which") as mock_which,
+        ):
+            mock_which.side_effect = lambda name: f"/fake/{name}"
+            instance = MagicMock()
+            instance.start = AsyncMock(return_value="run_unknown")
+            instance.wait = AsyncMock(return_value=None)
+            instance.thread_is_alive = AsyncMock(return_value=False)
+            instance.stream = AsyncMock()
+            instance.stream.pop_output = AsyncMock(return_value="mock output")
+            instance.stream.success = AsyncMock(return_value=True)
+            mock_pt.return_value = instance
+
+            result = await run(RunParams(command="unknown-cmd", token_kill=True))
+
+            assert isinstance(result, ToolOk)
+            args = mock_pt.call_args[0]
+            assert args[0] == "unknown-cmd"
+            assert args[1] == []
+
+    async def test_run_token_kill_false_does_not_prepend_rtk(self, mock_session: MagicMock) -> None:
+        run = _run_instance(mock_session)
+        with (
+            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimix.tools.file.run._rtk_binary_path", return_value=Path("/fake/share/bin/rtk")),
+            patch("kimix.tools.file.run.shutil.which") as mock_which,
+        ):
+            mock_which.side_effect = lambda name: f"/fake/{name}"
+            instance = MagicMock()
+            instance.start = AsyncMock(return_value="run_no_rtk")
+            instance.wait = AsyncMock(return_value=None)
+            instance.thread_is_alive = AsyncMock(return_value=False)
+            instance.stream = AsyncMock()
+            instance.stream.pop_output = AsyncMock(return_value="mock output")
+            instance.stream.success = AsyncMock(return_value=True)
+            mock_pt.return_value = instance
+
+            result = await run(RunParams(command="git status", token_kill=False))
+
+            assert isinstance(result, ToolOk)
+            args = mock_pt.call_args[0]
+            assert args[0] == "git"
+            assert args[1] == ["status"]
 
 
 class TestRunContinueSession:
