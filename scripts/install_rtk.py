@@ -12,23 +12,52 @@ Usage:
 from __future__ import annotations
 
 import os
-import platform
 import shutil
-import stat
 import sys
-import tarfile
 import tempfile
 import urllib.request
-import zipfile
 from pathlib import Path
 
 # ============================================================
-# Global configuration
+# Import shared helpers. When this script is run before the
+# package is installed (e.g. from the root install.py), locate
+# the in-repo source tree and add it to sys.path.
 # ============================================================
-RTK_VERSION: str = "0.43.0"
+
+
+def _import_rtk_common():
+    """Import ``kimi_cli._rtk_common`` from the installed package or source tree."""
+    try:
+        from kimi_cli import _rtk_common
+
+        return _rtk_common
+    except ImportError:
+        pass
+
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    src_path = repo_root / "kimi-cli" / "src"
+    if src_path.is_dir():
+        sys.path.insert(0, str(src_path))
+
+    from kimi_cli import _rtk_common
+
+    return _rtk_common
+
+
+_rtk_common = _import_rtk_common()
+
+# Global configuration
+RTK_VERSION: str = _rtk_common.RTK_VERSION
 """rtk version to install when using the direct-download strategy."""
 
-RTK_BASE_URL = "https://github.com/rtk-ai/rtk/releases/download"
+RTK_BASE_URL = _rtk_common.RTK_BASE_URL
+
+_rtk_binary_name = _rtk_common._rtk_binary_name
+_detect_target = _rtk_common._detect_rtk_target
+_rtk_archive_name = _rtk_common._rtk_archive_name
+_rtk_download_url = _rtk_common._rtk_download_url
+_extract_rtk_archive = _rtk_common._extract_rtk_archive
 
 
 def _get_share_dir() -> Path:
@@ -45,38 +74,6 @@ INSTALL_DIR = _get_share_dir() / "bin"
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-
-
-def _rtk_binary_name() -> str:
-    return "rtk.exe" if sys.platform == "win32" else "rtk"
-
-
-def _detect_target() -> str | None:
-    sys_name = platform.system()
-    mach = platform.machine().lower()
-
-    if mach in ("x86_64", "amd64"):
-        arch = "x86_64"
-    elif mach in ("arm64", "aarch64"):
-        arch = "aarch64"
-    else:
-        print(f"Unsupported architecture for rtk: {mach}", file=sys.stderr)
-        return None
-
-    if sys_name == "Darwin":
-        os_name = "apple-darwin"
-    elif sys_name == "Linux":
-        os_name = "unknown-linux-musl" if arch == "x86_64" else "unknown-linux-gnu"
-    elif sys_name == "Windows":
-        if arch != "x86_64":
-            print(f"Unsupported Windows arch for rtk: {mach}", file=sys.stderr)
-            return None
-        os_name = "pc-windows-msvc"
-    else:
-        print(f"Unsupported operating system for rtk: {sys_name}", file=sys.stderr)
-        return None
-
-    return f"{arch}-{os_name}"
 
 
 def _download_file(url: str, dest: Path) -> None:
@@ -144,7 +141,7 @@ def _ensure_in_user_path(dirpath: str) -> None:
 
 def install_rtk(
     version: str = RTK_VERSION,
-    install_dir: str | None = INSTALL_DIR,
+    install_dir: str | Path | None = INSTALL_DIR,
 ) -> str | None:
     """Download and install rtk into *install_dir*.
 
@@ -176,14 +173,14 @@ def install_rtk(
         _ensure_in_user_path(str(target_dir))
         return str(target_dir)
 
-    target = _detect_target()
-    if not target:
+    try:
+        target = _detect_target()
+    except RuntimeError as exc:
+        print(f"{exc}", file=sys.stderr)
         return None
 
-    is_windows = "windows" in target
-    archive_ext = "zip" if is_windows else "tar.gz"
-    filename = f"rtk-{target}.{archive_ext}"
-    url = f"{RTK_BASE_URL}/v{version}/{filename}"
+    filename = _rtk_archive_name(target)
+    url = _rtk_download_url(version, target)
 
     print(f"Downloading rtk {version} for {target} ...")
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -194,40 +191,14 @@ def install_rtk(
             _download_file(url, archive_path)
 
             print(f"Extracting rtk to {target_dir} ...")
-            if is_windows:
-                with zipfile.ZipFile(archive_path, "r") as zf:
-                    member_name = next(
-                        (name for name in zf.namelist() if Path(name).name == bin_name),
-                        None,
-                    )
-                    if not member_name:
-                        print("rtk binary not found in archive.", file=sys.stderr)
-                        return None
-                    with zf.open(member_name) as source, open(destination, "wb") as dest_fh:
-                        shutil.copyfileobj(source, dest_fh)
-            else:
-                with tarfile.open(archive_path, "r:gz") as tar:
-                    member = next(
-                        (m for m in tar.getmembers() if Path(m.name).name == bin_name),
-                        None,
-                    )
-                    if not member:
-                        print("rtk binary not found in archive.", file=sys.stderr)
-                        return None
-                    extracted = tar.extractfile(member)
-                    if not extracted:
-                        print("Failed to extract rtk binary.", file=sys.stderr)
-                        return None
-                    with open(destination, "wb") as dest_fh:
-                        shutil.copyfileobj(extracted, dest_fh)
+            _extract_rtk_archive(archive_path, destination, target, bin_name)
     except (urllib.error.URLError, TimeoutError) as exc:
         print(f"Failed to download rtk: {exc}", file=sys.stderr)
         return None
-    except (zipfile.BadZipFile, tarfile.TarError, OSError) as exc:
+    except RuntimeError as exc:
         print(f"Failed to extract rtk archive: {exc}", file=sys.stderr)
         return None
 
-    destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     _ensure_in_user_path(str(target_dir))
     print(f"rtk installed at {destination}.")
     return str(target_dir)

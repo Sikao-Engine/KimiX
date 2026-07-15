@@ -12,23 +12,51 @@ Usage:
 from __future__ import annotations
 
 import os
-import platform
-import shutil
-import stat
 import sys
-import tarfile
 import tempfile
 import urllib.request
-import zipfile
 from pathlib import Path
 
 # ============================================================
-# Global configuration
+# Import shared helpers. When this script is run before the
+# package is installed (e.g. from the root install.py), locate
+# the in-repo source tree and add it to sys.path.
 # ============================================================
-RG_VERSION: str = "15.1.0"
+
+
+def _import_ripgrep_common():
+    """Import ``kimi_cli._ripgrep_common`` from the installed package or source tree."""
+    try:
+        from kimi_cli import _ripgrep_common
+
+        return _ripgrep_common
+    except ImportError:
+        pass
+
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    src_path = repo_root / "kimi-cli" / "src"
+    if src_path.is_dir():
+        sys.path.insert(0, str(src_path))
+
+    from kimi_cli import _ripgrep_common
+
+    return _ripgrep_common
+
+
+_ripgrep_common = _import_ripgrep_common()
+
+# Global configuration
+RG_VERSION: str = _ripgrep_common.RG_VERSION
 """Ripgrep version to install when using the direct-download strategy."""
 
-RG_BASE_URL = "https://github.com/BurntSushi/ripgrep/releases/download"
+RG_BASE_URL = _ripgrep_common.RG_BASE_URL
+
+_rg_binary_name = _ripgrep_common._rg_binary_name
+_detect_target = _ripgrep_common._detect_rg_target
+_rg_archive_name = _ripgrep_common._rg_archive_name
+_rg_download_url = _ripgrep_common._rg_download_url
+_extract_rg_archive = _ripgrep_common._extract_rg_archive
 
 
 def _get_share_dir() -> Path:
@@ -45,35 +73,6 @@ INSTALL_DIR = _get_share_dir() / "bin"
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
-
-
-def _rg_binary_name() -> str:
-    return "rg.exe" if sys.platform == "win32" else "rg"
-
-
-def _detect_target() -> str | None:
-    sys_name = platform.system()
-    mach = platform.machine().lower()
-
-    if mach in ("x86_64", "amd64"):
-        arch = "x86_64"
-    elif mach in ("arm64", "aarch64"):
-        arch = "aarch64"
-    else:
-        print(f"Unsupported architecture for ripgrep: {mach}", file=sys.stderr)
-        return None
-
-    if sys_name == "Darwin":
-        os_name = "apple-darwin"
-    elif sys_name == "Linux":
-        os_name = "unknown-linux-musl" if arch == "x86_64" else "unknown-linux-gnu"
-    elif sys_name == "Windows":
-        os_name = "pc-windows-msvc"
-    else:
-        print(f"Unsupported operating system for ripgrep: {sys_name}", file=sys.stderr)
-        return None
-
-    return f"{arch}-{os_name}"
 
 
 def _download_file(url: str, dest: Path) -> None:
@@ -96,7 +95,7 @@ def _download_file(url: str, dest: Path) -> None:
 
 def install_ripgrep(
     version: str = RG_VERSION,
-    install_dir: str | None = INSTALL_DIR,
+    install_dir: str | Path | None = INSTALL_DIR,
 ) -> str | None:
     """Download and install ripgrep into *install_dir*.
 
@@ -121,14 +120,14 @@ def install_ripgrep(
         print(f"Ripgrep is already installed at {destination}.")
         return str(target_dir)
 
-    target = _detect_target()
-    if not target:
+    try:
+        target = _detect_target()
+    except RuntimeError as exc:
+        print(f"{exc}", file=sys.stderr)
         return None
 
-    is_windows = "windows" in target
-    archive_ext = "zip" if is_windows else "tar.gz"
-    filename = f"ripgrep-{version}-{target}.{archive_ext}"
-    url = f"{RG_BASE_URL}/{version}/{filename}"
+    filename = _rg_archive_name(version, target)
+    url = _rg_download_url(version, target)
 
     print(f"Downloading ripgrep {version} for {target} ...")
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -139,40 +138,14 @@ def install_ripgrep(
             _download_file(url, archive_path)
 
             print(f"Extracting ripgrep to {target_dir} ...")
-            if is_windows:
-                with zipfile.ZipFile(archive_path, "r") as zf:
-                    member_name = next(
-                        (name for name in zf.namelist() if Path(name).name == bin_name),
-                        None,
-                    )
-                    if not member_name:
-                        print("Ripgrep binary not found in archive.", file=sys.stderr)
-                        return None
-                    with zf.open(member_name) as source, open(destination, "wb") as dest_fh:
-                        shutil.copyfileobj(source, dest_fh)
-            else:
-                with tarfile.open(archive_path, "r:gz") as tar:
-                    member = next(
-                        (m for m in tar.getmembers() if Path(m.name).name == bin_name),
-                        None,
-                    )
-                    if not member:
-                        print("Ripgrep binary not found in archive.", file=sys.stderr)
-                        return None
-                    extracted = tar.extractfile(member)
-                    if not extracted:
-                        print("Failed to extract ripgrep binary.", file=sys.stderr)
-                        return None
-                    with open(destination, "wb") as dest_fh:
-                        shutil.copyfileobj(extracted, dest_fh)
+            _extract_rg_archive(archive_path, destination, target, bin_name)
     except (urllib.error.URLError, TimeoutError) as exc:
         print(f"Failed to download ripgrep: {exc}", file=sys.stderr)
         return None
-    except (zipfile.BadZipFile, tarfile.TarError, OSError) as exc:
+    except RuntimeError as exc:
         print(f"Failed to extract ripgrep archive: {exc}", file=sys.stderr)
         return None
 
-    destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     print(f"Ripgrep installed at {destination}.")
     return str(target_dir)
 
