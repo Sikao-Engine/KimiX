@@ -76,7 +76,7 @@ from kimi_cli.session import Session
 
 if TYPE_CHECKING:
     from kimix.tools.background.utils import BackgroundStream
-OUTPUT_LIMIT = 16384
+OUTPUT_LIMIT = 4096
 _temp_folder = Path.home() / '.kimi' / 'sessions' / uuid.uuid4().hex
 _temp_folder.mkdir(parents=True, exist_ok=True)
 _temp_idx = 0
@@ -311,6 +311,7 @@ def _build_session_output_block(
     exit_code: int | None = None,
     output_path: str | None = None,
     output_truncated: bool = False,
+    original_path: str | None = None,
 ) -> str:
     """Build a YAML-like metadata block for interactive/background sessions.
 
@@ -335,7 +336,45 @@ def _build_session_output_block(
     lines.append(
         f"elapsed_seconds: {elapsed_seconds:.2f}" if elapsed_seconds is not None else "elapsed_seconds: null"
     )
+    lines.append(
+        f"original_path: {original_path if original_path else 'null'}"
+    )
     return "\n".join(lines)
+
+
+def _apply_grep_filter(output: str, pattern: str) -> str:
+    """Filter output: keep only lines matching the regex pattern.
+
+    Uses the ``regex`` library for performance.
+    """
+    if not pattern or not output:
+        return output
+    try:
+        compiled = re.compile(pattern)
+        lines = output.splitlines()
+        kept = [line for line in lines if compiled.search(line)]
+        return "\n".join(kept) if kept else ""
+    except re.error:
+        return output  # invalid pattern returns unfiltered output
+
+
+async def _save_and_filter_output(
+    output: str,
+    grep: str | None = None,
+) -> tuple[str, str | None]:
+    """Save original output to a temp file, then apply grep filter.
+
+    Returns ``(filtered_output, original_file_path)``.
+    When ``grep`` is None, returns ``(output, None)`` unchanged.
+    """
+    if not grep:
+        return output, None
+    # Save original *before* filtering so the LLM can always access it.
+    original_path, _ = await _export_to_temp_file_async(
+        key=None, content=output, ext=".txt"
+    )
+    filtered = _apply_grep_filter(output, grep)
+    return filtered, original_path
 
 
 def _env_with_rg_bin_path(env: dict[str, str] | None = None) -> dict[str, str]:

@@ -16,6 +16,7 @@ from kimix.tools.common import (
     _extract_export_path,
     _maybe_export_output_async,
     _export_to_temp_file_async,
+    _save_and_filter_output,
     _summarize_long_output_async,
     ProcessTask,
 )
@@ -116,6 +117,10 @@ class RunParams(BaseModel):
             "Optional regex pattern. After starting or sending input, the tool blocks up "
             "to 'timeout' seconds until the pattern appears in output."
         ),
+    )
+    grep: str | None = Field(
+        default=None,
+        description="Regex pattern to filter output lines. Original full output is always saved to a temp file.",
     )
 
 
@@ -343,7 +348,7 @@ class Run(CallableTool2[RunParams]):
                     await task.wait(wait_timeout)
 
                 if await task.thread_is_alive():
-                    output = await task.stream.get_output() if task.stream else ""
+                    output = await task.stream.pop_output() if task.stream else ""
                     output = await _maybe_export_output_async(output)
                     return ToolError(
                         output=output,
@@ -356,6 +361,11 @@ class Run(CallableTool2[RunParams]):
 
                 # Get output
                 output = await task.stream.pop_output() if task.stream else ""
+
+                # Apply grep filter (if set) and save original to temp file
+                original_path: str | None = None
+                if params.grep:
+                    output, original_path = await _save_and_filter_output(output, params.grep)
 
                 # Optionally offload a very long output to a sub-agent
                 output_truncated = False
@@ -402,6 +412,7 @@ class Run(CallableTool2[RunParams]):
                         elapsed_seconds=elapsed_seconds,
                         output_path=output_path,
                         output_truncated=output_truncated,
+                        original_path=original_path,
                     )
                     return ToolError(
                         output=block,
@@ -421,6 +432,7 @@ class Run(CallableTool2[RunParams]):
                     elapsed_seconds=elapsed_seconds,
                     output_path=output_path,
                     output_truncated=output_truncated,
+                    original_path=original_path,
                 )
                 return ToolOk(
                     output=block,
@@ -509,8 +521,11 @@ class Run(CallableTool2[RunParams]):
 
     async def _process_output(
         self, params: RunParams, output: str
-    ) -> tuple[str, str | None, bool]:
-        """Summarize/export long output and return (display_output, path, truncated)."""
+    ) -> tuple[str, str | None, bool, str | None]:
+        """Summarize/export long output. Returns (display_output, path, truncated, original_path)."""
+        original_path: str | None = None
+        if params.grep:
+            output, original_path = await _save_and_filter_output(output, params.grep)
         output_truncated = False
         if params.max_output_length > 0 and len(output) > params.max_output_length:
             output = await _summarize_long_output_async(
@@ -519,7 +534,7 @@ class Run(CallableTool2[RunParams]):
             output_truncated = True
         output = await _maybe_export_output_async(output)
         output_path = _extract_export_path(output)
-        return output, output_path, output_truncated
+        return output, output_path, output_truncated, original_path
 
     async def _format_session_result(
         self,
@@ -535,7 +550,7 @@ class Run(CallableTool2[RunParams]):
         brief: str,
     ) -> ToolReturnValue:
         """Build a ToolOk response with a structured output block."""
-        processed, output_path, output_truncated = await self._process_output(params, output)
+        processed, output_path, output_truncated, original_path = await self._process_output(params, output)
         block = _build_session_output_block(
             task_id=task_id,
             status=status,
@@ -545,5 +560,6 @@ class Run(CallableTool2[RunParams]):
             elapsed_seconds=elapsed_seconds,
             output_path=output_path,
             output_truncated=output_truncated,
+            original_path=original_path,
         )
         return ToolOk(output=block, message=message, brief=brief)

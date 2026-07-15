@@ -25,6 +25,7 @@ from kimix.tools.common import (
     _env_with_rg_bin_path,
     _extract_export_path,
     _maybe_export_output_async,
+    _save_and_filter_output,
     _summarize_long_output_async,
     ProcessTask,
 )
@@ -179,6 +180,10 @@ class PowershellParams(BaseModel):
             "Optional regex pattern. After starting or sending input, the tool blocks up "
             "to 'timeout' seconds until the pattern appears in output."
         ),
+    )
+    grep: str | None = Field(
+        default=None,
+        description="Regex pattern to filter output lines. Original full output is always saved to a temp file.",
     )
 
     @model_validator(mode="after")
@@ -355,7 +360,7 @@ class Powershell(CallableTool2[PowershellParams]):
             )
 
         if await process_task.thread_is_alive():
-            output = await process_task.stream.get_output() if process_task.stream else ""
+            output = await process_task.stream.pop_output() if process_task.stream else ""
             output = await _maybe_export_output_async(output)
             return ToolError(
                 output=output,
@@ -370,7 +375,7 @@ class Powershell(CallableTool2[PowershellParams]):
         success = await process_task.stream.success() if process_task.stream else False
 
         if not success:
-            processed, output_path, output_truncated = await self._process_output(cmd, params, output)
+            processed, output_path, output_truncated, original_path = await self._process_output(cmd, params, output)
             block = _build_session_output_block(
                 task_id=task_id,
                 status="completed",
@@ -380,10 +385,11 @@ class Powershell(CallableTool2[PowershellParams]):
                 elapsed_seconds=elapsed_seconds,
                 output_path=output_path,
                 output_truncated=output_truncated,
+                original_path=original_path,
             )
             return ToolError(output=block, message=f"`{cmd}` failed." + transform_warning, brief="Command execution failed")
 
-        processed, output_path, output_truncated = await self._process_output(cmd, params, output)
+        processed, output_path, output_truncated, original_path = await self._process_output(cmd, params, output)
         block = _build_session_output_block(
             task_id=task_id,
             status="completed",
@@ -393,6 +399,7 @@ class Powershell(CallableTool2[PowershellParams]):
             elapsed_seconds=elapsed_seconds,
             output_path=output_path,
             output_truncated=output_truncated,
+            original_path=original_path,
         )
         return ToolOk(
             output=block,
@@ -469,15 +476,18 @@ class Powershell(CallableTool2[PowershellParams]):
 
     async def _process_output(
         self, command: str, params: PowershellParams, output: str
-    ) -> tuple[str, str | None, bool]:
-        """Summarize/export long output and return (display_output, path, truncated)."""
+    ) -> tuple[str, str | None, bool, str | None]:
+        """Summarize/export long output. Returns (display_output, path, truncated, original_path)."""
+        original_path: str | None = None
+        if params.grep:
+            output, original_path = await _save_and_filter_output(output, params.grep)
         output_truncated = False
         if params.max_output_length > 0 and len(output) > params.max_output_length:
             output = await _summarize_long_output_async(self._session, command, output)
             output_truncated = True
         output = await _maybe_export_output_async(output)
         output_path = _extract_export_path(output)
-        return output, output_path, output_truncated
+        return output, output_path, output_truncated, original_path
 
     async def _format_session_result(
         self,
@@ -493,7 +503,7 @@ class Powershell(CallableTool2[PowershellParams]):
         brief: str,
     ) -> ToolReturnValue:
         """Build a ToolOk response with a structured output block."""
-        processed, output_path, output_truncated = await self._process_output(params.cmd, params, output)
+        processed, output_path, output_truncated, original_path = await self._process_output(params.cmd, params, output)
         block = _build_session_output_block(
             task_id=task_id,
             status=status,
@@ -503,5 +513,6 @@ class Powershell(CallableTool2[PowershellParams]):
             elapsed_seconds=elapsed_seconds,
             output_path=output_path,
             output_truncated=output_truncated,
+            original_path=original_path,
         )
         return ToolOk(output=block, message=message, brief=brief)

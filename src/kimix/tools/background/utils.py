@@ -256,6 +256,13 @@ class BackgroundStream:
                     break
             await asyncio.sleep(0.1)
 
+        # Clear the internal buffer since the caller has consumed all
+        # accumulated output via the returned `output` string. This ensures
+        # subsequent get_output() / pop_output() calls do not repeat the
+        # same data.
+        self._output.truncate(0)
+        self._output.seek(0)
+
         return output, matched, elapsed
 
     async def stop(self) -> bool:

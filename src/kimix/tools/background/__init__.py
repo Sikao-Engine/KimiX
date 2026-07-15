@@ -111,7 +111,9 @@ class TaskOutput(CallableTool2):
             if params.kill and task_alive:
                 await stream.stop()
                 task_alive = False
-            output = await stream.get_output() if task_alive else await stream.pop_output()
+            # Use pop_output to ensure each call returns only new data
+            # since the last call, avoiding repeated output.
+            output = await stream.pop_output()
             if not task_alive:
                 remove_task_id(self._session, params.task_id)
                 # If the process failed (non-zero return), return error message
