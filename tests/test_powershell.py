@@ -318,16 +318,26 @@ class TestPowershellInteractiveIntegration:
         assert task is not None
 
         await task.input("Write-Output hello")
-        await asyncio.sleep(0.5)
-        output = await task.get_output()
-        assert "hello" in output
+        # Poll for output with timeout instead of fixed sleep to handle CI/load variations
+        output = ""
+        for _ in range(20):
+            await asyncio.sleep(0.1)
+            output = await task.get_output()
+            if "hello" in output:
+                break
+        assert "hello" in output, f"Expected 'hello' in output, got: {output!r}"
 
         await task.input("$x = 42")
         await asyncio.sleep(0.2)
         await task.input("Write-Output $x")
-        await asyncio.sleep(0.5)
-        output = await task.get_output()
-        assert "42" in output
+        # Poll for output
+        output = ""
+        for _ in range(20):
+            await asyncio.sleep(0.1)
+            output = await task.get_output()
+            if "42" in output:
+                break
+        assert "42" in output, f"Expected '42' in output, got: {output!r}"
 
         await task.input("exit")
         await task.wait(timeout=5)

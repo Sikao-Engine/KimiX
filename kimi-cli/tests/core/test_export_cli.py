@@ -209,4 +209,4 @@ def test_format_tool_call_md_falls_back_to_raw_args_on_stdlib_json_error() -> No
         md = _format_tool_call_md(tool_call)
     assert "ReadFile" in md
     assert '{"path": "x"}' in md
-    assert "COMMAND [ARGS]..." not in result.output
+    assert "COMMAND [ARGS]..." not in md

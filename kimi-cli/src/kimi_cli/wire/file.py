@@ -4,7 +4,7 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import aiofiles
 import orjson
@@ -60,6 +60,7 @@ def parse_wire_file_line(line: str) -> WireFileMetadata | WireMessageRecord:
 class WireFile:
     path: Path
     protocol_version: str = WIRE_PROTOCOL_VERSION
+    _file_handle: Any | None = None
 
     def __post_init__(self) -> None:
         if self.path.exists():
@@ -121,14 +122,34 @@ class WireFile:
         )
         await self.append_record(record)
 
-    async def append_record(self, record: WireMessageRecord) -> None:
+    async def open(self) -> None:
+        """Open the wire file for appending. Creates parent dirs and writes the header if needed."""
         self.path.parent.mkdir(parents=True, exist_ok=True)
         needs_header = not self.path.exists() or self.path.stat().st_size == 0
-        async with aiofiles.open(self.path, mode="a", encoding="utf-8") as f:
-            if needs_header:
-                metadata = WireFileMetadata(protocol_version=self.protocol_version)
-                await f.write(_dump_line(metadata))
-            await f.write(_dump_line(record))
+        self._file_handle = await aiofiles.open(self.path, mode="a", encoding="utf-8")
+        if needs_header:
+            metadata = WireFileMetadata(protocol_version=self.protocol_version)
+            await self._file_handle.write(_dump_line(metadata))
+
+    async def close(self) -> None:
+        """Close the wire file if open."""
+        if self._file_handle is not None:
+            await self._file_handle.close()
+            self._file_handle = None
+
+    async def append_record(self, record: WireMessageRecord) -> None:
+        if self._file_handle is not None:
+            # Fast path: write through the open handle
+            await self._file_handle.write(_dump_line(record))
+        else:
+            # Fallback: open/close per write (backward compat)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            needs_header = not self.path.exists() or self.path.stat().st_size == 0
+            async with aiofiles.open(self.path, mode="a", encoding="utf-8") as f:
+                if needs_header:
+                    metadata = WireFileMetadata(protocol_version=self.protocol_version)
+                    await f.write(_dump_line(metadata))
+                await f.write(_dump_line(record))
 
 
 def _dump_line(model: BaseModel) -> str:

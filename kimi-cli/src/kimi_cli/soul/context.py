@@ -72,19 +72,22 @@ class JsonlContextStorage:
 
     def __init__(self, file_path: Path) -> None:
         self._file_path = file_path
+        self._write_handle: Any | None = None
 
     @property
     def storage_path(self) -> Path:
         return self._file_path
 
     async def initialize(self) -> None:
-        """Ensure the JSONL file exists."""
+        """Ensure the JSONL file exists and open write handle."""
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
-        if not self._file_path.exists():
-            self._file_path.touch()
+        self._write_handle = await aiofiles.open(self._file_path, mode="a", encoding="utf-8")
 
     async def close(self) -> None:
-        """No-op for JSONL backend."""
+        """Close the write handle."""
+        if self._write_handle is not None:
+            await self._write_handle.close()
+            self._write_handle = None
 
     # ---- System prompt ---- #
 
@@ -108,6 +111,11 @@ class JsonlContextStorage:
 
     async def set_system_prompt(self, content: str) -> None:
         """Write or prepend the system prompt."""
+        # Close the write handle before rewriting to avoid Windows file-lock conflicts
+        if self._write_handle is not None:
+            await self._write_handle.close()
+            self._write_handle = None
+
         prompt_line = (
             orjson.dumps({"role": "_system_prompt", "content": content}).decode("utf-8") + "\n"
         )
@@ -131,12 +139,20 @@ class JsonlContextStorage:
 
         await asyncio.to_thread(_write_sync)
 
+        # Reopen the write handle for subsequent append operations
+        self._write_handle = await aiofiles.open(self._file_path, mode="a", encoding="utf-8")
+
     # ---- Messages ---- #
 
     async def append_messages(self, messages: Sequence[Message]) -> None:
-        async with aiofiles.open(self._file_path, "a", encoding="utf-8") as f:
+        if self._write_handle is not None:
             for message in messages:
-                await f.write(message.model_dump_json(exclude_none=True) + "\n")
+                await self._write_handle.write(message.model_dump_json(exclude_none=True) + "\n")
+            await self._write_handle.flush()
+        else:
+            async with aiofiles.open(self._file_path, "a", encoding="utf-8") as f:
+                for message in messages:
+                    await f.write(message.model_dump_json(exclude_none=True) + "\n")
 
     async def get_messages(
         self, *, after_rowid: int = 0, limit: int | None = None
@@ -202,12 +218,16 @@ class JsonlContextStorage:
     # ---- Checkpoints ---- #
 
     async def create_checkpoint(self, checkpoint_id: int) -> int:
-        """Append a checkpoint line and return the line number (approx rowid)."""
+        """Append a checkpoint line and return 0 (unused by caller)."""
         line = orjson.dumps({"role": "_checkpoint", "id": checkpoint_id}).decode("utf-8") + "\n"
-        async with aiofiles.open(self._file_path, "a", encoding="utf-8") as f:
-            await f.write(line)
-        # Count current lines to return as approximate rowid
-        return await self.get_message_count()
+        if self._write_handle is not None:
+            await self._write_handle.write(line)
+            await self._write_handle.flush()
+        else:
+            async with aiofiles.open(self._file_path, "a", encoding="utf-8") as f:
+                await f.write(line)
+        # Return a dummy rowid; the caller (Context.checkpoint) ignores it.
+        return 0
 
     async def get_latest_checkpoint_id(self) -> int:
         latest_id = -1
@@ -235,6 +255,11 @@ class JsonlContextStorage:
         Only keeps valid context lines (messages, system prompt, usage, checkpoint) and
         skips malformed/invalid lines, matching the original ``Context.revert_to()`` behavior.
         """
+        # Close the write handle before rewriting to avoid Windows file-lock conflicts
+        if self._write_handle is not None:
+            await self._write_handle.close()
+            self._write_handle = None
+
         tmp_path = self._file_path.with_suffix(".tmp")
         found = False
         try:
@@ -269,13 +294,20 @@ class JsonlContextStorage:
             if tmp_path.exists():
                 await aiofiles.os.unlink(tmp_path)
             raise
+        finally:
+            # Reopen the write handle for subsequent append operations
+            self._write_handle = await aiofiles.open(self._file_path, mode="a", encoding="utf-8")
 
     # ---- Usage ---- #
 
     async def record_usage(self, token_count: int) -> None:
         line = orjson.dumps({"role": "_usage", "token_count": token_count}).decode("utf-8") + "\n"
-        async with aiofiles.open(self._file_path, "a", encoding="utf-8") as f:
-            await f.write(line)
+        if self._write_handle is not None:
+            await self._write_handle.write(line)
+            await self._write_handle.flush()
+        else:
+            async with aiofiles.open(self._file_path, "a", encoding="utf-8") as f:
+                await f.write(line)
 
     async def get_latest_usage(self) -> int | None:
         latest = None
@@ -298,8 +330,14 @@ class JsonlContextStorage:
     # ---- Bulk ---- #
 
     async def clear(self) -> None:
+        """Clear the JSONL file (truncate)."""
+        # Close existing handle, truncate, then reopen in append mode
+        if self._write_handle is not None:
+            await self._write_handle.close()
+            self._write_handle = None
         async with aiofiles.open(self._file_path, "w", encoding="utf-8") as f:
             pass
+        self._write_handle = await aiofiles.open(self._file_path, mode="a", encoding="utf-8")
 
     async def restore_full(self) -> tuple[str | None, list[Message], int | None, int, list[Message]]:
         """Full restore scanning the entire JSONL file.

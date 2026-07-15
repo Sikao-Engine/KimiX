@@ -137,12 +137,16 @@ class _WireRecorder:
             await self._task
 
     async def _consume_loop(self, queue: Queue[WireMessage]) -> None:
-        while True:
-            try:
-                msg = await queue.get()
-                await self._record(msg)
-            except QueueShutDown:
-                break
+        await self._wire_file.open()
+        try:
+            while True:
+                try:
+                    msg = await queue.get()
+                    await self._record(msg)
+                except QueueShutDown:
+                    break
+        finally:
+            await self._wire_file.close()
 
     async def _record(self, msg: WireMessage) -> None:
         await self._wire_file.append_message(msg)
