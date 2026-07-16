@@ -17,6 +17,7 @@ dependencies = [
     "mcp>=1,<2",
     "orjson>=3.0.0",
     "json_repair>=0.59.10",
+    "regex>=2023.0.0",
 ]
 
 [project.optional-dependencies]

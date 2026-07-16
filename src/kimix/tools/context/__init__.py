@@ -45,11 +45,11 @@ class CompactParams(BaseModel):
         description="Optional instruction guiding what to preserve during compaction.",
     )
     mode: CompactMode = Field(
-        default=CompactMode.BALANCED,
+        default=CompactMode.RETENTIVE,
         description=(
             "High-level compaction style / emphasis. "
-            "One of: balanced (default structured summary), aggressive (shorter), "
-            "retentive (keep more detail), technical (emphasize code/errors/design). "
+            "One of: retentive (default, keep more detail), balanced (structured summary), "
+            "aggressive (shorter), technical (emphasize code/errors/design). "
             "Does not affect preserve depth or cascade behavior."
         ),
     )

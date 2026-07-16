@@ -2,7 +2,7 @@ import asyncio
 import contextlib
 import copy
 import json
-import re
+import regex as re
 import ssl
 import time
 import traceback
@@ -470,6 +470,83 @@ def is_effectively_empty_content_parts(content: Sequence[ContentPart]) -> bool:
     return True
 
 
+class BufferedChatCompletionToolCall(TypedDict, total=False):
+    """Per-stream-index buffering state for streamed tool-call deltas."""
+
+    id: str | None
+    arguments: str
+    emitted: bool
+
+
+def convert_chat_completion_stream_tool_call(
+    tool_call: Any,
+    buffered_by_index: dict[int, BufferedChatCompletionToolCall],
+) -> list[StreamedMessagePart]:
+    """Convert an OpenAI Chat Completions-style streamed tool-call delta into
+    the normalized kosong stream-part protocol.
+
+    OpenAI-compatible providers may emit argument chunks before the function
+    name for a stream index. Buffer those early argument chunks until the
+    first named header arrives, then emit the header with the buffered
+    arguments prepended so no argument text is lost. After the header,
+    subsequent argument chunks are emitted as ``ToolCallPart`` deltas.
+    """
+    function = tool_call.function
+    if function is None:
+        return []
+
+    stream_index = getattr(tool_call, "index", None)
+    name = function.name
+    arguments = function.arguments
+    has_name = isinstance(name, str) and len(name) > 0
+    has_arguments = isinstance(arguments, str) and len(arguments) > 0
+
+    if stream_index is None:
+        if has_name:
+            return [
+                ToolCall(
+                    id=tool_call.id or str(uuid.uuid4()),
+                    function=ToolCall.FunctionBody(name=name, arguments=arguments),
+                )
+            ]
+        if has_arguments:
+            return [ToolCallPart(arguments_part=arguments)]
+        return []
+
+    buffered = buffered_by_index.get(stream_index)
+    if buffered is None:
+        buffered = BufferedChatCompletionToolCall(id=None, arguments="", emitted=False)
+    if tool_call.id is not None:
+        buffered["id"] = tool_call.id
+
+    if not buffered["emitted"]:
+        if not has_name:
+            # Argument chunks arriving before the function name — buffer them
+            # so they can be prepended to the header once the name arrives.
+            if has_arguments:
+                buffered["arguments"] = buffered["arguments"] + arguments
+            buffered_by_index[stream_index] = buffered
+            return []
+        buffered["emitted"] = True
+        initial_arguments: str | None
+        if buffered["arguments"]:
+            initial_arguments = buffered["arguments"] + (arguments or "")
+        else:
+            initial_arguments = arguments or None
+        buffered["arguments"] = ""
+        buffered_by_index[stream_index] = buffered
+        return [
+            ToolCall(
+                id=buffered["id"] or tool_call.id or str(uuid.uuid4()),
+                function=ToolCall.FunctionBody(name=name, arguments=initial_arguments),
+            )
+        ]
+
+    if not has_arguments:
+        return []
+    return [ToolCallPart(arguments_part=arguments)]
+
+
 def extract_usage_from_chunk(chunk: ChatCompletionChunk) -> CompletionUsage | None:
     """Extract token usage from a streaming ``ChatCompletionChunk``.
 
@@ -550,7 +627,12 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
         self._usage = response.usage
         message = response.choices[0].message
         reasoning_key = self._reasoning_key
-        if reasoning_key and (reasoning_content := getattr(message, reasoning_key, None)):
+        reasoning_content = getattr(message, reasoning_key, None) if reasoning_key else None
+        # Yield on presence, not truthiness: an explicitly empty
+        # reasoning_content must round-trip as an empty ThinkPart so the
+        # next request passes the field back (Moonshot rejects thinking-mode
+        # histories whose assistant messages lost their reasoning field).
+        if reasoning_content is not None:
             assert isinstance(reasoning_content, str)
             yield ThinkPart(think=reasoning_content)
         if message.content:
@@ -572,6 +654,7 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
         self,
         response: AsyncIterator[ChatCompletionChunk],
     ) -> AsyncIterator[StreamedMessagePart]:
+        buffered_tool_calls: dict[int, BufferedChatCompletionToolCall] = {}
         try:
             async for chunk in response:
                 if chunk.id:
@@ -586,7 +669,10 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
 
                 # extract reasoning / thinking content
                 reasoning_key = self._reasoning_key
-                if reasoning_key and (reasoning_content := getattr(delta, reasoning_key, None)):
+                reasoning_content = getattr(delta, reasoning_key, None) if reasoning_key else None
+                # Same presence-vs-truthiness rule as the non-stream path:
+                # preserve an explicitly empty reasoning_content delta.
+                if reasoning_content is not None:
                     assert isinstance(reasoning_content, str)
                     yield ThinkPart(think=reasoning_content)
 
@@ -596,23 +682,9 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
 
                 # extract tool-call deltas
                 for tool_call in delta.tool_calls or []:
-                    if not tool_call.function:
-                        continue
-
-                    if tool_call.function.name:
-                        yield ToolCall(
-                            id=tool_call.id or str(uuid.uuid4()),
-                            function=ToolCall.FunctionBody(
-                                name=tool_call.function.name,
-                                arguments=tool_call.function.arguments,
-                            ),
-                        )
-                    elif tool_call.function.arguments:
-                        yield ToolCallPart(
-                            arguments_part=tool_call.function.arguments,
-                        )
-                    else:
-                        # skip empty tool calls
-                        pass
+                    for part in convert_chat_completion_stream_tool_call(
+                        tool_call, buffered_tool_calls
+                    ):
+                        yield part
         except (OpenAIError, httpx.HTTPError) as e:
             raise convert_error(e) from e

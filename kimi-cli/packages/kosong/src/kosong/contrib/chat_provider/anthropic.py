@@ -10,7 +10,7 @@ import asyncio
 import contextlib
 import json
 import orjson
-import re
+import regex as re
 from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, Self, TypedDict, Unpack, cast
 
@@ -86,6 +86,7 @@ from kosong.contrib.chat_provider.common import (
     BaseStreamedMessage,
     ToolMessageConversion,
     check_tool_call_id,
+    normalize_tool_call_ids,
     validate_tool_call_arguments,
 )
 from kosong.message import (
@@ -366,8 +367,13 @@ class Anthropic:
             if system_prompt
             else omit
         )
+        # Normalize historical tool-call ids defensively: Anthropic validates
+        # tool_use/tool_result ids against [a-zA-Z0-9_-] and 400s on ids
+        # persisted from other providers (e.g. ``Read:9``). Assistant
+        # tool_calls and their matching tool messages are rewritten
+        # consistently; the caller's history objects are never mutated.
         messages: list[MessageParam] = []
-        for message in history:
+        for message in normalize_tool_call_ids(history):
             converted = self._convert_message(message)
             # Per Anthropic spec, tool_result blocks for the same assistant turn
             # must live in a single user message. Internal Messages model one

@@ -194,10 +194,7 @@ async def test_context_prune_tool_does_not_break_provider_conversion(
         base_url="http://localhost",
     )
     try:
-        converted = [
-            _kimi_convert_message(m, include_reasoning_content=False)
-            for m in soul.context.history
-        ]
+        converted = [_kimi_convert_message(m) for m in soul.context.history]
         tool_call_ids = {
             tc["id"]
             for m in converted

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+import regex as re
+from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Literal
 
 from kosong.chat_provider import StreamedMessagePart, TokenUsage
+from kosong.message import Message
 
 if TYPE_CHECKING:
     from kosong.message import ToolCall
@@ -56,6 +58,110 @@ def check_tool_call_id(
             f"Content: {message_content}"
         )
     return None
+
+
+_EMPTY_TOOL_CALL_ID = "tool_call"
+_TOOL_CALL_ID_SAFE_CHARS = re.compile(r"[^a-zA-Z0-9_-]")
+_TOOL_CALL_ID_MAX_LENGTH = 64
+
+
+def _sanitize_tool_call_id(tool_call_id: str) -> str:
+    """Replace characters strict backends reject and truncate to the id budget."""
+    sanitized = _TOOL_CALL_ID_SAFE_CHARS.sub("_", tool_call_id)
+    return sanitized[:_TOOL_CALL_ID_MAX_LENGTH]
+
+
+def _make_unique_tool_call_id(normalized: str, used: set[str]) -> str:
+    base = normalized if normalized else _EMPTY_TOOL_CALL_ID
+    candidate = base[:_TOOL_CALL_ID_MAX_LENGTH]
+    if candidate not in used:
+        return candidate
+    index = 2
+    while True:
+        suffix = f"_{index}"
+        candidate = base[: _TOOL_CALL_ID_MAX_LENGTH - len(suffix)] + suffix
+        if candidate not in used:
+            return candidate
+        index += 1
+
+
+def normalize_tool_call_ids(history: Sequence[Message]) -> Sequence[Message]:
+    """Rewrite invalid historical tool-call ids to a safe, portable shape.
+
+    Histories persisted from other providers (or older sessions) can contain
+    tool-call ids with characters strict backends reject (e.g. Moonshot 400s
+    on ``Read:9``) or ids longer than 64 characters; sending them verbatim
+    fails the whole request. Ids are sanitized to ``[a-zA-Z0-9_-]``,
+    truncated, and made unique with ``_2``/``_3``... suffixes; assistant
+    ``tool_calls`` entries and their matching ``tool`` messages are rewritten
+    consistently.
+
+    Providers whose own backends generate well-formed ids (OpenAI, Anthropic)
+    apply the same normalization defensively so cross-provider histories can
+    be replayed anywhere. Input messages are never mutated; when every id is
+    already valid the original sequence object is returned unchanged.
+    """
+    raw_ids: list[str] = []
+    seen: set[str] = set()
+    for message in history:
+        for tool_call in message.tool_calls or []:
+            if tool_call.id not in seen:
+                seen.add(tool_call.id)
+                raw_ids.append(tool_call.id)
+        if message.tool_call_id is not None and message.tool_call_id not in seen:
+            seen.add(message.tool_call_id)
+            raw_ids.append(message.tool_call_id)
+    if not raw_ids:
+        return history
+
+    # Ids that already satisfy the contract keep their value (first pass), so
+    # only genuinely invalid ids are rewritten (second pass).
+    mapped: dict[str, str] = {}
+    used: set[str] = set()
+    for raw_id in raw_ids:
+        normalized = _sanitize_tool_call_id(raw_id)
+        if normalized == raw_id and normalized:
+            mapped[raw_id] = normalized
+            used.add(normalized)
+    for raw_id in raw_ids:
+        if raw_id in mapped:
+            continue
+        unique = _make_unique_tool_call_id(_sanitize_tool_call_id(raw_id), used)
+        mapped[raw_id] = unique
+        used.add(unique)
+
+    if all(mapped[raw_id] == raw_id for raw_id in raw_ids):
+        return history
+
+    normalized_messages: list[Message] = []
+    for message in history:
+        changed = False
+        new_tool_calls = message.tool_calls
+        if message.tool_calls:
+            new_tool_calls = []
+            for tool_call in message.tool_calls:
+                mapped_id = mapped[tool_call.id]
+                if mapped_id == tool_call.id:
+                    new_tool_calls.append(tool_call)
+                else:
+                    changed = True
+                    new_tool_calls.append(tool_call.model_copy(update={"id": mapped_id}))
+        new_tool_call_id = (
+            mapped[message.tool_call_id]
+            if message.tool_call_id is not None
+            else message.tool_call_id
+        )
+        if new_tool_call_id != message.tool_call_id:
+            changed = True
+        if not changed:
+            normalized_messages.append(message)
+        else:
+            normalized_messages.append(
+                message.model_copy(
+                    update={"tool_calls": new_tool_calls, "tool_call_id": new_tool_call_id}
+                )
+            )
+    return normalized_messages
 
 
 class BaseStreamedMessage:

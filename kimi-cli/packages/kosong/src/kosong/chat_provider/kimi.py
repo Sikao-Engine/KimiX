@@ -1,6 +1,7 @@
 import copy
 import mimetypes
 import os
+import regex as re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal, Self, Unpack, cast
 
@@ -27,6 +28,7 @@ from kosong.chat_provider.openai_common import (
     OpenAICompatibleProviderMixin,
     OpenAICompatibleStreamedMessage,
     apply_generation_kwargs,
+    clamp_max_tokens,
     convert_error,
     extract_reasoning_from_content,
     is_effectively_empty_content_parts,
@@ -39,7 +41,7 @@ from kosong.message import (
     VideoURLPart,
 )
 from kosong.tooling import Tool
-from kosong.utils.jsonschema import JsonDict, ensure_property_types
+from kosong.utils.jsonschema import JsonDict, deref_json_schema, ensure_property_types
 
 if TYPE_CHECKING:
 
@@ -50,6 +52,10 @@ if TYPE_CHECKING:
 
 class ThinkingConfig(TypedDict, total=False):
     type: Literal["enabled", "disabled"]
+    effort: str
+    """Concrete thinking effort level (e.g. ``"low"``, ``"high"``, ``"max"``).
+    Carried inside the ``thinking`` object; the API does not accept a top-level
+    ``reasoning_effort`` field for this contract."""
     keep: Any
     """Moonshot-specific ``thinking.keep`` switch for preserved thinking.
     Forwarded verbatim to the API; callers are responsible for choosing a value
@@ -88,7 +94,8 @@ class Kimi(OpenAICompatibleProviderMixin):
         stop: str | list[str] | None
         prompt_cache_key: str | None
         reasoning_effort: str | None
-        """Legacy thinking parameter. Use `extra_body.thinking` instead."""
+        """Legacy thinking parameter, forwarded verbatim when set manually.
+        Use ``with_thinking`` / `extra_body.thinking.effort` instead."""
         extra_body: ExtraBody | None
 
     def __init__(
@@ -123,18 +130,18 @@ class Kimi(OpenAICompatibleProviderMixin):
 
     @property
     def thinking_effort(self) -> ThinkingEffort | None:
-        reasoning_effort = self._generation_kwargs.get("reasoning_effort")
-        if reasoning_effort is None:
+        extra_body = self._generation_kwargs.get("extra_body") or {}
+        thinking = extra_body.get("thinking")
+        if thinking is None:
             return None
-        match reasoning_effort:
-            case "low":
-                return "low"
-            case "medium":
-                return "medium"
-            case "high":
-                return "high"
-            case _:
-                return "off"
+        if thinking.get("type") == "disabled":
+            return "off"
+        effort = thinking.get("effort")
+        if effort in ("low", "medium", "high", "xhigh", "max"):
+            return cast(ThinkingEffort, effort)
+        # Thinking enabled without a concrete effort (the boolean "on"
+        # signal) is not representable in kosong's ThinkingEffort set.
+        return None
 
     async def generate(
         self,
@@ -142,35 +149,45 @@ class Kimi(OpenAICompatibleProviderMixin):
         tools: Sequence[Tool],
         history: Sequence[Message],
     ) -> KimiStreamedMessage:
-        generation_kwargs: dict[str, Any] = {
-            # default kimi generation kwargs
-            "max_tokens": 32000,
-        }
+        generation_kwargs: dict[str, Any] = {}
         generation_kwargs.update(self._generation_kwargs)
+        # Drop None-valued kwargs so they are never serialized as JSON null.
+        generation_kwargs = {k: v for k, v in generation_kwargs.items() if v is not None}
+
+        # Normalize the legacy ``max_tokens`` alias to Kimi's preferred
+        # ``max_completion_tokens``. For reasoning models ``max_tokens`` shares
+        # the budget with ``reasoning_content`` and a small value can cause a
+        # 200 response with no ``content``. When both are set,
+        # ``max_completion_tokens`` wins. When neither is set, send no cap.
+        if generation_kwargs.get("max_completion_tokens") is None:
+            max_tokens = generation_kwargs.get("max_tokens")
+            if max_tokens is not None:
+                generation_kwargs["max_completion_tokens"] = max_tokens
+        generation_kwargs.pop("max_tokens", None)
+        clamp_max_tokens(generation_kwargs)
 
         extra_body = cast(dict[str, Any], generation_kwargs.get("extra_body") or {})
-        thinking_enabled = (
-            extra_body.get("thinking", {}).get("type") == "enabled"
-            or generation_kwargs.get("reasoning_effort") is not None
+        thinking = cast(dict[str, Any], extra_body.get("thinking") or {})
+        # Preserved thinking (``thinking.keep == "all"``) requires a
+        # ``reasoning_content`` field on every assistant message; without it
+        # only messages that actually carry reasoning include the field.
+        preserved_thinking_enabled = (
+            thinking.get("keep") == "all" and thinking.get("type") != "disabled"
         )
-        has_think_part = any(
-            isinstance(part, ThinkPart) for message in history for part in message.content
-        )
-        include_reasoning_content = thinking_enabled or has_think_part
 
         messages: list[ChatCompletionMessageParam] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(
-            _convert_message(message, include_reasoning_content=include_reasoning_content)
-            for message in history
+            _convert_message(message, preserved_thinking_enabled=preserved_thinking_enabled)
+            for message in _normalize_tool_call_ids(history)
         )
 
         try:
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=(_convert_tool(tool) for tool in tools),
+                tools=[_convert_tool(tool) for tool in tools] if tools else omit,
                 stream=self.stream,
                 stream_options={"include_usage": True} if self.stream else omit,
                 **generation_kwargs,
@@ -189,23 +206,25 @@ class Kimi(OpenAICompatibleProviderMixin):
             raise convert_error(e) from e
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
-        match effort:
-            case "off":
-                reasoning_effort = None
-            case "low":
-                reasoning_effort = "low"
-            case "medium":
-                reasoning_effort = "medium"
-            case "high" | "xhigh" | "max":
-                # Kimi's API caps at "high"; xhigh/max are Anthropic-specific.
-                reasoning_effort = "high"
-        return self.with_generation_kwargs(reasoning_effort=reasoning_effort).with_extra_body(
-            {
-                "thinking": {
-                    "type": "enabled" if effort != "off" else "disabled",
-                }
-            }
-        )
+        thinking: ThinkingConfig
+        if effort == "off":
+            thinking = {"type": "disabled"}
+        else:
+            # Concrete effort strings pass through verbatim — model
+            # compatibility and fallback are resolved above the provider
+            # boundary.
+            thinking = {"type": "enabled", "effort": effort}
+        # Replace extra_body.thinking wholesale so a stale ``effort`` from a
+        # previous with_thinking call can never linger on a disabled thinking
+        # object — but carry over a ``keep`` set earlier via with_extra_body
+        # (the KIMI_MODEL_THINKING_KEEP path applies keep after with_thinking
+        # and merges on top, so it is unaffected either way).
+        old_extra_body = self._generation_kwargs.get("extra_body") or {}
+        old_thinking = old_extra_body.get("thinking") or {}
+        keep = old_thinking.get("keep")
+        if keep is not None:
+            thinking["keep"] = keep
+        return self.with_generation_kwargs(extra_body={**old_extra_body, "thinking": thinking})
 
     def with_generation_kwargs(self, **kwargs: Unpack[GenerationKwargs]) -> Self:
         """
@@ -284,10 +303,108 @@ def _guess_filename(mime_type: str) -> str:
     return f"upload{extension}"
 
 
+_EMPTY_TOOL_CALL_ID = "tool_call"
+_TOOL_CALL_ID_SAFE_CHARS = re.compile(r"[^a-zA-Z0-9_-]")
+_TOOL_CALL_ID_MAX_LENGTH = 64
+
+
+def _sanitize_tool_call_id(tool_call_id: str) -> str:
+    """Replace characters Moonshot rejects and truncate to its id budget."""
+    sanitized = _TOOL_CALL_ID_SAFE_CHARS.sub("_", tool_call_id)
+    return sanitized[:_TOOL_CALL_ID_MAX_LENGTH]
+
+
+def _make_unique_tool_call_id(normalized: str, used: set[str]) -> str:
+    base = normalized if normalized else _EMPTY_TOOL_CALL_ID
+    candidate = base[:_TOOL_CALL_ID_MAX_LENGTH]
+    if candidate not in used:
+        return candidate
+    index = 2
+    while True:
+        suffix = f"_{index}"
+        candidate = base[: _TOOL_CALL_ID_MAX_LENGTH - len(suffix)] + suffix
+        if candidate not in used:
+            return candidate
+        index += 1
+
+
+def _normalize_tool_call_ids(history: Sequence[Message]) -> Sequence[Message]:
+    """Rewrite invalid historical tool-call ids to Moonshot's accepted shape.
+
+    Histories persisted from other providers (or older sessions) can contain
+    tool-call ids with characters Moonshot rejects (e.g. ``Read:9``) or ids
+    longer than 64 characters; sending them verbatim fails the whole request
+    with a 400. Ids are sanitized to ``[a-zA-Z0-9_-]``, truncated, and made
+    unique with ``_2``/``_3``... suffixes; assistant ``tool_calls`` entries
+    and their matching ``tool`` messages are rewritten consistently.
+    """
+    raw_ids: list[str] = []
+    seen: set[str] = set()
+    for message in history:
+        for tool_call in message.tool_calls or []:
+            if tool_call.id not in seen:
+                seen.add(tool_call.id)
+                raw_ids.append(tool_call.id)
+        if message.tool_call_id is not None and message.tool_call_id not in seen:
+            seen.add(message.tool_call_id)
+            raw_ids.append(message.tool_call_id)
+    if not raw_ids:
+        return history
+
+    # Ids that already satisfy the contract keep their value (first pass), so
+    # only genuinely invalid ids are rewritten (second pass).
+    mapped: dict[str, str] = {}
+    used: set[str] = set()
+    for raw_id in raw_ids:
+        normalized = _sanitize_tool_call_id(raw_id)
+        if normalized == raw_id and normalized:
+            mapped[raw_id] = normalized
+            used.add(normalized)
+    for raw_id in raw_ids:
+        if raw_id in mapped:
+            continue
+        unique = _make_unique_tool_call_id(_sanitize_tool_call_id(raw_id), used)
+        mapped[raw_id] = unique
+        used.add(unique)
+
+    if all(mapped[raw_id] == raw_id for raw_id in raw_ids):
+        return history
+
+    normalized_messages: list[Message] = []
+    for message in history:
+        changed = False
+        new_tool_calls = message.tool_calls
+        if message.tool_calls:
+            new_tool_calls = []
+            for tool_call in message.tool_calls:
+                mapped_id = mapped[tool_call.id]
+                if mapped_id == tool_call.id:
+                    new_tool_calls.append(tool_call)
+                else:
+                    changed = True
+                    new_tool_calls.append(tool_call.model_copy(update={"id": mapped_id}))
+        new_tool_call_id = (
+            mapped[message.tool_call_id]
+            if message.tool_call_id is not None
+            else message.tool_call_id
+        )
+        if new_tool_call_id != message.tool_call_id:
+            changed = True
+        if not changed:
+            normalized_messages.append(message)
+        else:
+            normalized_messages.append(
+                message.model_copy(
+                    update={"tool_calls": new_tool_calls, "tool_call_id": new_tool_call_id}
+                )
+            )
+    return normalized_messages
+
 def _convert_message(
-    message: Message, *, include_reasoning_content: bool = False
+    message: Message, *, preserved_thinking_enabled: bool = False
 ) -> ChatCompletionMessageParam:
     message = message.model_copy(deep=True)
+    has_reasoning_part = any(isinstance(part, ThinkPart) for part in message.content)
     reasoning_content, visible_content = extract_reasoning_from_content(message.content)
     message.content = visible_content
     dumped_message = message.model_dump(exclude_none=True)
@@ -304,10 +421,11 @@ def _convert_message(
         # the visible content is effectively empty alongside a tool call.
         dumped_message.pop("content", None)
     # Moonshot/DeepSeek-compatible backends require reasoning_content to be
-    # passed back on every assistant message in a thinking-mode conversation.
-    # Include it (empty string when there is no reasoning) whenever thinking is
-    # enabled or the history already contains reasoning content.
-    if include_reasoning_content and message.role == "assistant":
+    # passed back on assistant messages that carried reasoning. When preserved
+    # thinking is active (``thinking.keep == "all"`` and thinking is not
+    # disabled), the field must additionally be present on every assistant
+    # message, so backfill an empty string for messages without reasoning.
+    if has_reasoning_part or (preserved_thinking_enabled and message.role == "assistant"):
         dumped_message["reasoning_content"] = reasoning_content
     return cast(ChatCompletionMessageParam, dumped_message)
 
@@ -327,13 +445,15 @@ def _convert_tool(tool: Tool) -> ChatCompletionToolParam:
         )
     converted = tool_to_openai(tool)
     # Moonshot's API rejects parameter schemas whose nested properties omit
-    # `type` (e.g. enum-only properties exposed by some MCP servers). Patch
-    # the schema locally so such tools keep working against Kimi without
-    # requiring every MCP server author to tighten their schemas.
+    # `type` (e.g. enum-only properties exposed by some MCP servers), and
+    # schemas that keep draft-7 ``definitions``/``$ref`` indirections. Inline
+    # local refs, then patch missing types locally so such tools keep working
+    # against Kimi without requiring every MCP server author to tighten their
+    # schemas.
     function = converted["function"]
     parameters = function.get("parameters")
     if isinstance(parameters, dict):
-        normalized = ensure_property_types(cast(JsonDict, parameters))
+        normalized = ensure_property_types(deref_json_schema(cast(JsonDict, parameters)))
         function["parameters"] = cast(dict[str, object], normalized)
     return converted
 

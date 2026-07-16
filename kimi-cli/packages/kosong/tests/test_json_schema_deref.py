@@ -233,7 +233,9 @@ def test_ensure_property_types_infers_structural_type_before_string_fallback():
 def test_ensure_property_types_leaves_combinators_alone():
     """Properties using anyOf/oneOf/allOf/$ref/not/if/then/else legitimately
     declare their shape without a top-level `type` — we must not overwrite
-    that, or we would narrow the schema's meaning."""
+    that, or we would narrow the schema's meaning. Child schemas INSIDE the
+    combinator branches are still normalized (Moonshot rejects type-less
+    schemas anywhere in the tree)."""
     schema: JsonSchema = {
         "type": "object",
         "properties": {
@@ -268,13 +270,153 @@ def test_ensure_property_types_leaves_combinators_alone():
                 "ref_prop": {"$ref": "#/$defs/Something"},
                 "negated": {"not": {"type": "number"}},
                 "conditional": {
-                    "if": {"properties": {"kind": {"const": "a"}}},
-                    "then": {"required": ["a_only"]},
-                    "else": {"required": ["b_only"]},
+                    "if": {
+                        "properties": {"kind": {"const": "a", "type": "string"}},
+                        "type": "object",
+                    },
+                    "then": {"required": ["a_only"], "type": "object"},
+                    "else": {"required": ["b_only"], "type": "object"},
                 },
             },
         }
     )
+
+
+def test_ensure_property_types_repairs_type_contradicting_enum_values():
+    """Regression for the Xcode MCP generator bug (xcrun mcpbridge >= 26.5):
+    an explicit `type` that contradicts the enum/const values (e.g.
+    `type: "object"` alongside string enums) is rejected by Moonshot, so the
+    type is repaired and structure keys that no longer apply are dropped."""
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "type": "object",
+                "properties": {"unused": {"type": "string"}},
+                "required": ["unused"],
+                "enum": ["fast", "safe"],
+            },
+            # mixed enum values cannot be repaired to a single type — leave
+            # the explicit type alone and let the server validator decide.
+            "ambiguous": {"type": "integer", "enum": [True, 1]},
+        },
+    }
+    assert ensure_property_types(schema) == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "mode": {"type": "string", "enum": ["fast", "safe"]},
+                "ambiguous": {"type": "integer", "enum": [True, 1]},
+            },
+        }
+    )
+
+
+def test_ensure_property_types_walks_prefix_items_and_pattern_properties():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "tuple": {"type": "array", "prefixItems": [{"enum": ["left", "right"]}]},
+            "mapping": {"patternProperties": {"^x-": {"enum": [1, 2]}}},
+        },
+    }
+    assert ensure_property_types(schema) == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "tuple": {
+                    "type": "array",
+                    "prefixItems": [{"enum": ["left", "right"], "type": "string"}],
+                },
+                "mapping": {
+                    "patternProperties": {"^x-": {"enum": [1, 2], "type": "integer"}},
+                    "type": "object",
+                },
+            },
+        }
+    )
+
+
+def test_deref_json_schema_preserves_circular_refs():
+    """Circular references must not cause infinite recursion: the cyclic
+    `$ref` is left in place and its definition bucket is preserved so the
+    pointer stays resolvable."""
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {"node": {"$ref": "#/definitions/Node"}},
+        "definitions": {
+            "Node": {
+                "type": "object",
+                "properties": {"child": {"$ref": "#/definitions/Node"}},
+            }
+        },
+    }
+    resolved = deref_json_schema(schema)
+    assert resolved == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "node": {
+                    "type": "object",
+                    "properties": {"child": {"$ref": "#/definitions/Node"}},
+                }
+            },
+            # The bucket is preserved because a cyclic $ref still points into
+            # it; refs inside the bucket itself get inlined one level deep.
+            "definitions": {
+                "Node": {
+                    "type": "object",
+                    "properties": {
+                        "child": {
+                            "type": "object",
+                            "properties": {"child": {"$ref": "#/definitions/Node"}},
+                        }
+                    },
+                }
+            },
+        }
+    )
+
+
+def test_deref_json_schema_sibling_keys_take_precedence():
+    """A `$ref` with sibling keywords (JSON Schema 2020-12) merges the
+    resolved definition with the siblings; local keys win."""
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "mode": {
+                "$ref": "#/definitions/Mode",
+                "description": "Pick a mode.",
+                "enum": ["override"],
+            }
+        },
+        "definitions": {"Mode": {"enum": ["fast", "safe"], "type": "string"}},
+    }
+    resolved = deref_json_schema(schema)
+    assert resolved == snapshot(
+        {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "enum": ["override"],
+                    "type": "string",
+                    "description": "Pick a mode.",
+                }
+            },
+        }
+    )
+
+
+def test_deref_json_schema_leaves_unresolvable_refs_untouched():
+    schema: JsonSchema = {
+        "type": "object",
+        "properties": {
+            "remote": {"$ref": "https://example.com/schema.json#/Thing"},
+            "dangling": {"$ref": "#/definitions/Missing"},
+        },
+    }
+    resolved = deref_json_schema(schema)
+    assert resolved == schema
 
 
 def test_ensure_property_types_infers_object_and_array_from_container_enum_values():

@@ -145,8 +145,11 @@ Support for levels above ``high`` varies by provider:
 - **OpenAI**: ``xhigh`` is accepted natively for reasoning-capable models
   after ``gpt-5.1-codex-max`` and passes through unchanged. ``max`` is
   Anthropic-specific and clamps to ``xhigh`` (OpenAI's ceiling).
-- **Kimi / Gemini**: ``xhigh`` and ``max`` clamp to ``high`` (no native
-  support).
+- **Kimi**: any concrete effort string passes through verbatim inside
+  ``thinking.effort`` (``off`` maps to ``thinking.type = "disabled"``).
+  The provider performs no clamping — model compatibility and fallback
+  are resolved above the provider boundary.
+- **Gemini**: ``xhigh`` and ``max`` clamp to ``high`` (no native support).
 """
 
 

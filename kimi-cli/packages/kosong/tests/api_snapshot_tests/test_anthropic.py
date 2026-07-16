@@ -1000,6 +1000,89 @@ async def test_anthropic_parallel_tool_results_merged_into_single_user_message()
 
 
 # -----------------------------------------------------------------------------
+# Cross-provider tool-call id normalization
+# -----------------------------------------------------------------------------
+
+
+async def test_anthropic_normalizes_invalid_tool_call_ids():
+    """Histories persisted from other providers can carry tool-call ids that
+    Anthropic's id validation rejects (e.g. ``Read:9`` — only
+    ``[a-zA-Z0-9_-]`` is accepted). They are sanitized in both the assistant
+    tool_use block and the matching tool_result block, keeping them
+    consistent."""
+    from common import capture_request
+
+    history = [
+        Message(role="user", content="Read a file"),
+        Message(
+            role="assistant",
+            content=[],
+            tool_calls=[
+                ToolCall(
+                    id="Read:9",
+                    function=ToolCall.FunctionBody(name="Read", arguments='{"path":"/tmp/file"}'),
+                )
+            ],
+        ),
+        Message(role="tool", content="content", tool_call_id="Read:9"),
+    ]
+
+    with respx.mock(base_url="https://api.anthropic.com") as mock:
+        mock.post("/v1/messages").mock(return_value=Response(200, json=make_anthropic_response()))
+        provider = Anthropic(
+            model="claude-sonnet-4-20250514",
+            api_key="test-key",
+            default_max_tokens=1024,
+            stream=False,
+        )
+        body = await capture_request(mock, provider, "", [], history)
+
+    messages = body["messages"]
+    tool_use = messages[1]["content"][0]
+    assert tool_use["type"] == "tool_use"
+    assert tool_use["id"] == "Read_9"
+    tool_result = messages[2]["content"][0]
+    assert tool_result["type"] == "tool_result"
+    assert tool_result["tool_use_id"] == "Read_9"
+    # The caller's history objects must not be mutated.
+    assert history[1].tool_calls is not None
+    assert history[1].tool_calls[0].id == "Read:9"
+    assert history[2].tool_call_id == "Read:9"
+
+
+async def test_anthropic_valid_tool_call_ids_pass_through_unchanged():
+    """Well-formed Anthropic ids (``toolu_...``) are sent verbatim."""
+    from common import capture_request
+
+    history = [
+        Message(
+            role="assistant",
+            content=[],
+            tool_calls=[
+                ToolCall(
+                    id="toolu_abc-123_XYZ",
+                    function=ToolCall.FunctionBody(name="f", arguments="{}"),
+                )
+            ],
+        ),
+        Message(role="tool", content="1", tool_call_id="toolu_abc-123_XYZ"),
+    ]
+
+    with respx.mock(base_url="https://api.anthropic.com") as mock:
+        mock.post("/v1/messages").mock(return_value=Response(200, json=make_anthropic_response()))
+        provider = Anthropic(
+            model="claude-sonnet-4-20250514",
+            api_key="test-key",
+            default_max_tokens=1024,
+            stream=False,
+        )
+        body = await capture_request(mock, provider, "", [], history)
+
+    assert body["messages"][0]["content"][0]["id"] == "toolu_abc-123_XYZ"
+    assert body["messages"][1]["content"][0]["tool_use_id"] == "toolu_abc-123_XYZ"
+
+
+# -----------------------------------------------------------------------------
 # Malformed tool-call arguments (defensive parsing)
 # -----------------------------------------------------------------------------
 

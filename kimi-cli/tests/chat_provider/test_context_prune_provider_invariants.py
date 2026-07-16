@@ -48,23 +48,28 @@ async def test_kimi_thinking_mode_requires_reasoning_backpass() -> None:
         base_url="http://localhost",
     )
     try:
-        # Full reasoning content is forwarded back
+        # Full reasoning content is forwarded back whenever the message
+        # carries a ThinkPart, regardless of thinking configuration.
         msg = Message(role="assistant", content=[ThinkPart(think="deep reasoning")])
-        converted = _kimi_convert_message(msg, include_reasoning_content=True)
+        converted = _kimi_convert_message(msg)
         assert converted.get("reasoning_content") == "deep reasoning"
 
         # After ContextPrune strips reasoning in thinking mode, an empty
         # reasoning_content placeholder is preserved so the API still receives
         # the required field.
         stripped = Message(role="assistant", content=[ThinkPart(think="")])
-        converted_stripped = _kimi_convert_message(
-            stripped, include_reasoning_content=True
-        )
+        converted_stripped = _kimi_convert_message(stripped)
         assert converted_stripped.get("reasoning_content") == ""
 
-        # Without thinking mode, no reasoning_content key is injected.
-        converted_no_think = _kimi_convert_message(msg, include_reasoning_content=False)
-        assert "reasoning_content" not in converted_no_think
+        # With preserved thinking active, assistant messages without reasoning
+        # are backfilled with an empty reasoning_content field.
+        plain = Message(role="assistant", content=[TextPart(text="done")])
+        converted_plain = _kimi_convert_message(plain, preserved_thinking_enabled=True)
+        assert converted_plain.get("reasoning_content") == ""
+
+        # Without preserved thinking, plain assistant messages carry no field.
+        converted_plain_off = _kimi_convert_message(plain)
+        assert "reasoning_content" not in converted_plain_off
     finally:
         await provider.aclose()
 

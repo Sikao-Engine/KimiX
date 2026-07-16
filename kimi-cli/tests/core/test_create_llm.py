@@ -572,7 +572,7 @@ def test_create_llm_kimi_thinking_keep_all_injects_field(monkeypatch):
     assert isinstance(llm.chat_provider, Kimi)
 
     assert llm.chat_provider.model_parameters.get("extra_body") == snapshot(
-        {"thinking": {"type": "enabled", "keep": "all"}}
+        {"thinking": {"type": "enabled", "effort": "max", "keep": "all"}}
     )
 
 
@@ -644,7 +644,7 @@ def test_create_llm_kimi_thinking_keep_injected_on_explicit_thinking_true(monkey
     assert isinstance(llm.chat_provider, Kimi)
 
     assert llm.chat_provider.model_parameters.get("extra_body") == snapshot(
-        {"thinking": {"type": "enabled", "keep": "all"}}
+        {"thinking": {"type": "enabled", "effort": "max", "keep": "all"}}
     )
 
 
