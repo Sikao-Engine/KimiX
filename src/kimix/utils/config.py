@@ -130,7 +130,7 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
             "api_key", "oauth", "openai_settings", "custom_headers", "loop_control",
             "show_thinking_stream", "notifications", "mcp", "max_tokens",
             "thinking_effort", "temperature", "top_p", "top_k", "background",
-            "model_name", "name",
+            "model_name", "name", "role", 
         }
         unrecognized_keys = [k for k in provider_dict if k not in recognized_keys]
         if unrecognized_keys:
