@@ -439,19 +439,34 @@ def _build_session_output_block(
     return "\n".join(lines)
 
 
-def _dedup_output(output: str, threshold: int = 3) -> str:
-    """Collapse identical repeated lines.
+def _dedup_output(
+    output: str,
+    threshold: int = 3,
+    *,
+    max_block_lines: int = 1,
+) -> str:
+    """Collapse identical repeated lines or multi-line blocks.
 
     Lines appearing more than ``threshold`` times are collapsed:
         "ERROR: timeout" x 500  ->  "ERROR: timeout  (500 repeats)"
 
-    The first occurrence of a repeated line is kept with the count annotation;
-    all subsequent duplicates are dropped. Unique lines and lines appearing
-    <= threshold times pass through unchanged. Line order is preserved.
+    When ``max_block_lines`` is greater than 1, contiguous runs of identical
+    multi-line blocks are also collapsed. The annotation is placed on the last
+    line of the kept block:
+        "ERROR: module load failed\n  at /app/main.py:42" x 5
+        ->  "ERROR: module load failed\n  at /app/main.py:42  (5 repeats)"
+
+    The first occurrence of a repeated line or block is kept with the count
+    annotation; all subsequent duplicates are dropped. Unique lines/blocks and
+    those appearing <= threshold times pass through unchanged. Line order is
+    preserved.
 
     Args:
         output: The output string to deduplicate.
         threshold: Minimum repeat count before collapsing (default 3).
+        max_block_lines: Maximum height of a repeating block to detect.
+            Default 1 keeps the original single-line behavior. Values >= 2
+            enable multi-line block detection.
 
     Returns:
         Deduplicated output string.
@@ -459,19 +474,63 @@ def _dedup_output(output: str, threshold: int = 3) -> str:
     if not output:
         return ""
     lines = output.splitlines()
-    # Count occurrences per line (preserving original form)
-    from collections import Counter
-    counts = Counter(lines)
-    emitted: set[str] = set()
+
+    if max_block_lines <= 1:
+        # Count occurrences per line (preserving original form)
+        from collections import Counter
+        counts = Counter(lines)
+        emitted: set[str] = set()
+        result: list[str] = []
+        for line in lines:
+            cnt = counts[line]
+            if cnt > threshold:
+                if line not in emitted:
+                    emitted.add(line)
+                    result.append(f"{line}  ({cnt} repeats)")
+            else:
+                result.append(line)
+        return "\n".join(result)
+
+    # Multi-line path: greedy largest-block-first contiguous run detection.
+    consumed = [False] * len(lines)
     result: list[str] = []
-    for line in lines:
-        cnt = counts[line]
-        if cnt > threshold:
-            if line not in emitted:
-                emitted.add(line)
-                result.append(f"{line}  ({cnt} repeats)")
-        else:
-            result.append(line)
+    i = 0
+    n = len(lines)
+
+    while i < n:
+        if consumed[i]:
+            i += 1
+            continue
+
+        collapsed = False
+        for h in range(min(max_block_lines, n - i), 0, -1):
+            block = tuple(lines[i : i + h])
+            # Count contiguous repeats starting at i.
+            j = i
+            repeats = 0
+            while j + h <= n and tuple(lines[j : j + h]) == block:
+                if any(consumed[k] for k in range(j, j + h)):
+                    break
+                repeats += 1
+                j += h
+
+            if repeats > threshold:
+                # Emit one copy of the block.
+                for k, line in enumerate(block[:-1]):
+                    result.append(line)
+                    consumed[i + k] = True
+                result.append(f"{block[-1]}  ({repeats} repeats)")
+                for k in range(h * repeats):
+                    consumed[i + k] = True
+                i = i + h * repeats
+                collapsed = True
+                break
+
+        if not collapsed:
+            result.append(lines[i])
+            consumed[i] = True
+            i += 1
+
     return "\n".join(result)
 
 
@@ -840,13 +899,14 @@ async def _token_filter_output(
     token_kill: bool = True,
     max_lines: int | None = None,
     rtk_rewritten: bool = False,
+    max_block_lines: int = 1,
 ) -> tuple[str, str | None]:
     """Run the token filter pipeline on shell output.
 
     Stages run in order:
       1. Strip ANSI escape codes (via rich, merged with dedup step)
       2. Save original to temp file (if any filter is active)
-      3. Dedup (collapse repeated lines, when token_kill=True and RTK was not used)
+      3. Dedup (collapse repeated lines/blocks, when token_kill=True and RTK was not used)
       4. Truncate (head/tail fold to max_lines)
 
     Args:
@@ -857,6 +917,9 @@ async def _token_filter_output(
             because RTK already collapses repeats.
         max_lines: Optional max line count for head/tail truncation.
         rtk_rewritten: Whether the producing command was rewritten to ``rtk``.
+        max_block_lines: Maximum height of a repeating block for dedup.
+            Default 1 keeps single-line dedup. Values >= 2 enable multi-line
+            block detection.
 
     Returns:
         (filtered_output, original_path).
@@ -885,7 +948,7 @@ async def _token_filter_output(
 
     # Step 3: Dedup (preserves line order)
     if apply_dedup:
-        output = _dedup_output(output)
+        output = _dedup_output(output, max_block_lines=max_block_lines)
 
     # Step 4: Truncate (head/tail fold)
     if max_lines is not None:

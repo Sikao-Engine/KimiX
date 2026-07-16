@@ -69,6 +69,46 @@ def test_dedup_large_input():
         assert f"unique_{i}" in result
 
 
+def test_dedup_multiline_two_line_block():
+    out = "A\nB\n" * 4
+    result = _dedup_output(out.strip(), threshold=3, max_block_lines=2)
+    assert result == "A\nB  (4 repeats)"
+
+
+def test_dedup_multiline_two_line_block_below_threshold():
+    out = "A\nB\n" * 3
+    result = _dedup_output(out.strip(), threshold=3, max_block_lines=2)
+    assert result == out.strip()
+
+
+def test_dedup_multiline_prefers_larger_block():
+    # Should collapse as a 2-line block, not as individual A/B lines.
+    out = "A\nB\n" * 5
+    result = _dedup_output(out.strip(), threshold=3, max_block_lines=2)
+    assert result == "A\nB  (5 repeats)"
+    assert result.count("A") == 1
+
+
+def test_dedup_multiline_mixed_repeats():
+    out = "X\n" * 5 + "A\nB\n" * 4 + "Y\n" * 2
+    result = _dedup_output(out.strip(), threshold=3, max_block_lines=2)
+    assert "X  (5 repeats)" in result
+    assert "A\nB  (4 repeats)" in result
+    assert "Y" in result  # only 2 repeats, passes through
+
+
+def test_dedup_multiline_block_larger_than_run():
+    out = "A\nB\n" * 4
+    result = _dedup_output(out.strip(), threshold=3, max_block_lines=5)
+    assert result == "A\nB  (4 repeats)"
+
+
+def test_dedup_multiline_non_contiguous_blocks_unchanged():
+    out = "A\nB\nC\nA\nB\nD"
+    result = _dedup_output(out, threshold=2, max_block_lines=2)
+    assert result == out
+
+
 # ── _truncate_lines tests ───────────────────────────────────────────
 
 def test_truncate_short_unchanged():
@@ -439,5 +479,27 @@ async def test_token_filter_rtk_rewritten_with_max_lines_still_truncates():
     )
     assert "lines omitted" in result
     # truncation active -> original saved
+    assert orig_path is not None
+
+
+@pytest.mark.asyncio
+async def test_token_filter_multiline_dedup():
+    out = "ERROR\n  details\n" * 5
+    result, orig_path = await _token_filter_output(
+        out, token_kill=True, max_lines=None, max_block_lines=2
+    )
+    assert "ERROR\n  details  (5 repeats)" in result
+    assert orig_path is not None
+
+
+@pytest.mark.asyncio
+async def test_token_filter_default_still_single_line():
+    out = "ERROR\n  details\n" * 5
+    result, orig_path = await _token_filter_output(
+        out, token_kill=True, max_lines=None
+    )
+    # With default max_block_lines=1, only individual lines collapse.
+    assert "ERROR  (5 repeats)" in result
+    assert "details  (5 repeats)" in result
     assert orig_path is not None
 
