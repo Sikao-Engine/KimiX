@@ -40,8 +40,6 @@ def test_default_config_dump():
                 "adaptive_preserve_enabled": True,
                 "compact_reminder_enabled": True,
                 "compact_reminder_threshold": 0.7,
-                "done_reminder_enabled": True,
-                "done_reminder_cooldown_steps": 10,
                 "auto_retrieve_history": True,
                 "auto_retrieve_history_threshold": 5.0,
                 "auto_retrieve_working_memory": True,

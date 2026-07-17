@@ -973,7 +973,7 @@ from kosong.message import Message
 
 @dataclass(frozen=True, slots=True)
 class DynamicInjection:
-    type: str      # identifier, e.g. "compact_reminder", "done_reminder"
+    type: str      # identifier, e.g. "compact_reminder"
     content: str   # plain text; will be wrapped in <system-reminder> tags
 
 class DynamicInjectionProvider(ABC):
@@ -1016,10 +1016,6 @@ class KimiSoul:
         self._injection_providers: list[DynamicInjectionProvider] = [
             CompactReminderProvider(threshold=loop_control.compact_reminder_threshold)
                 if loop_control.compact_reminder_enabled else [],
-            DoneReminderProvider(
-                enabled=True,
-                cooldown_steps=loop_control.done_reminder_cooldown_steps,
-            ) if loop_control.done_reminder_enabled else [],
         ]
 
     def add_injection_provider(self, provider: DynamicInjectionProvider) -> None:
@@ -1042,9 +1038,8 @@ Built-in providers are registered in `__init__` according to `Config` / `LoopCon
 | Provider | File | Type | Purpose | Config knobs |
 |----------|------|------|---------|--------------|
 | `CompactReminderProvider` | `dynamic_injections/compact_reminder.py` | `compact_reminder` | Suggests calling `Compact` when context usage exceeds a threshold. | `LoopControl.compact_reminder_enabled`, `compact_reminder_threshold` |
-| `DoneReminderProvider` | `dynamic_injections/done_reminder.py` | `done_reminder` | Detects completion language in the latest assistant `TextPart`s and reminds the model to call `TodoList` before concluding. | `LoopControl.done_reminder_enabled`, `done_reminder_cooldown_steps` |
 
-Both providers skip subagent sessions and reset their throttling state in `on_context_compacted()` and/or `on_afk_changed()`.
+Both providers (and any custom providers) skip subagent sessions and reset their throttling state in `on_context_compacted()` and/or `on_afk_changed()`.
 
 ### Implementing a custom provider
 

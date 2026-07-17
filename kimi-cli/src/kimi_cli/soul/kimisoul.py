@@ -69,7 +69,6 @@ from kimi_cli.soul.dynamic_injection import (
     normalize_history,
 )
 from kimi_cli.soul.dynamic_injections.compact_reminder import CompactReminderProvider
-from kimi_cli.soul.dynamic_injections.done_reminder import DoneReminderProvider
 from kimi_cli.soul.llm_request_recorder import LLMRequestRecorder
 from kimi_cli.soul.message import (
     check_message,
@@ -302,14 +301,6 @@ class KimiSoul:
                 if not self._loop_control.compact_reminder_enabled
                 else [CompactReminderProvider(
                     threshold=self._loop_control.compact_reminder_threshold,
-                )]
-            ),
-            *(
-                []
-                if not self._loop_control.done_reminder_enabled
-                else [DoneReminderProvider(
-                    enabled=True,
-                    cooldown_steps=self._loop_control.done_reminder_cooldown_steps,
                 )]
             ),
         ]
