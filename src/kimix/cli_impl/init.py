@@ -37,8 +37,8 @@ minimax_default_config = '''
 kimi_default_config = '''
 {
     "model": "kimi-for-coding",
-    "max_context_size": 262144,
-    "capabilities": ["thinking"],
+    "max_context_size": 1048576,
+    "capabilities": ["thinking", "image_in"],
     "url": "https://api.kimi.com/coding/v1",
     "type": "kimi",
     "max_tokens": 131072,
@@ -140,7 +140,7 @@ def _ask_api_key() -> str:
 
 
 def _ask_context_size(config: dict[str, Any] | None = None) -> int:
-    default = "256k"
+    default = "1M"
     if config is not None:
         max_ctx = config.get("max_context_size")
         if max_ctx is not None:
@@ -174,7 +174,7 @@ def _ask_thinking_effort(default: str = "max") -> str:
         print_warning(f"Invalid effort '{value}', please choose from: {options_str}")
 
 
-def _ask_capabilities(default: tuple[str, ...] = ("thinking",)) -> list[str]:
+def _ask_capabilities(default: tuple[str, ...] = ("thinking", "image_in")) -> list[str]:
     options_str = ", ".join(_VALID_CAPABILITIES)
     prompt = f"Enter capabilities ({options_str}), multiple allowed, 'none' for empty"
     default_str = ", ".join(default)
@@ -310,7 +310,7 @@ def init(initialize: bool = True) -> None:
             thinking = _ask_thinking_effort(config.get("thinking_effort", "low"))
             config["thinking_effort"] = thinking
 
-            caps = config.get("capabilities", ["thinking"])
+            caps = config.get("capabilities", ["thinking", "image_in"])
             if isinstance(caps, str):
                 caps = (caps,)
             capabilities = _ask_capabilities(tuple(caps))

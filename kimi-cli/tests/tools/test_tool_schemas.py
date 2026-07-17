@@ -335,9 +335,47 @@ def test_read_media_file_params_schema(read_media_file_tool: ReadMediaFile):
         {
             "properties": {
                 "path": {
-                    "description": "Media path. Absolute required outside work dir.",
+                    "description": "Path to an image or video file. Relative paths resolve against the working directory; a path outside the working directory must be absolute. Directories and text files are not supported.",
                     "type": "string",
-                }
+                },
+                "region": {
+                    "anyOf": [
+                        {
+                            "properties": {
+                                "x": {
+                                    "description": "Left edge of the crop, in original-image pixels.",
+                                    "minimum": 0,
+                                    "type": "integer",
+                                },
+                                "y": {
+                                    "description": "Top edge of the crop, in original-image pixels.",
+                                    "minimum": 0,
+                                    "type": "integer",
+                                },
+                                "width": {
+                                    "description": "Crop width, in original-image pixels.",
+                                    "minimum": 1,
+                                    "type": "integer",
+                                },
+                                "height": {
+                                    "description": "Crop height, in original-image pixels.",
+                                    "minimum": 1,
+                                    "type": "integer",
+                                },
+                            },
+                            "required": ["x", "y", "width", "height"],
+                            "type": "object",
+                        },
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "description": "Images only: view just this rectangle of the image (original-image pixel coordinates). Use after a downsampled full view to inspect fine detail — a region within the size limits is delivered at full fidelity.",
+                },
+                "full_resolution": {
+                    "anyOf": [{"type": "boolean"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Images only: skip the default downscaling and view at native resolution. Fails with an explicit error when the payload would exceed the per-image byte limit; use region for files that large.",
+                },
             },
             "required": ["path"],
             "type": "object",
