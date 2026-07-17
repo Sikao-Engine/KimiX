@@ -818,6 +818,10 @@ def _read_shell_word(
     return "".join(chars), start, i
 
 
+# Prefix commands that should be skipped when finding the real executable token.
+# These are modifiers that precede the actual command (e.g. ``sudo git status``).
+_PREFIX_SKIP: frozenset[str] = frozenset({"sudo", "time", "nohup", "nice"})
+
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
@@ -835,6 +839,9 @@ def _rewrite_shell_segment(segment: str, exclude_read: bool) -> tuple[str, bool]
         if word == "RTK_DISABLED=1":
             return segment, False
         if _is_shell_assignment(word):
+            i = end
+            continue
+        if word in _PREFIX_SKIP:
             i = end
             continue
         # First real executable token in this segment/pipeline.

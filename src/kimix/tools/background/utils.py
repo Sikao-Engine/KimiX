@@ -50,9 +50,15 @@ class BackgroundStream:
         self._output = io.StringIO()
         self._last_output_time = time.monotonic()
         self._completed_event = threading.Event()
+        self._process_elapsed: float | None = None
 
     async def success(self) -> bool:
         return self._success
+
+    @property
+    def process_elapsed(self) -> float | None:
+        """The total running time of the subprocess in seconds, or None."""
+        return self._process_elapsed
 
     async def start(self, function: Callable[[queue.Queue[str]], Any] | Callable[[queue.Queue[str]], Awaitable[Any]], stop_function: Callable[[], Any] | Callable[[], Awaitable[Any]], input_function: Callable[[str], Any] | Callable[[str], Awaitable[Any]] | None = None) -> None:
         """Start the background thread with the given function.

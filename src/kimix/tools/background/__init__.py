@@ -118,8 +118,12 @@ class TaskOutput(CallableTool2):
                 remove_task_id(self._session, params.task_id)
                 # If the process failed (non-zero return), return error message
                 if not await stream.success():
+                    elapsed = stream.process_elapsed
+                    msg = output if output else "Task process failed (non-zero exit)"
+                    if elapsed is not None:
+                        msg += f" ({elapsed:.1f}s)"
                     return ToolError(
-                        message=output if output else "Task process failed (non-zero exit)",
+                        message=msg,
                         output=output if output else "",
                         brief=f"Task '{params.task_id}' failed"
                     )
@@ -135,14 +139,19 @@ class TaskOutput(CallableTool2):
                 output = await _maybe_export_output_async(output)
             kind = params.task_id.split("_")[0] if params.task_id else "task"
             status = "running" if task_alive else "completed"
+            output_text = output if output else "(no output)"
+            if not task_alive:
+                elapsed = stream.process_elapsed
+                if elapsed is not None:
+                    output_text += f"\n[Process completed in {elapsed:.2f}s]"
             return ToolOk(
-                output=output if output else "(no output)",
+                output=output_text,
                 brief="Task output retrieved",
                 display_block=BackgroundTaskDisplayBlock(
                     task_id=params.task_id,
                     kind=kind,
                     status=status,
-                    description=output[:200] if output else "(no output)",
+                    description=output_text[:200] if output_text else "(no output)",
                 ),
             )
         except Exception as e:

@@ -431,9 +431,13 @@ class Run(CallableTool2[RunParams]):
                         output_truncated=output_truncated,
                         original_path=original_path,
                     )
+                    elapsed = task.process_elapsed
+                    msg = (f"[rtk] `{display_cmd}` failed" if rtk_rewritten else f"`{display_cmd}` failed")
+                    if elapsed is not None:
+                        msg += f" ({elapsed:.1f}s)"
                     return ToolError(
                         output=block,
-                        message=(f"[rtk] `{display_cmd}` failed" if rtk_rewritten else f"`{display_cmd}` failed"),
+                        message=msg,
                         brief="Command execution failed",
                     )
 
@@ -451,9 +455,13 @@ class Run(CallableTool2[RunParams]):
                     output_truncated=output_truncated,
                     original_path=original_path,
                 )
+                elapsed = task.process_elapsed
+                msg = (f"[rtk] `{display_cmd}` success" if rtk_rewritten else f"`{display_cmd}` success")
+                if elapsed is not None:
+                    msg += f" ({elapsed:.1f}s)"
                 return ToolOk(
                     output=block,
-                    message=(f"[rtk] `{display_cmd}` success" if rtk_rewritten else f"`{display_cmd}` success"),
+                    message=msg,
                     brief="Command executed successfully",
                     display_block=ShellDisplayBlock(
                         language="shell", command=display_cmd),

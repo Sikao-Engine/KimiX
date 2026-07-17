@@ -394,7 +394,11 @@ class Powershell(CallableTool2[PowershellParams]):
                 output_truncated=output_truncated,
                 original_path=original_path,
             )
-            return ToolError(output=block, message=f"`{cmd}` failed." + transform_warning, brief="Command execution failed")
+            elapsed = process_task.process_elapsed
+            msg = f"`{cmd}` failed."
+            if elapsed is not None:
+                msg += f" ({elapsed:.1f}s)"
+            return ToolError(output=block, message=msg + transform_warning, brief="Command execution failed")
 
         processed, output_path, output_truncated, original_path = await self._process_output(
             cmd, params, output, rtk_rewritten=rtk_rewritten
@@ -410,9 +414,13 @@ class Powershell(CallableTool2[PowershellParams]):
             output_truncated=output_truncated,
             original_path=original_path,
         )
+        elapsed = process_task.process_elapsed
+        msg = (f"[rtk] `{cmd}` success." if rtk_rewritten else f"`{cmd}` success.")
+        if elapsed is not None:
+            msg += f" ({elapsed:.1f}s)"
         return ToolOk(
             output=block,
-            message=(f"[rtk] `{cmd}` success." if rtk_rewritten else f"`{cmd}` success.") + transform_warning,
+            message=msg + transform_warning,
             brief=f"Command executed successfully",
             display_block=ShellDisplayBlock(language="powershell", command=cmd),
         )

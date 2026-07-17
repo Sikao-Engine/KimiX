@@ -788,7 +788,11 @@ class Bash(CallableTool2[BashParams]):
                 output_truncated=output_truncated,
                 original_path=original_path,
             )
-            return ToolError(output=block, message=f"`{params.cmd}` failed", brief="Command execution failed")
+            elapsed = process_task.process_elapsed
+            msg = f"`{params.cmd}` failed"
+            if elapsed is not None:
+                msg += f" ({elapsed:.1f}s)"
+            return ToolError(output=block, message=msg, brief="Command execution failed")
 
         processed, output_path, output_truncated, original_path = await self._process_output(
             params, output, rtk_rewritten=rtk_rewritten
@@ -804,9 +808,13 @@ class Bash(CallableTool2[BashParams]):
             output_truncated=output_truncated,
             original_path=original_path,
         )
+        elapsed = process_task.process_elapsed
+        msg = (f"[rtk] `{params.cmd}` success" if rtk_rewritten else f"`{params.cmd}` success")
+        if elapsed is not None:
+            msg += f" ({elapsed:.1f}s)"
         return ToolOk(
             output=block,
-            message=(f"[rtk] `{params.cmd}` success" if rtk_rewritten else f"`{params.cmd}` success"),
+            message=msg,
             brief="Command executed successfully",
             display_block=ShellDisplayBlock(language="shell", command=params.cmd),
         )

@@ -484,7 +484,7 @@ def _cmd_supervisor(task_split: list[str], text_arr: list[str]) -> tuple[None, b
         return None, False
 
     try:
-        prompt(prompt_str=task_prompt, session=supervisor_session)
+        prompt(prompt_str=task_prompt, session=supervisor_session, format_output=True)
     except Exception as e:
         print_error(f'Supervisor prompt failed: {e}')
     finally:
@@ -518,7 +518,7 @@ def _cmd_swarm(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         return None, False
 
     try:
-        prompt(prompt_str=swarm_prompt, session=swarm_session)
+        prompt(prompt_str=swarm_prompt, session=swarm_session, format_output=True)
     except Exception as e:
         print_error(f'Swarm prompt failed: {e}')
     finally:
@@ -601,7 +601,7 @@ def _cmd_todo(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
 
     try:
         print_info(prompt_str)
-        prompt(prompt_str=prompt_str)
+        prompt(prompt_str=prompt_str, format_output=True)
     except Exception as e:
         print_error(f'Prompt failed: {e}')
 
