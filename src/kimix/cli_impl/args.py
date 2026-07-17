@@ -399,6 +399,7 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
                 normalized_providers = _normalize_sub_providers(sub_provider, sub_providers)
                 _pick_main_from_sub_providers(config_data, sub_provider, sub_providers)
                 base.set_default_provider(config_data)
+                print_debug(f"Provider model: {config_data.get('model', 'None')}")
                 if normalized_providers:
                     base.set_default_sub_providers(normalized_providers)
             except (orjson.JSONDecodeError, Exception):
