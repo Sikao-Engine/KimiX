@@ -228,6 +228,39 @@ def _format_turn_md(messages: list[Message], turn_number: int) -> str:
     return "\n".join(lines)
 
 
+def build_export_jsonl(
+    session_id: str,
+    work_dir: str,
+    history: Sequence[Message],
+    token_count: int,
+    now: pendulum.DateTime,
+) -> str:
+    """Build the full export as a JSONL (JSON Lines) string.
+
+    Line 1: session metadata (JSON object).
+    Lines 2+: each non-internal message serialized via ``Message.model_dump()``.
+    """
+    # Line 1: metadata
+    metadata = {
+        "type": "session_metadata",
+        "session_id": session_id,
+        "exported_at": now.isoformat(timespec="seconds"),
+        "work_dir": work_dir,
+        "message_count": len(history),
+        "token_count": token_count,
+    }
+    lines: list[str] = [orjson.dumps(metadata).decode()]
+
+    # Lines 2+: messages
+    for msg in history:
+        if _is_internal_user_message(msg):
+            continue
+        lines.append(orjson.dumps(msg.model_dump(exclude_none=True)).decode())
+
+    # Join with newlines, ensuring trailing newline
+    return "\n".join(lines) + "\n"
+
+
 def _build_overview(
     history: Sequence[Message],
     turns: list[list[Message]],

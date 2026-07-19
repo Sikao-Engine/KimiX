@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import enum
 import inspect
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -23,6 +24,16 @@ _prompt_semaphore = asyncio.Semaphore(5)
 
 if TYPE_CHECKING:
     from kimi_agent_sdk import MCPConfig
+
+
+class ExportFormat(enum.Enum):
+    """Format for session export."""
+
+    Markdown = "markdown"
+    """Export as a human-readable Markdown file."""
+
+    Jsonl = "jsonl"
+    """Export as a JSON Lines file (machine-readable)."""
 
 
 def _ensure_type(name: str, value: object, expected: type) -> None:
@@ -533,13 +544,21 @@ class Session:
             return self._cli.session.custom_config
         return None
 
-    async def export(self, output_path: str | Path | None = None) -> tuple[Path, int]:
-        """Export current session context to a markdown file.
+    async def export(
+        self,
+        output_path: str | Path | None = None,
+        format: ExportFormat = ExportFormat.Markdown,
+    ) -> tuple[Path, int]:
+        """Export current session context to a file.
 
         Args:
             output_path: Optional output file or directory path. If a directory,
                 a default filename is generated. If not provided, the file is
                 written to the session's work directory.
+            format: Export format — ``ExportFormat.Markdown`` (default) for a
+                human-readable markdown file, or ``ExportFormat.Jsonl`` for
+                a JSON Lines file.  Internal messages (checkpoints, system
+                reminders, notifications) are excluded in both formats.
 
         Returns:
             tuple[Path, int]: The output file path and the number of messages exported.
@@ -552,21 +571,61 @@ class Session:
         if self._closed:
             raise SessionStateError("Session is closed")
 
-        from kimi_cli.utils.export import perform_export
+        from kimi_cli.utils.export import build_export_jsonl, build_export_markdown
+
+        import aiofiles
+        import pendulum
 
         soul = self._cli.soul
         session = self._cli.session
-        result = await perform_export(
-            history=list(soul.context.history),
-            session_id=session.id,
-            work_dir=str(session.work_dir),
-            token_count=soul.context.token_count,
-            args=str(output_path) if output_path else "",
-            default_dir=Path(str(session.work_dir)),
-        )
-        if isinstance(result, str):
-            raise ValueError(result)
-        return result
+
+        history = list(soul.context.history)
+        if not history:
+            raise ValueError("No messages to export.")
+
+        now = pendulum.now()
+        short_id = session.id[:8]
+        extension = "." + format.value
+        default_name = f"kimi-export-{short_id}-{now.strftime('%Y%m%d-%H%M%S')}{extension}"
+
+        # Resolve output path
+        default_dir = Path(str(session.work_dir))
+        if output_path:
+            output = Path(output_path).expanduser()
+            if not output.is_absolute():
+                output = default_dir / output
+            # If path ends with a separator or is an existing directory, treat as directory
+            path_str = str(output_path).rstrip("/\\")
+            if output_path != path_str or output.is_dir():
+                output = output / default_name
+        else:
+            output = default_dir / default_name
+
+        if format is ExportFormat.Jsonl:
+            content = build_export_jsonl(
+                session_id=session.id,
+                work_dir=str(session.work_dir),
+                history=history,
+                token_count=soul.context.token_count,
+                now=now,
+            )
+        else:
+            content = build_export_markdown(
+                session_id=session.id,
+                work_dir=str(session.work_dir),
+                history=history,
+                token_count=soul.context.token_count,
+                now=now,
+            )
+
+        try:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            async with aiofiles.open(output, "w", encoding="utf-8") as f:
+                await f.write(content)
+        except OSError as e:
+            raise ValueError(f"Failed to write export file: {e}")
+
+        return (output, len(history))
 
     async def prompt(
         self,
