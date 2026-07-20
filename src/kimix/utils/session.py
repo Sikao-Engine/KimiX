@@ -275,6 +275,13 @@ def _create_default_session(resume: bool = True) -> Session:
         return _globals._default_session
     _globals._default_session = create_session(session_id=None, resume=resume)
     _globals._default_role = SystemPromptType.Worker
+
+    # Populate _cli_sessions cache
+    try:
+        _globals._refresh_cli_sessions(_globals._default_session._cli.session.work_dir)
+    except Exception:
+        pass
+
     return _globals._default_session
 
 

@@ -103,6 +103,17 @@ def _cmd_resume(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]
         new_session = create_session(session_id=session_id, resume=True)
         _globals._default_session = new_session
         _globals._default_role = SystemPromptType.Worker
+
+        # Update _cli_sessions cache
+        cli_sess = new_session._cli.session
+        _globals._add_cli_session(
+            cli_sess.id,
+            cli_sess.title,
+            cli_sess.updated_at,
+            context_usage=new_session.status.context_usage,
+            context_tokens=new_session.status.context_tokens,
+        )
+
         print_success(f'Resumed session {session_id}')
     except Exception as e:
         print_error(f'Failed to resume session: {e}')
@@ -166,6 +177,16 @@ def _cmd_store(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
             )
             _globals._default_session = new_session
             _globals._default_role = SystemPromptType.Worker
+
+            # Update _cli_sessions cache
+            cli_sess = new_session._cli.session
+            _globals._add_cli_session(
+                cli_sess.id,
+                cli_sess.title,
+                cli_sess.updated_at,
+                context_usage=-1.0,
+                context_tokens=0,
+            )
         except Exception as resume_err:
             print_error(f'Failed to resume original session: {resume_err}')
         return None, False
@@ -182,6 +203,16 @@ def _cmd_store(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         )
         _globals._default_session = new_session
         _globals._default_role = SystemPromptType.Worker
+
+        # Update _cli_sessions cache
+        cli_sess = new_session._cli.session
+        _globals._add_cli_session(
+            cli_sess.id,
+            cli_sess.title,
+            cli_sess.updated_at,
+            context_usage=new_session.status.context_usage,
+            context_tokens=new_session.status.context_tokens,
+        )
     except Exception as e:
         import traceback
         print_error(f'Store succeeded but failed to resume original session: {e}')
@@ -254,6 +285,16 @@ def _cmd_load(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         )
         _globals._default_session = new_session
         _globals._default_role = SystemPromptType.Worker
+
+        # Update _cli_sessions cache
+        cli_sess = new_session._cli.session
+        _globals._add_cli_session(
+            cli_sess.id,
+            cli_sess.title,
+            cli_sess.updated_at,
+            context_usage=new_session.status.context_usage,
+            context_tokens=new_session.status.context_tokens,
+        )
     except Exception as e:
         import traceback
         print_error(f'Loaded session but failed to resume copy: {e}')
@@ -265,34 +306,94 @@ def _cmd_load(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
 
 
 def _cmd_sessions(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
-    from kaos.path import KaosPath
-    from kimi_cli.session import Session as CliSession
+    """Handle /sessions and /sessions:<name> commands.
 
-    session = get_default_session()
-    current_id = None
-    if session is None:
-        work_dir = KaosPath('.')
-    else:
-        cli_session = session._cli.session
-        work_dir = cli_session.work_dir
-        current_id = cli_session.id
+    /sessions        - list all known sessions from in-memory cache
+    /sessions:<name> - create a new session named <name> and switch to it
+    """
+    from kimix.utils import _create_default_session
 
-    try:
-        sessions = asyncio.run(CliSession.list(work_dir))
-    except Exception as e:
-        print_error(f'Failed to list sessions: {e}')
+    # Case 1: /sessions:<name> — create a new named session
+    if len(task_split) >= 2:
+        new_name = ':'.join(task_split[1:])
+
+        # Close current session if any
+        session = get_default_session()
+        if session:
+            close_session(session)
+        _globals._default_session = None
+        _globals._default_role = None
+
+        try:
+            new_session = create_session(session_id=new_name, resume=False)
+            _globals._default_session = new_session
+            _globals._default_role = SystemPromptType.Worker
+
+            # Update cache
+            cli_sess = new_session._cli.session
+            _globals._add_cli_session(
+                cli_sess.id,
+                cli_sess.title,
+                cli_sess.updated_at,
+                context_usage=new_session.status.context_usage,
+                context_tokens=new_session.status.context_tokens,
+            )
+
+            print_success(f'Created and switched to session: {new_name}')
+        except Exception as e:
+            print_error(f'Failed to create session "{new_name}": {e}')
+            # Try to recover: create a fresh anonymous session
+            try:
+                _create_default_session(resume=False)
+            except Exception:
+                pass
+
         return None, False
 
-    if not sessions:
+    # Case 2: /sessions — list all known sessions
+    sessions_dict = _globals._cli_sessions
+
+    if not sessions_dict:
         print_warning('No sessions found.')
         return None, False
 
-    id_width = max(len('session id'), *(len(item.id) for item in sessions))
-    print_info(f'{" ":1}  {"session id":<{id_width}}  {"updated at":<19}  title')
-    for item in sessions:
-        marker = '*' if item.id == current_id else ' '
-        updated_at = pendulum.from_timestamp(item.updated_at).strftime('%Y-%m-%d %H:%M:%S')
-        print(f'{marker}  {item.id:<{id_width}}  {updated_at}  {item.title}')
+    # Get current session id and update its context usage in the cache
+    session = get_default_session()
+    current_id = session._cli.session.id if session else None
+    if session is not None:
+        try:
+            status = session.status
+            sessions_dict[current_id]['context_usage'] = status.context_usage
+            sessions_dict[current_id]['context_tokens'] = status.context_tokens
+        except Exception:
+            pass
+
+    # Build sortable list
+    items = [
+        (
+            sid,
+            info.get('title', 'Untitled'),
+            info.get('updated_at', 0.0),
+            info.get('context_usage', -1.0),
+            info.get('context_tokens', 0),
+        )
+        for sid, info in sessions_dict.items()
+    ]
+    items.sort(key=lambda x: x[2], reverse=True)
+
+    id_width = max(len('session id'), *(len(sid) for sid, _, _, _, _ in items))
+    print_info(
+        f'{" ":1}  {"session id":<{id_width}}  {"updated at":<19}  {"context usage":<22}  title'
+    )
+    for sid, title, updated_at, context_usage, context_tokens in items:
+        marker = '*' if sid == current_id else ' '
+        updated_str = pendulum.from_timestamp(updated_at).strftime('%Y-%m-%d %H:%M:%S')
+        if context_usage >= 0.0:
+            usage_str = f'{context_usage * 100:.1f}% ({context_tokens} tokens)'
+        else:
+            usage_str = '-'
+        print(f'{marker}  {sid:<{id_width}}  {updated_str}  {usage_str:<22}  {title}')
+
     return None, False
 
 

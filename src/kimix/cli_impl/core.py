@@ -11,6 +11,7 @@ from kimix.base import (
     sync_all,
 )
 from kimix.cot import cot_prompt
+import kimix.utils._globals as _globals
 from kimix.utils import _create_default_session, close_session, get_default_session, prompt
 
 from . import constants
@@ -122,6 +123,15 @@ def _client_cli() -> None:
     # so they do not block Python's threading._shutdown() on interpreter exit.
     session = get_default_session()
     if session is not None:
+        # Save final session state to _cli_sessions before closing
+        cli_sess = session._cli.session
+        _globals._add_cli_session(
+            cli_sess.id,
+            cli_sess.title,
+            cli_sess.updated_at,
+            context_usage=session.status.context_usage,
+            context_tokens=session.status.context_tokens,
+        )
         close_session(session)
 
 

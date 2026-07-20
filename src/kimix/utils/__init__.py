@@ -1,6 +1,10 @@
 from ._globals import (
     _default_session,
     _should_print_usage,
+    _cli_sessions,
+    _add_cli_session,
+    _remove_cli_session,
+    _refresh_cli_sessions,
 )
 from .config import _create_config
 from .system_prompt import _SYSTEM_PROMP, get_system_prompt, SystemPromptType
@@ -33,6 +37,10 @@ __all__ = [
     "SystemPromptType",
     "_default_session",
     "_should_print_usage",
+    "_cli_sessions",
+    "_add_cli_session",
+    "_remove_cli_session",
+    "_refresh_cli_sessions",
     "_create_config",
     "_SYSTEM_PROMP",
     "get_system_prompt",
