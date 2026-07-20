@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from hashlib import md5
+import xxhash
 from pathlib import Path
 
 import orjson
@@ -33,7 +33,7 @@ class WorkDirMeta(BaseModel):
     @property
     def sessions_dir(self) -> Path:
         """The directory to store sessions for this work directory."""
-        path_md5 = md5(self.path.encode(encoding="utf-8")).hexdigest()
+        path_md5 = xxhash.xxh64(self.path.encode(encoding="utf-8")).hexdigest()
         dir_basename = path_md5 if self.kaos == local_kaos.name else f"{self.kaos}_{path_md5}"
         session_dir = get_share_dir() / "sessions" / dir_basename
         session_dir.mkdir(parents=True, exist_ok=True)

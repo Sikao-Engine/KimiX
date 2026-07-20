@@ -27,7 +27,7 @@ in the Kimi Code TypeScript monorepo.
 
 from __future__ import annotations
 
-import re
+import regex as re
 from dataclasses import dataclass
 
 # Image MIME types every provider accepts. The closed set.

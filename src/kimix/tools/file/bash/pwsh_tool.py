@@ -1,7 +1,7 @@
 """PowerShell tool that executes commands via the system PowerShell executable."""
 
 import asyncio
-import base64
+import pybase64 as base64
 import contextlib
 import functools
 import os

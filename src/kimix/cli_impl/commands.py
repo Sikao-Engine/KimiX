@@ -537,7 +537,7 @@ def _cmd_todo(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         print_error(f'file not found: {file_path}')
         return None, False
 
-    import re
+    import regex as re
 
     from kimix.parser import (
         CParser,

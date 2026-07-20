@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import datetime
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import mcp.types
@@ -36,7 +36,7 @@ class MCPClient:
         import fastmcp
 
         self._name = name
-        self._timeout = datetime.timedelta(milliseconds=timeout_ms)
+        self._timeout = timedelta(milliseconds=timeout_ms)
         self._roots_handler = roots_handler
         self._sampling_handler = sampling_handler
 
@@ -85,7 +85,7 @@ class MCPClient:
         timeout_ms: int | None = None,
     ) -> CallToolResult:
         timeout = (
-            datetime.timedelta(milliseconds=timeout_ms) if timeout_ms is not None else self._timeout
+            timedelta(milliseconds=timeout_ms) if timeout_ms is not None else self._timeout
         )
         async with self._client as client:
             return await client.call_tool(

@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from asyncio import Future
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-import difflib
+from rapidfuzz import fuzz
 from functools import lru_cache
 import orjson
 import typing
@@ -709,7 +709,7 @@ def _cached_model_field_info(model: type[BaseModel]) -> tuple[
 @lru_cache(maxsize=65536)
 def _sequence_ratio(a: str, b: str) -> float:
     """Cached SequenceMatcher ratio for string pair (a, b)."""
-    return difflib.SequenceMatcher(None, a, b).ratio()
+    return fuzz.ratio(a, b) / 100.0
 
 
 def _fuzzy_match_keys(

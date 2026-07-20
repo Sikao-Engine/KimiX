@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import math
 import os
-import re
+import regex as re
 import warnings
 from dataclasses import dataclass
 from io import BytesIO

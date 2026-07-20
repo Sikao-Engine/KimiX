@@ -1,4 +1,4 @@
-import json
+import orjson
 import os
 import random
 from collections.abc import AsyncIterator, Sequence
@@ -85,7 +85,7 @@ class ChaosTransport(httpx.AsyncBaseTransport):
             },
         }
 
-        content = json.dumps(
+        content = orjson.dumps(
             error_messages.get(status_code, {"error": {"message": "Unknown error"}})
         )
         headers = {"content-type": "application/json"}

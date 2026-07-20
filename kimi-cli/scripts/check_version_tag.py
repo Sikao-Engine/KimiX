@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import re
+import regex as re
 import sys
 import tomllib
 from pathlib import Path

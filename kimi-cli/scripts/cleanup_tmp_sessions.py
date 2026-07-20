@@ -20,7 +20,7 @@ import argparse
 import orjson
 import shutil
 import sys
-from hashlib import md5
+import xxhash
 from pathlib import Path
 
 KIMI_DIR = Path.home() / ".kimi"
@@ -43,7 +43,7 @@ def is_tmp_path(path: str) -> bool:
 
 
 def work_dir_hash(path: str, kaos: str = "local") -> str:
-    h = md5(path.encode("utf-8")).hexdigest()
+    h = xxhash.xxh64(path.encode("utf-8")).hexdigest()
     return h if kaos == "local" else f"{kaos}_{h}"
 
 

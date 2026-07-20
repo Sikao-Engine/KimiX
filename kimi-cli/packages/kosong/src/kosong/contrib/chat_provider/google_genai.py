@@ -6,7 +6,7 @@ except ModuleNotFoundError as exc:
         'Install with `pip install "kosong[contrib]"`.'
     ) from exc
 
-import base64
+import pybase64 as base64
 import orjson
 import mimetypes
 from collections.abc import AsyncIterator, Mapping, Sequence

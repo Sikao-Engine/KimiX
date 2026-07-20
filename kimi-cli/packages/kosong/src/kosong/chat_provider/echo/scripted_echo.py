@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-import json
+import orjson
 from collections import deque
 from collections.abc import AsyncIterator, Iterable, Sequence
 from typing import TYPE_CHECKING, Self
@@ -54,7 +54,7 @@ class ScriptedEchoChatProvider:
             raise ChatProviderError(f"ScriptedEchoChatProvider exhausted at turn {self._turn + 1}.")
         script_text = self._scripts.popleft()
         if self._trace:
-            script_json = json.dumps(script_text)
+            script_json = orjson.dumps(script_text).decode()
             print(f"SCRIPTED_ECHO TURN {self._turn + 1}: {script_json}")
         self._turn += 1
         parts, message_id, usage = parse_echo_script(script_text)

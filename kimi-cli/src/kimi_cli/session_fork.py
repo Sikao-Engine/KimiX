@@ -308,7 +308,6 @@ async def fork_session(
 
 def _truncate_context_sqlite(db_path: Path, turn_index: int) -> list[str]:
     """Read context from SQLite DB and return lines up to and including the given turn."""
-    import re
     import orjson
 
     import apsw
