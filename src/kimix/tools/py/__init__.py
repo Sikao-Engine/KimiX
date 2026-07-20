@@ -1,7 +1,6 @@
 import asyncio
 import sys
-import os
-import tempfile
+from pathlib import Path
 
 import anyio
 from kimix.tools.common import _maybe_export_output_async, _export_to_temp_file_async, ProcessTask
@@ -16,7 +15,7 @@ _HUGE_CODE_THRESHOLD = 10000
 
 class Params(BaseModel):
     code: str = Field(
-        description="Python code to execute.",
+        description="Python code to execute, or path to a .py file to run directly.",
     )
     output_path: str | None = Field(
         default=None,
@@ -36,35 +35,47 @@ class Params(BaseModel):
 
 class Python(CallableTool2[Params]):
     name: str = "Python"
-    description: str = "Execute Python code."
+    description: str = "Execute Python code or run a .py file directly."
     params: type[Params] = Params
 
     def __init__(self, session: Session):
         super().__init__()
         self._session = session
         self._semaphore = asyncio.Semaphore(8)
+        self._script_counter = 0
 
     async def __call__(self, params: Params) -> ToolReturnValue:
         async with self._semaphore:
-            # Force UTF-8 encoding for subprocess on Windows and Unix
-            script_path: str | None = None
+            # Determine if code is a .py file path or inline code
+            code_path = Path(params.code)
+            is_file_mode = params.code.endswith('.py') and code_path.is_file()
 
-            # Windows CreateProcessW has a ~32767 char command-line limit.
-            # Use a temp file for very long code to avoid truncation/failure.
-            if len(params.code) > 30000:
-                with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
-                    f.write(params.code)
-                    script_path = f.name
+            if is_file_mode:
+                # File mode: run the given .py file directly
+                script_path = params.code
+                display_script_path = script_path.replace("\\", "/")
                 args = [script_path]
+                source_label = "File"
             else:
-                args = ['-c', params.code]
+                # Inline mode: write code to a numbered file in the session directory
+                session_dir = Path(self._session.dir)
+                script_name = f"{self._script_counter}.py"
+                script_path = str(session_dir / script_name)
+                self._script_counter += 1
+
+                async with await anyio.open_file(script_path, 'w', encoding='utf-8', errors='replace') as f:
+                    await f.write(params.code)
+
+                display_script_path = script_path.replace("\\", "/")
+                args = [script_path]
+                source_label = "Script"
 
             task = ProcessTask(sys.executable, args)
             task_id = await task.start(self._session, "python")
 
             if params.run_in_background:
                 return ToolOk(
-                    output=f"Running in background. task_id: `{task_id}`. Use `TaskOutput` tool to retrieve output.",
+                    output=f"{source_label} saved to `{display_script_path}`. Running in background. task_id: `{task_id}`. Use `TaskOutput` tool to retrieve output.",
                     brief="Background task started"
                 )
 
@@ -77,7 +88,7 @@ class Python(CallableTool2[Params]):
                 output = await _maybe_export_output_async(output)
                 return ToolError(
                     output=output,
-                    message=f"Running in background. task_id: `{task_id}`. use `TaskOutput`",
+                    message=f"{source_label} saved to `{display_script_path}`. Running in background. task_id: `{task_id}`. use `TaskOutput`",
                     brief="Timeout"
                 )
             # Clean up foreground task registration
@@ -85,13 +96,6 @@ class Python(CallableTool2[Params]):
             remove_task_id(self._session, task_id)
             # Get output
             output = await task.stream.pop_output() if task.stream else ""
-
-            # Clean up temp file since process has finished
-            if script_path is not None:
-                try:
-                    os.remove(script_path)
-                except Exception:
-                    pass
 
             # Handle output_path parameter if provided
             if params.output_path:
@@ -105,20 +109,21 @@ class Python(CallableTool2[Params]):
             # Check success
             success = await task.stream.success() if task.stream else False
 
-
-
             if not success:
                 if output and not params.output_path:
                     temp_path, _ = await _export_to_temp_file_async(key=None, content=output, ext='.txt')
                     display_temp_path = temp_path.replace("\\", "/")
                     output = f'saved to file `{display_temp_path}`'
                 return ToolError(
-                    output=output,
+                    output=f"{source_label}: `{display_script_path}`\n\n{output}",
                     message="Python execution failed",
                     brief="Python execution error"
                 )
 
+            success_message = f"{source_label}: `{display_script_path}`"
+            if is_file_mode:
+                return ToolOk(output=f"{success_message}\n\n{output}", brief=f"Python file executed: {display_script_path}")
             if len(params.code) > _HUGE_CODE_THRESHOLD:
-                return ToolOk(output=output, brief="Python code executed successfully")
+                return ToolOk(output=f"{success_message}\n\n{output}", brief="Python code executed successfully")
             colored_code = colorful_text(params.code, fg=Color.BLACK)
-            return ToolOk(output=f"{colored_code}\n\n{output}", brief=params.code)
+            return ToolOk(output=f"{success_message}\n\n{colored_code}\n\n{output}", brief=params.code)

@@ -26,9 +26,11 @@ from kimix.tools.py import Python, Params as PyParams
 
 
 @pytest.fixture
-def mock_session() -> MagicMock:
+def mock_session(tmp_path: Path) -> MagicMock:
     session = MagicMock()
     session.custom_data = {}
+    session.dir = tmp_path / ".kimi" / "sessions" / "test"
+    session.dir.mkdir(parents=True, exist_ok=True)
     return session
 
 
@@ -193,6 +195,51 @@ class TestPython:
             assert "Running in background" in result.message
             assert "task_id" in result.message
 
+    # File mode tests -------------------------------------------------------
+
+    async def test_file_success(self, mock_session: MagicMock, tmp_path: Path) -> None:
+        """Run an existing .py file directly."""
+        py_file = tmp_path / "hello.py"
+        py_file.write_text("print('hello_from_file')", encoding='utf-8')
+        tool = Python(session=mock_session)
+        params = PyParams(code=str(py_file), timeout=10)
+        result = await tool(params)
+        assert "hello_from_file" in str(result.output)
+        assert "File:" in str(result.output)
+        assert "hello.py" in str(result.output)
+
+    async def test_file_failure(self, mock_session: MagicMock, tmp_path: Path) -> None:
+        """Run an existing .py file that exits with error."""
+        py_file = tmp_path / "fail.py"
+        py_file.write_text("import sys; sys.exit(42)", encoding='utf-8')
+        tool = Python(session=mock_session)
+        params = PyParams(code=str(py_file), timeout=10)
+        result = await tool(params)
+        assert "failed" in str(result.message).lower() or "exited" in str(result.output).lower()
+        assert "File:" in str(result.output)
+
+    async def test_file_with_output_path(self, mock_session: MagicMock, tmp_path: Path) -> None:
+        """Run a .py file and export output to a destination file."""
+        py_file = tmp_path / "greet.py"
+        py_file.write_text("print('file_dest_out')", encoding='utf-8')
+        dest = tmp_path / "file_out.txt"
+        tool = Python(session=mock_session)
+        params = PyParams(code=str(py_file), timeout=10, output_path=str(dest))
+        result = await tool(params)
+        assert dest.exists()
+        assert "file_dest_out" in dest.read_text(encoding="utf-8")
+        assert "exported to" in str(result.output)
+
+    async def test_file_not_found_treated_as_code(self, mock_session: MagicMock) -> None:
+        """A .py path that does not exist should be treated as inline code."""
+        tool = Python(session=mock_session)
+        # "nonexistent.py" doesn't exist, so it's treated as inline code (a syntax error)
+        params = PyParams(code="nonexistent.py", timeout=10)
+        result = await tool(params)
+        # It will fail as Python code since "nonexistent.py" is not valid Python
+        assert isinstance(result, ToolError)
+        # Should reference "Script:" not "File:"
+        assert "Script:" in str(result.output)
 
 
 # ---------------------------------------------------------------------------
