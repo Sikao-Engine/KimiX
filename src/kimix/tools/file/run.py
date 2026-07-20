@@ -431,7 +431,7 @@ class Run(CallableTool2[RunParams]):
                         output_truncated=output_truncated,
                         original_path=original_path,
                     )
-                    elapsed = task.process_elapsed
+                    elapsed = task.stream.process_elapsed if task.stream else None
                     msg = (f"[rtk] `{display_cmd}` failed" if rtk_rewritten else f"`{display_cmd}` failed")
                     if elapsed is not None:
                         msg += f" ({elapsed:.1f}s)"
@@ -455,7 +455,7 @@ class Run(CallableTool2[RunParams]):
                     output_truncated=output_truncated,
                     original_path=original_path,
                 )
-                elapsed = task.process_elapsed
+                elapsed = task.stream.process_elapsed if task.stream else None
                 msg = (f"[rtk] `{display_cmd}` success" if rtk_rewritten else f"`{display_cmd}` success")
                 if elapsed is not None:
                     msg += f" ({elapsed:.1f}s)"

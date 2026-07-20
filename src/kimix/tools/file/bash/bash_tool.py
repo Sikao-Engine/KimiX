@@ -788,7 +788,7 @@ class Bash(CallableTool2[BashParams]):
                 output_truncated=output_truncated,
                 original_path=original_path,
             )
-            elapsed = process_task.process_elapsed
+            elapsed = process_task.stream.process_elapsed if process_task.stream else None
             msg = f"`{params.cmd}` failed"
             if elapsed is not None:
                 msg += f" ({elapsed:.1f}s)"
@@ -808,7 +808,7 @@ class Bash(CallableTool2[BashParams]):
             output_truncated=output_truncated,
             original_path=original_path,
         )
-        elapsed = process_task.process_elapsed
+        elapsed = process_task.stream.process_elapsed if process_task.stream else None
         msg = (f"[rtk] `{params.cmd}` success" if rtk_rewritten else f"`{params.cmd}` success")
         if elapsed is not None:
             msg += f" ({elapsed:.1f}s)"
