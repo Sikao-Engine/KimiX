@@ -1345,6 +1345,9 @@ class KimiSoul:
                         new=new_max,
                     )
                     chat_provider._generation_kwargs['max_tokens'] = new_max
+                    # Also set max_output_tokens for providers that use the
+                    # OpenAI Responses API (which ignores max_tokens).
+                    chat_provider._generation_kwargs['max_output_tokens'] = new_max
 
         @tenacity.retry(
             retry=retry_if_exception(self._is_retryable_error),
@@ -1366,14 +1369,19 @@ class KimiSoul:
         except APIEmptyResponseError:
             # All retries exhausted — the model keeps producing only thinking
             # content (output token budget exhausted during reasoning).
-            # Instead of crashing the conversation, return None to let the
-            # agent loop try another step.
+            # Stop the turn instead of looping infinitely.
             logger.warning(
                 "All retries exhausted for think-only response at step {step_no}, "
-                "continuing to next step",
+                "stopping turn",
                 step_no=self._current_step_no,
             )
-            return None
+            wire_send(TextPart(
+                text="\n(The model produced only thinking content without a response. Stopping this turn.)\n"
+            ))
+            return StepOutcome(
+                stop_reason="no_tool_calls",
+                assistant_message=Message(role="assistant", content=[]),
+            )
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.5. USAGE & STATUS UPDATE

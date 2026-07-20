@@ -127,7 +127,7 @@ class LoopControl(BaseModel):
         validation_alias=AliasChoices("max_steps_per_turn", "max_steps_per_run"),
     )
     """Maximum number of steps in one turn"""
-    max_retries_per_step: int = Field(default=3, ge=1)
+    max_retries_per_step: int = Field(default=5, ge=1)
     """Maximum number of retries in one step"""
     max_ralph_iterations: int = Field(default=0, ge=-1)
     """Extra iterations after the first turn in Ralph mode. Use -1 for unlimited."""
@@ -135,7 +135,7 @@ class LoopControl(BaseModel):
     """Reserved token count for LLM response generation. Auto-compaction triggers when
     either context_tokens + reserved_context_size >= max_context_size or
     context_tokens >= max_context_size * compaction_trigger_ratio. Default is 50000."""
-    compaction_trigger_ratio: float = Field(default=0.75, ge=0.5, le=0.99)
+    compaction_trigger_ratio: float = Field(default=0.8, ge=0.5, le=0.99)
     """Context usage ratio threshold for auto-compaction. Default is 0.85 (85%).
     Auto-compaction triggers when context_tokens >= max_context_size * compaction_trigger_ratio
     or when context_tokens + reserved_context_size >= max_context_size."""
@@ -184,7 +184,7 @@ class LoopControl(BaseModel):
     auto_retrieve_max_injections_per_turn: int = Field(default=3, ge=1, le=5)
     """Maximum number of auto-retrieved injections to inject per turn.
     Default is 3."""
-    auto_retrieve_max_tokens_per_turn: int = Field(default=2_000, ge=500, le=10_000)
+    auto_retrieve_max_tokens_per_turn: int = Field(default=20_000, ge=500, le=100_000)
     """Maximum total token budget for all auto-retrieved history injections in one turn.
     If the cumulative token count of selected injections exceeds this budget,
     additional injections are skipped. Default is 2,000."""

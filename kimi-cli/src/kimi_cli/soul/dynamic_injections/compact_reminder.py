@@ -14,7 +14,8 @@ _COMPACT_REMINDER_TYPE = "compact_reminder"
 
 _COMPACT_REMINDER_TEMPLATE = (
     "Context {usage:.0%} full ({tokens}/{max_tokens} tokens). "
-    "Call `Compact` to free space before auto-compaction forces it. "
+    "Call `Compact` after completing the current atomic task, "
+    "before auto-compaction forces it. "
     "Optionally pass an instruction to guide what to preserve."
 )
 

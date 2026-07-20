@@ -72,14 +72,15 @@ _MAX_OUTPUT_TOKENS = 384_000
 def clamp_max_tokens(kwargs: dict[str, Any]) -> None:
     """Clamp output-token budgets in *kwargs* to a safe upper bound.
 
-    Covers both ``max_tokens`` (the legacy field) and
+    Covers ``max_tokens`` (the legacy field),
     ``max_completion_tokens`` (the modern field recommended for reasoning
-    models).  The ``llm.py`` layer may default these to the model's total
+    models), and ``max_output_tokens`` (used by the OpenAI Responses API).
+    The ``llm.py`` layer may default these to the model's total
     context size (which can be 1 M+ tokens), but the API's output budget
     is typically capped far below that.  Sending an over-large value
     causes a ``400 BadRequest``.
     """
-    for key in ("max_tokens", "max_completion_tokens"):
+    for key in ("max_tokens", "max_completion_tokens", "max_output_tokens"):
         raw = kwargs.get(key)
         if raw is not None and raw > _MAX_OUTPUT_TOKENS:
             kwargs[key] = _MAX_OUTPUT_TOKENS
