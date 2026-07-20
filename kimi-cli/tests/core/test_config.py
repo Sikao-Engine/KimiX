@@ -30,10 +30,11 @@ def test_default_config_dump():
             "provider": None,
             "loop_control": {
                 "max_steps_per_turn": 15000,
-                "max_retries_per_step": 3,
+                "max_retries_per_step": 5,
+                "max_session_restarts": 3,
                 "max_ralph_iterations": 0,
                 "reserved_context_size": 75000,
-                "compaction_trigger_ratio": 0.75,
+                "compaction_trigger_ratio": 0.8,
                 "max_system_prompt_tokens": 4000,
                 "max_preserved_messages": 2,
                 "min_preserved_messages": 1,
@@ -48,7 +49,7 @@ def test_default_config_dump():
                 "auto_retrieve_recency_memory_threshold": 4.0,
                 "auto_retrieve_recency_weight": 1.0,
                 "auto_retrieve_max_injections_per_turn": 3,
-                "auto_retrieve_max_tokens_per_turn": 2000,
+                "auto_retrieve_max_tokens_per_turn": 20000,
                 "context_pruning_enabled": True,
                 "prune_trigger_ratio": 0.0,
                 "prune_target_ratio": 0.0,
@@ -162,7 +163,7 @@ def test_load_config_compaction_trigger_ratio():
 
 def test_load_config_compaction_trigger_ratio_default():
     config = load_config_from_string("{}")
-    assert config.loop_control.compaction_trigger_ratio == 0.75
+    assert config.loop_control.compaction_trigger_ratio == 0.8
 
 
 def test_load_config_compaction_trigger_ratio_too_low():

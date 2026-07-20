@@ -47,6 +47,7 @@ from kimi_cli.soul import (
     LLMNotSet,
     LLMNotSupported,
     MaxStepsReached,
+    SessionRestartRequired,
     Soul,
     StatusSnapshot,
     wire_send,
@@ -1095,12 +1096,20 @@ class KimiSoul:
                 # ── 2e. Step Execution ──────────────────────────────────────────
                 step_outcome = await self._step()
 
+            except SessionRestartRequired:
+                # ── 2f-i. Session restart signal ─────────────────────────────
+                # Propagate to outer layers (Session.prompt) for auto-restart.
+                # Do NOT send StepInterrupted here — the session will be cleared
+                # and restarted, so reporting an error on the old session is
+                # misleading.
+                raise
+
             except BackToTheFuture as e:
-                # ── 2f-i. D-Mail revert signal ────────────────────────────────
+                # ── 2f-ii. D-Mail revert signal ────────────────────────────────
                 back_to_the_future = e
 
             except Exception as e:
-                # ── 2f-ii. Fatal step error ───────────────────────────────────
+                # ── 2f-iii. Fatal step error ──────────────────────────────────
                 req_id = getattr(e, "request_id", None)
                 logger.error(
                     "Agent step {step_no} failed: {error_type}: {error}"
@@ -1382,6 +1391,17 @@ class KimiSoul:
                 stop_reason="no_tool_calls",
                 assistant_message=Message(role="assistant", content=[]),
             )
+        except (APIStatusError, APIConnectionError, APITimeoutError) as e:
+            # All retries exhausted for persistent API errors.
+            # Interrupt the session and restart with the same user input.
+            recovery_exhausted = getattr(e, "_kimi_recovery_exhausted", False)
+            raise SessionRestartRequired(
+                f"Step {self._current_step_no}: {type(e).__name__}"
+                + (f" (status={e.status_code})" if isinstance(e, APIStatusError) else "")
+                + (" [connection recovery exhausted]" if recovery_exhausted else "")
+                + " — retries exhausted, restarting session",
+                original_error=e,
+            ) from e
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.5. USAGE & STATUS UPDATE

@@ -50,6 +50,25 @@ class MaxStepsReached(Exception):
         self.n_steps = n_steps
 
 
+class SessionRestartRequired(Exception):
+    """Raised when the session should be automatically restarted.
+
+    This is raised when retryable errors (e.g. persistent 5xx, connection
+    failures) exhaust all retries and the session needs a fresh start.
+    The exception propagates through the agent loop and is handled by
+    :meth:`kimi_agent_sdk.Session.prompt`, which calls :meth:`Session.clear`
+    and re-invokes the prompt.
+    """
+
+    def __init__(
+        self,
+        reason: str,
+        original_error: BaseException | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.original_error = original_error
+
+
 def format_token_count(n: int) -> str:
     """Format token count as compact string, e.g. 28.5k, 128k, 1.2m."""
     suffix = ""

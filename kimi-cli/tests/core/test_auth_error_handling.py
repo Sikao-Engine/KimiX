@@ -31,7 +31,7 @@ from pydantic import SecretStr
 from kimi_cli.acp.session import ACPSession
 from kimi_cli.config import LLMProvider, OAuthRef
 from kimi_cli.llm import LLM
-from kimi_cli.soul import run_soul
+from kimi_cli.soul import SessionRestartRequired, run_soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
@@ -321,24 +321,26 @@ async def _drain_ui_messages(wire: Wire) -> None:
 
 @pytest.mark.asyncio
 async def test_401_propagates_as_api_status_error(runtime: Runtime, tmp_path: Path) -> None:
-    """A 401 from the provider should propagate as APIStatusError through run_soul."""
+    """A 401 from the provider should propagate as SessionRestartRequired through run_soul."""
     soul = _make_soul(runtime, Auth401Provider(), tmp_path)
 
-    with pytest.raises(APIStatusError) as exc_info:
+    with pytest.raises(SessionRestartRequired) as exc_info:
         await run_soul(soul, "hello", _drain_ui_messages, asyncio.Event())
 
-    assert exc_info.value.status_code == 401
+    assert isinstance(exc_info.value.original_error, APIStatusError)
+    assert exc_info.value.original_error.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_403_propagates_as_api_status_error(runtime: Runtime, tmp_path: Path) -> None:
-    """Non-401 status errors should still propagate as APIStatusError."""
+    """Non-401 status errors should still propagate as SessionRestartRequired."""
     soul = _make_soul(runtime, APIStatusErrorProvider(403, "permission denied"), tmp_path)
 
-    with pytest.raises(APIStatusError) as exc_info:
+    with pytest.raises(SessionRestartRequired) as exc_info:
         await run_soul(soul, "hello", _drain_ui_messages, asyncio.Event())
 
-    assert exc_info.value.status_code == 403
+    assert isinstance(exc_info.value.original_error, APIStatusError)
+    assert exc_info.value.original_error.status_code == 403
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ from kosong.utils.typing import JsonType
 
 from kimi_cli.approval_runtime import ApprovalRuntime
 from kimi_cli.constant import USER_AGENT
-from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, Soul, run_soul
+from kimi_cli.soul import LLMNotSet, LLMNotSupported, MaxStepsReached, RunCancelled, SessionRestartRequired, Soul, run_soul
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.toolset import KimiToolset, WireExternalTool
 from kimi_cli.utils.aioqueue import Queue, QueueShutDown
@@ -639,6 +639,39 @@ class WireServer:
             return JSONRPCErrorResponse(
                 id=msg.id,
                 error=JSONRPCErrorObject(code=ErrorCodes.LLM_NOT_SUPPORTED, message=str(e)),
+            )
+        except SessionRestartRequired as e:
+            # Unwrap the original error for proper handling below.
+            original = e.original_error
+            if isinstance(original, APIStatusError):
+                if original.status_code == 401 and _is_oauth_session(runtime):
+                    return JSONRPCErrorResponse(
+                        id=msg.id,
+                        error=JSONRPCErrorObject(
+                            code=ErrorCodes.AUTH_EXPIRED,
+                            message=(
+                                "Authentication failed. Your login session may have expired. "
+                                'Please run "/login" to sign in again.'
+                            ),
+                        ),
+                    )
+                return JSONRPCErrorResponse(
+                    id=msg.id,
+                    error=JSONRPCErrorObject(code=ErrorCodes.CHAT_PROVIDER_ERROR, message=str(original)),
+                )
+            if isinstance(original, ChatProviderError):
+                return JSONRPCErrorResponse(
+                    id=msg.id,
+                    error=JSONRPCErrorObject(code=ErrorCodes.CHAT_PROVIDER_ERROR, message=str(original)),
+                )
+            # Unknown original error — fall through to generic handler
+            logger.exception("Session restart required: %s", e)
+            return JSONRPCErrorResponse(
+                id=msg.id,
+                error=JSONRPCErrorObject(
+                    code=ErrorCodes.INTERNAL_ERROR,
+                    message=f"{type(e).__name__}: {e}",
+                ),
             )
         except APIStatusError as e:
             if e.status_code == 401 and _is_oauth_session(runtime):

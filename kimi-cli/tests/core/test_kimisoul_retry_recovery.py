@@ -21,7 +21,7 @@ from pydantic import SecretStr
 
 from kimi_cli.config import LLMModel, LLMProvider, OAuthRef
 from kimi_cli.llm import LLM
-from kimi_cli.soul import run_soul
+from kimi_cli.soul import SessionRestartRequired, run_soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul, _RETRY_WAIT
@@ -360,7 +360,7 @@ async def test_step_connection_error_recovery_only_retries_once(
     )
     soul, _ = _make_soul(runtime, llm, tmp_path)
 
-    with pytest.raises(APIConnectionError):
+    with pytest.raises(SessionRestartRequired):
         await run_soul(soul, "trigger connection failure", _drain_ui_messages, asyncio.Event())
 
     assert provider.generate_attempts == 2

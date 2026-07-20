@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import enum
 import inspect
+import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -14,11 +15,13 @@ from kimi_cli.config import Config
 from kimi_cli.llm import LLM
 from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.session import Session as CliSession
-from kimi_cli.soul import StatusSnapshot
+from kimi_cli.soul import SessionRestartRequired, StatusSnapshot
 from kimi_cli.wire.types import ContentPart, TextPart, ThinkPart, WireMessage
 from kosong.chat_provider import ChatProvider
 
 from kimi_agent_sdk._exception import SessionStateError
+
+logger = logging.getLogger(__name__)
 
 _prompt_semaphore = asyncio.Semaphore(5)
 
@@ -632,6 +635,7 @@ class Session:
         user_input: str | list[ContentPart],
         *,
         merge_wire_messages: bool = False,
+        max_restarts: int = 3,
     ) -> AsyncGenerator[WireMessage, None]:
         """
         Send a prompt and get a WireMessage stream.
@@ -639,6 +643,9 @@ class Session:
         Args:
             user_input: User input, can be plain text or a list of content parts.
             merge_wire_messages: Whether to merge consecutive Wire messages.
+            max_restarts: Maximum number of automatic session restarts when step
+                retries are exhausted (e.g. persistent 5xx, connection failures).
+                Set to 0 to disable auto-restart. Default is 3.
 
         Yields:
             WireMessage: Wire messages, including ApprovalRequest.
@@ -681,19 +688,67 @@ class Session:
             raise SessionStateError("Session is closed")
         if self._cancel_event is not None:
             raise SessionStateError("Session is already running")
-        cancel_event = asyncio.Event()
-        self._cancel_event = cancel_event
-        try:
-            async with _prompt_semaphore:
-                async for msg in self._cli.run(
-                    user_input,
-                    cancel_event,
-                    merge_wire_messages=merge_wire_messages,
-                ):
-                    yield msg
-        finally:
-            if self._cancel_event is cancel_event:
-                self._cancel_event = None
+
+        # Read max_restarts from LoopControl config if available
+        loop_control = getattr(
+            getattr(getattr(self._cli, 'soul', None), '_loop_control', None),
+            'max_session_restarts',
+            None,
+        )
+        if loop_control is not None:
+            max_restarts = loop_control
+        if max_restarts < 0:
+            max_restarts = 0
+
+        restart_count = 0
+        current_user_input = user_input
+
+        while True:
+            cancel_event = asyncio.Event()
+            self._cancel_event = cancel_event
+            try:
+                async with _prompt_semaphore:
+                    async for msg in self._cli.run(
+                        current_user_input,
+                        cancel_event,
+                        merge_wire_messages=merge_wire_messages,
+                    ):
+                        yield msg
+                break  # success — exit the restart loop
+            except SessionRestartRequired as e:
+                restart_count += 1
+                if restart_count > max_restarts:
+                    logger.error(
+                        "Session restart limit reached (%d/%d): %s",
+                        restart_count - 1,
+                        max_restarts,
+                        e,
+                    )
+                    if e.original_error:
+                        raise e.original_error from e
+                    raise
+                logger.warning(
+                    "Auto-restarting session (%d/%d): %s",
+                    restart_count,
+                    max_restarts,
+                    e,
+                )
+                # Notify user via Wire
+                yield TextPart(
+                    text=(
+                        f"\n⚠️ Connection lost ({type(e.original_error).__name__ if e.original_error else 'unknown error'}). "
+                        f"Restarting session (attempt {restart_count}/{max_restarts})...\n"
+                    )
+                )
+                # Clear and restart — this cancels any ongoing prompt, cleans up
+                # tools, deletes context, and recreates a fresh CLI + session.
+                await self.clear()
+                # After clear(), self._cancel_event is None,
+                # self._closed is False, and self._cli is fresh.
+                # current_user_input is preserved from the outer scope.
+            finally:
+                if self._cancel_event is cancel_event:
+                    self._cancel_event = None
 
     def cancel(self) -> None:
         """
