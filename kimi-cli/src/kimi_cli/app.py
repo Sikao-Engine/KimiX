@@ -134,6 +134,7 @@ class KimiCLI:
         # Extensions
         agent_file: Path | None = None,
         mcp_configs: list[MCPConfig] | list[dict[str, Any]] | None = None,
+        start_mcp_loading: bool = True,
         skills_dirs: list[KaosPath] | None = None,
         # Loop control
         max_steps_per_turn: int | None = None,
@@ -159,6 +160,9 @@ class KimiCLI:
             agent_file (Path | None, optional): Path to the agent file. Defaults to None.
             mcp_configs (list[MCPConfig | dict[str, Any]] | None, optional): MCP configs to load
                 MCP tools from. Defaults to None.
+            start_mcp_loading (bool, optional): Start MCP connections during session creation.
+                Set to False when creation and prompting run in different event loops so loading
+                can be deferred to the prompt loop. Defaults to True.
             skills_dirs (list[KaosPath] | None, optional): Custom skills directories that
                 override default user/project discovery. Defaults to None.
             max_steps_per_turn (int | None, optional): Maximum number of steps in one turn.
@@ -291,7 +295,7 @@ class KimiCLI:
             agent_file,
             runtime,
             mcp_configs=discovered_mcp_configs or [],
-            start_mcp_loading=True,
+            start_mcp_loading=start_mcp_loading,
             **load_agent_custom_arguments,
         )
         _phase_timings_ms["mcp_ms"] = int((time.monotonic() - _phase_t) * 1000)

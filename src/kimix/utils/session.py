@@ -1,17 +1,19 @@
-from typing import Any, Callable, Optional
 import asyncio
 from pathlib import Path
-import os
+from typing import Any, Callable, Optional
+
 from kaos.path import KaosPath
-from kimi_agent_sdk import Session
+from kimi_cli.soul.agent import Runtime
 from kosong.chat_provider import ChatProvider
+
 import kimix.base as base
-from kimix.base import percentage_str, percentage_and_token, Color, Style
+from kimi_agent_sdk import Session
+from kimix.base import Color, Style, percentage_and_token
+
 from . import _globals
 from .config import _create_config
-from .system_prompt import get_system_prompt, SystemPromptType, SystemPromptCallback
-from kimi_agent_sdk import Config
-from kimi_cli.soul.agent import Runtime
+from .system_prompt import SystemPromptCallback, SystemPromptType, get_system_prompt
+
 
 def context_path() -> Path:
     user_home = Path.home()
@@ -36,7 +38,7 @@ def _ensure_skill_dirs(skill_dirs: Any) -> list[KaosPath]:
     from collections.abc import Iterable
     if skill_dirs is None:
         return []
-    if type(skill_dirs) == list:
+    if isinstance(skill_dirs, list):
         return [make_kaos_dir(i) for i in skill_dirs]
     if isinstance(skill_dirs, Iterable) and not isinstance(skill_dirs, (str, bytes)):
         return [make_kaos_dir(i) for i in skill_dirs]
@@ -99,6 +101,7 @@ async def _create_session_async(
             max_ralph_iterations=max_ralph_iterations,
             anonymous=anonymous,
             custom_data=custom_data,
+            start_mcp_loading=False,
         )
         if not session:
             if not base._quiet:
@@ -119,6 +122,7 @@ async def _create_session_async(
             max_ralph_iterations=max_ralph_iterations,
             anonymous=anonymous,
             custom_data=custom_data,
+            start_mcp_loading=False,
         )
     # save config
     custom_config = session.get_custom_config()
