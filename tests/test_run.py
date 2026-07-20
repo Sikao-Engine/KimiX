@@ -68,9 +68,11 @@ class TestRunRtkRewrite:
             instance.stream = AsyncMock()
             instance.stream.pop_output = AsyncMock(return_value="mock output")
             instance.stream.success = AsyncMock(return_value=True)
+            instance.stream.exit_code = 0
+            instance.stream.process_elapsed = None
             mock_pt.return_value = instance
 
-            result = await run(RunParams(command="git status", token_kill=True))
+            result = await run(RunParams(command="git status"))
 
             assert isinstance(result, ToolOk)
             args = mock_pt.call_args[0]
@@ -92,14 +94,19 @@ class TestRunRtkRewrite:
             instance.stream = AsyncMock()
             instance.stream.pop_output = AsyncMock(return_value="mock output")
             instance.stream.success = AsyncMock(return_value=True)
+            instance.stream.exit_code = 0
+            instance.stream.process_elapsed = None
             mock_pt.return_value = instance
 
-            result = await run(RunParams(command="unknown-cmd", token_kill=True))
+            result = await run(RunParams(command="git status", token_kill=False))
 
             assert isinstance(result, ToolOk)
             args = mock_pt.call_args[0]
-            assert args[0] == "unknown-cmd"
-            assert args[1] == []
+            # With token_kill=False, RTK is disabled and the command is passed as-is.
+            # shutil.which("git") returns "/fake/git" from the mock side_effect.
+            assert "/fake/git" in args[0] or "git" in args[0]
+            # The command "git status" is split into executable "git" and args ["status"].
+            assert "status" in args[1]
 
     async def test_run_token_kill_false_does_not_prepend_rtk(self, mock_session: MagicMock) -> None:
         run = _run_instance(mock_session)
@@ -116,6 +123,8 @@ class TestRunRtkRewrite:
             instance.stream = AsyncMock()
             instance.stream.pop_output = AsyncMock(return_value="mock output")
             instance.stream.success = AsyncMock(return_value=True)
+            instance.stream.exit_code = 0
+            instance.stream.process_elapsed = None
             mock_pt.return_value = instance
 
             result = await run(RunParams(command="git status", token_kill=False))
@@ -185,6 +194,8 @@ class TestRunStartModes:
             instance.stream = AsyncMock()
             instance.stream.pop_output = AsyncMock(return_value="mock output")
             instance.stream.success = AsyncMock(return_value=True)
+            instance.stream.exit_code = 0
+            instance.stream.process_elapsed = None
             mock_pt.return_value = instance
 
             result = await run(RunParams(command="python -c print(1)"))

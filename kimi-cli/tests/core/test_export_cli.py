@@ -182,7 +182,7 @@ def test_export_help_is_leaf_command() -> None:
     result = CliRunner().invoke(cli, ["export", "--help"])
 
     assert result.exit_code == 0, result.output
-    assert "Usage: root export [OPTIONS] [SESSION_ID]" in result.output
+    assert "Usage: root export [OPTIONS] [session_id]" in result.output
 
 
 def test_extract_tool_call_hint_handles_stdlib_json_decode_error() -> None:

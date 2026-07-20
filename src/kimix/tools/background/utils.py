@@ -47,6 +47,7 @@ class BackgroundStream:
         self._input_function: Callable[[str], Any] | None = None
         self._lock = threading.Lock()
         self._success = False
+        self._exit_code: int | None = None
         self._output = io.StringIO()
         self._last_output_time = time.monotonic()
         self._completed_event = threading.Event()
@@ -54,6 +55,11 @@ class BackgroundStream:
 
     async def success(self) -> bool:
         return self._success
+
+    @property
+    def exit_code(self) -> int | None:
+        """The exit code of the subprocess, or None if not yet completed."""
+        return self._exit_code
 
     @property
     def process_elapsed(self) -> float | None:
@@ -80,7 +86,11 @@ class BackgroundStream:
                         result = asyncio.run(function(q))
                     else:
                         result = function(q)
-                    v._success = False if result == False else True # defaultly success
+                    if isinstance(result, tuple) and len(result) >= 2:
+                        v._success = bool(result[0])
+                        v._exit_code = result[1]
+                    else:
+                        v._success = False if result == False else True
                 except Exception:
                     v._success = False
                 finally:

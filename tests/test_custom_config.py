@@ -264,6 +264,8 @@ def mock_process_task() -> MagicMock:
         mock_task = MagicMock()
         mock_task.stream = MagicMock()
         mock_task.stream.success = AsyncMock(return_value=True)
+        mock_task.stream.exit_code = 0
+        mock_task.stream.process_elapsed = None
         mock_task.stream.pop_output = AsyncMock(return_value="output")
         mock_task.thread_is_alive = AsyncMock(return_value=False)
         mock_task.start = AsyncMock(return_value="task-1")

@@ -1537,6 +1537,8 @@ class TestBashInteractiveArgumentBuilding:
             mock_instance.stream.pop_output.return_value.set_result("mock output")
             mock_instance.stream.success = MagicMock(return_value=asyncio.Future())
             mock_instance.stream.success.return_value.set_result(True)
+            mock_instance.stream.exit_code = 0
+            mock_instance.stream.process_elapsed = None
             mock_pt.return_value = mock_instance
 
             params = BashParams(cmd="echo hello")
@@ -1649,6 +1651,8 @@ class TestBashRtkRewrite:
                 mock_instance.stream.pop_output.return_value.set_result("mock output")
                 mock_instance.stream.success = MagicMock(return_value=asyncio.Future())
                 mock_instance.stream.success.return_value.set_result(True)
+                mock_instance.stream.exit_code = 0
+                mock_instance.stream.process_elapsed = None
                 mock_pt.return_value = mock_instance
 
                 params = BashParams(cmd="git status")
@@ -1683,6 +1687,8 @@ class TestBashRtkRewrite:
             mock_instance.stream.pop_output.return_value.set_result("mock output")
             mock_instance.stream.success = MagicMock(return_value=asyncio.Future())
             mock_instance.stream.success.return_value.set_result(True)
+            mock_instance.stream.exit_code = 0
+            mock_instance.stream.process_elapsed = None
             mock_pt.return_value = mock_instance
 
             params = BashParams(cmd="read var")

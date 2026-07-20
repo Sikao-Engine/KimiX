@@ -1,6 +1,7 @@
 """PowerShell tool that executes commands via the system PowerShell executable."""
 
 import asyncio
+import base64
 import contextlib
 import functools
 import os
@@ -50,7 +51,6 @@ def _print_warning(message: str) -> None:
     reset = "\033[0m"
     print(f"{yellow}WARNING: {message}{reset}", file=sys.stderr, flush=True)
 
-
 def _pwsh_major_version(path: str) -> int | None:
     """Return the major version reported by a PowerShell executable, or None."""
     try:
@@ -58,15 +58,20 @@ def _pwsh_major_version(path: str) -> int | None:
             [path, "-NoP", "-NonI", "-C", "$PSVersionTable.PSVersion.Major"],
             stderr=subprocess.DEVNULL,
             text=True,
-            timeout=5,
+            timeout=3,
         ).strip()
         return int(output)
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
 
 
+def _is_windows_apps_stub(path: str) -> bool:
+    """Return True if *path* points into the WindowsApps directory (Store stub)."""
+    return "WindowsApps" in os.path.normpath(path).split(os.sep)
+
+
 def _where_candidates(name: str) -> list[str]:
-    """Return candidate paths reported by ``where.exe <name>``."""
+    """Return candidate paths reported by ``where.exe <name>``, excluding WindowsApps stubs."""
     try:
         result = subprocess.run(
             ["where.exe", name],
@@ -79,7 +84,28 @@ def _where_candidates(name: str) -> list[str]:
         return []
     if result.returncode != 0:
         return []
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    return [
+        line.strip() for line in result.stdout.splitlines()
+        if line.strip() and not _is_windows_apps_stub(line.strip())
+    ]
+
+
+def _common_fixed_pwsh_paths() -> list[str]:
+    """Return well-known PowerShell 7 installation paths for the current platform.
+
+    On Windows these are checked *before* ``where.exe`` results so that the
+    genuine MSI install is preferred over Store execution aliases.
+    """
+    if sys.platform == "win32":
+        return [
+            r"C:\Program Files\PowerShell\7\pwsh.exe",
+            r"C:\Program Files (x86)\PowerShell\7\pwsh.exe",
+        ]
+    return [
+        "/opt/microsoft/powershell/7/pwsh",
+        "/usr/local/bin/pwsh",
+        "/usr/bin/pwsh",
+    ]
 
 
 @functools.lru_cache(maxsize=1)
@@ -87,47 +113,33 @@ def find_pwsh() -> str | None:
     """Find PowerShell 7.x on the current platform.
 
     Resolution order:
-      1. ``pwsh`` / ``pwsh.exe`` on PATH (via ``shutil.which``).
-      2. ``where.exe pwsh.exe`` on Windows.
-      3. Common fixed installation paths.
+      1. Common fixed installation paths (MSI install on Windows).
+      2. ``pwsh`` / ``pwsh.exe`` on PATH (via ``shutil.which``).
+      3. ``where.exe pwsh.exe`` on Windows (WindowsApps stubs filtered out).
 
     Returns the absolute path to a PowerShell 7+ executable, or ``None`` if
     only Windows PowerShell 5.1 (or no PowerShell) is available.
     """
     candidates: list[str] = []
 
+    # 1. Fixed common install locations (checked first so MSI install is
+    #    preferred over Store execution aliases on Windows).
+    candidates.extend(_common_fixed_pwsh_paths())
+
+    # 2. PATH
     if sys.platform == "win32":
         names = ["pwsh.exe", "pwsh"]
     else:
         names = ["pwsh"]
-
-    # 1. PATH
     for name in names:
         resolved = shutil.which(name)
         if resolved:
             candidates.append(resolved)
 
-    # 2. where.exe (Windows only)
+    # 3. where.exe (Windows only) — WindowsApps stubs already filtered
     if sys.platform == "win32":
         for name in names:
             candidates.extend(_where_candidates(name))
-
-    # 3. Fixed common install locations
-    if sys.platform == "win32":
-        candidates.extend(
-            [
-                r"C:\Program Files\PowerShell\7\pwsh.exe",
-                r"C:\Program Files (x86)\PowerShell\7\pwsh.exe",
-            ]
-        )
-    else:
-        candidates.extend(
-            [
-                "/opt/microsoft/powershell/7/pwsh",
-                "/usr/local/bin/pwsh",
-                "/usr/bin/pwsh",
-            ]
-        )
 
     seen: set[str] = set()
     for candidate in candidates:
@@ -214,7 +226,11 @@ class Powershell(CallableTool2[PowershellParams]):
             )
 
         self._pwsh_path = find_pwsh()
+        self._pwsh_fallback_path: str | None = None
         if self._pwsh_path is None:
+            # Resolve Windows PowerShell fallback to a full path so that we
+            # avoid accidentally picking up a WindowsApps stub at runtime.
+            self._pwsh_fallback_path = shutil.which("powershell.exe") or shutil.which("powershell") or "powershell"
             _print_warning(
                 "PowerShell 7.x not found on this system; falling back to Windows PowerShell 5.1. "
                 "PowerShell 7 syntax will be downgraded automatically, which may change command behavior."
@@ -268,7 +284,19 @@ class Powershell(CallableTool2[PowershellParams]):
             if transform_warnings:
                 warning_lines = "\n".join(w for w in transform_warnings)
                 transform_warning = '\n[WARNING]' + warning_lines
-            executable = "powershell"
+            executable = self._pwsh_fallback_path if self._pwsh_fallback_path else "powershell"
+
+        # Lightweight input validation before proceeding.
+        # Skip validation for interactive sessions with no initial command
+        # (empty cmd is valid in that case — just starts a shell).
+        if cmd:
+            validation_error = self._validate_command_for_ps(cmd)
+            if validation_error:
+                return ToolError(
+                    output="",
+                    message=validation_error + transform_warning,
+                    brief="Invalid PowerShell command",
+                )
 
         pattern = self._compile_pattern(params.wait_for_pattern)
         if isinstance(pattern, ToolError):
@@ -325,8 +353,28 @@ class Powershell(CallableTool2[PowershellParams]):
                 brief="Interactive PowerShell started",
             )
 
-        # Build the command line to pass to PowerShell -Command
-        process_task = ProcessTask(executable, ["-NoP", "-NonI", "-Exec", "Bypass", "-NoL", "-C", _PWSH_CONSOLE_INIT + cmd], None, _env_with_rg_bin_path())
+        # Build the command line to pass to PowerShell.  Two safety measures:
+        #
+        # 1. Wrap the user command in ``try{…}catch{…;exit 1}`` so that
+        #    terminating errors (e.g. script-terminating ``throw``, or cmdlet
+        #    errors when ``$ErrorActionPreference = 'Stop'``) produce a non-zero
+        #    exit code instead of silently succeeding.  The catch block echoes
+        #    the error and exits with code 1.
+        # 2. Append ``; exit $LASTEXITCODE`` so PowerShell preserves the real
+        #    native exit code from external programs (otherwise all non-zero
+        #    codes are flattened to 1).
+        raw_command = (
+            _PWSH_CONSOLE_INIT
+            + "try{" + cmd + "}catch{$_|Out-String|Write-Error;exit 1}"
+            + ";exit $LASTEXITCODE"
+        )
+        encoded_cmd, param_name, was_encoded = self._maybe_encode_command(raw_command)
+        process_task = ProcessTask(
+            executable,
+            ["-NoP", "-NonI", "-Exec", "Bypass", "-NoL", param_name, encoded_cmd],
+            None,
+            _env_with_rg_bin_path(),
+        )
         task_id = await process_task.start(self._session, "pwsh")
 
         wait_matched: bool | None = None
@@ -377,29 +425,11 @@ class Powershell(CallableTool2[PowershellParams]):
         remove_task_id(self._session, task_id)
 
         output = await process_task.stream.pop_output() if process_task.stream else ""
-        success = await process_task.stream.success() if process_task.stream else False
+        stream = process_task.stream
+        success = await stream.success() if stream else False
+        real_exit_code = stream.exit_code if stream else None
 
-        if not success:
-            processed, output_path, output_truncated, original_path = await self._process_output(
-                cmd, params, output, rtk_rewritten=rtk_rewritten
-            )
-            block = _build_session_output_block(
-                task_id=task_id,
-                status="completed",
-                output=processed,
-                exit_code=None,
-                wait_matched=wait_matched,
-                elapsed_seconds=elapsed_seconds,
-                output_path=output_path,
-                output_truncated=output_truncated,
-                original_path=original_path,
-            )
-            elapsed = process_task.stream.process_elapsed if process_task.stream else None
-            msg = f"`{cmd}` failed."
-            if elapsed is not None:
-                msg += f" ({elapsed:.1f}s)"
-            return ToolError(output=block, message=msg + transform_warning, brief="Command execution failed")
-
+        # Unify success/error path: always pass the real exit code.
         processed, output_path, output_truncated, original_path = await self._process_output(
             cmd, params, output, rtk_rewritten=rtk_rewritten
         )
@@ -407,14 +437,21 @@ class Powershell(CallableTool2[PowershellParams]):
             task_id=task_id,
             status="completed",
             output=processed,
-            exit_code=0,
+            exit_code=real_exit_code,
             wait_matched=wait_matched,
             elapsed_seconds=elapsed_seconds,
             output_path=output_path,
             output_truncated=output_truncated,
             original_path=original_path,
         )
-        elapsed = process_task.stream.process_elapsed if process_task.stream else None
+        elapsed = stream.process_elapsed if stream else None
+
+        if not success:
+            msg = f"`{cmd}` failed."
+            if elapsed is not None:
+                msg += f" ({elapsed:.1f}s)"
+            return ToolError(output=block, message=msg + transform_warning, brief="Command execution failed")
+
         msg = (f"[rtk] `{cmd}` success." if rtk_rewritten else f"`{cmd}` success.")
         if elapsed is not None:
             msg += f" ({elapsed:.1f}s)"
@@ -424,6 +461,52 @@ class Powershell(CallableTool2[PowershellParams]):
             brief=f"Command executed successfully",
             display_block=ShellDisplayBlock(language="powershell", command=cmd),
         )
+
+    @staticmethod
+    def _validate_command_for_ps(cmd: str) -> str | None:
+        """Lightweight validation of a PowerShell command string.
+
+        Checks for patterns that are known to cause argument-parsing problems
+        when passed via ``-Command``:
+
+        * Command strings that are empty or whitespace-only.
+        * Unbalanced double quotes ``"`` (odd count of ``"`` outside of safe
+          contexts).  This is a best-effort heuristic — it does not account
+          for escaped quotes or nested strings.
+
+        Returns ``None`` when the command passes validation, or an error
+        message string explaining the problem.
+        """
+        if not cmd or not cmd.strip():
+            return "Command is empty or whitespace-only."
+
+        # Check for obviously unbalanced double quotes (simple count).
+        # PowerShell allows escaped quotes inside ``"..."`` via ``, but a
+        # simple parity check still catches many user errors.
+        dq_count = cmd.count('"')
+        if dq_count % 2 != 0:
+            return (
+                "Command contains an unbalanced double quote character. "
+                "This may cause PowerShell to misinterpret the command. "
+                "Consider escaping or removing the extra quote."
+            )
+
+        return None
+
+    @staticmethod
+    def _maybe_encode_command(full_cmd: str) -> tuple[str, str, bool]:
+        """Return ``(command_or_encoded, param_name, was_encoded)``.
+
+        When *full_cmd* exceeds 8000 characters the command is Base64-encoded
+        (UTF-16 LE) and returned with ``-EncodedCommand`` (short form ``-Enc``)
+        to avoid the Win32 ``CreateProcess`` command-line length limit.
+        Otherwise the original string is returned with ``-Command`` (short form
+        ``-C``).
+        """
+        if len(full_cmd) > 8000:
+            encoded = base64.b64encode(full_cmd.encode("utf-16-le")).decode("ascii")
+            return encoded, "-Enc", True
+        return full_cmd, "-C", False
 
     def _compile_pattern(self, wait_for_pattern: str | None) -> re.Pattern[str] | ToolError:
         if wait_for_pattern is None:
@@ -532,11 +615,17 @@ class Powershell(CallableTool2[PowershellParams]):
         processed, output_path, output_truncated, original_path = await self._process_output(
             params.cmd, params, output, rtk_rewritten=rtk_rewritten
         )
+        if status != "completed":
+            real_exit_code = None
+        else:
+            real_exit_code = stream.exit_code if stream else None
+            if real_exit_code is None:
+                real_exit_code = 0 if await stream.success() else None
         block = _build_session_output_block(
             task_id=task_id,
             status=status,
             output=processed,
-            exit_code=None if status != "completed" else (0 if await stream.success() else None),
+            exit_code=real_exit_code,
             wait_matched=wait_matched,
             elapsed_seconds=elapsed_seconds,
             output_path=output_path,

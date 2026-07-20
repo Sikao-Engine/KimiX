@@ -62,7 +62,8 @@ async def test_run_process_bg_success() -> None:
     task = ProcessTask(sys.executable, ["-c", "print('hello_world')"])
     q: queue.Queue[str] = queue.Queue()
     result = await task._run_process_bg(q)
-    assert result is True
+    assert result[0] is True
+    assert result[1] == 0
 
     output = ""
     while True:
@@ -80,7 +81,8 @@ async def test_run_process_bg_stderr() -> None:
     )
     q: queue.Queue[str] = queue.Queue()
     result = await task._run_process_bg(q)
-    assert result is True
+    assert result[0] is True
+    assert result[1] == 0
 
     output = ""
     while True:
@@ -95,7 +97,8 @@ async def test_run_process_bg_nonzero_exit() -> None:
     task = ProcessTask(sys.executable, ["-c", "import sys; sys.exit(42)"])
     q: queue.Queue[str] = queue.Queue()
     result = await task._run_process_bg(q)
-    assert result is False
+    assert result[0] is False
+    assert result[1] == 42
 
     messages = []
     while True:
@@ -111,7 +114,8 @@ async def test_run_process_bg_stop_event_before_start() -> None:
     task._stop_event.set()
     q: queue.Queue[str] = queue.Queue()
     result = await task._run_process_bg(q)
-    assert result is False
+    assert result[0] is False
+    assert result[1] is None
 
 
 async def test_run_process_bg_stop_event_during_run() -> None:
@@ -121,9 +125,9 @@ async def test_run_process_bg_stop_event_during_run() -> None:
     bg = asyncio.create_task(task._run_process_bg(q))
     await asyncio.sleep(0.2)
     await task._stop_function()
+    await task._stop_function()
     result = await asyncio.wait_for(bg, timeout=5)
-
-    assert result is False
+    assert result[0] is False
     output = ""
     while True:
         try:
@@ -137,7 +141,8 @@ async def test_run_process_bg_exception_on_popen() -> None:
     task = ProcessTask("this_should_not_exist_command_12345")
     q: queue.Queue[str] = queue.Queue()
     result = await task._run_process_bg(q)
-    assert result is False
+    assert result[0] is False
+    assert result[1] is None
     msg = q.get_nowait()
     assert msg.startswith("\n[Error:")
 
@@ -147,7 +152,8 @@ async def test_run_process_bg_popen_raises_oserror() -> None:
     with patch("asyncio.create_subprocess_exec", side_effect=OSError("boom")):
         q: queue.Queue[str] = queue.Queue()
         result = await task._run_process_bg(q)
-        assert result is False
+        assert result[0] is False
+        assert result[1] is None
         msg = q.get_nowait()
         assert "boom" in msg
 
@@ -166,7 +172,7 @@ async def test_stop_function_terminates_running_process() -> None:
 
     await task._stop_function()
     result = await asyncio.wait_for(bg, timeout=5)
-    assert result is False
+    assert result[0] is False
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +191,8 @@ async def test_input_function_writes_to_stdin() -> None:
     assert success is True
 
     result = await asyncio.wait_for(bg, timeout=5)
-    assert result is True
+    assert result[0] is True
+    assert result[1] == 0
 
     output = ""
     while True:
@@ -339,7 +346,9 @@ async def test_run_process_bg_empty_args() -> None:
     task = ProcessTask(sys.executable, ["-c", "print('empty_args_work')"])
     q: queue.Queue[str] = queue.Queue()
     result = await task._run_process_bg(q)
-    assert result is True
+    assert result[0] is True
+    assert result[1] == 0
+
     output = ""
     while True:
         try:
@@ -347,7 +356,6 @@ async def test_run_process_bg_empty_args() -> None:
         except queue.Empty:
             break
     assert "empty_args_work" in output
-
 
 async def test_run_process_bg_with_cwd(tmp_path: Path) -> None:
     task = ProcessTask(
@@ -357,7 +365,8 @@ async def test_run_process_bg_with_cwd(tmp_path: Path) -> None:
     )
     q: queue.Queue[str] = queue.Queue()
     result = await task._run_process_bg(q)
-    assert result is True
+    assert result[0] is True
+    assert result[1] == 0
     output = ""
     while True:
         try:
@@ -388,7 +397,7 @@ async def test_run_process_bg_decoder_flush_on_stop() -> None:
     await task._stop_function()
     result = await asyncio.wait_for(bg, timeout=5)
 
-    assert result is False
+    assert result[0] is False
     output = ""
     while True:
         try:

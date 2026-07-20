@@ -1020,13 +1020,18 @@ class ProcessTask:
         self._task_id: str | None = None
         self._input_queue: queue.Queue[str] = queue.Queue()
 
-    async def _run_process_bg(self, q: queue.Queue[str]) -> bool:
-        """Run the process and collect output into the queue."""
+    async def _run_process_bg(self, q: queue.Queue[str]) -> tuple[bool, int | None]:
+        """Run the process and collect output into the queue.
+
+        Returns:
+            ``(success, exit_code)`` where *exit_code* is the subprocess return
+            code (may be ``None`` if the process was stopped before completing).
+        """
         process = None
         output_buffer = io.StringIO()
         try:
             if self._stop_event.is_set():
-                return False
+                return False, None
             # Start the process
             process_env = os.environ.copy()
             if self.env:
@@ -1212,7 +1217,7 @@ class ProcessTask:
             return_code = process.returncode
             if self._stop_event.is_set():
                 q.put_nowait("\n[Process stopped by user]")
-                return False
+                return False, return_code
             elif return_code is not None and return_code != 0:
                 full_output = output_buffer.getvalue()
                 error_line = _find_error_line_index(full_output)
@@ -1220,12 +1225,12 @@ class ProcessTask:
                     q.put_nowait(f"\n[Process exited with code {return_code}, error at line {error_line}]")
                 else:
                     q.put_nowait(f"\n[Process exited with code {return_code}]")
-                return False
-            return True
+                return False, return_code
+            return True, return_code
 
         except Exception as e:
             q.put_nowait(f"\n[Error: {str(e)}]")
-            return False
+            return False, None
         finally:
             self._stop_event.set()
             if process is not None and process.returncode is None:

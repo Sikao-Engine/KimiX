@@ -771,29 +771,11 @@ class Bash(CallableTool2[BashParams]):
         remove_task_id(self._session, task_id)
 
         output = await process_task.stream.pop_output() if process_task.stream else ""
-        success = await process_task.stream.success() if process_task.stream else False
+        stream = process_task.stream
+        success = await stream.success() if stream else False
+        real_exit_code = stream.exit_code if stream else None
 
-        if not success:
-            processed, output_path, output_truncated, original_path = await self._process_output(
-                params, output, rtk_rewritten=rtk_rewritten
-            )
-            block = _build_session_output_block(
-                task_id=task_id,
-                status="completed",
-                output=processed,
-                exit_code=None,
-                wait_matched=wait_matched,
-                elapsed_seconds=elapsed_seconds,
-                output_path=output_path,
-                output_truncated=output_truncated,
-                original_path=original_path,
-            )
-            elapsed = process_task.stream.process_elapsed if process_task.stream else None
-            msg = f"`{params.cmd}` failed"
-            if elapsed is not None:
-                msg += f" ({elapsed:.1f}s)"
-            return ToolError(output=block, message=msg, brief="Command execution failed")
-
+        # Unify success/error path: always pass the real exit code.
         processed, output_path, output_truncated, original_path = await self._process_output(
             params, output, rtk_rewritten=rtk_rewritten
         )
@@ -801,14 +783,21 @@ class Bash(CallableTool2[BashParams]):
             task_id=task_id,
             status="completed",
             output=processed,
-            exit_code=0,
+            exit_code=real_exit_code,
             wait_matched=wait_matched,
             elapsed_seconds=elapsed_seconds,
             output_path=output_path,
             output_truncated=output_truncated,
             original_path=original_path,
         )
-        elapsed = process_task.stream.process_elapsed if process_task.stream else None
+        elapsed = stream.process_elapsed if stream else None
+
+        if not success:
+            msg = f"`{params.cmd}` failed"
+            if elapsed is not None:
+                msg += f" ({elapsed:.1f}s)"
+            return ToolError(output=block, message=msg, brief="Command execution failed")
+
         msg = (f"[rtk] `{params.cmd}` success" if rtk_rewritten else f"`{params.cmd}` success")
         if elapsed is not None:
             msg += f" ({elapsed:.1f}s)"
@@ -927,11 +916,17 @@ class Bash(CallableTool2[BashParams]):
         processed, output_path, output_truncated, original_path = await self._process_output(
             params, output, rtk_rewritten=rtk_rewritten
         )
+        if status != "completed":
+            real_exit_code = None
+        else:
+            real_exit_code = stream.exit_code if stream else None
+            if real_exit_code is None:
+                real_exit_code = 0 if await stream.success() else None
         block = _build_session_output_block(
             task_id=task_id,
             status=status,
             output=processed,
-            exit_code=None if status != "completed" else (0 if await stream.success() else None),
+            exit_code=real_exit_code,
             wait_matched=wait_matched,
             elapsed_seconds=elapsed_seconds,
             output_path=output_path,
