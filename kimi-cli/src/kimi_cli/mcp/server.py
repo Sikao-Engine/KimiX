@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-import pybase64
 import inspect
 import mimetypes
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import mcp.types
 from fastmcp import FastMCP
-from fastmcp.resources import Resource as FastMCPResource
+from fastmcp.resources import FileResource, ResourceContent, ResourceResult
 from fastmcp.tools.function_tool import FunctionTool
 from kosong.message import (
     AudioURLPart,
@@ -20,6 +20,8 @@ from kosong.message import (
     VideoURLPart,
 )
 from kosong.tooling import CallableTool, CallableTool2, ToolError, ToolOk, ToolReturnValue
+from starlette.middleware import Middleware
+from starlette.responses import PlainTextResponse
 
 from kimi_cli.mcp.sampling import MCPSamplingHandler
 
@@ -191,9 +193,12 @@ class MCPKimixServer:
             if path.exists():
                 from pydantic import AnyUrl
 
+                # FileResource reads the file lazily on each resources/read;
+                # the base Resource class raises NotImplementedError instead.
                 self._server.add_resource(
-                    FastMCPResource(
+                    FileResource(
                         uri=AnyUrl(f"file://{path.resolve().as_posix()}"),
+                        path=path.resolve(),
                         name=filename,
                         mime_type="text/markdown",
                     )
@@ -217,8 +222,12 @@ class MCPKimixServer:
                     "application/xml",
                 ):
                     return file_path.read_text(encoding="utf-8")
+                # Return binary content as MCP BlobResourceContents instead of
+                # a text data URI so clients receive proper binary resource data.
                 data = file_path.read_bytes()
-                return f"data:{mime_type};base64,{pybase64.b64encode(data).decode('ascii')}"
+                return ResourceResult(
+                    contents=[ResourceContent(content=data, mime_type=mime_type)]
+                )
             except Exception as exc:
                 return f"Error reading file: {exc}"
 
@@ -229,7 +238,10 @@ class MCPKimixServer:
         if not system_prompt:
             return
 
-        @self._server.prompt("system")
+        @self._server.prompt(
+            "system",
+            description="The Kimix agent system prompt.",
+        )
         async def system_prompt_template() -> str:
             return system_prompt
 
@@ -312,6 +324,63 @@ class MCPKimixServer:
             raise
 
 
+_LOCALHOST_HOSTNAMES = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _extract_hostname(host_header: str) -> str:
+    """Extract the hostname portion from an HTTP Host header value."""
+    host_header = host_header.strip()
+    if host_header.startswith("["):
+        end = host_header.find("]")
+        return host_header[1:end] if end != -1 else host_header
+    return host_header.split(":", 1)[0]
+
+
+def _is_localhost_host(host_header: str) -> bool:
+    """Whether a Host header value refers to a localhost address."""
+    return _extract_hostname(host_header).lower() in _LOCALHOST_HOSTNAMES
+
+
+def _is_localhost_origin(origin: str) -> bool:
+    """Whether an Origin header value refers to a localhost address."""
+    try:
+        hostname = urlparse(origin).hostname
+    except ValueError:
+        return False
+    return hostname is not None and hostname.lower() in _LOCALHOST_HOSTNAMES
+
+
+class _LocalhostDNSRebindingMiddleware:
+    """ASGI middleware rejecting non-localhost Host/Origin headers.
+
+    MCP servers bound to a localhost interface without TLS or authentication
+    are vulnerable to DNS rebinding attacks, so the MCP specification requires
+    them to validate the Host or Origin header on incoming requests.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope.get("type") in ("http", "websocket"):
+            headers = {
+                key.decode("latin-1").lower(): value.decode("latin-1")
+                for key, value in scope.get("headers", [])
+            }
+            host = headers.get("host", "")
+            origin = headers.get("origin")
+            if not _is_localhost_host(host) or (
+                origin is not None and not _is_localhost_origin(origin)
+            ):
+                response = PlainTextResponse(
+                    "Rejected: non-localhost Host or Origin header.",
+                    status_code=403,
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
 async def serve_stdio(runtime: Runtime, **server_options: Any) -> None:
     """Run the Kimix MCP server over stdio."""
     server = MCPKimixServer(runtime, **server_options).server
@@ -327,4 +396,10 @@ async def serve_http(
 ) -> None:
     """Run the Kimix MCP server over streamable HTTP."""
     server = MCPKimixServer(runtime, **server_options).server
-    await server.run_http_async(host=host, port=port)
+    middleware: list[Middleware] = []
+    if _is_localhost_host(host):
+        # Localhost servers without TLS/auth must guard against DNS rebinding.
+        middleware.append(Middleware(_LocalhostDNSRebindingMiddleware))
+    await server.run_http_async(
+        host=host, port=port, middleware=middleware or None
+    )
