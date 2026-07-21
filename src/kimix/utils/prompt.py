@@ -227,7 +227,7 @@ async def _run_single_prompt(
                 if cancel_callable is not None and cancel_callable():
                     session.cancel()
                     break
-                print_agent_json(message, session, output_function, format_output=format_output)
+                await print_agent_json(message, session, output_function, format_output=format_output)
             # After finishing, flush any remaining buffered text parts as formatted markdown.
             if format_output:
                 print_agent_json_flush_text()
@@ -436,7 +436,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
                     require_new_line=True,
                 )
                 async for message in planner_session.prompt(reminder):
-                    print_agent_json(message, planner_session, None, True)
+                    await print_agent_json(message, planner_session, None, True)
                 base._stream.print_word("\n", require_new_line=True)
 
                 if plan_file.exists() and plan_file.stat().st_size > 0:
@@ -522,7 +522,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
                     require_new_line=True,
                 )
                 async for message in planner_session.prompt(revision_reminder):
-                    print_agent_json(message, planner_session, None, True)
+                    await print_agent_json(message, planner_session, None, True)
                 base._stream.print_word("\n", require_new_line=True)
 
                 # Re-open the updated plan file for review

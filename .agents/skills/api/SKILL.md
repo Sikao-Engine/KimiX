@@ -274,20 +274,31 @@ colored = colorful_text("Warning", fg=Color.YELLOW, styles=[Style.BOLD])
 # File: src/kimix/base.py
 from kimix.base import print_agent_json
 
-# Pretty-print streaming wire messages from the agent session
+# Pretty-print streaming wire messages from the agent session (async — await it)
 # Handles multiple message types intelligently:
 # - ApprovalRequest: auto-resolves to "approve"
 # - StepBegin, StepInterrupted, CompactionEnd: silently skipped
 # - CompactionBegin: prints "Compacting..." info message
 # - ThinkPart: prints thinking content in cyan (suppressed if _quiet)
 # - TextPart: prints text chunks directly
-# - ToolCall, ToolCallPart, ToolResult: calls output_function with MessageType.ToolCalling
+# - ToolCall, ToolCallPart: prints "⚡ <name>" header, then streams long argument
+#   values (e.g. WriteFile `content`) decoded, token by token, as fragments arrive;
+#   each argument starts on its own line beneath the header, short scalar args
+#   print as compact `key: value` lines
+# - ToolResult: prints ✓/✗ result line; calls output_function with MessageType.ToolResult
 # - Type transitions: prints black context usage/token count using the provided session
-print_agent_json(
+await print_agent_json(
     wire_msg=message,
     session=session,
-    output_function=custom_handler  # Optional: callback(text, MessageType) for text/think/tool content
+    output_function=custom_handler,  # Optional: callback(text, MessageType) for text/think/tool content
+    stream_tool_args=True,           # Default: stream long tool args token by token.
+                                     # Pass False for legacy compact output (hides
+                                     # WriteFile `content` as `content: ...`).
 )
+
+# Note: with merge_wire_messages=True a single complete ToolCall arrives, so the
+# full decoded content prints in one go; use stream_tool_args=False to keep the
+# old compact, hidden-content output in that mode.
 ```
 
 ## Threading (kimix.base)

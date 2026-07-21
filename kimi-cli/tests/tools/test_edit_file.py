@@ -12,7 +12,6 @@ from kimi_cli.session import Session
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval, ApprovalResult
 from kimi_cli.tools.file.replace import Edit, EditFile, Params
-from kimi_cli.wire.types import DiffDisplayBlock
 from tests.conftest import tool_call_context
 
 
@@ -30,11 +29,10 @@ async def test_replace_single_occurrence(
 
     assert not result.is_error
     assert "successfully edited" in result.message
-    diff_block = next(block for block in result.display if block.type == "diff")
-    assert isinstance(diff_block, DiffDisplayBlock)
-    assert diff_block.path == str(file_path)
-    assert diff_block.old_text == original_content
-    assert diff_block.new_text == "Hello universe! This is a test."
+    # The diff is intentionally not attached to the result display: it was
+    # already shown during approval, and the streamed old/new arguments are
+    # printed live by the CLI printer (see kimix.base).
+    assert result.display == []
     assert await file_path.read_text() == "Hello universe! This is a test."
 
 

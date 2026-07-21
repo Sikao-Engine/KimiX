@@ -5,6 +5,7 @@ All timings are assert-based so the file doubles as a regression test.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -409,9 +410,13 @@ class TestMiscFunctionsBenchmark:
         from kimi_cli.wire.types import StepBegin
 
         msg = StepBegin(n=1)
+
+        async def _run() -> None:
+            for _ in range(100_000):
+                await print_agent_json(msg, session)
+
         start = time.perf_counter()
-        for _ in range(100_000):
-            print_agent_json(msg, session)
+        asyncio.run(_run())
         elapsed = time.perf_counter() - start
         assert elapsed < 10.0
 

@@ -267,6 +267,11 @@ class WriteFile(CallableTool2[Params]):
                     message=f"{'[out of work-dir] ' if _outside else ''}File successfully {action_desc}, but {fmt_error} Path: {display_path}",
                     brief="Format validation failed",
                 )
+            # Note: the diff is intentionally NOT attached to the result display.
+            # It was already shown during approval, and the streamed content
+            # argument value is printed live (formatted and colored) by the CLI
+            # printer while the tool call is generated (see kimix.base).
+            # Attaching diff_blocks here would print the written content twice.
             return ToolReturnValue(
                 is_error=False,
                 output="",
@@ -274,7 +279,7 @@ class WriteFile(CallableTool2[Params]):
                     f"{'[out of work-dir] ' if _outside else ''}File successfully {action_desc}. Current size: {file_size} bytes."
                     f" Path: {display_path}"
                 ),
-                display=diff_blocks,
+                display=[],
             )
 
         except Exception as e:

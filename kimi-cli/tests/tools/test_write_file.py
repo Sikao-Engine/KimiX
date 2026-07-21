@@ -13,7 +13,6 @@ from pydantic import ValidationError
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval, ApprovalResult
 from kimi_cli.tools.file.write import Params, WriteFile
-from kimi_cli.wire.types import DiffDisplayBlock
 from tests.conftest import tool_call_context
 
 
@@ -26,11 +25,10 @@ async def test_write_new_file(write_file_tool: WriteFile, temp_work_dir: KaosPat
 
     assert not result.is_error
     assert "successfully overwritten" in result.message
-    diff_block = next(block for block in result.display if block.type == "diff")
-    assert isinstance(diff_block, DiffDisplayBlock)
-    assert diff_block.path == str(file_path)
-    assert diff_block.old_text == ""
-    assert diff_block.new_text == content
+    # The diff is intentionally not attached to the result display: it was
+    # already shown during approval, and the streamed content argument is
+    # printed live by the CLI printer (see kimix.base).
+    assert result.display == []
     assert await file_path.exists()
     assert await file_path.read_text() == content
 

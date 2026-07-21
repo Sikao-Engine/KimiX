@@ -7,10 +7,6 @@ from kimix.tools.common import _maybe_export_output_async, _export_to_temp_file_
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 from kimi_cli.session import Session
-from kimix.base import colorful_text, Color
-
-_HUGE_CODE_THRESHOLD = 10000
-"""Character count above which the code block is skipped in display output."""
 
 
 class Params(BaseModel):
@@ -123,7 +119,8 @@ class Python(CallableTool2[Params]):
             success_message = f"{source_label}: `{display_script_path}`"
             if is_file_mode:
                 return ToolOk(output=f"{success_message}\n\n{output}", brief=f"Python file executed: {display_script_path}")
-            if len(params.code) > _HUGE_CODE_THRESHOLD:
-                return ToolOk(output=f"{success_message}\n\n{output}", brief="Python code executed successfully")
-            colored_code = colorful_text(params.code, fg=Color.BLACK)
-            return ToolOk(output=f"{success_message}\n\n{colored_code}\n\n{output}", brief=params.code)
+            # The code itself is intentionally not echoed back: it is streamed
+            # live (formatted and colored) by the CLI printer while the tool
+            # call is generated (see kimix.base), so printing it here would
+            # show it twice.
+            return ToolOk(output=f"{success_message}\n\n{output}", brief="Python code executed successfully")

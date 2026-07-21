@@ -266,10 +266,14 @@ class Agent(CallableTool2):
 
                 if err_msg:
                     output_prefix = f"Session ID: {session_id}\n\n"
+                    # The prompt is intentionally not echoed in the brief: it is
+                    # streamed live (formatted and colored) by the CLI printer
+                    # while the tool call is generated (see kimix.base), so
+                    # printing it here would show it twice.
                     result = ToolError(
                         output=output_prefix + output_text,
                         message=err_msg,
-                        brief=f"sub-agent task failed: {task_prompt}",
+                        brief="sub-agent task failed",
                     )
                     result.extras = {
                         "session_id": session_id,
@@ -305,7 +309,7 @@ class Agent(CallableTool2):
                     output_prefix = f"Session ID: {session_id}\n\n"
                     result = ToolOk(
                         output=output_prefix + output_text,
-                        brief=task_prompt,
+                        brief="Sub-agent is awaiting a response",
                     )
                     result.extras = extras
                     return result
@@ -325,7 +329,7 @@ class Agent(CallableTool2):
                 output_prefix = f"Session ID: {session_id}\n\n"
                 result = ToolOk(
                     output=output_prefix + output_text,
-                    brief=task_prompt,
+                    brief="Sub-agent task completed",
                 )
                 result.extras = extras
                 return result
@@ -334,7 +338,7 @@ class Agent(CallableTool2):
                 return ToolError(
                     output="",
                     message=str(exc),
-                    brief=f"Failed to create session: {params.prompt}",
+                    brief="Failed to create sub-agent session",
                 )
 
     async def _resolve_session(self, params: SubAgentParams) -> tuple[Any, str, bool]:

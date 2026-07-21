@@ -293,19 +293,19 @@ class PrintStream:
         self._last_char_was_newline = True
         self._state = StreamPrintState.Other
 
-    def print_word(self, word: str, require_new_line: bool, raw_word: str | None = None) -> None:
+    def print_word(self, word: str, require_new_line: bool, raw_word: str | None = None, flush: bool = False) -> None:
         """Print a word, auto-inserting a leading newline when the previous
-        output didn't end with one."""
+        output didn't end with one. Pass ``flush=True`` for live streaming output."""
         if not word:
             if require_new_line and not self._last_char_was_newline:
-                self._print_func('', end='\n')
+                self._print_func('', end='\n', flush=flush)
                 self._last_char_was_newline = True
             return
 
         if require_new_line and not self._last_char_was_newline:
-            self._print_func('', end='\n')
+            self._print_func('', end='\n', flush=flush)
 
-        self._print_func(word, end='')
+        self._print_func(word, end='', flush=flush)
         check_word = raw_word if raw_word is not None else word
         self._last_char_was_newline = _strip_ansi(check_word).endswith('\n')
 
@@ -314,9 +314,10 @@ class PrintStream:
             require_new_line: bool,
             fg: Color | Color256 | TrueColor | None = None,
             bg: BgColor | BgColor256 | BgTrueColor | None = None,
-            styles: list[Style] | None = None) -> None:
+            styles: list[Style] | None = None,
+            flush: bool = False) -> None:
         self.print_word(colorful_text(word, fg, bg, styles),
-                        require_new_line=require_new_line, raw_word=word)
+                        require_new_line=require_new_line, raw_word=word, flush=flush)
 
 
 _quiet = False
@@ -459,6 +460,45 @@ def _format_tool_result(result: ToolResult) -> str:
 
 
 _LAST_TOOL_CALL_KEY = "_kimix_last_tool_call"
+_TOOL_CALL_STREAM_KEY = "_kimix_tool_call_stream"
+_TOOL_HEADER_PRINTED_KEY = "_kimix_tool_header_printed"
+
+# Tool names eligible for streaming argument display.
+# Only these tools benefit from the incremental decoded output;
+# all other tools (e.g. Grep, Powershell, Bash) use the legacy
+# compact one-line format regardless of the stream_tool_args flag.
+_STREAM_TOOL_NAMES = frozenset({
+    "WriteFile",
+    "WritePlan",
+    "Python",
+    "Agent",
+    "EditFile",
+})
+
+# Tool-call argument keys whose (potentially very long) string values are
+# printed decoded, token by token, as they stream in from the LLM.
+_STREAM_ARG_KEYS = frozenset({
+    "content",       # WriteFile / WritePlan
+    "code",          # Python
+    "prompt",        # Agent
+    "old", "new",    # EditFile edit items
+    "old_string", "new_string", "text", "source_code",
+    "question", "context", "instruction",
+})
+
+# Foreground color for the "⚡ ToolName" header printed when a tool call
+# starts. All tool names use the same BRIGHT_MAGENTA color.
+_TOOL_HEADER_COLOR: Color = Color.BRIGHT_MAGENTA
+
+
+def _tool_header_color(name: str) -> Color:
+    """Return the foreground color for the tool-call header '⚡ Name'.
+
+    All tool names use BRIGHT_MAGENTA; the result colors (success green,
+    failure red) are handled separately when the tool result is printed.
+    """
+    del name  # unused: every tool header uses the same color
+    return _TOOL_HEADER_COLOR
 
 
 def _format_tool_args(name: str, args: str | None) -> str | None:
@@ -581,25 +621,387 @@ def _format_tool_args(name: str, args: str | None) -> str | None:
         return None
 
 
+class _ToolCallStreamPrinter:
+    """Incrementally lexes streamed tool-call arguments JSON and prints
+    decoded argument values live (token by token) as fragments arrive.
+
+    Lifecycle: created when a ``ToolCall`` arrives; :meth:`feed` is called per
+    ``ToolCallPart`` fragment; :meth:`finish` is called when the arguments JSON
+    parses completely, when a new ``ToolCall`` supersedes this one, or when any
+    non-``ToolCallPart`` wire message arrives (safety net for truncated or
+    malformed JSON).
+
+    Each argument — streamed or compact — is printed on its own line beneath
+    the ``⚡ Name`` header. String values for keys in :data:`_STREAM_ARG_KEYS`
+    are printed decoded, fragment by fragment, each in a per-key color from
+    :attr:`_STREAM_KEY_COLORS` (fallback ``GRAY_LIGHT``). Other short scalar
+    values are buffered and printed as compact ``key: value`` lines on
+    completion.
+    """
+
+    # Lexer states.
+    _EXPECT_KEY = 0
+    _IN_KEY = 1
+    _EXPECT_COLON = 2
+    _EXPECT_VALUE = 3
+    _IN_STRING = 4
+    _IN_BARE = 5
+    _AFTER_VALUE = 6
+    _DONE = 7
+
+    _SIMPLE_ESCAPES = {
+        "n": "\n", "t": "\t", "r": "\r", '"': '"',
+        "\\": "\\", "/": "/", "b": "\b", "f": "\f",
+    }
+    _BARE_LITERALS = {"true": "True", "false": "False", "null": "None"}
+
+    # Key -> foreground color for streamed argument values printed live by
+    # _flush_emit. Keys not listed here fall back to GRAY_LIGHT.
+    _STREAM_KEY_COLORS: dict[str, Color | Color256] = {
+        "old": Color.BRIGHT_RED,
+        "old_string": Color.BRIGHT_RED,
+        "new": Color.BRIGHT_GREEN,
+        "new_string": Color.BRIGHT_GREEN,
+        "code": Color.BRIGHT_BLUE,
+        "prompt": Color.BRIGHT_YELLOW,
+        "question": Color.BRIGHT_YELLOW,
+        "instruction": Color.BRIGHT_YELLOW,
+        "content": Color.BRIGHT_WHITE,
+        "context": GRAY,
+        "source_code": Color.BRIGHT_CYAN,
+        "text": GRAY_LIGHT,
+    }
+
+    def __init__(self, tool_name: str, session: Session) -> None:
+        self._tool_name = tool_name
+        self._session = session
+        self._state = self._EXPECT_VALUE
+        self._stack: list[str] = []
+        self._current_key = ""
+        self._key_chars: list[str] = []
+        self._value_chars: list[str] = []
+        self._emit_chars: list[str] = []
+        self._escape_buf = ""
+        self._in_escape = False
+        self._pending_high_surrogate: int | None = None
+        self._string_streamed = False
+        self._stream_color: Color | Color256 = GRAY_LIGHT  # resolved per-key in _begin_string_value
+        self._json_parts: list[str] = []
+        self._finished = False
+        self._broken = False
+
+    @staticmethod
+    def _stream_color_for_key(key: str) -> Color | Color256:
+        """Return the foreground color for a streamed argument key."""
+        return _ToolCallStreamPrinter._STREAM_KEY_COLORS.get(key, GRAY_LIGHT)
+
+    # ------------------------------------------------------------------ API
+
+    def feed(self, fragment: str) -> None:
+        """Feed one raw JSON fragment; prints decoded output as it goes."""
+        if self._finished:
+            return
+        if fragment:
+            self._json_parts.append(fragment)
+            if self._broken:
+                _stream.colorful_print_word(
+                    fragment, fg=GRAY_LIGHT, require_new_line=False, flush=True)
+            else:
+                try:
+                    self._lex(fragment)
+                    self._flush_emit()
+                except Exception:
+                    # Defensive fallback: never let a lexer error break output.
+                    self._broken = True
+                    _stream.colorful_print_word(
+                        fragment, fg=GRAY_LIGHT, require_new_line=False, flush=True)
+        self._check_complete()
+
+    def finish(self) -> None:
+        """Flush pending buffers, terminate the line and detach from the session."""
+        if self._finished:
+            return
+        self._finished = True
+        try:
+            if self._in_escape and self._escape_buf:
+                # Incomplete escape at end of input: emit verbatim.
+                self._append_value_char(self._escape_buf)
+                self._in_escape = False
+                self._escape_buf = ""
+            if self._pending_high_surrogate is not None:
+                self._append_value_char("\ufffd")
+                self._pending_high_surrogate = None
+            if self._state == self._IN_STRING:
+                if self._string_streamed:
+                    self._flush_emit()
+                elif self._value_chars:
+                    self._emit_compact("".join(self._value_chars) + "...")
+            elif self._state == self._IN_BARE and self._value_chars:
+                self._end_bare_value()
+            else:
+                self._flush_emit()
+        except Exception:
+            pass
+        _stream.print_word("", True)
+        _stream._state = StreamPrintState.Other
+        # Release accumulated fragments promptly; they are no longer needed.
+        self._json_parts.clear()
+        if self._session._tmp_data.get(_TOOL_CALL_STREAM_KEY) is self:
+            self._session._tmp_data.pop(_TOOL_CALL_STREAM_KEY, None)
+
+    # ------------------------------------------------------------- internal
+
+    def _check_complete(self) -> None:
+        if not self._json_parts:
+            return
+        # Structural gate: only run the full JSON validation when the document
+        # may actually be complete. Re-joining and re-parsing every accumulated
+        # fragment on each feed() is O(N^2) in the number of fragments.
+        if self._broken:
+            # Lexer unavailable (defensive fallback): a complete JSON document
+            # can only end right after a container close or a closing quote.
+            tail = self._json_parts[-1].rstrip()
+            if not tail or tail[-1] not in '}]"':
+                return
+        elif self._state != self._DONE:
+            # The incremental lexer tracks container balance. The document can
+            # only be complete once the outermost container has closed (_DONE),
+            # or when a top-level string/bare value has just ended (empty stack).
+            if self._stack or self._state not in (self._AFTER_VALUE, self._IN_BARE):
+                return
+        try:
+            orjson.loads("".join(self._json_parts))
+        except (orjson.JSONDecodeError, TypeError, ValueError):
+            return
+        self.finish()
+
+    def _lex(self, fragment: str) -> None:
+        for ch in fragment:
+            self._feed_char(ch)
+
+    def _feed_char(self, ch: str) -> None:
+        if self._in_escape:
+            self._feed_escape_char(ch)
+            return
+        state = self._state
+        if state == self._DONE:
+            return
+        if state == self._EXPECT_KEY:
+            if ch == '"':
+                self._key_chars = []
+                self._state = self._IN_KEY
+            elif ch == '}':
+                self._close_container()
+        elif state == self._IN_KEY:
+            if ch == '\\':
+                self._in_escape = True
+                self._escape_buf = "\\"
+            elif ch == '"':
+                self._current_key = "".join(self._key_chars)
+                self._state = self._EXPECT_COLON
+            else:
+                self._key_chars.append(ch)
+        elif state == self._EXPECT_COLON:
+            if ch == ':':
+                self._state = self._EXPECT_VALUE
+        elif state == self._EXPECT_VALUE:
+            if ch == '"':
+                self._begin_string_value()
+            elif ch == '{':
+                self._stack.append('{')
+                self._state = self._EXPECT_KEY
+            elif ch == '[':
+                self._stack.append('[')
+            elif ch == ']' or ch == '}':
+                self._close_container()
+            elif ch not in ' \t\r\n':
+                self._value_chars = [ch]
+                self._state = self._IN_BARE
+        elif state == self._IN_STRING:
+            if ch == '\\':
+                self._in_escape = True
+                self._escape_buf = "\\"
+            elif ch == '"':
+                self._end_string_value()
+            else:
+                self._append_value_char(ch)
+        elif state == self._IN_BARE:
+            if ch == ',':
+                self._end_bare_value()
+                self._after_comma()
+            elif ch == '}' or ch == ']':
+                self._end_bare_value()
+                self._close_container()
+            elif ch in ' \t\r\n':
+                self._end_bare_value()
+            else:
+                self._value_chars.append(ch)
+        elif state == self._AFTER_VALUE:
+            if ch == ',':
+                self._after_comma()
+            elif ch == '}' or ch == ']':
+                self._close_container()
+
+    def _feed_escape_char(self, ch: str) -> None:
+        self._escape_buf += ch
+        buf = self._escape_buf
+        if len(buf) == 2 and buf[1] != 'u':
+            decoded = self._SIMPLE_ESCAPES.get(ch, ch)
+            self._reset_escape()
+            self._append_value_char(decoded)
+        elif buf.startswith("\\u") and len(buf) == 6:
+            self._reset_escape()
+            try:
+                cp = int(buf[2:], 16)
+            except ValueError:
+                self._append_value_char(buf)
+                return
+            self._handle_code_point(cp)
+        elif len(buf) > 6 or (len(buf) > 2 and not buf.startswith("\\u")):
+            # Should not happen; emit verbatim and recover.
+            self._reset_escape()
+            self._append_value_char(buf)
+
+    def _reset_escape(self) -> None:
+        self._in_escape = False
+        self._escape_buf = ""
+
+    def _handle_code_point(self, cp: int) -> None:
+        hi = self._pending_high_surrogate
+        if hi is not None:
+            self._pending_high_surrogate = None
+            if 0xDC00 <= cp <= 0xDFFF:
+                self._append_value_char(
+                    chr(0x10000 + ((hi - 0xD800) << 10) + (cp - 0xDC00)))
+                return
+            self._append_value_char("\ufffd")
+        if 0xD800 <= cp <= 0xDBFF:
+            self._pending_high_surrogate = cp
+        elif 0xDC00 <= cp <= 0xDFFF:
+            self._append_value_char("\ufffd")
+        else:
+            self._append_value_char(chr(cp))
+
+    def _append_value_char(self, s: str) -> None:
+        if self._state == self._IN_KEY:
+            self._key_chars.append(s)
+        elif self._string_streamed:
+            self._emit_chars.append(s)
+        else:
+            self._value_chars.append(s)
+
+    def _begin_string_value(self) -> None:
+        self._string_streamed = self._current_key in _STREAM_ARG_KEYS
+        self._value_chars = []
+        self._state = self._IN_STRING
+        if self._string_streamed:
+            self._stream_color = self._stream_color_for_key(self._current_key)
+            _stream.colorful_print_word(
+                f"{self._separator()}{self._current_key}: ",
+                fg=GRAY, require_new_line=False, flush=True)
+
+    def _end_string_value(self) -> None:
+        if self._string_streamed:
+            if self._pending_high_surrogate is not None:
+                self._emit_chars.append("\ufffd")
+                self._pending_high_surrogate = None
+            self._flush_emit()
+        else:
+            self._emit_compact("".join(self._value_chars))
+        self._value_chars = []
+        self._state = self._AFTER_VALUE
+
+    def _end_bare_value(self) -> None:
+        text = "".join(self._value_chars)
+        self._value_chars = []
+        self._emit_compact(self._BARE_LITERALS.get(text, text))
+        self._state = self._AFTER_VALUE
+
+    def _emit_compact(self, text: str) -> None:
+        if len(text) > 60:
+            text = text[:60] + "..."
+        segment = f"{self._separator()}{self._current_key}: {text}" if self._current_key \
+            else f"{self._separator()}{text}"
+        _stream.colorful_print_word(
+            segment, fg=Color.BRIGHT_MAGENTA, require_new_line=False, flush=True)
+
+    def _separator(self) -> str:
+        # Each tool argument starts on its own line beneath the tool header.
+        return "\n"
+
+    def _flush_emit(self) -> None:
+        if not self._emit_chars:
+            return
+        chunk = "".join(self._emit_chars)
+        self._emit_chars = []
+        _stream.colorful_print_word(
+            chunk, fg=self._stream_color, require_new_line=False, flush=True)
+
+    def _after_comma(self) -> None:
+        if self._stack and self._stack[-1] == '{':
+            self._state = self._EXPECT_KEY
+        elif self._stack:
+            self._state = self._EXPECT_VALUE
+
+    def _close_container(self) -> None:
+        if self._stack:
+            self._stack.pop()
+        self._state = self._AFTER_VALUE if self._stack else self._DONE
+
+
+def _finish_tool_call_stream(session: Session) -> None:
+    """Finish and remove any active tool-call stream printer for the session."""
+    tmp_data = getattr(session, "_tmp_data", None)
+    if not tmp_data:
+        return
+    printer = tmp_data.pop(_TOOL_CALL_STREAM_KEY, None)
+    if printer is not None:
+        printer.finish()
+
+
 def _handle_tool_call(
     wire_msg: ToolCall | ToolCallPart,
     output_function: Callable[[str, MessageType], Any] | None,
     session: Session,
     format_output: bool = False,
+    stream_tool_args: bool = False,
 ) -> None:
     if isinstance(wire_msg, ToolCall):
+        # Clear previous header-printed flag for the new tool call.
+        session._tmp_data.pop(_TOOL_HEADER_PRINTED_KEY, None)
         session._tmp_data[_LAST_TOOL_CALL_KEY] = wire_msg
         session._tmp_data[wire_msg.id] = wire_msg
         name = wire_msg.function.name
         args = wire_msg.function.arguments
+        if stream_tool_args:
+            if args == "" or name not in _STREAM_TOOL_NAMES:
+                # Empty args or non-streamable tool: fall through to the
+                # legacy compact format path.
+                pass
+            else:
+                # A new tool call supersedes any previous stream printer.
+                _finish_tool_call_stream(session)
+                _stream.colorful_print_word(
+                    f"⚡ {name}", fg=_tool_header_color(name), require_new_line=True)
+                _stream._state = StreamPrintState.Other
+                printer = _ToolCallStreamPrinter(name, session)
+                session._tmp_data[_TOOL_CALL_STREAM_KEY] = printer
+                if args:
+                    printer.feed(args)
+                session._tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
+                if output_function:
+                    output_function(
+                        f"{name} {args or ''}", MessageType.ToolCalling)
+                return
         formatted = _format_tool_args(name, args)
         if formatted:
             header = f"⚡ {name} {formatted}"
         else:
             return
         _stream.colorful_print_word(
-            header, fg=Color.BRIGHT_MAGENTA, require_new_line=True)
+            header, fg=_tool_header_color(name), require_new_line=True)
         _stream._state = StreamPrintState.Other
+        session._tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
         if output_function:
             output_function(
                 f"{name} {args or ''}", MessageType.ToolCalling)
@@ -607,23 +1009,34 @@ def _handle_tool_call(
         last_tc: ToolCall = session._tmp_data.get(_LAST_TOOL_CALL_KEY)
         if last_tc is not None:
             last_tc.merge_in_place(wire_msg)
+        printer: _ToolCallStreamPrinter | None = None
+        if stream_tool_args:
+            printer = session._tmp_data.get(_TOOL_CALL_STREAM_KEY)
+        if printer is not None:
+            printer.feed(wire_msg.arguments_part or "")
+        elif last_tc is not None:
+            if not session._tmp_data.get(_TOOL_HEADER_PRINTED_KEY):
+                name = last_tc.function.name
+                args = last_tc.function.arguments
+                if args:
+                    formatted = _format_tool_args(name, args)
+                    header = None
+                    if formatted:
+                        header = f"⚡ {name} {formatted}"
+                    if header:
+                        _stream.colorful_print_word(header, fg=_tool_header_color(name), require_new_line=True)
+                        session._tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
         if last_tc is not None:
-            name = last_tc.function.name
-            args = last_tc.function.arguments
-            if args:
-                formatted = _format_tool_args(name, args)
-                header = None
-                if formatted:
-                    header = f"⚡ {name} {formatted}"
-                if header:
-                    _stream.colorful_print_word(header, fg=Color.BRIGHT_MAGENTA, require_new_line=True)
             if output_function:
-                output_function(f"{name} {args or ''}", MessageType.ToolCallingPart)
+                output_function(
+                    f"{last_tc.function.name} {last_tc.function.arguments or ''}",
+                    MessageType.ToolCallingPart)
         elif output_function:
             part = wire_msg.arguments_part or ""
             if part:
                 output_function(part, MessageType.ToolCallingPart)
-        _stream.print_word('', True)
+        if printer is None:
+            _stream.print_word('', True)
         _stream._state = StreamPrintState.Other
 
 
@@ -638,6 +1051,7 @@ def _handle_tool_result(wire_msg: ToolResult, output_function: Callable[[str, Me
             tc: ToolCall | None = _session._tmp_data.pop(wire_msg.tool_call_id, None)
             if tc is None:
                 tc = _session._tmp_data.pop(_LAST_TOOL_CALL_KEY, None)
+            _session._tmp_data.pop(_TOOL_HEADER_PRINTED_KEY, None)
             if tc:
                 tool_name = tc.function.name if tc else "tool"
                 _stream.colorful_print_word(
@@ -738,16 +1152,41 @@ def print_agent_json_flush_text() -> None:
     _flush_agent_json_text()
 
 
-def print_agent_json(
+async def print_agent_json(
     wire_msg: Any,
     session: Session,
     output_function: Callable[[str, MessageType], Any] | None = None,
     format_output: bool = False,
+    stream_tool_args: bool = True,
 ) -> None:
+    """Pretty-print a streaming wire message from an agent session.
+
+    Awaitable; the internal handlers are synchronous (printing is sync I/O).
+
+    When ``stream_tool_args`` is True (default), each tool argument starts on
+    its own line beneath the tool header; long whitelisted string values
+    (e.g. the ``content`` parameter of ``WriteFile``) are streamed decoded
+    token by token as ``ToolCallPart`` fragments arrive from the LLM, and
+    short scalar arguments print as compact ``key: value`` lines. Pass
+    ``stream_tool_args=False`` to restore the legacy compact output (which
+    hides long values such as ``content``) byte-for-byte.
+
+    With ``merge_wire_messages=True`` a single complete ``ToolCall`` arrives,
+    so the full decoded value is printed in one go; pass
+    ``stream_tool_args=False`` for the old compact, hidden-content output.
+    """
     if format_output and _stream._state == StreamPrintState.Text and not isinstance(wire_msg, TextPart):
         _flush_agent_json_text()
         _stream._state = StreamPrintState.Other
+    if not isinstance(wire_msg, (ToolCall, ToolCallPart)):
+        # Terminate any streamed tool-call argument line before other output
+        # (tool results, text parts, usage banners, ...).
+        _finish_tool_call_stream(session)
     _print_transition_usage(session, _message_transition_type(wire_msg))
+    if isinstance(wire_msg, (ToolCall, ToolCallPart)):
+        _handle_tool_call(wire_msg, output_function, session, format_output,
+                          stream_tool_args=stream_tool_args)
+        return
     handler = _PRINT_AGENT_JSON_DISPATCH.get(type(wire_msg))
     if handler is not None:
         handler(wire_msg, output_function, session, format_output)

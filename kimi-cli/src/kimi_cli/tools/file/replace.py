@@ -376,6 +376,11 @@ class EditFile(CallableTool2[Params]):
                     brief="Format validation failed",
                 )
 
+            # Note: the diff is intentionally NOT attached to the result display.
+            # It was already shown during approval, and the streamed old/new
+            # argument values are printed live (formatted and colored) by the
+            # CLI printer while the tool call is generated (see kimix.base).
+            # Attaching diff_blocks here would print the old -> new content twice.
             return ToolReturnValue(
                 is_error=False,
                 output="",
@@ -383,7 +388,7 @@ class EditFile(CallableTool2[Params]):
                     f"{'[out of work-dir] ' if _outside else ''}File successfully edited. "
                     f"Applied {len(edits)} edit(s) with {total_replacements} total replacement(s)."
                 ),
-                display=diff_blocks,
+                display=[],
             )
 
         except (OSError, ValueError, RuntimeError) as e:
