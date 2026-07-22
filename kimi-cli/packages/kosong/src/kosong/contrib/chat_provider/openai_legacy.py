@@ -162,6 +162,14 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
         # a 400 from the API, which enforces its own per-model output limit.
         clamp_max_tokens(generation_kwargs)
 
+        # The OpenAI Chat Completions API does not accept ``max_output_tokens``
+        # (that is a Responses API parameter).  Some callers (e.g. the soul
+        # retry logic in ``kimisoul.py``) set both ``max_tokens`` and
+        # ``max_output_tokens``; the latter must be stripped here to avoid
+        # ``TypeError: AsyncCompletions.create() got an unexpected keyword
+        # argument 'max_output_tokens'``.
+        generation_kwargs.pop("max_output_tokens", None)
+
         reasoning_effort = self._reasoning_effort
         # Auto-enable reasoning_effort when the history contains ThinkPart but reasoning
         # was not explicitly configured. This prevents server validation errors from APIs
