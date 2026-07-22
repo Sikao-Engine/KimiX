@@ -135,6 +135,7 @@ def _try_mipmap_fallback(
             height=result.height,
             byte_length=result.final_byte_length,
             mime_type=result.mime_type,
+            mipmap=True,
         )
         return (part, delivery)
     return None
@@ -194,6 +195,10 @@ class _ImageDelivery:
     region: CropRegion | None = None
     # For kind "crop": the crop was additionally downscaled to fit budgets.
     resized: bool | None = None
+    # True when mip-map (numpy-based 2x2 bilinear averaging) was used
+    # instead of the standard Pillow downsampling path. Mip-map can
+    # cause more aggressive detail loss.
+    mipmap: bool = False
 
 
 def _build_media_note(
@@ -233,6 +238,12 @@ def _build_media_note(
             "To inspect fine detail, call ReadMediaFile again with the region parameter "
             "(original-image pixel coordinates) to view a crop at full fidelity."
         )
+        if delivery.mipmap:
+            parts.append(
+                "Warning: Mip-map downsampling (2x2 bilinear averaging) was used "
+                "because standard compression could not meet the delivery limits; "
+                "fine detail may be significantly reduced."
+            )
     elif delivery and delivery.kind == "crop" and delivery.region:
         region = delivery.region
         how = (

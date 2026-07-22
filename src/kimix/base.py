@@ -191,6 +191,50 @@ def _strip_ansi(text: str) -> str:
     return _ANSI_ESCAPE.sub("", text)
 
 
+def _sgr_end(word: str, i: int, end: int) -> int:
+    """If an SGR sequence (``\\x1b[<digits/semicolons>m``) starts at ``i``,
+    return its end offset; otherwise return -1.
+
+    This is exactly the sequence shape emitted by ``colorful_text`` /
+    ``_ansi_prefix``, so the common colored-output path needs no regex.
+    """
+    j = i + 2
+    while j < end and (word[j].isdigit() or word[j] == ';'):
+        j += 1
+    return j + 1 if j < end and word[j] == 'm' else -1
+
+
+def _ends_with_newline(word: str) -> bool:
+    """Return whether ``word`` ends with a newline, ignoring ANSI sequences.
+
+    Equivalent to ``_strip_ansi(word).endswith('\\n')`` but avoids the regex
+    substitution for the common cases (plain text, or text wrapped in SGR
+    color sequences — which is how ``colorful_text`` emits colored output).
+    Falls back to exact stripping for anything else (OSC sequences,
+    malformed escapes, ...).
+    """
+    end = len(word)
+    for _ in range(8):
+        if end == 0:
+            return False
+        if word[end - 1] == '\n':
+            return True
+        i = word.rfind('\x1b[', 0, end)
+        if i < 0:
+            break
+        j = _sgr_end(word, i, end)
+        if j < 0:
+            break  # Non-SGR CSI or malformed; exact fallback below.
+        if j < end:
+            # Something follows the last SGR sequence. If it contains no
+            # ESC it is literal text whose last char is not a newline.
+            if '\x1b' not in word[j:end]:
+                return False
+            break  # e.g. an OSC/APC sequence; exact fallback below.
+        end = i
+    return _strip_ansi(word[:end]).endswith('\n')
+
+
 _colorful_print = True
 _print_func: Callable = print
 
@@ -307,7 +351,7 @@ class PrintStream:
 
         self._print_func(word, end='', flush=flush)
         check_word = raw_word if raw_word is not None else word
-        self._last_char_was_newline = _strip_ansi(check_word).endswith('\n')
+        self._last_char_was_newline = _ends_with_newline(check_word)
 
     def colorful_print_word(
             self, word: str,
@@ -462,6 +506,38 @@ def _format_tool_result(result: ToolResult) -> str:
 _LAST_TOOL_CALL_KEY = "_kimix_last_tool_call"
 _TOOL_CALL_STREAM_KEY = "_kimix_tool_call_stream"
 _TOOL_HEADER_PRINTED_KEY = "_kimix_tool_header_printed"
+_TOOL_CALL_PART_PENDING_KEY = "_kimix_tool_call_part_pending"
+_TOOL_CALL_PART_EMITTED_LEN_KEY = "_kimix_tool_call_part_emitted_len"
+
+# Minimum payload size before a cumulative ``ToolCallingPart`` snapshot is
+# emitted to ``output_function``; afterwards the emission threshold doubles
+# each time. Consumers replace (not append) the previous snapshot, so
+# coalescing intermediate snapshots is invisible while avoiding O(N^2)
+# bytes for long streamed tool arguments.
+_TOOL_CALL_PART_MIN_EMIT_BYTES = 4096
+
+
+def _flush_tool_call_part_output(
+    session: Session,
+    output_function: Callable[[str, MessageType], Any] | None,
+) -> None:
+    """Emit any pending coalesced ``ToolCallingPart`` snapshot.
+
+    Called when the tool call finishes (a non-``ToolCallPart`` wire message
+    arrives) or is superseded by a new ``ToolCall``, guaranteeing the final
+    full snapshot is always delivered exactly once.
+    """
+    if output_function is None:
+        return
+    tmp_data = getattr(session, "_tmp_data", None)
+    if not tmp_data or not tmp_data.pop(_TOOL_CALL_PART_PENDING_KEY, None):
+        return
+    last_tc: ToolCall | None = tmp_data.get(_LAST_TOOL_CALL_KEY)
+    if last_tc is None:
+        return
+    payload = f"{last_tc.function.name} {last_tc.function.arguments or ''}"
+    output_function(payload, MessageType.ToolCallingPart)
+    tmp_data[_TOOL_CALL_PART_EMITTED_LEN_KEY] = len(payload)
 
 # Tool names eligible for streaming argument display.
 # Only these tools benefit from the incremental decoded output;
@@ -653,6 +729,11 @@ class _ToolCallStreamPrinter:
         "n": "\n", "t": "\t", "r": "\r", '"': '"',
         "\\": "\\", "/": "/", "b": "\b", "f": "\f",
     }
+
+    # Flush streamed output to the terminal at least every this many bytes.
+    # Keeps long values visibly "live" without paying one terminal flush
+    # (a syscall on real consoles/pipes) per LLM fragment.
+    _FLUSH_INTERVAL_BYTES = 256
     _BARE_LITERALS = {"true": "True", "false": "False", "null": "None"}
 
     # Key -> foreground color for streamed argument values printed live by
@@ -689,6 +770,7 @@ class _ToolCallStreamPrinter:
         self._json_parts: list[str] = []
         self._finished = False
         self._broken = False
+        self._bytes_since_flush = 0
 
     @staticmethod
     def _stream_color_for_key(key: str) -> Color | Color256:
@@ -733,13 +815,13 @@ class _ToolCallStreamPrinter:
                 self._pending_high_surrogate = None
             if self._state == self._IN_STRING:
                 if self._string_streamed:
-                    self._flush_emit()
+                    self._flush_emit(flush=True)
                 elif self._value_chars:
                     self._emit_compact("".join(self._value_chars) + "...")
             elif self._state == self._IN_BARE and self._value_chars:
                 self._end_bare_value()
             else:
-                self._flush_emit()
+                self._flush_emit(flush=True)
         except Exception:
             pass
         _stream.print_word("", True)
@@ -775,9 +857,58 @@ class _ToolCallStreamPrinter:
             return
         self.finish()
 
+    # Terminates a bare (unquoted) JSON value: comma, container close, or
+    # JSON insignificant whitespace. Mirrors the set handled in _feed_char.
+    _BARE_VALUE_TERMINATOR = re.compile(r"[,}\] \t\r\n]")
+
     def _lex(self, fragment: str) -> None:
-        for ch in fragment:
-            self._feed_char(ch)
+        """Lex one raw JSON fragment.
+
+        Fast paths consume "boring" spans in bulk via C-level ``str.find`` /
+        regex search — string content without quotes or escapes, bare
+        literals, and insignificant whitespace. Only boundary characters go
+        through the per-char state machine, which keeps the emitted output
+        byte-for-byte identical while cutting the per-char dispatch cost.
+        """
+        i = 0
+        n = len(fragment)
+        while i < n:
+            if self._in_escape:
+                self._feed_escape_char(fragment[i])
+                i += 1
+                continue
+            state = self._state
+            if state == self._DONE:
+                # Characters after a complete document are ignored.
+                return
+            if state == self._IN_STRING or state == self._IN_KEY:
+                # Bulk-consume up to the next quote or escape introducer.
+                q = fragment.find('"', i)
+                b = fragment.find('\\', i)
+                if q == -1:
+                    j = b if b != -1 else n
+                elif b == -1:
+                    j = q
+                else:
+                    j = q if q < b else b
+                if j > i:
+                    self._append_value_char(fragment[i:j])
+                    i = j
+                    continue
+            elif state == self._IN_BARE:
+                m = self._BARE_VALUE_TERMINATOR.search(fragment, i)
+                j = m.start() if m is not None else n
+                if j > i:
+                    self._value_chars.append(fragment[i:j])
+                    i = j
+                    continue
+            elif fragment[i] in ' \t\r\n':
+                # Insignificant whitespace outside strings / bare values is
+                # ignored by every remaining state; skip without dispatch.
+                i += 1
+                continue
+            self._feed_char(fragment[i])
+            i += 1
 
     def _feed_char(self, ch: str) -> None:
         if self._in_escape:
@@ -905,7 +1036,7 @@ class _ToolCallStreamPrinter:
             if self._pending_high_surrogate is not None:
                 self._emit_chars.append("\ufffd")
                 self._pending_high_surrogate = None
-            self._flush_emit()
+            self._flush_emit(flush=True)
         else:
             self._emit_compact("".join(self._value_chars))
         self._value_chars = []
@@ -929,13 +1060,24 @@ class _ToolCallStreamPrinter:
         # Each tool argument starts on its own line beneath the tool header.
         return "\n"
 
-    def _flush_emit(self) -> None:
+    def _flush_emit(self, flush: bool = False) -> None:
+        """Print buffered decoded output.
+
+        ``flush=True`` forces a terminal flush (value boundaries, finish);
+        otherwise a flush happens only once every
+        :data:`_FLUSH_INTERVAL_BYTES` streamed bytes. Printed bytes are
+        identical either way — only the flush cadence changes.
+        """
         if not self._emit_chars:
             return
         chunk = "".join(self._emit_chars)
         self._emit_chars = []
+        self._bytes_since_flush += len(chunk)
+        if flush or self._bytes_since_flush >= self._FLUSH_INTERVAL_BYTES:
+            self._bytes_since_flush = 0
+            flush = True
         _stream.colorful_print_word(
-            chunk, fg=self._stream_color, require_new_line=False, flush=True)
+            chunk, fg=self._stream_color, require_new_line=False, flush=flush)
 
     def _after_comma(self) -> None:
         if self._stack and self._stack[-1] == '{':
@@ -949,6 +1091,37 @@ class _ToolCallStreamPrinter:
         self._state = self._AFTER_VALUE if self._stack else self._DONE
 
 
+def _json_tail_may_complete(args: str) -> bool:
+    """Cheap structural gate before attempting a full JSON parse of an
+    accumulated (usually still incomplete) tool-arguments string.
+
+    Tool-call arguments are JSON objects, so a complete document can only end
+    with ``}`` (or ``]`` / ``"`` for exotic non-object args). Skipping the
+    parse attempt for every other fragment avoids re-parsing the whole
+    growing string per fragment — O(N^2) failed parses per tool call.
+    """
+    tail = args[-256:].rstrip()
+    return bool(tail) and tail[-1] in '}]"'
+
+
+def _print_compact_tool_header(session: Session, last_tc: ToolCall) -> None:
+    """Print the legacy compact ``⚡ name args`` header once the accumulated
+    arguments parse as complete JSON. No-op if already printed or the
+    arguments are still incomplete/invalid."""
+    tmp_data = session._tmp_data
+    if tmp_data.get(_TOOL_HEADER_PRINTED_KEY):
+        return
+    args = last_tc.function.arguments
+    if not args:
+        return
+    formatted = _format_tool_args(last_tc.function.name, args)
+    if formatted:
+        _stream.colorful_print_word(
+            f"⚡ {last_tc.function.name} {formatted}",
+            fg=_tool_header_color(last_tc.function.name), require_new_line=True)
+        tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
+
+
 def _finish_tool_call_stream(session: Session) -> None:
     """Finish and remove any active tool-call stream printer for the session."""
     tmp_data = getattr(session, "_tmp_data", None)
@@ -957,6 +1130,15 @@ def _finish_tool_call_stream(session: Session) -> None:
     printer = tmp_data.pop(_TOOL_CALL_STREAM_KEY, None)
     if printer is not None:
         printer.finish()
+    # Compact path: if the per-fragment gate never saw a completable tail
+    # (e.g. exotic non-object arguments), make one final parse attempt now
+    # that no more fragments can arrive for this tool call.
+    last_tc: ToolCall | None = tmp_data.get(_LAST_TOOL_CALL_KEY)
+    if last_tc is not None and not tmp_data.get(_TOOL_HEADER_PRINTED_KEY):
+        _print_compact_tool_header(session, last_tc)
+        # No more fragments can arrive for this tool call; don't re-attempt
+        # the (failed) parse on every later non-toolcall message.
+        tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
 
 
 def _handle_tool_call(
@@ -967,6 +1149,10 @@ def _handle_tool_call(
     stream_tool_args: bool = False,
 ) -> None:
     if isinstance(wire_msg, ToolCall):
+        # A new tool call supersedes any previous one: flush its pending
+        # coalesced output first so callbacks stay in wire order.
+        _flush_tool_call_part_output(session, output_function)
+        session._tmp_data.pop(_TOOL_CALL_PART_EMITTED_LEN_KEY, None)
         # Clear previous header-printed flag for the new tool call.
         session._tmp_data.pop(_TOOL_HEADER_PRINTED_KEY, None)
         session._tmp_data[_LAST_TOOL_CALL_KEY] = wire_msg
@@ -1016,21 +1202,33 @@ def _handle_tool_call(
             printer.feed(wire_msg.arguments_part or "")
         elif last_tc is not None:
             if not session._tmp_data.get(_TOOL_HEADER_PRINTED_KEY):
-                name = last_tc.function.name
                 args = last_tc.function.arguments
-                if args:
-                    formatted = _format_tool_args(name, args)
-                    header = None
-                    if formatted:
-                        header = f"⚡ {name} {formatted}"
-                    if header:
-                        _stream.colorful_print_word(header, fg=_tool_header_color(name), require_new_line=True)
-                        session._tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
+                # Only attempt the full parse when the accumulated string
+                # may actually be complete; otherwise orjson scans (and
+                # fails on) the whole growing string per fragment — O(N^2).
+                if args and _json_tail_may_complete(args):
+                    _print_compact_tool_header(session, last_tc)
         if last_tc is not None:
             if output_function:
-                output_function(
-                    f"{last_tc.function.name} {last_tc.function.arguments or ''}",
-                    MessageType.ToolCallingPart)
+                # Coalesce cumulative snapshots: building and emitting the
+                # full accumulated arguments for every fragment is O(N^2) in
+                # the number of fragments. Consumers replace the previous
+                # snapshot, so only emit at geometrically growing thresholds;
+                # the final snapshot is flushed by
+                # _flush_tool_call_part_output when the tool call ends.
+                name = last_tc.function.name
+                payload_len = len(name) + 1 + len(last_tc.function.arguments or '')
+                emitted_len: int = session._tmp_data.get(
+                    _TOOL_CALL_PART_EMITTED_LEN_KEY, 0)
+                if payload_len >= max(
+                        _TOOL_CALL_PART_MIN_EMIT_BYTES, emitted_len * 2):
+                    output_function(
+                        f"{name} {last_tc.function.arguments or ''}",
+                        MessageType.ToolCallingPart)
+                    session._tmp_data[_TOOL_CALL_PART_EMITTED_LEN_KEY] = payload_len
+                    session._tmp_data.pop(_TOOL_CALL_PART_PENDING_KEY, None)
+                else:
+                    session._tmp_data[_TOOL_CALL_PART_PENDING_KEY] = True
         elif output_function:
             part = wire_msg.arguments_part or ""
             if part:
@@ -1182,6 +1380,9 @@ async def print_agent_json(
         # Terminate any streamed tool-call argument line before other output
         # (tool results, text parts, usage banners, ...).
         _finish_tool_call_stream(session)
+        # Deliver the final coalesced ToolCallingPart snapshot (if any)
+        # before this message's own output.
+        _flush_tool_call_part_output(session, output_function)
     _print_transition_usage(session, _message_transition_type(wire_msg))
     if isinstance(wire_msg, (ToolCall, ToolCallPart)):
         _handle_tool_call(wire_msg, output_function, session, format_output,
