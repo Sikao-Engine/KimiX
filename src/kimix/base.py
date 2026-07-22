@@ -754,7 +754,7 @@ class _ToolCallStreamPrinter:
         "prompt": Color.BRIGHT_YELLOW,
         "question": Color.BRIGHT_YELLOW,
         "instruction": Color.BRIGHT_YELLOW,
-        "content": Color.BRIGHT_WHITE,
+        "content": Color.BRIGHT_BLACK,
         "context": GRAY,
         "source_code": Color.BRIGHT_CYAN,
         "text": GRAY_LIGHT,
