@@ -176,7 +176,7 @@ async def test_print_agent_json_streams_writefile_content_token_by_token(monkeyp
     # Header printed exactly once when the ToolCall arrives.
     assert output.count("⚡ WriteFile") == 1
     # Non-whitelisted short values print as compact segments.
-    assert "path: x.py" in plain
+    assert "path:\nx.py" in plain
     # The long content value is printed decoded, across fragments.
     assert "hello world" in plain
     # No stray JSON quotes/braces leak into the streamed content.
@@ -242,9 +242,9 @@ async def test_print_agent_json_stream_prints_compact_short_values(monkeypatch: 
 
     plain = _plain(chunks)
 
-    assert "path: x.py" in plain
-    assert "mode: overwrite" in plain
-    assert "\nmode: overwrite" in plain
+    assert "path:\nx.py" in plain
+    assert "mode:\noverwrite" in plain
+    assert "\nmode:\noverwrite" in plain
     assert "body" in plain
 
 
@@ -304,7 +304,7 @@ async def test_print_agent_json_merged_tool_call_prints_full_content_once(monkey
 
     plain = _plain(chunks)
     assert plain.count("full body here") == 1
-    assert "path: big.py" in plain
+    assert "path:\nbig.py" in plain
     assert base._stream._last_char_was_newline is True
 
 
@@ -430,7 +430,7 @@ async def test_stream_colors_writefile_header_and_content_white(monkeypatch: Any
     assert "\x1b[97mhello\x1b[0m" in output
     # Non-streamed compact segments keep the legacy magenta and start on
     # their own line (newline prefix).
-    assert "\x1b[95m\npath: x.py\x1b[0m" in output
+    assert "\x1b[95m\npath:\nx.py\x1b[0m" in output
 
 
 async def test_stream_colors_editfile_old_red_new_green(monkeypatch: Any) -> None:
@@ -472,9 +472,9 @@ async def test_stream_prints_each_argument_on_new_line(monkeypatch: Any) -> None
 
     # Header on its own line, then exactly one argument per line.
     assert "⚡ EditFile\n" in plain
-    assert "\npath: f.py" in plain
-    assert "\nold: aaa" in plain
-    assert "\nnew: bbb" in plain
+    assert "\npath:\nf.py" in plain
+    assert "\nold:\naaa" in plain
+    assert "\nnew:\nbbb" in plain
     # No comma-separated arguments remain.
     assert ", old:" not in plain
     assert ", new:" not in plain

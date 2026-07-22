@@ -228,12 +228,13 @@ async def test_read_image_full_resolution_over_budget_refused(
     assert "Use region to view a crop at full fidelity instead." in result.message
 
 
-async def test_read_image_decode_cap_precheck(
+async def test_read_image_decode_cap_mipmap_fallback(
     read_media_file_tool: ReadMediaFile,
     temp_work_dir: KaosPath,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Default reads over the safe decode allocation fail before loading bytes."""
+    """Default reads over the safe decode allocation now fall back to
+    mip-map downsampling instead of erroring."""
     image_file = temp_work_dir / "sample.png"
     data = _make_png((100, 100))
     await image_file.write_bytes(data)
@@ -243,27 +244,84 @@ async def test_read_image_decode_cap_precheck(
     monkeypatch.setenv("KIMI_IMAGE_READ_BYTE_BUDGET", "100")
     monkeypatch.delenv("KIMI_IMAGE_MAX_EDGE_PX", raising=False)
 
-    read_calls: list[int | None] = []
-    original_read_bytes = KaosPath.read_bytes
+    result = await read_media_file_tool(Params(path=str(image_file)))
 
-    async def spy_read_bytes(self: KaosPath, n: int | None = None) -> bytes:
-        read_calls.append(n)
-        return await original_read_bytes(self, n)
+    # The mipmap fallback should succeed - 100x100 down to ~25x25 fits 100 bytes.
+    assert not result.is_error
+    assert "downsampled" in result.message
+    part = result.output[1]
+    assert isinstance(part, ImageURLPart)
 
-    monkeypatch.setattr(KaosPath, "read_bytes", spy_read_bytes)
+
+async def test_large_image_falls_back_to_mipmap(
+    read_media_file_tool: ReadMediaFile,
+    temp_work_dir: KaosPath,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A large noisy image that would normally error now succeeds via mipmap fallback."""
+    image_file = temp_work_dir / "large_noisy.png"
+    data = _make_noisy_png((4000, 3000))
+    assert len(data) > 256 * 1024  # over READ_IMAGE_BYTE_BUDGET
+    await image_file.write_bytes(data)
+
+    monkeypatch.setenv("KIMI_IMAGE_READ_BYTE_BUDGET", "256000")
+    monkeypatch.delenv("KIMI_IMAGE_MAX_EDGE_PX", raising=False)
+
+    result = await read_media_file_tool(Params(path=str(image_file)))
+
+    assert not result.is_error
+    assert "downsampled" in result.message
+    part = result.output[1]
+    assert isinstance(part, ImageURLPart)
+    # The mipmap should have shrunk it — output should be ≤ 2000 edge
+    url = part.image_url.url
+    payload = url.split(",", 1)[1]
+    dims = sniff_image_dimensions(base64.b64decode(payload))
+    assert dims is not None
+    assert max(dims.width, dims.height) <= 2000
+
+
+async def test_large_image_mipmap_note(
+    read_media_file_tool: ReadMediaFile,
+    temp_work_dir: KaosPath,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The <system> message indicates downsampling when mipmap fallback is used."""
+    image_file = temp_work_dir / "big_for_mipmap.png"
+    data = _make_noisy_png((4000, 3000))
+    await image_file.write_bytes(data)
+
+    monkeypatch.setenv("KIMI_IMAGE_READ_BYTE_BUDGET", "256000")
+    monkeypatch.delenv("KIMI_IMAGE_MAX_EDGE_PX", raising=False)
+
+    result = await read_media_file_tool(Params(path=str(image_file)))
+
+    assert not result.is_error
+    message = result.message
+    assert message.startswith("<system>") and message.endswith("</system>")
+    assert "Original dimensions: 4000x3000 pixels." in message
+    assert "The attached image was downsampled to" in message
+    assert "fine detail may be lost" in message
+    assert "call ReadMediaFile again with the region parameter" in message
+
+
+async def test_extremely_large_image_still_errors(
+    read_media_file_tool: ReadMediaFile,
+    temp_work_dir: KaosPath,
+):
+    """An image over MAX_MEDIA_MEGABYTES (100 MB) still errors."""
+    image_file = temp_work_dir / "huge_fake.png"
+    # Write a minimal valid PNG header with a large enough IHDR that
+    # the file is just over 100 MB of actual bytes.
+    one_mb = b"x" * (1024 * 1024)
+    data = b"\x89PNG\r\n\x1a\n" + one_mb * 101  # ~101 MB
+    # The header won't parse as a real PNG, but the size gate fires first.
+    await image_file.write_bytes(data)
 
     result = await read_media_file_tool(Params(path=str(image_file)))
 
     assert result.is_error
-    assert result.message == (
-        f"Image is too large to send safely after compression ({len(data)} bytes; "
-        "limit 100 bytes and 2000px on the longest edge). "
-        "The original image was not sent to the model. Do not retry the same file unchanged. "
-        "Use Bash or an available image-processing tool to create a smaller copy within both "
-        "limits, then call ReadMediaFile on the smaller copy."
-    )
-    # Only the sniff header was read; the full file was never loaded.
-    assert read_calls == [512]
+    assert "exceeds the max 100MB" in result.message
 
 
 async def test_read_image_decode_cap_precheck_region(

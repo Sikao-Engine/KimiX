@@ -4,8 +4,37 @@
 import os
 import shutil
 import subprocess
+import re
 import sys
 from pathlib import Path
+
+
+def _get_rg_version() -> str:
+    """Return the expected ripgrep version from kimi_cli._ripgrep_common."""
+    try:
+        from kimi_cli._ripgrep_common import RG_VERSION
+        return RG_VERSION
+    except ImportError:
+        pass
+    src_path = Path(__file__).resolve().parent / "kimi-cli" / "src"
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+    from kimi_cli._ripgrep_common import RG_VERSION
+    return RG_VERSION
+
+
+def _get_rtk_version() -> str:
+    """Return the expected rtk version from kimi_cli._rtk_common."""
+    try:
+        from kimi_cli._rtk_common import RTK_VERSION
+        return RTK_VERSION
+    except ImportError:
+        pass
+    src_path = Path(__file__).resolve().parent / "kimi-cli" / "src"
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+    from kimi_cli._rtk_common import RTK_VERSION
+    return RTK_VERSION
 
 
 def command_exists(cmd: str) -> bool:
@@ -134,6 +163,26 @@ def _shared_bin_path(bin_name: str) -> Path:
     return Path.home() / ".kimi" / "bin" / bin_name
 
 
+def _get_installed_binary_version(binary: Path, timeout: float = 5.0) -> str | None:
+    """Run ``binary --version`` and extract a semver version string."""
+    try:
+        result = subprocess.run(
+            [str(binary), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+        output = result.stdout or result.stderr
+        if not output:
+            return None
+        # Match first occurrence of X.Y.Z
+        m = re.search(r"(\d+\.\d+\.\d+)", output)
+        return m.group(1) if m else None
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+
+
 def _install_ripgrep() -> tuple[bool, bool]:
     """Prompt for and install ripgrep if needed (cross-platform).
 
@@ -143,8 +192,18 @@ def _install_ripgrep() -> tuple[bool, bool]:
     share_bin = _shared_bin_path(bin_name)
 
     if share_bin.is_file():
-        print("✅ Ripgrep is already installed in shared bin, skipping.")
-        return False, False
+        expected_version = _get_rg_version()
+        installed_version = _get_installed_binary_version(share_bin)
+        if installed_version == expected_version:
+            print(f"✅ Ripgrep {expected_version} is already installed in shared bin, skipping.")
+            return False, False
+        else:
+            installed_str = installed_version or "unknown"
+            print(f"⚠️  Ripgrep found but version is {installed_str}, expected {expected_version}.")
+            if not _ask_yes_no("Reinstall Ripgrep to the expected version?"):
+                print("⏭️  Skipping Ripgrep reinstall.")
+                return False, False
+            # Fall through to the download/install block below
 
     if not _ask_yes_no("Ripgrep was not found. Install Ripgrep?"):
         print("⏭️  Skipping Ripgrep installation.")
@@ -164,7 +223,8 @@ def _install_ripgrep() -> tuple[bool, bool]:
         print("\n▶ Installing Ripgrep ...")
         result = install_ripgrep.install_ripgrep()
         if result:
-            print(f"✅ Ripgrep installed at {result}.")
+            expected_version = _get_rg_version()
+            print(f"✅ Ripgrep installed at {result} (version {expected_version}).")
             return True, True
         else:
             print("⚠️  Ripgrep installation was not successful (non-fatal).")
@@ -183,8 +243,18 @@ def _install_rtk() -> tuple[bool, bool]:
     share_bin = _shared_bin_path(bin_name)
 
     if share_bin.is_file():
-        print("✅ rtk is already installed in shared bin, skipping.")
-        return False, False
+        expected_version = _get_rtk_version()
+        installed_version = _get_installed_binary_version(share_bin)
+        if installed_version == expected_version:
+            print(f"✅ rtk {expected_version} is already installed in shared bin, skipping.")
+            return False, False
+        else:
+            installed_str = installed_version or "unknown"
+            print(f"⚠️  rtk found but version is {installed_str}, expected {expected_version}.")
+            if not _ask_yes_no("Reinstall rtk to the expected version?"):
+                print("⏭️  Skipping rtk reinstall.")
+                return False, False
+            # Fall through to the download/install block below
 
     if not _ask_yes_no("rtk (reasoning toolkit) was not found. Install rtk?"):
         print("⏭️  Skipping rtk installation.")
@@ -204,7 +274,8 @@ def _install_rtk() -> tuple[bool, bool]:
         print("\n▶ Installing rtk ...")
         result = install_rtk.install_rtk()
         if result:
-            print(f"✅ rtk installed at {result}.")
+            expected_version = _get_rtk_version()
+            print(f"✅ rtk installed at {result} (version {expected_version}).")
             return True, True
         else:
             print("⚠️  rtk installation was not successful (non-fatal).")

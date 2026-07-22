@@ -897,7 +897,7 @@ class _ToolCallStreamPrinter:
         if self._string_streamed:
             self._stream_color = self._stream_color_for_key(self._current_key)
             _stream.colorful_print_word(
-                f"{self._separator()}{self._current_key}: ",
+                f"{self._separator()}{self._current_key}:\n",
                 fg=GRAY, require_new_line=False, flush=True)
 
     def _end_string_value(self) -> None:
@@ -920,7 +920,7 @@ class _ToolCallStreamPrinter:
     def _emit_compact(self, text: str) -> None:
         if len(text) > 60:
             text = text[:60] + "..."
-        segment = f"{self._separator()}{self._current_key}: {text}" if self._current_key \
+        segment = f"{self._separator()}{self._current_key}:\n{text}" if self._current_key \
             else f"{self._separator()}{text}"
         _stream.colorful_print_word(
             segment, fg=Color.BRIGHT_MAGENTA, require_new_line=False, flush=True)

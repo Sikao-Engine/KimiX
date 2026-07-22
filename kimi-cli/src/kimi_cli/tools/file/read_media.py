@@ -53,6 +53,7 @@ from kimi_cli.utils.image_compress import (
     compress_image_for_model,
     crop_image_for_model,
     format_byte_size,
+    mipmap_downsample,
     resolve_max_image_edge_px,
     resolve_read_image_byte_budget,
     sniff_image_dimensions,
@@ -98,6 +99,45 @@ def _build_image_decode_limit_error(final_bytes: int) -> str:
         "Use Bash or an available image-processing tool to create a smaller copy or crop the "
         "needed region into a separate image, then call ReadMediaFile on the resulting file."
     )
+
+
+def _try_mipmap_fallback(
+    data: bytes,
+    mime_type: str,
+    media_path: str,
+    max_edge: int,
+    byte_budget: int,
+    original_dimensions: tuple[int, int] | None,
+) -> tuple[ImageURLPart, _ImageDelivery] | None:
+    """Attempt mip-map downsampling when the normal compression path produces
+    an image too large to deliver. Returns ``(ImageURLPart, _ImageDelivery)``
+    on success, ``None`` when even the mipmap result is over budget."""
+    result = mipmap_downsample(
+        data,
+        mime_type,
+        max_edge=max_edge,
+        byte_budget=byte_budget,
+    )
+    if (
+        result.changed
+        and result.final_byte_length <= byte_budget
+        and max(result.width, result.height) <= max_edge
+    ):
+        part = ImageURLPart(
+            image_url=ImageURLPart.ImageURL(
+                url=_to_data_url(result.mime_type, result.data)
+            )
+        )
+        wrapped = wrap_media_part(part, tag="image", attrs={"path": media_path})
+        delivery = _ImageDelivery(
+            kind="downsampled",
+            width=result.width,
+            height=result.height,
+            byte_length=result.final_byte_length,
+            mime_type=result.mime_type,
+        )
+        return (part, delivery)
+    return None
 
 
 def _build_full_resolution_limit_error(path: str, final_bytes: int) -> str:
@@ -375,29 +415,49 @@ class ReadMediaFile(CallableTool2[Params]):
                     compressed.final_byte_length > read_byte_budget
                     or max(compressed.width, compressed.height) > max_edge
                 ):
-                    return ToolError(
-                        message=_build_image_delivery_limit_error(
-                            compressed.final_byte_length, read_byte_budget, max_edge
-                        ),
-                        brief="Image too large",
+                    # The normal compressor could not meet budgets — try the
+                    # mip-map fallback (numpy-based 2×2 bilinear averaging).
+                    mip_result = _try_mipmap_fallback(
+                        data,
+                        file_type.mime_type,
+                        media_path,
+                        max_edge,
+                        read_byte_budget,
+                        dimensions,
                     )
-                part = ImageURLPart(
-                    image_url=ImageURLPart.ImageURL(
-                        url=_to_data_url(compressed.mime_type, compressed.data)
+                    if mip_result is not None:
+                        part, delivery = mip_result
+                        wrapped = wrap_media_part(part, tag="image", attrs={"path": media_path})
+                        # The mipmap decode dimensions are authoritative.
+                        dimensions = (
+                            compressed.original_width,
+                            compressed.original_height,
+                        )
+                    else:
+                        return ToolError(
+                            message=_build_image_delivery_limit_error(
+                                compressed.final_byte_length, read_byte_budget, max_edge
+                            ),
+                            brief="Image too large",
+                        )
+                else:
+                    part = ImageURLPart(
+                        image_url=ImageURLPart.ImageURL(
+                            url=_to_data_url(compressed.mime_type, compressed.data)
+                        )
                     )
-                )
-                wrapped = wrap_media_part(part, tag="image", attrs={"path": media_path})
-                delivery = _ImageDelivery(
-                    kind="downsampled" if compressed.changed else "untouched",
-                    width=compressed.width,
-                    height=compressed.height,
-                    byte_length=compressed.final_byte_length,
-                    mime_type=compressed.mime_type,
-                )
-                if compressed.changed:
-                    # Same as the crop path: once a decode happened, its
-                    # dimensions are authoritative over the header sniff.
-                    dimensions = (compressed.original_width, compressed.original_height)
+                    wrapped = wrap_media_part(part, tag="image", attrs={"path": media_path})
+                    delivery = _ImageDelivery(
+                        kind="downsampled" if compressed.changed else "untouched",
+                        width=compressed.width,
+                        height=compressed.height,
+                        byte_length=compressed.final_byte_length,
+                        mime_type=compressed.mime_type,
+                    )
+                    if compressed.changed:
+                        # Same as the crop path: once a decode happened, its
+                        # dimensions are authoritative over the header sniff.
+                        dimensions = (compressed.original_width, compressed.original_height)
         else:
             if (llm := self._runtime.llm) and isinstance(llm.chat_provider, Kimi):
                 part = await llm.chat_provider.files.upload_video(
@@ -541,28 +601,6 @@ class ReadMediaFile(CallableTool2[Params]):
             ):
                 return ToolError(
                     message=_build_full_resolution_limit_error(params.path, size),
-                    brief="Image too large",
-                )
-
-            default_image_limits: tuple[int, int] | None = None
-            if (
-                file_type.kind == "image"
-                and params.region is None
-                and not params.full_resolution
-            ):
-                default_image_limits = (
-                    resolve_max_image_edge_px(),
-                    resolve_read_image_byte_budget(),
-                )
-            if (
-                default_image_limits is not None
-                and size > MAX_IMAGE_DECODE_BYTES
-                and size > default_image_limits[1]
-            ):
-                return ToolError(
-                    message=_build_image_delivery_limit_error(
-                        size, default_image_limits[1], default_image_limits[0]
-                    ),
                     brief="Image too large",
                 )
 

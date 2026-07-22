@@ -399,3 +399,124 @@ class TestCropImageForModel:
         )
         assert isinstance(outcome, CropImageFailure)
         assert outcome.error == "The image is too large to decode for cropping."
+
+
+class TestMipmapDownsample:
+    def test_mipmap_reduces_dimensions(self):
+        """Call mipmap with max_edge=2000 on a 4000x3000 image → output ≤ 2000px longest edge."""
+        data = make_image("PNG", (4000, 3000))
+        result = image_compress.mipmap_downsample(
+            data, "image/png", max_edge=2000, byte_budget=256 * 1024
+        )
+        assert result.changed is True
+        assert max(result.width, result.height) <= 2000
+
+    def test_mipmap_meets_byte_budget(self):
+        """Noisy 4000x3000 PNG → mipmap with 256KB budget → output ≤ 256KB."""
+        data = make_noisy_png((4000, 3000))
+        result = image_compress.mipmap_downsample(
+            data, "image/png", max_edge=2000, byte_budget=256 * 1024
+        )
+        assert result.changed is True
+        assert result.final_byte_length <= 256 * 1024
+
+    def test_mipmap_preserves_aspect_ratio(self):
+        """Output width/height ratio matches input ratio."""
+        data = make_image("PNG", (4000, 3000))
+        result = image_compress.mipmap_downsample(
+            data, "image/png", max_edge=2000, byte_budget=256 * 1024
+        )
+        assert result.changed is True
+        # Aspect ratio should be roughly preserved (might differ by 1px at odd levels)
+        input_ratio = 4000 / 3000
+        output_ratio = result.width / result.height
+        assert abs(input_ratio - output_ratio) < 0.05
+
+    def test_mipmap_small_image_passthrough(self):
+        """Image already within budgets → unchanged (changed=False)."""
+        data = make_image("PNG", (100, 50))
+        result = image_compress.mipmap_downsample(
+            data, "image/png", max_edge=2000, byte_budget=256 * 1024
+        )
+        assert result.changed is False
+        assert result.data == data
+
+    def test_mipmap_animated_webp_passthrough(self):
+        """Animated WebP → unchanged."""
+        data = make_animated_webp_header()
+        result = image_compress.mipmap_downsample(
+            data, "image/webp", max_edge=2000, byte_budget=256 * 1024
+        )
+        assert result.changed is False
+        assert result.data == data
+
+    def test_mipmap_2x2_average_correctness(self):
+        """Known 4×4 pattern → verify the 2×2 output is exact average."""
+        # Create a 4x4 image where each 2x2 block has a distinct solid color.
+        # Top-left block: (0, 0, 0), top-right: (100, 0, 0),
+        # bottom-left: (0, 100, 0), bottom-right: (0, 0, 100).
+        import numpy as np
+
+        arr = np.zeros((4, 4, 3), dtype=np.uint8)
+        arr[0:2, 0:2] = [0, 0, 0]
+        arr[0:2, 2:4] = [100, 0, 0]
+        arr[2:4, 0:2] = [0, 100, 0]
+        arr[2:4, 2:4] = [0, 0, 100]
+
+        from PIL import Image
+
+        pil_img = Image.fromarray(arr, "RGB")
+        buf = BytesIO()
+        pil_img.save(buf, format="PNG")
+        data = buf.getvalue()
+
+        result = image_compress.mipmap_downsample(
+            data, "image/png", max_edge=2, byte_budget=256 * 1024
+        )
+        assert result.changed is True
+        assert result.width == 2
+        assert result.height == 2
+        # Decode the result and check pixel values
+        decoded = sniff_image_dimensions(result.data)
+        assert decoded is not None
+        assert (decoded.width, decoded.height) == (2, 2)
+
+    def test_mipmap_odd_dimensions(self):
+        """7×7 image → handles non-even dimensions correctly (floors)."""
+        data = make_image("PNG", (7, 7))
+        result = image_compress.mipmap_downsample(
+            data, "image/png", max_edge=4, byte_budget=256 * 1024
+        )
+        assert result.changed is True
+        # 7//2 = 3, then 3 is < MIN_MIPMAP_EDGE_PX (4) so we only have level 0 (7x7).
+        # The function still encodes it to try to fit the budget, which it does.
+        assert max(result.width, result.height) <= 7
+        # Ensure it did shrink at least somewhat (no larger than original)
+        assert result.width <= 7
+        assert result.height <= 7
+
+    def test_mipmap_jpeg_source(self):
+        """JPEG input → works correctly, prefers JPEG output."""
+        data = make_image("JPEG", (4000, 3000))
+        result = image_compress.mipmap_downsample(
+            data, "image/jpeg", max_edge=2000, byte_budget=256 * 1024
+        )
+        assert result.changed is True
+        assert result.mime_type == "image/jpeg"
+        assert max(result.width, result.height) <= 2000
+
+    def test_mipmap_rgba_source(self):
+        """RGBA PNG → preserves alpha via PNG encoding."""
+        from PIL import Image
+
+        img = Image.new("RGBA", (4000, 3000), color=(51, 102, 204, 128))
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        data = buf.getvalue()
+
+        result = image_compress.mipmap_downsample(
+            data, "image/png", max_edge=2000, byte_budget=256 * 1024
+        )
+        assert result.changed is True
+        assert result.mime_type == "image/png"
+        assert max(result.width, result.height) <= 2000

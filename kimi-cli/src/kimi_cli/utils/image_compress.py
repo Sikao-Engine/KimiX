@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Literal
 from kimi_cli.utils.image_format_policy import normalize_image_mime
 
 if TYPE_CHECKING:
+    import numpy as np
     from PIL import Image
 
 # ---------------------------------------------------------------------------
@@ -115,6 +116,14 @@ PNG_RESCALE_FLOOR_PX = 1000
 # Formats we can decode and re-encode. GIF is never re-encoded (animation
 # preservation); animated WebP is gated to a passthrough before decoding.
 _RECODABLE_MIME = frozenset({"image/png", "image/jpeg", "image/webp"})
+
+# Raw-byte ceiling for mipmap decode attempts — higher than MAX_IMAGE_DECODE_BYTES
+# because numpy can handle larger arrays more efficiently than Pillow's
+# processing pipeline.
+MAX_MIPMAP_DECODE_BYTES = 128 * 1024 * 1024  # 128 MB
+
+# Minimum dimension for mipmap levels — don't go below this.
+MIN_MIPMAP_EDGE_PX = 2
 
 _POSITIVE_INT_RE = re.compile(r"^[0-9]+$")
 
@@ -802,3 +811,181 @@ def _encode_within_budget(
 
     assert smallest is not None
     return smallest
+
+
+# ---------------------------------------------------------------------------
+# Mip-map downsampling (numpy-based box-filter pyramid)
+# ---------------------------------------------------------------------------
+
+
+def _mipmap_one_level(arr: np.ndarray) -> np.ndarray:
+    """Downsample one mip-map level: average each non-overlapping 2×2 block.
+
+    Input shape ``(H, W, C)``, output shape ``(H//2, W//2, C)``.  Odd
+    dimensions are floored (the right/bottom edge pixels are dropped).
+    """
+    h, w, c = arr.shape
+    h2, w2 = h // 2, w // 2
+    # Crop to even dimensions, reshape to group 2×2 blocks, mean over spatial axes
+    return arr[: h2 * 2, : w2 * 2].reshape(h2, 2, w2, 2, c).mean(axis=(1, 3)).astype(arr.dtype)
+
+
+def _ndarray_to_pil(arr: np.ndarray) -> Image.Image:
+    """Convert a numpy ``uint8`` array ``(H, W, 3)`` or ``(H, W, 4)`` back to a
+    PIL Image (RGB or RGBA respectively)."""
+    from PIL import Image
+
+    if arr.shape[2] == 4:
+        return Image.fromarray(arr, "RGBA")
+    return Image.fromarray(arr, "RGB")
+
+
+def mipmap_downsample(
+    data: bytes,
+    mime_type: str,
+    *,
+    max_edge: int,
+    byte_budget: int,
+    max_mipmap_decode_bytes: int = MAX_MIPMAP_DECODE_BYTES,
+) -> CompressImageResult:
+    """Build a mip-map pyramid via 2×2 bilinear averaging and return the
+    first level that fits within both ``max_edge`` (longest-edge pixels) and
+    ``byte_budget`` (encoded bytes).
+
+    Falls back to a passthrough result (``changed=False``) on any failure
+    — decode error, unsupported format, numpy memory error, etc. — never
+    raises.
+    """
+    normalized_mime = normalize_image_mime(mime_type)
+    dims = sniff_image_dimensions(data)
+
+    def passthrough() -> CompressImageResult:
+        width = dims.width if dims else 0
+        height = dims.height if dims else 0
+        return CompressImageResult(
+            data=data,
+            mime_type=mime_type,
+            width=width,
+            height=height,
+            original_width=width,
+            original_height=height,
+            changed=False,
+            original_byte_length=len(data),
+            final_byte_length=len(data),
+        )
+
+    if len(data) == 0:
+        return passthrough()
+    if normalized_mime not in _RECODABLE_MIME:
+        return passthrough()
+    if normalized_mime == "image/webp" and _is_animated_webp(data):
+        return passthrough()
+    if dims and dims.width * dims.height > MAX_DECODE_PIXELS:
+        return passthrough()
+    # Fast path: already within both budgets — no decode, no pyramid.
+    longest_edge = max(dims.width, dims.height) if dims else 0
+    within_bytes = len(data) <= byte_budget
+    within_edge = 0 < longest_edge <= max_edge
+    if within_bytes and (within_edge or longest_edge == 0):
+        return passthrough()
+
+    if len(data) > max_mipmap_decode_bytes:
+        return passthrough()
+
+    try:
+        image = _decode_image(data)
+    except Exception:
+        return passthrough()
+
+    original_width, original_height = image.size
+    prefer_lossless = normalized_mime != "image/jpeg"
+
+    try:
+        import numpy as np
+
+        arr = np.asarray(image, dtype=np.uint8)
+    except Exception:
+        return passthrough()
+
+    levels: list[tuple[np.ndarray, int, int]] = [(arr, original_width, original_height)]
+    try:
+        while True:
+            h, w = arr.shape[0], arr.shape[1]
+            if w <= MIN_MIPMAP_EDGE_PX or h <= MIN_MIPMAP_EDGE_PX:
+                break
+            arr = _mipmap_one_level(arr)
+            h2, w2 = arr.shape[0], arr.shape[1]
+            if h2 < MIN_MIPMAP_EDGE_PX or w2 < MIN_MIPMAP_EDGE_PX:
+                break
+            levels.append((arr, w2, h2))
+    except (MemoryError, Exception):
+        return passthrough()
+
+    # Find the first level whose longest edge fits max_edge, then encode and
+    # check the byte budget.  If none fits the edge, use the smallest level.
+    first_that_fits_edge: int | None = None
+    for idx in range(len(levels)):
+        _, w, h = levels[idx]
+        if max(w, h) <= max_edge:
+            first_that_fits_edge = idx
+            break
+    if first_that_fits_edge is None:
+        # Even the smallest level exceeds the edge cap — return smallest.
+        first_that_fits_edge = len(levels) - 1
+
+    smallest_level: tuple[np.ndarray, int, int] | None = None
+    smallest_bytes: int | None = None
+
+    for idx in range(first_that_fits_edge, len(levels)):
+        level_arr, level_w, level_h = levels[idx]
+        try:
+            pil_img = _ndarray_to_pil(level_arr)
+            encoded = _encode_within_budget(
+                pil_img,
+                prefer_lossless=prefer_lossless,
+                byte_budget=byte_budget,
+            )
+        except Exception:
+            continue
+
+        if smallest_level is None or len(encoded.data) < (smallest_bytes or float("inf")):
+            smallest_level = (level_arr, level_w, level_h)
+            smallest_bytes = len(encoded.data)
+
+        if len(encoded.data) <= byte_budget:
+            return CompressImageResult(
+                data=encoded.data,
+                mime_type=encoded.mime_type,
+                width=encoded.width,
+                height=encoded.height,
+                original_width=original_width,
+                original_height=original_height,
+                changed=True,
+                original_byte_length=len(data),
+                final_byte_length=len(encoded.data),
+            )
+
+    # No level met the byte budget — return smallest encoded result.
+    if smallest_level is not None:
+        pil_img = _ndarray_to_pil(smallest_level[0])
+        try:
+            encoded = _encode_within_budget(
+                pil_img,
+                prefer_lossless=prefer_lossless,
+                byte_budget=byte_budget,
+            )
+            return CompressImageResult(
+                data=encoded.data,
+                mime_type=encoded.mime_type,
+                width=encoded.width,
+                height=encoded.height,
+                original_width=original_width,
+                original_height=original_height,
+                changed=True,
+                original_byte_length=len(data),
+                final_byte_length=len(encoded.data),
+            )
+        except Exception:
+            pass
+
+    return passthrough()
