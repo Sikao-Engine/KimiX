@@ -124,8 +124,8 @@ def get_system_prompt(
                 use_skills = True
                 role_doc = 'You are a planner'
                 items.append('Plan only. Do not implement.')
-                items.append('Record comprehensive plan with `WritePlan`.')
-                items.append('You cannot write files or run commands. If any requirements need those abilities, reject them in `WritePlan` and stop.')
+                items.append('Record comprehensive and detailed plan with `WritePlan` `EditPlan`.')
+                items.append('You cannot write files or run commands. If any requirements need those abilities, reject them in `WritePlan` `EditPlan` and stop.')
             case SystemPromptType.Thinker:
                 worker_logic('thinker')
                 items.append(

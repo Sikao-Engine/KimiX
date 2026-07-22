@@ -5,7 +5,14 @@ from dataclasses import dataclass
 from typing import Any
 
 import orjson
-from kimi_cli.wire.types import TextPart, ThinkPart, ToolCall, ToolCallPart, ToolResult
+from kimi_cli.wire.types import (
+    ShellDisplayBlock,
+    TextPart,
+    ThinkPart,
+    ToolCall,
+    ToolCallPart,
+    ToolResult,
+)
 from kosong.tooling import ToolReturnValue
 
 import kimix.base as base
@@ -533,6 +540,90 @@ async def test_tool_header_color_compact_path_and_fallback(monkeypatch: Any) -> 
         ToolCall(id="c2", function=ToolCall.FunctionBody(
             name="MysteryTool", arguments='{"a": 1}')), session2)
     assert "\x1b[95m⚡ MysteryTool" in "".join(chunks2)
+
+
+async def test_tool_header_not_reprinted_after_tool_result(monkeypatch: Any) -> None:
+    """Regression: the compact tool header must not be printed again after
+    the tool result arrives.
+
+    _handle_tool_result clears _TOOL_HEADER_PRINTED_KEY but (when the tool
+    call is found by id) left the stale _LAST_TOOL_CALL_KEY behind. The next
+    non-toolcall wire message then triggered _finish_tool_call_stream, whose
+    final parse attempt re-printed the header a second time."""
+    chunks = _capture_base_stream(monkeypatch)
+    session = FakeSession()
+    tool_call = ToolCall(
+        id="call-1",
+        function=ToolCall.FunctionBody(
+            name="Powershell", arguments='{"cmd": "git diff --stat"}'),
+    )
+
+    await base.print_agent_json(tool_call, session)
+    tool_result = ToolResult(
+        tool_call_id="call-1",
+        return_value=ToolReturnValue(
+            is_error=False,
+            message="ok",
+            output="",
+            display=[ShellDisplayBlock(command="git diff --stat", language="powershell")],
+        ),
+    )
+    await base.print_agent_json(tool_result, session)
+    # Any subsequent non-toolcall message (next step, text, ...) must not
+    # re-print the finished tool call's header.
+    await base.print_agent_json(TextPart(text="next step"), session)
+
+    plain = _plain(chunks)
+    assert plain.count("⚡ Powershell") == 1
+    assert "✓ Powershell" in plain
+
+
+async def test_tool_header_not_reprinted_for_in_flight_call_on_earlier_results(
+    monkeypatch: Any,
+) -> None:
+    """Regression: while the last streamed tool call is still in flight,
+    results of earlier parallel calls must not re-print its header.
+
+    _handle_tool_result used to clear _TOOL_HEADER_PRINTED_KEY for *any*
+    result with display blocks. With parallel tool calls (the OpenAI
+    Responses wire format: ``ToolCall(args='')`` + one ``ToolCallPart`` per
+    call), the results of earlier calls then cleared the flag of the last,
+    still-pending call, so each arriving result made
+    _finish_tool_call_stream re-print the pending call's ``⚡`` header."""
+    chunks = _capture_base_stream(monkeypatch)
+    session = FakeSession()
+
+    # Proxy-style stream: header with empty args, then a single full-args part.
+    await base.print_agent_json(
+        ToolCall(id="call-1", function=ToolCall.FunctionBody(name="Glob", arguments="")),
+        session,
+    )
+    await base.print_agent_json(ToolCallPart(arguments_part='{"pattern": "*.a"}'), session)
+    await base.print_agent_json(
+        ToolCall(id="call-2", function=ToolCall.FunctionBody(name="Glob", arguments="")),
+        session,
+    )
+    await base.print_agent_json(ToolCallPart(arguments_part='{"pattern": "*.b"}'), session)
+
+    def _result(call_id: str) -> ToolResult:
+        return ToolResult(
+            tool_call_id=call_id,
+            return_value=ToolReturnValue(
+                is_error=False,
+                message="ok",
+                output="",
+                display=[ShellDisplayBlock(command="glob", language="text")],
+            ),
+        )
+
+    # Earlier call's result arrives while the last call is still in flight.
+    await base.print_agent_json(_result("call-1"), session)
+    await base.print_agent_json(_result("call-2"), session)
+    await base.print_agent_json(TextPart(text="next step"), session)
+
+    plain = _plain(chunks)
+    assert plain.count("⚡ Glob") == 2
+    assert plain.count("✓ Glob") == 2
 
 
 async def test_tool_result_colors_success_green_error_red(monkeypatch: Any) -> None:

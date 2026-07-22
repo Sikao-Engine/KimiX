@@ -508,6 +508,13 @@ _TOOL_CALL_STREAM_KEY = "_kimix_tool_call_stream"
 _TOOL_HEADER_PRINTED_KEY = "_kimix_tool_header_printed"
 _TOOL_CALL_PART_PENDING_KEY = "_kimix_tool_call_part_pending"
 _TOOL_CALL_PART_EMITTED_LEN_KEY = "_kimix_tool_call_part_emitted_len"
+_TOOL_CALL_MERGE_TARGET_KEY = "_kimix_tool_call_merge_target"
+# The id of the tool call whose header was last printed (paired with
+# _TOOL_HEADER_PRINTED_KEY).  This makes the header-printed gate work
+# per-call, which is essential when parallel tool calls are in flight:
+# finishing one call's arguments and printing its header must not prevent
+# the next call's header from being printed.
+_TOOL_CALL_HEADER_PRINTED_TC_ID_KEY = "_kimix_tool_call_header_printed_tc_id"
 
 # Minimum payload size before a cumulative ``ToolCallingPart`` snapshot is
 # emitted to ``output_function``; afterwards the emission threshold doubles
@@ -1104,22 +1111,29 @@ def _json_tail_may_complete(args: str) -> bool:
     return bool(tail) and tail[-1] in '}]"'
 
 
-def _print_compact_tool_header(session: Session, last_tc: ToolCall) -> None:
+def _print_compact_tool_header(session: Session, last_tc: ToolCall) -> bool:
     """Print the legacy compact ``⚡ name args`` header once the accumulated
-    arguments parse as complete JSON. No-op if already printed or the
-    arguments are still incomplete/invalid."""
+    arguments parse as complete JSON. No-op if already printed (for this
+    specific tool call) or the arguments are still incomplete/invalid.
+
+    Returns ``True`` if the header was actually printed, ``False`` otherwise.
+    """
     tmp_data = session._tmp_data
-    if tmp_data.get(_TOOL_HEADER_PRINTED_KEY):
-        return
+    # Per-call gate: only skip if the flag is set AND it belongs to THIS call.
+    if tmp_data.get(_TOOL_HEADER_PRINTED_KEY) and tmp_data.get(_TOOL_CALL_HEADER_PRINTED_TC_ID_KEY) == last_tc.id:
+        return False
     args = last_tc.function.arguments
     if not args:
-        return
+        return False
     formatted = _format_tool_args(last_tc.function.name, args)
     if formatted:
         _stream.colorful_print_word(
             f"⚡ {last_tc.function.name} {formatted}",
             fg=_tool_header_color(last_tc.function.name), require_new_line=True)
         tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
+        tmp_data[_TOOL_CALL_HEADER_PRINTED_TC_ID_KEY] = last_tc.id
+        return True
+    return False
 
 
 def _finish_tool_call_stream(session: Session) -> None:
@@ -1134,11 +1148,23 @@ def _finish_tool_call_stream(session: Session) -> None:
     # (e.g. exotic non-object arguments), make one final parse attempt now
     # that no more fragments can arrive for this tool call.
     last_tc: ToolCall | None = tmp_data.get(_LAST_TOOL_CALL_KEY)
-    if last_tc is not None and not tmp_data.get(_TOOL_HEADER_PRINTED_KEY):
-        _print_compact_tool_header(session, last_tc)
-        # No more fragments can arrive for this tool call; don't re-attempt
-        # the (failed) parse on every later non-toolcall message.
-        tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
+    if last_tc is not None:
+        already_printed = (
+            tmp_data.get(_TOOL_HEADER_PRINTED_KEY)
+            and tmp_data.get(_TOOL_CALL_HEADER_PRINTED_TC_ID_KEY) == last_tc.id
+        )
+        if not already_printed:
+            printed = _print_compact_tool_header(session, last_tc)
+            # No more fragments can arrive for this tool call; don't re-attempt
+            # the (failed) parse on every later non-toolcall message.
+            tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
+            # Only remember the call id when the header actually printed;
+            # otherwise a subsequent ToolCallPart for a different call
+            # would be falsely gated.
+            if printed:
+                tmp_data[_TOOL_CALL_HEADER_PRINTED_TC_ID_KEY] = last_tc.id
+    # Clear any stale merge target (safety net for truncated streams).
+    tmp_data.pop(_TOOL_CALL_MERGE_TARGET_KEY, None)
 
 
 def _handle_tool_call(
@@ -1159,6 +1185,16 @@ def _handle_tool_call(
         session._tmp_data[wire_msg.id] = wire_msg
         name = wire_msg.function.name
         args = wire_msg.function.arguments
+        # Track merge target for ToolCallPart routing: when parallel tool
+        # calls arrive, each streamed fragment must merge into the correct
+        # pending call (not just the last one).  A call with empty or
+        # still-incomplete arguments becomes the merge target; a call with
+        # already-complete arguments clears it.
+        if args is None or args == "" or not _json_tail_may_complete(args):
+            if _TOOL_CALL_MERGE_TARGET_KEY not in session._tmp_data:
+                session._tmp_data[_TOOL_CALL_MERGE_TARGET_KEY] = wire_msg
+        else:
+            session._tmp_data.pop(_TOOL_CALL_MERGE_TARGET_KEY, None)
         if stream_tool_args:
             if args == "" or name not in _STREAM_TOOL_NAMES:
                 # Empty args or non-streamable tool: fall through to the
@@ -1175,6 +1211,7 @@ def _handle_tool_call(
                 if args:
                     printer.feed(args)
                 session._tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
+                session._tmp_data[_TOOL_CALL_HEADER_PRINTED_TC_ID_KEY] = wire_msg.id
                 if output_function:
                     output_function(
                         f"{name} {args or ''}", MessageType.ToolCalling)
@@ -1188,20 +1225,44 @@ def _handle_tool_call(
             header, fg=_tool_header_color(name), require_new_line=True)
         _stream._state = StreamPrintState.Other
         session._tmp_data[_TOOL_HEADER_PRINTED_KEY] = True
+        session._tmp_data[_TOOL_CALL_HEADER_PRINTED_TC_ID_KEY] = wire_msg.id
         if output_function:
             output_function(
                 f"{name} {args or ''}", MessageType.ToolCalling)
     else:  # ToolCallPart
-        last_tc: ToolCall = session._tmp_data.get(_LAST_TOOL_CALL_KEY)
+        # Route the fragment to the correct pending call.  When multiple
+        # parallel tool calls are in flight, ``_LAST_TOOL_CALL_KEY`` may
+        # point to a *later* call whose parts have already started arriving,
+        # while this fragment belongs to an earlier still-pending call.  Use
+        # the dedicated merge-target pointer when available.
+        last_tc: ToolCall = (
+            session._tmp_data.get(_TOOL_CALL_MERGE_TARGET_KEY)
+            or session._tmp_data.get(_LAST_TOOL_CALL_KEY)
+        )
         if last_tc is not None:
             last_tc.merge_in_place(wire_msg)
+        # Clear the merge target when the merged arguments become
+        # structurally complete (valid JSON).  This lets the next
+        # ToolCallPart fall back to ``_LAST_TOOL_CALL_KEY`` (the next
+        # pending call).
+        if last_tc is not None and _TOOL_CALL_MERGE_TARGET_KEY in session._tmp_data:
+            merged_args = last_tc.function.arguments
+            if merged_args and _json_tail_may_complete(merged_args):
+                try:
+                    orjson.loads(merged_args)
+                    session._tmp_data.pop(_TOOL_CALL_MERGE_TARGET_KEY, None)
+                except (orjson.JSONDecodeError, TypeError, ValueError):
+                    pass
         printer: _ToolCallStreamPrinter | None = None
         if stream_tool_args:
             printer = session._tmp_data.get(_TOOL_CALL_STREAM_KEY)
         if printer is not None:
             printer.feed(wire_msg.arguments_part or "")
         elif last_tc is not None:
-            if not session._tmp_data.get(_TOOL_HEADER_PRINTED_KEY):
+            # Per-call gate: only skip printing if the header was already
+            # printed for THIS specific tool call.
+            _printed_id = session._tmp_data.get(_TOOL_CALL_HEADER_PRINTED_TC_ID_KEY)
+            if not session._tmp_data.get(_TOOL_HEADER_PRINTED_KEY) or _printed_id != last_tc.id:
                 args = last_tc.function.arguments
                 # Only attempt the full parse when the accumulated string
                 # may actually be complete; otherwise orjson scans (and
@@ -1247,9 +1308,29 @@ def _handle_tool_result(wire_msg: ToolResult, output_function: Callable[[str, Me
         prefix = ("✗ " if rv.is_error else "✓ ")
         if display_text:
             tc: ToolCall | None = _session._tmp_data.pop(wire_msg.tool_call_id, None)
-            if tc is None:
-                tc = _session._tmp_data.pop(_LAST_TOOL_CALL_KEY, None)
-            _session._tmp_data.pop(_TOOL_HEADER_PRINTED_KEY, None)
+            # The tool call is finished: drop the stale "last tool call"
+            # reference (only if it still points to this call, so a newer
+            # in-flight call is not clobbered) together with the header flag.
+            # Otherwise the next non-toolcall wire message would make
+            # _finish_tool_call_stream re-print this call's header.
+            #
+            # Both pops are conditional on the id match: when the result
+            # belongs to an *earlier* call while a later one is still in
+            # flight, touching either entry corrupts the in-flight call's
+            # state — clearing the header flag makes _finish_tool_call_stream
+            # re-print the in-flight call's header once per arriving result.
+            last_tc: ToolCall | None = _session._tmp_data.get(_LAST_TOOL_CALL_KEY)
+            if last_tc is not None and last_tc.id == wire_msg.tool_call_id:
+                _session._tmp_data.pop(_LAST_TOOL_CALL_KEY, None)
+                _session._tmp_data.pop(_TOOL_HEADER_PRINTED_KEY, None)
+                _session._tmp_data.pop(_TOOL_CALL_HEADER_PRINTED_TC_ID_KEY, None)
+                _session._tmp_data.pop(_TOOL_CALL_MERGE_TARGET_KEY, None)
+                if tc is None:
+                    tc = last_tc
+            # Safety: if the tool call was stored by id, it's done — clean up
+            # any stale merge target that might still point to this call.
+            if tc is not None:
+                _session._tmp_data.pop(_TOOL_CALL_MERGE_TARGET_KEY, None)
             if tc:
                 tool_name = tc.function.name if tc else "tool"
                 _stream.colorful_print_word(

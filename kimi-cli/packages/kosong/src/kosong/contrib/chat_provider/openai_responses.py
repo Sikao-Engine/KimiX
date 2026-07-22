@@ -3,6 +3,8 @@ from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Any, Self, Unpack, cast, get_args
 
 import httpx
+import openai
+import regex as re
 from openai import AsyncStream, OpenAIError
 from openai.types.responses import (
     Response,
@@ -187,16 +189,33 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
             extra_body["reasoning"] = {"effort": reasoning_effort, "summary": "auto"}
             generation_kwargs["include"] = ["reasoning.encrypted_content"]
 
+        create_kwargs: dict[str, Any] = {
+            "stream": self._stream,
+            "model": self._model,
+            "input": inputs,
+            "tools": [_convert_tool(tool) for tool in tools],
+            "store": False,
+            **generation_kwargs,
+        }
         try:
-            response = await self.client.responses.create(
-                stream=self._stream,
-                model=self._model,
-                input=inputs,
-                tools=[_convert_tool(tool) for tool in tools],
-                store=False,
-                **generation_kwargs,
-            )
-            return OpenAIResponsesStreamedMessage(response)
+            response = await self.client.responses.create(**create_kwargs)
+        except openai.APIStatusError as e:
+            # Some OpenAI-compatible gateways (e.g. llmproxy front-ends) issue
+            # reasoning ``encrypted_content`` blobs that they later fail to
+            # verify (key rotation, multi-node deployments, ...). The request
+            # then fails with a 400 ``invalid_encrypted_content`` on every
+            # retry because the offending blob sits in the history. Recover by
+            # stripping the unverifiable blobs (keeping the visible reasoning
+            # summaries) and retrying once without them.
+            if not (
+                _is_invalid_encrypted_content_error(e)
+                and _strip_reasoning_encrypted_content(inputs)
+            ):
+                raise convert_error(e) from e
+            try:
+                response = await self.client.responses.create(**create_kwargs)
+            except (OpenAIError, httpx.HTTPError) as retry_error:
+                raise convert_error(retry_error) from retry_error
         except (OpenAIError, httpx.HTTPError) as e:
             # Debug logging for the Moonshot/Kimi "reasoning_content must be passed back"
             # 400 is disabled by default. Uncomment the block below to enable it.
@@ -208,6 +227,7 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
             #     generation_kwargs=generation_kwargs,
             # )
             raise convert_error(e) from e
+        return OpenAIResponsesStreamedMessage(response)
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
         reasoning_effort = thinking_effort_to_reasoning_effort(
@@ -349,16 +369,15 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
                             break
                         summaries.append({"type": "summary_text", "text": next_part.think or ""})
                         i += 1
-                    result.append(
-                        cast(
-                            ResponseReasoningItemParam,
-                            {
-                                "summary": summaries,
-                                "type": "reasoning",
-                                "encrypted_content": encrypted_value,
-                            },
-                        )
-                    )
+                    reasoning_item: dict[str, Any] = {
+                        "summary": summaries,
+                        "type": "reasoning",
+                    }
+                    # Omit the key entirely when no encrypted content is
+                    # available: some backends reject an explicit null.
+                    if encrypted_value is not None:
+                        reasoning_item["encrypted_content"] = encrypted_value
+                    result.append(cast(ResponseReasoningItemParam, reasoning_item))
                 else:
                     pending_parts.append(part)
                     i += 1
@@ -377,6 +396,48 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
             )
 
         return result
+
+
+_INVALID_ENCRYPTED_CONTENT_MESSAGE_RE = re.compile(
+    r"encrypted[ _]content", re.IGNORECASE
+)
+
+
+def _is_invalid_encrypted_content_error(error: openai.APIStatusError) -> bool:
+    """Detect the 400 raised when a backend cannot verify a reasoning
+    ``encrypted_content`` blob that was passed back in the request input.
+
+    OpenAI-compatible gateways signal this with the
+    ``invalid_encrypted_content`` error code (e.g. ``The encrypted content
+    gAAA... could not be verified``); fall back to a message heuristic for
+    backends that omit the structured code.
+    """
+    if error.status_code != 400:
+        return False
+    body = error.body
+    if isinstance(body, dict):
+        err = body.get("error")
+        if isinstance(err, dict) and err.get("code") == "invalid_encrypted_content":
+            return True
+    message = error.message or ""
+    return bool(_INVALID_ENCRYPTED_CONTENT_MESSAGE_RE.search(message)) and (
+        "could not be verified" in message or "invalid" in message.lower()
+    )
+
+
+def _strip_reasoning_encrypted_content(inputs: ResponseInputParam) -> bool:
+    """Remove ``encrypted_content`` from every reasoning item in *inputs*.
+
+    The visible reasoning summaries are kept so the model retains its
+    high-level chain of thought. Returns ``True`` when at least one blob was
+    stripped (i.e. a retry without them is worth attempting).
+    """
+    stripped = False
+    for item in inputs:
+        if isinstance(item, dict) and item.get("type") == "reasoning":
+            if item.pop("encrypted_content", None) is not None:
+                stripped = True
+    return stripped
 
 
 def _convert_tool(tool: Tool) -> ToolParam:
