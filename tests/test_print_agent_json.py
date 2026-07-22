@@ -375,6 +375,49 @@ async def test_non_whitelisted_tool_streaming_fragments_still_compact(monkeypatc
     assert base._TOOL_CALL_STREAM_KEY not in session._tmp_data
 
 
+async def test_whitelisted_tool_empty_initial_args_streams_live(monkeypatch: Any) -> None:
+    """Regression (WritePlan stall): Anthropic-protocol and OpenAI-Responses
+    providers emit the streamed call header as ``ToolCall(arguments="")`` and
+    deliver the arguments via subsequent ``ToolCallPart`` fragments.
+
+    The ``args == ""`` guard used to force whitelisted tools down the legacy
+    compact path: no stream printer was created, so the terminal showed
+    nothing until the whole arguments JSON had finished streaming, and then
+    only the compact hidden-content one-liner appeared. The header must print
+    at header time and the decoded content must stream live.
+    """
+    chunks = _capture_base_stream(monkeypatch)
+    session = FakeSession()
+
+    await base.print_agent_json(
+        ToolCall(id="call-1", function=ToolCall.FunctionBody(name="WritePlan", arguments="")),
+        session,
+    )
+    # Header printed immediately at ToolCall time; stream printer created.
+    assert "⚡ WritePlan" in _plain(chunks)
+    assert base._TOOL_CALL_STREAM_KEY in session._tmp_data
+
+    # Fragments are JSON-escaped, exactly as a provider's input_json_delta sends them.
+    fragments = ['{"content": "# Plan', '\\n\\n1. first', '\\n2. second', '"}']
+    per_fragment_output: list[str] = []
+    for frag in fragments:
+        before = len("".join(chunks))
+        await base.print_agent_json(ToolCallPart(arguments_part=frag), session)
+        per_fragment_output.append("".join(chunks)[before:])
+
+    plain = _plain(chunks)
+    # Decoded content streamed live and is fully visible.
+    assert "# Plan" in plain
+    assert "1. first" in plain
+    assert "2. second" in plain
+    # Mid-stream fragments produced visible output before the JSON completed.
+    assert any(base._strip_ansi(text).strip() for text in per_fragment_output[:-1])
+    # The compact hidden-content one-liner (bug signature) must not appear.
+    assert "⚡ WritePlan content: ..." not in plain
+    # Printer finished once the arguments JSON completed.
+    assert base._TOOL_CALL_STREAM_KEY not in session._tmp_data
+
+
 async def test_non_whitelisted_tool_unknown_no_stream(monkeypatch: Any) -> None:
     """An unknown tool (not in whitelist) with partial JSON produces no output
     via the legacy path and doesn't break when fragments arrive."""
@@ -413,7 +456,7 @@ def test_stream_color_for_key_mapping_and_fallback() -> None:
     assert printer._stream_color_for_key("new_string") is base.Color.BRIGHT_GREEN
     assert printer._stream_color_for_key("code") is base.Color.BRIGHT_BLUE
     assert printer._stream_color_for_key("prompt") is base.Color.BRIGHT_YELLOW
-    assert printer._stream_color_for_key("content") is base.Color.BRIGHT_WHITE
+    assert printer._stream_color_for_key("content") is base.Color.BRIGHT_BLACK
     assert printer._stream_color_for_key("context") is base.GRAY
     assert printer._stream_color_for_key("anything_else") is base.GRAY_LIGHT
 
@@ -433,8 +476,8 @@ async def test_stream_colors_writefile_header_and_content_white(monkeypatch: Any
     output = "".join(chunks)
     # Header is always bright magenta.
     assert "\x1b[95m⚡ WriteFile\x1b[0m" in output
-    # Streamed content value color-coded bright white.
-    assert "\x1b[97mhello\x1b[0m" in output
+    # Streamed content value color-coded bright black.
+    assert "\x1b[90mhello\x1b[0m" in output
     # Non-streamed compact segments keep the legacy magenta and start on
     # their own line (newline prefix).
     assert "\x1b[95m\npath:\nx.py\x1b[0m" in output

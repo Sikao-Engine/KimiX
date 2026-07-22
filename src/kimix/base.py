@@ -1196,9 +1196,17 @@ def _handle_tool_call(
         else:
             session._tmp_data.pop(_TOOL_CALL_MERGE_TARGET_KEY, None)
         if stream_tool_args:
-            if args == "" or name not in _STREAM_TOOL_NAMES:
-                # Empty args or non-streamable tool: fall through to the
-                # legacy compact format path.
+            if name not in _STREAM_TOOL_NAMES:
+                # Non-streamable tool: fall through to the legacy compact
+                # format path.
+                # NOTE: empty initial arguments (``args == ""``) must NOT take
+                # this path for streamable tools. Anthropic-protocol and
+                # OpenAI-Responses providers emit the streamed call header as
+                # ``ToolCall(arguments="")`` and deliver the arguments via
+                # subsequent ``ToolCallPart`` fragments; treating the empty
+                # header as "compact" left no stream printer behind, so the
+                # terminal showed nothing until the whole arguments JSON had
+                # finished streaming (the WritePlan stall).
                 pass
             else:
                 # A new tool call supersedes any previous stream printer.
