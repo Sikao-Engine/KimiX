@@ -294,11 +294,8 @@ uv run kimix --clean --manually-cot
 | `/load:<id>` | 将指定命名会话复制到一个新的匿名会话并切换 |
 | `/ralph:on` / `/ralph:off` / `/ralph:<num>` | 设置 Ralph 模式循环次数 |
 | `/supervisor` | 进入多行输入模式，以 Supervisor 角色创建会话并执行一次任务（以 `/end` 结束，`/cancel` 取消） |
-| `/cot:on` / `/cot:off` | 开启 / 关闭手动 CoT 模式 |
 | `/plan` / `/plan:<file>` | 使用 TodoMaker Agent 生成任务计划。任务需求通过多行输入提供（以 `/end` 结束）；`<file>` 用于指定计划输出文件路径，若该文件已存在会被覆盖。生成后支持用户审阅、修改，确认后再执行，执行后会追加一次 review 提示 |
-| `/script` | 编写并执行 Python 脚本（以 `/end` 结束输入） |
 | `/cmd:<command>` | 执行系统命令 |
-| `/cd:<path>` | 切换当前工作目录（切换后会重置 skill 目录并清空对话上下文） |
 
 除上述命令外，你也可以直接输入任意自然语言提示词（prompt）发送给 Agent 进行处理。
 

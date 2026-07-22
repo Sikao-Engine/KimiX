@@ -159,11 +159,8 @@ uv run kimix --config=<path>
 | `/load:<id>` | Copy a named session into a new anonymous session |
 | `/ralph:on/off/<num>` | Set Ralph mode |
 | `/supervisor` | Enter multi-line input mode to create a session with the Supervisor role and execute one task (end with `/end`, cancel with `/cancel`) |
-| `/cot:on/off` | Toggle manual CoT mode |
 | `/plan` / `/plan:<file>` | Use the TodoMaker Agent to generate a task plan. Task requirements are provided via multi-line input (end with `/end`); `<file>` specifies the plan output file path, and will be overwritten if it already exists. After generation, you can review and modify the plan, then confirm to execute; a review prompt is appended after execution |
-| `/script` | Write and execute Python script (end with `/end`) |
 | `/cmd:<command>` | Execute system command |
-| `/cd:<path>` | Change working directory (resets skills and clears context) |
 
 
 ---

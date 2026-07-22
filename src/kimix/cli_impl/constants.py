@@ -28,7 +28,6 @@ Available commands:
   <path>              - Same as /file:<path>
   {colorful_text('/todo:<path>', fg=Color.YELLOW)}    - Scan code file for TODO comments and prompt agent to implement them
   {colorful_text('/clear', fg=Color.YELLOW)}          - Clear the conversation context
-  {colorful_text('/summarize', fg=Color.YELLOW)}      - Summarize conversation context to memory
   {colorful_text('/exit', fg=Color.YELLOW)}           - Exit the program
   {colorful_text('/help', fg=Color.YELLOW)}           - Show this help message
   {colorful_text('/context', fg=Color.YELLOW)}        - Print context usage
@@ -44,14 +43,10 @@ Available commands:
   {colorful_text('/ralph:on', fg=Color.YELLOW)}       - Enable Ralph mode
   {colorful_text('/ralph:off', fg=Color.YELLOW)}      - Disable Ralph mode
   {colorful_text('/ralph:<num>', fg=Color.YELLOW)}    - Set Ralph iterations
-  {colorful_text('/cot:on', fg=Color.YELLOW)}         - Enable manually CoT mode
-  {colorful_text('/cot:off', fg=Color.YELLOW)}        - Disable manually CoT mode
   {colorful_text('/supervisor', fg=Color.YELLOW)}   - Start a supervisor session with multi-line input text
   {colorful_text('/swarm', fg=Color.YELLOW)}          - Start a swarm session with multi-line input text
   {colorful_text('/plan', fg=Color.YELLOW)}           - Plan a long-term task, step-by-step, then execute
-  {colorful_text('/script', fg=Color.YELLOW)}         - Write python script
   {colorful_text('/cmd:<command>', fg=Color.YELLOW)}  - Execute system command
-  {colorful_text('/cd:<path>', fg=Color.YELLOW)}      - Change directory
 
 Or enter any prompt to send to the agent.
 
@@ -60,5 +55,4 @@ Press <Tab> after '/' to complete commands and arguments.
 # End writen by AGENT
 
 CLEAN_MODE: bool | None = None
-globals_dict: dict[str, Any] = {}
-locals_dict: dict[str, Any] = {}
+

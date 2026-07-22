@@ -98,12 +98,12 @@ async def _sse_cli_main(host: str, port: int, debug: bool = False) -> None:
 
     session = await client.create_session("SSE CLI debug session")
     print(f"[SSE CLI] Created session: {session.id}")
-    print("[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /summarize /fix")
+    print("[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /fix")
 
     tool_start_times: dict[str, float] = {}
 
     async def _cmd_help(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
-        print("[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /summarize /fix")
+        print("[SSE CLI] Commands: /exit /new /abort /status /sessions /messages /clear /fix")
         return False
 
     async def _cmd_new(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:

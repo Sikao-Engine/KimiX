@@ -393,15 +393,6 @@ def _cmd_sessions(task_split: list[str], text_arr: list[str]) -> tuple[None, boo
         else:
             usage_str = '-'
         print(f'{marker}  {sid:<{id_width}}  {updated_str}  {usage_str:<22}  {title}')
-
-    return None, False
-
-
-def _cmd_summarize(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
-    import asyncio
-
-    from kimix.summarize import summarize
-    asyncio.run(summarize())
     return None, False
 
 
@@ -420,17 +411,6 @@ def _cmd_context(task_split: list[str], text_arr: list[str]) -> tuple[None, bool
     return None, False
 
 
-def _cmd_script(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
-    print('\n>>>> Start input multiple-lines, end with /end')
-    text_lines, _ = _read_multi_line(text_arr, allow_cancel=False)
-    text = '\n'.join(text_lines)
-    try:
-        exec(text, constants.globals_dict, constants.locals_dict)
-        print_success('Done.')
-    except Exception as e:
-        print_error(str(e))
-    return None, False
-
 
 def _cmd_cmd(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     if len(task_split) < 2:
@@ -447,21 +427,6 @@ def _cmd_cmd(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         print_error(str(e))
     return None, False
 
-
-def _cmd_cd(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
-    if len(task_split) < 2:
-        print_error('Command must be /cd:PATH')
-        return None, False
-    path = ':'.join(task_split[1:])
-    try:
-        os.chdir(path)
-        base._default_skill_dirs = []
-        if get_default_session():
-            clear_default_context(True, True)
-        print_success(f'Changed directory to: {Path(".").resolve()}')
-    except Exception as e:
-        print_error(f'Failed to change directory: {e}')
-    return None, False
 
 
 def _cmd_fix(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
@@ -540,21 +505,6 @@ def _cmd_ralph(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
             print_error('Command must be /ralph:on, /ralph:off, /ralph:<num>')
     return None, False
 
-
-def _cmd_cot(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
-    if len(task_split) < 2:
-        print_error('Command must be /cot:on or /cot:off')
-        return None, False
-    val = task_split[1].strip().lower()
-    if val == 'on':
-        base.set_default_manually_cot(True)
-        print_success('Manually CoT mode ON.')
-    elif val == 'off':
-        base.set_default_manually_cot(False)
-        print_success('Manually CoT mode OFF.')
-    else:
-        print_error('Command must be /cot:on or /cot:off')
-    return None, False
 
 
 def _cmd_init(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
@@ -717,12 +667,9 @@ def _cmd_unknown(task_split: list[str], text_arr: list[str]) -> tuple[None, bool
 _command_map = {
     'help': _cmd_help,
     'clear': _cmd_clear,
-    'summarize': _cmd_summarize,
     'exit': _cmd_exit,
     'context': _cmd_context,
-    'script': _cmd_script,
     'cmd': _cmd_cmd,
-    'cd': _cmd_cd,
     'fix': _cmd_fix,
     'txt': _cmd_txt,
     'file': _cmd_file,
@@ -734,7 +681,6 @@ _command_map = {
     'load': _cmd_load,
     'sessions': _cmd_sessions,
     'ralph': _cmd_ralph,
-    'cot': _cmd_cot,
     'supervisor': _cmd_supervisor,
     'swarm': _cmd_swarm,
     'init': _cmd_init,
@@ -744,12 +690,10 @@ _command_map_keys = set(_command_map.keys())
 
 # Argument-type categories used by the readline Tab completer in utils.py.
 _command_arg_types: dict[str, str] = {
-    "cd": "dir",
     "file": "file",
     "todo": "file",
     "export": "file",
     "plan": "file",
     "ralph": "ralph",
-    "cot": "bool_on_off",
     "swarm": "swarm",
 }
