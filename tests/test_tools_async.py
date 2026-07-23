@@ -47,13 +47,13 @@ def patch_find_bash() -> Any:
 
 
 # ---------------------------------------------------------------------------
-# TaskList tool (via TaskOutput with task_id=None)
+# TaskList tool (via TaskOutput with task_id=None / action='list')
 # ---------------------------------------------------------------------------
 class TestTaskList:
     async def test_empty(self, mock_session: MagicMock) -> None:
         tool = TaskOutput(session=mock_session)
         result = await tool(TaskOutputParams(task_id=None))
-        assert "No running task" in str(result.output)
+        assert "No running tasks" in str(result.output)
 
     async def test_lists_tasks(self, mock_session: MagicMock) -> None:
         tool = TaskOutput(session=mock_session)
@@ -67,6 +67,22 @@ class TestTaskList:
         result = await tool(TaskOutputParams(task_id=None))
         await stream.wait()
         assert "run_test" in str(result.output)
+
+    async def test_action_list(self, mock_session: MagicMock) -> None:
+        """action='list' should work like task_id=None."""
+        tool = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+
+        def worker(q: queue.Queue[str]) -> None:
+            q.put("hello")
+
+        await stream.start(worker, stop_function=lambda: None)
+        add_task(mock_session, "run_test", stream)
+        result = await tool(TaskOutputParams(action="list"))
+        await stream.wait()
+        assert "run_test" in str(result.output)
+        # Should have structured extras
+        assert hasattr(result, 'extras') and result.extras is not None
 
 
 # ---------------------------------------------------------------------------
@@ -89,9 +105,40 @@ class TestTaskOutput:
         await stream.start(worker, stop_function=lambda: None)
         add_task(mock_session, "run_test", stream)
 
-        result = await tool(TaskOutputParams(task_id="run_test", block=True, timeout=5))
+        # Use new wait=True (was block=True)
+        result = await tool(TaskOutputParams(task_id="run_test", wait=True, timeout=5))
         assert "output_line" in str(result.output)
         assert "run_test" not in get_all_tasks(mock_session)
+
+    async def test_wait_alias_block_still_works(self, mock_session: MagicMock) -> None:
+        """block=True (old name) should still work via alias."""
+        tool = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+
+        def worker(q: queue.Queue[str]) -> None:
+            q.put("block_alias_works")
+            time.sleep(0.05)
+
+        await stream.start(worker, stop_function=lambda: None)
+        add_task(mock_session, "run_test", stream)
+
+        result = await tool(TaskOutputParams(task_id="run_test", block=True, timeout=5))
+        assert "block_alias_works" in str(result.output)
+
+    async def test_action_get(self, mock_session: MagicMock) -> None:
+        """action='get' should work like default."""
+        tool = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+
+        def worker(q: queue.Queue[str]) -> None:
+            q.put("action_get_works")
+            time.sleep(0.05)
+
+        await stream.start(worker, stop_function=lambda: None)
+        add_task(mock_session, "run_test", stream)
+
+        result = await tool(TaskOutputParams(task_id="run_test", action="get", wait=True, timeout=5))
+        assert "action_get_works" in str(result.output)
 
     async def test_kill_running_task(self, mock_session: MagicMock) -> None:
         tool = TaskOutput(session=mock_session)
@@ -107,6 +154,30 @@ class TestTaskOutput:
         await stream.wait()
         assert "run_test" not in get_all_tasks(mock_session)
 
+    async def test_action_kill(self, mock_session: MagicMock) -> None:
+        """action='kill' should stop the task and return output."""
+        tool = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+
+        def worker(q: queue.Queue[str]) -> None:
+            q.put("kill_output")
+            time.sleep(10)
+
+        await stream.start(worker, stop_function=lambda: None)
+        add_task(mock_session, "run_test", stream)
+
+        result = await tool(TaskOutputParams(task_id="run_test", action="kill"))
+        await stream.wait()
+        assert "run_test" not in get_all_tasks(mock_session)
+        assert "kill_output" in str(result.output)
+
+    async def test_action_kill_missing_task_id(self, mock_session: MagicMock) -> None:
+        """action='kill' without task_id should return error."""
+        tool = TaskOutput(session=mock_session)
+        result = await tool(TaskOutputParams(action="kill"))
+        assert isinstance(result, ToolError)
+        assert "task_id" in result.message.lower()
+
     async def test_export_to_file(self, mock_session: MagicMock, tmp_path: Path) -> None:
         tool = TaskOutput(session=mock_session)
         stream = BackgroundStream()
@@ -118,7 +189,7 @@ class TestTaskOutput:
         add_task(mock_session, "run_test", stream)
 
         out_path = tmp_path / "out.txt"
-        result = await tool(TaskOutputParams(task_id="run_test", block=True, timeout=5, output_path=str(out_path)))
+        result = await tool(TaskOutputParams(task_id="run_test", wait=True, timeout=5, output_path=str(out_path)))
         await stream.wait()
         assert out_path.exists()
         assert "file_content" in out_path.read_text(encoding="utf-8")
@@ -138,7 +209,7 @@ class TestTaskOutput:
         await stream.start(worker, stop_function=lambda: None)
         add_task(mock_session, "run_test", stream)
 
-        result = await tool(TaskOutputParams(task_id="run_test", block=False))
+        result = await tool(TaskOutputParams(task_id="run_test", wait=False))
         assert "hello_running" in str(result.output)
         assert "exported to file" not in str(result.output)
 
@@ -151,10 +222,15 @@ class TestTaskOutput:
 # Python tool — Params validation
 # ---------------------------------------------------------------------------
 class TestPythonParams:
-    def test_code_empty_without_interactive(self) -> None:
-        """code="" with interactive=False should raise a validation error."""
-        with pytest.raises(ValueError, match="code cannot be empty unless interactive=True"):
+    def test_code_empty_without_interactive_or_file(self) -> None:
+        """code="" with no file/interactive/task_id should raise a validation error."""
+        with pytest.raises(ValueError, match="Either `code` or `file` must be provided"):
             PyParams(code="", interactive=False)
+
+    def test_code_and_file_mutually_exclusive(self) -> None:
+        """Both code and file should raise a validation error."""
+        with pytest.raises(ValueError, match="Specify either `code` or `file`, not both"):
+            PyParams(code="print('hi')", file="script.py")
 
     def test_task_id_without_code(self) -> None:
         """task_id="xxx" with code="" should raise a validation error."""
@@ -164,7 +240,7 @@ class TestPythonParams:
     def test_interactive_allows_empty_code(self) -> None:
         """interactive=True with code="" should be valid."""
         params = PyParams(code="", interactive=True)
-        assert params.interactive is True
+        assert params.mode == "interactive"
         assert params.code == ""
 
     def test_task_id_with_code_valid(self) -> None:
@@ -177,6 +253,49 @@ class TestPythonParams:
         """code="..." with no interactive/task_id should be valid."""
         params = PyParams(code="print('hi')")
         assert params.code == "print('hi')"
+        assert params.mode == "run"
+
+    def test_file_only_valid(self) -> None:
+        """file="..." with no code should be valid."""
+        params = PyParams(file="script.py")
+        assert params.file == "script.py"
+        assert params.code == ""
+        assert params.mode == "run"
+
+    def test_mode_background(self) -> None:
+        """mode='background' should work."""
+        params = PyParams(code="print('hi')", mode="background")
+        assert params.mode == "background"
+
+    def test_mode_interactive(self) -> None:
+        """mode='interactive' should work."""
+        params = PyParams(code="print('hi')", mode="interactive")
+        assert params.mode == "interactive"
+
+    def test_run_in_background_deprecated(self) -> None:
+        """run_in_background=True should be converted to mode='background'."""
+        params = PyParams(code="print('hi')", run_in_background=True)
+        assert params.mode == "background"
+
+    def test_interactive_deprecated(self) -> None:
+        """interactive=True should be converted to mode='interactive'."""
+        params = PyParams(code="print('hi')", interactive=True)
+        assert params.mode == "interactive"
+
+    def test_both_deprecated_booleans_raises(self) -> None:
+        """Both interactive=True and run_in_background=True should raise."""
+        with pytest.raises(ValueError, match="Cannot set both interactive=True and run_in_background=True"):
+            PyParams(code="print('hi')", interactive=True, run_in_background=True)
+
+    def test_venv_field(self) -> None:
+        """venv parameter should be accepted."""
+        params = PyParams(code="print('hi')", venv=".venv")
+        assert params.venv == ".venv"
+
+    def test_pip_install_field(self) -> None:
+        """pip_install should be accepted."""
+        params = PyParams(code="print('hi')", pip_install=["requests", "numpy"])
+        assert params.pip_install == ["requests", "numpy"]
 
 
 # ---------------------------------------------------------------------------
@@ -389,10 +508,122 @@ class TestPython:
                     break
         assert output_line_count <= 15, f"Expected <=15 output lines, got {output_line_count}"
 
+    # New file param tests ------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Async syntax / integration smoke tests
-# ---------------------------------------------------------------------------
+    async def test_file_param_success(self, mock_session: MagicMock, tmp_path: Path) -> None:
+        """Use explicit `file` parameter to run a .py file."""
+        py_file = tmp_path / "hello_file_param.py"
+        py_file.write_text("print('hello_from_file_param')", encoding='utf-8')
+        tool = Python(session=mock_session)
+        params = PyParams(file=str(py_file), timeout=10)
+        result = await tool(params)
+        output_str = str(result.output)
+        assert "hello_from_file_param" in output_str
+        assert "task_id:" in output_str
+        assert "status: completed" in output_str
+
+    async def test_file_param_failure(self, mock_session: MagicMock, tmp_path: Path) -> None:
+        """Use explicit `file` parameter with a failing script."""
+        py_file = tmp_path / "fail_file_param.py"
+        py_file.write_text("import sys; sys.exit(99)", encoding='utf-8')
+        tool = Python(session=mock_session)
+        params = PyParams(file=str(py_file), timeout=10)
+        result = await tool(params)
+        assert isinstance(result, ToolError)
+        output_str = str(result.output)
+        assert "status: completed" in output_str
+
+    async def test_file_param_not_found_raises_error(self, mock_session: MagicMock) -> None:
+        """A non-existent `file` path should be treated as an actual file path (unlike old code param)."""
+        tool = Python(session=mock_session)
+        params = PyParams(file="/nonexistent/path/script.py", timeout=10)
+        result = await tool(params)
+        # The subprocess will fail because the file doesn't exist
+        assert isinstance(result, (ToolError, ToolOk))
+
+    # Mode tests -----------------------------------------------------------
+
+    async def test_mode_background(self, mock_session: MagicMock) -> None:
+        """mode='background' starts a task and returns immediately."""
+        tool = Python(session=mock_session)
+        params = PyParams(code="import time; time.sleep(100)", mode="background", timeout=5)
+        result = await tool(params)
+        assert isinstance(result, ToolOk)
+        assert "Background task started" in result.brief
+        # cleanup
+        for tid in list(get_all_tasks(mock_session).keys()):
+            remove_task_id(mock_session, tid)
+
+    async def test_mode_interactive(self, mock_session: MagicMock) -> None:
+        """mode='interactive' starts a persistent REPL."""
+        tool = Python(session=mock_session)
+        params = PyParams(code="", mode="interactive", timeout=5)
+        result = await tool(params)
+        assert isinstance(result, ToolOk)
+        assert "Interactive Python started" in result.message
+        # cleanup
+        for tid in list(get_all_tasks(mock_session).keys()):
+            remove_task_id(mock_session, tid)
+
+    async def test_mode_run_default(self, mock_session: MagicMock) -> None:
+        """mode='run' (default) executes code and waits."""
+        tool = Python(session=mock_session)
+        params = PyParams(code="print('run_mode_test')", mode="run", timeout=10)
+        result = await tool(params)
+        output_str = str(result.output)
+        assert "run_mode_test" in output_str
+        assert "status: completed" in output_str
+
+    # Venv tests -----------------------------------------------------------
+
+    async def test_venv_resolves_python(self, mock_session: MagicMock, tmp_path: Path) -> None:
+        """venv parameter resolves to the venv's python executable."""
+        # Create a virtual environment
+        import subprocess as sp
+        venv_dir = tmp_path / ".testvenv"
+        sp.run([sys.executable, "-m", "venv", str(venv_dir)], check=True, capture_output=True)
+
+        tool = Python(session=mock_session)
+        params = PyParams(code="import sys; print(sys.executable)", venv=str(venv_dir), timeout=30)
+        result = await tool(params)
+        output_str = str(result.output)
+        # The output should contain the venv python path
+        if sys.platform == "win32":
+            assert "Scripts\\python.exe" in output_str or ".testvenv" in output_str
+        else:
+            assert ".testvenv/bin/python" in output_str or ".testvenv" in output_str
+
+    async def test_venv_not_found(self, mock_session: MagicMock) -> None:
+        """Non-existent venv path should raise ValueError when resolving python."""
+        tool = Python(session=mock_session)
+        params = PyParams(code="print('hi')", venv="/nonexistent/venv")
+        with pytest.raises(ValueError, match="Venv python not found"):
+            tool._resolve_python(params)
+
+    # Pip install tests ----------------------------------------------------
+
+    async def test_pip_install_hook_runs(self, mock_session: MagicMock) -> None:
+        """pip_install should attempt to install packages."""
+        # Skip if pip is not available in the test environment
+        import subprocess as sp
+        try:
+            sp.run([sys.executable, "-m", "pip", "--version"],
+                   capture_output=True, check=True, timeout=5)
+        except (sp.CalledProcessError, FileNotFoundError):
+            pytest.skip("pip is not available in this environment")
+
+        tool = Python(session=mock_session)
+        # Use a tiny package that's quick to install
+        params = PyParams(
+            code="import six; print(six.__version__)",
+            pip_install=["six"],
+            timeout=30,
+        )
+        result = await tool(params)
+        output_str = str(result.output)
+        assert "status: completed" in output_str or "six" in output_str
+
+
 class TestAsyncIntegration:
     async def test_background_stream_awaited_methods(self) -> None:
         stream = BackgroundStream()

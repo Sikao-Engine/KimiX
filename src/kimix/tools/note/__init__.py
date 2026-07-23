@@ -1,4 +1,4 @@
-"""Plan file tools: WritePlan, ReadPlan, EditPlan."""
+"""Plan file tools: WritePlan, ReadPlan, EditPlan, EditTool."""
 
 from pathlib import Path
 from typing import Any, Literal
@@ -497,3 +497,6 @@ class EditPlan(CallableTool2):
                 message=f"Failed to edit plan. Error: {exc}",
                 brief="Failed to edit plan",
             )
+
+
+

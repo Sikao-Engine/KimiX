@@ -10,7 +10,7 @@ import regex as re
 import shutil
 import subprocess
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import kimi_cli
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
@@ -161,12 +161,25 @@ def find_pwsh() -> str | None:
 class PowershellParams(BaseModel):
     """Parameters for the Powershell tool — execute a PowerShell command."""
 
-    cmd: str = Field(default="", description="PowerShell command or input text for an existing session.")
+    model_config = {"populate_by_name": True}
+
+    cmd: str = Field(
+        default="",
+        alias="command",  # LLM can use "command" instead of "cmd"
+        description="PowerShell command or input text for an existing session. Accepts `cmd` or `command`."
+    )
+    mode: Literal["execute", "send"] = Field(
+        default="execute",
+        description=(
+            "'execute': Run the PowerShell command. "
+            "'send': Send command as stdin text to an existing session identified by `task_id`."
+        ),
+    )
     timeout: int = Field(
-        default=10,
-        ge=3,
+        default=30,
+        ge=1,
         le=900,
-        description="Timeout in seconds."
+        description="Timeout in seconds (1-900)."
     )
     interactive: bool = Field(
         default=False,
@@ -195,17 +208,34 @@ class PowershellParams(BaseModel):
         ge=3,
         description="Max lines to return via head+tail fold. <N> head lines + <N> tail lines kept; middle collapsed. None = unlimited.",
     )
-    token_kill: bool = Field(
+    deduplicate_output: bool = Field(
         default=True,
-        description="Run known commands through token killer when available.",
+        alias="token_kill",  # backward compat
+        description="Deduplicate repeated output lines from known commands (git, npm, etc.). "
+                    "Set to False to see raw, unfiltered output.",
     )
 
     @model_validator(mode="after")
+    def _infer_mode(self) -> "PowershellParams":
+        """Backward compat: when task_id is set but mode is default 'execute', auto-switch to 'send'."""
+        if self.task_id is not None and self.mode == "execute":
+            object.__setattr__(self, 'mode', 'send')
+        return self
+
+    @model_validator(mode="after")
     def _validate_cmd(self) -> "PowershellParams":
-        if self.task_id is None and not self.interactive and not self.cmd:
-            raise ValueError("cmd cannot be empty unless interactive=True")
-        if self.task_id is not None and not self.cmd:
-            raise ValueError("cmd cannot be empty when continuing a session via task_id")
+        if self.mode == "execute" and not self.interactive and not self.cmd:
+            raise ValueError("cmd cannot be empty unless interactive=True or mode='send'")
+        if self.mode == "send":
+            if not self.cmd:
+                raise ValueError("cmd cannot be empty when mode='send'")
+            if not self.task_id:
+                raise ValueError("mode='send' requires task_id to identify the target session")
+        if self.task_id is not None and self.mode != "send":
+            raise ValueError("task_id requires mode='send'")
+        return self
+        if self.task_id is not None and self.mode != "send":
+            raise ValueError("task_id requires mode='send'")
         return self
 
 class Powershell(CallableTool2[PowershellParams]):
@@ -217,7 +247,12 @@ class Powershell(CallableTool2[PowershellParams]):
     def __init__(self, session: Session):
         desc = load_desc(Path(__file__).parent / "pwsh_tool.md")
         super().__init__(description=desc)
-        self.description += " " + _interactive_scope_text(is_shell=True)
+        self.description += (
+            " Accepts `cmd` or `command` parameter. "
+            "Output longer than `max_lines` is collapsed via head+tail fold (first N + last N lines, "
+            "with middle replaced by a truncation marker). Set `max_lines=None` for unlimited output. "
+            + _interactive_scope_text(is_shell=True)
+        )
         self._session = session
         if not _bash_tool._should_enable_powershell():
             raise SkipThisTool()
@@ -260,7 +295,13 @@ class Powershell(CallableTool2[PowershellParams]):
         Returns:
             ToolOk on success, ToolError on failure or timeout.
         """
-        if params.task_id is not None:
+        if params.mode == "send":
+            if not params.task_id:
+                return ToolError(
+                    output="",
+                    message="mode='send' requires task_id to identify the target session.",
+                    brief="Missing task_id",
+                )
             return await self._continue_session(params)
 
         if not params.interactive and not params.cmd:
@@ -272,7 +313,7 @@ class Powershell(CallableTool2[PowershellParams]):
 
         # Rewrite known commands through RTK before any PS5.1 syntax transform.
         rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
-            params.cmd, params.token_kill
+            params.cmd, params.deduplicate_output
         )
         if self._pwsh_path is not None:
             # PowerShell 7 is available: run the command as-is without syntax transforms.
@@ -553,7 +594,7 @@ class Powershell(CallableTool2[PowershellParams]):
         await stream.pop_output()
 
         rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
-            params.cmd, params.token_kill
+            params.cmd, params.deduplicate_output
         )
         input_text = rtk_cmd
         if not input_text.endswith("\n"):
@@ -587,7 +628,7 @@ class Powershell(CallableTool2[PowershellParams]):
         # Run token filter pipeline (dedup, truncate)
         output, original_path = await _token_filter_output(
             output,
-            token_kill=params.token_kill,
+            token_kill=params.deduplicate_output,
             max_lines=params.max_lines,
             rtk_rewritten=rtk_rewritten,
         )

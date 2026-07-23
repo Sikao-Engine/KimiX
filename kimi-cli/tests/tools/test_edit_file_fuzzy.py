@@ -26,6 +26,7 @@ def test_apply_edit_crlf_file_lf_old():
     new = "replaced"
     result, count, suggestion = tool._apply_edit(content, Edit(old=old, new=new))
     assert count == 1
+    # Exact match via CRLF normalization succeeds, no fuzzy info
     assert suggestion is None
     assert result == "line1\nreplaced"
 
@@ -144,7 +145,9 @@ def test_apply_edit_fuzzy_multiline_minor_whitespace():
     new = "line X\nline Y"
     result, count, suggestion = tool._apply_edit(content, Edit(old=old, new=new))
     assert count == 1
-    assert suggestion is None
+    # Fuzzy match returns match info
+    assert suggestion is not None
+    assert "fuzzy-matched" in suggestion
     # Fuzzy match replaces the whole matched chunk (including indentation)
     assert result == "start\nline X\nline Y\nend"
 

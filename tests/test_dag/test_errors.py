@@ -17,7 +17,7 @@ from kimix.dag import (
     TaskNode,
 )
 
-from conftest import failing_task, async_fail, make_adder
+from tests.test_dag.conftest import failing_task, async_fail, make_adder
 
 
 def make_executor(max_workers: int | None = None) -> Executor:

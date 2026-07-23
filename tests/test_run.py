@@ -43,13 +43,57 @@ class TestRunParams:
         p = RunParams(command="hello", wait_for_pattern="done")
         assert p.wait_for_pattern == "done"
 
-    def test_token_kill_defaults_true(self) -> None:
+    def test_deduplicate_output_defaults_true(self) -> None:
         p = RunParams(command="hello")
-        assert p.token_kill is True
+        assert p.deduplicate_output is True
 
-    def test_token_kill_can_be_disabled(self) -> None:
+    def test_deduplicate_output_can_be_disabled(self) -> None:
+        p = RunParams(command="hello", deduplicate_output=False)
+        assert p.deduplicate_output is False
+
+    def test_deduplicate_output_accepts_token_kill_alias(self) -> None:
         p = RunParams(command="hello", token_kill=False)
-        assert p.token_kill is False
+        assert p.deduplicate_output is False
+
+    def test_defaults(self) -> None:
+        p = RunParams(command="ls")
+        assert p.timeout == 30
+        assert p.deduplicate_output is True
+        assert p.mode == "execute"
+        assert p.shell is False
+
+    def test_accepts_cmd_alias(self) -> None:
+        p = RunParams(cmd="echo hello")
+        assert p.command == "echo hello"
+
+    def test_mode_send_requires_task_id(self) -> None:
+        with pytest.raises(ValueError, match="task_id"):
+            RunParams(command="hi", mode="send")
+
+    def test_mode_send_with_task_id_succeeds(self) -> None:
+        p = RunParams(command="hi", task_id="run_0")
+        assert p.mode == "send"
+        assert p.task_id == "run_0"
+
+    def test_shell_flag(self) -> None:
+        p = RunParams(command="ls -la | head", shell=True)
+        assert p.shell is True
+        p2 = RunParams(command="ls", shell=False)
+        assert p2.shell is False
+
+    def test_timeout_min(self) -> None:
+        p = RunParams(command="ls", timeout=1)
+        assert p.timeout == 1
+
+    def test_timeout_max(self) -> None:
+        with pytest.raises(Exception):
+            RunParams(command="ls", timeout=901)
+
+    def test_max_lines_field(self) -> None:
+        p = RunParams(command="ls", max_lines=50)
+        assert p.max_lines == 50
+        p2 = RunParams(command="ls", max_lines=None)
+        assert p2.max_lines is None
 
 
 class TestRunRtkRewrite:
@@ -98,15 +142,14 @@ class TestRunRtkRewrite:
             instance.stream.process_elapsed = None
             mock_pt.return_value = instance
 
-            result = await run(RunParams(command="git status", token_kill=False))
+            result = await run(RunParams(command="git status", deduplicate_output=False))
 
             assert isinstance(result, ToolOk)
             args = mock_pt.call_args[0]
-            # With token_kill=False, RTK is disabled and the command is passed as-is.
+            # With deduplicate_output=False, RTK is disabled and the command is passed as-is.
             # shutil.which("git") returns "/fake/git" from the mock side_effect.
-            assert "/fake/git" in args[0] or "git" in args[0]
-            # The command "git status" is split into executable "git" and args ["status"].
-            assert "status" in args[1]
+            assert args[0] == "git"
+            assert args[1] == ["status"]
 
     async def test_run_token_kill_false_does_not_prepend_rtk(self, mock_session: MagicMock) -> None:
         run = _run_instance(mock_session)

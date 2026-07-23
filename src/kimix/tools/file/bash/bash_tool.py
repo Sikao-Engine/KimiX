@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import kimi_cli
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
@@ -556,12 +556,25 @@ def _prepare_bash_cmd(cmd: str) -> str:
 class BashParams(BaseModel):
     """Parameters for the Bash tool — execute a bash command."""
 
-    cmd: str = Field(default="", description="Bash command or input text for an existing session.")
+    model_config = {"populate_by_name": True}
+
+    cmd: str = Field(
+        default="",
+        alias="command",  # LLM can use "command" instead of "cmd"
+        description="Bash command or input text for an existing session. Accepts `cmd` or `command`."
+    )
+    mode: Literal["execute", "send"] = Field(
+        default="execute",
+        description=(
+            "'execute': Run `cmd` as a shell command. "
+            "'send': Send `cmd` as stdin text to an existing session identified by `task_id`."
+        ),
+    )
     timeout: int = Field(
-        default=10,
-        ge=3,
+        default=30,
+        ge=1,
         le=900,
-        description="Timeout in seconds."
+        description="Timeout in seconds (1-900)."
     )
     interactive: bool = Field(
         default=False,
@@ -590,17 +603,31 @@ class BashParams(BaseModel):
         ge=3,
         description="Max lines to return via head+tail fold. <N> head lines + <N> tail lines kept; middle collapsed. None = unlimited.",
     )
-    token_kill: bool = Field(
+    deduplicate_output: bool = Field(
         default=True,
-        description="Run known commands through token killer when available.",
+        alias="token_kill",  # backward compat
+        description="Deduplicate repeated output lines from known commands (git, npm, etc.). "
+                    "Set to False to see raw, unfiltered output.",
     )
 
     @model_validator(mode="after")
+    def _infer_mode(self) -> "BashParams":
+        """Backward compat: when task_id is set but mode is default 'execute', auto-switch to 'send'."""
+        if self.task_id is not None and self.mode == "execute":
+            object.__setattr__(self, 'mode', 'send')
+        return self
+
+    @model_validator(mode="after")
     def _validate_cmd(self) -> "BashParams":
-        if self.task_id is None and not self.interactive and not self.cmd:
-            raise ValueError("cmd cannot be empty unless interactive=True")
-        if self.task_id is not None and not self.cmd:
-            raise ValueError("cmd cannot be empty when continuing a session via task_id")
+        if self.mode == "execute" and not self.interactive and not self.cmd:
+            raise ValueError("cmd cannot be empty unless interactive=True or mode='send'")
+        if self.mode == "send":
+            if not self.cmd:
+                raise ValueError("cmd cannot be empty when mode='send'")
+            if not self.task_id:
+                raise ValueError("mode='send' requires task_id to identify the target session")
+        if self.task_id is not None and self.mode != "send":
+            raise ValueError("task_id requires mode='send'")
         return self
 
 
@@ -610,6 +637,9 @@ class Bash(CallableTool2[BashParams]):
     name: str = "Bash"
     description: str = (
         "Execute a bash command. Supports Unix-style / POSIX bash syntax. "
+        "Accepts `cmd` or `command` parameter. "
+        "Output longer than `max_lines` is collapsed via head+tail fold (first N + last N lines, "
+        "with middle replaced by a truncation marker). Set `max_lines=None` for unlimited output. "
         + _interactive_scope_text(is_shell=True)
     )
     params: type[BashParams] = BashParams
@@ -642,7 +672,13 @@ class Bash(CallableTool2[BashParams]):
         Returns:
             ToolOk on success, ToolError on failure or timeout.
         """
-        if params.task_id is not None:
+        if params.mode == "send":
+            if not params.task_id:
+                return ToolError(
+                    output="",
+                    message="mode='send' requires task_id to identify the target session.",
+                    brief="Missing task_id",
+                )
             return await self._continue_session(params)
 
         if not params.interactive and not params.cmd:
@@ -679,7 +715,7 @@ class Bash(CallableTool2[BashParams]):
             if params.cmd:
                 safe_cmd = _prepare_bash_cmd(params.cmd)
                 rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
-                    safe_cmd, params.token_kill, exclude_read=True
+                    safe_cmd, params.deduplicate_output, exclude_read=True
                 )
                 bash_args = ["-c", rtk_cmd + "; exec bash -i"]
             else:
@@ -717,7 +753,7 @@ class Bash(CallableTool2[BashParams]):
         # On Windows, escape backslashes so bash preserves them in paths.
         safe_cmd = _prepare_bash_cmd(params.cmd)
         rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
-            safe_cmd, params.token_kill, exclude_read=True
+            safe_cmd, params.deduplicate_output, exclude_read=True
         )
         process_task = ProcessTask(self._bash, ["-c", rtk_cmd], None, _env_with_rg_bin_path())
         task_id = await process_task.start(self._session, "bash")
@@ -850,7 +886,7 @@ class Bash(CallableTool2[BashParams]):
         await stream.pop_output()
 
         rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
-            params.cmd, params.token_kill, exclude_read=True
+            params.cmd, params.deduplicate_output, exclude_read=True
         )
         input_text = rtk_cmd
         if not input_text.endswith("\n"):
@@ -884,7 +920,7 @@ class Bash(CallableTool2[BashParams]):
         # Run token filter pipeline (dedup, truncate)
         output, original_path = await _token_filter_output(
             output,
-            token_kill=params.token_kill,
+            token_kill=params.deduplicate_output,
             max_lines=params.max_lines,
             rtk_rewritten=rtk_rewritten,
         )

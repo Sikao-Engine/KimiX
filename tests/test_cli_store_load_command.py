@@ -18,6 +18,19 @@ from kimi_cli.wire.protocol import WIRE_PROTOCOL_VERSION
 from kimi_cli.wire.types import TextPart, TurnBegin
 
 
+def _make_globals(
+    _default_session=None,
+    _default_role=None,
+) -> SimpleNamespace:
+    """Create a SimpleNamespace mock for commands._globals."""
+    return SimpleNamespace(
+        _default_session=_default_session,
+        _default_role=_default_role,
+        _cli_sessions={},
+        _add_cli_session=lambda *args, **kwargs: None,
+    )
+
+
 def _fake_session(
     session_id: str = "current",
     work_dir: KaosPath | None = None,
@@ -33,10 +46,16 @@ def _fake_session(
         _cancel_event=None,
         _cleanup_tools=AsyncMock(),
         _close_chat_provider=AsyncMock(),
+        status=SimpleNamespace(
+            context_usage=0.0,
+            context_tokens=token_count,
+        ),
         _cli=SimpleNamespace(
             session=SimpleNamespace(
                 work_dir=work_dir,
                 id=session_id,
+                title="Test Session",
+                updated_at=time.time(),
                 close_context_db=AsyncMock(),
                 is_empty=lambda: empty,
             ),
@@ -127,9 +146,7 @@ def test_store_command_rejects_existing_target_and_resumes_original(monkeypatch,
         return fake_new
 
     monkeypatch.setattr(commands, "create_session", _create_session)
-    monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=None, _default_role=None)
-    )
+    monkeypatch.setattr(commands, "_globals", _make_globals())
 
     commands._cmd_store(["store", "backup"], [])
 
@@ -159,7 +176,7 @@ def test_store_command_resumes_original_on_copy_failure(monkeypatch, capsys):
 
     monkeypatch.setattr(commands, "create_session", _create_session)
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=None, _default_role=None)
+        commands, "_globals", _make_globals()
     )
 
     commands._cmd_store(["store", "backup"], [])
@@ -190,7 +207,7 @@ def test_store_command_preserves_anonymous_flag(monkeypatch, capsys):
 
     monkeypatch.setattr(commands, "create_session", _create_session)
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=None, _default_role=None)
+        commands, "_globals", _make_globals()
     )
 
     commands._cmd_store(["store", "backup"], [])
@@ -211,7 +228,7 @@ def test_store_command_marks_old_session_closed(monkeypatch, capsys):
     )
     monkeypatch.setattr(commands, "create_session", lambda **kw: _fake_new_session("current"))
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=None, _default_role=None)
+        commands, "_globals", _make_globals()
     )
 
     commands._cmd_store(["store", "backup"], [])
@@ -230,7 +247,7 @@ def test_store_command_success_updates_default_session(monkeypatch, capsys):
     fake_new = _fake_new_session("current")
     monkeypatch.setattr(commands, "create_session", lambda **kw: fake_new)
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=None, _default_role=None)
+        commands, "_globals", _make_globals()
     )
 
     commands._cmd_store(["store", "backup"], [])
@@ -286,9 +303,7 @@ def test_load_command_success_creates_anonymous_copy(monkeypatch, capsys):
         return fake_new
 
     monkeypatch.setattr(commands, "create_session", _create_session)
-    monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=None, _default_role=None)
-    )
+    monkeypatch.setattr(commands, "_globals", _make_globals())
 
     commands._cmd_load(["load", "saved"], [])
 
@@ -328,7 +343,7 @@ def test_load_command_warns_and_cancels_on_non_empty_current(monkeypatch, capsys
     closed_sessions = []
     monkeypatch.setattr(commands, "close_session", lambda s: closed_sessions.append(s))
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=current, _default_role=None)
+        commands, "_globals", _make_globals(_default_session=current)
     )
 
     commands._cmd_load(["load", "saved"], ["n"])
@@ -359,7 +374,7 @@ def test_load_command_warns_and_confirms_on_non_empty_current(monkeypatch, capsy
 
     monkeypatch.setattr(commands, "create_session", _create_session)
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=current, _default_role=None)
+        commands, "_globals", _make_globals(_default_session=current)
     )
 
     closed_sessions = []
@@ -390,7 +405,7 @@ def test_load_command_rejects_invalid_confirmation_input(monkeypatch, capsys):
     fake_new = _fake_new_session("anon123")
     monkeypatch.setattr(commands, "create_session", lambda **kw: fake_new)
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=current, _default_role=None)
+        commands, "_globals", _make_globals(_default_session=current)
     )
     monkeypatch.setattr(commands, "close_session", lambda s: None)
 
@@ -441,7 +456,7 @@ def test_store_command_copies_session_on_disk(
 
     monkeypatch.setattr(commands, "create_session", _create_session)
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=None, _default_role=None)
+        commands, "_globals", _make_globals()
     )
 
     commands._cmd_store(["store", "backup"], [])
@@ -484,7 +499,7 @@ def test_load_command_copies_named_session_to_anonymous(
 
     monkeypatch.setattr(commands, "create_session", _create_session)
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=None, _default_role=None)
+        commands, "_globals", _make_globals()
     )
 
     commands._cmd_load(["load", "saved"], [])
@@ -514,7 +529,7 @@ def test_load_command_from_current_session_preserves_source(
     monkeypatch.setattr(commands, "close_session", lambda s: closed_sessions.append(s))
 
     monkeypatch.setattr(
-        commands, "_globals", SimpleNamespace(_default_session=None, _default_role=None)
+        commands, "_globals", _make_globals()
     )
     monkeypatch.setattr(
         commands, "create_session", lambda **kw: _fake_new_session(kw.get("session_id", "anonload2"))

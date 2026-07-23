@@ -8,7 +8,7 @@ import pytest
 
 from kimix.dag import DAG, Context, ExecutionError, Executor, TaskNode
 
-from conftest import make_adder, make_slow_task, async_add_one
+from tests.test_dag.conftest import make_adder, make_slow_task, async_add_one
 
 
 def make_executor(max_workers: int | None = None) -> Executor:

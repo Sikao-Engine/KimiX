@@ -53,43 +53,17 @@ from kimi_cli.utils.path import (
 from kimi_cli.utils.sensitive import is_sensitive_file, sensitive_file_warning
 from kimi_cli.vfs import VFS
 
-# Fuzzy output_mode map — maps common synonyms to canonical values
+# Output mode map — only canonical values accepted
 _OUTPUT_MODE_MAP: dict[str, Literal["files_with_matches", "count_matches", "content"]] = {
-    # files_with_matches
     "files_with_matches": "files_with_matches",
-    "fileswithmatches": "files_with_matches",
-    "files_with_match": "files_with_matches",
-    "files": "files_with_matches",
-    "file": "files_with_matches",
-    "filenames": "files_with_matches",
-    "names_only": "files_with_matches",
-    "files_only": "files_with_matches",
-    "list": "files_with_matches",
-    "matching_files": "files_with_matches",
-    # count_matches
     "count_matches": "count_matches",
-    "countmatches": "count_matches",
-    "count": "count_matches",
-    "counts": "count_matches",
-    "match_count": "count_matches",
-    "num_matches": "count_matches",
-    "stats": "count_matches",
-    "summary": "count_matches",
-    "count_match": "count_matches",
-    # content
     "content": "content",
-    "full": "content",
-    "full_content": "content",
-    "lines": "content",
-    "matched_lines": "content",
-    "matching_lines": "content",
-    "context": "content",
-    "matches": "content",
-    "results": "content",
 }
 
 
 class Params(BaseModel):
+    model_config = {"populate_by_name": True}
+
     pattern: str = Field(description="Regex pattern.")
     path: str = Field(
         description="Search target directory or file.",
@@ -112,34 +86,34 @@ class Params(BaseModel):
         if canonical is None:
             raise ValueError(
                 f"Invalid output_mode '{v}'. Must be 'files_with_matches', "
-                "'count_matches', or 'content' (or a known synonym)."
+                "'count_matches', or 'content'."
             )
         return canonical
 
     before_context: int | None = Field(
-        alias="-B",
-        description="Lines before match (content mode only).",
         default=None,
+        alias="-B",
+        description="Lines before match (content mode only)."
     )
     after_context: int | None = Field(
-        alias="-A",
-        description="Lines after match (content mode only).",
         default=None,
+        alias="-A",
+        description="Lines after match (content mode only)."
     )
     context: int | None = Field(
-        alias="-C",
-        description="Lines around match (content mode only).",
         default=None,
+        alias="-C",
+        description="Lines around match (content mode only)."
     )
     line_number: bool = Field(
-        alias="-n",
-        description="Show line numbers (content mode only).",
         default=True,
+        alias="-n",
+        description="Show line numbers (content mode only)."
     )
     ignore_case: bool = Field(
-        alias="-i",
-        description="Case-insensitive search.",
         default=False,
+        alias="-i",
+        description="Case-insensitive search."
     )
     type: str | None = Field(
         description="File type filter.",
@@ -147,7 +121,7 @@ class Params(BaseModel):
     )
     head_limit: int | None = Field(
         description="Max results (0 = unlimited).",
-        default=250,
+        default=500,
         ge=0,
     )
     offset: int = Field(
@@ -553,9 +527,23 @@ def _merge_intervals(intervals: list[tuple[int, int]]) -> list[tuple[int, int]]:
 
 class Grep(CallableTool2[Params]):
     name: str = "Grep"
-    description: str = "Search files using ripgrep."
+    description: str = (
+        "Search files using ripgrep. "
+        "Multiline patterns match across line boundaries. "
+        "Example: pattern='def foo\\(.*?\\):' with multiline=True matches function signatures "
+        "spanning multiple lines."
+    )
     params: type[Params] = Params
-    field_aliases = {**FIELD_ALIASES_GENERAL, **FIELD_ALIASES_FILE, **FIELD_ALIASES_WEB}
+    field_aliases = {
+        **FIELD_ALIASES_GENERAL,
+        **FIELD_ALIASES_FILE,
+        **FIELD_ALIASES_WEB,
+        "-B": "before_context",
+        "-A": "after_context",
+        "-C": "context",
+        "-n": "line_number",
+        "-i": "ignore_case",
+    }
 
     def __init__(self, runtime: Runtime, vfs: VFS | None = None) -> None:
         super().__init__(self.name, self.description, self.params)

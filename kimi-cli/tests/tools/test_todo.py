@@ -282,7 +282,7 @@ class TestTodoListActiveSummary:
                 Todo(title="Second", status="in_progress", notes=""),
                 Todo(title="Third", status="pending", notes=""),
                 Todo(title="Fourth", status="done", notes=""),
-                Todo(title="Fifth", status="in_progress", notes=""),
+                Todo(title="Fifth", status="pending", notes=""),
             ]
         )
         result = await todo_list_tool(params)
@@ -293,7 +293,7 @@ class TestTodoListActiveSummary:
             "- [pending] First",
             "- [in progress] Second",
             "- [pending] Third",
-            "- [in progress] Fifth",
+            "- [pending] Fifth",
         ]
 
 
@@ -982,22 +982,15 @@ class TestTodoListNotes:
 
     async def test_notes_mode_synonym_maps_to_append(self, todo_list_tool: TodoList):
         await todo_list_tool(Params(todos=[Todo(title="Task A", status="pending", notes="")]))
-        result = await todo_list_tool(
+        # 'notes' is no longer a recognized mode synonym; should raise ValueError
+        with pytest.raises((ValueError, Exception)):
             Params(todos=[Todo(title="Task B", status="pending", notes="")], mode="notes")
-        )
-        assert not result.is_error
-        assert "mode='overwrite'" not in result.message
 
-        read = await todo_list_tool(Params(todos=None))
-        assert "[pending] Task A" in read.output
-        assert "[pending] Task B" in read.output
-
-    async def test_notes_typos_recognized(self, todo_list_tool: TodoList):
+    async def test_notes_typos_rejected(self, todo_list_tool: TodoList):
+        """Typos like 'ntoes' are no longer accepted as mode synonyms."""
         for typo in ("ntoes", "noets", "nots"):
-            result = await todo_list_tool(
+            with pytest.raises((ValueError, Exception)):
                 Params(todos=[Todo(title=f"Task {typo}", status="pending", notes="")], mode=typo)
-            )
-            assert not result.is_error, f"mode={typo!r} should be accepted"
 
     async def test_in_progress_output_includes_notes(self, todo_list_tool: TodoList):
         params = Params(
@@ -1296,25 +1289,15 @@ class TestTodoListForceOverwriteMode:
         assert "New task" in read.output
         assert "Old task" not in read.output
 
-    async def test_force_overwrite_synonym_force(self, todo_list_tool: TodoList):
-        await todo_list_tool(Params(todos=[Todo(title="Old task", status="pending", notes="")]))
-        result = await todo_list_tool(
+    async def test_force_overwrite_synonym_force_rejected(self, todo_list_tool: TodoList):
+        """'force' is no longer a recognized mode synonym."""
+        with pytest.raises((ValueError, Exception)):
             Params(todos=[Todo(title="New task", status="done", notes="")], mode="force")
-        )
-        assert not result.is_error
-        read = await todo_list_tool(Params(todos=None))
-        assert "New task" in read.output
-        assert "Old task" not in read.output
 
-    async def test_force_overwrite_synonym_force_overwrite(self, todo_list_tool: TodoList):
-        await todo_list_tool(Params(todos=[Todo(title="Old task", status="pending", notes="")]))
-        result = await todo_list_tool(
+    async def test_force_overwrite_synonym_force_overwrite_rejected(self, todo_list_tool: TodoList):
+        """'force overwrite' (with space) is no longer a recognized mode synonym."""
+        with pytest.raises((ValueError, Exception)):
             Params(todos=[Todo(title="New task", status="done", notes="")], mode="force overwrite")
-        )
-        assert not result.is_error
-        read = await todo_list_tool(Params(todos=None))
-        assert "New task" in read.output
-
     async def test_force_overwrite_on_empty_list_no_warning(self, todo_list_tool: TodoList):
         """When the existing todo list is empty, force_overwrite should not warn."""
         result = await todo_list_tool(
@@ -1493,10 +1476,11 @@ class TestTodoListProgressCounters:
         )
 
 
-class TestTodoListInProgressNudge:
-    """Tests for the non-blocking multiple-in_progress warning."""
+class TestTodoListInProgressConstraint:
+    """Tests for single in_progress enforcement."""
 
-    async def test_multiple_in_progress_warns(self, todo_list_tool: TodoList):
+    async def test_multiple_in_progress_rejected(self, todo_list_tool: TodoList):
+        """Multiple in_progress items should be rejected."""
         result = await todo_list_tool(
             Params(
                 todos=[
@@ -1506,10 +1490,28 @@ class TestTodoListInProgressNudge:
                 ]
             )
         )
-        assert not result.is_error
-        assert "Note: 3 items are in_progress; prefer exactly one at a time." in result.message
+        assert result.is_error
+        assert "Multiple items are in_progress" in result.output
 
-    async def test_single_in_progress_no_warning(self, todo_list_tool: TodoList):
+    async def test_auto_fix_resolves_conflict(self, todo_list_tool: TodoList):
+        """auto_fix=True resolves multiple in_progress by marking extras as done."""
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="A", status="in_progress", notes=""),
+                    Todo(title="B", status="in_progress", notes=""),
+                ],
+                auto_fix=True,
+            )
+        )
+        assert not result.is_error
+        # Only the first in_progress item should remain in_progress
+        read = await todo_list_tool(Params(todos=None))
+        assert "[in_progress] A" in read.output or "[in progress] A" in read.output
+        assert "[done] B" in read.output or "[done]" in read.output
+
+    async def test_single_in_progress_no_error(self, todo_list_tool: TodoList):
+        """Single in_progress item should work without error."""
         result = await todo_list_tool(
             Params(
                 todos=[
@@ -1519,7 +1521,19 @@ class TestTodoListInProgressNudge:
             )
         )
         assert not result.is_error
-        assert "prefer exactly one at a time" not in result.message
+
+    async def test_force_overwrite_bypasses_constraint(self, todo_list_tool: TodoList):
+        """force_overwrite mode should bypass the single in_progress constraint."""
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="X", status="in_progress", notes=""),
+                    Todo(title="Y", status="in_progress", notes=""),
+                ],
+                mode="force_overwrite",
+            )
+        )
+        assert not result.is_error
 
 
 class TestTodoListActionableErrors:

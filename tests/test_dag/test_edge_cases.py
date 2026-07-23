@@ -7,7 +7,7 @@ import pytest
 
 from kimix.dag import DAG, Context, Executor, TaskNode
 
-from conftest import make_adder
+from tests.test_dag.conftest import make_adder
 
 
 def make_executor(max_workers: int | None = None) -> Executor:

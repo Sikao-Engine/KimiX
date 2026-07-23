@@ -5,7 +5,7 @@ from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimi_cli.soul import get_current_soul_or_none
 from kimi_cli.soul.compaction import CompactMode
 from kimi_cli.soul.kimisoul import KimiSoul
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ContextUsageParams(BaseModel):
@@ -31,12 +31,19 @@ class ContextUsage(CallableTool2):
                 brief="No active session",
             )
         status = soul.status
-        return ToolOk(
-            output=(
-                f"Context usage: {status.context_usage:.1%} "
-                f"({status.context_tokens:,} / {status.max_context_tokens:,} tokens)"
-            )
+        used_pct = round(status.context_usage * 100, 1)
+        output = (
+            f"Context usage: {status.context_usage:.1%} "
+            f"({status.context_tokens:,} / {status.max_context_tokens:,} tokens)"
         )
+        result = ToolOk(output=output)
+        result.extras = {
+            "context_usage_pct": used_pct,
+            "used_tokens": status.context_tokens,
+            "max_tokens": status.max_context_tokens,
+            "free_tokens": status.max_context_tokens - status.context_tokens,
+        }
+        return result
 
 
 class CompactParams(BaseModel):
@@ -44,15 +51,39 @@ class CompactParams(BaseModel):
         default=None,
         description="Optional instruction guiding what to preserve during compaction.",
     )
-    mode: CompactMode = Field(
-        default=CompactMode.RETENTIVE,
+    mode: str = Field(
+        default="auto",
         description=(
-            "High-level compaction style / emphasis. "
-            "One of: retentive (default, keep more detail), balanced (structured summary), "
-            "aggressive (shorter), technical (emphasize code/errors/design). "
-            "Does not affect preserve depth or cascade behavior."
+            "Compaction mode / style. "
+            "'retentive' (default, keep more detail), 'balanced' (structured summary), "
+            "'aggressive' (shorter), 'technical' (emphasize code/errors/design). "
+            "'auto': automatically select based on current context usage. "
+            "Does not affect preserve depth or cascade behavior.\n"
+            "Mode selection guide:\n"
+            "- retentive: Keeps more detail; use when context is moderately full.\n"
+            "- balanced: Structured summary; use when context is very full.\n"
+            "- aggressive: Shortest summary; use only when critically low on context.\n"
+            "- technical: Emphasizes code, errors, and design decisions.\n"
+            "- auto: Automatically picks based on context usage."
         ),
     )
+
+    _COOLDOWN_STEPS = 5
+
+    @model_validator(mode="after")
+    def _resolve_mode(self) -> "CompactParams":
+        """Resolve 'auto' mode based on current context usage."""
+        if self.mode == "auto":
+            soul = get_current_soul_or_none()
+            if soul is not None:
+                usage = soul.status.context_usage
+                if usage > 0.9:
+                    self.mode = "aggressive"
+                elif usage > 0.75:
+                    self.mode = "balanced"
+                else:
+                    self.mode = "retentive"
+        return self
 
 
 class Compact(CallableTool2):
@@ -61,7 +92,9 @@ class Compact(CallableTool2):
         "Compact / summarize the conversation context to reduce token usage. "
         "Call this when ContextUsage shows usage is high and you want to free up context. "
         "Optionally pass an instruction and a compaction mode (balanced, aggressive, "
-        "retentive, technical) to control the summary style."
+        "retentive, technical, auto) to control the summary style. "
+        "[IMPORTANT] Do NOT call Compact more than once every 5 steps, "
+        "and only call it when ContextUsage exceeds 70%."
     )
     params = CompactParams
 
@@ -73,17 +106,49 @@ class Compact(CallableTool2):
                 output="",
                 brief="No active soul",
             )
+
+        # Cooldown check
+        current_step = soul.status.step_count if hasattr(soul.status, "step_count") else 0
+        last_compact = soul.custom_data.get("last_compact_step", 0) if hasattr(soul, "custom_data") else 0
+        if hasattr(soul, "custom_data") and current_step - last_compact < 5:
+            return ToolError(
+                message=(
+                    f"Compact called too soon ({current_step - last_compact} steps ago). "
+                    "Wait at least 5 steps between compactions."
+                ),
+                brief="Compaction too frequent",
+            )
+
+        # Resolve mode string to CompactMode enum
+        mode_map = {
+            "retentive": CompactMode.RETENTIVE,
+            "balanced": CompactMode.BALANCED,
+            "aggressive": CompactMode.AGGRESSIVE,
+            "technical": CompactMode.TECHNICAL,
+        }
+        resolved_mode = mode_map.get(params.mode, CompactMode.RETENTIVE)
+
         try:
             await soul.compact_context(
                 manual=True,
                 custom_instruction=params.instruction or "",
                 avoid_cascade=True,
-                mode=params.mode,
+                mode=resolved_mode,
             )
+            # Update cooldown
+            if hasattr(soul, "custom_data"):
+                soul.custom_data["last_compact_step"] = current_step
         except Exception as exc:
             return ToolError(
                 message=str(exc),
                 output="",
                 brief="Compaction failed",
             )
-        return ToolOk(output='Compaction success. [WARNING] DO NOT call `Compact` frequently.')
+
+        return ToolOk(
+            output="Compaction completed.",
+            message=(
+                "Compaction completed. "
+                "[IMPORTANT] Do not call Compact again until context usage exceeds 70%."
+            ),
+        )

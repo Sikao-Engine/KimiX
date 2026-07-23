@@ -85,8 +85,8 @@ async def test_grep_content_mode(grep_tool: Grep, temp_test_files):
                 "pattern": "hello",
                 "path": temp_dir,
                 "output_mode": "content",
-                "-n": True,
-                "-i": True,
+                "line_number": True,
+                "ignore_case": True,
             }
         )
     )
@@ -388,23 +388,23 @@ async def test_grep_before_after_context(grep_tool: Grep, temp_test_files):
 
 # === Tests for new features ===
 
-
 async def test_grep_default_head_limit(grep_tool: Grep):
-    """Default head_limit=250 truncates large result sets."""
+    """Default head_limit=500 truncates large result sets."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        for i in range(300):
+        for i in range(600):
             (Path(temp_dir) / f"file_{i:03d}.txt").write_text("marker\n")
 
+        # head_limit defaults to 500 now
         result = await grep_tool(
             Params(pattern="marker", path=temp_dir, output_mode="files_with_matches")
         )
-        assert not result.is_error
-        assert isinstance(result.output, str)
+        output = result.output.split("\n")
+        assert len(output) == 500
         lines = [x for x in result.output.split("\n") if x.strip()]
-        assert len(lines) == 250
-        assert "Results truncated to 250 lines" in result.message
-        assert "total: 300" in result.message
-        assert "Use offset=250 to see more" in result.message
+        assert len(lines) == 500
+        assert "Results truncated to 500 lines" in result.message
+        assert "total: 600" in result.message
+        assert "Use offset=500 to see more" in result.message
 
 
 async def test_grep_head_limit_zero_unlimited(grep_tool: Grep):
@@ -703,10 +703,10 @@ def test_build_rg_args_defaults():
     )
     assert "--max-columns" not in content_args
     assert "--files-with-matches" not in content_args
-    # default head_limit=250 adds --max-count with margin
+    # default head_limit=500 adds --max-count with margin
     assert "--max-count" in content_args
     idx = content_args.index("--max-count")
-    assert content_args[idx + 1] == "1250"  # 0 + 250 + 1000
+    assert content_args[idx + 1] == "1500"  # 0 + 500 + 1000
 
     # head_limit=0 (unlimited): no --max-count
     unlimited_args = _build_rg_args(
@@ -1491,71 +1491,56 @@ async def test_grep_outside_work_dir_has_warning(grep_tool: Grep):
 class TestGrepFuzzyOutputMode:
     """Test fuzzy matching for the output_mode field."""
 
-    # ── files_with_matches synonyms ──
+    # ── files_with_matches synonyms (deprecated) ──
 
     @pytest.mark.parametrize("synonym", [
         "files", "file", "filenames", "names_only", "files_only",
         "list", "matching_files", "fileswithmatches", "files_with_match",
     ])
-    async def test_fuzzy_files_with_matches_synonyms(
+    async def test_fuzzy_files_with_matches_synonyms_rejected(
         self, grep_tool: Grep, temp_test_files, synonym: str
     ):
-        """All files_with_matches synonyms should be accepted."""
-        temp_dir, _ = temp_test_files
-        result = await grep_tool(
+        """Non-canonical synonyms should be rejected."""
+        with pytest.raises((ValueError, Exception)):
             Params.model_validate({
                 "pattern": "hello",
-                "path": temp_dir,
+                "path": ".",
                 "output_mode": synonym,
-                "-i": True,
             })
-        )
-        assert not result.is_error
-        assert "test1.py" in result.output
 
-    # ── count_matches synonyms ──
+    # ── count_matches synonyms (deprecated) ──
 
     @pytest.mark.parametrize("synonym", [
         "count", "counts", "match_count", "num_matches", "stats",
         "summary", "count_match", "countmatches",
     ])
-    async def test_fuzzy_count_matches_synonyms(
+    async def test_fuzzy_count_matches_synonyms_rejected(
         self, grep_tool: Grep, temp_test_files, synonym: str
     ):
-        """All count_matches synonyms should be accepted."""
-        temp_dir, _ = temp_test_files
-        result = await grep_tool(
+        """Non-canonical synonyms should be rejected."""
+        with pytest.raises((ValueError, Exception)):
             Params.model_validate({
                 "pattern": "hello",
-                "path": temp_dir,
+                "path": ".",
                 "output_mode": synonym,
-                "-i": True,
             })
-        )
-        assert not result.is_error
-        assert "Found" in result.message
 
-    # ── content synonyms ──
+    # ── content synonyms (deprecated) ──
 
     @pytest.mark.parametrize("synonym", [
         "full", "full_content", "lines", "matched_lines", "matching_lines",
         "context", "matches", "results",
     ])
-    async def test_fuzzy_content_synonyms(
+    async def test_fuzzy_content_synonyms_rejected(
         self, grep_tool: Grep, temp_test_files, synonym: str
     ):
-        """All content synonyms should be accepted."""
-        temp_dir, _ = temp_test_files
-        result = await grep_tool(
+        """Non-canonical synonyms should be rejected."""
+        with pytest.raises((ValueError, Exception)):
             Params.model_validate({
                 "pattern": "hello",
-                "path": temp_dir,
+                "path": ".",
                 "output_mode": synonym,
-                "-i": True,
             })
-        )
-        assert not result.is_error
-        assert "hello" in result.output.lower()
 
     # ── normalisation ──
 

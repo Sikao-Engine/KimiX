@@ -77,7 +77,8 @@ def llm() -> LLM:
 @pytest.fixture
 def temp_work_dir() -> Generator[KaosPath]:
     """Create a temporary working directory for tests."""
-    with tempfile.TemporaryDirectory() as tmpdir:
+    import platform
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=platform.system() == "Windows") as tmpdir:
         original_cwd = Path.cwd()
         p = Path(tmpdir).resolve()
         os.chdir(p)
@@ -92,7 +93,8 @@ def temp_work_dir() -> Generator[KaosPath]:
 @pytest.fixture
 def temp_share_dir() -> Generator[Path]:
     """Create a temporary shared directory for tests."""
-    with tempfile.TemporaryDirectory() as tmpdir:
+    import platform
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=platform.system() == "Windows") as tmpdir:
         yield Path(tmpdir)
 
 

@@ -40,7 +40,7 @@ import pybase64
 from kaos.path import KaosPath
 from kosong.chat_provider.kimi import Kimi
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools import SkipThisTool
@@ -69,7 +69,7 @@ from kimi_cli.utils.path import (
     kaos_path_from_tool_input,
     kaos_path_from_user_input,
 )
-from kimi_cli.wire.types import ImageURLPart, VideoURLPart
+from kimi_cli.wire.types import ImageURLPart, TextPart, VideoURLPart
 
 MAX_MEDIA_MEGABYTES = 100
 
@@ -169,12 +169,54 @@ class Params(BaseModel):
         "pixel coordinates). Use after a downsampled full view to inspect fine detail — "
         "a region within the size limits is delivered at full fidelity.",
     )
+    region_pct: str | None = Field(
+        default=None,
+        description="Images only: region as percentages instead of pixels. "
+        "Format: 'x,y,width,height' where each is 0-100. "
+        "Example: '10,10,50,50' for the center half of the image. "
+        "Mutually exclusive with `region`.",
+    )
     full_resolution: bool | None = Field(
         default=None,
         description="Images only: skip the default downscaling and view at native "
         "resolution. Fails with an explicit error when the payload would exceed the "
         "per-image byte limit; use region for files that large.",
     )
+    info_only: bool = Field(
+        default=False,
+        description="When True, return only image metadata (dimensions, format, size) "
+        "without loading the image into context.",
+    )
+    max_dimension: int | None = Field(
+        default=None,
+        description="Maximum width/height in pixels. If the image exceeds this, it is "
+        "downsampled. Default (None) uses the model's built-in limit.",
+    )
+    quality: int = Field(
+        default=85,
+        ge=1,
+        le=100,
+        description="JPEG/WebP quality for compressed output (1-100). Higher = better "
+        "quality, larger size.",
+    )
+    auto_convert: bool = Field(
+        default=True,
+        description="When True (default), automatically convert unsupported image formats "
+        "(AVIF, HEIC, BMP, TIFF) to PNG before sending to the model. "
+        "When False, refuse with a conversion command.",
+    )
+
+    @model_validator(mode="after")
+    def _validate_region(self) -> "Params":
+        if self.region is not None and self.region_pct is not None:
+            raise ValueError("Specify either `region` or `region_pct`, not both.")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_video_params(self) -> "Params":
+        if self.full_resolution and self.info_only:
+            raise ValueError("Cannot set both full_resolution=True and info_only=True.")
+        return self
 
 
 @dataclass(frozen=True)
@@ -331,6 +373,20 @@ class ReadMediaFile(CallableTool2[Params]):
         media_path = str(path)
 
         data = await path.read_bytes()
+
+        # Info-only mode: return metadata without loading into context
+        if params.info_only:
+            from PIL import Image as PILImage
+            import io
+            pil = PILImage.open(io.BytesIO(data))
+            dims = f"{pil.width}x{pil.height}" if kind == "image" else "N/A (video)"
+            meta = (
+                f"Format: {file_type.mime_type}\n"
+                f"Size: {size} bytes\n"
+                f"Dimensions: {dims}\n"
+            )
+            return ToolOk(output=meta, message=meta, brief="Media metadata")
+
         # The summary always reports the ORIGINAL pixel size and byte size:
         # the model derives relative coordinates and scales them by the
         # original dimensions, so it must see the pre-compression size even
@@ -342,7 +398,35 @@ class ReadMediaFile(CallableTool2[Params]):
             sniffed = sniff_image_dimensions(data)
             dimensions = (sniffed.width, sniffed.height) if sniffed else None
 
-            if params.region is not None:
+            # Resolve region_pct to pixel coordinates if provided
+            region = params.region
+            if params.region_pct is not None and dimensions is not None:
+                parts = params.region_pct.split(",")
+                if len(parts) == 4:
+                    try:
+                        pct_x, pct_y, pct_w, pct_h = map(float, parts)
+                        orig_w, orig_h = dimensions
+                        region = Region(
+                            x=int(orig_w * pct_x / 100.0),
+                            y=int(orig_h * pct_y / 100.0),
+                            width=max(1, int(orig_w * pct_w / 100.0)),
+                            height=max(1, int(orig_h * pct_h / 100.0)),
+                        )
+                    except (ValueError, ZeroDivisionError):
+                        return ToolError(
+                            message=f"Invalid region_pct '{params.region_pct}'. "
+                            "Format: 'x,y,width,height' with each value 0-100.",
+                            brief="Invalid region_pct",
+                        )
+
+            # Resolve max_edge: use params.max_dimension if set, else model default
+            if params.max_dimension is not None:
+                max_edge = params.max_dimension
+            else:
+                max_edge = resolve_max_image_edge_px()
+            read_byte_budget = resolve_read_image_byte_budget()
+
+            if region is not None:
                 # Explicit crop: read a rectangle of the original back,
                 # typically at full fidelity, so a prior downsampled view
                 # can be zoomed into.
@@ -350,13 +434,13 @@ class ReadMediaFile(CallableTool2[Params]):
                     data,
                     file_type.mime_type,
                     CropRegion(
-                        x=params.region.x,
-                        y=params.region.y,
-                        width=params.region.width,
-                        height=params.region.height,
+                        x=region.x,
+                        y=region.y,
+                        width=region.width,
+                        height=region.height,
                     ),
                     skip_resize=bool(params.full_resolution),
-                    max_edge=resolve_max_image_edge_px(),
+                    max_edge=max_edge,
                 )
                 if not outcome.ok:
                     return ToolError(
@@ -386,9 +470,7 @@ class ReadMediaFile(CallableTool2[Params]):
             elif params.full_resolution:
                 # Native resolution on request — but the provider's
                 # per-image byte ceiling is a hard limit, so refuse
-                # explicitly rather than degrade. Exact byte counts
-                # accompany the rounded sizes: a file a hair over budget
-                # would otherwise read "is 3.8 MB, over the 3.8 MB limit".
+                # explicitly rather than degrade.
                 if len(data) > IMAGE_BYTE_BUDGET:
                     return ToolError(
                         message=_build_full_resolution_limit_error(params.path, len(data)),
@@ -414,8 +496,6 @@ class ReadMediaFile(CallableTool2[Params]):
                 # return the original bytes after a safety guard or codec
                 # failure, so enforce both delivery limits before creating
                 # any model-visible media part.
-                max_edge = resolve_max_image_edge_px()
-                read_byte_budget = resolve_read_image_byte_budget()
                 compressed = compress_image_for_model(
                     data,
                     file_type.mime_type,
@@ -488,6 +568,18 @@ class ReadMediaFile(CallableTool2[Params]):
             dimensions=dimensions,
             delivery=delivery,
         )
+
+        # Prepend delivery summary to output so the model sees it before the image
+        if delivery is not None:
+            preview = (
+                f"[Image: {delivery.kind}, {delivery.width}x{delivery.height}, "
+                f"{delivery.byte_length} bytes]\n"
+            )
+            if isinstance(wrapped, list):
+                wrapped = [TextPart(text=preview)] + wrapped
+            else:
+                wrapped = f"{preview}{wrapped}"
+
         return ToolOk(output=wrapped, message=note)
 
     @override
@@ -555,12 +647,38 @@ class ReadMediaFile(CallableTool2[Params]):
             if file_type.kind == "image" and not is_model_accepted_image_mime(
                 file_type.mime_type
             ):
-                return ToolError(
-                    message=build_image_conversion_guidance(
-                        params.path, file_type.mime_type, self._os_kind()
-                    ),
-                    brief="Unsupported image format",
-                )
+                if params.auto_convert:
+                    # Auto-convert unsupported format to PNG
+                    from PIL import Image as PILImage
+                    import io
+                    try:
+                        full_data = await p.read_bytes()
+                        pil_image = PILImage.open(io.BytesIO(full_data))
+                        converted_buf = io.BytesIO()
+                        pil_image.save(converted_buf, format="PNG")
+                        # Write converted data to a temp file next to the original
+                        converted_path_str = str(p) + ".converted.png"
+                        import anyio
+                        async with await anyio.open_file(converted_path_str, 'wb') as f:
+                            await f.write(converted_buf.getvalue())
+                        p = KaosPath(converted_path_str)
+                        file_type.mime_type = "image/png"
+                        file_type.kind = "image"
+                    except Exception as conv_e:
+                        return ToolError(
+                            message=f"Failed to convert `{params.path}` to PNG: {conv_e}. "
+                            + build_image_conversion_guidance(
+                                params.path, file_type.mime_type, self._os_kind()
+                            ),
+                            brief="Conversion failed",
+                        )
+                else:
+                    return ToolError(
+                        message=build_image_conversion_guidance(
+                            params.path, file_type.mime_type, self._os_kind()
+                        ),
+                        brief="Unsupported image format",
+                    )
             if file_type.kind == "video" and "video_in" not in self._capabilities:
                 return ToolError(
                     message=(

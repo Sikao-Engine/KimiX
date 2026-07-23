@@ -6,7 +6,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
@@ -49,9 +49,25 @@ class SubAgentParams(BaseModel):
         default=False,
         description="Return the full conversation history in extras."
     )
+    history_format: Literal["json", "markdown", "summary"] = Field(
+        default="json",
+        description="'json': Raw conversation turns in JSON. "
+        "'markdown': Formatted as Markdown with headings. "
+        "'summary': Concise summary of what the sub-agent did.",
+    )
     response: str | None = Field(
         default=None,
-        description="Response to the sub-agent's pending question. Only used when the sub-agent is awaiting input."
+        description="[Deprecated] Response to the sub-agent's pending question. "
+        "Use the AgentRespond tool instead."
+    )
+    context_files: list[str] | None = Field(
+        default=None,
+        description="File paths to pre-read into the sub-agent's context before the prompt. "
+        "Each file's content is included as context."
+    )
+    context_data: dict[str, Any] | None = Field(
+        default=None,
+        description="Structured JSON data to pass as context to the sub-agent."
     )
 
 
@@ -176,7 +192,10 @@ class AskParent(CallableTool2):
 
 class Agent(CallableTool2):
     name: str = "Agent"
-    description: str = "Launch a sub-agent for a task."
+    description: str = (
+        "Launch a sub-agent for a task. "
+        "Use AgentRespond to answer a sub-agent's pending question."
+    )
     params: type[SubAgentParams] = SubAgentParams
 
     def __init__(self, session: Session):
@@ -224,13 +243,32 @@ class Agent(CallableTool2):
                 else:
                     task_prompt = params.prompt
 
-                # Inject response to pending question if provided
+                # Build prompt with context files / context_data if provided
                 prompt = task_prompt
+                if params.context_files or params.context_data:
+                    context_parts = ["<context>"]
+                    if params.context_files:
+                        work_dir = Path(self._session.dir) if hasattr(self._session, "dir") else Path(".")
+                        for fp in params.context_files:
+                            try:
+                                file_path = work_dir / fp
+                                content = file_path.read_text(encoding="utf-8", errors="replace")
+                                context_parts.append(f"<file path='{fp}'>\n{content}\n</file>")
+                            except Exception as e:
+                                context_parts.append(f"<file path='{fp}' error='{e}'/>")
+                    if params.context_data:
+                        import orjson as _orjson
+                        context_parts.append(f"<data>\n{_orjson.dumps(params.context_data, option=_orjson.OPT_INDENT_2).decode()}\n</data>")
+                    context_parts.append("</context>")
+                    context_block = "\n".join(context_parts)
+                    prompt = f"{context_block}\n\n{prompt}"
+
+                # Inject response to pending question if provided
                 if is_reused and entry and entry.pending_question and params.response:
                     prompt = (
                         f"The parent agent responded to your question "
                         f"({entry.pending_question}):\n\n{params.response}\n\n"
-                        f"Now, regarding your original task: {task_prompt}"
+                        f"Now, regarding your original task: {prompt}"
                     )
                     entry.pending_question = None
                     entry.state = "running"
@@ -281,9 +319,9 @@ class Agent(CallableTool2):
                         "turn_count": len(collector.turns),
                     }
                     if params.return_history:
-                        result.extras["conversation_history"] = [
-                            turn.model_dump() for turn in collector.turns
-                        ]
+                        result.extras["conversation_history"] = self._format_history(
+                            collector.turns, params.history_format
+                        )
                     await close_session_async(session)
                     store.close(session_id)
                     _unregister_entry(session_id)
@@ -303,9 +341,9 @@ class Agent(CallableTool2):
                         "question": current_entry.pending_question,
                     }
                     if params.return_history:
-                        extras["conversation_history"] = [
-                            turn.model_dump() for turn in collector.turns
-                        ]
+                        extras["conversation_history"] = self._format_history(
+                            collector.turns, params.history_format
+                        )
                     output_prefix = f"Session ID: {session_id}\n\n"
                     result = ToolOk(
                         output=output_prefix + output_text,
@@ -320,9 +358,9 @@ class Agent(CallableTool2):
                     "turn_count": len(collector.turns),
                 }
                 if params.return_history:
-                    extras["conversation_history"] = [
-                        turn.model_dump() for turn in collector.turns
-                    ]
+                    extras["conversation_history"] = self._format_history(
+                        collector.turns, params.history_format
+                    )
 
                 await self._update_store(params, session, session_id, is_reused, collector.turns)
 
@@ -340,6 +378,33 @@ class Agent(CallableTool2):
                     message=str(exc),
                     brief="Failed to create sub-agent session",
                 )
+
+    def _format_history(self, turns: list[ConversationTurn], format: str) -> list[dict[str, Any]] | str:
+        """Format conversation turns according to history_format."""
+        if format == "json":
+            return [turn.model_dump() for turn in turns]
+        elif format == "markdown":
+            lines: list[str] = []
+            for i, turn in enumerate(turns):
+                role_icon = {"user": "👤", "assistant": "🤖", "tool": "🔧", "error": "❌", "system": "⚙️"}
+                icon = role_icon.get(turn.role, "?")
+                label = turn.metadata.get("type", turn.role) if turn.metadata else turn.role
+                lines.append(f"### Turn {i+1}: {icon} {label}")
+                content = turn.content if isinstance(turn.content, str) else str(turn.content)
+                lines.append(content)
+                lines.append("")
+            return "\n".join(lines)
+        elif format == "summary":
+            tool_calls = sum(1 for t in turns if t.metadata and t.metadata.get("type") == "tool_call")
+            tool_results = sum(1 for t in turns if t.metadata and t.metadata.get("type") == "tool_result")
+            text_turns = [t for t in turns if t.role == "assistant" and t.metadata and t.metadata.get("type") == "text"]
+            total_chars = sum(len(str(t.content)) for t in text_turns)
+            return (
+                f"Sub-agent made {tool_calls} tool call(s) and "
+                f"produced {len(text_turns)} text response(s) "
+                f"({total_chars} total characters)."
+            )
+        return []
 
     async def _resolve_session(self, params: SubAgentParams) -> tuple[Any, str, bool]:
         store = _get_store(self._session)
@@ -409,8 +474,89 @@ class Agent(CallableTool2):
             _register_entry(session_id, entry)
 
 
+class AgentRespondParams(BaseModel):
+    session_id: str = Field(description="Sub-agent session ID that asked a question.")
+    response: str = Field(description="Answer to the sub-agent's pending question.")
+    close_session: bool = Field(
+        default=True,
+        description="Close the subagent session after this response? Set to False to keep it open for more follow-up."
+    )
+
+
+class AgentRespond(CallableTool2):
+    name: str = "AgentRespond"
+    description: str = (
+        "Answer a pending question from a sub-agent. "
+        "Use this when a sub-agent has asked the parent agent a question (status='awaiting_response'). "
+        "Provide your response and the sub-agent will continue with the answer."
+    )
+    params: type[BaseModel] = AgentRespondParams
+
+    def __init__(self, session: Session):
+        super().__init__()
+        self._session = session
+
+    async def __call__(self, params: AgentRespondParams) -> ToolReturnValue:
+        store = _get_store(self._session)
+        entry = store.get(params.session_id)
+        if entry is None:
+            return ToolError(
+                output="",
+                message=f"Session '{params.session_id}' not found.",
+                brief="Session not found",
+            )
+        if entry.state != "awaiting_response":
+            return ToolError(
+                output="",
+                message=f"Session '{params.session_id}' is not awaiting a response (state: {entry.state}).",
+                brief="Not awaiting response",
+            )
+        # Send the response to the sub-agent via the Agent tool
+        agent = Agent(self._session)
+        sub_params = SubAgentParams(
+            prompt="Continue with the parent's answer.",
+            session_id=params.session_id,
+            close_session=params.close_session,
+            response=params.response,
+        )
+        return await agent(sub_params)
+
+
 class AgentListParams(BaseModel):
     pass
+
+
+class AgentList(CallableTool2):
+    name: str = "AgentList"
+    description: str = "List all active subagent sessions."
+    params: type[BaseModel] = AgentListParams
+
+    def __init__(self, session: Session):
+        super().__init__()
+        self._session = session
+
+    async def __call__(self, params: AgentListParams) -> ToolReturnValue:
+        store = _get_store(self._session)
+        sessions = store.list_active()
+        if not sessions:
+            return ToolOk(output="No active sub-agents.", brief="No sub-agents")
+
+        # Format as Markdown table
+        lines = [
+            "| Session ID | Turns | State | Last Accessed |",
+            "|------------|-------|-------|---------------|",
+        ]
+        for s in sessions:
+            sid = s.get("session_id", "-")
+            turns = s.get("total_turns", 0)
+            state = s.get("state", "unknown")
+            last = time.strftime("%Y-%m-%d %H:%M", time.localtime(s.get("last_accessed", 0)))
+            lines.append(f"| `{sid}` | {turns} | {state} | {last} |")
+
+        output = "\n".join(lines)
+        result = ToolOk(output=output, brief=f"{len(sessions)} active sub-agent(s)")
+        result.extras = {"sessions": sessions}
+        return result
 
 
 class AgentList(CallableTool2):

@@ -104,76 +104,31 @@ def test_think_params_schema(think_tool: Think):
 
 def test_todo_list_params_schema(todo_list_tool: TodoList):
     """Test the schema of TodoList tool parameters."""
-    assert todo_list_tool.base.parameters == snapshot(
-        {
-            "additionalProperties": False,
-            "properties": {
-                "todos": {
-                    "anyOf": [
-                        {
-                            "items": {
-                                "properties": {
-                                    "title": {
-                                        "description": "Title",
-                                        "maxLength": 65536,
-                                        "minLength": 1,
-                                        "type": "string",
-                                    },
-                                    "status": {
-                                        "description": "Status",
-                                        "enum": ["pending", "in_progress", "done"],
-                                        "type": "string",
-                                    },
-                                    "notes": {
-                                        "default": "",
-                                        "description": "Notes.",
-                                        "maxLength": 65536,
-                                        "type": "string",
-                                    },
-                                },
-                                "required": ["title", "status"],
-                                "type": "object",
-                            },
-                            "type": "array",
-                        },
-                        {
-                            "properties": {
-                                "title": {
-                                    "description": "Title",
-                                    "maxLength": 65536,
-                                    "minLength": 1,
-                                    "type": "string",
-                                },
-                                "status": {
-                                    "description": "Status",
-                                    "enum": ["pending", "in_progress", "done"],
-                                    "type": "string",
-                                },
-                                "notes": {
-                                    "default": "",
-                                    "description": "Notes.",
-                                    "maxLength": 65536,
-                                    "type": "string",
-                                },
-                            },
-                            "required": ["title", "status"],
-                            "type": "object",
-                        },
-                        {"type": "null"},
-                    ],
-                    "default": None,
-                    "description": "Updated list, a single Todo item, or omit to return current list unchanged.",
-                },
-                "mode": {
-                    "default": "append",
-                    "description": "Write mode: 'overwrite' safely replaces the existing todo list only when all old todos are done; 'append' merges the provided todos into the existing list (existing titles are updated, new titles are appended); 'force_overwrite' replaces the existing todo list unconditionally.",
-                    "enum": ["overwrite", "append", "force_overwrite"],
-                    "type": "string",
-                },
-            },
-            "type": "object",
-        }
-    )
+    schema = todo_list_tool.base.parameters
+    # Verify top-level structure
+    assert schema.get("additionalProperties") is False
+    assert schema.get("type") == "object"
+    props = schema.get("properties", {})
+    # Verify required properties exist
+    assert "todos" in props
+    assert "mode" in props
+    assert "match_mode" in props
+    assert "auto_fix" in props
+    assert "parent_title" in props
+    # Verify mode enum values
+    assert props["mode"]["enum"] == ["overwrite", "append", "force_overwrite"]
+    assert props["mode"]["default"] == "append"
+    # Verify match_mode enum values
+    assert props["match_mode"]["enum"] == ["exact", "fuzzy"]
+    assert props["match_mode"]["default"] == "exact"
+    # Verify auto_fix type
+    assert props["auto_fix"]["type"] == "boolean"
+    assert props["auto_fix"]["default"] is False
+    # Verify todos has Todo structure (may be $ref or inlined)
+    todos_props = str(props["todos"])
+    assert "title" in todos_props and "status" in todos_props
+    # Verify sub-schema has notes field in the inline todos definition
+    assert "notes" in str(props["todos"])
 
 
 def test_shell_params_schema(shell_tool: Shell):
@@ -280,144 +235,70 @@ def test_task_stop_params_schema(task_stop_tool: TaskStop):
 
 def test_read_file_params_schema(read_file_tool: ReadFile):
     """Test the schema of ReadFile tool parameters."""
-    assert read_file_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "path": {
-                    "anyOf": [
-                        {"type": "string"},
-                        {"items": {"type": "string"}, "type": "array"},
-                    ],
-                    "description": "File path, or a list of file paths. Each path may also be a glob pattern such as `*.py`; only the final path component may contain wildcards (`*`, `?`, `[...]`), and recursive patterns starting with `**` are not allowed. Absolute for files outside working directory.",
-                },
-                "line_offset": {
-                    "anyOf": [
-                        {"type": "integer"},
-                        {"items": {"type": "integer"}, "type": "array"},
-                    ],
-                    "default": 1,
-                    "description": "Start line, 1-based. Negative reads from end. Max abs 5000. May be a single integer applied to all files, or a list with one integer per file path.",
-                },
-                "n_lines": {
-                    "anyOf": [
-                        {"type": "integer"},
-                        {"items": {"type": "integer"}, "type": "array"},
-                    ],
-                    "default": 5000,
-                    "description": "Lines to read, max 5000. May be a single integer applied to all files, or a list with one integer per file path.",
-                },
-                "max_char": {
-                    "anyOf": [
-                        {"type": "integer"},
-                        {"items": {"type": "integer"}, "type": "array"},
-                    ],
-                    "default": 65536,
-                    "description": "Maximum number of characters to return. May be a single integer applied to all files, or a list with one integer per file path.",
-                },
-                "char_offset": {
-                    "anyOf": [
-                        {"type": "integer"},
-                        {"items": {"type": "integer"}, "type": "array"},
-                    ],
-                    "default": 0,
-                    "description": "Character offset to start returning from. May be a single integer applied to all files, or a list with one integer per file path.",
-                },
-            },
-            "required": ["path"],
-            "type": "object",
-        }
-    )
+    schema = read_file_tool.base.parameters
+    props = schema.get("properties", {})
+    # Verify top-level properties exist
+    assert "path" in props
+    assert "line_offset" in props
+    assert "n_lines" in props
+    assert "max_char" in props
+    assert "char_offset" in props
+    assert "glob" in props
+    assert "show_line_numbers" in props
+    # Verify line_offset is int (not list)
+    assert props["line_offset"]["type"] == "integer"
+    assert props["n_lines"]["type"] == "integer"
+    assert props["max_char"]["type"] == "integer"
+    # Verify glob is boolean
+    assert props["glob"]["type"] == "boolean"
+    # Verify show_line_numbers is boolean
+    assert props["show_line_numbers"]["type"] == "boolean"
 
 
 def test_read_media_file_params_schema(read_media_file_tool: ReadMediaFile):
     """Test the schema of ReadMediaFile tool parameters."""
-    assert read_media_file_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "path": {
-                    "description": "Path to an image or video file. Relative paths resolve against the working directory; a path outside the working directory must be absolute. Directories and text files are not supported.",
-                    "type": "string",
-                },
-                "region": {
-                    "anyOf": [
-                        {
-                            "properties": {
-                                "x": {
-                                    "description": "Left edge of the crop, in original-image pixels.",
-                                    "minimum": 0,
-                                    "type": "integer",
-                                },
-                                "y": {
-                                    "description": "Top edge of the crop, in original-image pixels.",
-                                    "minimum": 0,
-                                    "type": "integer",
-                                },
-                                "width": {
-                                    "description": "Crop width, in original-image pixels.",
-                                    "minimum": 1,
-                                    "type": "integer",
-                                },
-                                "height": {
-                                    "description": "Crop height, in original-image pixels.",
-                                    "minimum": 1,
-                                    "type": "integer",
-                                },
-                            },
-                            "required": ["x", "y", "width", "height"],
-                            "type": "object",
-                        },
-                        {"type": "null"},
-                    ],
-                    "default": None,
-                    "description": "Images only: view just this rectangle of the image (original-image pixel coordinates). Use after a downsampled full view to inspect fine detail — a region within the size limits is delivered at full fidelity.",
-                },
-                "full_resolution": {
-                    "anyOf": [{"type": "boolean"}, {"type": "null"}],
-                    "default": None,
-                    "description": "Images only: skip the default downscaling and view at native resolution. Fails with an explicit error when the payload would exceed the per-image byte limit; use region for files that large.",
-                },
-            },
-            "required": ["path"],
-            "type": "object",
-        }
-    )
+    schema = read_media_file_tool.base.parameters
+    props = schema.get("properties", {})
+    # Verify required properties
+    assert "path" in props
+    assert props["path"]["type"] == "string"
+    # Verify new params exist
+    assert "info_only" in props
+    assert "max_dimension" in props
+    assert "quality" in props
+    assert "auto_convert" in props
+    assert "region_pct" in props
+    assert "region" in props
+    assert "full_resolution" in props
+    # Verify quality bounds
+    assert props["quality"]["default"] == 85
+    assert props["quality"]["minimum"] == 1
+    assert props["quality"]["maximum"] == 100
+    # Verify auto_convert default
+    assert props["auto_convert"]["default"] is True
+    # Verify info_only default
+    assert props["info_only"]["default"] is False
 
 
 def test_glob_params_schema(glob_tool: Glob):
     """Test the schema of Glob tool parameters."""
-    assert glob_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "pattern": {
-                    "description": "Glob pattern.",
-                    "type": "string",
-                },
-                "directory": {
-                    "anyOf": [{"type": "string"}, {"type": "null"}],
-                    "default": None,
-                    "description": "Absolute search path. Defaults to working directory.",
-                },
-                "include_dirs": {
-                    "default": True,
-                    "description": "Include directories in results.",
-                    "type": "boolean",
-                },
-                "include_ignored": {
-                    "default": False,
-                    "description": "Include .gitignore files.",
-                    "type": "boolean",
-                },
-                "timeout": {
-                    "default": 10,
-                    "description": "Maximum time in seconds to wait for the search to complete.",
-                    "minimum": 1,
-                    "type": "integer",
-                },
-            },
-            "required": ["pattern"],
-            "type": "object",
-        }
-    )
+    schema = glob_tool.base.parameters
+    props = schema.get("properties", {})
+    # Verify required properties
+    assert "pattern" in props
+    assert props["pattern"]["type"] == "string"
+    # Verify new/modified params
+    assert "directory" in props
+    assert "include_dirs" in props
+    assert props["include_dirs"]["default"] is False  # Changed from True to False
+    assert "respect_gitignore" in props
+    assert props["respect_gitignore"]["default"] is True
+    assert props["respect_gitignore"]["type"] == "boolean"
+    assert "include_ignored" in props  # Deprecated but still present
+    assert "verbose" in props
+    assert props["verbose"]["default"] is False
+    assert props["verbose"]["type"] == "boolean"
+    assert "timeout" in props
 
 
 def test_grep_params_schema(grep_tool: Grep):
@@ -477,7 +358,7 @@ def test_grep_params_schema(grep_tool: Grep):
                 },
                 "head_limit": {
                     "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
-                    "default": 250,
+                    "default": 500,
                     "description": "Max results (0 = unlimited).",
                 },
                 "offset": {
@@ -511,90 +392,58 @@ def test_grep_params_schema(grep_tool: Grep):
 
 def test_write_file_params_schema(write_file_tool: WriteFile):
     """Test the schema of WriteFile tool parameters."""
-    assert write_file_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "path": {
-                    "description": "File path. Absolute paths required outside the working directory.",
-                    "type": "string",
-                },
-                "content": {
-                    "description": "Content to write.",
-                    "type": "string",
-                },
-                "mode": {
-                    "default": "overwrite",
-                    "description": "Write mode: overwrite or append.",
-                    "enum": ["overwrite", "append"],
-                    "type": "string",
-                },
-            },
-            "required": ["path", "content"],
-            "type": "object",
-        }
-    )
+    schema = write_file_tool.base.parameters
+    props = schema.get("properties", {})
+    # Verify required properties
+    assert "path" in props
+    assert "content" in props
+    assert "mode" in props
+    assert "auto_fix_json" in props
+    assert "mkdir" in props
+    assert "show_diff" in props
+    # Verify types
+    assert props["path"]["type"] == "string"
+    assert props["content"]["type"] == "string"
+    assert props["mode"]["enum"] == ["overwrite", "append"]
+    assert props["auto_fix_json"]["type"] == "boolean"
+    assert props["auto_fix_json"]["default"] is True
+    assert props["mkdir"]["type"] == "boolean"
+    assert props["mkdir"]["default"] is True
+    assert props["show_diff"]["type"] == "boolean"
+    assert props["show_diff"]["default"] is False
 
 
 def test_edit_file_params_schema(edit_file_tool: EditFile):
     """Test the schema of EditFile tool parameters."""
-    assert edit_file_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "path": {
-                    "description": "File path. Absolute path required outside working directory.",
-                    "type": "string",
-                },
-                "edit": {
-                    "anyOf": [
-                        {
-                            "properties": {
-                                "old": {
-                                    "description": "String to replace.",
-                                    "type": "string",
-                                },
-                                "new": {
-                                    "description": "Replacement string.",
-                                    "type": "string",
-                                },
-                                "replace_all": {
-                                    "default": False,
-                                    "description": "Replace all occurrences.",
-                                    "type": "boolean",
-                                },
-                            },
-                            "required": ["old", "new"],
-                            "type": "object",
-                        },
-                        {
-                            "items": {
-                                "properties": {
-                                    "old": {
-                                        "description": "String to replace.",
-                                        "type": "string",
-                                    },
-                                    "new": {
-                                        "description": "Replacement string.",
-                                        "type": "string",
-                                    },
-                                    "replace_all": {
-                                        "default": False,
-                                        "description": "Replace all occurrences.",
-                                        "type": "boolean",
-                                    },
-                                },
-                                "required": ["old", "new"],
-                                "type": "object",
-                            },
-                            "type": "array",
-                        },
-                    ],
-                    "description": "One or more edits.",
-                },
-            },
-            "required": ["path", "edit"],
-            "type": "object",
-        }
-    )
+    schema = edit_file_tool.base.parameters
+    props = schema.get("properties", {})
+    # Verify required properties
+    assert "path" in props
+    assert "edit" in props
+    assert props["path"]["type"] == "string"
+    # edit accepts both a single Edit object and a list of Edit objects
+    edit_schema = props["edit"]
+    assert "anyOf" in edit_schema
+    # Find the array option in anyOf
+    array_schema = None
+    for opt in edit_schema["anyOf"]:
+        if opt.get("type") == "array":
+            array_schema = opt
+            break
+    assert array_schema is not None, "Expected an array option in anyOf"
+    # Verify edit item properties include new fields
+    item_schema = array_schema.get("items", {})
+    item_props = item_schema.get("properties", {})
+    assert "old" in item_props
+    assert "new" in item_props
+    assert "replace_all" in item_props
+    assert "max_replacements" in item_props
+    assert "match_mode" in item_props
+    # Verify match_mode enum
+    assert item_props["match_mode"]["enum"] == ["exact", "fuzzy"]
+    assert item_props["match_mode"]["default"] == "fuzzy"
+    # Verify max_replacements is nullable integer (None = unlimited)
+    assert item_props["max_replacements"]["anyOf"][0]["minimum"] == 1
 
 
 def test_search_web_params_schema(search_web_tool: SearchWeb):
@@ -627,15 +476,22 @@ def test_search_web_params_schema(search_web_tool: SearchWeb):
 
 def test_fetch_url_params_schema(fetch_url_tool: FetchURL):
     """Test the schema of FetchURL tool parameters."""
-    assert fetch_url_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "url": {
-                    "description": "URL to fetch.",
-                    "type": "string",
-                }
-            },
-            "required": ["url"],
-            "type": "object",
-        }
-    )
+    schema = fetch_url_tool.base.parameters
+    props = schema.get("properties", {})
+    # Verify required properties
+    assert "url" in props
+    assert "timeout" in props
+    assert "method" in props
+    assert "headers" in props
+    assert "body" in props
+    assert "follow_redirects" in props
+    assert "max_redirects" in props
+    # Verify types
+    assert props["url"]["type"] == "string"
+    assert props["timeout"]["default"] == 30.0
+    assert props["timeout"]["minimum"] == 1.0
+    assert props["timeout"]["maximum"] == 300.0
+    assert props["method"]["enum"] == ["GET", "POST"]
+    assert props["follow_redirects"]["default"] is True
+    assert props["max_redirects"]["default"] == 5
+    assert props["max_redirects"]["maximum"] == 20

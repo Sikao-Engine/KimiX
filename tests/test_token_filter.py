@@ -290,7 +290,7 @@ async def test_token_filter_ansi_stripped_before_dedup():
 def test_powershell_params_new_fields_defaults():
     from kimix.tools.file.bash.pwsh_tool import PowershellParams
     p = PowershellParams(cmd="echo hi")
-    assert p.token_kill is True
+    assert p.deduplicate_output is True
     assert p.max_lines is None
 
 
@@ -304,14 +304,14 @@ def test_powershell_params_max_lines_min():
 def test_bash_params_new_fields():
     from kimix.tools.file.bash.bash_tool import BashParams
     p = BashParams(cmd="echo hi", token_kill=False, max_lines=50)
-    assert p.token_kill is False
+    assert p.deduplicate_output is False
     assert p.max_lines == 50
 
 
 def test_run_params_new_fields():
     from kimix.tools.file.run import RunParams
     p = RunParams(command="echo hi", token_kill=False, max_lines=50)
-    assert p.token_kill is False
+    assert p.deduplicate_output is False
     assert p.max_lines == 50
 
 

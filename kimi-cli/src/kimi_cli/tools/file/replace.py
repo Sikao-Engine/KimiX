@@ -2,12 +2,12 @@ import asyncio
 import contextlib
 from pathlib import Path
 from stat import S_ISREG
-from typing import override
+from typing import Any, Literal, override
 
 import json_repair
 from kaos.path import KaosPath
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from rapidfuzz import fuzz, process
 
 from kimi_cli.session import Session
@@ -39,7 +39,21 @@ _BASE_DESCRIPTION = "Replace strings in text files."
 class Edit(BaseModel):
     old: str = Field(description="String to replace.")
     new: str = Field(description="Replacement string.")
-    replace_all: bool = Field(description="Replace all occurrences.", default=False)
+    replace_all: bool = Field(
+        default=False,
+        description="Replace all occurrences. When False, only the first occurrence is replaced.",
+    )
+    max_replacements: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum number of occurrences to replace when replace_all=True. "
+        "None means unlimited.",
+    )
+    match_mode: Literal["exact", "fuzzy"] = Field(
+        default="fuzzy",
+        description="'exact': Only replace literal matches of `old`. "
+        "'fuzzy': Use fuzzy matching when exact match fails (may match similar text).",
+    )
 
 
 class Params(BaseModel):
@@ -47,8 +61,18 @@ class Params(BaseModel):
         description="File path. Absolute path required outside working directory."
     )
     edit: Edit | list[Edit] = Field(
-        description="One or more edits."
+        description="One or more edits to apply, in order."
     )
+
+    @field_validator("edit", mode="before")
+    @classmethod
+    def _normalize_edit(cls, v: Any) -> list[dict]:
+        """Auto-wrap a single Edit dict into a list for backward compat."""
+        if isinstance(v, dict):
+            return [v]
+        if isinstance(v, Edit):
+            return [v.model_dump()]
+        return v
 
 class EditFile(CallableTool2[Params]):
     name: str = "EditFile"
@@ -221,18 +245,38 @@ class EditFile(CallableTool2[Params]):
         norm_new = self._normalize_line_endings(edit.new)
 
         if edit.replace_all:
-            count = norm_content.count(norm_old)
-            if count == 0:
-                suggestion = self._find_similar(edit.old, content)
-                return content, 0, suggestion
-            return norm_content.replace(norm_old, norm_new), count, None
+            if edit.max_replacements is not None:
+                # Replace only first max_replacements occurrences
+                count = 0
+                result = norm_content
+                while count < edit.max_replacements:
+                    idx = result.find(norm_old)
+                    if idx == -1:
+                        break
+                    result = result[:idx] + norm_new + result[idx + len(norm_old):]
+                    count += 1
+                if count == 0:
+                    suggestion = self._find_similar(edit.old, content) if edit.match_mode == "fuzzy" else None
+                    return content, 0, suggestion
+                return result, count, None
+            else:
+                count = norm_content.count(norm_old)
+                if count == 0:
+                    suggestion = self._find_similar(edit.old, content) if edit.match_mode == "fuzzy" else None
+                    return content, 0, suggestion
+                return norm_content.replace(norm_old, norm_new), count, None
 
         # Single replacement with normalized line endings
         idx = norm_content.find(norm_old)
         if idx != -1:
             return norm_content.replace(norm_old, norm_new, 1), 1, None
 
-        # Exact match failed — try strip match (ignores leading/trailing spaces)
+        # Exact match failed — if match_mode="exact", return suggestion without fuzzy fallback
+        if edit.match_mode == "exact":
+            suggestion = self._find_similar(edit.old, content)
+            return content, 0, suggestion
+
+        # Fuzzy mode: try strip match (ignores leading/trailing spaces)
         stripped = self._try_strip_match(content, edit.old, edit.new)
         if stripped is not None:
             return stripped, 1, None
@@ -245,7 +289,9 @@ class EditFile(CallableTool2[Params]):
             new_content = norm_content.replace(
                 self._normalize_line_endings(matched_text), norm_new, 1
             )
-            return new_content, 1, None
+            # Return score info via suggestion field for logging
+            suggestion = f"fuzzy-matched at {score:.0f}%: '{matched_text[:80]}'"
+            return new_content, 1, suggestion
 
         # No match at all — return suggestion for error message
         suggestion = self._find_similar(edit.old, content)
@@ -296,7 +342,7 @@ class EditFile(CallableTool2[Params]):
             content = await p.read_text(errors="replace")
 
             original_content = content
-            edits = [params.edit] if isinstance(params.edit, Edit) else params.edit
+            edits = params.edit
 
             def _work() -> tuple[str, int, str | None]:
                 text = content
@@ -320,6 +366,14 @@ class EditFile(CallableTool2[Params]):
                     message=msg,
                     brief="No replacements made",
                 )
+
+            # Build result message with fuzzy match info if applicable
+            result_msg_parts = [
+                f"{'[out of work-dir] ' if _outside else ''}File successfully edited. "
+                f"Applied {len(edits)} edit(s) with {total_replacements} total replacement(s)."
+            ]
+            if suggestion and "fuzzy-matched" in suggestion:
+                result_msg_parts.append(f" ({suggestion})")
 
             diff_blocks: list[DisplayBlock] = await build_diff_blocks(
                 str(logical_path), original_content, new_content
@@ -384,10 +438,7 @@ class EditFile(CallableTool2[Params]):
             return ToolReturnValue(
                 is_error=False,
                 output="",
-                message=(
-                    f"{'[out of work-dir] ' if _outside else ''}File successfully edited. "
-                    f"Applied {len(edits)} edit(s) with {total_replacements} total replacement(s)."
-                ),
+                message="".join(result_msg_parts),
                 display=[],
             )
 

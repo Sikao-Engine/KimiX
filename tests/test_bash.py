@@ -201,7 +201,9 @@ class TestBashParams:
     def test_defaults(self) -> None:
         p = BashParams(cmd="ls")
         assert p.cmd == "ls"
-        assert p.timeout == 10
+        assert p.timeout == 30
+        assert p.deduplicate_output is True
+        assert p.mode == "execute"
 
     def test_full(self) -> None:
         p = BashParams(cmd="cat -n file.txt", timeout=30)
@@ -209,12 +211,41 @@ class TestBashParams:
         assert p.timeout == 30
 
     def test_timeout_min(self) -> None:
-        with pytest.raises(Exception):
-            BashParams(cmd="ls", timeout=1)
+        # timeout=1 is now valid (ge=1)
+        p = BashParams(cmd="ls", timeout=1)
+        assert p.timeout == 1
 
     def test_timeout_max(self) -> None:
         with pytest.raises(Exception):
             BashParams(cmd="ls", timeout=901)
+
+    def test_accepts_command_alias(self) -> None:
+        p = BashParams(command="echo hello")
+        assert p.cmd == "echo hello"
+
+    def test_mode_send_requires_task_id(self) -> None:
+        with pytest.raises(ValueError, match="task_id"):
+            BashParams(cmd="hi", mode="send")
+
+    def test_mode_send_with_task_id_succeeds(self) -> None:
+        p = BashParams(cmd="hi", task_id="bash_0")
+        # _infer_mode should auto-set mode to "send"
+        assert p.mode == "send"
+        assert p.task_id == "bash_0"
+
+    def test_deduplicate_output_accepts_token_kill_alias(self) -> None:
+        p = BashParams(cmd="ls", token_kill=False)
+        assert p.deduplicate_output is False
+
+    def test_deduplicate_output_default_true(self) -> None:
+        p = BashParams(cmd="ls")
+        assert p.deduplicate_output is True
+
+    def test_max_lines_field(self) -> None:
+        p = BashParams(cmd="ls", max_lines=50)
+        assert p.max_lines == 50
+        p2 = BashParams(cmd="ls", max_lines=None)
+        assert p2.max_lines is None
 
 
 # ============================================================================
@@ -952,6 +983,52 @@ class TestBashInactivityTimeout:
     not PWSH_AVAILABLE,
     reason="PowerShell tool is not available on this platform",
 )
+class TestPowershellParams:
+    """Tests for PowershellParams model."""
+
+    def test_defaults(self) -> None:
+        p = PowershellParams(cmd="Get-ChildItem")
+        assert p.cmd == "Get-ChildItem"
+        assert p.timeout == 30
+        assert p.deduplicate_output is True
+        assert p.mode == "execute"
+
+    def test_accepts_command_alias(self) -> None:
+        p = PowershellParams(command="Get-ChildItem")
+        assert p.cmd == "Get-ChildItem"
+
+    def test_mode_send_requires_task_id(self) -> None:
+        with pytest.raises(ValueError, match="task_id"):
+            PowershellParams(cmd="hi", mode="send")
+
+    def test_mode_send_with_task_id_succeeds(self) -> None:
+        p = PowershellParams(cmd="hi", task_id="pwsh_0")
+        assert p.mode == "send"
+        assert p.task_id == "pwsh_0"
+
+    def test_deduplicate_output_accepts_token_kill_alias(self) -> None:
+        p = PowershellParams(cmd="ls", token_kill=False)
+        assert p.deduplicate_output is False
+
+    def test_deduplicate_output_default_true(self) -> None:
+        p = PowershellParams(cmd="ls")
+        assert p.deduplicate_output is True
+
+    def test_max_lines_field(self) -> None:
+        p = PowershellParams(cmd="ls", max_lines=50)
+        assert p.max_lines == 50
+        p2 = PowershellParams(cmd="ls", max_lines=None)
+        assert p2.max_lines is None
+
+    def test_timeout_min(self) -> None:
+        p = PowershellParams(cmd="ls", timeout=1)
+        assert p.timeout == 1
+
+    def test_timeout_max(self) -> None:
+        with pytest.raises(Exception):
+            PowershellParams(cmd="ls", timeout=901)
+
+
 class TestPowershellInactivityTimeout:
     async def test_pwsh_inactivity_timeout_returns_background_error(
         self, mock_session: MagicMock

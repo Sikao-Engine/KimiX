@@ -3,7 +3,7 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import anyio
 import regex as re
@@ -27,33 +27,42 @@ if TYPE_CHECKING:
 class Params(BaseModel):
     code: str = Field(
         default="",
-        description="Python code to execute, or path to a .py file to run directly.",
+        description=(
+            "Inline Python code to execute. Mutually exclusive with `file`. "
+            "When `file` is not set and `code` ends with '.py' and the file exists, "
+            "it is treated as a file path (deprecated — use `file` explicitly)."
+        ),
+    )
+    file: str | None = Field(
+        default=None,
+        description="Path to a .py file to run. Mutually exclusive with `code`.",
     )
     output_path: str | None = Field(
         default=None,
         description="Output file path."
     )
     timeout: int = Field(
-        default=10,
-        ge=3,
+        default=30,
+        ge=1,
         le=900,
-        description="Timeout in seconds."
+        description="Timeout in seconds (1-900)."
     )
+    mode: Literal["run", "background", "interactive"] = Field(
+        default="run",
+        description=(
+            "'run': Execute code and wait for completion (default). "
+            "'background': Execute code in background, return immediately with task_id. "
+            "'interactive': Start a persistent Python REPL, return task_id for further input."
+        ),
+    )
+    # Deprecated boolean aliases for mode
     run_in_background: bool = Field(
         default=False,
-        description=(
-            "Run the Python code in the background and return immediately. "
-            "Use this for one-shot background execution (no stdin interaction). "
-            "For persistent interactive sessions, use interactive=True + task_id."
-        )
+        description="[Deprecated] Use mode='background' instead.",
     )
     interactive: bool = Field(
         default=False,
-        description=(
-            "Run Python interactively. The process stays alive and accepts "
-            "further input via task_id. Returns a task_id immediately; "
-            "use TaskOutput to read output."
-        ),
+        description="[Deprecated] Use mode='interactive' instead.",
     )
     task_id: str | None = Field(
         default=None,
@@ -74,12 +83,49 @@ class Params(BaseModel):
         ge=3,
         description="Max lines to return via head+tail fold. <N> head lines + <N> tail lines kept; middle collapsed. None = unlimited.",
     )
+    deduplicate_output: bool = Field(
+        default=True,
+        alias="token_kill",  # backward compat with shell tools
+        description="Deduplicate repeated output lines from known commands (pytest, ruff, etc.). "
+                    "Set to False to see raw, unfiltered output.",
+    )
+    venv: str | None = Field(
+        default=None,
+        description=(
+            "Path to a Python virtual environment directory. "
+            "If provided, the venv's python executable is used instead of the system python. "
+            "Example: '.venv' or 'myproject/.venv'."
+        ),
+    )
+    pip_install: list[str] | None = Field(
+        default=None,
+        description=(
+            "List of pip packages to install before execution. "
+            "Uses the venv's pip if `venv` is set, otherwise the system pip. "
+            "Example: ['requests', 'numpy>=1.21']."
+        ),
+    )
 
     @model_validator(mode="after")
-    def _validate_code(self) -> "Params":
-        if self.task_id is None and not self.interactive and not self.code:
-            raise ValueError("code cannot be empty unless interactive=True")
-        if self.task_id is not None and not self.code:
+    def _normalize_mode(self) -> "Params":
+        """Convert deprecated boolean flags to mode string."""
+        if self.interactive and self.run_in_background:
+            raise ValueError("Cannot set both interactive=True and run_in_background=True")
+        if self.interactive:
+            object.__setattr__(self, 'mode', 'interactive')
+        elif self.run_in_background:
+            object.__setattr__(self, 'mode', 'background')
+        return self
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> "Params":
+        has_code = bool(self.code)
+        has_file = self.file is not None
+        if has_code and has_file:
+            raise ValueError("Specify either `code` or `file`, not both.")
+        if not has_code and not has_file and self.task_id is None and self.mode != "interactive":
+            raise ValueError("Either `code` or `file` must be provided (unless interactive=True or task_id is set).")
+        if self.task_id is not None and not has_code:
             raise ValueError("code cannot be empty when continuing a session via task_id")
         return self
 
@@ -88,6 +134,18 @@ class Python(CallableTool2[Params]):
     name: str = "Python"
     description: str = (
         "Execute Python code or run a .py file directly. "
+        "Use `code` for inline Python code, or `file` to run an existing .py file. "
+        "Use `venv` to specify a virtual environment directory. "
+        "Output longer than `max_lines` is collapsed via head+tail fold (first N + last N lines, "
+        "with middle replaced by a truncation marker). Set `max_lines=None` for unlimited output. "
+        "Set `deduplicate_output=False` (or `token_kill=False`) to disable deduplication of repeated "
+        "output lines from known commands (pytest, ruff, mypy, pip, etc.). "
+        "When invoking known CLI tools (pytest, ruff, mypy, pip, uv, git, npm, etc.) via subprocess, "
+        "you can use the \"rtk\" executable to reduce token usage: rtk is a valid binary available on "
+        "PATH with the usage pattern `rtk <process> <arguments...>`. For example: "
+        "subprocess.run([\"rtk\", \"pytest\", \"-v\"]) or subprocess.run(\"rtk pip list\", shell=True). "
+        "rtk automatically deduplicates and truncates the output of the wrapped command."
+        " "
         + _interactive_scope_text(is_shell=False)
     )
     params: type[Params] = Params
@@ -98,40 +156,123 @@ class Python(CallableTool2[Params]):
         self._semaphore = asyncio.Semaphore(8)
         self._script_counter = 0
 
+    def _resolve_python(self, params: Params) -> str:
+        """Resolve the Python executable to use.
+
+        If ``params.venv`` is set, returns the venv's python executable.
+        Otherwise returns ``sys.executable``.
+        """
+        if params.venv:
+            venv_path = Path(params.venv)
+            if sys.platform == "win32":
+                python_exe = venv_path / "Scripts" / "python.exe"
+            else:
+                python_exe = venv_path / "bin" / "python"
+            if python_exe.is_file():
+                return str(python_exe)
+            raise ValueError(f"Venv python not found at {python_exe}")
+        return sys.executable
+
+    async def _maybe_pip_install(self, params: Params) -> ToolError | None:
+        """Pre-execution pip install hook.
+
+        If ``params.pip_install`` is set, runs pip install before the
+        main Python execution. Returns a ``ToolError`` on failure or
+        ``None`` on success (or when no packages are requested).
+        """
+        if not params.pip_install:
+            return None
+        try:
+            python_exe = self._resolve_python(params)
+            pip_args = [python_exe, "-m", "pip", "install", "--quiet"] + params.pip_install
+            proc = await asyncio.create_subprocess_exec(
+                *pip_args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                err_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+                return ToolError(
+                    output=err_text,
+                    message=f"pip install failed with code {proc.returncode}.",
+                    brief="pip install failed",
+                )
+        except Exception as e:
+            return ToolError(
+                output="",
+                message=f"pip install failed: {e}",
+                brief="pip install error",
+            )
+        return None
+
+    def _resolve_script_source(self, params: Params) -> tuple[str | None, bool]:
+        """Resolve the script source from params.
+
+        Priority:
+          1. ``params.file`` — explicit file path (always treated as file mode).
+          2. ``params.code`` ending with ``.py`` and existing file — auto-detected
+             file path (deprecated, emits warning).
+          3. ``params.code`` — inline code, written to a temp file.
+
+        Returns ``(script_path, is_file_mode)`` where ``is_file_mode`` is True
+        when the source is an existing file (not inline code).
+        """
+        # Priority 1: explicit file param
+        if params.file is not None:
+            return params.file, True
+
+        if not params.code:
+            return None, False
+
+        # Priority 2: legacy auto-detection (deprecated)
+        code_path = Path(params.code)
+        if params.code.endswith('.py') and code_path.is_file():
+            import warnings
+            warnings.warn(
+                "Auto-detecting .py files from `code` parameter is deprecated. "
+                "Use `file` parameter instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return params.code, True
+
+        # Priority 3: inline code — write to a temp file
+        session_dir = Path(self._session.dir)
+        script_name = f"{self._script_counter}.py"
+        script_path = str(session_dir / script_name)
+        self._script_counter += 1
+        # Write is done synchronously because we need the path before async ops
+        session_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / script_name).write_text(params.code, encoding='utf-8')
+        return script_path, False
+
     async def __call__(self, params: Params) -> ToolReturnValue:
         # Early dispatch: continue an existing session
         if params.task_id is not None:
             return await self._continue_session(params)
 
-        async with self._semaphore:
-            # Interactive mode path
-            if params.interactive:
-                return await self._start_interactive(params)
+        # Pre-execution: pip install if requested
+        pip_error = await self._maybe_pip_install(params)
+        if pip_error is not None:
+            return pip_error
 
-            # Non-interactive path — execute code and wait for completion
-            return await self._execute_code(params)
+        async with self._semaphore:
+            if params.mode == "interactive":
+                return await self._start_interactive(params)
+            elif params.mode == "background":
+                # Execute in background mode
+                return await self._execute_code(params, background=True)
+            else:
+                return await self._execute_code(params, background=False)
 
     async def _start_interactive(self, params: Params) -> ToolReturnValue:
         """Start an interactive Python session."""
-        # Determine script path if code is provided
-        if params.code:
-            code_path = Path(params.code)
-            is_file_mode = params.code.endswith('.py') and code_path.is_file()
+        # Determine script path: prefer `file`, then auto-detect from `code`
+        script_path, _ = self._resolve_script_source(params)
 
-            if is_file_mode:
-                script_path = params.code
-                args = ["-i", script_path]
-            else:
-                # Inline mode: write code to a numbered file
-                session_dir = Path(self._session.dir)
-                script_name = f"{self._script_counter}.py"
-                script_path = str(session_dir / script_name)
-                self._script_counter += 1
-
-                async with await anyio.open_file(script_path, 'w', encoding='utf-8', errors='replace') as f:
-                    await f.write(params.code)
-
-                args = ["-i", script_path]
+        if script_path is not None:
+            args = ["-i", script_path]
         else:
             # Pure interactive REPL (no initial code)
             args = ["-i"]
@@ -140,7 +281,8 @@ class Python(CallableTool2[Params]):
         if isinstance(pattern, ToolError):
             return pattern
 
-        process_task = ProcessTask(sys.executable, args, append_newline=True)
+        python_exe = self._resolve_python(params)
+        process_task = ProcessTask(python_exe, args, append_newline=True)
         task_id = await process_task.start(self._session, "python")
 
         if params.wait_for_pattern is not None and process_task.stream is not None:
@@ -171,36 +313,35 @@ class Python(CallableTool2[Params]):
             brief="Interactive Python started",
         )
 
-    async def _execute_code(self, params: Params) -> ToolReturnValue:
-        """Execute Python code (non-interactive, one-shot)."""
-        # Determine if code is a .py file path or inline code
-        code_path = Path(params.code)
-        is_file_mode = params.code.endswith('.py') and code_path.is_file()
+    async def _execute_code(self, params: Params, background: bool = False) -> ToolReturnValue:
+        """Execute Python code (non-interactive, one-shot).
+
+        Args:
+            params: Tool parameters.
+            background: If True, start the process and return immediately with task_id.
+        """
+        # Resolve script source: `file` param takes priority
+        script_path, is_file_mode = self._resolve_script_source(params)
+        display_script_path = script_path.replace("\\", "/") if script_path else ""
 
         if is_file_mode:
-            # File mode: run the given .py file directly
-            script_path = params.code
-            display_script_path = script_path.replace("\\", "/")
-            args = [script_path]
             source_label = "File"
-        else:
-            # Inline mode: write code to a numbered file in the session directory
-            session_dir = Path(self._session.dir)
-            script_name = f"{self._script_counter}.py"
-            script_path = str(session_dir / script_name)
-            self._script_counter += 1
-
-            async with await anyio.open_file(script_path, 'w', encoding='utf-8', errors='replace') as f:
-                await f.write(params.code)
-
-            display_script_path = script_path.replace("\\", "/")
-            args = [script_path]
+        elif script_path is not None:
             source_label = "Script"
+        else:
+            return ToolError(
+                output="",
+                message="No code or file provided to execute.",
+                brief="Missing code/file",
+            )
 
-        process_task = ProcessTask(sys.executable, args)
+        python_exe = self._resolve_python(params)
+        args = [script_path]
+
+        process_task = ProcessTask(python_exe, args)
         task_id = await process_task.start(self._session, "python")
 
-        if params.run_in_background:
+        if background:
             return ToolOk(
                 output=f"{source_label} saved to `{display_script_path}`. Running in background. task_id: `{task_id}`. Use `TaskOutput` tool to retrieve output.",
                 brief="Background task started"
@@ -374,21 +515,22 @@ class Python(CallableTool2[Params]):
         )
 
     async def _process_output(
-        self, params: Params, output: str
+        self, params: Params, output: str, source_label: str = "Script"
     ) -> tuple[str, str | None, bool, str | None]:
         """Summarize/export long output. Returns (display_output, path, truncated, original_path)."""
         # Run token filter pipeline (dedup, truncate).
-        # Python output does not use RTK, so token_kill=False and rtk_rewritten=False.
+        # Python tool doesn't rewrite commands with RTK binary, so rtk_rewritten=False.
         output, original_path = await _token_filter_output(
             output,
-            token_kill=False,
+            token_kill=params.deduplicate_output,
             max_lines=params.max_lines,
             rtk_rewritten=False,
         )
         output_truncated = False
         if len(output) > 65536:
-            # Use the code itself as the 'command' for summarization context
-            output = await _summarize_long_output_async(self._session, params.code, output)
+            # Use the source (file path or inline code) as context for summarization
+            source_context = params.file if params.file else params.code
+            output = await _summarize_long_output_async(self._session, source_context, output)
             output_truncated = True
         output = await _maybe_export_output_async(output)
         output_path = _extract_export_path(output)

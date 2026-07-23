@@ -173,7 +173,7 @@ class TestCompactParams:
     def test_defaults(self):
         params = CompactParams()
         assert params.instruction is None
-        assert params.mode == CompactMode.RETENTIVE
+        assert params.mode == "auto"  # default resolves dynamically via model_validator
 
     def test_accepts_all_modes(self):
         for mode in CompactMode:
@@ -183,4 +183,4 @@ class TestCompactParams:
     def test_instruction_optional(self):
         params = CompactParams(instruction="Keep the database schema")
         assert params.instruction == "Keep the database schema"
-        assert params.mode == CompactMode.RETENTIVE
+        assert params.mode == "auto"  # default resolves dynamically via model_validator

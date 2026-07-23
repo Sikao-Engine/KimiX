@@ -67,6 +67,20 @@ class Params(BaseModel):
         description="Write mode: overwrite or append.",
         default="overwrite",
     )
+    auto_fix_json: bool = Field(
+        default=True,
+        description="When True (default), attempt to repair broken JSON before writing. "
+        "When False, fail with a format error if JSON is invalid.",
+    )
+    mkdir: bool = Field(
+        default=True,
+        description="When True (default), automatically create parent directories. "
+        "When False, fail if the parent directory does not exist.",
+    )
+    show_diff: bool = Field(
+        default=False,
+        description="When True, include a unified diff in the tool output.",
+    )
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -169,13 +183,22 @@ class WriteFile(CallableTool2[Params]):
                     brief="Path is a directory",
                 )
 
-            try:
-                await p.parent.mkdir(parents=True, exist_ok=True)
-            except OSError as e:
-                return ToolError(
-                    message=f"{'[out of work-dir] ' if _outside else ''}Failed to create parent directory for {display_p}: {e}",
-                    brief="Parent directory not found",
-                )
+            # Create parent directories (or fail if mkdir=False)
+            parent = p.parent
+            if not await parent.exists():
+                if params.mkdir:
+                    try:
+                        await parent.mkdir(parents=True, exist_ok=True)
+                    except OSError as e:
+                        return ToolError(
+                            message=f"{'[out of work-dir] ' if _outside else ''}Failed to create parent directory for {display_p}: {e}",
+                            brief="Parent directory not found",
+                        )
+                else:
+                    return ToolError(
+                        message=f"{'[out of work-dir] ' if _outside else ''}Parent directory does not exist: {parent}. Set mkdir=True to create it.",
+                        brief="Directory not found",
+                    )
 
             old_text = ""
             file_existed = False
@@ -200,8 +223,31 @@ class WriteFile(CallableTool2[Params]):
             elif file_path_str.lower().endswith(".xml"):
                 fmt_error = check_xml_text(new_text)
 
-            # Try to repair broken JSON before building diff
-            if is_json and fmt_error:
+            # Try to repair broken JSON before building diff (if auto_fix_json is enabled)
+            if is_json and fmt_error and params.auto_fix_json:
+                try:
+                    repaired_text = json_repair.repair_json(new_text, return_objects=False)
+                    if repaired_text and repaired_text != new_text:
+                        # Build diff showing the repair
+                        repair_diff_blocks = await build_diff_blocks(
+                            file_path_str, new_text, repaired_text
+                        )
+                        new_text = repaired_text
+                        fmt_error = None
+                        # Store repair diff to report
+                        _repair_diff = repair_diff_blocks
+                    else:
+                        _repair_diff = None
+                except Exception:
+                    _repair_diff = None
+            else:
+                _repair_diff = None
+
+            # Old repair path (unconditional, kept for backward compat when auto_fix_json=True)
+            if is_json and fmt_error and not params.auto_fix_json:
+                pass  # Leave fmt_error as-is so the error is reported below
+            elif is_json and fmt_error:
+                # Also try the old repair path (will be skipped if already repaired)
                 try:
                     repaired_text = json_repair.repair_json(new_text, return_objects=False)
                     if repaired_text:
@@ -267,18 +313,33 @@ class WriteFile(CallableTool2[Params]):
                     message=f"{'[out of work-dir] ' if _outside else ''}File successfully {action_desc}, but {fmt_error} Path: {display_path}",
                     brief="Format validation failed",
                 )
-            # Note: the diff is intentionally NOT attached to the result display.
-            # It was already shown during approval, and the streamed content
-            # argument value is printed live (formatted and colored) by the CLI
-            # printer while the tool call is generated (see kimix.base).
-            # Attaching diff_blocks here would print the written content twice.
+
+            # Build result output
+            result_parts: list[str] = []
+            if params.show_diff:
+                # Include diff in output if requested
+                diff_text = "\n".join(str(b) for b in diff_blocks)
+                if diff_text:
+                    result_parts.append(f"Diff:\n{diff_text}\n")
+            if _repair_diff:
+                repair_text = "\n".join(str(b) for b in _repair_diff)
+                result_parts.append(f"JSON auto-repair diff:\n{repair_text}")
+
+            result_output = "\n".join(result_parts)
+            if result_output:
+                result_output = result_output.rstrip("\n") + "\n"
+
+            message_parts = [
+                f"{'[out of work-dir] ' if _outside else ''}File successfully {action_desc}. "
+                f"Current size: {file_size} bytes. Path: {display_path}"
+            ]
+            if _repair_diff:
+                message_parts.append(" JSON was auto-repaired.")
+
             return ToolReturnValue(
                 is_error=False,
-                output="",
-                message=(
-                    f"{'[out of work-dir] ' if _outside else ''}File successfully {action_desc}. Current size: {file_size} bytes."
-                    f" Path: {display_path}"
-                ),
+                output=result_output,
+                message="".join(message_parts),
                 display=[],
             )
 

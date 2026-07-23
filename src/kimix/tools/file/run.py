@@ -2,13 +2,14 @@
 import anyio
 import asyncio
 from pathlib import Path
+from typing import Literal
 import regex as re
 import shlex
 import sys
 import tempfile
 from kimi_cli.tools import SkipThisTool
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from kimi_cli.session import Session
 from kimix.tools.common import (
     _build_session_output_block,
@@ -73,18 +74,38 @@ def find_bash() -> str | None:
     return None
 
 class RunParams(BaseModel):
+    model_config = {"populate_by_name": True}
+
     command: str = Field(
+        default="",
+        alias="cmd",  # backward compat: old "cmd" still works
         description=(
             "Executable command line. Only real executables / processes are accepted — "
             "No shell syntax (pipes, redirects, &&, ||, variables, etc.). "
-            "Example: `python -c \"print(1)\"` or `git status`."
+            "Example: `python -c \"print(1)\"` or `git status`. "
+            "Accepts `command` or `cmd` parameter."
         )
     )
+    mode: Literal["execute", "send"] = Field(
+        default="execute",
+        description=(
+            "'execute': Run `command` as a direct process (default). "
+            "'send': Send `command` as stdin text to an existing session identified by `task_id`."
+        ),
+    )
+    shell: bool = Field(
+        default=False,
+        description=(
+            "When True, execute `command` through the system shell (bash on Linux/macOS, "
+            "powershell on Windows). Supports pipes, redirects, variables, etc. "
+            "When False (default), execute `command` as a direct process without shell interpretation."
+        ),
+    )
     timeout: int = Field(
-        default=10,
-        ge=3,
+        default=30,
+        ge=1,
         le=900,
-        description="Timeout in seconds."
+        description="Timeout in seconds (1-900)."
     )
     output_path: str | None = Field(
         default=None,
@@ -121,16 +142,56 @@ class RunParams(BaseModel):
         ge=3,
         description="Max lines to return via head+tail fold. <N> head lines + <N> tail lines kept; middle collapsed. None = unlimited.",
     )
-    token_kill: bool = Field(
+    deduplicate_output: bool = Field(
         default=True,
-        description="Run known commands through token killer when available.",
+        alias="token_kill",  # backward compat
+        description="Deduplicate repeated output lines from known commands (git, npm, etc.). "
+                    "Set to False to see raw, unfiltered output.",
     )
+
+    @model_validator(mode="after")
+    def _infer_mode(self) -> "RunParams":
+        """Backward compat: when task_id is set but mode is default 'execute', auto-switch to 'send'."""
+        if self.task_id is not None and self.mode == "execute":
+            object.__setattr__(self, 'mode', 'send')
+        return self
+
+    @model_validator(mode="after")
+    def _validate_cmd(self) -> "RunParams":
+        if self.mode == "execute" and not self.command:
+            raise ValueError("command cannot be empty when mode='execute'")
+        if self.mode == "send":
+            if not self.command:
+                raise ValueError("command cannot be empty when mode='send'")
+            if not self.task_id:
+                raise ValueError("mode='send' requires task_id to identify the target session")
+        if self.task_id is not None and self.mode != "send":
+            raise ValueError("task_id requires mode='send'")
+        return self
+
+
+class Run(CallableTool2[RunParams]):
+    @model_validator(mode="after")
+    def _validate_cmd(self) -> "RunParams":
+        if self.mode == "execute" and not self.command:
+            raise ValueError("command cannot be empty unless mode='send'")
+        if self.mode == "send":
+            if not self.command:
+                raise ValueError("command cannot be empty when mode='send'")
+            if not self.task_id:
+                raise ValueError("mode='send' requires task_id to identify the target session")
+        if self.task_id is not None and self.mode != "send":
+            raise ValueError("task_id requires mode='send'")
+        return self
 
 
 class Run(CallableTool2[RunParams]):
     name: str = "Run"
     description: str = (
         "Run an executable or bash command. "
+        "Accepts `command` or `cmd` parameter. "
+        "Output longer than `max_lines` is collapsed via head+tail fold (first N + last N lines, "
+        "with middle replaced by a truncation marker). Set `max_lines=None` for unlimited output. "
         + _interactive_scope_text(is_shell=False)
     )
     params: type[RunParams] = RunParams
@@ -163,8 +224,20 @@ class Run(CallableTool2[RunParams]):
 
     async def __call__(self, params: RunParams) -> ToolReturnValue:
         import os
-        if params.task_id is not None:
+
+        # Mode-based dispatch
+        if params.mode == "send":
+            if not params.task_id:
+                return ToolError(
+                    output="",
+                    message="mode='send' requires task_id to identify the target session.",
+                    brief="Missing task_id",
+                )
             return await self._continue_session(params)
+
+        # Shell mode: delegate to Bash or Powershell
+        if params.shell:
+            return await self._run_via_shell(params)
 
         pattern = self._compile_pattern(params.wait_for_pattern)
         if isinstance(pattern, ToolError):
@@ -270,7 +343,7 @@ class Run(CallableTool2[RunParams]):
             rtk_rewritten = False
             rtk_path = _rtk_binary_path()
             if (
-                params.token_kill
+                params.deduplicate_output
                 and rtk_path is not None
                 and _is_known_rtk_command(Path(executable).stem)
                 and executable not in ("rtk", "rtk.exe")
@@ -382,7 +455,7 @@ class Run(CallableTool2[RunParams]):
                 # Apply token filter pipeline (dedup, truncate)
                 output, original_path = await _token_filter_output(
                     output,
-                    token_kill=params.token_kill,
+                    token_kill=params.deduplicate_output,
                     max_lines=params.max_lines,
                     rtk_rewritten=rtk_rewritten,
                 )
@@ -478,6 +551,47 @@ class Run(CallableTool2[RunParams]):
                 except Exception:
                     pass
 
+    async def _run_via_shell(self, params: RunParams) -> ToolReturnValue:
+        """Execute the command via the system shell (bash/pwsh)."""
+        if sys.platform == "win32":
+            from kimix.tools.file.bash.pwsh_tool import Powershell, PowershellParams
+            try:
+                pwsh = Powershell(self._session)
+            except Exception:
+                return ToolError(
+                    output="",
+                    message="PowerShell is not available on this system.",
+                    brief="PowerShell unavailable",
+                )
+            ps_params = PowershellParams(
+                cmd=params.command,
+                timeout=params.timeout,
+                deduplicate_output=params.deduplicate_output,
+                max_lines=params.max_lines,
+                wait_for_pattern=params.wait_for_pattern,
+                interactive=False,
+            )
+            return await pwsh.__call__(ps_params)
+        else:
+            from kimix.tools.file.bash.bash_tool import Bash, BashParams
+            try:
+                bash = Bash(self._session)
+            except Exception:
+                return ToolError(
+                    output="",
+                    message="Bash is not available on this system.",
+                    brief="Bash unavailable",
+                )
+            bash_params = BashParams(
+                cmd=params.command,
+                timeout=params.timeout,
+                deduplicate_output=params.deduplicate_output,
+                max_lines=params.max_lines,
+                wait_for_pattern=params.wait_for_pattern,
+                interactive=False,
+            )
+            return await bash.__call__(bash_params)
+
     def _compile_pattern(self, wait_for_pattern: str | None) -> re.Pattern[str] | ToolError:
         if wait_for_pattern is None:
             return None
@@ -550,7 +664,7 @@ class Run(CallableTool2[RunParams]):
         # Run token filter pipeline (dedup, truncate)
         output, original_path = await _token_filter_output(
             output,
-            token_kill=params.token_kill,
+            token_kill=params.deduplicate_output,
             max_lines=params.max_lines,
             rtk_rewritten=rtk_rewritten,
         )

@@ -55,10 +55,12 @@ async def test_read_image_file(read_media_file_tool: ReadMediaFile, temp_work_di
 
     assert not result.is_error
     assert isinstance(result.output, list)
-    assert len(result.output) == 3
-    assert result.output[0] == TextPart(text=f'<image path="{image_file}">')
-    assert result.output[2] == TextPart(text="</image>")
-    part = result.output[1]
+    # output is [TextPart(preview), TextPart('<image path=...'), ImageURLPart, TextPart('</image>')]
+    assert len(result.output) == 4
+    assert result.output[0].text.startswith("[Image:")
+    assert result.output[1] == TextPart(text=f'<image path="{image_file}">')
+    assert result.output[3] == TextPart(text="</image>")
+    part = result.output[2]
     assert isinstance(part, ImageURLPart)
     assert part.image_url.url.startswith("data:image/png;base64,")
     assert result.message == snapshot(
@@ -80,10 +82,11 @@ async def test_read_extensionless_image_file(
 
     assert not result.is_error
     assert isinstance(result.output, list)
-    assert len(result.output) == 3
-    assert result.output[0] == TextPart(text=f'<image path="{image_file}">')
-    assert result.output[2] == TextPart(text="</image>")
-    part = result.output[1]
+    assert len(result.output) == 4
+    # Index 0 = preview, 1 = <image>, 2 = ImageURLPart, 3 = </image>
+    assert result.output[1] == TextPart(text=f'<image path="{image_file}">')
+    assert result.output[3] == TextPart(text="</image>")
+    part = result.output[2]
     assert isinstance(part, ImageURLPart)
     assert part.image_url.url.startswith("data:image/png;base64,")
     assert result.message == snapshot(
@@ -125,7 +128,8 @@ async def test_untouched_small_image_does_not_claim_downsampling(
 
     assert not result.is_error
     assert "downsampled" not in result.message.lower()
-    part = result.output[1]
+    # media part is at index 2 (index 0 = preview, 1 = <image>, 2 = ImageURLPart)
+    part = result.output[2]
     assert isinstance(part, ImageURLPart)
     assert _part_dimensions(part) == (30, 20)
 
@@ -148,7 +152,7 @@ async def test_read_large_image_is_downsampled(
     assert "The attached image was downsampled to 2000x2000 pixels" in message
     assert "fine detail may be lost" in message
     assert "call ReadMediaFile again with the region parameter" in message
-    part = result.output[1]
+    part = result.output[2]
     assert isinstance(part, ImageURLPart)
     width, height = _part_dimensions(part)
     assert max(width, height) <= 2000
@@ -166,7 +170,7 @@ async def test_read_image_region_at_native_resolution(
     )
 
     assert not result.is_error
-    part = result.output[1]
+    part = result.output[2]
     assert isinstance(part, ImageURLPart)
     assert _part_dimensions(part) == (400, 300)
     message = result.message
@@ -203,7 +207,7 @@ async def test_read_image_full_resolution_served_under_budget(
     result = await read_media_file_tool(Params(path=str(image_file), full_resolution=True))
 
     assert not result.is_error
-    part = result.output[1]
+    part = result.output[2]
     assert isinstance(part, ImageURLPart)
     expected_url = "data:image/png;base64," + base64.b64encode(data).decode("ascii")
     assert part.image_url.url == expected_url
@@ -249,7 +253,7 @@ async def test_read_image_decode_cap_mipmap_fallback(
     # The mipmap fallback should succeed - 100x100 down to ~25x25 fits 100 bytes.
     assert not result.is_error
     assert "downsampled" in result.message
-    part = result.output[1]
+    part = result.output[2]
     assert isinstance(part, ImageURLPart)
 
 
@@ -271,7 +275,7 @@ async def test_large_image_falls_back_to_mipmap(
 
     assert not result.is_error
     assert "downsampled" in result.message
-    part = result.output[1]
+    part = result.output[2]
     assert isinstance(part, ImageURLPart)
     # The mipmap should have shrunk it — output should be ≤ 2000 edge
     url = part.image_url.url
@@ -379,7 +383,7 @@ async def test_read_unsupported_image_format_refused_with_guidance(
     image_file = temp_work_dir / filename
     await image_file.write_bytes(magic)
 
-    result = await read_media_file_tool(Params(path=str(image_file)))
+    result = await read_media_file_tool(Params(path=str(image_file), auto_convert=False))
 
     assert result.is_error
     assert result.brief == "Unsupported image format"

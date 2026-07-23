@@ -43,27 +43,48 @@ class SwarmTask:
     index: int
 
 
-@dataclass
 class SwarmSubagentResult:
     """Result of a single sub-agent task."""
 
-    index: int
-    agent_id: str
-    output: str
-    success: bool
-    error: str | None = None
+    def __init__(
+        self,
+        index: int,
+        agent_id: str,
+        output: str,
+        success: bool,
+        error: str | None = None,
+        elapsed: float | None = None,
+    ):
+        self.index = index
+        self.agent_id = agent_id
+        self.output = output
+        self.success = success
+        self.error = error
+        self.elapsed = elapsed
 
 
 class AgentSwarmParams(BaseModel):
     """Parameters for the AgentSwarm tool."""
 
     description: str = Field(description="Short description of the whole swarm.")
-    subagent_type: Literal["coder", "explore", "plan"] = Field(
+    subagent_type: str = Field(
         default="coder",
-        description="Type of sub-agent to spawn: coder, explore, or plan.",
+        description="Type of sub-agent. Built-in: 'coder', 'explore', 'plan'. "
+        "Custom types can be registered in agent configuration.",
     )
-    prompt_template: str = Field(
-        description="Prompt template that contains the placeholder {{item}}."
+    prompt_template: str | None = Field(
+        default=None,
+        description="Prompt template that contains the placeholder {{item}}. "
+        "Mutually exclusive with prompt_prefix.",
+    )
+    prompt_prefix: str | None = Field(
+        default=None,
+        description="Text to prepend to each item. Alternative to prompt_template. "
+        "Mutually exclusive with prompt_template.",
+    )
+    prompt_suffix: str | None = Field(
+        default=None,
+        description="Text to append after each item. Used with prompt_prefix.",
     )
     items: list[str] = Field(
         default_factory=list,
@@ -82,8 +103,20 @@ class AgentSwarmParams(BaseModel):
         total = len(self.items) + resume_count
         if total > _MAX_SUB_AGENTS:
             raise ValueError(f"Max {_MAX_SUB_AGENTS} sub-agents per swarm.")
-        if "{{item}}" not in self.prompt_template:
-            raise ValueError("prompt_template must contain the placeholder {{item}}.")
+        uses_template = self.prompt_template and "{{item}}" in self.prompt_template
+        uses_prefix = self.prompt_prefix is not None
+        if uses_template and uses_prefix:
+            raise ValueError("Use either prompt_template or prompt_prefix+suffix, not both.")
+        if not uses_template and not uses_prefix:
+            raise ValueError(
+                "prompt_template must contain '{{item}}', or set prompt_prefix. "
+                "For example: prompt_template='Fix errors in {{item}}.'"
+            )
+        if uses_template and "{{item}}" not in self.prompt_template:
+            raise ValueError(
+                "prompt_template must contain '{{item}}'. "
+                "For example: 'Fix all lint errors in {{item}}.'"
+            )
         return self
 
 
@@ -158,7 +191,10 @@ class AgentSwarm(CallableTool2):
             self._session.custom_data.pop("agent_swarm_in_flight", None)
 
     async def _execute(self, params: AgentSwarmParams) -> ToolReturnValue:
-        expanded_prompts = _expand_template(params.prompt_template, params.items)
+        expanded_prompts = _expand_template(
+            params.prompt_template, params.items,
+            prefix=params.prompt_prefix, suffix=params.prompt_suffix,
+        )
         _validate_uniqueness(expanded_prompts)
 
         tasks: list[SwarmTask] = [
@@ -179,8 +215,13 @@ class AgentSwarm(CallableTool2):
         return ToolOk(output=_render_results(results, params.description))
 
 
-def _expand_template(template: str, items: list[str]) -> list[str]:
-    return [template.replace("{{item}}", item) for item in items]
+def _expand_template(template: str | None, items: list[str], prefix: str | None = None, suffix: str | None = None) -> list[str]:
+    if template is not None and "{{item}}" in template:
+        return [template.replace("{{item}}", item) for item in items]
+    elif prefix is not None:
+        suffix_str = suffix or ""
+        return [f"{prefix}{item}{suffix_str}" for item in items]
+    return list(items)
 
 
 def _validate_uniqueness(prompts: list[str]) -> None:
@@ -214,9 +255,10 @@ def _render_results(results: list[SwarmSubagentResult], description: str) -> str
     lines.append("  <subagents>")
     for result in results:
         success_str = "true" if result.success else "false"
+        elapsed_str = f'{result.elapsed:.1f}s' if result.elapsed else '-'
         lines.append(
             f'    <subagent id="{_xml_escape(result.agent_id)}" index="{result.index}" '
-            f'success="{success_str}">'
+            f'success="{success_str}" elapsed="{elapsed_str}">'
         )
         lines.append(f"      <output>{_xml_escape(result.output)}</output>")
         if result.error:
@@ -277,6 +319,7 @@ async def _run_subagent_task(
     session: Session | None = None
     session_id: str | None = task.agent_id
     last_error: Exception | None = None
+    start_time = time.monotonic()
     try:
         session, session_id, task_prompt = await _resolve_subagent_session(
             task, subagent_type, parent_session
@@ -302,11 +345,13 @@ async def _run_subagent_task(
                 output_text = collector.finalize_assistant_turn()
                 if not output_text:
                     output_text = "(no text output)"
+                elapsed = time.monotonic() - start_time
                 return SwarmSubagentResult(
                     index=task.index,
                     agent_id=session_id,
                     output=output_text,
                     success=True,
+                    elapsed=elapsed,
                 )
             except Exception as exc:
                 last_error = exc
@@ -318,12 +363,14 @@ async def _run_subagent_task(
         # Unreachable; satisfies type checker.
         raise last_error or RuntimeError("sub-agent task failed")
     except Exception as exc:
+        elapsed = time.monotonic() - start_time
         return SwarmSubagentResult(
             index=task.index,
             agent_id=session_id or task.agent_id or "unknown",
             output=str(exc),
             success=False,
             error=str(exc),
+            elapsed=elapsed,
         )
     finally:
         if session is not None:

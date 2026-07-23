@@ -38,8 +38,25 @@ def test_params_rejects_too_few_items():
 
 
 def test_params_rejects_missing_placeholder():
-    with pytest.raises(ValueError, match="must contain the placeholder"):
+    with pytest.raises(ValueError, match="prompt_template must contain"):
         AgentSwarmParams(description="test", prompt_template="do it", items=["a", "b"])
+
+
+def test_params_accepts_prompt_prefix():
+    """prompt_prefix + items as alternative to prompt_template."""
+    params = AgentSwarmParams(
+        description="test",
+        prompt_prefix="Please fix: ",
+        items=["file1.py", "file2.py"],
+    )
+    assert params.prompt_prefix == "Please fix: "
+    expanded = _expand_template(None, ["file1.py"], prefix=params.prompt_prefix)
+    assert expanded == ["Please fix: file1.py"]
+
+
+def test_params_rejects_both_template_and_prefix():
+    with pytest.raises(ValueError, match="not both"):
+        AgentSwarmParams(description="test", prompt_template="do {{item}}", prompt_prefix="prefix", items=["a", "b"])
 
 
 def test_params_rejects_too_many_items():
@@ -136,10 +153,12 @@ def test_render_results():
     xml = _render_results(results, "my swarm")
     assert "<agent_swarm_result>" in xml
     assert "my swarm" in xml
-    assert '<subagent id="a1" index="0" success="true">' in xml
-    assert '<subagent id="a2" index="1" success="false">' in xml
+    # Check new elapsed attribute
+    assert 'elapsed="-"' in xml
+    assert 'success="true"' in xml
+    assert 'success="false"' in xml
     assert "bad &lt;value&gt;" in xml
-    assert "<resume_hint>" in xml
+    assert "err" in xml
 
 
 # ---------------------------------------------------------------------------

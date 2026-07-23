@@ -41,90 +41,85 @@ class Params(BaseModel):
     path: str | list[str] = Field(
         description=(
             "File path, or a list of file paths. "
-            "Each path may also be a glob pattern such as `*.py`; only the final "
-            "path component may contain wildcards (`*`, `?`, `[...]`), and "
-            "recursive patterns starting with `**` are not allowed. "
+            "When `glob=True`, the final path component may contain wildcards "
+            "(`*`, `?`, `[...]`), and recursive patterns starting with `**` are not allowed. "
             "Absolute for files outside working directory."
         )
     )
-    line_offset: int | list[int] = Field(
+    line_offset: int = Field(
+        default=1,
         description=(
             "Start line, 1-based. Negative reads from end. "
-            f"Max abs {MAX_LINES}. May be a single integer applied to all files, "
-            "or a list with one integer per file path."
+            f"Max abs {MAX_LINES}. Applies to all files in multi-file reads."
         ),
-        default=1,
     )
-    n_lines: int | list[int] = Field(
+    n_lines: int = Field(
+        default=MAX_LINES,
         description=(
             f"Lines to read, max {MAX_LINES}. "
-            "May be a single integer applied to all files, "
-            "or a list with one integer per file path."
+            "Applies to all files in multi-file reads."
         ),
-        default=MAX_LINES,
     )
-    max_char: int | list[int] = Field(
+    max_char: int = Field(
+        default=16000,
         description=(
             "Maximum number of characters to return. "
-            "May be a single integer applied to all files, "
-            "or a list with one integer per file path."
+            "Applies to all files in multi-file reads. "
+            "Default 16K balances completeness with context efficiency."
         ),
-        default=65536,
     )
-    char_offset: int | list[int] = Field(
+    char_offset: int = Field(
+        default=0,
         description=(
             "Character offset to start returning from. "
-            "May be a single integer applied to all files, "
-            "or a list with one integer per file path."
+            "Applies to all files in multi-file reads."
         ),
-        default=0,
+    )
+    glob: bool = Field(
+        default=False,
+        description=(
+            "When True, treat `path` as a glob pattern (e.g., '*.py', 'src/**/*.ts'). "
+            "When False (default), treat `path` as a literal file path."
+        ),
+    )
+    show_line_numbers: bool = Field(
+        default=True,
+        description=(
+            "When True (default), prefix each line with its line number "
+            "(e.g., '    42\\tcontent'). "
+            "When False, return raw content without line numbers."
+        ),
     )
 
     @model_validator(mode="after")
     def _validate(self) -> "Params":
         n = len(self.path) if isinstance(self.path, list) else 1
 
-        fields: list[tuple[str, int | list[int], int]] = [
+        if n > MAX_FILES:
+            raise ValueError(f"Cannot read more than {MAX_FILES} files in one call.")
+
+        fields: list[tuple[str, int, int]] = [
             ("line_offset", self.line_offset, -MAX_LINES),
             ("n_lines", self.n_lines, 1),
             ("max_char", self.max_char, 0),
             ("char_offset", self.char_offset, 0),
         ]
         for name, value, min_value in fields:
-            if isinstance(value, list):
-                if len(value) != n:
+            if name == "line_offset":
+                if value == 0:
                     raise ValueError(
-                        f"{name} list length ({len(value)}) must match "
-                        f"path list length ({n})."
+                        f"{name} cannot be 0; use 1 for the first line "
+                        "or -1 for the last line"
                     )
-                values = value
-            else:
-                values = [value]
-            for i, v in enumerate(values):
-                if name == "line_offset":
-                    if v == 0:
-                        raise ValueError(
-                            f"{name}[{i}] cannot be 0; use 1 for the first line "
-                            "or -1 for the last line"
-                        )
-                    if v < -MAX_LINES:
-                        raise ValueError(
-                            f"{name}[{i}] cannot be less than -{MAX_LINES}. "
-                            "Use a positive line_offset with the total line count "
-                            "to read from a specific position."
-                        )
-                elif v < min_value:
+                if value < -MAX_LINES:
                     raise ValueError(
-                        f"{name}[{i}] must be >= {min_value}."
+                        f"{name} cannot be less than -{MAX_LINES}. "
+                        "Use a positive line_offset with the total line count "
+                        "to read from a specific position."
                     )
+            elif value < min_value:
+                raise ValueError(f"{name} must be >= {min_value}.")
         return self
-
-
-def _normalize_per_file(value: int | list[int], n: int) -> list[int]:
-    """Return a per-file option list; scalars are broadcast to all files."""
-    if isinstance(value, list):
-        return value
-    return [value] * n
 
 
 _GLOB_META = frozenset("*?[")
@@ -352,39 +347,27 @@ class ReadFile(CallableTool2[Params]):
                 brief="Too many files",
             )
 
-        n = len(raw_paths)
-        line_offsets = _normalize_per_file(params.line_offset, n)
-        n_lines_list = _normalize_per_file(params.n_lines, n)
-        max_chars = _normalize_per_file(params.max_char, n)
-        char_offsets = _normalize_per_file(params.char_offset, n)
+        # Common options for all files (scalar params broadcast)
+        options = (
+            params.line_offset,
+            params.n_lines,
+            params.max_char,
+            params.char_offset,
+        )
 
         # Expand any glob paths into concrete file entries while preserving order.
-        # Each entry is (display_path, options, canonical_or_error). For file entries
-        # the third item is a canonical path string used for deduplication; for
-        # expansion errors it is the pre-built ToolError.
         entries: list[tuple[str, tuple[int, int, int, int], str | ToolError]] = []
         for i, raw_path in enumerate(raw_paths):
-            options = (
-                line_offsets[i],
-                n_lines_list[i],
-                max_chars[i],
-                char_offsets[i],
-            )
-            if not _is_glob_pattern(raw_path):
-                try:
-                    canonical = str(kaos_path_from_tool_input(raw_path, self._work_dir).canonical())
-                    entries.append((raw_path, options, canonical))
-                except Exception as e:
-                    logger.warning(
-                        "ReadFile path resolution failed: {path}: {error}",
-                        path=raw_path, error=e,
+            is_glob = _is_glob_pattern(raw_path)
+            if params.glob or is_glob:
+                # Glob path: expand and read matches
+                if is_glob and not params.glob:
+                    import warnings
+                    warnings.warn(
+                        "Auto-detecting glob patterns from path is deprecated. "
+                        "Set glob=True explicitly.",
+                        DeprecationWarning,
                     )
-                    err = ToolError(
-                        message=f"Invalid path `{raw_path}`: {e}",
-                        brief="Invalid path",
-                    )
-                    entries.append((raw_path, options, err))
-            else:
                 concrete, err = await self._expand_glob_path(raw_path, options)
                 if err is not None:
                     entries.append((raw_path, options, err))
@@ -403,6 +386,20 @@ class ReadFile(CallableTool2[Params]):
                                 brief="Invalid path",
                             )
                             entries.append((path_str, opts, err))
+            else:
+                try:
+                    canonical = str(kaos_path_from_tool_input(raw_path, self._work_dir).canonical())
+                    entries.append((raw_path, options, canonical))
+                except Exception as e:
+                    logger.warning(
+                        "ReadFile path resolution failed: {path}: {error}",
+                        path=raw_path, error=e,
+                    )
+                    err = ToolError(
+                        message=f"Invalid path `{raw_path}`: {e}",
+                        brief="Invalid path",
+                    )
+                    entries.append((raw_path, options, err))
 
         # Deduplicate concrete files by canonical path, preserving order and the
         # first options tuple. Error entries are kept as-is.
@@ -428,14 +425,15 @@ class ReadFile(CallableTool2[Params]):
         display_paths: list[str] = []
         success_count = 0
         error_count = 0
-        for path_str, options, marker in deduped_entries:
+        for path_str, opts, marker in deduped_entries:
             if isinstance(marker, ToolError):
                 result = marker
                 error_count += 1
             else:
-                line_offset, n_lines, max_char, char_offset = options
+                line_offset, n_lines, max_char, char_offset = opts
                 result = await self._read_single_file(
-                    path_str, line_offset, n_lines, char_offset, max_char
+                    path_str, line_offset, n_lines, char_offset, max_char,
+                    show_line_numbers=params.show_line_numbers,
                 )
                 if result.is_error:
                     error_count += 1
@@ -444,7 +442,7 @@ class ReadFile(CallableTool2[Params]):
             display_paths.append(path_str.replace("\\", "/"))
             results.append(result)
 
-        # Single-file reads keep the original output/message format for backward compatibility.
+        # Single-file reads keep the original output format for backward compatibility.
         if len(deduped_entries) == 1:
             return results[0]
 
@@ -481,6 +479,8 @@ class ReadFile(CallableTool2[Params]):
         n_lines: int,
         char_offset: int,
         max_char: int,
+        *,  # keyword-only from here
+        show_line_numbers: bool = True,
     ) -> ToolReturnValue:
         display_path = raw_path.replace("\\", "/")
         if not raw_path:
@@ -545,9 +545,9 @@ class ReadFile(CallableTool2[Params]):
             assert line_offset != 0
 
             if line_offset < 0:
-                result = await self._read_tail(p, display_path, line_offset, n_lines)
+                result = await self._read_tail(p, display_path, line_offset, n_lines, show_line_numbers=show_line_numbers)
             else:
-                result = await self._read_forward(p, display_path, line_offset, n_lines)
+                result = await self._read_forward(p, display_path, line_offset, n_lines, show_line_numbers=show_line_numbers)
 
             if isinstance(result, ToolOk):
                 if isinstance(result.output, str):
@@ -567,6 +567,8 @@ class ReadFile(CallableTool2[Params]):
         display_path: str,
         line_offset: int,
         n_lines: int,
+        *,  # keyword-only
+        show_line_numbers: bool = True,
     ) -> ToolReturnValue:
         """Read file from a positive line_offset."""
         lines_with_no: list[str] = []
@@ -586,7 +588,10 @@ class ReadFile(CallableTool2[Params]):
             if truncated != line:
                 truncated_line_numbers.append(current_line_no)
             b_len = len(truncated.encode("utf-8"))
-            lines_with_no.append(f"{current_line_no:6d}\t{truncated}")
+            if show_line_numbers:
+                lines_with_no.append(f"{current_line_no:6d}\t{truncated}")
+            else:
+                lines_with_no.append(truncated)
             n_bytes += b_len
             if len(lines_with_no) >= target_lines:
                 max_lines_reached = target_lines >= MAX_LINES
@@ -627,13 +632,14 @@ class ReadFile(CallableTool2[Params]):
         display_path: str,
         line_offset: int,
         n_lines: int,
+        *,  # keyword-only
+        show_line_numbers: bool = True,
     ) -> ToolReturnValue:
         """Read file from a negative line_offset (tail mode)."""
         tail_count = abs(line_offset)
         line_limit = min(n_lines, MAX_LINES)
 
         # Bounded list keeping the last `tail_count` lines.
-        # Each entry: (line_no, truncated_line, was_truncated, byte_len)
         tail_buf: list[tuple[int, str, bool, int]] = []
         current_line_no = 0
         async for line in p.read_lines(errors="replace"):
@@ -675,7 +681,10 @@ class ReadFile(CallableTool2[Params]):
         for line_no, truncated, was_truncated, _ in candidates:
             if was_truncated:
                 truncated_line_numbers.append(line_no)
-            lines_with_no.append(f"{line_no:6d}\t{truncated}")
+            if show_line_numbers:
+                lines_with_no.append(f"{line_no:6d}\t{truncated}")
+            else:
+                lines_with_no.append(truncated)
 
         start_line = candidates[0][0] if candidates else total_lines + 1
         message = (

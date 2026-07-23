@@ -427,3 +427,77 @@ class TestWriteFileFuzzyMode:
         """Empty mode should still raise ValidationError."""
         with pytest.raises(ValidationError):
             Params(path="test.txt", content="x", mode="")  # type: ignore[reportArgumentType]
+
+
+# ── New params tests ─────────────────────────────────────────────────────────
+
+
+async def test_auto_fix_json_enabled_repairs_broken_json(
+    write_file_tool: WriteFile, temp_work_dir: KaosPath
+):
+    """auto_fix_json=True (default) repairs broken JSON."""
+    file_path = temp_work_dir / "config.json"
+    broken_json = '{"key": "value"'
+    result = await write_file_tool(
+        Params(path=str(file_path), content=broken_json)
+    )
+    assert not result.is_error
+    # Should have been repaired and written
+    written = await file_path.read_text()
+    assert '"key": "value"' in written
+    # Should end with curly brace (repaired)
+    assert written.strip().endswith("}")
+
+
+async def test_auto_fix_json_disabled_reports_error(
+    write_file_tool: WriteFile, temp_work_dir: KaosPath
+):
+    """auto_fix_json=False reports format error instead of repairing."""
+    file_path = temp_work_dir / "broken.json"
+    broken_json = '{"key": "value"'
+    result = await write_file_tool(
+        Params(path=str(file_path), content=broken_json, auto_fix_json=False)
+    )
+    # With auto_fix_json=False, the JSON error should be reported
+    assert result.is_error
+    assert "format" in result.message.lower() or "JSON" in result.message
+
+
+async def test_mkdir_true_creates_parents(
+    write_file_tool: WriteFile, temp_work_dir: KaosPath
+):
+    """mkdir=True (default) creates parent directories."""
+    file_path = temp_work_dir / "newdir" / "subdir" / "test.txt"
+    result = await write_file_tool(
+        Params(path=str(file_path), content="hello", mkdir=True)
+    )
+    assert not result.is_error
+    assert await file_path.exists()
+    assert await file_path.read_text() == "hello"
+
+
+async def test_mkdir_false_fails_on_missing_parent(
+    write_file_tool: WriteFile, temp_work_dir: KaosPath
+):
+    """mkdir=False fails when parent directory does not exist."""
+    file_path = temp_work_dir / "nonexistent_parent" / "test.txt"
+    result = await write_file_tool(
+        Params(path=str(file_path), content="hello", mkdir=False)
+    )
+    assert result.is_error
+    assert "Parent directory does not exist" in result.message
+
+
+async def test_show_diff_includes_diff_in_output(
+    write_file_tool: WriteFile, temp_work_dir: KaosPath
+):
+    """show_diff=True includes a diff in the tool output."""
+    file_path = temp_work_dir / "diff_test.txt"
+    content = "Hello, World!"
+    result = await write_file_tool(
+        Params(path=str(file_path), content=content, show_diff=True)
+    )
+    assert not result.is_error
+    # Output should be non-empty (diff was included)
+    assert len(result.output) > 0
+    assert "Diff:" in result.output or "diff" in result.output.lower()

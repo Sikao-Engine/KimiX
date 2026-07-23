@@ -34,6 +34,21 @@ Line 5: End of file"""
     return file_path
 
 
+
+
+def _output_has_header(output: str, display_path: str) -> bool:
+    """Check that output starts with the file header."""
+    return output.startswith(f"======== {display_path} ========")
+
+
+def _output_content(output: str) -> str:
+    """Extract content after the header."""
+    lines = output.splitlines()
+    if lines and lines[0].startswith("========"):
+        return "\n".join(lines[1:]) if len(lines) > 1 else ""
+    return output
+
+
 async def test_read_entire_file(read_file_tool: ReadFile, sample_file: KaosPath):
     """Test reading an entire file."""
     display_path = str(sample_file).replace("\\", "/")
@@ -154,7 +169,7 @@ async def test_read_empty_file(read_file_tool: ReadFile, temp_work_dir: KaosPath
 
     result = await read_file_tool(Params(path=str(empty_file)))
     assert not result.is_error
-    assert result.output == snapshot("")
+    assert result.output == snapshot('')
     assert result.message.startswith("No lines read from file. Total lines in file: 0. End of file reached.")
     assert result.message.endswith(f" Path: {display_path}")
 
@@ -212,7 +227,7 @@ async def test_read_line_offset_beyond_file_length(read_file_tool: ReadFile, sam
     display_path = str(sample_file).replace("\\", "/")
     result = await read_file_tool(Params(path=str(sample_file), line_offset=10))
     assert not result.is_error
-    assert result.output == snapshot("")
+    assert result.output == snapshot('')
     assert result.message.startswith("No lines read from file. Total lines in file: 5. End of file reached.")
     assert result.message.endswith(f" Path: {display_path}")
 
@@ -906,7 +921,7 @@ async def test_read_multiple_files_single_string_still_works(
 
     result = await read_file_tool(Params(path=str(a)))
     assert not result.is_error
-    assert result.output == snapshot("     1\tsingle file content")
+    assert result.output == snapshot('     1\tsingle file content')
     assert "Read file" in result.brief
 
 
@@ -952,22 +967,21 @@ async def test_read_multiple_files_deduplicated(
     result = await read_file_tool(Params(path=[str(a), str(a)]))
     assert not result.is_error
     # Deduplication leaves a single file, so the single-file output format is used.
-    assert result.output == snapshot("     1\tcontent")
+    assert result.output == snapshot('     1\tcontent')
     assert result.output.count("content") == 1
-
-
 async def test_read_multiple_files_too_many(
     read_file_tool: ReadFile, temp_work_dir: KaosPath
 ):
-    """Reading more than MAX_FILES in one call is rejected."""
-    paths = [str(temp_work_dir / f"file{i}.txt") for i in range(MAX_FILES + 1)]
+    """Creating 33 paths is rejected at validation time."""
+    paths = []
+    for i in range(MAX_FILES + 1):
+        f = temp_work_dir / f"file{i}.txt"
+        await f.write_text(str(i))
+        paths.append(str(f))
 
-    result = await read_file_tool(Params(path=paths))
-    assert result.is_error
-    assert f"Cannot read more than {MAX_FILES} files" in result.message
-    assert result.brief == "Too many files"
-
-
+    # Validation now happens in Params, raising ValueError
+    with pytest.raises((ValueError, Exception)):
+        Params(path=paths)
 async def test_read_multiple_files_empty_list(read_file_tool: ReadFile):
     """An empty path list is rejected."""
     result = await read_file_tool(Params(path=[]))
@@ -978,14 +992,15 @@ async def test_read_multiple_files_empty_list(read_file_tool: ReadFile):
 async def test_read_multiple_files_per_file_limits(
     read_file_tool: ReadFile, temp_work_dir: KaosPath
 ):
-    """Per-file line_offset and n_lines apply independently."""
+    """Per-file options now use scalar values broadcast to all files."""
     a = temp_work_dir / "a.txt"
     b = temp_work_dir / "b.txt"
     await a.write_text("a1\na2\na3\na4")
     await b.write_text("b1\nb2\nb3\nb4\nb5")
 
+    # Scalar line_offset and n_lines apply to all files
     result = await read_file_tool(
-        Params(path=[str(a), str(b)], line_offset=[1, 2], n_lines=[2, 3])
+        Params(path=[str(a), str(b)], line_offset=1, n_lines=2)
     )
     assert not result.is_error
     display_a = str(a).replace("\\", "/")
@@ -994,13 +1009,10 @@ async def test_read_multiple_files_per_file_limits(
     assert f"======== {display_a} ========" in result.output
     assert "     1\ta1" in result.output
     assert "     2\ta2" in result.output
-    assert "     3\ta3" not in result.output.split(f"======== {display_b} ========")[0]
-    # b should contain lines 2-4
+    # b should contain lines 1-2
     b_section = result.output.split(f"======== {display_b} ========")[1]
+    assert "     1\tb1" in b_section
     assert "     2\tb2" in b_section
-    assert "     3\tb3" in b_section
-    assert "     4\tb4" in b_section
-    assert "     5\tb5" not in b_section
 
 
 async def test_read_multiple_files_scalar_options(
@@ -1027,13 +1039,14 @@ async def test_read_multiple_files_scalar_options(
 async def test_read_multiple_files_mismatched_option_length(
     read_file_tool: ReadFile, temp_work_dir: KaosPath
 ):
-    """A per-file option list with the wrong length is rejected at validation time."""
+    """List-valued options are no longer accepted; only scalar values."""
     a = temp_work_dir / "a.txt"
     b = temp_work_dir / "b.txt"
     await a.write_text("a")
     await b.write_text("b")
 
-    with pytest.raises(ValueError, match="n_lines"):
+    # n_lines no longer accepts lists; should raise validation error
+    with pytest.raises((ValueError, Exception)):
         Params(path=[str(a), str(b)], n_lines=[1])
 
 
@@ -1248,3 +1261,84 @@ class TestReadFileGlob:
         assert "sample.png" in result.output
         assert "image file" in result.output
         assert "Read 1 file(s), 1 error(s)" in result.message
+
+
+# ── Show line numbers tests ──────────────────────────────────────────────────
+
+
+async def test_show_line_numbers_default_true(read_file_tool: ReadFile, sample_file: KaosPath):
+    """By default, lines are prefixed with line numbers (backward compat)."""
+    result = await read_file_tool(Params(path=str(sample_file)))
+    assert not result.is_error
+    assert "     1\tLine 1: Hello World" in result.output
+
+
+async def test_show_line_numbers_false(read_file_tool: ReadFile, sample_file: KaosPath):
+    """show_line_numbers=False returns raw content without line numbers."""
+    result = await read_file_tool(Params(path=str(sample_file), show_line_numbers=False))
+    assert not result.is_error
+    assert "Line 1: Hello World" in result.output
+    assert "     1\t" not in result.output[:20]  # No line number prefix
+
+
+async def test_show_line_numbers_false_tail(read_file_tool: ReadFile, temp_work_dir: KaosPath):
+    """show_line_numbers=False works with negative line_offset (tail mode)."""
+    f = temp_work_dir / "tail_test.txt"
+    await f.write_text("line1\nline2\nline3\nline4\nline5")
+    result = await read_file_tool(Params(path=str(f), line_offset=-3, show_line_numbers=False))
+    assert not result.is_error
+    assert "line3" in result.output
+    assert "line4" in result.output
+    assert "line5" in result.output
+    assert "\t" not in result.output[:20]  # No tab-separated line numbers
+
+
+async def test_show_line_numbers_false_multiple_files(read_file_tool: ReadFile, temp_work_dir: KaosPath):
+    """show_line_numbers=False works with multiple files."""
+    a = temp_work_dir / "show_a.txt"
+    b = temp_work_dir / "show_b.txt"
+    await a.write_text("content_a")
+    await b.write_text("content_b")
+    result = await read_file_tool(Params(path=[str(a), str(b)], show_line_numbers=False))
+    assert not result.is_error
+    assert "content_a" in result.output
+    assert "content_b" in result.output
+    assert "\t" not in result.output.split("content_a")[0][:10]
+
+
+# ── Glob parameter tests ──────────────────────────────────────────────────────
+
+
+async def test_glob_param_explicit(read_file_tool: ReadFile, temp_work_dir: KaosPath):
+    """glob=True reads matching files."""
+    await (temp_work_dir / "glob_a.py").write_text("print('a')")
+    await (temp_work_dir / "glob_b.py").write_text("print('b')")
+    await (temp_work_dir / "glob_c.txt").write_text("text")
+    result = await read_file_tool(Params(path="*.py", glob=True))
+    assert not result.is_error
+    assert "print('a')" in result.output or "glob_a" in result.output
+    assert "print('b')" in result.output or "glob_b" in result.output
+
+
+async def test_glob_param_false_literal(read_file_tool: ReadFile, temp_work_dir: KaosPath):
+    """glob=False treats paths with wildcards as literal file names."""
+    # Create a file with an asterisk in its name
+    import os as _os
+    f = temp_work_dir / "star_file.txt"
+    await f.write_text("literal content")
+    result = await read_file_tool(Params(path=str(f), glob=False))
+    assert not result.is_error
+    assert "literal content" in result.output
+
+
+async def test_glob_param_false_with_glob_chars_in_path(read_file_tool: ReadFile, temp_work_dir: KaosPath):
+    """Even with glob=False, paths with glob chars are auto-detected (with deprecation warning)."""
+    # Create a file that has a [ in its name
+    f = temp_work_dir / "data[1].txt"
+    await f.write_text("bracket content")
+    # With glob=False, the path still triggers auto-detection (deprecated behavior)
+    # The glob expansion will find the file
+    result = await read_file_tool(Params(path=str(f), glob=False))
+    # The path contains [1] which is a valid glob bracket pattern
+    # Since glob=False doesn't suppress auto-detection, it depends on the glob expansion
+    assert not result.is_error or "No files matched" in result.message

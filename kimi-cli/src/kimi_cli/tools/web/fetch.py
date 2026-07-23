@@ -1,4 +1,4 @@
-from typing import override
+from typing import Literal, override
 
 import aiohttp
 import trafilatura
@@ -15,7 +15,35 @@ from kimi_cli.utils.logging import logger
 
 
 class Params(BaseModel):
-    url: str = Field(description="URL to fetch.")
+    url: str = Field(description="URL to fetch content from.")
+    timeout: float = Field(
+        default=30.0,
+        ge=1.0,
+        le=300.0,
+        description="Request timeout in seconds (1-300).",
+    )
+    method: Literal["GET", "POST"] = Field(
+        default="GET",
+        description="HTTP method to use.",
+    )
+    headers: dict[str, str] | None = Field(
+        default=None,
+        description="Custom HTTP headers (e.g., {'Authorization': 'Bearer token'}).",
+    )
+    body: str | None = Field(
+        default=None,
+        description="Request body for POST requests.",
+    )
+    follow_redirects: bool = Field(
+        default=True,
+        description="Automatically follow HTTP redirects.",
+    )
+    max_redirects: int = Field(
+        default=5,
+        ge=0,
+        le=20,
+        description="Maximum number of redirects to follow (0-20).",
+    )
 
 
 class FetchURL(CallableTool2[Params]):
@@ -42,40 +70,64 @@ class FetchURL(CallableTool2[Params]):
     async def fetch_with_http_get(params: Params) -> ToolReturnValue:
         builder = ToolResultBuilder(max_line_length=None)
         try:
-            # Fetching arbitrary web pages can take a while on large/slow sites.
-            fetch_timeout = aiohttp.ClientTimeout(total=180, sock_read=60, sock_connect=15)
-            async with (
-                new_client_session(timeout=fetch_timeout) as session,
-                session.get(
-                    params.url,
-                    headers={
-                        "User-Agent": (
-                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                            "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-                        ),
-                    },
-                ) as response,
-            ):
-                if response.status >= 400:
-                    logger.warning(
-                        "FetchURL HTTP error: status={status}, url={url}",
-                        status=response.status,
-                        url=params.url,
+            # Build request headers
+            req_headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                ),
+            }
+            if params.headers:
+                req_headers.update(params.headers)
+
+            # Configure timeout
+            fetch_timeout = aiohttp.ClientTimeout(
+                total=params.timeout,
+                sock_read=min(60, params.timeout),
+                sock_connect=min(15, params.timeout),
+            )
+
+            # Configure redirects
+            max_redirects = params.max_redirects if params.follow_redirects else 0
+
+            async with new_client_session(timeout=fetch_timeout) as session:
+                if params.method == "POST":
+                    req = session.post(
+                        params.url,
+                        headers=req_headers,
+                        data=params.body,
+                        allow_redirects=params.follow_redirects,
+                        max_redirects=max_redirects,
                     )
-                    return builder.error(
-                        (
-                            f"Failed to fetch URL. Status: {response.status}. "
-                            f"This may indicate the page is not accessible or the server is down."
-                        ),
-                        brief=f"HTTP {response.status} error",
+                else:
+                    req = session.get(
+                        params.url,
+                        headers=req_headers,
+                        allow_redirects=params.follow_redirects,
+                        max_redirects=max_redirects,
                     )
 
-                resp_text = await response.text()
+                async with req as response:
+                    if response.status >= 400:
+                        logger.warning(
+                            "FetchURL HTTP error: status={status}, url={url}",
+                            status=response.status,
+                            url=params.url,
+                        )
+                        return builder.error(
+                            (
+                                f"Failed to fetch URL. Status: {response.status}. "
+                                f"This may indicate the page is not accessible or the server is down."
+                            ),
+                            brief=f"HTTP {response.status} error",
+                        )
 
-                content_type = response.headers.get(aiohttp.hdrs.CONTENT_TYPE, "").lower()
-                if content_type.startswith(("text/plain", "text/markdown")):
-                    builder.write(resp_text)
-                    return builder.ok("The returned content is the full content of the page.")
+                    resp_text = await response.text()
+
+                    content_type = response.headers.get(aiohttp.hdrs.CONTENT_TYPE, "").lower()
+                    if content_type.startswith(("text/plain", "text/markdown")):
+                        builder.write(resp_text)
+                        return builder.ok("The returned content is the full content of the page.")
         except TimeoutError:
             logger.warning("FetchURL timed out: url={url}", url=params.url)
             return builder.error(

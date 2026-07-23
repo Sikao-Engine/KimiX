@@ -10,7 +10,7 @@ from typing import Any, Literal, cast, override
 import orjson
 import rapidfuzz
 from kosong.tooling import CallableTool2, ToolReturnValue
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from kimi_cli import logger
 from kimi_cli.session_state import TodoItemState, TodoStatus
@@ -29,122 +29,19 @@ _MAX_READ_ITEMS = 100
 _MAX_SUB_TODOS = 256
 
 
-# Fuzzy mode map — maps common synonyms to canonical write modes
+# Mode map — only canonical values accepted
 _MODE_MAP: dict[str, Literal["overwrite", "append", "force_overwrite"]] = {
-    # overwrite synonyms
     "overwrite": "overwrite",
-    "over_write": "overwrite",
-    "replace": "overwrite",
-    "write": "overwrite",
-    "set": "overwrite",
-    "put": "overwrite",
-    "truncate": "overwrite",
-    "rewrite": "overwrite",
-    "new": "overwrite",
-    # append synonyms
     "append": "append",
-    "add": "append",
-    "merge": "append",
-    "update": "append",
-    "patch": "append",
-    "extend": "append",
-    "concat": "append",
-    "concatenate": "append",
-    # notes synonyms (common typos / misuses for append)
-    "notes": "append",
-    "note": "append",
-    "ntoes": "append",
-    "noets": "append",
-    "nots": "append",
-    "notes_append": "append",
-    "add_notes": "append",
-    # force_overwrite synonyms
     "force_overwrite": "force_overwrite",
-    "forceoverwrite": "force_overwrite",
-    "force overwrite": "force_overwrite",
-    "force-write": "force_overwrite",
-    "force_write": "force_overwrite",
-    "force": "force_overwrite",
-    "forced": "force_overwrite",
-    "forcereplace": "force_overwrite",
-    "force_replace": "force_overwrite",
-    "force replace": "force_overwrite",
 }
 
 
-# Fuzzy status map — maps common synonyms to canonical values
+# Status map — only canonical values accepted
 _STATUS_MAP: dict[str, TodoStatus] = {
-    # pending
     "pending": "pending",
-    "wait": "pending",
-    "waiting": "pending",
-    "todo": "pending",
-    "to_do": "pending",
-    "not_started": "pending",
-    "notstarted": "pending",
-    "not started": "pending",
-    "backlog": "pending",
-    "queued": "pending",
-    "unstarted": "pending",
-    "open": "pending",
-    "new": "pending",
-    "planned": "pending",
-    "scheduled": "pending",
-    "upcoming": "pending",
-    "ready": "pending",
-    "idle": "pending",
-    # in_progress
     "in_progress": "in_progress",
-    "inprogress": "in_progress",
-    "in progress": "in_progress",
-    "started": "in_progress",
-    "start": "in_progress",
-    "active": "in_progress",
-    "ongoing": "in_progress",
-    "working": "in_progress",
-    "work": "in_progress",
-    "doing": "in_progress",
-    "underway": "in_progress",
-    "under way": "in_progress",
-    "wip": "in_progress",
-    "current": "in_progress",
-    "progress": "in_progress",
-    "busy": "in_progress",
-    "developing": "in_progress",
-    "partial": "in_progress",
-    "partially_done": "in_progress",
-    "partially done": "in_progress",
-    # done
     "done": "done",
-    "completed": "done",
-    "complete": "done",
-    "finished": "done",
-    "finish": "done",
-    "resolved": "done",
-    "closed": "done",
-    "close": "done",
-    "verified": "done",
-    "approved": "done",
-    "ok": "done",
-    "yes": "done",
-    "success": "done",
-    "successful": "done",
-    "passed": "done",
-    "fixed": "done",
-    "shipped": "done",
-    "delivered": "done",
-    "archived": "done",
-    "merged": "done",
-    "deployed": "done",
-    "released": "done",
-    "published": "done",
-    "live": "done",
-    "accepted": "done",
-    "confirmed": "done",
-    "finalized": "done",
-    "finalised": "done",
-    "ready_for_review": "done",
-    "ready for review": "done",
 }
 
 
@@ -152,13 +49,13 @@ def _canonical_status(v: Any) -> TodoStatus:
     """Normalize a status value to its canonical form."""
     if not isinstance(v, str):
         raise ValueError(
-            f"Invalid status '{v}'. Must be one of: pending, in_progress, done (or a known synonym)."
+            f"Invalid status '{v}'. Must be one of: pending, in_progress, done."
         )
     normalized = v.strip().lower().replace("-", "_")
     canonical = _STATUS_MAP.get(normalized)
     if canonical is None:
         raise ValueError(
-            f"Invalid status '{v}'. Must be one of: pending, in_progress, done (or a known synonym)."
+            f"Invalid status '{v}'. Must be one of: pending, in_progress, done."
         )
     return canonical
 
@@ -175,6 +72,8 @@ class _FuzzyResult:
 class SubTodo(BaseModel):
     """A leaf sub-todo item (no recursion — one level deep only)."""
 
+    model_config = {"populate_by_name": True}
+
     title: str = Field(description="Title", min_length=1, max_length=65536)
     status: TodoStatus = Field(description="Status")
     notes: str | None = Field(
@@ -182,6 +81,15 @@ class SubTodo(BaseModel):
         description="Notes.",
         max_length=65536,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_description_alias(cls, data: Any) -> Any:
+        """Accept `description` as an alias for `notes`."""
+        if isinstance(data, dict):
+            if "description" in data and "notes" not in data:
+                data["notes"] = data.pop("description")
+        return data
 
     @field_validator("status", mode="before")
     @classmethod
@@ -206,6 +114,8 @@ class SubTodo(BaseModel):
 
 
 class Todo(BaseModel):
+    model_config = {"populate_by_name": True}
+
     title: str = Field(description="Title", min_length=1, max_length=65536)
     status: TodoStatus = Field(description="Status")
     notes: str | None = Field(
@@ -220,6 +130,15 @@ class Todo(BaseModel):
             "Omit to preserve existing sub-todos. Set to [] to clear. Set to [...] to merge by title."
         ),
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_description_alias(cls, data: Any) -> Any:
+        """Accept `description` as an alias for `notes`."""
+        if isinstance(data, dict):
+            if "description" in data and "notes" not in data:
+                data["notes"] = data.pop("description")
+        return data
 
     @field_validator("status", mode="before")
     @classmethod
@@ -258,12 +177,25 @@ class Params(BaseModel):
             "'force_overwrite' replaces the existing todo list unconditionally."
         ),
     )
+    match_mode: Literal["exact", "fuzzy"] = Field(
+        default="exact",
+        description=(
+            "'exact' (default): Match titles exactly. "
+            "'fuzzy': Use fuzzy matching for near-miss titles when appending/updating."
+        ),
+    )
+    auto_fix: bool = Field(
+        default=False,
+        description=(
+            "When True and multiple items are in_progress, automatically mark the extra "
+            "items as done before applying the update. Use with caution."
+        ),
+    )
     parent_title: str | None = Field(
         default=None,
         description=(
-            "When set, the provided todos are treated as sub-todos for the parent todo "
-            "matching this title (fuzzy-matched). Mode applies to the sub-todo list. "
-            "Prefer embedding sub_todos directly inside Todo objects instead."
+            "[Deprecated] When set, the provided todos are treated as sub-todos for the parent todo "
+            "matching this title (fuzzy-matched). Prefer embedding sub_todos directly inside Todo objects instead."
         ),
     )
 
@@ -272,13 +204,13 @@ class Params(BaseModel):
     def _validate_mode(cls, v: Any) -> str:
         if not isinstance(v, str):
             raise ValueError(
-                "Invalid mode. Must be 'overwrite', 'append', or 'force_overwrite' (or a known synonym)."
+                "Invalid mode. Must be 'overwrite', 'append', or 'force_overwrite'."
             )
         normalized = v.strip().lower().replace("-", "_")
         canonical = _MODE_MAP.get(normalized)
         if canonical is None:
             raise ValueError(
-                f"Invalid mode '{v}'. Must be 'overwrite', 'append', or 'force_overwrite' (or a known synonym)."
+                f"Invalid mode '{v}'. Must be 'overwrite', 'append', or 'force_overwrite'."
             )
         return canonical
 
@@ -320,6 +252,18 @@ class Params(BaseModel):
                 )
             return out
         raise ValueError("todos must be a list of todos, a single todo dict/object, or None")
+
+    @model_validator(mode="after")
+    def _deprecate_parent_title(self) -> "Params":
+        """Emit deprecation warning when parent_title is used."""
+        if self.parent_title is not None:
+            import warnings
+            warnings.warn(
+                "parent_title is deprecated. Use sub_todos embedded in Todo objects instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return self
 
 
 def _first_pydantic_message(exc: ValidationError) -> str:
@@ -371,6 +315,14 @@ class TodoList(CallableTool2[Params]):
         return self._read_todos()
 
     # ---- Write mode --------------------------------------------------------
+
+    @staticmethod
+    def _enforce_single_in_progress(todos: list[Todo]) -> list[str] | None:
+        """Return list of titles that are in_progress if >1, else None."""
+        in_progress = [t.title for t in todos if t.status == "in_progress"]
+        if len(in_progress) > 1:
+            return in_progress
+        return None
 
     def _write_todos(
         self,
@@ -447,6 +399,36 @@ class TodoList(CallableTool2[Params]):
             if newly_archived:
                 archived.extend(self._item_states(newly_archived))
                 archived = archived[-_MAX_ARCHIVED_TODOS:]
+
+        # 5b. Enforce single in_progress (unless auto_fix or force_overwrite)
+        if params.mode != "force_overwrite":
+            conflicts = self._enforce_single_in_progress(final_todos)
+            if conflicts:
+                if params.auto_fix:
+                    # Auto-fix: mark extra in_progress items as done
+                    fixed_todos: list[Todo] = []
+                    seen_in_progress = False
+                    for t in final_todos:
+                        if t.status == "in_progress":
+                            if seen_in_progress:
+                                fixed_todos.append(t.model_copy(update={"status": "done"}))
+                                warnings.append(f'Auto-fixed "{t.title}": set to done (only one item may be in_progress)')
+                            else:
+                                seen_in_progress = True
+                                fixed_todos.append(t)
+                        else:
+                            fixed_todos.append(t)
+                    final_todos = fixed_todos
+                else:
+                    return self._error(
+                        f"Error: Multiple items are in_progress: {conflicts}. "
+                        "Keep exactly one item in_progress at a time. "
+                        "Mark the current item as 'done' before starting another, "
+                        "use mode='force_overwrite' to override, "
+                        "or set auto_fix=True to automatically resolve conflicts.",
+                        "Multiple items in_progress",
+                        display=[self._build_display_block(final_todos)],
+                    )
 
         # 6. Persist exactly once
         save_error = self._save_todos(final_todos, archived)

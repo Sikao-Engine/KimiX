@@ -8,6 +8,82 @@ import regex as re
 import shutil
 import textwrap
 import uuid
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
+from kimi_agent_sdk import ToolReturnValue
+
+
+# ── Standard Error Helpers ────────────────────────────────────────────────
+
+
+class ErrorKind(str, Enum):
+    """Standardized error kinds for tool errors."""
+
+    INVALID_PARAMETER = "invalid_parameter"
+    FILE_NOT_FOUND = "file_not_found"
+    PERMISSION_DENIED = "permission_denied"
+    TIMEOUT = "timeout"
+    EXECUTION_FAILED = "execution_failed"
+    NETWORK_ERROR = "network_error"
+    RATE_LIMITED = "rate_limited"
+    CONTEXT_FULL = "context_full"
+    UNSUPPORTED = "unsupported"
+
+
+# Common suggested actions for frequent error scenarios.
+_SUGGESTED_ACTIONS: dict[str, str] = {
+    "file_not_found": "Check the file path with `Glob` or verify with `Bash ls -la`.",
+    "timeout": "Increase the `timeout` parameter or simplify the command/query.",
+    "permission_denied": "Check file permissions with `Bash ls -la`.",
+    "network_error": "Check network connectivity and try again. The server may be unreachable.",
+    "rate_limited": "Wait a moment and retry with a longer delay between calls.",
+    "invalid_parameter": "Review the parameter description and provide a valid value.",
+    "execution_failed": "Check the command syntax and try again. Use simpler arguments.",
+    "context_full": "Call `Compact` with mode='auto' or mode='aggressive' to free up context.",
+    "unsupported": "Use an alternative tool or method that supports this operation.",
+}
+
+
+def make_tool_error(
+    kind: ErrorKind,
+    *,
+    user_message: str = "",
+    llm_message: str = "",
+    recoverable: bool = True,
+    suggested_action: str = "",
+    output: str = "",
+) -> ToolReturnValue:
+    """Build a standardized error ToolReturnValue.
+
+    Args:
+        kind: The error category.
+        user_message: Short human-readable error summary (appears in brief).
+        llm_message: Detailed message for the LLM.
+        recoverable: Whether the error is recoverable by the LLM.
+        suggested_action: Specific action the LLM can take. Falls back to
+            the default for the error kind if empty.
+        output: Raw output text.
+    """
+    action = suggested_action or _SUGGESTED_ACTIONS.get(kind.value, "")
+    brief_parts = [f"[{kind.value}] {user_message}"] if user_message else [f"[{kind.value}]"]
+    message_parts = [llm_message] if llm_message else []
+    if action:
+        brief_parts.append(action)
+        message_parts.append(f"Suggested action: {action}")
+
+    return ToolReturnValue(
+        is_error=True,
+        output=output or "",
+        message=" ".join(message_parts) if message_parts else (user_message or kind.value),
+        brief=" | ".join(brief_parts) if len(brief_parts) > 1 else brief_parts[0],
+        extras={
+            "error_kind": kind.value,
+            "recoverable": recoverable,
+            "suggested_action": action,
+        },
+    )
 from pathlib import Path
 import queue
 import subprocess

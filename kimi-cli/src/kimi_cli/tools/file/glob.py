@@ -280,11 +280,20 @@ class Params(BaseModel):
     )
     include_dirs: bool = Field(
         description="Include directories in results.",
+        default=False,
+    )
+    respect_gitignore: bool = Field(
         default=True,
+        description="When True (default), skip files matched by .gitignore rules. "
+        "When False, include all files regardless of .gitignore settings.",
     )
     include_ignored: bool = Field(
-        description="Include .gitignore files.",
         default=False,
+        description="[Deprecated] Use respect_gitignore=False instead.",
+    )
+    verbose: bool = Field(
+        default=False,
+        description="When True, include file size, modification time, and type for each match.",
     )
     timeout: int = Field(
         description="Maximum time in seconds to wait for the search to complete.",
@@ -366,9 +375,15 @@ class Glob(CallableTool2[Params]):
             matches: list[KaosPath] = []
             truncated = False
             timed_out = False
+
+            # Handle deprecated include_ignored -> respect_gitignore inversion
+            respect_gitignore = params.respect_gitignore
+            if params.include_ignored:
+                respect_gitignore = False
+
             try:
                 async with asyncio.timeout(params.timeout):
-                    if not params.include_ignored:
+                    if respect_gitignore:
                         try:
                             resolved_dir = Path(str(dir_path)).resolve()
                             gitignore_rules = await asyncio.to_thread(
@@ -406,7 +421,20 @@ class Glob(CallableTool2[Params]):
             n_bytes = 0
             truncated_by_bytes = False
             for p in matches:
-                line = str(p.relative_to(dir_path))
+                relative_path = str(p.relative_to(dir_path))
+                if params.verbose:
+                    # Include metadata
+                    try:
+                        stat_result = await p.stat()
+                        size = stat_result.st_size
+                        from pendulum import from_timestamp
+                        mtime = from_timestamp(stat_result.st_mtime).to_datetime_string()
+                        kind = "dir" if await p.is_dir() else "file"
+                        line = f"{relative_path}  ({size} bytes, {kind}, {mtime})"
+                    except Exception:
+                        line = relative_path
+                else:
+                    line = relative_path
                 line_bytes = len(line.encode("utf-8"))
                 separator_bytes = 1 if output_lines else 0
                 output_lines.append(line)
