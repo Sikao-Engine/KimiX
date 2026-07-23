@@ -1594,6 +1594,8 @@ COMMON_SKILL_DIRS: list[str] = [
     ".agents/skills",
     ".config/.agents/skills",
     ".opencode/skills",
+    ".claude/skills",
+    ".codex/skills",
     ".skills",
     "skills",
 ]
