@@ -25,6 +25,7 @@ from kimix.tools.common import (
     _build_session_output_block,
     _env_with_rg_bin_path,
     _extract_export_path,
+    _interactive_scope_text,
     _maybe_export_output_async,
     _maybe_rewrite_shell_command_with_rtk,
     _summarize_long_output_async,
@@ -216,6 +217,7 @@ class Powershell(CallableTool2[PowershellParams]):
     def __init__(self, session: Session):
         desc = load_desc(Path(__file__).parent / "pwsh_tool.md")
         super().__init__(description=desc)
+        self.description += " " + _interactive_scope_text(is_shell=True)
         self._session = session
         if not _bash_tool._should_enable_powershell():
             raise SkipThisTool()

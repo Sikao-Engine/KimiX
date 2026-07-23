@@ -60,6 +60,17 @@ class FakeCLI:
         self.session = FakeCLISession(todos=todos)
 
 
+class FakeSubTodoItemState:
+    title: str
+    status: str
+    notes: str
+
+    def __init__(self, title: str, status: str, notes: str = "") -> None:
+        self.title = title
+        self.status = status
+        self.notes = notes
+
+
 class FakeSessionWithCLI:
     def __init__(
         self,
@@ -226,6 +237,32 @@ def test_no_reminder_when_ensure_todo_finished_false(monkeypatch: Any) -> None:
     )
 
     assert session.prompts == ["hello"]
+
+
+def test_reminder_includes_sub_todos(monkeypatch: Any) -> None:
+    """Sub-todos appear indented in the reminder output."""
+    _suppress_stream(monkeypatch)
+    from types import SimpleNamespace
+
+    todo = SimpleNamespace(
+        title="Parent task",
+        status="in_progress",
+        notes="",
+        sub_todos=[
+            SimpleNamespace(title="Sub task A", status="pending", notes=""),
+            SimpleNamespace(title="Sub task B", status="done", notes=""),
+        ],
+    )
+    session = FakeSessionWithCLI(has_set_todo=True, todos=[todo])
+
+    asyncio.run(prompt_mod.prompt_async("hello", session=session, info_print=False))
+
+    assert len(session.prompts) >= 2
+    reminder = session.prompts[1]
+    assert "<system-reminder>" in reminder
+    assert "- [in_progress] Parent task" in reminder
+    assert "  - [pending] Sub task A" in reminder
+    assert "  - [done] Sub task B" in reminder
 
 
 def test_todos_are_cleared_after_prompt_async(monkeypatch: Any) -> None:

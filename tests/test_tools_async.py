@@ -148,20 +148,60 @@ class TestTaskOutput:
 
 
 # ---------------------------------------------------------------------------
-# Python tool
+# Python tool — Params validation
+# ---------------------------------------------------------------------------
+class TestPythonParams:
+    def test_code_empty_without_interactive(self) -> None:
+        """code="" with interactive=False should raise a validation error."""
+        with pytest.raises(ValueError, match="code cannot be empty unless interactive=True"):
+            PyParams(code="", interactive=False)
+
+    def test_task_id_without_code(self) -> None:
+        """task_id="xxx" with code="" should raise a validation error."""
+        with pytest.raises(ValueError, match="code cannot be empty when continuing a session via task_id"):
+            PyParams(code="", task_id="xxx")
+
+    def test_interactive_allows_empty_code(self) -> None:
+        """interactive=True with code="" should be valid."""
+        params = PyParams(code="", interactive=True)
+        assert params.interactive is True
+        assert params.code == ""
+
+    def test_task_id_with_code_valid(self) -> None:
+        """task_id="xxx" with code="..." should be valid."""
+        params = PyParams(code="print('hi')", task_id="xxx")
+        assert params.task_id == "xxx"
+        assert params.code == "print('hi')"
+
+    def test_code_only_valid(self) -> None:
+        """code="..." with no interactive/task_id should be valid."""
+        params = PyParams(code="print('hi')")
+        assert params.code == "print('hi')"
+
+
+# ---------------------------------------------------------------------------
+# Python tool — execution tests
 # ---------------------------------------------------------------------------
 class TestPython:
     async def test_foreground_success(self, mock_session: MagicMock) -> None:
         tool = Python(session=mock_session)
         params = PyParams(code="print('hello_py')", timeout=10)
         result = await tool(params)
-        assert "hello_py" in str(result.output)
+        # Output is now a structured block containing the script output
+        output_str = str(result.output)
+        assert "hello_py" in output_str
+        assert "status: completed" in output_str
+        assert "task_id:" in output_str
 
     async def test_foreground_failure(self, mock_session: MagicMock) -> None:
         tool = Python(session=mock_session)
         params = PyParams(code="import sys; sys.exit(1)", timeout=10)
         result = await tool(params)
-        assert "failed" in str(result.message).lower() or "exited" in str(result.output).lower()
+        output_str = str(result.output)
+        assert "status: completed" in output_str
+        assert "exit_code:" in output_str
+        # Should be a ToolError
+        assert isinstance(result, ToolError)
 
     async def test_foreground_timeout(self, mock_session: MagicMock) -> None:
         tool = Python(session=mock_session)
@@ -204,9 +244,10 @@ class TestPython:
         tool = Python(session=mock_session)
         params = PyParams(code=str(py_file), timeout=10)
         result = await tool(params)
-        assert "hello_from_file" in str(result.output)
-        assert "File:" in str(result.output)
-        assert "hello.py" in str(result.output)
+        output_str = str(result.output)
+        assert "hello_from_file" in output_str
+        assert "task_id:" in output_str
+        assert "status: completed" in output_str
 
     async def test_file_failure(self, mock_session: MagicMock, tmp_path: Path) -> None:
         """Run an existing .py file that exits with error."""
@@ -215,8 +256,10 @@ class TestPython:
         tool = Python(session=mock_session)
         params = PyParams(code=str(py_file), timeout=10)
         result = await tool(params)
-        assert "failed" in str(result.message).lower() or "exited" in str(result.output).lower()
-        assert "File:" in str(result.output)
+        # Should be a ToolError with structured output
+        assert isinstance(result, ToolError)
+        output_str = str(result.output)
+        assert "status: completed" in output_str
 
     async def test_file_with_output_path(self, mock_session: MagicMock, tmp_path: Path) -> None:
         """Run a .py file and export output to a destination file."""
@@ -238,8 +281,113 @@ class TestPython:
         result = await tool(params)
         # It will fail as Python code since "nonexistent.py" is not valid Python
         assert isinstance(result, ToolError)
-        # Should reference "Script:" not "File:"
-        assert "Script:" in str(result.output)
+        output_str = str(result.output)
+        # Should reference structured output block
+        assert "task_id:" in output_str
+
+    # Interactive mode tests ------------------------------------------------
+
+    async def test_interactive_start_no_code(self, mock_session: MagicMock) -> None:
+        """interactive=True, code=""  -> returns ToolOk with task_id."""
+        tool = Python(session=mock_session)
+        params = PyParams(code="", interactive=True, timeout=5)
+        result = await tool(params)
+        assert isinstance(result, ToolOk)
+        assert "Interactive Python started" in result.message
+        assert "task_id" in result.message
+        # cleanup
+        for tid in list(get_all_tasks(mock_session).keys()):
+            remove_task_id(mock_session, tid)
+
+    async def test_interactive_start_with_code(self, mock_session: MagicMock) -> None:
+        """interactive=True, code="print('hi')" -> returns ToolOk with task_id."""
+        tool = Python(session=mock_session)
+        params = PyParams(code="print('hi')", interactive=True, timeout=5)
+        result = await tool(params)
+        assert isinstance(result, ToolOk)
+        assert "Interactive Python started" in result.message
+        assert "task_id" in result.message
+        # cleanup
+        for tid in list(get_all_tasks(mock_session).keys()):
+            remove_task_id(mock_session, tid)
+
+    async def test_interactive_with_wait_pattern(self, mock_session: MagicMock) -> None:
+        """interactive=True, wait_for_pattern waits and matches."""
+        tool = Python(session=mock_session)
+        # The Python interactive REPL prints '>>> ' as a prompt
+        params = PyParams(
+            code="print('ready')",
+            interactive=True,
+            wait_for_pattern=r">>>",
+            timeout=10,
+        )
+        result = await tool(params)
+        assert isinstance(result, ToolOk)
+        output_str = str(result.output)
+        assert "task_id:" in output_str
+        assert "wait_matched:" in output_str
+        # cleanup
+        for tid in list(get_all_tasks(mock_session).keys()):
+            remove_task_id(mock_session, tid)
+
+    async def test_continue_session(self, mock_session: MagicMock) -> None:
+        """Start interactive, then call again with task_id and new code."""
+        tool = Python(session=mock_session)
+        # Start interactive
+        start_params = PyParams(code="", interactive=True, timeout=5)
+        start_result = await tool(start_params)
+        assert isinstance(start_result, ToolOk)
+        assert "task_id" in start_result.message
+
+        # Extract task_id from the message
+        msg = start_result.message
+        task_id = msg.split("task_id: `")[1].split("`")[0]
+
+        # Continue session: send a simple print
+        continue_params = PyParams(code="print('continue_test')", task_id=task_id, timeout=10, wait_for_pattern=r"continue_test")
+        continue_result = await tool(continue_params)
+        assert isinstance(continue_result, ToolOk)
+        output_str = str(continue_result.output)
+        assert "continue_test" in output_str or "task_id:" in output_str
+
+        # cleanup
+        for tid in list(get_all_tasks(mock_session).keys()):
+            remove_task_id(mock_session, tid)
+
+    async def test_continue_session_not_found(self, mock_session: MagicMock) -> None:
+        """task_id="nonexistent" -> ToolError."""
+        tool = Python(session=mock_session)
+        params = PyParams(code="print('test')", task_id="nonexistent", timeout=5)
+        result = await tool(params)
+        assert isinstance(result, ToolError)
+        assert "not found" in result.message.lower()
+
+    async def test_max_lines_truncation(self, mock_session: MagicMock) -> None:
+        """max_lines=10 on long output -> output is truncated."""
+        tool = Python(session=mock_session)
+        # Generate 50 lines of output
+        code = "for i in range(50): print(f'line_{i}')"
+        params = PyParams(code=code, timeout=10, max_lines=10)
+        result = await tool(params)
+        output_str = str(result.output)
+        assert "output_truncated:" in output_str
+        # Should have the fold marker (10 lines max -> fold)
+        assert "omitted" in output_str or "lines" in output_str
+        # Should have at most 15 lines (10 max + 5 metadata)
+        lines = output_str.splitlines()
+        # Count only output lines (after "output: |")
+        output_section = False
+        output_line_count = 0
+        for line in lines:
+            if "output: |" in line:
+                output_section = True
+                continue
+            if output_section:
+                if line.startswith("  "):
+                    output_line_count += 1
+                else:
+                    break
+        assert output_line_count <= 15, f"Expected <=15 output lines, got {output_line_count}"
 
 
 # ---------------------------------------------------------------------------

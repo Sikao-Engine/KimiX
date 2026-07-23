@@ -21,12 +21,21 @@ class ApprovalStateData(BaseModel):
     auto_approve_actions: set[str] = Field(default_factory=set)
 
 
+class SubTodoItemState(BaseModel):
+    """A single sub-todo item stored in session or subagent state."""
+
+    title: str
+    status: TodoStatus
+    notes: str | None = None
+
+
 class TodoItemState(BaseModel):
     """A single todo item stored in session or subagent state."""
 
     title: str
     status: TodoStatus
     notes: str | None = None
+    sub_todos: list[SubTodoItemState] | None = None
 
 
 class SessionState(BaseModel):

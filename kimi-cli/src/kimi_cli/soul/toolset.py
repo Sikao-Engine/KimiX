@@ -5,23 +5,27 @@ import contextlib
 import importlib
 import inspect
 import orjson
+import sys
 import time
 import typing
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast, overload
 
-import orjson
 from kosong.tooling import (
     CallableTool,
     CallableTool2,
     HandleResult,
+    TOOL_NAME_REDIRECTS,
     Tool,
     ToolError,
     ToolOk,
     Toolset,
+    normalize_tool_name,
+    resolve_tool_by_arguments,
     resolve_tool_name,
 )
 from kosong.tooling.error import (
@@ -151,6 +155,94 @@ if TYPE_CHECKING:
 
     def type_check(kimi_toolset: KimiToolset):
         _: Toolset = kimi_toolset
+
+
+def _collect_candidates(
+    tool_name: str,
+    valid_names: Iterable[str],
+    redirects: dict[str, str] | None = None,
+) -> list[str]:
+    """
+    Collect candidate real tool names for a hallucinated tool name, ordered by confidence:
+
+    1. Redirect map match (highest confidence — human-curated).
+    2. ``normalize_tool_name`` exact match (case/separator fold).
+    3. Fuzzy string match candidates (from ``fuzzy_match_tool_name``).
+
+    Deduplicates while preserving priority order.
+    """
+    from kosong.tooling import fuzzy_match_tool_name
+
+    seen: set[str] = set()
+    result: list[str] = []
+
+    norm_name = normalize_tool_name(tool_name)
+
+    # 1. Redirect map (pre-normalized keys)
+    if redirects:
+        redirected = redirects.get(norm_name)
+        if redirected is not None and redirected in valid_names:
+            if redirected not in seen:
+                result.append(redirected)
+                seen.add(redirected)
+
+    # 2. normalize_tool_name exact match against valid names
+    for name in valid_names:
+        if normalize_tool_name(name) == norm_name and name not in seen:
+            result.append(name)
+            seen.add(name)
+
+    # 3. Fuzzy matches
+    fuzzy = fuzzy_match_tool_name(tool_name, valid_names, n=5, cutoff=0.5)
+    for name in fuzzy:
+        if name not in seen:
+            result.append(name)
+            seen.add(name)
+
+    return result
+
+
+# ── Pre-computed platform-aware normalized redirect map ──
+# Built once at module load time instead of on every unknown-tool call
+# in ``KimiToolset.handle()``.  ``sys.platform`` is immutable for the
+# lifetime of the process, so the result is deterministic.
+def _build_platform_redirects() -> dict[str, str]:
+    """Build the platform-aware normalized redirect map."""
+    _redirects = dict(TOOL_NAME_REDIRECTS)
+
+    if sys.platform == "win32":
+        # Windows: redirect all shell names to Powershell.
+        _redirects.update({
+            "Bash": "Powershell",
+            "Shell": "Powershell",
+            "Terminal": "Powershell",
+            "Cmd": "Powershell",
+            "Command": "Powershell",
+            "Execute": "Powershell",
+            "Exec": "Powershell",
+            "RunCommand": "Powershell",
+            "Sh": "Powershell",
+            "Zsh": "Powershell",
+            "ShellCommand": "Powershell",
+            "BashCommand": "Powershell",
+        })
+    else:
+        # POSIX (Linux/macOS): PowerShell references → Bash
+        _redirects.update({
+            "Powershell": "Bash",
+            "PowerShell": "Bash",
+            "Pwsh": "Bash",
+            "PS": "Bash",
+        })
+
+    return {
+        normalize_tool_name(k): v
+        for k, v in _redirects.items()
+        if k != v  # skip self-mapping entries (handled by exact match)
+    }
+
+
+_PLATFORM_REDIRECTS_NORM: dict[str, str] = _build_platform_redirects()
 
 
 _REMINDER_TEXT_1 = (
@@ -511,15 +603,47 @@ class KimiToolset:
             tool_name = tool_call.function.name
             warning_text: str | None = None
 
-            if tool_name not in self._tool_dict:
-                # Delegate the auto-correct-vs-suggest decision to the reusable
-                # kosong matcher; only the side effects (audit log + warning)
-                # stay here (they depend on kimi_cli's logger / UX convention).
-                resolution = resolve_tool_name(
-                    tool_name,
-                    self._tool_dict.keys(),
-                    auto_correct_cutoff=_AUTO_CORRECT_CUTOFF,
+            from kosong.utils.jsonx import loads_relaxed
+
+            try:
+                arguments: JsonType = loads_relaxed(tool_call.function.arguments or "{}")
+            except (orjson.JSONDecodeError, ValueError) as e:
+                logger.warning(
+                    "Tool call JSON parse error: {tool_name} (call_id={call_id}): {error}",
+                    tool_name=tool_name,
+                    call_id=tool_call.id,
+                    error=e,
                 )
+                return ToolResult(tool_call_id=tool_call.id, return_value=ToolParseError(str(e)))
+
+            if not isinstance(arguments, dict):
+                arguments = {}
+
+            if tool_name not in self._tool_dict:
+                # Step 1: Collect candidates from cached redirect map + fuzzy matching.
+                candidates = _collect_candidates(
+                    tool_name, self._tool_dict.keys(), _PLATFORM_REDIRECTS_NORM
+                )
+
+                # Step 2: Try argument-based disambiguation.
+                arg_resolution = None
+                if arguments and candidates:
+                    arg_resolution = resolve_tool_by_arguments(
+                        tool_name, arguments, candidates, self._tool_dict
+                    )
+
+                if arg_resolution is not None:
+                    # High-confidence resolution from argument fit.
+                    resolution = arg_resolution
+                else:
+                    # Fall back to name-only resolution (redirects + fuzzy).
+                    resolution = resolve_tool_name(
+                        tool_name,
+                        self._tool_dict.keys(),
+                        auto_correct_cutoff=_AUTO_CORRECT_CUTOFF,
+                        redirects=_PLATFORM_REDIRECTS_NORM,
+                    )
+
                 if resolution.name is None:
                     # No close enough match — return suggestions error.
                     return ToolResult(
@@ -539,22 +663,6 @@ class KimiToolset:
                         f"</system-warning>"
                     )
                 tool_name = resolution.name
-
-            from kosong.utils.jsonx import loads_relaxed
-
-            try:
-                arguments: JsonType = loads_relaxed(tool_call.function.arguments or "{}")
-            except (orjson.JSONDecodeError, ValueError) as e:
-                logger.warning(
-                    "Tool call JSON parse error: {tool_name} (call_id={call_id}): {error}",
-                    tool_name=tool_name,
-                    call_id=tool_call.id,
-                    error=e,
-                )
-                return ToolResult(tool_call_id=tool_call.id, return_value=ToolParseError(str(e)))
-
-            if not isinstance(arguments, dict):
-                arguments = {}
 
             canonical_args = _canonical_tool_arguments(arguments)
             call_key = (tool_name, canonical_args)

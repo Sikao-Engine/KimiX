@@ -8,7 +8,7 @@ import pytest
 from kosong.tooling import ToolReturnValue
 
 from kimi_cli.soul.agent import Runtime
-from kimi_cli.tools.todo import MergeResult, Params, Todo, TodoList
+from kimi_cli.tools.todo import MergeResult, Params, SubTodo, Todo, TodoList
 
 
 @pytest.fixture
@@ -964,18 +964,17 @@ class TestTodoModel:
             todo = Todo(title="Task", status=status, notes="")
             assert todo.status == status
 
-    def test_notes_defaults_to_empty_string(self):
+    def test_notes_defaults_to_none(self):
         todo = Todo(title="Task", status="pending")
-        assert todo.notes == ""
-        assert not isinstance(todo.notes, type(None))
+        assert todo.notes is None
 
-    def test_whitespace_only_notes_become_empty(self):
+    def test_whitespace_only_notes_become_none(self):
         todo = Todo(title="Task", status="pending", notes="   ")
-        assert todo.notes == ""
+        assert todo.notes is None
 
-    def test_notes_is_string_not_none(self):
+    def test_notes_none_valid(self):
         todo = Todo(title="Task", status="pending", notes=None)  # type: ignore[arg-type]
-        assert todo.notes == ""
+        assert todo.notes is None
 
 
 class TestTodoListNotes:
@@ -1711,3 +1710,654 @@ class TestTodoListSubagentSaveFailure:
         assert result.is_error
         assert "Failed to save subagent todos" in result.output
         assert "disk full" in result.output
+
+
+class TestSubTodoModel:
+    """Test SubTodo model validation."""
+
+    def test_sub_todo_title_stripped(self):
+        from kimi_cli.tools.todo import SubTodo
+
+        st = SubTodo(title="  hello  ", status="pending")
+        assert st.title == "hello"
+
+    def test_sub_todo_valid_statuses(self):
+        from kimi_cli.tools.todo import SubTodo
+
+        for status in ("pending", "in_progress", "done"):
+            st = SubTodo(title="Task", status=status)
+            assert st.status == status
+
+    def test_sub_todo_notes_defaults_and_stripping(self):
+        from kimi_cli.tools.todo import SubTodo
+
+        st = SubTodo(title="Task", status="pending")
+        assert st.notes is None
+
+        st = SubTodo(title="Task", status="pending", notes="   ")
+        assert st.notes is None
+
+        st = SubTodo(title="Task", status="pending", notes=None)  # type: ignore[arg-type]
+        assert st.notes is None
+
+    def test_sub_todo_no_nested_sub_todos(self):
+        from kimi_cli.tools.todo import SubTodo
+
+        assert not hasattr(SubTodo, "sub_todos")
+
+
+class TestSubTodoNested:
+    """Tests for nested sub_todos inside Todo objects (primary path)."""
+
+    async def test_create_parent_with_sub_todos(self, todo_list_tool: TodoList):
+        """One call creates parent + sub-todos via nested sub_todos."""
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        notes="",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="pending"),
+                            SubTodo(title="Sub B", status="done"),
+                        ],
+                    )
+                ]
+            )
+        )
+        assert not result.is_error
+        # Sub A is pending -> shows in active summary; Sub B done -> hidden
+        assert "Sub A" in result.output
+        assert "Sub B" not in result.output
+        # Sub B is in the display block though
+        assert any(
+            st.title == "Sub B"
+            for block in result.display
+            for item in getattr(block, "items", [])
+            for st in (item.sub_todos or [])
+        )
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Sub A" in read.output
+        # In read mode all statuses shown
+        assert "Sub B" in read.output
+
+    async def test_nested_sub_todos_absent_preserves_existing(self, todo_list_tool: TodoList):
+        """Updating a parent without sub_todos field leaves existing sub-todos untouched."""
+        from kimi_cli.tools.todo import SubTodo
+
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="pending"),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        # Update parent status without touching sub_todos
+        result = await todo_list_tool(
+            Params(todos=[Todo(title="Parent", status="done", notes="")])
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Sub A" in read.output  # preserved
+
+    async def test_nested_sub_todos_empty_list_clears(self, todo_list_tool: TodoList):
+        """Passing sub_todos: [] clears sub-todos when mode allows."""
+        from kimi_cli.tools.todo import SubTodo
+
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="done"),
+                            SubTodo(title="Sub B", status="done"),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        # Mark all sub-todos done, then clear with empty list
+        result = await todo_list_tool(
+            Params(todos=[Todo(title="Parent", status="in_progress", sub_todos=[])])
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Sub A" not in read.output
+
+    async def test_nested_sub_todos_nonempty_merges_by_title(self, todo_list_tool: TodoList):
+        """Passing sub_todos: [...] merges with existing by title."""
+        from kimi_cli.tools.todo import SubTodo
+
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="pending"),
+                            SubTodo(title="Sub B", status="pending"),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        # Update Sub A to done, add Sub C
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="done"),
+                            SubTodo(title="Sub C", status="pending"),
+                        ],
+                    )
+                ]
+            )
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Sub A" in read.output
+        assert "Sub B" in read.output  # preserved untouched
+        assert "Sub C" in read.output  # newly added
+
+    async def test_nested_sub_todos_incremental_status_update(self, todo_list_tool: TodoList):
+        """Update one sub-todo's status while preserving others."""
+        from kimi_cli.tools.todo import SubTodo
+
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="pending"),
+                            SubTodo(title="Sub B", status="pending"),
+                            SubTodo(title="Sub C", status="pending"),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        # Just update Sub B to done
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub B", status="done"),
+                        ],
+                    )
+                ]
+            )
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Sub A" in read.output
+        assert "Sub B" in read.output
+        assert "Sub C" in read.output
+
+    async def test_nested_sub_todos_in_display_block(self, todo_list_tool: TodoList):
+        """TodoDisplayItem includes SubTodoDisplayItem entries."""
+        from kimi_cli.tools.display import SubTodoDisplayItem, TodoDisplayBlock
+        from kimi_cli.tools.todo import SubTodo
+
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="pending"),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        # Write again to get a display block
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="done"),
+                        ],
+                    )
+                ]
+            )
+        )
+        assert not result.is_error
+        assert len(result.display) == 1
+        assert isinstance(result.display[0], TodoDisplayBlock)
+        item = result.display[0].items[0]
+        assert item.sub_todos is not None
+        assert len(item.sub_todos) == 1
+        assert isinstance(item.sub_todos[0], SubTodoDisplayItem)
+        assert item.sub_todos[0].title == "Sub A"
+
+    async def test_nested_sub_todos_in_read_output(self, todo_list_tool: TodoList):
+        """Read mode shows sub-todos indented."""
+        from kimi_cli.tools.todo import SubTodo
+
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="pending"),
+                            SubTodo(title="Sub B", status="done"),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Sub A" in read.output
+        assert "Sub B" in read.output
+
+    async def test_nested_sub_todos_notes_preserved(self, todo_list_tool: TodoList):
+        """Old sub-todo notes preserved when new notes empty."""
+        from kimi_cli.tools.todo import SubTodo
+
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="in_progress", notes="Keep this"),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        # Update status only, no notes
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="done", notes=""),
+                        ],
+                    )
+                ]
+            )
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Sub A" in read.output
+
+    async def test_nested_sub_todos_regression_blocked(self, todo_list_tool: TodoList):
+        """Can't regress done sub-todos via nested path."""
+        from kimi_cli.tools.todo import SubTodo
+
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="done"),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="pending"),
+                        ],
+                    )
+                ]
+            )
+        )
+        assert result.is_error
+        # Regression message now includes parent context
+        assert "Cannot regress completed todos" in result.output
+        assert "Parent > Sub A" in result.output
+
+    async def test_nested_sub_todos_persistence_roundtrip(self, todo_list_tool: TodoList, runtime: Runtime):
+        """Sub-todos survive save => load cycle."""
+        from kimi_cli.session_state import load_session_state
+        from kimi_cli.tools.todo import SubTodo
+
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub A", status="pending"),
+                            SubTodo(title="Sub B", status="done"),
+                        ],
+                    )
+                ]
+            )
+        )
+
+        # Reload from disk
+        disk_state = load_session_state(runtime.session.dir)
+        assert len(disk_state.todos) == 1
+        assert disk_state.todos[0].sub_todos is not None
+        assert len(disk_state.todos[0].sub_todos) == 2
+        assert disk_state.todos[0].sub_todos[0].title == "Sub A"
+        assert disk_state.todos[0].sub_todos[1].title == "Sub B"
+
+
+class TestSubTodoParentTitle:
+    """Tests for parent_title-based sub-todo updates (secondary path)."""
+
+    async def test_parent_title_adds_sub_todos(self, todo_list_tool: TodoList):
+        """Add sub-todos to existing parent via parent_title."""
+        await todo_list_tool(
+            Params(todos=[Todo(title="Parent", status="in_progress", notes="")])
+        )
+
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Sub A", status="pending"),
+                    Todo(title="Sub B", status="done"),
+                ],
+                parent_title="Parent",
+            )
+        )
+        assert not result.is_error
+        # Sub A is pending -> shows in active summary; Sub B done -> hidden
+        assert "Sub A" in result.output
+        assert "Sub B" not in result.output
+        # Sub B is in the display block though
+        assert any(
+            st.title == "Sub B"
+            for block in result.display
+            for item in getattr(block, "items", [])
+            for st in (item.sub_todos or [])
+        )
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Sub A" in read.output
+        # In read mode all statuses shown
+        assert "Sub B" in read.output
+
+    async def test_parent_title_nonexistent_parent_errors(self, todo_list_tool: TodoList):
+        """Non-existent parent_title returns error with suggestions."""
+        await todo_list_tool(
+            Params(todos=[Todo(title="Existing", status="pending", notes="")])
+        )
+
+        result = await todo_list_tool(
+            Params(
+                todos=[Todo(title="Sub A", status="pending")],
+                parent_title="Nonexistent",
+            )
+        )
+        assert result.is_error
+        assert "No todo exactly matching" in result.output
+        assert "Existing" in result.output
+
+    async def test_parent_title_exact_match_fast_path(self, todo_list_tool: TodoList):
+        """Exact match uses fast path without fuzzy."""
+        await todo_list_tool(
+            Params(todos=[Todo(title="Exact Title", status="in_progress", notes="")])
+        )
+
+        result = await todo_list_tool(
+            Params(
+                todos=[Todo(title="Sub A", status="pending")],
+                parent_title="Exact Title",
+            )
+        )
+        assert not result.is_error
+
+    async def test_parent_title_on_empty_list_errors(self, todo_list_tool: TodoList):
+        """parent_title on empty todo list errors."""
+        result = await todo_list_tool(
+            Params(
+                todos=[Todo(title="Sub A", status="pending")],
+                parent_title="Anything",
+            )
+        )
+        assert result.is_error
+        assert "No todos exist" in result.output
+
+    async def test_parent_title_max_sub_todos_limit(self, todo_list_tool: TodoList):
+        """Exceeding max sub-todos limit returns error."""
+        await todo_list_tool(
+            Params(todos=[Todo(title="Parent", status="in_progress", notes="")])
+        )
+
+        from kimi_cli.tools.todo import _MAX_SUB_TODOS
+
+        todos = [Todo(title=f"Sub {i}", status="pending") for i in range(_MAX_SUB_TODOS + 1)]
+        result = await todo_list_tool(
+            Params(todos=todos, parent_title="Parent")
+        )
+        assert result.is_error
+        assert "exceeds maximum limit" in result.output
+
+    async def test_parent_title_append_mode(self, todo_list_tool: TodoList):
+        """parent_title with append mode merges sub-todos by title."""
+        await todo_list_tool(
+            Params(todos=[Todo(title="Parent", status="in_progress", notes="")])
+        )
+
+        # Add sub-todos
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Sub A", status="pending"),
+                    Todo(title="Sub B", status="pending"),
+                ],
+                parent_title="Parent",
+            )
+        )
+
+        # Append-mode update: update Sub A and add Sub C
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Sub A", status="done"),
+                    Todo(title="Sub C", status="pending"),
+                ],
+                parent_title="Parent",
+            )
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "Sub A" in read.output
+        assert "Sub B" in read.output
+        assert "Sub C" in read.output
+
+    async def test_parent_title_overwrite_mode(self, todo_list_tool: TodoList):
+        """parent_title with overwrite mode replaces sub-todos when all done."""
+        await todo_list_tool(
+            Params(todos=[Todo(title="Parent", status="in_progress", notes="")])
+        )
+
+        # Add sub-todos and mark them done
+        await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(title="Sub A", status="done"),
+                ],
+                parent_title="Parent",
+            )
+        )
+
+        # Overwrite with new sub-todos
+        result = await todo_list_tool(
+            Params(
+                todos=[Todo(title="New Sub", status="pending")],
+                parent_title="Parent",
+                mode="overwrite",
+            )
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "New Sub" in read.output
+        assert "Sub A" not in read.output
+
+    async def test_parent_title_force_overwrite_mode(self, todo_list_tool: TodoList):
+        """parent_title with force_overwrite bypasses done check."""
+        await todo_list_tool(
+            Params(todos=[Todo(title="Parent", status="in_progress", notes="")])
+        )
+
+        await todo_list_tool(
+            Params(
+                todos=[Todo(title="Sub A", status="pending")],
+                parent_title="Parent",
+            )
+        )
+
+        result = await todo_list_tool(
+            Params(
+                todos=[Todo(title="New Sub", status="pending")],
+                parent_title="Parent",
+                mode="force_overwrite",
+            )
+        )
+        assert not result.is_error
+
+        read = await todo_list_tool(Params(todos=None))
+        assert "New Sub" in read.output
+        assert "Sub A" not in read.output
+
+    async def test_parent_title_regression_blocked(self, todo_list_tool: TodoList):
+        """parent_title path also blocks sub-todo regressions."""
+        await todo_list_tool(
+            Params(todos=[Todo(title="Parent", status="in_progress", notes="")])
+        )
+
+        await todo_list_tool(
+            Params(
+                todos=[Todo(title="Sub A", status="done")],
+                parent_title="Parent",
+            )
+        )
+
+        result = await todo_list_tool(
+            Params(
+                todos=[Todo(title="Sub A", status="pending")],
+                parent_title="Parent",
+            )
+        )
+        assert result.is_error
+        assert "Cannot regress completed sub-todos" in result.output
+
+    async def test_parent_title_subagent_context(self, runtime: Runtime):
+        """parent_title works in subagent context."""
+        subagent_runtime = runtime.copy_for_subagent(
+            agent_id="test-sub-pt",
+            subagent_type="coder",
+        )
+        assert subagent_runtime.subagent_store is not None
+        subagent_runtime.subagent_store.instance_dir("test-sub-pt", create=True)
+
+        tool = TodoList(subagent_runtime)
+        await tool(Params(todos=[Todo(title="Parent", status="in_progress", notes="")]))
+
+        result = await tool(
+            Params(
+                todos=[Todo(title="Sub A", status="done")],
+                parent_title="Parent",
+            )
+        )
+        assert not result.is_error
+
+        read = await tool(Params(todos=None))
+        assert "Sub A" in read.output
+
+
+class TestSubTodoFormatting:
+    """Tests for sub-todo formatting in output."""
+
+    async def test_sub_todos_indented_in_output_summary(self, todo_list_tool: TodoList):
+        """Active sub-todos shown indented under active parents."""
+        from kimi_cli.tools.todo import SubTodo
+
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub pending", status="pending"),
+                            SubTodo(title="Sub done", status="done"),
+                        ],
+                    )
+                ]
+            )
+        )
+        assert not result.is_error
+        # Sub-todos appear indented in output
+        assert "  - [pending] Sub pending" in result.output
+        # Done sub-todos not shown in active summary
+        assert "  - [done] Sub done" not in result.output
+
+    async def test_sub_todos_in_progress_notes_shown(self, todo_list_tool: TodoList):
+        """In-progress sub-todo notes appear in output."""
+        from kimi_cli.tools.todo import SubTodo
+
+        result = await todo_list_tool(
+            Params(
+                todos=[
+                    Todo(
+                        title="Parent",
+                        status="in_progress",
+                        sub_todos=[
+                            SubTodo(title="Sub active", status="in_progress", notes="Working on it"),
+                        ],
+                    )
+                ]
+            )
+        )
+        assert not result.is_error
+        assert "  - [in progress] Sub active" in result.output
+        assert "Notes: Working on it" in result.output

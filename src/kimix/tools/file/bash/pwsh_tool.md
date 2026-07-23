@@ -1,4 +1,4 @@
-Run a simple PowerShell command. Prefer Python for complex or stateful tasks. Start a persistent session with interactive=True, then reuse the same tool with task_id=<id> to send input and read output in one step. Use wait_for_pattern to wait for a prompt. TaskOutput remains available as a fallback for listing/monitoring tasks. Send 'exit' to close the session.
+Run a simple PowerShell command. Prefer Python for complex or stateful tasks.
 
 PowerShell quick reference:
 - Cmdlets use Verb-Noun names: Get-ChildItem (list files), Get-Content (read file), Set-Location (cd), Copy-Item, Move-Item, Remove-Item, New-Item, Select-String (grep), Get-Command, Get-Help.

@@ -16,10 +16,17 @@ class DiffDisplayBlock(DisplayBlock):
     is_summary: bool = False
 
 
+class SubTodoDisplayItem(BaseModel):
+    title: str
+    status: TodoStatus
+    notes: str | None = None
+
+
 class TodoDisplayItem(BaseModel):
     title: str
     status: TodoStatus
     notes: str | None = None
+    sub_todos: list[SubTodoDisplayItem] | None = None
 
 
 class TodoDisplayBlock(DisplayBlock):

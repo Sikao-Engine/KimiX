@@ -14,6 +14,7 @@ from kimix.tools.common import (
     _build_session_output_block,
     _env_with_rg_bin_path,
     _extract_export_path,
+    _interactive_scope_text,
     _is_known_rtk_command,
     _maybe_export_output_async,
     _export_to_temp_file_async,
@@ -130,9 +131,7 @@ class Run(CallableTool2[RunParams]):
     name: str = "Run"
     description: str = (
         "Run an executable or bash command. "
-        "Start a background session with run_in_background=True, then reuse the same tool with "
-        "task_id=<id> to send input and read output in one step. Use wait_for_pattern to wait "
-        "for a prompt. TaskOutput remains available as a fallback for listing/monitoring tasks."
+        + _interactive_scope_text(is_shell=False)
     )
     params: type[RunParams] = RunParams
 

@@ -889,14 +889,16 @@ def resolve_tool_name(
     suggest_cutoff: float = 0.5,
     n_suggestions: int = 3,
     min_length: int = 3,
+    redirects: dict[str, str] | None = None,
 ) -> ToolNameResolution:
     """Resolve a possibly mis-formatted tool name to a real tool.
 
     Pure and side-effect free. Resolution order:
       1. Exact match -> returned unchanged (``corrected=False``).
-      2. High-confidence fuzzy match at or above *auto_correct_cutoff* ->
+      2. Redirect map lookup via normalized key (if *redirects* provided).
+      3. High-confidence fuzzy match at or above *auto_correct_cutoff* ->
          auto-corrected (``corrected=True``).
-      3. Otherwise ``name`` is ``None`` and *suggestions* (matches at or above
+      4. Otherwise ``name`` is ``None`` and *suggestions* (matches at or above
          *suggest_cutoff*) are populated for an error message.
 
     Names shorter than *min_length* are never matched.
@@ -906,6 +908,13 @@ def resolve_tool_name(
     valid_tuple = tuple(valid_names)
     if name in valid_tuple:
         return ToolNameResolution(name=name, original=name)
+
+    # Check the redirect map (pre-normalized keys) before fuzzy matching.
+    if redirects:
+        norm_name = normalize_tool_name(name)
+        redirected = redirects.get(norm_name)
+        if redirected is not None and redirected in valid_tuple:
+            return ToolNameResolution(name=redirected, original=name, corrected=True)
 
     if auto_correct_cutoff >= suggest_cutoff:
         # Fast path (the normal regime): a single scan at the lower suggestion
@@ -939,6 +948,473 @@ def resolve_tool_name(
         name, valid_tuple, n=n_suggestions, cutoff=suggest_cutoff, min_length=min_length
     )
     return ToolNameResolution(name=None, original=name, suggestions=suggestions)
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Tool Name Hallucination Redirect Map
+# ──────────────────────────────────────────────────────────────────────
+#
+# When an LLM backend hallucinates a tool name (e.g. ``AppendFile`` instead
+# of ``WriteFile``), this map provides a hardcoded redirect to the real name.
+# The lookup uses ``normalize_tool_name()`` so case, hyphen and underscore
+# variations all resolve correctly.
+#
+# Platform-specific overrides (e.g. ``Bash`` -> ``Powershell`` on Windows)
+# are applied in ``KimiToolset.handle()``.
+
+TOOL_NAME_REDIRECTS: dict[str, str] = {
+    # ── WriteFile hallucinations ──
+    "AppendFile": "WriteFile",
+    "CreateFile": "WriteFile",
+    "SaveFile": "WriteFile",
+    "NewFile": "WriteFile",
+    "PutFile": "WriteFile",
+    "TouchFile": "WriteFile",
+    "OverwriteFile": "WriteFile",
+    "UpdateFile": "WriteFile",
+    "Write": "WriteFile",
+    "WriteText": "WriteFile",
+    "WriteContent": "WriteFile",
+    "FileWrite": "WriteFile",
+    "OutputFile": "WriteFile",
+    "DumpFile": "WriteFile",
+    "StoreFile": "WriteFile",
+    "PersistFile": "WriteFile",
+    "Create": "WriteFile",
+    "Save": "WriteFile",
+    # ── EditFile hallucinations ──
+    "ReplaceFile": "EditFile",
+    "ModifyFile": "EditFile",
+    "PatchFile": "EditFile",
+    "ChangeFile": "EditFile",
+    "SubFile": "EditFile",
+    "SedFile": "EditFile",
+    "Edit": "EditFile",
+    "FileEdit": "EditFile",
+    "ReplaceInFile": "EditFile",
+    "FindReplace": "EditFile",
+    "SearchReplace": "EditFile",
+    "ApplyPatch": "EditFile",
+    "TextReplace": "EditFile",
+    "StringReplace": "EditFile",
+    "ReplaceText": "EditFile",
+    "UpdateFileContent": "EditFile",
+    "AlterFile": "EditFile",
+    "AdjustFile": "EditFile",
+    "RewriteFile": "EditFile",
+    # ── ReadFile hallucinations ──
+    "Read": "ReadFile",
+    "Cat": "ReadFile",
+    "ViewFile": "ReadFile",
+    "ShowFile": "ReadFile",
+    "DisplayFile": "ReadFile",
+    "OpenFile": "ReadFile",
+    "GetFile": "ReadFile",
+    "LoadFile": "ReadFile",
+    "ReadText": "ReadFile",
+    "FileRead": "ReadFile",
+    "PrintFile": "ReadFile",
+    "Dump": "ReadFile",
+    "Head": "ReadFile",
+    "Tail": "ReadFile",
+    "Preview": "ReadFile",
+    "Inspect": "ReadFile",
+    "Peek": "ReadFile",
+    "ReadLines": "ReadFile",
+    # ── Glob hallucinations ──
+    "ListFiles": "Glob",
+    "FindFiles": "Glob",
+    "SearchFiles": "Glob",
+    "FileGlob": "Glob",
+    "Ls": "Glob",
+    "Dir": "Glob",
+    "Walk": "Glob",
+    "FileSearch": "Glob",
+    "FileList": "Glob",
+    "ListDir": "Glob",
+    "ListDirectory": "Glob",
+    "DirectoryList": "Glob",
+    "GlobFiles": "Glob",
+    "MatchFiles": "Glob",
+    "Wildcard": "Glob",
+    # ── Grep hallucinations ──
+    "Search": "Grep",
+    "Find": "Grep",
+    "RipGrep": "Grep",
+    "Rg": "Grep",
+    "TextSearch": "Grep",
+    "ContentSearch": "Grep",
+    "GrepText": "Grep",
+    "SearchInFiles": "Grep",
+    "FindInFiles": "Grep",
+    "FileGrep": "Grep",
+    "PatternSearch": "Grep",
+    "RegexSearch": "Grep",
+    "MatchPattern": "Grep",
+    "Lookup": "Grep",
+    # ── TodoList hallucinations ──
+    "TaskList": "TodoList",
+    "Todo": "TodoList",
+    "Todos": "TodoList",
+    "Tasks": "TodoList",
+    "TaskManager": "TodoList",
+    "TaskPlan": "TodoList",
+    "Plan": "TodoList",
+    "Checklist": "TodoList",
+    # "TodoList" is a canonical name — no redirect needed
+    "TaskTracker": "TodoList",
+    "Progress": "TodoList",
+    # ── FetchURL hallucinations ──
+    "Fetch": "FetchURL",
+    "HttpGet": "FetchURL",
+    "GetUrl": "FetchURL",
+    "Download": "FetchURL",
+    "WebFetch": "FetchURL",
+    "FetchPage": "FetchURL",
+    "OpenUrl": "FetchURL",
+    "Browse": "FetchURL",
+    "Visit": "FetchURL",
+    "ReadUrl": "FetchURL",
+    "UrlFetch": "FetchURL",
+    "HttpRequest": "FetchURL",
+    "Curl": "FetchURL",
+    "Wget": "FetchURL",
+    # ── SearchWeb hallucinations ──
+    # "SearchWeb" is a canonical name — no redirect needed
+    "WebSearch": "SearchWeb",
+    "GoogleSearch": "SearchWeb",
+    "SearchInternet": "SearchWeb",
+    "InternetSearch": "SearchWeb",
+    "SearchOnline": "SearchWeb",
+    "OnlineSearch": "SearchWeb",
+    "WebQuery": "SearchWeb",
+    "QueryWeb": "SearchWeb",
+    "SearchEngine": "SearchWeb",
+    "Search": "SearchWeb",
+    "LookupWeb": "SearchWeb",
+    "FindOnline": "SearchWeb",
+    # ── Context management hallucinations ──
+    # ContextUsage, Compact, ContextPrune, ContextRetrieval are canonical
+    "PruneContext": "ContextPrune",
+    "CompactContext": "Compact",
+    "Summarize": "Compact",
+    "SummarizeContext": "Compact",
+    "ContextSummary": "Compact",
+    "ContextTrim": "ContextPrune",
+    "TrimContext": "ContextPrune",
+    "Recall": "ContextRetrieval",
+    "RetrieveContext": "ContextRetrieval",
+    "SearchHistory": "ContextRetrieval",
+    "HistorySearch": "ContextRetrieval",
+    "GetContext": "ContextUsage",
+    "ContextInfo": "ContextUsage",
+    # ── Agent/Subagent hallucinations ──
+    "SubAgent": "Agent",
+    "Subagent": "Agent",
+    "SpawnAgent": "Agent",
+    "StartAgent": "Agent",
+    "RunAgent": "Agent",
+    "LaunchAgent": "Agent",
+    "AgentCreate": "Agent",
+    "AgentSpawn": "Agent",
+    "AgentRun": "Agent",
+    "CreateAgent": "Agent",
+    "NewAgent": "Agent",
+    "Agents": "AgentList",
+    # "AgentList" is a canonical name — no redirect needed
+    "ListAgents": "AgentList",
+    "ActiveAgents": "AgentList",
+    "AgentStatus": "AgentList",
+    "CloseAgent": "AgentClose",
+    # "AgentClose" is a canonical name — no redirect needed
+    "StopAgent": "AgentClose",
+    "KillAgent": "AgentClose",
+    "EndAgent": "AgentClose",
+    "TerminateAgent": "AgentClose",
+    "AgentStop": "AgentClose",
+    "AgentKill": "AgentClose",
+    # "AgentSwarm" is a canonical name — no redirect needed
+    "Swarm": "AgentSwarm",
+    "AgentTeam": "AgentSwarm",
+    "MultiAgent": "AgentSwarm",
+    # ── Background task hallucinations ──
+    "ListTasks": "TaskList",
+    "Tasks": "TaskList",
+    "TaskStatus": "TaskList",
+    "GetTaskOutput": "TaskOutput",
+    # "TaskOutput" is a canonical name — no redirect needed
+    "TaskResult": "TaskOutput",
+    "GetOutput": "TaskOutput",
+    "ReadOutput": "TaskOutput",
+    "StopTask": "TaskStop",
+    # "TaskStop" is a canonical name — no redirect needed
+    "KillTask": "TaskStop",
+    "CancelTask": "TaskStop",
+    "AbortTask": "TaskStop",
+    "TerminateTask": "TaskStop",
+    "TaskKill": "TaskStop",
+    "TaskCancel": "TaskStop",
+    # ── Python/Run hallucinations ──
+    # "Python" is a canonical name — no redirect needed
+    "RunPython": "Python",
+    "ExecutePython": "Python",
+    "Py": "Python",
+    "PythonExec": "Python",
+    "PythonRun": "Python",
+    "PythonCode": "Python",
+    "Eval": "Python",
+    "ExecPython": "Python",
+    "Run": "Python",
+    "Execute": "Python",
+    "Exec": "Python",
+    # ── Miscellaneous hallucinations ──
+    # "ReadMediaFile" is a canonical name — no redirect needed
+    "MediaRead": "ReadMediaFile",
+    "ReadMedia": "ReadMediaFile",
+    "ViewMedia": "ReadMediaFile",
+    "AskUser": "AskUserQuestion",
+    # "AskUserQuestion" is a canonical name — no redirect needed
+    "UserQuestion": "AskUserQuestion",
+    "Ask": "AskUserQuestion",
+    "QueryUser": "AskUserQuestion",
+    "PromptUser": "AskUserQuestion",
+    # "Think" is a canonical name — no redirect needed
+    "Reason": "Think",
+    "Reflect": "Think",
+    "Consider": "Think",
+    "Analyze": "Think",
+    # "Mkdir" is a canonical name — no redirect needed
+    "MakeDir": "Mkdir",
+    "CreateDir": "Mkdir",
+    "CreateDirectory": "Mkdir",
+    # "Rm" is a canonical name — no redirect needed
+    "Remove": "Rm",
+    "Delete": "Rm",
+    "RemoveFile": "Rm",
+    "DeleteFile": "Rm",
+    "RmDir": "Rm",
+    "RemoveDir": "Rm",
+    "DeleteDir": "Rm",
+    "Unlink": "Rm",
+    # "ParserTool" is a canonical name — no redirect needed
+    "Parse": "ParserTool",
+    "Parser": "ParserTool",
+    # "FindStr" is a canonical name — no redirect needed
+    "FindString": "FindStr",
+    "SearchString": "FindStr",
+    # "AskParent" is a canonical name — no redirect needed
+    "AskParentAgent": "AskParent",
+    "QueryParent": "AskParent",
+    "ParentQuery": "AskParent",
+    # "HashRead" is a canonical name — no redirect needed
+    "HashReadFile": "HashRead",
+    "ReadHash": "HashRead",
+    "FileHash": "HashRead",
+    # "HashEdit" is a canonical name — no redirect needed
+    "HashEditFile": "HashEdit",
+    "EditHash": "HashEdit",
+    # ── Shell command hallucinations (platform-neutral baseline) ──
+    # On POSIX, these all redirect to ``Bash`` (the real tool).
+    # On Windows, ``Bash`` and all other shell names redirect to ``Powershell``.
+    # Platform overrides are applied in ``KimiToolset.handle()``.
+    "Shell": "Bash",
+    "Terminal": "Bash",
+    "Cmd": "Bash",
+    "Command": "Bash",
+    "Sh": "Bash",
+    "Zsh": "Bash",
+    "ShellCommand": "Bash",
+    "BashCommand": "Bash",
+    "RunCommand": "Bash",
+    "Powershell": "Bash",
+    "PowerShell": "Bash",
+    "Pwsh": "Bash",
+    "PS": "Bash",
+    # "Bash" is a canonical name (real tool on POSIX) — no redirect needed
+}
+
+# Pre-normalized version for O(1) lookup after normalize_tool_name().
+# Self-mapping entries (k == v) are filtered out — they add no value.
+_TOOL_NAME_REDIRECTS_NORMALIZED: dict[str, str] = {
+    normalize_tool_name(k): v for k, v in TOOL_NAME_REDIRECTS.items() if k != v
+}
+
+
+def _score_argument_fit(
+    arguments: dict[str, Any],
+    params_model: type[BaseModel] | None,
+) -> tuple[float, dict[str, Any] | None]:
+    """
+    Score how well *arguments* fit a tool's parameter schema.
+
+    Returns ``(score 0.0–1.0, repaired_args_or_None)`` where a higher score
+    means a better fit.  ``repaired_args`` is only set when the arguments
+    could be meaningfully repaired against the model (i.e. at least one field
+    matched).
+
+    Score components:
+    - Each required field present in arguments (after repair): +0.3 / n_required
+    - Each optional field present: +0.1 / n_optional
+    - Each field matched via alias/fuzzy: +0.05 bonus
+    - Each field matched by exact name: +0.1 bonus
+    - Each unmapped key (LLM sent a field no candidate has): -0.15
+    - Each type coercion applied: +0.02 bonus (weak signal)
+
+    Clamped to [0.0, 1.0].
+
+    Returns ``(0.0, None)`` when the model is not a BaseModel subclass
+    (e.g. legacy CallableTool without typed params).
+    """
+    if params_model is None or not isinstance(params_model, type) or not issubclass(params_model, BaseModel):
+        return 0.0, None
+    if not isinstance(arguments, dict) or not arguments:
+        return 0.0, None
+
+    # Attempt to repair the arguments against this model.
+    repaired = _repair_dict_for_model(arguments, params_model)
+
+    model_fields = params_model.model_fields
+    n_total = len(model_fields)
+    if n_total == 0:
+        return 1.0, {} if not arguments else None
+
+    # Count required and optional fields.
+    n_required = 0
+    for finfo in model_fields.values():
+        if finfo.is_required():
+            n_required += 1
+    n_optional = n_total - n_required
+    if n_required == 0:
+        n_required = 1  # avoid division by zero; treat as optional-only
+
+    score = 0.0
+    exact_matches = 0
+    alias_matches = 0
+    coercion_count = 0
+
+    # Track which original argument keys were successfully mapped.
+    original_keys = set(arguments.keys())
+    mapped_keys: set[str] = set()
+
+    for fname, finfo in model_fields.items():
+        if fname not in repaired:
+            # Field not provided — no score contribution
+            continue
+        mapped_keys.add(fname)
+
+        # Check if the key was originally provided (exact match) or came via alias/fuzzy.
+        was_exact = fname in arguments
+        if was_exact:
+            exact_matches += 1
+            if finfo.is_required():
+                score += 0.3 / max(n_required, 1)
+            else:
+                score += 0.1 / max(n_optional, 1)
+            score += 0.1  # exact match bonus
+        else:
+            alias_matches += 1
+            if finfo.is_required():
+                score += 0.3 / max(n_required, 1)
+            else:
+                score += 0.1 / max(n_optional, 1)
+            score += 0.05  # alias/fuzzy match bonus
+
+        # Detect type coercion: compare original value vs repaired value type.
+        original_val = arguments.get(fname)
+        if original_val is not None and fname in repaired:
+            repaired_val = repaired[fname]
+            if type(original_val) is not type(repaired_val):
+                coercion_count += 1
+
+    # Penalty for unmapped keys (LLM sent fields this model does not have).
+    for key in arguments:
+        if key not in model_fields and key not in repaired:
+            score -= 0.15
+        elif key in repaired and repaired[key] is not arguments.get(key):
+            pass  # was successfully repaired
+
+    # Bonus for type coercions (weak signal).
+    score += coercion_count * 0.02
+
+    # Clamp to [0.0, 1.0].
+    score = max(0.0, min(1.0, score))
+
+    # Only return repaired args if at least one field was matched.
+    if mapped_keys:
+        return score, repaired
+    return 0.0, None
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCandidate:
+    """A candidate tool name with its argument-match score."""
+
+    name: str
+    score: float  # 0.0–1.0, higher = better argument match
+    args_repaired: dict[str, Any] | None = None
+
+
+def resolve_tool_by_arguments(
+    tool_name: str,
+    arguments: dict[str, Any],
+    candidates: list[str],
+    tool_dict: dict[str, Any],
+    *,
+    min_argument_score: float = 0.3,
+    score_delta: float = 0.15,
+) -> ToolNameResolution | None:
+    """
+    Try to resolve a hallucinated tool name by testing arguments against
+    each candidate tool's parameter schema.
+
+    Returns a ``ToolNameResolution`` if the arguments clearly point to one
+    candidate (score >= *min_argument_score* and beat second place by
+    *score_delta*).  Otherwise returns ``None`` to fall through to name-only
+    matching.
+
+    Tools that do not have a typed ``params`` (legacy ``CallableTool``,
+    not ``CallableTool2``) are silently skipped.
+    """
+    if not isinstance(arguments, dict) or not arguments:
+        return None
+    if not candidates:
+        return None
+
+    scored: list[ToolCandidate] = []
+
+    for name in candidates:
+        tool = tool_dict.get(name)
+        if tool is None:
+            continue
+
+        # Get the params model — only CallableTool2 has typed params.
+        params_model: type[BaseModel] | None = getattr(tool, "params", None)
+        if params_model is None:
+            # Legacy CallableTool — cannot score arguments.
+            continue
+
+        score, repaired = _score_argument_fit(arguments, params_model)
+        scored.append(ToolCandidate(name=name, score=score, args_repaired=repaired))
+
+    if not scored:
+        return None
+
+    # Sort by score descending.
+    scored.sort(key=lambda c: c.score, reverse=True)
+
+    best = scored[0]
+    second_best = scored[1] if len(scored) > 1 else None
+
+    if best.score >= min_argument_score and (
+        second_best is None or (best.score - second_best.score) >= score_delta
+    ):
+        return ToolNameResolution(
+            name=best.name,
+            original=tool_name,
+            corrected=True,
+        )
+
+    return None
 
 
 def _repair_dict_for_model(

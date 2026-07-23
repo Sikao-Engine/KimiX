@@ -566,15 +566,29 @@ class ACPSession:
             "done": "completed",
             "completed": "completed",
         }
-        entries: list[acp.schema.PlanEntry] = [
-            acp.schema.PlanEntry(
-                content=todo.title,
-                priority="medium",
-                status=status_map.get(todo.status.lower(), "pending"),
+        entries: list[acp.schema.PlanEntry] = []
+        for todo in block.items:
+            if not todo.title:
+                continue
+            entries.append(
+                acp.schema.PlanEntry(
+                    content=todo.title,
+                    priority="medium",
+                    status=status_map.get(todo.status.lower(), "pending"),
+                )
             )
-            for todo in block.items
-            if todo.title
-        ]
+            # Flatten sub-todos as additional plan entries with parent prefix
+            if todo.sub_todos:
+                for st in todo.sub_todos:
+                    if not st.title:
+                        continue
+                    entries.append(
+                        acp.schema.PlanEntry(
+                            content=f"{todo.title} → {st.title}",
+                            priority="low",
+                            status=status_map.get(st.status.lower(), "pending"),
+                        )
+                    )
 
         if not entries:
             logger.warning("No valid todo items to send in plan update: {todos}", todos=block.items)

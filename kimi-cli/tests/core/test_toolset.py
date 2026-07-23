@@ -5,11 +5,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import sys
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kosong.tooling.error import ToolNotFoundError as KosongToolNotFoundError
 from pydantic import BaseModel
 
-from kimi_cli.soul.toolset import KimiToolset
+from kimi_cli.soul.toolset import (
+    KimiToolset,
+    _PLATFORM_REDIRECTS_NORM,
+    _build_platform_redirects,
+    _collect_candidates,
+)
 from kimi_cli.wire.types import TextPart, ToolCall, ToolResult
 
 
@@ -791,3 +797,154 @@ async def test_oversized_content_part_output_is_truncated():
     assert len(output[0].text.encode("utf-8")) == ts._get_max_output_bytes()
     assert "exceeded the maximum allowed size" in tr.return_value.message
     assert large_output.startswith(output[0].text)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tool name redirect / candidate collection tests
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_platform_redirects_win32_includes_powershell():
+    """On Windows, the platform redirect map includes Bash→Powershell."""
+    redirects = _build_platform_redirects()
+    # The normalized key for "Bash" should map to "Powershell"
+    from kosong.tooling import normalize_tool_name
+
+    bash_norm = normalize_tool_name("Bash")
+    pwsh_norm = normalize_tool_name("Powershell")
+    # On win32, Bash → Powershell; on POSIX, Powershell → Bash
+    if sys.platform == "win32":
+        assert redirects.get(bash_norm) == "Powershell"
+    else:
+        assert redirects.get(pwsh_norm) == "Bash"
+
+
+def test_platform_redirects_has_keys():
+    """Platform redirects map should always have entries."""
+    redirects = _build_platform_redirects()
+    assert len(redirects) > 0
+    # All values should be valid normalized tool name variants
+    for norm_key, target in redirects.items():
+        assert isinstance(norm_key, str)
+        assert isinstance(target, str)
+        assert norm_key.islower()
+
+
+def test_platform_redirects_norm_is_cache():
+    """_PLATFORM_REDIRECTS_NORM is the pre-computed platform redirect map."""
+    assert isinstance(_PLATFORM_REDIRECTS_NORM, dict)
+    # Should match a fresh build
+    fresh = _build_platform_redirects()
+    assert _PLATFORM_REDIRECTS_NORM == fresh
+
+
+def test_collect_candidates_no_redirects():
+    """Without redirects, _collect_candidates falls through to normalize+fuzzy."""
+    valid = {"ToolA", "ToolB", "LongNamedTool"}
+    candidates = _collect_candidates("ToolA", valid)
+    assert "ToolA" in candidates
+    # The exact match via normalize_tool_name should be first
+    assert candidates[0] == "ToolA"
+
+
+def test_collect_candidates_with_redirect():
+    """With redirects, the redirect match takes priority."""
+    from kosong.tooling import normalize_tool_name
+
+    valid = {"ToolA", "ToolB"}
+    redirects = {normalize_tool_name("Bash"): "ToolA"}
+    # "Bash" is not in valid, but redirects point to "ToolA"
+    candidates = _collect_candidates("Bash", valid, redirects=redirects)
+    assert "ToolA" in candidates
+    # ToolA should be first (from redirect, highest priority)
+    assert candidates[0] == "ToolA"
+
+
+def test_collect_candidates_redirect_not_in_valid():
+    """Redirect to a name not in valid_names is skipped."""
+    from kosong.tooling import normalize_tool_name
+
+    valid = {"ToolA", "ToolB"}
+    redirects = {normalize_tool_name("Bash"): "NonExistent"}
+    candidates = _collect_candidates("Bash", valid, redirects=redirects)
+    # Should not contain "NonExistent" since it's not in valid
+    assert "NonExistent" not in candidates
+
+
+def test_collect_candidates_deduplicates():
+    """Candidates list should not contain duplicates."""
+    valid = {"ToolA", "ToolB"}
+    candidates = _collect_candidates("toola", valid)  # case-insensitive match to ToolA
+    # Should have exactly one "ToolA"
+    toola_count = candidates.count("ToolA")
+    assert toola_count == 1, f"Expected exactly one 'ToolA', got {toola_count}"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Handle with redirect map (integration)
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+async def test_handle_redirect_auto_corrects_hallucinated_name():
+    """A hallucinated tool name that matches the redirect map should auto-correct."""
+    from kosong.tooling import normalize_tool_name
+
+    ts = _make_toolset()
+    # Add a redirect entry for testing: "AppendFile" → "ToolA"
+    # We inject into the module-level platform redirects (it's used by handle())
+    import kimi_cli.soul.toolset as ts_mod
+
+    original_redirects = dict(ts_mod._PLATFORM_REDIRECTS_NORM)
+    ts_mod._PLATFORM_REDIRECTS_NORM = dict(original_redirects)
+    ts_mod._PLATFORM_REDIRECTS_NORM[normalize_tool_name("AppendFile")] = "ToolA"
+
+    try:
+        tool_call = ToolCall(
+            id="tc-redirect",
+            function=ToolCall.FunctionBody(
+                name="AppendFile",
+                arguments=json.dumps({"value": "test"}),
+            ),
+        )
+        result = ts.handle(tool_call)
+        assert isinstance(result, asyncio.Task)
+        tr = await result
+        output = tr.return_value.output
+        assert isinstance(output, str)
+        assert output.startswith("a")  # ToolA returns "a"
+        assert "<system-warning>" in output
+        assert "Auto-corrected" in output
+    finally:
+        ts_mod._PLATFORM_REDIRECTS_NORM = original_redirects
+
+
+async def test_handle_redirect_precedes_fuzzy():
+    """Redirect map is checked before fuzzy matching."""
+    from kosong.tooling import normalize_tool_name
+
+    ts = _make_extended_toolset()
+    import kimi_cli.soul.toolset as ts_mod
+
+    original_redirects = dict(ts_mod._PLATFORM_REDIRECTS_NORM)
+    ts_mod._PLATFORM_REDIRECTS_NORM = dict(original_redirects)
+    # "LongNmedTool" has a typo - fuzzy would correct to "LongNamedTool"
+    # But we redirect it to "ToolB" instead
+    ts_mod._PLATFORM_REDIRECTS_NORM[normalize_tool_name("LongNmedTool")] = "ToolB"
+
+    try:
+        tool_call = ToolCall(
+            id="tc-redirect-priority",
+            function=ToolCall.FunctionBody(
+                name="LongNmedTool",
+                arguments=json.dumps({"value": "test"}),
+            ),
+        )
+        result = ts.handle(tool_call)
+        assert isinstance(result, asyncio.Task)
+        tr = await result
+        output = tr.return_value.output
+        assert isinstance(output, str)
+        assert output.startswith("b")  # ToolB returns "b", not "long"
+        assert "<system-warning>" in output
+    finally:
+        ts_mod._PLATFORM_REDIRECTS_NORM = original_redirects

@@ -72,10 +72,21 @@ async def _maybe_build_todo_reminder(session: Session, *, strong: bool = False) 
         state_file = subagent_store.instance_dir(subagent_id) / "state.json"
         data = _read_subagent_state(state_file)
         raw_todos = data.get("todos", []) if isinstance(data.get("todos"), list) else []
-        todos = [
-            SimpleNamespace(title=t.get("title", ""), status=t.get("status", ""))
-            for t in raw_todos
-        ]
+        todos = []
+        for t in raw_todos:
+            sub_todos_raw = t.get("sub_todos", None) or []
+            sub_todos_ns = [
+                SimpleNamespace(title=st.get("title", ""), status=st.get("status", ""), notes=st.get("notes", None))
+                for st in sub_todos_raw
+            ]
+            todos.append(
+                SimpleNamespace(
+                    title=t.get("title", ""),
+                    status=t.get("status", ""),
+                    notes=t.get("notes", None),
+                    sub_todos=sub_todos_ns,
+                )
+            )
 
     if not todos:
         return None
@@ -95,7 +106,21 @@ async def _maybe_build_todo_reminder(session: Session, *, strong: bool = False) 
     for todo in todos:
         title = getattr(todo, "title", "")
         status = getattr(todo, "status", "")
-        lines.append(f"- [{status}] {title}")
+        notes = getattr(todo, "notes", None)
+        if notes:
+            lines.append(f"- [{status}] {title}  Notes: {notes}")
+        else:
+            lines.append(f"- [{status}] {title}")
+        # Render sub-todos if present
+        sub_todos = getattr(todo, "sub_todos", None) or []
+        for st in sub_todos:
+            st_title = getattr(st, "title", "") if not isinstance(st, dict) else st.get("title", "")
+            st_status = getattr(st, "status", "") if not isinstance(st, dict) else st.get("status", "")
+            st_notes = getattr(st, "notes", None) if not isinstance(st, dict) else st.get("notes", None)
+            if st_notes:
+                lines.append(f"  - [{st_status}] {st_title}  Notes: {st_notes}")
+            else:
+                lines.append(f"  - [{st_status}] {st_title}")
     lines.append("</system-reminder>")
     return "\n".join(lines)
 
@@ -179,18 +204,32 @@ async def _export_session_todos(session: Session, path: Path) -> None:
         data = _read_subagent_state(state_file)
         todos = data.get("todos", []) if isinstance(data.get("todos"), list) else []
 
-    export_data: list[dict[str, str]] = []
+    export_data: list[dict[str, Any]] = []
     for todo in todos:
         if isinstance(todo, dict):
-            export_data.append({
+            exp_entry: dict[str, Any] = {
                 "title": todo.get("title", ""),
                 "status": todo.get("status", ""),
-            })
+            }
+            sub_list_raw = todo.get("sub_todos", None)
+            if sub_list_raw:
+                exp_entry["sub_todos"] = [
+                    {"title": st.get("title", ""), "status": st.get("status", "")}
+                    for st in sub_list_raw
+                ]
+            export_data.append(exp_entry)
         else:
-            export_data.append({
+            exp_entry: dict[str, Any] = {
                 "title": getattr(todo, "title", ""),
                 "status": getattr(todo, "status", ""),
-            })
+            }
+            sub_list_raw = getattr(todo, "sub_todos", None)
+            if sub_list_raw:
+                exp_entry["sub_todos"] = [
+                    {"title": getattr(st, "title", ""), "status": getattr(st, "status", "")}
+                    for st in sub_list_raw
+                ]
+            export_data.append(exp_entry)
     if not export_data:
         return
     try:
@@ -558,10 +597,10 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
         plan_size = len(plan_content.encode("utf-8"))
         regular_session = _create_default_session()
         if plan_size > 100 * 1024:
-            impl_prompt = f"Read the plan in `{plan_file}`, implement the plan."
+            impl_prompt = f"Read the plan in `{plan_file}`, carefully research, read all related files first, then implement the plan."
             review_reminder = f"Review the plan in `{plan_file}` and ensure all tasks are completed."
         else:
-            impl_prompt = f"implement the plan:\n\n{plan_content}"
+            impl_prompt = f"carefully research, read all related files first, then implement the plan:\n\n{plan_content}"
             review_reminder = f"Review this plan and ensure all tasks are completed:\n\n{plan_content}"
         await prompt_async(
             impl_prompt,

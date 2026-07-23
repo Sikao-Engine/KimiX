@@ -964,6 +964,33 @@ async def _token_filter_output(
     return output, original_path
 
 
+def _interactive_scope_text(*, is_shell: bool = True) -> str:
+    """Return the interactive/background usage scope prompt for tool descriptions.
+
+    Shell tools (Bash, Powershell) use ``interactive=True``, while the
+    ``Run`` tool uses ``run_in_background=True``.  This is the single source
+    of truth so that tool descriptions stay in sync.
+
+    Args:
+        is_shell: ``True`` for shell tools (Bash/Powershell), ``False`` for Run.
+
+    Returns:
+        A sentence describing how to start interactive/background sessions.
+    """
+    if is_shell:
+        return (
+            "Start a persistent session with interactive=True, then reuse the same tool with "
+            "task_id=<id> to send input and read output in one step. Use wait_for_pattern to wait "
+            "for a prompt. TaskOutput remains available as a fallback for listing/monitoring tasks. "
+            "Send 'exit' to close the session."
+        )
+    return (
+        "Start a background session with run_in_background=True, then reuse the same tool with "
+        "task_id=<id> to send input and read output in one step. Use wait_for_pattern to wait "
+        "for a prompt. TaskOutput remains available as a fallback for listing/monitoring tasks."
+    )
+
+
 def _env_with_rg_bin_path(env: dict[str, str] | None = None) -> dict[str, str]:
     """Return a copy of environment with rg shared bin dir prepended to PATH.
 

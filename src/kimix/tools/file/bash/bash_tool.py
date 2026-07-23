@@ -24,6 +24,7 @@ from kimix.tools.common import (
     _build_session_output_block,
     _env_with_rg_bin_path,
     _extract_export_path,
+    _interactive_scope_text,
     _maybe_export_output_async,
     _maybe_rewrite_shell_command_with_rtk,
     _summarize_long_output_async,
@@ -609,10 +610,7 @@ class Bash(CallableTool2[BashParams]):
     name: str = "Bash"
     description: str = (
         "Execute a bash command. Supports Unix-style / POSIX bash syntax. "
-        "Start a persistent session with interactive=True, then reuse the same tool with "
-        "task_id=<id> to send input and read output in one step. Use wait_for_pattern to wait "
-        "for a prompt. TaskOutput remains available as a fallback for listing/monitoring tasks. "
-        "Send 'exit' to close the session."
+        + _interactive_scope_text(is_shell=True)
     )
     params: type[BashParams] = BashParams
 
