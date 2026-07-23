@@ -64,3 +64,34 @@ class TestTaskOutputActionKill:
     def test_legacy_kill_bool_maps_to_action(self) -> None:
         params = TaskOutputParams(task_id="t1", kill=True)
         assert params.action == "kill"
+
+
+# ── Defect: __del__ cleanup safety ────────────────────────────────────────
+
+
+class TestTaskOutputDelCleanup:
+    """Verify that __del__ does not crash or leak event loops."""
+
+    def test_del_without_session_does_nothing(self) -> None:
+        """__del__ with no _session should not crash."""
+        obj = TaskOutput.__new__(TaskOutput)
+        obj.__del__()  # Should not raise
+
+    def test_del_with_mock_session_no_event_loop(self) -> None:
+        """__del__ with a session but no running loop should not crash."""
+        obj = TaskOutput.__new__(TaskOutput)
+        obj._session = MagicMock()
+        obj.__del__()  # Should not raise
+
+    def test_del_during_finalization_noop(self) -> None:
+        """__del__ when sys.is_finalizing() should return early."""
+        import sys
+        # Simulate interpreter-finalizing state
+        orig = sys.is_finalizing
+        try:
+            sys.is_finalizing = lambda: True  # type: ignore[method-assign]
+            obj = TaskOutput.__new__(TaskOutput)
+            obj._session = MagicMock()
+            obj.__del__()  # Should return without accessing session
+        finally:
+            sys.is_finalizing = orig

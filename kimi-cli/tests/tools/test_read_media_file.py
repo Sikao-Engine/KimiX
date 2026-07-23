@@ -490,3 +490,45 @@ async def test_read_image_file_without_capability(runtime: Runtime, temp_work_di
         "Tell the user to use a model with image input capability."
     )
     assert result.brief == snapshot("Unsupported media type")
+
+
+# ── info_only tests ─────────────────────────────────────────────────────────
+
+
+async def test_info_only_image(
+    read_media_file_tool: ReadMediaFile, temp_work_dir: KaosPath
+):
+    """info_only with an image file returns metadata without loading into context."""
+    image_file = temp_work_dir / "info_sample.png"
+    data = _make_png((32, 16))
+    await image_file.write_bytes(data)
+
+    result = await read_media_file_tool(Params(path=str(image_file), info_only=True))
+
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "Format:" in result.output
+    assert "Size:" in result.output
+    assert "Dimensions:" in result.output
+    assert "32x16" in result.output
+    assert result.brief == "Media metadata"
+
+
+async def test_info_only_video(
+    read_media_file_tool: ReadMediaFile, temp_work_dir: KaosPath
+):
+    """info_only with a video file should NOT crash (PIL cannot open video)."""
+    video_file = temp_work_dir / "info_sample.mp4"
+    data = b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom"
+    await video_file.write_bytes(data)
+
+    # Prior to fix, this would crash with PIL.UnidentifiedImageError
+    result = await read_media_file_tool(Params(path=str(video_file), info_only=True))
+
+    assert not result.is_error
+    assert isinstance(result.output, str)
+    assert "Format:" in result.output
+    assert "Size:" in result.output
+    assert "Dimensions:" in result.output
+    assert "N/A (video)" in result.output
+    assert result.brief == "Media metadata"

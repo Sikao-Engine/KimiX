@@ -114,7 +114,6 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
     assert "mode" in props
     assert "match_mode" in props
     assert "auto_fix" in props
-    assert "parent_title" in props
     # Verify mode enum values
     assert props["mode"]["enum"] == ["overwrite", "append", "force_overwrite"]
     assert props["mode"]["default"] == "append"

@@ -25,8 +25,7 @@ _MAX_TODOS = 4096
 _MAX_ARCHIVED_TODOS = 500
 # Maximum number of items printed by read mode before truncating.
 _MAX_READ_ITEMS = 100
-# Maximum number of sub-todos per parent.
-_MAX_SUB_TODOS = 256
+
 
 
 # Mode map — only canonical values accepted
@@ -69,50 +68,6 @@ class _FuzzyResult:
     index: int
 
 
-class SubTodo(BaseModel):
-    """A leaf sub-todo item (no recursion — one level deep only)."""
-
-    model_config = {"populate_by_name": True}
-
-    title: str = Field(description="Title", min_length=1, max_length=65536)
-    status: TodoStatus = Field(description="Status")
-    notes: str | None = Field(
-        default=None,
-        description="Notes.",
-        max_length=65536,
-    )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _accept_description_alias(cls, data: Any) -> Any:
-        """Accept `description` as an alias for `notes`."""
-        if isinstance(data, dict):
-            if "description" in data and "notes" not in data:
-                data["notes"] = data.pop("description")
-        return data
-
-    @field_validator("status", mode="before")
-    @classmethod
-    def _validate_status(cls, v: Any) -> str:
-        return _canonical_status(v)
-
-    @field_validator("notes", mode="before")
-    @classmethod
-    def _validate_notes(cls, v: Any) -> str | None:
-        if v is None:
-            return None
-        stripped = str(v).strip()
-        return stripped if stripped else None
-
-    @field_validator("title")
-    @classmethod
-    def _validate_title(cls, v: str) -> str:
-        stripped = v.strip()
-        if not stripped:
-            raise ValueError("Title cannot be empty or contain only whitespace")
-        return stripped
-
-
 class Todo(BaseModel):
     model_config = {"populate_by_name": True}
 
@@ -122,13 +77,6 @@ class Todo(BaseModel):
         default=None,
         description="Notes.",
         max_length=65536,
-    )
-    sub_todos: list[SubTodo] | None = Field(
-        default=None,
-        description=(
-            "Optional sub-level todo list (one level only, no recursion). "
-            "Omit to preserve existing sub-todos. Set to [] to clear. Set to [...] to merge by title."
-        ),
     )
 
     @model_validator(mode="before")
@@ -167,7 +115,7 @@ class Params(BaseModel):
 
     todos: list[Todo] | Todo | None = Field(
         default=None,
-        description="Updated list, a single Todo item, or omit to return current list unchanged. Each Todo may optionally include sub_todos for one-level nesting.",
+        description="Updated list, a single Todo item, or omit to return current list unchanged.",
     )
     mode: Literal["overwrite", "append", "force_overwrite"] = Field(
         default="append",
@@ -191,14 +139,6 @@ class Params(BaseModel):
             "items as done before applying the update. Use with caution."
         ),
     )
-    parent_title: str | None = Field(
-        default=None,
-        description=(
-            "[Deprecated] When set, the provided todos are treated as sub-todos for the parent todo "
-            "matching this title (fuzzy-matched). Prefer embedding sub_todos directly inside Todo objects instead."
-        ),
-    )
-
     @field_validator("mode", mode="before")
     @classmethod
     def _validate_mode(cls, v: Any) -> str:
@@ -253,18 +193,6 @@ class Params(BaseModel):
             return out
         raise ValueError("todos must be a list of todos, a single todo dict/object, or None")
 
-    @model_validator(mode="after")
-    def _deprecate_parent_title(self) -> "Params":
-        """Emit deprecation warning when parent_title is used."""
-        if self.parent_title is not None:
-            import warnings
-            warnings.warn(
-                "parent_title is deprecated. Use sub_todos embedded in Todo objects instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return self
-
 
 def _first_pydantic_message(exc: ValidationError) -> str:
     """Return the first human-readable message from a Pydantic ValidationError."""
@@ -297,8 +225,7 @@ class TodoList(CallableTool2[Params]):
         "mode='append' (default) merges by exact title: existing titles are updated, new titles are appended.\n"
         "mode='overwrite' replaces the list only when every existing todo is done; "
         "use mode='force_overwrite' to intentionally discard unfinished items.\n"
-        "Keep exactly one item in_progress at a time and mark items done immediately after finishing them.\n"
-        "Set parent_title to update sub-todos for a specific parent todo (one level deep only)."
+        "Keep exactly one item in_progress at a time and mark items done immediately after finishing them."
     )
     params: type[Params] = Params
 
@@ -309,8 +236,6 @@ class TodoList(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         if params.todos is not None:
-            if params.parent_title is not None:
-                return self._write_sub_todos(params)
             return self._write_todos(params.todos, params)
         return self._read_todos()
 
@@ -474,11 +399,7 @@ class TodoList(CallableTool2[Params]):
         ),
         display_status: dict[TodoStatus, str] | None = None,
     ) -> str:
-        """Return a dense Markdown summary of selected todos, or '' if none.
-
-        Sub-todos are shown indented under their parent if the parent matches
-        the status filter. Only sub-todos matching the filter are shown.
-        """
+        """Return a dense Markdown summary of selected todos, or '' if none."""
         if display_status is None:
             display_status = {
                 "pending": "pending",
@@ -494,15 +415,6 @@ class TodoList(CallableTool2[Params]):
             if t.status == "in_progress" and t.notes:
                 todo += f"  Notes: {t.notes}"
             lines.append(todo)
-            # Render sub-todos indented under parent
-            if t.sub_todos:
-                for st in t.sub_todos:
-                    if st.status not in status_filter:
-                        continue
-                    sub_line = f"  - [{display_status[st.status]}] {st.title}"
-                    if st.status == "in_progress" and st.notes:
-                        sub_line += f"  Notes: {st.notes}"
-                    lines.append(sub_line)
 
         return "\n".join(lines)
 
@@ -656,63 +568,12 @@ class TodoList(CallableTool2[Params]):
 
     @staticmethod
     def _merge_one(old: Todo, new: Todo) -> Todo:
-        """Produce an updated todo preserving old notes when new omits them.
-
-        Sub-todos:
-        - ``None`` (not provided / explicit null) → preserve existing sub-todos.
-        - ``[]`` (explicit empty list) → clear sub-todos (caller handles mode check).
-        - ``[...]`` (non-empty list) → merge with existing sub-todos by title.
-        """
-        # Sub-todo merge
-        if new.sub_todos is None:
-            merged_sub_todos = old.sub_todos  # preserve existing
-        elif new.sub_todos == []:
-            merged_sub_todos = []  # explicit clear
-        else:
-            merged_sub_todos = TodoList._merge_sub_todo_lists(
-                old.sub_todos or [], new.sub_todos
-            )
-
+        """Produce an updated todo preserving old notes when new omits them."""
         return Todo(
             title=old.title,
             status=new.status,
             notes=new.notes if new.notes is not None else old.notes,
-            sub_todos=merged_sub_todos,
         )
-
-    @staticmethod
-    def _merge_sub_todo_lists(
-        old_sub_todos: list[SubTodo],
-        new_sub_todos: list[SubTodo],
-    ) -> list[SubTodo]:
-        """Update existing sub-todo titles and append brand-new ones.
-
-        Same semantics as ``_merge_by_title_update`` but for sub-todo lists.
-        """
-        new_by_title = {st.title: st for st in new_sub_todos}
-        merged: list[SubTodo] = []
-        seen: set[str] = set()
-
-        for old in old_sub_todos:
-            new = new_by_title.get(old.title)
-            if new is not None:
-                merged.append(
-                    SubTodo(
-                        title=old.title,
-                        status=new.status,
-                        notes=new.notes if new.notes is not None else old.notes,
-                    )
-                )
-            else:
-                merged.append(old)
-            seen.add(old.title)
-
-        for new in new_sub_todos:
-            if new.title not in seen:
-                merged.append(new)
-                seen.add(new.title)
-
-        return merged
 
     @staticmethod
     def _check_regressions(
@@ -720,15 +581,10 @@ class TodoList(CallableTool2[Params]):
     ) -> tuple[list[Todo], list[str]]:
         """Detect done todos being moved back to pending/in_progress.
 
-        Also checks sub-todo regressions when both old and new have ``sub_todos``.
         Returns the final list with regressed items clamped back to ``done``,
         plus the list of regressed titles.
         """
         old_status_map = {t.title: t.status for t in old_todos}
-        old_sub_map: dict[str, dict[str, str]] = {}  # parent_title -> {sub_title: status}
-        for t in old_todos:
-            if t.sub_todos:
-                old_sub_map[t.title] = {st.title: st.status for st in t.sub_todos}
 
         regressions: list[str] = []
         clamped: list[Todo] = []
@@ -736,244 +592,9 @@ class TodoList(CallableTool2[Params]):
             if old_status_map.get(t.title) == "done" and t.status != "done":
                 regressions.append(t.title)
                 clamped.append(t.model_copy(update={"status": "done"}))
-            elif t.sub_todos and t.title in old_sub_map:
-                # Check sub-todo regressions
-                old_sub = old_sub_map[t.title]
-                has_regression = False
-                new_sub_list: list[SubTodo] = []
-                for st in t.sub_todos:
-                    if old_sub.get(st.title) == "done" and st.status != "done":
-                        regressions.append(f"{t.title} > {st.title}")
-                        new_sub_list.append(st.model_copy(update={"status": "done"}))
-                        has_regression = True
-                    else:
-                        new_sub_list.append(st)
-                if has_regression:
-                    clamped.append(t.model_copy(update={"sub_todos": new_sub_list}))
-                else:
-                    clamped.append(t)
             else:
                 clamped.append(t)
         return clamped, regressions
-
-    @staticmethod
-    def _check_sub_todo_regressions(
-        old_sub_todos: list[SubTodo], new_sub_todos: list[SubTodo]
-    ) -> tuple[list[SubTodo], list[str]]:
-        """Detect done sub-todos regressed to pending/in_progress.
-
-        Returns clamped sub-todos and a list of regressed titles.
-        """
-        old_status_map = {st.title: st.status for st in old_sub_todos}
-        regressions: list[str] = []
-        clamped: list[SubTodo] = []
-        for st in new_sub_todos:
-            if old_status_map.get(st.title) == "done" and st.status != "done":
-                regressions.append(st.title)
-                clamped.append(st.model_copy(update={"status": "done"}))
-            else:
-                clamped.append(st)
-        return clamped, regressions
-
-    def _resolve_parent_title(self, parent_title: str, old_todos: list[Todo]) -> tuple[Todo, str | None]:
-        """Fuzzy-match ``parent_title`` to an existing Todo.
-
-        Returns ``(matched_todo, warning_message_or_None)``.
-        Raises ``ValueError`` with suggestions if no match found.
-        """
-        titles = [t.title for t in old_todos]
-        if not titles:
-            raise ValueError(
-                "No todos exist. Create a parent todo first before adding sub-todos."
-            )
-
-        # Fast path: exact match
-        for t in old_todos:
-            if t.title == parent_title:
-                return t, None
-
-        # Fuzzy match with case-insensitive token_sort_ratio
-        matches = self._find_nearest_titles(
-            [parent_title], titles, top_k=3, score_cutoff=60, processor=str.lower
-        )
-        candidates = matches.get(parent_title, [])
-
-        if not candidates:
-            preview = ", ".join(f"'{t}'" for t in titles[:10])
-            suffix = "..." if len(titles) > 10 else ""
-            raise ValueError(
-                f"No todo matching '{parent_title}' found. Existing titles: {preview}{suffix}"
-            )
-
-        best = candidates[0]
-        matched = old_todos[best.index]
-
-        if best.score >= 90:
-            return matched, None  # high confidence, no warning
-        elif best.score >= 80:
-            return matched, (
-                f'parent_title "{parent_title}" matched existing "{matched.title}" (score={best.score:.0f})'
-            )
-        else:
-            suggestions = ", ".join(f"'{c.choice}'" for c in candidates)
-            raise ValueError(
-                f"No todo exactly matching '{parent_title}'. Did you mean: {suggestions}?"
-            )
-
-    def _write_sub_todos(self, params: Params) -> ToolReturnValue:
-        """Write sub-todos for a parent todo identified by ``params.parent_title``.
-
-        Secondary path — used when the LLM explicitly sets ``parent_title``.
-        The primary path is embedding ``sub_todos`` directly in ``Todo`` objects.
-        """
-        assert params.parent_title is not None
-        new_sub_todos: list[SubTodo] = []
-
-        raw = params.todos
-        if raw is None:
-            return self._error(
-                "Error: parent_title requires todos (sub-todos to set).",
-                "parent_title requires todos (sub-todos to set).",
-            )
-
-        # Normalize to list of SubTodo
-        raw_list: list[Todo] = [raw] if isinstance(raw, Todo) else list(raw)
-        for item in raw_list:
-            new_sub_todos.append(
-                SubTodo(title=item.title, status=item.status, notes=item.notes)
-            )
-
-        # 1. Validate new sub-todos
-        duplicates = self._find_duplicate_titles(
-            [Todo(title=st.title, status=st.status, notes=st.notes) for st in new_sub_todos]
-        )
-        if duplicates:
-            return self._error(
-                f"Error: Duplicate sub-todo titles found: {duplicates}",
-                f"Duplicate sub-todo titles found: {duplicates}",
-            )
-
-        if len(new_sub_todos) > _MAX_SUB_TODOS:
-            return self._error(
-                f"Error: Sub-todo list exceeds maximum limit of {_MAX_SUB_TODOS} items.",
-                f"Sub-todo list exceeds maximum limit of {_MAX_SUB_TODOS} items.",
-            )
-
-        # 2. Load existing state
-        old_todos = self._load_todos()
-        old_archived = self._load_archived_todos()
-
-        # 3. Find parent by fuzzy matching
-        try:
-            parent, fuzzy_warning = self._resolve_parent_title(params.parent_title, old_todos)
-        except ValueError as exc:
-            return self._error(str(exc), str(exc))
-
-        warnings: list[str] = []
-        if fuzzy_warning:
-            warnings.append(fuzzy_warning)
-
-        # 4. Get parent's existing sub-todos
-        old_sub_todos = parent.sub_todos or []
-
-        # 5. Branch on mode
-        if params.mode == "force_overwrite":
-            final_sub_todos = list(new_sub_todos)
-        elif params.mode == "overwrite":
-            if old_sub_todos and not all(st.status == "done" for st in old_sub_todos):
-                unfinished = "\n".join(st.title for st in old_sub_todos if st.status != "done")
-                return self._error(
-                    "Error: Cannot overwrite sub-todos while old sub-todos are not all done. "
-                    "Use mode='force_overwrite' if you really want to discard unfinished work.\n"
-                    f"Unfinished:\n{unfinished}",
-                    "Cannot overwrite sub-todos while old sub-todos are not all done.",
-                )
-            final_sub_todos = list(new_sub_todos)
-        else:  # append
-            # Merge sub-todos by title
-            merged = self._merge_sub_todo_lists(old_sub_todos, new_sub_todos)
-            # Detect fuzzy near-matches for sub-todos
-            old_sub_titles = [st.title for st in old_sub_todos]
-            old_sub_title_set = set(old_sub_titles)
-            fuzzy_warnings = self._detect_fuzzy_warnings(
-                [Todo(title=st.title, status=st.status, notes=st.notes) for st in new_sub_todos],
-                old_sub_title_set,
-                old_sub_titles,
-            )
-            warnings.extend(fuzzy_warnings)
-            final_sub_todos = merged
-
-        # 6. Regression detection for sub-todos
-        if params.mode != "force_overwrite" and old_sub_todos:
-            final_sub_todos, sub_regressions = self._check_sub_todo_regressions(
-                old_sub_todos, final_sub_todos
-            )
-            if sub_regressions:
-                # Build display with the clamped sub-todos
-                clamped_parent = parent.model_copy(
-                    update={"sub_todos": final_sub_todos}
-                )
-                return self._error(
-                    "Error: Cannot regress completed sub-todos back to pending/in_progress: "
-                    + ", ".join(sub_regressions)
-                    + "\nNext step: resend with these items kept as 'done', "
-                    "or use mode='force_overwrite' to restart them intentionally.",
-                    "Cannot regress completed sub-todos.",
-                    display=[self._build_display_block([clamped_parent])],
-                )
-
-        # 7. Build the final todo list with updated parent
-        final_todos: list[Todo] = []
-        for t in old_todos:
-            if t.title == parent.title:
-                final_todos.append(
-                    Todo(
-                        title=t.title,
-                        status=t.status,
-                        notes=t.notes,
-                        sub_todos=final_sub_todos,
-                    )
-                )
-            else:
-                final_todos.append(t)
-
-        # 8. Persist
-        archived = list(old_archived)
-        save_error = self._save_todos(final_todos, archived)
-        if save_error:
-            return self._error(save_error, "Failed to save todos.")
-
-        # 9. Build response
-        display_block = self._build_display_block(final_todos)
-        active_summary = self._format_todos(final_todos)
-        counts = self._status_counts(final_todos)
-
-        mode_msg = {
-            "append": "appended",
-            "overwrite": "overwritten",
-            "force_overwrite": "force overwritten",
-        }[params.mode]
-
-        stats = (
-            f"Sub-todos for '{parent.title}' {mode_msg} "
-            f"({len(final_sub_todos)} total)"
-        )
-        output_lines: list[str] = [stats]
-        if active_summary:
-            output_lines.append(active_summary)
-        output = "\n".join(output_lines)
-
-        message_lines: list[str] = [f"Sub-todos for '{parent.title}' {mode_msg}."]
-        if warnings:
-            message_lines.extend(["", *warnings])
-        message = "\n".join(message_lines)
-
-        return ToolReturnValue(
-            is_error=False,
-            output=output,
-            message=message,
-            display=[display_block],
-        )
 
     def _build_success_response(
         self,
@@ -1011,15 +632,6 @@ class TodoList(CallableTool2[Params]):
                 f"Note: {counts['in_progress']} items are in_progress; "
                 "prefer exactly one at a time."
             )
-        # Count sub-todos
-        total_sub = sum(len(t.sub_todos or []) for t in todos)
-        done_sub = sum(
-            1 for t in todos for st in (t.sub_todos or []) if st.status == "done"
-        )
-        if total_sub > 0:
-            message_lines.append(
-                f"Sub-todos: {total_sub} total ({done_sub} done)"
-            )
         if warnings:
             message_lines.extend(["", *warnings])
         message = "\n".join(message_lines)
@@ -1041,20 +653,12 @@ class TodoList(CallableTool2[Params]):
 
     @staticmethod
     def _build_display_block(todos: list[Todo]) -> TodoDisplayBlock:
-        from kimi_cli.tools.display import SubTodoDisplayItem
-
         return TodoDisplayBlock(
             items=[
                 TodoDisplayItem(
                     title=todo.title,
                     status=todo.status,
                     notes=todo.notes,
-                    sub_todos=[
-                        SubTodoDisplayItem(title=st.title, status=st.status, notes=st.notes)
-                        for st in (todo.sub_todos or [])
-                    ]
-                    if todo.sub_todos
-                    else None,
                 )
                 for todo in todos
             ]
@@ -1090,14 +694,6 @@ class TodoList(CallableTool2[Params]):
         output_lines = ["Current todo list:"]
         if formatted:
             output_lines.append(formatted)
-
-        # Count sub-todos
-        total_sub = sum(len(t.sub_todos or []) for t in todos)
-        if total_sub > 0:
-            done_sub = sum(
-                1 for t in todos for st in (t.sub_todos or []) if st.status == "done"
-            )
-            output_lines.append(f"Sub-todos: {total_sub} total ({done_sub} done)")
 
         if len(todos) > _MAX_READ_ITEMS:
             counts = self._status_counts(todos)
@@ -1215,15 +811,7 @@ class TodoList(CallableTool2[Params]):
 
     @staticmethod
     def _item_states(todos: list[Todo]) -> list[TodoItemState]:
-        from kimi_cli.session_state import SubTodoItemState
-
-        result: list[TodoItemState] = []
-        for todo in todos:
-            dump = todo.model_dump()
-            if dump.get("sub_todos"):
-                dump["sub_todos"] = [SubTodoItemState(**st) for st in dump["sub_todos"]]
-            result.append(TodoItemState(**dump))
-        return result
+        return [TodoItemState(**todo.model_dump()) for todo in todos]
 
     def _subagent_state_file(self) -> Path | None:
         store = self._runtime.subagent_store

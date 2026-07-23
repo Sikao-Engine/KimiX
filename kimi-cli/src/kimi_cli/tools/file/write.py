@@ -224,37 +224,21 @@ class WriteFile(CallableTool2[Params]):
                 fmt_error = check_xml_text(new_text)
 
             # Try to repair broken JSON before building diff (if auto_fix_json is enabled)
-            if is_json and fmt_error and params.auto_fix_json:
-                try:
-                    repaired_text = json_repair.repair_json(new_text, return_objects=False)
-                    if repaired_text and repaired_text != new_text:
-                        # Build diff showing the repair
-                        repair_diff_blocks = await build_diff_blocks(
-                            file_path_str, new_text, repaired_text
-                        )
-                        new_text = repaired_text
-                        fmt_error = None
-                        # Store repair diff to report
-                        _repair_diff = repair_diff_blocks
-                    else:
-                        _repair_diff = None
-                except Exception:
-                    _repair_diff = None
-            else:
-                _repair_diff = None
-
-            # Old repair path (unconditional, kept for backward compat when auto_fix_json=True)
-            if is_json and fmt_error and not params.auto_fix_json:
-                pass  # Leave fmt_error as-is so the error is reported below
-            elif is_json and fmt_error:
-                # Also try the old repair path (will be skipped if already repaired)
-                try:
-                    repaired_text = json_repair.repair_json(new_text, return_objects=False)
-                    if repaired_text:
-                        new_text = repaired_text
-                        fmt_error = None
-                except Exception:
-                    pass
+            _repair_diff = None
+            if is_json and fmt_error:
+                if params.auto_fix_json:
+                    try:
+                        repaired_text = json_repair.repair_json(new_text, return_objects=False)
+                        if repaired_text and repaired_text != new_text:
+                            repair_diff_blocks = await build_diff_blocks(
+                                file_path_str, new_text, repaired_text
+                            )
+                            new_text = repaired_text
+                            fmt_error = None
+                            _repair_diff = repair_diff_blocks
+                    except Exception:
+                        pass
+                # else: auto_fix_json=False — leave fmt_error as-is, error reported below
 
             # Build diff blocks
             diff_blocks: list[DisplayBlock]

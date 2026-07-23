@@ -358,17 +358,14 @@ class ReadFile(CallableTool2[Params]):
         # Expand any glob paths into concrete file entries while preserving order.
         entries: list[tuple[str, tuple[int, int, int, int], str | ToolError]] = []
         for i, raw_path in enumerate(raw_paths):
-            is_glob = _is_glob_pattern(raw_path)
-            if params.glob or is_glob:
-                # Glob path: expand and read matches
-                if is_glob and not params.glob:
-                    import warnings
-                    warnings.warn(
-                        "Auto-detecting glob patterns from path is deprecated. "
-                        "Set glob=True explicitly.",
-                        DeprecationWarning,
-                    )
-                concrete, err = await self._expand_glob_path(raw_path, options)
+            if params.glob:
+                # Explicit glob mode: always expand
+                if _is_glob_pattern(raw_path):
+                    concrete, err = await self._expand_glob_path(raw_path, options)
+                else:
+                    # No glob metacharacters — treat as a literal single-file path
+                    concrete = [(raw_path, options)]
+                    err = None
                 if err is not None:
                     entries.append((raw_path, options, err))
                 else:
@@ -387,6 +384,7 @@ class ReadFile(CallableTool2[Params]):
                             )
                             entries.append((path_str, opts, err))
             else:
+                # glob=False (default): treat as literal path, no auto-detection
                 try:
                     canonical = str(kaos_path_from_tool_input(raw_path, self._work_dir).canonical())
                     entries.append((raw_path, options, canonical))

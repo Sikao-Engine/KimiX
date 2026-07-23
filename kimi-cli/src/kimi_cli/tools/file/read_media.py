@@ -376,10 +376,13 @@ class ReadMediaFile(CallableTool2[Params]):
 
         # Info-only mode: return metadata without loading into context
         if params.info_only:
-            from PIL import Image as PILImage
-            import io
-            pil = PILImage.open(io.BytesIO(data))
-            dims = f"{pil.width}x{pil.height}" if kind == "image" else "N/A (video)"
+            if kind == "image":
+                from PIL import Image as PILImage
+                import io
+                pil = PILImage.open(io.BytesIO(data))
+                dims = f"{pil.width}x{pil.height}"
+            else:
+                dims = "N/A (video)"
             meta = (
                 f"Format: {file_type.mime_type}\n"
                 f"Size: {size} bytes\n"

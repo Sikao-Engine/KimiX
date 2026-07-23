@@ -84,7 +84,7 @@ def make_tool_error(
             "suggested_action": action,
         },
     )
-from pathlib import Path
+
 import queue
 import subprocess
 import threading

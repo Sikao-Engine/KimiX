@@ -73,12 +73,12 @@ class TaskOutput(CallableTool2):
         if session is not None:
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(discard_all_tasks(session))
+                if loop.is_running():
+                    loop.call_soon_threadsafe(
+                        lambda: asyncio.ensure_future(discard_all_tasks(session))
+                    )
             except RuntimeError:
-                try:
-                    asyncio.run(discard_all_tasks(session))
-                except:
-                    pass
+                pass
 
     def __init__(self, session: Session):
         super().__init__()

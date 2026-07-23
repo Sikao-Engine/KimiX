@@ -501,3 +501,51 @@ async def test_show_diff_includes_diff_in_output(
     # Output should be non-empty (diff was included)
     assert len(result.output) > 0
     assert "Diff:" in result.output or "diff" in result.output.lower()
+
+
+# ── JSON auto-repair diff tests ─────────────────────────────────────────────
+
+
+async def test_json_auto_repair_reported_in_message(
+    write_file_tool: WriteFile, temp_work_dir: KaosPath
+):
+    """When auto_fix_json repairs broken JSON, the success message mentions the repair."""
+    file_path = temp_work_dir / "repair_test.json"
+    broken_json = '{"key": "value"'  # missing closing brace
+    result = await write_file_tool(
+        Params(path=str(file_path), content=broken_json)
+    )
+    assert not result.is_error
+    # Success message should mention JSON was auto-repaired
+    assert "JSON was auto-repaired" in result.message
+    # File should contain valid JSON (repaired)
+    written = await file_path.read_text()
+    assert written.strip().endswith("}")
+
+
+async def test_json_auto_repair_diff_in_output(
+    write_file_tool: WriteFile, temp_work_dir: KaosPath
+):
+    """When auto_fix_json repairs broken JSON, the repair diff appears in output."""
+    file_path = temp_work_dir / "repair_diff_test.json"
+    broken_json = '{"key": "value"'  # missing closing brace
+    result = await write_file_tool(
+        Params(path=str(file_path), content=broken_json)
+    )
+    assert not result.is_error
+    # Output should contain the repair diff
+    assert "JSON auto-repair diff" in result.output
+
+
+async def test_json_auto_repair_disabled_no_diff(
+    write_file_tool: WriteFile, temp_work_dir: KaosPath
+):
+    """When auto_fix_json=False, no repair diff should appear."""
+    file_path = temp_work_dir / "no_repair.json"
+    broken_json = '{"key": "value"'
+    result = await write_file_tool(
+        Params(path=str(file_path), content=broken_json, auto_fix_json=False)
+    )
+    assert result.is_error
+    # There should be no repair diff in output
+    assert "JSON auto-repair diff" not in result.output

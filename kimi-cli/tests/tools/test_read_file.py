@@ -1080,7 +1080,7 @@ class TestReadFileGlob:
         await (temp_work_dir / "b.md").write_text("beta")
         await (temp_work_dir / "c.txt").write_text("gamma")
 
-        result = await read_file_tool(Params(path="./*.md"))
+        result = await read_file_tool(Params(path="./*.md", glob=True))
 
         assert not result.is_error
         assert "alpha" in result.output
@@ -1094,7 +1094,7 @@ class TestReadFileGlob:
         await (temp_work_dir / "a.md").write_text("a")
         await (temp_work_dir / "m.md").write_text("m")
 
-        result = await read_file_tool(Params(path="*.md"))
+        result = await read_file_tool(Params(path="*.md", glob=True))
 
         assert not result.is_error
         names = self._file_headers(result.output)
@@ -1107,7 +1107,7 @@ class TestReadFileGlob:
         await (docs / "x.md").write_text("x")
         await (docs / "y.md").write_text("y")
 
-        result = await read_file_tool(Params(path="docs/*.md"))
+        result = await read_file_tool(Params(path="docs/*.md", glob=True))
 
         assert not result.is_error
         assert "x" in result.output
@@ -1120,7 +1120,7 @@ class TestReadFileGlob:
         await (temp_work_dir / "q.md").write_text("q")
 
         pattern = str(temp_work_dir).replace("\\", "/") + "/*.md"
-        result = await read_file_tool(Params(path=pattern))
+        result = await read_file_tool(Params(path=pattern, glob=True))
 
         assert not result.is_error
         assert "p" in result.output
@@ -1128,7 +1128,7 @@ class TestReadFileGlob:
 
     async def test_read_glob_no_matches(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         """`./*.nomatch` returns an error."""
-        result = await read_file_tool(Params(path="./*.nomatch"))
+        result = await read_file_tool(Params(path="./*.nomatch", glob=True))
 
         assert result.is_error
         assert "No files matched" in result.message
@@ -1136,7 +1136,7 @@ class TestReadFileGlob:
 
     async def test_read_glob_nonexistent_directory(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         """`missing/*.md` returns an error."""
-        result = await read_file_tool(Params(path="missing/*.md"))
+        result = await read_file_tool(Params(path="missing/*.md", glob=True))
 
         assert result.is_error
         assert "does not exist" in result.message
@@ -1155,7 +1155,7 @@ class TestReadFileGlob:
             original_cwd = Path.cwd()
             os.chdir(str(temp_work_dir))
             try:
-                result = await read_file_tool(Params(path="../outside/*.md"))
+                result = await read_file_tool(Params(path="../outside/*.md", glob=True))
             finally:
                 os.chdir(original_cwd)
 
@@ -1169,7 +1169,7 @@ class TestReadFileGlob:
         literal = temp_work_dir / "c.txt"
         await literal.write_text("c")
 
-        result = await read_file_tool(Params(path=["./*.md", str(literal)]))
+        result = await read_file_tool(Params(path=["./*.md", str(literal)], glob=True))
 
         assert not result.is_error
         assert "a" in result.output
@@ -1182,7 +1182,7 @@ class TestReadFileGlob:
         await (temp_work_dir / "a.md").write_text("a1\na2")
         await (temp_work_dir / "b.md").write_text("b1\nb2")
 
-        result = await read_file_tool(Params(path="*.md", n_lines=1))
+        result = await read_file_tool(Params(path="*.md", n_lines=1, glob=True))
 
         assert not result.is_error
         assert "     1\ta1" in result.output
@@ -1195,7 +1195,7 @@ class TestReadFileGlob:
         await (temp_work_dir / "a.md").write_text("a")
         await (temp_work_dir / "b.md").write_text("b")
 
-        result = await read_file_tool(Params(path=["a.md", "*.md"]))
+        result = await read_file_tool(Params(path=["a.md", "*.md"], glob=True))
 
         assert not result.is_error
         headers = self._file_headers(result.output)
@@ -1208,7 +1208,7 @@ class TestReadFileGlob:
         await (temp_work_dir / "subdir").mkdir()
         await (temp_work_dir / "file.txt").write_text("file")
 
-        result = await read_file_tool(Params(path="*"))
+        result = await read_file_tool(Params(path="*", glob=True))
 
         assert not result.is_error
         assert "file" in result.output
@@ -1222,7 +1222,7 @@ class TestReadFileGlob:
         await (temp_work_dir / "included.md").write_text("included")
         await (temp_work_dir / "ignored.md").write_text("ignored")
 
-        result = await read_file_tool(Params(path="*.md"))
+        result = await read_file_tool(Params(path="*.md", glob=True))
 
         assert not result.is_error
         assert "included" in result.output
@@ -1232,7 +1232,7 @@ class TestReadFileGlob:
 
     async def test_read_glob_rejects_leading_double_star(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         """`**/*.md` is rejected as unsafe."""
-        result = await read_file_tool(Params(path="**/*.md"))
+        result = await read_file_tool(Params(path="**/*.md", glob=True))
 
         assert result.is_error
         assert "starts with `**`" in result.message
@@ -1243,7 +1243,7 @@ class TestReadFileGlob:
         for i in range(MAX_FILES + 1):
             await (temp_work_dir / f"file{i}.txt").write_text(str(i))
 
-        result = await read_file_tool(Params(path="*.txt"))
+        result = await read_file_tool(Params(path="*.txt", glob=True))
 
         assert result.is_error
         assert f"Cannot read more than {MAX_FILES} files" in result.message
@@ -1254,7 +1254,7 @@ class TestReadFileGlob:
         await (temp_work_dir / "sample.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"pngdata")
         await (temp_work_dir / "readme.txt").write_text("hello")
 
-        result = await read_file_tool(Params(path="*"))
+        result = await read_file_tool(Params(path="*", glob=True))
 
         assert not result.is_error
         assert "hello" in result.output
@@ -1331,14 +1331,31 @@ async def test_glob_param_false_literal(read_file_tool: ReadFile, temp_work_dir:
     assert "literal content" in result.output
 
 
-async def test_glob_param_false_with_glob_chars_in_path(read_file_tool: ReadFile, temp_work_dir: KaosPath):
-    """Even with glob=False, paths with glob chars are auto-detected (with deprecation warning)."""
+async def test_glob_param_false_suppresses_auto_detection(read_file_tool: ReadFile, temp_work_dir: KaosPath):
+    """glob=False suppresses auto-detection; paths with glob chars are treated literally."""
     # Create a file that has a [ in its name
     f = temp_work_dir / "data[1].txt"
     await f.write_text("bracket content")
-    # With glob=False, the path still triggers auto-detection (deprecated behavior)
-    # The glob expansion will find the file
+    # With glob=False, auto-detection is suppressed
     result = await read_file_tool(Params(path=str(f), glob=False))
-    # The path contains [1] which is a valid glob bracket pattern
-    # Since glob=False doesn't suppress auto-detection, it depends on the glob expansion
+    assert not result.is_error
+    assert "bracket content" in result.output
+
+
+async def test_glob_param_true_literal_path(read_file_tool: ReadFile, temp_work_dir: KaosPath):
+    """glob=True with a literal path (no glob chars) treats it as a single file."""
+    f = temp_work_dir / "literal_target.txt"
+    await f.write_text("literal content for glob test")
+    result = await read_file_tool(Params(path=str(f), glob=True))
+    assert not result.is_error
+    assert "literal content for glob test" in result.output
+
+
+async def test_glob_param_true_works_for_glob_patterns(read_file_tool: ReadFile, temp_work_dir: KaosPath):
+    """glob=True expands glob patterns as expected."""
+    await (temp_work_dir / "glob_pattern_a.py").write_text("pattern_a")
+    await (temp_work_dir / "glob_pattern_b.py").write_text("pattern_b")
+    result = await read_file_tool(Params(path="*.py", glob=True))
     assert not result.is_error or "No files matched" in result.message
+    if not result.is_error:
+        assert "pattern_a" in result.output or "glob_pattern_a" in result.output
