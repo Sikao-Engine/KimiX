@@ -213,7 +213,13 @@ def _install_ripgrep() -> tuple[bool, bool]:
             if not _ask_yes_no("Reinstall Ripgrep to the expected version?"):
                 print("⏭️  Skipping Ripgrep reinstall.")
                 return False, False
-            # Fall through to the download/install block below
+            # Remove the stale binary so the install function actually replaces it.
+        try:
+            share_bin.unlink()
+        except OSError:
+            pass
+
+        # Fall through to the download/install block below
 
     if not _ask_yes_no("Ripgrep was not found. Install Ripgrep?"):
         print("⏭️  Skipping Ripgrep installation.")
@@ -264,7 +270,13 @@ def _install_rtk() -> tuple[bool, bool]:
             if not _ask_yes_no("Reinstall rtk to the expected version?"):
                 print("⏭️  Skipping rtk reinstall.")
                 return False, False
-            # Fall through to the download/install block below
+            # Remove the stale binary so the install function actually replaces it.
+        try:
+            share_bin.unlink()
+        except OSError:
+            pass
+
+        # Fall through to the download/install block below
 
     if not _ask_yes_no("rtk (reasoning toolkit) was not found. Install rtk?"):
         print("⏭️  Skipping rtk installation.")

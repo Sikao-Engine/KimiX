@@ -17,7 +17,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-RG_VERSION = "15.1.0"
+RG_VERSION = "15.2.0"
 RG_BASE_URL = "https://github.com/BurntSushi/ripgrep/releases/download"
 
 
