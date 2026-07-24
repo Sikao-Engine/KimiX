@@ -6,7 +6,7 @@ from ._globals import (
     _remove_cli_session,
     _refresh_cli_sessions,
 )
-from .config import _create_config
+from .config import _create_config, init
 from .system_prompt import _SYSTEM_PROMP, get_system_prompt, SystemPromptType
 from .windows_env import refresh_env_from_registry
 from .session import (
@@ -24,6 +24,7 @@ from .session import (
     cancel_prompt,
     get_default_session,
     _create_default_session,
+    _create_default_session_async,
     _print_usage,
     print_usage,
     clear_default_context,
@@ -41,6 +42,7 @@ __all__ = [
     "_add_cli_session",
     "_remove_cli_session",
     "_refresh_cli_sessions",
+    "init",
     "_create_config",
     "_SYSTEM_PROMP",
     "get_system_prompt",
@@ -58,6 +60,7 @@ __all__ = [
     "cancel_prompt",
     "get_default_session",
     "_create_default_session",
+    "_create_default_session_async",
     "_print_usage",
     "print_usage",
     "clear_default_context",

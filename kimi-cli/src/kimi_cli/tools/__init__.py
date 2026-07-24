@@ -39,30 +39,8 @@ def extract_key_argument(
             if not isinstance(curr_args, dict) or not curr_args.get("description"):
                 return None
             key_argument = str(curr_args["description"])
-        case "SendDMail":
-            return None
-        case "Think":
-            if not isinstance(curr_args, dict) or not curr_args.get("thought"):
-                return None
-            key_argument = str(curr_args["thought"])
         case "TodoList":
             return None
-        case "Shell":
-            if not isinstance(curr_args, dict) or not curr_args.get("command"):
-                return None
-            key_argument = str(curr_args["command"])
-        case "TaskOutput":
-            if not isinstance(curr_args, dict) or not curr_args.get("task_id"):
-                return None
-            key_argument = str(curr_args["task_id"])
-        case "TaskList":
-            if not isinstance(curr_args, dict):
-                return None
-            key_argument = "active" if curr_args.get("active_only", True) else "all"
-        case "TaskStop":
-            if not isinstance(curr_args, dict) or not curr_args.get("task_id"):
-                return None
-            key_argument = str(curr_args["task_id"])
         case "ReadFile":
             if not isinstance(curr_args, dict) or not curr_args.get("path"):
                 return None

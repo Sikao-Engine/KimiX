@@ -133,7 +133,7 @@ def test_load_system_prompt_missing_arg_raises(builtin_args: BuiltinSystemPrompt
 
 def test_load_tools_valid(runtime: Runtime):
     """Test loading valid tools."""
-    tool_paths = ["kimi_cli.tools.think:Think", "kimi_cli.tools.shell:Shell"]
+    tool_paths = ["kimi_cli.tools.todo:TodoList", "kimi_cli.tools.web:SearchWeb"]
     toolset = KimiToolset()
     toolset.load_tools(
         tool_paths,
@@ -152,7 +152,7 @@ def test_load_tools_valid(runtime: Runtime):
 
 def test_load_tools_invalid(runtime: Runtime):
     """Test loading with invalid tool paths."""
-    tool_paths = ["kimi_cli.tools.nonexistent:Tool", "kimi_cli.tools.think:Think"]
+    tool_paths = ["kimi_cli.tools.nonexistent:Tool", "kimi_cli.tools.todo:TodoList"]
     toolset = KimiToolset()
     try:
         toolset.load_tools(
@@ -191,7 +191,7 @@ async def test_load_agent_registers_builtin_subagent_types(runtime: Runtime):
         builtin_type_yaml.write_text(
             'version: 1\nagent:\n  name: "Sub"\n'
             "  system_prompt_path: ./sub_system.md\n"
-            '  tools: ["kimi_cli.tools.think:Think"]\n'
+            '  tools: ["kimi_cli.tools.todo:TodoList"]\n'
         )
 
         # Create main agent YAML that registers one builtin subagent type
@@ -199,7 +199,7 @@ async def test_load_agent_registers_builtin_subagent_types(runtime: Runtime):
         agent_yaml.write_text(
             'version: 1\nagent:\n  name: "Main"\n'
             "  system_prompt_path: ./system.md\n"
-            '  tools: ["kimi_cli.tools.think:Think"]\n'
+            '  tools: ["kimi_cli.tools.todo:TodoList"]\n'
             "  subagents:\n"
             "    coder:\n"
             "      path: ./child.yaml\n"
@@ -229,7 +229,7 @@ async def test_load_agent_starts_mcp_in_background(runtime: Runtime, monkeypatch
         agent_yaml.write_text(
             'version: 1\nagent:\n  name: "Main"\n'
             "  system_prompt_path: ./system.md\n"
-            '  tools: ["kimi_cli.tools.think:Think"]\n'
+            '  tools: ["kimi_cli.tools.todo:TodoList"]\n'
         )
 
         await load_agent(agent_yaml, runtime, mcp_configs=[{"mcpServers": {}}])
@@ -256,7 +256,7 @@ async def test_load_agent_can_defer_mcp_loading(runtime: Runtime, monkeypatch):
         agent_yaml.write_text(
             'version: 1\nagent:\n  name: "Main"\n'
             "  system_prompt_path: ./system.md\n"
-            '  tools: ["kimi_cli.tools.think:Think"]\n'
+            '  tools: ["kimi_cli.tools.todo:TodoList"]\n'
         )
 
         await load_agent(

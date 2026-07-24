@@ -28,10 +28,7 @@ def test_load_default_agent_spec():
         [
             "kimi_cli.tools.agent:Agent",
             "kimi_cli.tools.ask_user:AskUserQuestion",
-            "kimi_cli.tools.todo:TodoList", "kimi_cli.tools.shell:Shell",
-            "kimi_cli.tools.background:TaskList",
-            "kimi_cli.tools.background:TaskOutput",
-            "kimi_cli.tools.background:TaskStop",
+            "kimi_cli.tools.todo:TodoList",
             "kimi_cli.tools.file:ReadFile",
             "kimi_cli.tools.file:ReadMediaFile",
             "kimi_cli.tools.file:Glob",
@@ -71,7 +68,6 @@ def test_load_default_agent_spec():
     assert subagent_specs["coder"].model == snapshot(None)
     assert subagent_specs["coder"].allowed_tools == snapshot(
         [
-            "kimi_cli.tools.shell:Shell",
             "kimi_cli.tools.file:ReadFile",
             "kimi_cli.tools.file:ReadMediaFile",
             "kimi_cli.tools.file:Glob",
@@ -93,10 +89,7 @@ def test_load_default_agent_spec():
         [
             "kimi_cli.tools.agent:Agent",
             "kimi_cli.tools.ask_user:AskUserQuestion",
-            "kimi_cli.tools.todo:TodoList", "kimi_cli.tools.shell:Shell",
-            "kimi_cli.tools.background:TaskList",
-            "kimi_cli.tools.background:TaskOutput",
-            "kimi_cli.tools.background:TaskStop",
+            "kimi_cli.tools.todo:TodoList",
             "kimi_cli.tools.file:ReadFile",
             "kimi_cli.tools.file:ReadMediaFile",
             "kimi_cli.tools.file:Glob",
@@ -149,7 +142,6 @@ You are meant to be a fast agent. Complete the search request efficiently and re
     assert subagent_specs["explore"].model == snapshot(None)
     assert subagent_specs["explore"].allowed_tools == snapshot(
         [
-            "kimi_cli.tools.shell:Shell",
             "kimi_cli.tools.file:ReadFile",
             "kimi_cli.tools.file:ReadMediaFile",
             "kimi_cli.tools.file:Glob",
@@ -171,10 +163,7 @@ You are meant to be a fast agent. Complete the search request efficiently and re
         [
             "kimi_cli.tools.agent:Agent",
             "kimi_cli.tools.ask_user:AskUserQuestion",
-            "kimi_cli.tools.todo:TodoList", "kimi_cli.tools.shell:Shell",
-            "kimi_cli.tools.background:TaskList",
-            "kimi_cli.tools.background:TaskOutput",
-            "kimi_cli.tools.background:TaskStop",
+            "kimi_cli.tools.todo:TodoList",
             "kimi_cli.tools.file:ReadFile",
             "kimi_cli.tools.file:ReadMediaFile",
             "kimi_cli.tools.file:Glob",
@@ -198,7 +187,7 @@ def test_load_agent_spec_basic(agent_file: Path):
 
     assert spec.name == snapshot("Test Agent")
     assert spec.system_prompt_path == agent_file.parent / "system.md"
-    assert spec.tools == snapshot(["kimi_cli.tools.think:Think"])
+    assert spec.tools == snapshot(["kimi_cli.tools.todo:TodoList"])
 
 
 def test_load_agent_spec_missing_name(agent_file_no_name: Path):
@@ -223,8 +212,8 @@ def test_load_agent_spec_with_exclude_tools(agent_file_with_tools: Path):
     """Test loading agent spec with excluded tools."""
     spec = load_agent_spec(agent_file_with_tools)
 
-    assert spec.tools == snapshot(["kimi_cli.tools.think:Think", "kimi_cli.tools.shell:Shell"])
-    assert spec.exclude_tools == snapshot(["kimi_cli.tools.shell:Shell"])
+    assert spec.tools == snapshot(["kimi_cli.tools.todo:TodoList", "kimi_cli.tools.file:ReadFile"])
+    assert spec.exclude_tools == snapshot(["kimi_cli.tools.file:ReadFile"])
 
 
 def test_load_agent_spec_extension(agent_file_extending: Path):
@@ -232,7 +221,7 @@ def test_load_agent_spec_extension(agent_file_extending: Path):
     spec = load_agent_spec(agent_file_extending)
 
     assert spec.name == snapshot("Extended Agent")
-    assert spec.tools == snapshot(["kimi_cli.tools.think:Think"])
+    assert spec.tools == snapshot(["kimi_cli.tools.todo:TodoList"])
 
 
 def test_load_agent_spec_default_extension():
@@ -264,10 +253,7 @@ agent:
             [
                 "kimi_cli.tools.agent:Agent",
                 "kimi_cli.tools.ask_user:AskUserQuestion",
-                "kimi_cli.tools.todo:TodoList", "kimi_cli.tools.shell:Shell",
-                "kimi_cli.tools.background:TaskList",
-                "kimi_cli.tools.background:TaskOutput",
-                "kimi_cli.tools.background:TaskStop",
+                "kimi_cli.tools.todo:TodoList",
                 "kimi_cli.tools.file:ReadFile",
                 "kimi_cli.tools.file:ReadMediaFile",
                 "kimi_cli.tools.file:Glob",
@@ -295,7 +281,7 @@ version: 2
 agent:
   name: "Test Agent"
   system_prompt_path: ./system.md
-  tools: ["kimi_cli.tools.think:Think"]
+  tools: ["kimi_cli.tools.todo:TodoList"]
 """)
 
         with pytest.raises(AgentSpecError, match="Unsupported agent spec version: 2"):
@@ -332,7 +318,7 @@ version: 1
 agent:
   name: "Test Agent"
   system_prompt_path: ./system.md
-  tools: ["kimi_cli.tools.think:Think"]
+  tools: ["kimi_cli.tools.todo:TodoList"]
 """)
 
         yield agent_yaml
@@ -354,7 +340,7 @@ def agent_file_no_name() -> Generator[Path, Any, Any]:
 version: 1
 agent:
   system_prompt_path: ./system.md
-  tools: ["kimi_cli.tools.think:Think"]
+  tools: ["kimi_cli.tools.todo:TodoList"]
 """)
 
         yield agent_yaml
@@ -372,7 +358,7 @@ def agent_file_no_prompt() -> Generator[Path, Any, Any]:
 version: 1
 agent:
   name: "Test Agent"
-  tools: ["kimi_cli.tools.think:Think"]
+  tools: ["kimi_cli.tools.todo:TodoList"]
 """)
 
         yield agent_yaml
@@ -417,8 +403,8 @@ version: 1
 agent:
   name: "Test Agent"
   system_prompt_path: ./system.md
-  tools: ["kimi_cli.tools.think:Think", "kimi_cli.tools.shell:Shell"]
-  exclude_tools: ["kimi_cli.tools.shell:Shell"]
+  tools: ["kimi_cli.tools.todo:TodoList", "kimi_cli.tools.file:ReadFile"]
+  exclude_tools: ["kimi_cli.tools.file:ReadFile"]
 """)
 
         yield agent_yaml
@@ -437,7 +423,7 @@ version: 1
 agent:
   name: "Base Agent"
   system_prompt_path: ./system.md
-  tools: ["kimi_cli.tools.think:Think"]
+  tools: ["kimi_cli.tools.todo:TodoList"]
 """)
 
         # Create system.md

@@ -16,6 +16,12 @@ def _get_rg_version() -> str:
         return RG_VERSION
     except ImportError:
         pass
+    # If a partial kimi_cli is already cached in sys.modules (e.g. from a global
+    # Python environment that has an unrelated kimi_cli), Python will not re-import
+    # it even after adding the source path.  Clean up before retrying.
+    for key in list(sys.modules):
+        if key == "kimi_cli" or key.startswith("kimi_cli."):
+            del sys.modules[key]
     src_path = Path(__file__).resolve().parent / "kimi-cli" / "src"
     if str(src_path) not in sys.path:
         sys.path.insert(0, str(src_path))
@@ -30,6 +36,10 @@ def _get_rtk_version() -> str:
         return RTK_VERSION
     except ImportError:
         pass
+    # Clean up any partial kimi_cli in sys.modules (same rationale as above).
+    for key in list(sys.modules):
+        if key == "kimi_cli" or key.startswith("kimi_cli."):
+            del sys.modules[key]
     src_path = Path(__file__).resolve().parent / "kimi-cli" / "src"
     if str(src_path) not in sys.path:
         sys.path.insert(0, str(src_path))

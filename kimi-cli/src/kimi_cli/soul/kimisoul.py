@@ -81,7 +81,6 @@ from kimi_cli.soul.message import (
 from kimi_cli.soul.slash import registry as soul_slash_registry
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.context_prune import ContextPrune
-from kimi_cli.tools.dmail import NAME as SendDMail_NAME
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.export import perform_export
 from kimi_cli.utils.logging import logger
@@ -280,12 +279,7 @@ class KimiSoul:
             agent.toolset.add(ContextRetrieval(self._history_index))
             agent.toolset.add(ContextPrune(self))
 
-        for tool in agent.toolset.tools:
-            if tool.name == SendDMail_NAME:
-                self._checkpoint_with_user_message = True
-                break
-        else:
-            self._checkpoint_with_user_message = False
+        self._checkpoint_with_user_message = False
 
         self._llm_request_recorder = LLMRequestRecorder()
         self._recorder_restored = False

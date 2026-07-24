@@ -36,10 +36,17 @@ def _unregister_entry(session_id: str) -> None:
 
 
 class SubAgentParams(BaseModel):
-    prompt: str = Field(description="Task instructions for the sub-agent.")
+    model_config = {"populate_by_name": True}
+
+    prompt: str = Field(
+        alias="task",  # common LLM variant
+        description="Task instructions for the sub-agent. Accepts `prompt` or `task`.",
+    )
     session_id: str | None = Field(
         default=None,
-        description="Optional session ID to resume an existing sub-agent session."
+        alias="session",  # common LLM variant
+        description="Optional session ID to resume an existing sub-agent session. "
+        "Accepts `session_id` or `session`.",
     )
     close_session: bool = Field(
         default=True,
@@ -576,7 +583,12 @@ class AgentList(CallableTool2):
 
 
 class AgentCloseParams(BaseModel):
-    session_id: str = Field(description="Subagent session ID to close.")
+    model_config = {"populate_by_name": True}
+
+    session_id: str = Field(
+        alias="session",  # common LLM variant
+        description="Subagent session ID to close. Accepts `session_id` or `session`.",
+    )
 
 
 class AgentClose(CallableTool2):

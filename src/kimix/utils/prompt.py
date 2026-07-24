@@ -15,6 +15,7 @@ from kimix.base import Color, MessageType, Style, print_agent_json, print_agent_
 from kimix.tools.common import _export_to_temp_file
 from kimix.utils.session import (
     _create_default_session,
+    _create_default_session_async,
     _create_session_async,
     _print_usage,
     close_session_async,
@@ -319,7 +320,7 @@ async def prompt_async(
         export_todo_list_path = None
 
     if session is None:
-        session = _create_default_session()
+        session = await _create_default_session_async()
         close_session_after_prompt = False
     prompt_str = prompt_str.strip()
     prompt_str = escape_file_paths(prompt_str)
@@ -595,7 +596,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
 
         plan_content = plan_file.read_text(encoding="utf-8", errors="replace")
         plan_size = len(plan_content.encode("utf-8"))
-        regular_session = _create_default_session()
+        regular_session = await _create_default_session_async()
         if plan_size > 100 * 1024:
             impl_prompt = f"Read the plan in `{plan_file}`, carefully research, read all related files first, then implement the plan."
             review_reminder = f"Review the plan in `{plan_file}` and ensure all tasks are completed."

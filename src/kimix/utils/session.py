@@ -1,4 +1,6 @@
 import asyncio
+import atexit
+import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -13,6 +15,43 @@ from kimix.base import Color, Style, percentage_and_token
 from . import _globals
 from .config import _create_config
 from .system_prompt import SystemPromptCallback, SystemPromptType, get_system_prompt
+
+
+_shutdown_hook_registered = False
+
+
+def _shutdown_all_sessions() -> None:
+    """Close every tracked session at interpreter shutdown.
+
+    Sessions hold aiosqlite connections whose worker threads are non-daemon.
+    If they are not closed before ``threading._shutdown`` joins non-daemon
+    threads, the process hangs on exit (Ctrl+C then lands in
+    ``threading._shutdown``). This hook is registered via
+    ``threading._register_atexit`` so it runs *before* that join; a plain
+    ``atexit`` handler would run too late.
+    """
+    sessions = list(_globals._live_sessions)
+    _globals._live_sessions.clear()
+    _globals._default_session = None
+    for sess in sessions:
+        try:
+            close_session(sess)
+        except Exception:
+            pass
+
+
+def _register_shutdown_hook() -> None:
+    global _shutdown_hook_registered
+    if _shutdown_hook_registered:
+        return
+    _shutdown_hook_registered = True
+    register = getattr(threading, "_register_atexit", None)
+    if register is not None:
+        register(_shutdown_all_sessions)
+    else:
+        # Python < 3.9 fallback: plain atexit (runs after the thread join,
+        # but still better than nothing).
+        atexit.register(_shutdown_all_sessions)
 
 
 def context_path() -> Path:
@@ -129,6 +168,8 @@ async def _create_session_async(
     if chat_provider:
         custom_config['chat_provider'] = chat_provider
     custom_config['provider_dict'] = provider_dict
+    _globals._track_session(session)
+    _register_shutdown_hook()
     return session
 
 
@@ -207,6 +248,7 @@ def set_ralph_loop(value: int, session: Session | None = None) -> None:
 def close_session(session: Session) -> None:
     if not session:
         return
+    _globals._untrack_session(session)
     try:
         asyncio.run(session.close())
     except RuntimeError as exc:
@@ -220,6 +262,7 @@ def close_session(session: Session) -> None:
 async def close_session_async(session: Session) -> None:
     if not session:
         return
+    _globals._untrack_session(session)
     await session.close()
 
 
@@ -270,10 +313,15 @@ def get_default_session() -> Session | None:
     return _globals._default_session
 
 
-def _create_default_session(resume: bool = True) -> Session:
+async def _create_default_session_async(resume: bool = True) -> Session:
+    """Async variant of ``_create_default_session``.
+
+    Safe to call from within a running event loop: it awaits
+    ``_create_session_async`` directly instead of nesting ``asyncio.run``.
+    """
     if _globals._default_session:
         return _globals._default_session
-    _globals._default_session = create_session(session_id=None, resume=resume)
+    _globals._default_session = await _create_session_async(session_id=None, resume=resume)
     _globals._default_role = SystemPromptType.Worker
 
     # Populate _cli_sessions cache
@@ -283,6 +331,10 @@ def _create_default_session(resume: bool = True) -> Session:
         pass
 
     return _globals._default_session
+
+
+def _create_default_session(resume: bool = True) -> Session:
+    return asyncio.run(_create_default_session_async(resume))
 
 
 def _print_usage(session: Session, time_seconds: float | None = None) -> None:

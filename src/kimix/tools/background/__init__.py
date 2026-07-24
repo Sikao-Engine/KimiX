@@ -14,6 +14,8 @@ from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 
 class TaskOutputParams(BaseModel):
     """Parameters for TaskOutput."""
+    model_config = {"populate_by_name": True}
+
     task_id: str | None = Field(
         default=None,
         description="Task ID to get output from. When None, lists all tasks."
@@ -31,7 +33,7 @@ class TaskOutputParams(BaseModel):
         alias="block",  # backward compat
         description=(
             "When True (default), wait for the task to finish (up to `timeout` seconds) "
-            "and return accumulated output. "
+            "and return accumulated output. Accepts `wait` or `block`. "
             "When False, return immediately with whatever output is available so far."
         ),
     )

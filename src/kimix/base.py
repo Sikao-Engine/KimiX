@@ -567,6 +567,7 @@ _STREAM_ARG_KEYS = frozenset({
     "old", "new",    # EditFile edit items
     "old_string", "new_string", "text", "source_code",
     "question", "context", "instruction",
+    "task",          # Agent (alias of prompt)
 })
 
 # Foreground color for the "⚡ ToolName" header printed when a tool call
@@ -607,32 +608,48 @@ def _format_tool_args(name: str, args: str | None) -> str | None:
                 return s[:max_len] + "..."
             return s
 
-        def _collect(*keys: str, hide: set[str] | None = None) -> list[str]:
+        def _collect(*keys: str | tuple[str, ...], hide: set[str] | None = None) -> list[str]:
             hide = hide or set()
             parts: list[str] = []
             for key in keys:
-                if key in parsed:
-                    if key in hide:
-                        parts.append(f"{key}: ...")
-                    else:
-                        parts.append(f"{key}: {_fmt(parsed[key])}")
+                if isinstance(key, str):
+                    # Single key lookup.
+                    if key in parsed:
+                        display = key
+                        if key in hide:
+                            parts.append(f"{display}: ...")
+                        else:
+                            parts.append(f"{display}: {_fmt(parsed[key])}")
+                else:
+                    # Tuple of alternative keys — use the first one present.
+                    found_key = None
+                    for alt in key:
+                        if alt in parsed:
+                            found_key = alt
+                            break
+                    if found_key is not None:
+                        display = key[0]  # Use first alias as display name
+                        if found_key in hide:
+                            parts.append(f"{display}: ...")
+                        else:
+                            parts.append(f"{display}: {_fmt(parsed[found_key])}")
             return parts
 
         match name:
             case "Bash":
-                return ", ".join(_collect("cmd", "timeout", "interactive", "task_id", "wait_for_pattern"))
+                return ", ".join(_collect(("command", "cmd"), "mode", "timeout", "interactive", "task_id", "wait_for_pattern", "max_lines", ("deduplicate_output", "token_kill")))
             case "Powershell":
-                return ", ".join(_collect("cmd", "timeout", "interactive", "task_id", "wait_for_pattern"))
+                return ", ".join(_collect(("command", "cmd"), "mode", "timeout", "interactive", "task_id", "wait_for_pattern", "max_lines", ("deduplicate_output", "token_kill")))
             case "Run":
-                return ", ".join(_collect("command", "cwd", "timeout", "output_path", "env", "run_in_background", "task_id", "wait_for_pattern"))
+                return ", ".join(_collect(("command", "cmd"), "cwd", "timeout", "output_path", "env", "mode", "shell", "run_in_background", "task_id", "wait_for_pattern", "max_lines", ("deduplicate_output", "token_kill")))
             case "Python":
-                return ", ".join(_collect("code", "output_path", "timeout", "run_in_background", hide={"code"}))
+                return ", ".join(_collect(("code", "source_code"), "file", "output_path", "timeout", "mode", "run_in_background", "task_id", "wait_for_pattern", "max_lines", ("deduplicate_output", "token_kill"), hide={"code", "source_code"}))
             case "TaskOutput":
-                return ", ".join(_collect("task_id", "block", "timeout", "output_path", "kill"))
+                return ", ".join(_collect("task_id", "action", ("wait", "block"), "timeout", "output_path", "kill"))
             case "TodoList":
                 parts: list[str] = []
-                if "todos" in parsed:
-                    todos = parsed["todos"]
+                if "todos" in parsed or "items" in parsed:
+                    todos = parsed.get("todos", parsed.get("items"))
                     if todos is None:
                         parts.append("todos=None")
                     elif isinstance(todos, list):
@@ -643,13 +660,14 @@ def _format_tool_args(name: str, args: str | None) -> str | None:
                     parts.append(f"mode={parsed['mode']}")
                 return ", ".join(parts)
             case "ReadFile":
-                return ", ".join(_collect("path", "line_offset", "n_lines", "max_char", "char_offset"))
+                return ", ".join(_collect(("path", "file_path"), "line_offset", "n_lines", "max_char", "char_offset", "glob", "show_line_numbers"))
             case "EditFile":
                 parts = []
-                if "path" in parsed:
-                    parts.append(f"path={_fmt(parsed['path'])}")
-                if "edit" in parsed:
-                    edit = parsed["edit"]
+                _path = parsed.get("path", parsed.get("file_path"))
+                if _path is not None:
+                    parts.append(f"path={_fmt(_path)}")
+                if "edit" in parsed or "edits" in parsed:
+                    edit = parsed.get("edit", parsed.get("edits"))
                     if edit is None:
                         parts.append("edit=None")
                     elif isinstance(edit, list):
@@ -658,33 +676,34 @@ def _format_tool_args(name: str, args: str | None) -> str | None:
                         parts.append("edit=[1 edit]")
                 return ", ".join(parts)
             case "WriteFile":
-                return ", ".join(_collect("path", "content", "mode", hide={"content"}))
+                return ", ".join(_collect(("path", "file_path"), ("content", "text"), "mode", "auto_fix_json", "mkdir", "show_diff", hide={"content", "text"}))
             case "Glob":
-                return ", ".join(_collect("pattern", "directory", "include_dirs", "include_ignored"))
+                return ", ".join(_collect("pattern", ("directory", "path"), "include_dirs", "respect_gitignore", "include_ignored", "verbose", "timeout"))
             case "Grep":
                 return ", ".join(
                     _collect(
                         "pattern", "path", "glob", "output_mode",
-                        "-B", "-A", "-C", "-n", "-i",
+                        ("before_context", "-B"), ("after_context", "-A"), ("context", "-C"),
+                        ("line_number", "-n"), ("ignore_case", "-i"),
                         "type", "head_limit", "offset", "multiline", "include_ignored",
                     )
                 )
             case "FetchURL":
                 return ", ".join(_collect("url", "output_path"))
             case "Agent":
-                return ", ".join(_collect("prompt", "session_id"))
+                return ", ".join(_collect(("prompt", "task"), ("session_id", "session"), "close_session", "history_format", "context_files"))
             case "AgentList":
                 return ""
             case "AgentClose":
-                return ", ".join(_collect("session_id"))
+                return ", ".join(_collect(("session_id", "session")))
             case "WritePlan":
-                return ", ".join(_collect("content", "mode", hide={"content"}))
+                return ", ".join(_collect(("content", "text"), "mode", hide={"content", "text"}))
             case "ReadPlan":
                 return ", ".join(_collect("line_offset", "n_lines", "max_char", "char_offset"))
             case "EditPlan":
                 parts = []
-                if "edit" in parsed:
-                    edit = parsed["edit"]
+                if "edit" in parsed or "edits" in parsed:
+                    edit = parsed.get("edit", parsed.get("edits"))
                     if edit is None:
                         parts.append("edit=None")
                     elif isinstance(edit, list):
@@ -758,6 +777,7 @@ class _ToolCallStreamPrinter:
         "context": GRAY,
         "source_code": Color.BRIGHT_CYAN,
         "text": GRAY_LIGHT,
+        "task": Color.BRIGHT_YELLOW,
     }
 
     def __init__(self, tool_name: str, session: Session) -> None:

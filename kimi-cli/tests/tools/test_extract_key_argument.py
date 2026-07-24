@@ -24,10 +24,6 @@ class TestExtractKeyArgument:
         assert result is not None
         assert "example.com" in result
 
-    def test_shell(self):
-        result = extract_key_argument('{"command": "ls -la"}', "Shell", self.work_dir)
-        assert result == "ls -la"
-
     def test_readfile(self):
         result = extract_key_argument(
             '{"path": "foo/bar.py"}', "ReadFile", self.work_dir
@@ -40,15 +36,11 @@ class TestExtractKeyArgument:
         assert result == "hello"
 
     def test_invalid_json(self):
-        result = extract_key_argument("invalid", "Shell", self.work_dir)
+        result = extract_key_argument("invalid", "Agent", self.work_dir)
         assert result is None
 
     def test_empty_json_object(self):
-        result = extract_key_argument("{}", "Shell", self.work_dir)
-        assert result is None
-
-    def test_sendmail_returns_none(self):
-        result = extract_key_argument('{"to": "x"}', "SendDMail", self.work_dir)
+        result = extract_key_argument("{}", "Agent", self.work_dir)
         assert result is None
 
     def test_long_content_truncated(self):
@@ -82,5 +74,5 @@ class TestExtractKeyArgument:
             "kosong.utils.jsonx.loads_relaxed",
             side_effect=json.JSONDecodeError("Extra data", "doc", 0),
         ):
-            result = extract_key_argument('{"command": "ls"}', "Shell", self.work_dir)
+            result = extract_key_argument('{"url": "https://example.com"}', "FetchURL", self.work_dir)
         assert result is None

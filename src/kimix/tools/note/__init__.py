@@ -27,8 +27,11 @@ def _set_enable_plan(value: bool) -> None:
 # --- WritePlan ---
 
 class WritePlanParams(BaseModel):
+    model_config = {"populate_by_name": True}
+
     content: str = Field(
-        description="Content to write.",
+        alias="text",  # common LLM variant (mirrors WriteFile)
+        description="Content to write. Accepts `content` or `text`.",
     )
     mode: Literal["overwrite", "append"] = Field(
         description="Write mode: overwrite or append.",
@@ -282,14 +285,25 @@ class ReadPlan(CallableTool2):
 # --- EditPlan ---
 
 class Edit(BaseModel):
-    old: str = Field(description="String to replace.")
-    new: str = Field(description="Replacement string.")
+    model_config = {"populate_by_name": True}
+
+    old: str = Field(
+        alias="old_string",  # common LLM variant (mirrors EditFile)
+        description="String to replace. Accepts `old` or `old_string`.",
+    )
+    new: str = Field(
+        alias="new_string",  # common LLM variant (mirrors EditFile)
+        description="Replacement string. Accepts `new` or `new_string`.",
+    )
     replace_all: bool = Field(description="Replace all occurrences.", default=False)
 
 
 class EditPlanParams(BaseModel):
+    model_config = {"populate_by_name": True}
+
     edit: Edit | list[Edit] = Field(
-        description="One or more edits."
+        alias="edits",  # common LLM variant (plural, mirrors EditFile)
+        description="One or more edits. Accepts `edit` or `edits`.",
     )
 
 

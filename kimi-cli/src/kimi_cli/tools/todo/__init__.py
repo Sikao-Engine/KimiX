@@ -111,11 +111,13 @@ class Todo(BaseModel):
 
 
 class Params(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     todos: list[Todo] | Todo | None = Field(
         default=None,
-        description="Updated list, a single Todo item, or omit to return current list unchanged.",
+        alias="items",  # common LLM variant
+        description="Updated list, a single Todo item, or omit to return current list unchanged. "
+        "Accepts `todos` or `items`.",
     )
     mode: Literal["overwrite", "append", "force_overwrite"] = Field(
         default="append",

@@ -31,12 +31,6 @@ from kimi_cli.soul.denwarenji import DenwaRenji
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.subagents import AgentTypeDefinition, ToolPolicy
 from kimi_cli.tools.agent import Agent as AgentTool
-from kimi_cli.tools.background import (
-    TaskList,
-    TaskOutput,
-    TaskStop,
-)
-from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.hash_line import HashEdit, HashLine, HashRead
@@ -44,8 +38,6 @@ from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditFile
 from kimi_cli.tools.file.write import WriteFile
-from kimi_cli.tools.shell import Shell
-from kimi_cli.tools.think import Think
 from kimi_cli.tools.todo import TodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
@@ -243,46 +235,9 @@ def agent_tool(runtime: Runtime) -> AgentTool:
 
 
 @pytest.fixture
-def send_dmail_tool(denwa_renji: DenwaRenji) -> SendDMail:
-    """Create a SendDMail tool instance."""
-    return SendDMail(denwa_renji)
-
-
-@pytest.fixture
-def think_tool() -> Think:
-    """Create a Think tool instance."""
-    return Think()
-
-
-@pytest.fixture
 def todo_list_tool(runtime: Runtime) -> TodoList:
     """Create a TodoList tool instance."""
     return TodoList(runtime)
-
-
-@pytest.fixture
-def shell_tool(approval: Approval, environment: Environment, runtime: Runtime) -> Generator[Shell]:
-    """Create a Shell tool instance."""
-    with tool_call_context("Shell"):
-        yield Shell(approval, environment, runtime)
-
-
-@pytest.fixture
-def task_list_tool(runtime: Runtime) -> Generator[TaskList]:
-    with tool_call_context("TaskList"):
-        yield TaskList(runtime)
-
-
-@pytest.fixture
-def task_output_tool(runtime: Runtime) -> TaskOutput:
-    with tool_call_context("TaskOutput"):
-        return TaskOutput(runtime)
-
-
-@pytest.fixture
-def task_stop_tool(runtime: Runtime, approval: Approval) -> Generator[TaskStop]:
-    with tool_call_context("TaskStop"):
-        yield TaskStop(runtime, approval)
 
 
 @pytest.fixture

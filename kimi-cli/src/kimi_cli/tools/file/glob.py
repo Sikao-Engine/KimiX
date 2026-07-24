@@ -273,9 +273,13 @@ def _get_gitignore_rules(root: Path) -> list[_GitignoreRule]:
 
 
 class Params(BaseModel):
+    model_config = {"populate_by_name": True}
+
     pattern: str = Field(description="Glob pattern.")
     directory: str | None = Field(
-        description="Absolute search path. Defaults to working directory.",
+        alias="path",  # common LLM variant
+        description="Absolute search path. Defaults to working directory. "
+        "Accepts `directory` or `path`.",
         default=None,
     )
     include_dirs: bool = Field(

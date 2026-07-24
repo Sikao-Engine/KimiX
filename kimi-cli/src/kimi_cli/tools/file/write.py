@@ -59,10 +59,17 @@ _MODE_MAP: dict[str, Literal["overwrite", "append"]] = {
 
 
 class Params(BaseModel):
+    model_config = {"populate_by_name": True}
+
     path: str = Field(
-        description="File path. Absolute paths required outside the working directory."
+        alias="file_path",  # common LLM variant
+        description="File path. Absolute paths required outside the working directory. "
+        "Accepts `path` or `file_path`.",
     )
-    content: str = Field(description="Content to write.")
+    content: str = Field(
+        alias="text",  # common LLM variant
+        description="Content to write. Accepts `content` or `text`.",
+    )
     mode: Literal["overwrite", "append"] = Field(
         description="Write mode: overwrite or append.",
         default="overwrite",

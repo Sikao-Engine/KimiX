@@ -38,9 +38,12 @@ MAX_BYTES = _DEFAULT_READ_MAX_BYTES  # kept for backward compatibility
 
 
 class Params(BaseModel):
+    model_config = {"populate_by_name": True}
+
     path: str | list[str] = Field(
+        alias="file_path",  # common LLM variant
         description=(
-            "File path, or a list of file paths. "
+            "File path, or a list of file paths. Accepts `path` or `file_path`. "
             "When `glob=True`, the final path component may contain wildcards "
             "(`*`, `?`, `[...]`), and recursive patterns starting with `**` are not allowed. "
             "Absolute for files outside working directory."

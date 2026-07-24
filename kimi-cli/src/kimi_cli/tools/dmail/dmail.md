@@ -1,1 +1,0 @@
-D-Mail: Revert to a `CHECKPOINT` and send a concise message to your past self. Use for: summarizing irrelevant reads, condensing search results, or sending fixes after failed attempts. Context-only; doesn't affect filesystem. Address your past self directly.

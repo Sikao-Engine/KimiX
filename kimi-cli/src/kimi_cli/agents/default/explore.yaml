@@ -28,7 +28,6 @@ agent:
   when_to_use: |
     Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (e.g. "src/**/*.yaml"), search code for keywords (e.g. "database connection"), or answer questions about the codebase (e.g. "how does the auth module work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "thorough" for comprehensive analysis across multiple locations and naming conventions. Use this agent for any read-only exploration that will clearly require more than 3 tool calls. Prefer launching multiple explore agents concurrently when investigating independent questions.
   allowed_tools:
-    - "kimi_cli.tools.shell:Shell"
     - "kimi_cli.tools.file:ReadFile"
     - "kimi_cli.tools.file:ReadMediaFile"
     - "kimi_cli.tools.file:Glob"

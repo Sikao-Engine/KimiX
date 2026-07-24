@@ -13,6 +13,25 @@ from kimi_cli.metadata import load_metadata
 _default_session: Session | None = None
 _default_role: Any = None
 
+_live_sessions: list[Session] = []
+"""Sessions created through kimix.utils.session that are still open.
+
+Used by the interpreter-shutdown hook to close them (terminating non-daemon
+background threads such as aiosqlite's connection worker) before
+``threading._shutdown`` tries to join those threads."""
+
+
+def _track_session(session: Session) -> None:
+    if session not in _live_sessions:
+        _live_sessions.append(session)
+
+
+def _untrack_session(session: Session) -> None:
+    try:
+        _live_sessions.remove(session)
+    except ValueError:
+        pass
+
 _should_print_usage = threading.local()
 _should_print_usage.value = True
 

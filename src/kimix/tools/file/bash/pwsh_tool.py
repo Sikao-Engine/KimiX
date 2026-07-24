@@ -12,7 +12,6 @@ import subprocess
 import sys
 from typing import TYPE_CHECKING, Literal
 
-import kimi_cli
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field, model_validator
 from kimi_cli.session import Session

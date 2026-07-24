@@ -37,8 +37,16 @@ _BASE_DESCRIPTION = "Replace strings in text files."
 
 
 class Edit(BaseModel):
-    old: str = Field(description="String to replace.")
-    new: str = Field(description="Replacement string.")
+    model_config = {"populate_by_name": True}
+
+    old: str = Field(
+        alias="old_string",  # common LLM variant
+        description="String to replace. Accepts `old` or `old_string`.",
+    )
+    new: str = Field(
+        alias="new_string",  # common LLM variant
+        description="Replacement string. Accepts `new` or `new_string`.",
+    )
     replace_all: bool = Field(
         default=False,
         description="Replace all occurrences. When False, only the first occurrence is replaced.",
@@ -57,11 +65,16 @@ class Edit(BaseModel):
 
 
 class Params(BaseModel):
+    model_config = {"populate_by_name": True}
+
     path: str = Field(
-        description="File path. Absolute path required outside working directory."
+        alias="file_path",  # common LLM variant
+        description="File path. Absolute path required outside working directory. "
+        "Accepts `path` or `file_path`.",
     )
     edit: Edit | list[Edit] = Field(
-        description="One or more edits to apply, in order."
+        alias="edits",  # common LLM variant (plural)
+        description="One or more edits to apply, in order. Accepts `edit` or `edits`.",
     )
 
     @field_validator("edit", mode="before")

@@ -25,10 +25,14 @@ if TYPE_CHECKING:
 
 
 class Params(BaseModel):
+    model_config = {"populate_by_name": True}
+
     code: str = Field(
         default="",
+        alias="source_code",  # backward compat with stream display / other agents
         description=(
-            "Inline Python code to execute. Mutually exclusive with `file`. "
+            "Inline Python code to execute. Accepts `code` or `source_code`. "
+            "Mutually exclusive with `file`. "
             "When `file` is not set and `code` ends with '.py' and the file exists, "
             "it is treated as a file path (deprecated — use `file` explicitly)."
         ),
@@ -87,6 +91,7 @@ class Params(BaseModel):
         default=True,
         alias="token_kill",  # backward compat with shell tools
         description="Deduplicate repeated output lines from known commands (pytest, ruff, etc.). "
+                    "Accepts `deduplicate_output` or `token_kill`. "
                     "Set to False to see raw, unfiltered output.",
     )
     venv: str | None = Field(

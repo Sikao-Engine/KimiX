@@ -693,3 +693,69 @@ async def test_tool_result_colors_success_green_error_red(monkeypatch: Any) -> N
         session2,
     )
     assert "\x1b[91m✗ boom\x1b[0m" in "".join(chunks2)
+
+
+def test_format_tool_args_powershell_bash_prints_cmd_and_command_alias() -> None:
+    """Regression: ``PowershellParams``/``BashParams`` (pwsh_tool.py /
+    bash_tool.py) declare ``cmd`` with the pydantic alias ``command``, so the
+    JSON schema advertised to the LLM names the field ``command`` and models
+    typically send ``{"command": ...}``. The compact ``_format_tool_args``
+    header must print the command for both the ``command`` alias and the
+    ``cmd`` field name — previously only ``cmd`` was looked up, so the header
+    showed no command at all when the LLM used the advertised alias."""
+    for tool_name in ("Powershell", "Bash"):
+        for key in ("command", "cmd"):
+            formatted = base._format_tool_args(
+                tool_name, orjson.dumps({key: "Get-Date", "timeout": 30}).decode("utf-8")
+            )
+            assert formatted is not None, f"{tool_name}: no formatted output for {key!r}"
+            assert "Get-Date" in formatted, (
+                f"{tool_name}: command missing from header for {key!r} args: {formatted!r}"
+            )
+            assert "timeout: 30" in formatted
+
+
+async def test_powershell_bash_tool_call_header_prints_command_alias(monkeypatch: Any) -> None:
+    """End-to-end: the printed ``⚡ Powershell`` / ``⚡ Bash`` tool-call header
+    must include the command regardless of whether the LLM sent it under the
+    advertised ``command`` alias or the ``cmd`` field name."""
+    for tool_name in ("Powershell", "Bash"):
+        for key in ("command", "cmd"):
+            chunks = _capture_base_stream(monkeypatch)
+            session = FakeSession()
+            await base.print_agent_json(
+                ToolCall(
+                    id=f"call-{tool_name}-{key}",
+                    function=ToolCall.FunctionBody(
+                        name=tool_name,
+                        arguments=orjson.dumps({key: "Get-Date"}).decode("utf-8"),
+                    ),
+                ),
+                session,
+            )
+            plain = _plain(chunks)
+            assert f"⚡ {tool_name}" in plain
+            assert "Get-Date" in plain, (
+                f"{tool_name}: header missing command for {key!r} args: {plain!r}"
+            )
+
+
+async def test_powershell_bash_streamed_fragments_print_command_alias(monkeypatch: Any) -> None:
+    """Anthropic/OpenAI-Responses style streaming: ToolCall with empty
+    arguments followed by ToolCallPart fragments. Once the fragments complete
+    the JSON, the compact header must still print the command sent via the
+    ``command`` alias."""
+    for tool_name in ("Powershell", "Bash"):
+        chunks = _capture_base_stream(monkeypatch)
+        session = FakeSession()
+        await base.print_agent_json(
+            ToolCall(id=f"call-{tool_name}", function=ToolCall.FunctionBody(name=tool_name, arguments="")),
+            session,
+        )
+        await base.print_agent_json(ToolCallPart(arguments_part='{"command": "Get-Da'), session)
+        await base.print_agent_json(ToolCallPart(arguments_part='te"}'), session)
+        plain = _plain(chunks)
+        assert f"⚡ {tool_name}" in plain
+        assert "Get-Date" in plain, (
+            f"{tool_name}: streamed header missing command: {plain!r}"
+        )

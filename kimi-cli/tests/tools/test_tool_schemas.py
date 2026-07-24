@@ -5,16 +5,12 @@ from __future__ import annotations
 from inline_snapshot import snapshot
 
 from kimi_cli.tools.agent import Agent as AgentTool
-from kimi_cli.tools.background import TaskList, TaskOutput, TaskStop
-from kimi_cli.tools.dmail import SendDMail
 from kimi_cli.tools.file.glob import Glob
 from kimi_cli.tools.file.grep_local import Grep
 from kimi_cli.tools.file.read import ReadFile
 from kimi_cli.tools.file.read_media import ReadMediaFile
 from kimi_cli.tools.file.replace import EditFile
 from kimi_cli.tools.file.write import WriteFile
-from kimi_cli.tools.shell import Shell
-from kimi_cli.tools.think import Think
 from kimi_cli.tools.todo import TodoList
 from kimi_cli.tools.web.fetch import FetchURL
 from kimi_cli.tools.web.search import SearchWeb
@@ -68,40 +64,6 @@ def test_agent_params_schema(agent_tool: AgentTool):
     )
 
 
-def test_send_dmail_params_schema(send_dmail_tool: SendDMail):
-    """Test the schema of SendDMail tool parameters."""
-    assert send_dmail_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "message": {"description": "The message to send.", "type": "string"},
-                "checkpoint_id": {
-                    "description": "The checkpoint to send the message back to.",
-                    "minimum": 0,
-                    "type": "integer",
-                },
-            },
-            "required": ["message", "checkpoint_id"],
-            "type": "object",
-        }
-    )
-
-
-def test_think_params_schema(think_tool: Think):
-    """Test the schema of Think tool parameters."""
-    assert think_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "thought": {
-                    "description": "Thought to log.",
-                    "type": "string",
-                }
-            },
-            "required": ["thought"],
-            "type": "object",
-        }
-    )
-
-
 def test_todo_list_params_schema(todo_list_tool: TodoList):
     """Test the schema of TodoList tool parameters."""
     schema = todo_list_tool.base.parameters
@@ -110,7 +72,9 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
     assert schema.get("type") == "object"
     props = schema.get("properties", {})
     # Verify required properties exist
-    assert "todos" in props
+    # 'todos' declares alias 'items', so the advertised property is 'items'
+    # (both spellings validate via populate_by_name=True).
+    assert "items" in props
     assert "mode" in props
     assert "match_mode" in props
     assert "auto_fix" in props
@@ -123,113 +87,11 @@ def test_todo_list_params_schema(todo_list_tool: TodoList):
     # Verify auto_fix type
     assert props["auto_fix"]["type"] == "boolean"
     assert props["auto_fix"]["default"] is False
-    # Verify todos has Todo structure (may be $ref or inlined)
-    todos_props = str(props["todos"])
+    # Verify todos (advertised as 'items') has Todo structure (may be $ref or inlined)
+    todos_props = str(props["items"])
     assert "title" in todos_props and "status" in todos_props
     # Verify sub-schema has notes field in the inline todos definition
-    assert "notes" in str(props["todos"])
-
-
-def test_shell_params_schema(shell_tool: Shell):
-    """Test the schema of Shell tool parameters."""
-    assert shell_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "command": {
-                    "description": "Command to execute.",
-                    "type": "string",
-                },
-                "timeout": {
-                    "default": 60,
-                    "description": "Timeout in seconds.",
-                    "maximum": 86400,
-                    "minimum": 1,
-                    "type": "integer",
-                },
-                "run_in_background": {
-                    "default": False,
-                    "description": "Run as background task.",
-                    "type": "boolean",
-                },
-                "description": {
-                    "default": "",
-                    "description": "Background task description. Required for background tasks.",
-                    "type": "string",
-                },
-            },
-            "required": ["command"],
-            "type": "object",
-        }
-    )
-
-
-def test_task_output_params_schema(task_output_tool: TaskOutput):
-    assert task_output_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "task_id": {
-                    "description": "Task ID.",
-                    "type": "string",
-                },
-                "block": {
-                    "default": False,
-                    "description": "Wait for task completion.",
-                    "type": "boolean",
-                },
-                "timeout": {
-                    "default": 30,
-                    "description": "Wait timeout in seconds.",
-                    "maximum": 3600,
-                    "minimum": 0,
-                    "type": "integer",
-                },
-            },
-            "required": ["task_id"],
-            "type": "object",
-        }
-    )
-
-
-def test_task_list_params_schema(task_list_tool: TaskList):
-    assert task_list_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "active_only": {
-                    "default": True,
-                    "description": "Only active tasks.",
-                    "type": "boolean",
-                },
-                "limit": {
-                    "default": 20,
-                    "description": "Result limit.",
-                    "maximum": 100,
-                    "minimum": 1,
-                    "type": "integer",
-                },
-            },
-            "type": "object",
-        }
-    )
-
-
-def test_task_stop_params_schema(task_stop_tool: TaskStop):
-    assert task_stop_tool.base.parameters == snapshot(
-        {
-            "properties": {
-                "task_id": {
-                    "description": "Task ID.",
-                    "type": "string",
-                },
-                "reason": {
-                    "default": "Stopped by TaskStop",
-                    "description": "Stop reason.",
-                    "type": "string",
-                },
-            },
-            "required": ["task_id"],
-            "type": "object",
-        }
-    )
+    assert "notes" in str(props["items"])
 
 
 def test_read_file_params_schema(read_file_tool: ReadFile):
@@ -237,7 +99,9 @@ def test_read_file_params_schema(read_file_tool: ReadFile):
     schema = read_file_tool.base.parameters
     props = schema.get("properties", {})
     # Verify top-level properties exist
-    assert "path" in props
+    # 'path' declares alias 'file_path', so the advertised property is
+    # 'file_path' (both spellings validate via populate_by_name=True).
+    assert "file_path" in props
     assert "line_offset" in props
     assert "n_lines" in props
     assert "max_char" in props
@@ -287,7 +151,9 @@ def test_glob_params_schema(glob_tool: Glob):
     assert "pattern" in props
     assert props["pattern"]["type"] == "string"
     # Verify new/modified params
-    assert "directory" in props
+    # 'directory' declares alias 'path', so the advertised property is 'path'
+    # (both spellings validate via populate_by_name=True).
+    assert "path" in props
     assert "include_dirs" in props
     assert props["include_dirs"]["default"] is False  # Changed from True to False
     assert "respect_gitignore" in props
@@ -394,15 +260,17 @@ def test_write_file_params_schema(write_file_tool: WriteFile):
     schema = write_file_tool.base.parameters
     props = schema.get("properties", {})
     # Verify required properties
-    assert "path" in props
-    assert "content" in props
+    # 'path'/'content' declare aliases 'file_path'/'text', so the advertised
+    # properties are the aliases (both spellings validate via populate_by_name=True).
+    assert "file_path" in props
+    assert "text" in props
     assert "mode" in props
     assert "auto_fix_json" in props
     assert "mkdir" in props
     assert "show_diff" in props
     # Verify types
-    assert props["path"]["type"] == "string"
-    assert props["content"]["type"] == "string"
+    assert props["file_path"]["type"] == "string"
+    assert props["text"]["type"] == "string"
     assert props["mode"]["enum"] == ["overwrite", "append"]
     assert props["auto_fix_json"]["type"] == "boolean"
     assert props["auto_fix_json"]["default"] is True
@@ -417,11 +285,13 @@ def test_edit_file_params_schema(edit_file_tool: EditFile):
     schema = edit_file_tool.base.parameters
     props = schema.get("properties", {})
     # Verify required properties
-    assert "path" in props
-    assert "edit" in props
-    assert props["path"]["type"] == "string"
+    # 'path'/'edit' declare aliases 'file_path'/'edits', so the advertised
+    # properties are the aliases (both spellings validate via populate_by_name=True).
+    assert "file_path" in props
+    assert "edits" in props
+    assert props["file_path"]["type"] == "string"
     # edit accepts both a single Edit object and a list of Edit objects
-    edit_schema = props["edit"]
+    edit_schema = props["edits"]
     assert "anyOf" in edit_schema
     # Find the array option in anyOf
     array_schema = None
@@ -431,10 +301,12 @@ def test_edit_file_params_schema(edit_file_tool: EditFile):
             break
     assert array_schema is not None, "Expected an array option in anyOf"
     # Verify edit item properties include new fields
+    # 'old'/'new' declare aliases 'old_string'/'new_string', so the advertised
+    # properties are the aliases (both spellings validate via populate_by_name=True).
     item_schema = array_schema.get("items", {})
     item_props = item_schema.get("properties", {})
-    assert "old" in item_props
-    assert "new" in item_props
+    assert "old_string" in item_props
+    assert "new_string" in item_props
     assert "replace_all" in item_props
     assert "max_replacements" in item_props
     assert "match_mode" in item_props

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path
@@ -11,111 +13,13 @@ from kimix.base import print_debug, print_error, print_warning
 
 from . import constants, utils  # noqa: F401
 
-
-_REQUIRED_PROVIDER_KEYS = ("type", "max_context_size", "model", "url")
-
-
-# Priority for picking a sub_provider as the main provider when root lacks 'model'.
-# Earlier values in the tuple have higher priority.
-_SUB_PROVIDER_PICK_PRIORITY: tuple[str | None, ...] = (None, "sub_agent", "planner")
-
-
-def _normalize_sub_providers(
-    sub_provider: Any,
-    sub_providers: Any,
-) -> list[dict[str, Any]]:
-    """Normalize ``sub_provider`` and ``sub_providers`` into a flat list.
-
-    Each entry is validated to be a dict with required provider keys.
-    Missing or empty ``role`` defaults to ``sub_agent``.
-    """
-    raw_entries: list[Any] = []
-    for src in (sub_provider, sub_providers):
-        if src is None:
-            continue
-        if isinstance(src, dict):
-            raw_entries.append(src)
-        elif isinstance(src, list):
-            raw_entries.extend(src)
-        else:
-            print_warning(f"Ignoring invalid sub_provider value of type {type(src).__name__}")
-
-    normalized: list[dict[str, Any]] = []
-    seen_roles: set[str] = set()
-    for entry in raw_entries:
-        if not isinstance(entry, dict):
-            print_warning("Ignoring invalid sub_provider entry: expected dict")
-            continue
-        missing = [k for k in _REQUIRED_PROVIDER_KEYS if k not in entry]
-        if missing:
-            print_warning(
-                f"Ignoring invalid sub_provider entry (missing keys: {', '.join(missing)})"
-            )
-            continue
-        role = entry.get("role")
-        if not role:
-            entry = dict(entry)
-            entry["role"] = "sub_agent"
-        role = entry["role"]
-        if role in seen_roles:
-            print_debug(f"Multiple sub_providers with role '{role}'; using first match")
-        seen_roles.add(role)
-        normalized.append(entry)
-    return normalized
-
-
-def _pick_main_from_sub_providers(
-    config_data: dict[str, Any],
-    sub_provider: Any,
-    sub_providers: Any,
-) -> None:
-    """If ``config_data`` lacks a ``model`` key, pick a sub_provider as the main provider.
-
-    Priority (highest first):
-      1. Entry with no ``role`` key (or empty role)
-      2. Entry with ``role = "sub_agent"``
-      3. Entry with ``role = "planner"``
-
-    Mutates ``config_data`` in place by copying all non-``role`` keys from the winner.
-    """
-    if "model" in config_data:
-        return
-
-    # Collect raw entries (pre-normalization) to distinguish "no role" from explicit roles.
-    raw_entries: list[dict[str, Any]] = []
-    for src in (sub_provider, sub_providers):
-        if src is None:
-            continue
-        if isinstance(src, dict):
-            raw_entries.append(src)
-        elif isinstance(src, list):
-            raw_entries.extend(src)
-
-    picked: dict[str, Any] | None = None
-    for role_priority in _SUB_PROVIDER_PICK_PRIORITY:
-        if picked is not None:
-            break
-        for entry in raw_entries:
-            if not isinstance(entry, dict):
-                continue
-            if role_priority is None:
-                # no-role: entry has no 'role' key or role is empty/falsy
-                if not entry.get("role"):
-                    picked = entry
-                    break
-            else:
-                if entry.get("role") == role_priority:
-                    picked = entry
-                    break
-
-    if picked is not None:
-        for k, v in picked.items():
-            if k != "role":
-                config_data[k] = v
-        print_debug(
-            f"Picked sub_provider (role='{picked.get('role', '')}') "
-            f"as main provider (no 'model' in root)."
-        )
+# Import moved helpers from config.py
+from kimix.utils.config import (
+    _normalize_sub_providers,
+    _pick_main_from_sub_providers,
+    _REQUIRED_PROVIDER_KEYS,
+    _SUB_PROVIDER_PICK_PRIORITY,
+)
 
 
 def _load_project_mcp_config() -> dict[str, Any]:
@@ -243,7 +147,7 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
     known_args, remaining = parser.parse_known_args()
 
     if known_args.command is not None:
-        # Subcommand detected — re-parse with its own parser so subcommand-specific
+        # Subcommand detected -- re-parse with its own parser so subcommand-specific
         # arguments (e.g. --fe-port, --no-fe) are recognized.
         # The ``mcp`` command has its own nested subparsers; the top-level parse
         # already consumed ``mcp_command`` and its options, so re-parsing would
@@ -271,163 +175,20 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
 
     args.mcp_config = _load_project_mcp_config()
 
-    if args.no_color:
-        base._colorful_print = False
+    # Initialize global state via kimix.utils.config.init()
+    from kimix.utils.config import init as kimix_init
 
-    constants.CLEAN_MODE = args.clean
-    if constants.CLEAN_MODE:
-        print_debug("Clean mode ON, delete cache file after quit.")
+    kimix_init(
+        config_path=getattr(args, "config", None),
+        yolo=not args.no_yolo,
+        think=not args.no_think,
+        skill_dir=args.skill_dir,
+        ralph=args.ralph,
+        manually_cot=args.manually_cot,
+        colorful_print=not args.no_color,
+        clean=args.clean,
+    )
 
-    if args.no_think:
-        base.set_default_thinking(False)
-        print_debug("Thinking OFF.")
-    else:
-        base.set_default_thinking(True)
-
-    if args.no_yolo:
-        base.set_default_yolo(False)
-        print_debug("YOLO OFF.")
-    else:
-        base.set_default_yolo(True)
-
-    if args.manually_cot:
-        base.set_default_manually_cot(True)
-        print_debug("Manually CoT mode ON.")
-
-    # Read skill_dir from .kimix/config.json (string or array)
-    config_json_path = Path(".kimix/config.json")
-    if config_json_path.exists():
-        print_debug(".kimix/config.json exists.")
-    config_json_path = Path(".kimix/skill.json")
-    if config_json_path.exists():
-        print_debug(".kimix/skill.json exists.")
-        try:
-            config_json = orjson.loads(config_json_path.read_text(encoding="utf-8"))
-            skill_dir_cfg = config_json.get("skill_dir")
-            if skill_dir_cfg is not None:
-                if isinstance(skill_dir_cfg, str):
-                    skill_dir_cfg = [skill_dir_cfg]
-                if isinstance(skill_dir_cfg, list):
-                    skill_dirs_from_cfg = []
-                    for sd in skill_dir_cfg:
-                        if not isinstance(sd, str):
-                            continue
-                        sd_path = Path(sd)
-                        if not sd_path.is_absolute():
-                            sd_path = constants.curr_dir / sd_path
-                        sd_path = sd_path.resolve()
-                        if sd_path.exists() and sd_path.is_dir():
-                            skill_dirs_from_cfg.append(KaosPath(str(sd_path)))
-                            print_debug(f"Skill dir from config: {str(sd_path)}")
-                        else:
-                            print_warning(f"Skill dir from config not found: {str(sd_path)}")
-                    if skill_dirs_from_cfg:
-                        existing = list(base._default_skill_dirs)
-                        base.set_default_skill_dirs(existing + skill_dirs_from_cfg)
-        except (orjson.JSONDecodeError, Exception) as e:
-            print_warning(f"Failed to read skill_dir from .kimix/skill.json: {e}")
-    # Handle --config argument
-    if getattr(args, "config", None):
-        config_path = Path(args.config)
-        found = False
-        if config_path.exists() and config_path.is_file():
-            found = True
-        else:
-            # Search in parent directories of current work-dir recursively
-            cwd = Path.cwd()
-            for parent in [cwd, *cwd.parents]:
-                candidate = parent / config_path.name
-                if candidate.exists() and candidate.is_file():
-                    config_path = candidate
-                    found = True
-                    break
-            # Search in parent directories of __file__ recursively
-            file_dir = Path(__file__).resolve().parent
-            for parent in [file_dir, *file_dir.parents]:
-                candidate = parent / config_path.name
-                if candidate.exists() and candidate.is_file():
-                    config_path = candidate
-                    found = True
-                    break
-        if not found:
-            # Check if config_path is inside environment var PATH
-            import os
-
-            for path_dir in os.environ.get("PATH", "").split(os.pathsep):
-                path_dir = path_dir.strip()
-                if not path_dir:
-                    continue
-                candidate = Path(path_dir) / config_path.name
-                if candidate.exists() and candidate.is_file():
-                    config_path = candidate
-                    found = True
-                    break
-        if not found:
-            print_error(f"Config file not found: {str(config_path)}")
-            sys.exit(1)
-        config_path = config_path.resolve()
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                config_data = orjson.loads(f.read())
-            sub_provider = config_data.pop("sub_provider", None)
-            sub_providers = config_data.pop("sub_providers", None)
-            normalized_providers = _normalize_sub_providers(sub_provider, sub_providers)
-            _pick_main_from_sub_providers(config_data, sub_provider, sub_providers)
-            base.set_default_provider(config_data)
-            print_debug(f"{str(config_path)} loaded.")
-            print_debug(f"Provider model: {config_data.get('model', 'None')}")
-            if normalized_providers:
-                base.set_default_sub_providers(normalized_providers)
-                roles = [p.get("role", "sub_agent") for p in normalized_providers]
-                print_debug(f"Sub-provider roles loaded: {', '.join(roles)}")
-
-        except orjson.JSONDecodeError as e:
-            print_warning(f"Invalid JSON in config file: {str(config_path)} ({e})")
-        except Exception as e:
-            print_warning(f"Failed to load config file: {str(config_path)} ({e})")
-    else:
-        default_config_path = Path(__file__).parent.parent / "default_config.json"
-        if not default_config_path.exists():
-            from . import init
-
-            init.init(False)
-        if default_config_path.exists():
-            try:
-                config_data = orjson.loads(default_config_path.read_text(encoding="utf-8"))
-                sub_provider = config_data.pop("sub_provider", None)
-                sub_providers = config_data.pop("sub_providers", None)
-                normalized_providers = _normalize_sub_providers(sub_provider, sub_providers)
-                _pick_main_from_sub_providers(config_data, sub_provider, sub_providers)
-                base.set_default_provider(config_data)
-                print_debug(f"Provider model: {config_data.get('model', 'None')}")
-                if normalized_providers:
-                    base.set_default_sub_providers(normalized_providers)
-            except (orjson.JSONDecodeError, Exception):
-                pass
-
-    if args.ralph is not None:
-        base._default_ralph = args.ralph
-        if base._default_provider is not None:
-            if "loop_control" not in base._default_provider:
-                base._default_provider["loop_control"] = {}
-            base._default_provider["loop_control"]["max_ralph_iterations"] = args.ralph
-        print_debug(f"Ralph mode set to {args.ralph}.")
-
-    # Handle --skill-dir argument
-    if args.skill_dir:
-        skill_dirs = list(base._default_skill_dirs)
-        for skill_dir in args.skill_dir:
-            skill_dir_path = Path(skill_dir)
-            if not skill_dir_path.is_absolute():
-                skill_dir_path = constants.curr_dir / skill_dir_path
-            # Normalize the path (resolve ., .., and symlinks)
-            skill_dir_path = skill_dir_path.resolve()
-            if skill_dir_path.exists() and skill_dir_path.is_dir():
-                skill_dirs.append(KaosPath(str(skill_dir_path)))
-                print_debug(f"Skill dir added: {str(skill_dir_path)}")
-            else:
-                print_warning(f"Skill dir not found: {str(skill_dir_path)}")
-        base.set_default_skill_dirs(skill_dirs)
     if args.command == "mcp":
         print_debug(f"Starting kimix mcp {args.mcp_command}.")
         return "mcp", args

@@ -201,7 +201,6 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 None,
                 "allowlist",
                 (
-                    "kimi_cli.tools.shell:Shell",
                     "kimi_cli.tools.file:ReadFile",
                     "kimi_cli.tools.file:ReadMediaFile",
                     "kimi_cli.tools.file:Glob",
@@ -219,7 +218,6 @@ At any time, you should be HELPFUL, CONCISE, and ACCURATE. Be thorough in your a
                 None,
                 "allowlist",
                 (
-                    "kimi_cli.tools.shell:Shell",
                     "kimi_cli.tools.file:ReadFile",
                     "kimi_cli.tools.file:ReadMediaFile",
                     "kimi_cli.tools.file:Glob",
@@ -262,10 +260,6 @@ async def test_default_agent_background_bash_guardrails(runtime: Runtime):
             "Agent",
             "AskUserQuestion",
             "TodoList",
-            "Shell",
-            "TaskList",
-            "TaskOutput",
-            "TaskStop",
             "ReadFile",
             "ReadMediaFile",
             "Glob",

@@ -525,6 +525,9 @@ def test_prompt_plan_async_prompts_execution_agent(tmp_path: Path, monkeypatch: 
     def fake_create_default_session() -> Any:
         return execution_session
 
+    async def fake_create_default_session_async(*args: Any, **kwargs: Any) -> Any:
+        return execution_session
+
     async def fake_close_session_async(session: Any) -> None:
         pass
 
@@ -534,6 +537,7 @@ def test_prompt_plan_async_prompts_execution_agent(tmp_path: Path, monkeypatch: 
 
     monkeypatch.setattr(prompt_mod, "_create_session_async", fake_create_session_async)
     monkeypatch.setattr(prompt_mod, "_create_default_session", fake_create_default_session)
+    monkeypatch.setattr(prompt_mod, "_create_default_session_async", fake_create_default_session_async)
     monkeypatch.setattr(prompt_mod, "close_session_async", fake_close_session_async)
     monkeypatch.setattr(prompt_mod, "prompt_async", fake_prompt_async)
     monkeypatch.setattr(prompt_mod.os, "startfile", lambda _path: None)
