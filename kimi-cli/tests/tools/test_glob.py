@@ -604,7 +604,7 @@ async def test_glob_gitignore_dir_only_negated_unignores(
 
 
 async def test_glob_verbose_fold_and_truncate_line(
-    glob_tool: Glob, temp_work_dir: KaosPath
+    glob_tool: Glob, temp_work_dir: KaosPath, require_long_paths: None
 ):
     """Verbose lines are folded and per-line capped."""
     for i in range(250):

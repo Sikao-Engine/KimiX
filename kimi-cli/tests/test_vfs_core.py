@@ -32,7 +32,7 @@ class TestVFSRel:
         with pytest.raises(ValueError):
             vfs._rel(tmp_path / "outside.txt")
 
-    def test_rel_resolves_symlink_parent(self, tmp_path: Path) -> None:
+    def test_rel_resolves_symlink_parent(self, tmp_path: Path, require_symlink: None) -> None:
         wd = tmp_path / "work"
         wd.mkdir()
         vfs = VFS(tmp_path / "virtual", wd)
@@ -43,7 +43,7 @@ class TestVFSRel:
         # _rel resolves the parent directory but keeps the symlink name
         assert vfs._rel(link) == Path("link.txt")
 
-    def test_rel_raises_for_symlink_outside_workdir(self, tmp_path: Path) -> None:
+    def test_rel_raises_for_symlink_outside_workdir(self, tmp_path: Path, require_symlink: None) -> None:
         wd = tmp_path / "work"
         wd.mkdir()
         vfs = VFS(tmp_path / "virtual", wd)

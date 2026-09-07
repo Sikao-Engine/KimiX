@@ -1267,7 +1267,7 @@ async def test_discover_skill_description_frontmatter_not_truncated(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_resolve_skills_roots_extra_skill_dirs_symlink_dedup(monkeypatch, tmp_path):
+async def test_resolve_skills_roots_extra_skill_dirs_symlink_dedup(monkeypatch, tmp_path, require_symlink):
     """A symlinked extra dir collapses to the canonical target (no phantom dup).
 
     Two ``extra_skill_dirs`` entries — one pointing at the real directory, one
@@ -1340,7 +1340,7 @@ async def test_resolve_skills_roots_extra_skill_dirs_trailing_slash_dedup(monkey
 
 
 @pytest.mark.asyncio
-async def test_resolve_skills_roots_extra_skill_dirs_symlink_scope_is_extra(monkeypatch, tmp_path):
+async def test_resolve_skills_roots_extra_skill_dirs_symlink_scope_is_extra(monkeypatch, tmp_path, require_symlink):
     """After symlink dedup the surviving root still carries ``scope='extra'``."""
     import kimi_cli.skill as skill_mod
 
@@ -1367,7 +1367,7 @@ async def test_resolve_skills_roots_extra_skill_dirs_symlink_scope_is_extra(monk
 
 @pytest.mark.asyncio
 async def test_resolve_skills_roots_extra_skill_dirs_symlink_stored_root_is_realpath(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path, require_symlink
 ):
     """The stored root is the real target path, not the symlink the user typed.
 
