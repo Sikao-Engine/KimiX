@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import platform
+import shutil
 import tempfile
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -98,6 +99,78 @@ def temp_share_dir() -> Generator[Path]:
     import platform
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=platform.system() == "Windows") as tmpdir:
         yield Path(tmpdir)
+
+
+@pytest.fixture(scope="session")
+def symlink_supported() -> bool:
+    """Probe whether the current OS/user permits creating symbolic links.
+
+    On Windows this needs Developer Mode or an elevated (admin) token; without
+    it ``os.symlink`` raises ``OSError`` (``WinError 1314``). POSIX always
+    succeeds. Cached for the whole session.
+    """
+    probe = Path(tempfile.mkdtemp(prefix="kimix_symlink_probe_"))
+    try:
+        real = probe / "real.txt"
+        real.write_text("x")
+        (probe / "link.txt").symlink_to(real)
+        return True
+    except (OSError, NotImplementedError):
+        return False
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
+@pytest.fixture
+def require_symlink(symlink_supported: bool) -> None:
+    """Skip the test unless the platform allows creating symlinks."""
+    if not symlink_supported:
+        pytest.skip(
+            "symlink creation not permitted on this platform "
+            "(Windows: enable Developer Mode or run as admin)"
+        )
+
+
+@pytest.fixture(scope="session")
+def long_paths_supported() -> bool:
+    """Probe whether the filesystem can create the paths this suite's long-name
+    tests need.
+
+    Two independent Windows/POSIX limits are exercised:
+    * total path length > ``MAX_PATH`` (260) — needs ``LongPathsEnabled`` on
+      Windows (CPython itself is already long-path-aware via its manifest);
+    * a single filename component > 255 bytes (``NAME_MAX``) — hit because the
+      ``kaos`` atomic writer appends ``.<8 random>.tmp`` to the target name.
+    POSIX succeeds. Cached for the whole session.
+    """
+    probe = Path(tempfile.mkdtemp(prefix="kimix_longpath_probe_"))
+    try:
+        deep = probe / ("d" * 240)
+        deep.mkdir()
+        # Mirror kaos._atomic_write_bytes: prefix=<basename>".", suffix=".tmp".
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(deep),
+            prefix=("n" * 240 + ".txt") + ".",
+            suffix=".tmp",
+        )
+        os.close(fd)
+        os.unlink(tmp_name)
+        return True
+    except OSError:
+        return False
+    finally:
+        shutil.rmtree(probe, ignore_errors=True)
+
+
+@pytest.fixture
+def require_long_paths(long_paths_supported: bool) -> None:
+    """Skip the test unless paths longer than MAX_PATH can be created."""
+    if not long_paths_supported:
+        pytest.skip(
+            "filesystem cannot create the long path/name this test needs "
+            "(Windows MAX_PATH or 255-byte NAME_MAX component limit; "
+            "enable LongPathsEnabled / shorten the temp name)"
+        )
 
 
 @pytest.fixture

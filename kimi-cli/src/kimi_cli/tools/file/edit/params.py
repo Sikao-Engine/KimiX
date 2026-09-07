@@ -7,7 +7,7 @@ from typing import Any, Literal, Union
 from kosong.tooling import ToolError, alias_note
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
-EditMode = Literal["replace", "patch", "hashline", "sloppy"]
+EditMode = Literal["replace", "sloppy"]
 
 
 class ReplaceEditItem(BaseModel):
@@ -40,28 +40,12 @@ class ReplaceEditItem(BaseModel):
     )
 
 
-class PatchEntry(BaseModel):
-    """A single patch entry for patch mode."""
-
-    model_config = {"populate_by_name": True}
-
-    op: Literal["create", "update", "delete"] = Field(default="update")
-    diff: str | None = Field(
-        default=None,
-        description="Unified-diff hunk text for update; full file content for create.",
-    )
-    rename: str | None = Field(
-        default=None,
-        description="Destination path for update+move (relative to workdir).",
-    )
-
-
 class EditParams(BaseModel):
     """Parameters for the multi-mode edit tool."""
 
     model_config = {"populate_by_name": True}
 
-    mode: Literal["auto", "replace", "patch", "hashline", "sloppy"] = Field(
+    mode: Literal["auto", "replace", "sloppy"] = Field(
         default="auto",
         description="Edit mode. 'auto' detects the mode from the payload shape.",
     )
@@ -72,12 +56,10 @@ class EditParams(BaseModel):
         description="Path to edit. " + alias_note("file_path", "path", word=False),
     )
 
-    edit: Union[
-        ReplaceEditItem, PatchEntry, list[Union[ReplaceEditItem, PatchEntry]], None
-    ] = Field(
+    edit: Union[ReplaceEditItem, list[ReplaceEditItem], None] = Field(
         default=None,
         alias="edits",
-        description="One or more replace edits, or patch entries when mode='patch'. "
+        description="One or more literal replace edits. "
         + alias_note("edit", "edits", word=False),
     )
 
@@ -96,7 +78,7 @@ class EditParams(BaseModel):
 
     input: str | None = Field(
         default=None,
-        description="Input text for hashline / sloppy modes.",
+        description="Input text for sloppy mode.",
     )
 
     sandbox_permissions: Literal["workspace-write", "danger-full-access"] | None = Field(
@@ -146,25 +128,20 @@ class EditParams(BaseModel):
     @field_validator("edit", mode="before")
     @classmethod
     def _normalize_edit(cls, v: Any) -> Any:
-        """Auto-wrap a single edit dict into a list and route patch/replace models."""
+        """Auto-wrap a single edit dict into a list of replace edits."""
         if isinstance(v, dict):
             return [cls._coerce_edit(v)]
         if isinstance(v, list):
             return [cls._coerce_edit(item) for item in v]
         if isinstance(v, ReplaceEditItem):
             return [v]
-        if isinstance(v, PatchEntry):
-            return [v]
         return v
 
     @classmethod
-    def _coerce_edit(cls, item: Any) -> ReplaceEditItem | PatchEntry:
-        if isinstance(item, (ReplaceEditItem, PatchEntry)):
+    def _coerce_edit(cls, item: Any) -> ReplaceEditItem:
+        if isinstance(item, ReplaceEditItem):
             return item
         if isinstance(item, dict):
-            op = item.get("op")
-            if op in {"create", "update", "delete"}:
-                return PatchEntry.model_validate(item)
             return ReplaceEditItem.model_validate(item)
         raise ValueError(f"Invalid edit item: {item!r}")
 
@@ -189,9 +166,6 @@ def normalize_edit_mode(raw: str) -> EditMode | None:
     key = raw.lower().replace("-", "_").replace(" ", "_")
     mapping: dict[str, EditMode] = {
         "replace": "replace",
-        "patch": "patch",
-        "hashline": "hashline",
-        "hash_line": "hashline",
         "sloppy": "sloppy",
     }
     return mapping.get(key)
@@ -206,24 +180,9 @@ def detect_mode(params: EditParams) -> EditMode:
             if stripped:
                 first_non_blank = stripped
                 break
-        if first_non_blank.startswith("["):
-            return "hashline"
         if first_non_blank.startswith("§"):
             return "sloppy"
     edits = params.edit
-    if isinstance(edits, list) and edits:
-        all_patch_entries = True
-        for item in edits:
-            if isinstance(item, PatchEntry):
-                continue
-            if isinstance(item, dict):
-                op = item.get("op")
-                if op in {"create", "update", "delete"}:
-                    continue
-            all_patch_entries = False
-            break
-        if all_patch_entries:
-            return "patch"
     if params.old_string is not None or params.new_string is not None:
         return "replace"
     if edits is not None:
@@ -231,7 +190,5 @@ def detect_mode(params: EditParams) -> EditMode:
     raise ValueError(
         "Could not determine edit mode. Supported payloads: "
         "replace ({file_path, old_string, new_string}), "
-        "patch ({file_path, edits: [{op, diff}]}), "
-        "hashline ({input: '[path#TAG] ...'}), "
         "sloppy ({input: '§path ...'})."
     )
