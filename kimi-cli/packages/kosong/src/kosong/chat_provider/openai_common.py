@@ -209,6 +209,13 @@ def convert_error(error: OpenAIError | httpx.HTTPError) -> ChatProviderError:
             # events from the server carry a body dict and should fall through
             # to the default case instead.
             return _classify_base_api_error(error.message)
+        case openai.APIError() if _is_stream_truncation_error(error.message):
+            # SSE error payloads that describe the upstream model stream ending
+            # before a terminal chunk (e.g. "Upstream stream ended before
+            # terminal chunk") are transport truncations, not server business
+            # errors.  Classify them as retryable APIConnectionError so a
+            # mid-reasoning cut does not abort the whole agent turn.
+            return APIConnectionError(error.message)
         case _:
             return ChatProviderError(f"Error: {error}")
 
@@ -272,6 +279,22 @@ def maybe_log_reasoning_content_error(
 
 _NETWORK_RE = re.compile(r"network|connection|connect|disconnect", re.IGNORECASE)
 _TIMEOUT_RE = re.compile(r"timed?\s*out|timeout|deadline", re.IGNORECASE)
+
+# Error messages from OpenAI-compatible gateways that mean the upstream model
+# stream ended before a terminal chunk (e.g. Command Code / aggregator backends
+# that proxy DeepSeek/etc. and cut the SSE stream mid-reasoning). These are
+# transport-level truncations: retrying the request (ideally with a lower /
+# capped output budget) is the correct recovery, so classify them as
+# ``APIConnectionError`` instead of leaving them as a fatal
+# ``ChatProviderError`` that aborts the whole agent turn mid-reasoning.
+_STREAM_TRUNCATION_RE = re.compile(
+    r"stream ended before terminal chunk|upstream stream ended|stream\s+ended\s+before",
+    re.IGNORECASE,
+)
+
+
+def _is_stream_truncation_error(message: object) -> bool:
+    return isinstance(message, str) and bool(_STREAM_TRUNCATION_RE.search(message))
 
 
 class _TolerantSSEDecoder:
@@ -424,6 +447,12 @@ async def _iter_tolerant_chunks(
                     message = error.get("message")
                 if not isinstance(message, str):
                     message = "An error occurred during streaming"
+                if _is_stream_truncation_error(message):
+                    # Transport-level truncation from the upstream model stream
+                    # (e.g. "Upstream stream ended before terminal chunk").
+                    # Classify as a retryable connection error so the caller can
+                    # retry instead of aborting the whole agent turn mid-thought.
+                    raise APIConnectionError(message)
                 raise openai.APIError(
                     message=message,
                     request=response.request,

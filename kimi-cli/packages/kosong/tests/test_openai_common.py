@@ -638,6 +638,51 @@ async def test_tolerant_stream_raises_on_error_payload() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tolerant_stream_classifies_upstream_truncation_as_connection_error() -> None:
+    """An SSE error payload whose message says the upstream stream ended before
+    a terminal chunk (e.g. Command Code / aggregator proxies) must surface as a
+    retryable APIConnectionError instead of a fatal ChatProviderError, so a
+    mid-reasoning cut does not abort the whole agent turn."""
+    body = (
+        f"data: {_sse_chunk(content='thinking...')}\n\n"
+        'data: {"error": {"message": "Upstream stream ended before terminal chunk", '
+        '"type": "server_error"}}\n\n'
+    )
+    message, _ = _build_message([body.encode()])
+    with pytest.raises(APIConnectionError, match="Upstream stream ended before terminal chunk"):
+        async for _ in message:
+            pass
+
+
+def test_convert_error_classifies_upstream_truncation_openai_api_error() -> None:
+    """convert_error maps an OpenAI base APIError carrying an upstream-stream
+    truncation message to a retryable APIConnectionError."""
+    error = openai.APIError(
+        message="Upstream stream ended before terminal chunk",
+        request=_DUMMY_REQUEST,
+        body={"error": {"message": "Upstream stream ended before terminal chunk"}},
+    )
+    assert isinstance(convert_error(error), APIConnectionError)
+
+
+@pytest.mark.parametrize(
+    "message,expected",
+    [
+        ("Upstream stream ended before terminal chunk", True),
+        ("upstream stream ended before terminal chunk", True),
+        ("Stream ended before terminal chunk", True),
+        ("connection lost mid-stream", False),
+        ("boom", False),
+        (None, False),
+    ],
+)
+def test_is_stream_truncation_error(message: str | None, expected: bool) -> None:
+    from kosong.chat_provider.openai_common import _is_stream_truncation_error
+
+    assert _is_stream_truncation_error(message) is expected
+
+
+@pytest.mark.asyncio
 async def test_tolerant_stream_closes_response() -> None:
     body = f"data: {_sse_chunk(content='x')}\n\n" "data: [DONE]\n\n"
     message, response = _build_message([body.encode()])

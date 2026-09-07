@@ -1046,7 +1046,7 @@ class SessionManager:
             ralph_count = 0
             try:
                 ralph_count = sdk_session._cli._runtime.config.loop_control.max_ralph_iterations or 0
-            except AttributeError:
+            except Exception:
                 pass
 
             if ralph_count < 0:
@@ -1298,6 +1298,16 @@ class SessionManager:
 
                         if not todos or all(todo.status == 'done' for todo in todos):
                             break
+
+            # When max_ralph_iterations is 0 the SDK prompt returns after
+            # exactly one LLM turn, so the turn is naturally finished once
+            # the generator above exhausts.
+
+            # If no final visible text/reasoning part reached the wire (e.g.
+            # the LLM produced an empty/truncated stream), flush accumulated
+            # reasoning so the session does not end with a dangling open
+            # "thinking" block in the UI.
+            _flush_reasoning()
         except (asyncio.CancelledError, RunCancelled):
             error_msg = "cancelled"
         except Exception as exc:
