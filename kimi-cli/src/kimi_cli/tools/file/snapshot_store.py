@@ -3,8 +3,7 @@
 Two stores live here:
 
 1. ``EditSnapshotStore`` — the original single-version-per-path store used by
-   the hashline edit mode (``edit/modes/hashline.py``) and ``edit_safety.py``.
-   Kept fully backward compatible.
+   ``edit_safety.py``. Kept fully backward compatible.
 2. ``InMemorySnapshotStore`` — the plan-25 versioned store (port of
    oh-my-pi ``packages/hashline/src/snapshots.ts``): a bounded, LRU-pruned
    ring of whole-file versions per canonical path, content-addressed with a

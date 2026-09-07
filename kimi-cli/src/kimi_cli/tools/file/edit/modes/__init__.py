@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .hashline import HashlineModeExecutor
-from .patch import PatchModeExecutor
 from .replace import ReplaceModeExecutor
 from .sloppy import SloppyModeExecutor
 
@@ -16,7 +14,5 @@ if TYPE_CHECKING:
 
 MODE_REGISTRY: dict[EditMode, type] = {
     "replace": ReplaceModeExecutor,
-    "patch": PatchModeExecutor,
-    "hashline": HashlineModeExecutor,
     "sloppy": SloppyModeExecutor,
 }

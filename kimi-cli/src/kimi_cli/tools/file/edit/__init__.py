@@ -16,7 +16,7 @@ from .params import EditMode, EditParams, ReplaceEditItem, normalize_edit_mode
 
 
 class EditFile(CallableTool2[EditParams]):
-    """Edit tool supporting replace, patch, hashline, and sloppy modes."""
+    """Edit tool supporting replace and sloppy modes."""
 
     name: str = "edit"
     description: str = ReplaceModeExecutor.description
