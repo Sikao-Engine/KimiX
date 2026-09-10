@@ -1835,3 +1835,71 @@ class TestTodoListSubagentSaveFailure:
         assert result.is_error
         assert "Failed to save subagent todos" in result.output
         assert "disk full" in result.output
+
+
+class TestTodoSchemaNotRecursive:
+    """Regression test: providers like Moonshot reject tool parameter schemas
+    containing recursive JSON Schema references (HTTP 400
+    ``json_schema_refs_recursive``). The ``Todo`` model is recursive at
+    runtime (``children: list[Todo]``), but the emitted schema must be
+    bounded so no ``$ref`` cycle survives ``deref_json_schema``."""
+
+    def _collect_refs(self, node: object, path: str = "$") -> list[tuple[str, str]]:
+        refs: list[tuple[str, str]] = []
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "$ref":
+                    refs.append((path, str(value)))
+                else:
+                    refs.extend(self._collect_refs(value, f"{path}.{key}"))
+        elif isinstance(node, list):
+            for idx, value in enumerate(node):
+                refs.extend(self._collect_refs(value, f"{path}[{idx}]"))
+        return refs
+
+    def test_params_schema_derefs_without_cycles(self) -> None:
+        from kosong.utils.jsonschema import deref_json_schema
+
+        wire = deref_json_schema(Params.model_json_schema())
+        assert self._collect_refs(wire) == []
+
+    def test_tool_base_parameters_have_no_refs(self, todo_list_tool: TodoList) -> None:
+        """The exact schema sent on the wire (CallableTool2 build path)."""
+        assert self._collect_refs(todo_list_tool.base.parameters) == []
+
+    def test_child_items_are_leaf_shaped(self) -> None:
+        schema = Params.model_json_schema()
+        todo_def = schema["$defs"]["Todo"]
+        child_items = todo_def["properties"]["children"]["items"]
+        # Leaf copy carries the todo fields but no nested children property.
+        assert "children" not in child_items["properties"]
+        assert {"content", "status", "notes"} <= set(child_items["properties"])
+        assert "children" not in child_items.get("required", [])
+
+    def test_runtime_recursion_still_validates(self) -> None:
+        """Schema truncation must not affect runtime nesting depth."""
+        todo = Todo.model_validate(
+            {
+                "content": "root",
+                "status": "in_progress",
+                "children": [
+                    {
+                        "content": "a",
+                        "status": "pending",
+                        "children": [
+                            {
+                                "content": "b",
+                                "status": "done",
+                                "children": [{"content": "c", "status": "pending"}],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        depth = 0
+        node = todo
+        while node.children:
+            depth += 1
+            node = node.children[0]
+        assert depth == 3

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,8 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic.json_schema import GetJsonSchemaHandler, JsonSchemaValue
+from pydantic_core import CoreSchema
 
 from kimi_cli import logger
 from kimi_cli.session_state import TodoItemState, TodoStatus
@@ -146,8 +149,47 @@ class Todo(BaseModel):
     # automatically; all field validators apply to children too.
     children: list[Todo] = Field(
         default_factory=list,
-        description="Sub todos (children). Leave empty for a leaf.",
+        description=(
+            "Sub todos (children). Leave empty for a leaf. Each child has the "
+            "same fields as a todo (`content`/`status`/`notes`); a child's own "
+            "`children` accepts the same todo shape (arbitrary nesting depth)."
+        ),
     )
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: CoreSchema, handler: GetJsonSchemaHandler
+    ) -> JsonSchemaValue:
+        json_schema = handler(core_schema)
+        cls._truncate_children_schema(json_schema)
+        return json_schema
+
+    @staticmethod
+    def _truncate_children_schema(json_schema: JsonSchemaValue) -> None:
+        """Break JSON-Schema recursion on ``children``.
+
+        Some providers (e.g. Moonshot) reject tool parameter schemas that
+        contain recursive ``$ref`` cycles (HTTP 400
+        ``json_schema_refs_recursive``). Runtime validation keeps arbitrary-
+        depth recursion; only the *emitted schema* is bounded: child items are
+        rendered as a leaf copy of this model (same ``content``/``status``/
+        ``notes`` fields, no nested ``children`` property), so no ``$ref``
+        cycle survives ``deref_json_schema``.
+        """
+        properties = json_schema.get("properties")
+        if not isinstance(properties, dict):
+            return
+        children = properties.get("children")
+        if not isinstance(children, dict):
+            return
+        leaf = copy.deepcopy(json_schema)
+        leaf_properties = leaf.get("properties")
+        if isinstance(leaf_properties, dict):
+            leaf_properties.pop("children", None)
+        leaf_required = leaf.get("required")
+        if isinstance(leaf_required, list):
+            leaf["required"] = [r for r in leaf_required if r != "children"]
+        children["items"] = leaf
 
     @model_validator(mode="before")
     @classmethod
