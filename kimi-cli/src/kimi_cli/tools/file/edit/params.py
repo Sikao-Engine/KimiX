@@ -90,7 +90,7 @@ class EditParams(BaseModel):
         description="Required with sandbox_permissions: explanation for the user.",
     )
     allow_conflicts: bool = Field(
-        default=False,
+        default=True,
         description="When True, allow editing files that contain conflict markers.",
     )
     allow_auto_generated: bool = Field(

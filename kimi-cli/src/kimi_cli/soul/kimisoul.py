@@ -234,6 +234,32 @@ def _message_has_reasoning(message: Message | None) -> bool:
     )
 
 
+def _user_input_is_empty(user_input: str | list[ContentPart]) -> bool:
+    """Return ``True`` when *user_input* contains no sendable content.
+
+    An empty turn is produced when callers invoke the soul with a blank
+    prompt (an empty Enter, a reconnect/replay, or a stray empty steer from
+    the JSON-RPC wire server, which passes ``user_input`` straight through).
+    Forwarding it appends an empty ``user`` message to the session and makes
+    the LLM answer with a spurious "the user sent an empty message" turn.
+
+    A string is empty when it is ``""`` or whitespace-only. A part list is
+    empty when it has no parts or every part is a whitespace-only
+    ``TextPart``; non-text parts (e.g. images) are always sendable.
+    """
+    if isinstance(user_input, str):
+        return not user_input.strip()
+    if not user_input:
+        return True
+    for part in user_input:
+        if isinstance(part, TextPart):
+            if part.text.strip():
+                return False
+        else:
+            return False
+    return True
+
+
 class _RateLimitAwareWait(wait_base):
     """Tenacity wait callable that honors ``Retry-After`` for 429 responses."""
 
@@ -1004,13 +1030,22 @@ class KimiSoul:
         Step-boundary steering only: the message is consumed between steps (or
         before turn end), never mid-stream. Use :meth:`request_steer` for a
         mid-stream interrupt.
+
+        Empty steers are ignored: an empty steer would otherwise be injected
+        as an empty ``user`` message (an "empty message to session").
         """
+        if _user_input_is_empty(content):
+            logger.debug("Ignoring empty steer message")
+            return
         self._steer_queue.put_nowait(content)
 
     async def request_steer(self, content: str | list[ContentPart]) -> None:
         """Enqueue a steer and wake the agent loop so the currently streaming
         step is interrupted and the steer injected as a follow-up user
         message."""
+        if _user_input_is_empty(content):
+            logger.debug("Ignoring empty steer message")
+            return
         self._steer_queue.put_nowait(content)
         self._steer_wake_event.set()
 
@@ -1057,6 +1092,21 @@ class KimiSoul:
         *,
         skip_user_prompt_hook: bool = False,
     ):
+        # ── Empty-input guard ──────────────────────────────────────────
+        # Never start a turn for blank input. Some callers (notably the
+        # JSON-RPC wire server's ``_handle_prompt``, which passes
+        # ``msg.params.user_input`` straight into ``run_soul``, plus legacy
+        # CLIs) can invoke ``run`` with an empty/whitespace prompt — an
+        # empty Enter, a reconnect/replay, or a stray empty steer. Without
+        # this guard the soul appends an empty ``user`` message to the
+        # session and the LLM answers with a spurious "the user sent an
+        # empty message" turn. The SDK (``kimi_agent_sdk.Session.prompt``)
+        # and the web backend already reject empty input; this guard covers
+        # every remaining path so no empty turn is ever started.
+        if _user_input_is_empty(user_input):
+            logger.debug("Ignoring empty user input; no turn started")
+            return
+
         approval_source_token = None
         created_approval_source: ApprovalSource | None = None
         turn_started = False
