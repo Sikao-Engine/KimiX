@@ -14,6 +14,19 @@ CURRENT_ROOT = Path(__file__).parent.resolve()
 DIST_DIR = CURRENT_ROOT / "dist"
 ARTIFACTS_DIR = CURRENT_ROOT / "artifacts"
 
+# Packages handled by this script. The former standalone kosong/kaos packages
+# under kimi-cli/packages/ were removed; they are now vendored inside the
+# kimi-cli-x wheel, so only kimi-cli-x and kimix are published here.
+BUMP_VERSION_PACKAGES: list[tuple[str, Path]] = [
+    ("kimi-cli-x", CURRENT_ROOT / "kimi-cli" / "pyproject.toml"),
+    ("kimix", CURRENT_ROOT / "pyproject.toml"),
+]
+
+PUBLISH_PACKAGES: list[tuple[str, str | None, str]] = [
+    ("kimi-cli-x", "kimi-cli", "kimi-cli-x"),
+    ("根项目", None, "kimix"),
+]
+
 
 def confirm_step(step_name: str, package_name: str) -> bool:
     """询问用户是否执行此步骤"""
@@ -141,11 +154,7 @@ def update_dependency_in_content(content: str, package_name: str, new_version: s
 
 def bump_version() -> None:
     """依次询问并升级包的版本，同时同步更新所有 pyproject.toml 中的依赖"""
-    packages = [
-        ("kosong-x", CURRENT_ROOT / "kimi-cli" / "packages" / "kosong" / "pyproject.toml"),
-        ("kimi-cli-x", CURRENT_ROOT / "kimi-cli" / "pyproject.toml"),
-        ("kimix", CURRENT_ROOT / "pyproject.toml"),
-    ]
+    packages = BUMP_VERSION_PACKAGES
 
     all_toml_paths = [p for _, p in packages]
 
@@ -258,11 +267,7 @@ def main() -> None:
         return
 
     # 定义包及其工作目录、安装名
-    packages = [
-        ("kosong-x", "kimi-cli\\packages\\kosong", "kosong-x"),
-        ("kimi-cli-x", "kimi-cli", "kimi-cli-x"),
-        ("根项目", None, "kimix"),
-    ]
+    packages = PUBLISH_PACKAGES
 
     if args.local_test:
         for name, cwd, pkg_name in packages:

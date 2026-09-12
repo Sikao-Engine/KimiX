@@ -2,7 +2,7 @@
 
 Serializes the four shell/python tools the way the chat provider does
 (``tool.description`` + ``tool.params.model_json_schema()``, see
-``kosong/chat_provider/openai_common.py``) and reports per-tool and total
+``kimi-cli/src/kosong/chat_provider/openai_common.py``) and reports per-tool and total
 char counts.  When ``.baseline_tools.json`` exists (captured before the
 refactor), also prints the delta.
 

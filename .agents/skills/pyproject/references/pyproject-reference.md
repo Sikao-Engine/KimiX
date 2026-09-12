@@ -6,17 +6,15 @@ Full reference for pyproject.toml files in the kimix monorepo: package table, wo
 
 | Path | Name | Build Backend | Key Deps |
 |------|------|---------------|----------|
-| `./pyproject.toml` | `kimix` | `hatchling` | `numpy`, `playwright`, `fastapi`, `kimi-cli-x`, `kimi-agent-sdk-x` |
-| `kimi-cli/pyproject.toml` | `kimi-cli-x` | `uv_build` | `typer`, `aiohttp`, `kosong-x`, `pykaos`, `rich` |
-| `kimi-agent-sdk/python/pyproject.toml` | `kimi-agent-sdk-x` | `uv_build` | `kimi-cli-x`, `kosong-x` |
-| `kimi-cli/packages/kaos/pyproject.toml` | `pykaos` | `uv_build` | `aiofiles`, `asyncssh` |
-| `kimi-cli/packages/kimi-code/pyproject.toml` | `kimi-code` | `uv_build` | `kimi-cli==1.40.0` (thin wrapper) |
-| `kimi-cli/packages/kosong/pyproject.toml` | `kosong-x` | `uv_build` | `anthropic`, `openai`, `google-genai`, `pydantic`, `mcp` |
+| `./pyproject.toml` | `kimix` | `hatchling` | `numpy`, `playwright`, `fastapi`, `kimi-cli-x` |
+| `kimi-cli/pyproject.toml` | `kimi-cli-x` | `uv_build` | `typer`, `aiohttp`, `rich`, plus vendored `kosong`/`kaos` deps (`anthropic`, `openai`, `google-genai`, `mcp`, `asyncssh`, …) |
+
+The former `packages/kosong` (`kosong-x`), `packages/kaos` (`pykaos`), and `packages/kimi-code` were removed; `kosong` and `kaos` are vendored inside `kimi-cli/src/` (`src/kosong/`, `src/kaos/`) and shipped in the `kimi-cli-x` wheel via `module-name = ["kimi_cli", "kosong", "kaos"]`.
 
 ## Workspace
 
-Root `tool.uv.workspace` includes: `kimi-cli`, `kimi-cli/packages/kosong`, `kimi-cli/packages/kaos`, `kimi-agent-sdk/python`.
-Workspace sources in root: `kimi-cli-x`, `kimi-agent-sdk-x`, `kosong-x`, `pykaos`.
+Root `tool.uv.workspace` includes: `kimi-cli` (single member; `kosong`/`kaos` live inside it as vendored modules, not workspace packages).
+Workspace sources in root: `kimi-cli-x`.
 
 ## Common Tool Configs
 
@@ -38,13 +36,12 @@ Workspace sources in root: `kimi-cli-x`, `kimi-agent-sdk-x`, `kosong-x`, `pykaos
 
 - `kimix` -> `kimix.cli:cli`
 - `kimi` / `kimi-cli-x` -> `kimi_cli.__main__:main`
-- `kimi-code` -> `kimi_cli.__main__:main`
 
 ## Optional Deps
 
 - `kimix[office]`: `pymupdf`, `python-docx`
 - `kimix[image_process]`: `pillow`
-- `kosong-x[contrib]`: `anthropic`, `google-genai`
+- `kimix[all]`: both of the above plus dev/test tools (`pytest`, `ruff`, `mypy`, …)
 
 ## Block Templates
 
@@ -106,11 +103,10 @@ Root workspace declaration. Subpackages become editable installs.
 
 ```toml
 [tool.uv.workspace]
-members = ["kimi-cli", "kimi-cli/packages/kosong", "kimi-cli/packages/kaos", "kimi-agent-sdk/python"]
-
+[tool.uv.workspace]
+members = ["kimi-cli"]
 [tool.uv.sources]
 kimi-cli-x = { workspace = true }
-kimi-agent-sdk-x = { workspace = true }
 ```
 
 ### `[tool.uv.index]`

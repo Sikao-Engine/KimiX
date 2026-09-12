@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
+import xxhash
 from inline_snapshot import snapshot
-
 from tests_e2e.wire_helpers import (
     build_approval_response,
     build_shell_tool_call,
@@ -17,11 +16,13 @@ from tests_e2e.wire_helpers import (
     start_wire,
     summarize_messages,
     write_scripted_config,
+    write_shell_agent_file,
 )
 
 
 def _session_dir(home_dir: Path, work_dir: Path) -> Path:
-    digest = hashlib.md5(str(work_dir).encode("utf-8")).hexdigest()
+    # Mirrors WorkDirMeta.sessions_dir (xxh64 of the work-dir path).
+    digest = xxhash.xxh64(str(work_dir).encode("utf-8")).hexdigest()
     return share_dir(home_dir) / "sessions" / digest
 
 
@@ -31,14 +32,38 @@ def _count_lines(path: Path) -> int:
     return len(path.read_text(encoding="utf-8").splitlines())
 
 
-def _read_roles(path: Path) -> list[str]:
-    if not path.exists():
+def _count_db_entries(db_path: Path) -> int:
+    """Count logical context entries in a context.db (messages + system_prompt + checkpoints)."""
+    if not db_path.exists():
+        return 0
+    import apsw
+
+    conn = apsw.Connection(str(db_path))
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        total += conn.execute("SELECT COUNT(*) FROM system_prompt").fetchone()[0]
+        total += conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
+        return total
+    finally:
+        conn.close()
+
+
+def _read_roles(db_path: Path) -> list[str]:
+    """Read the logical message-role sequence from a context.db."""
+    if not db_path.exists():
         return []
+    import apsw
+
+    conn = apsw.Connection(str(db_path))
     roles: list[str] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        roles.append(json.loads(line)["role"])
+    try:
+        if conn.execute("SELECT COUNT(*) FROM system_prompt").fetchone()[0]:
+            roles.append("_system_prompt")
+        if conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]:
+            roles.append("_checkpoint")
+        roles.extend(row[0] for row in conn.execute("SELECT role FROM messages ORDER BY rowid"))
+    finally:
+        conn.close()
     return roles
 
 
@@ -72,15 +97,16 @@ def test_session_files_created(tmp_path) -> None:
         wire.close()
 
     session_dir = _session_dir(home_dir, work_dir) / session_id
-    context_file = session_dir / "context.jsonl"
+    # New sessions store context in context.db (context.jsonl is the legacy path).
+    context_file = session_dir / "context.db"
     wire_file = session_dir / "wire.jsonl"
     assert context_file.exists()
     assert wire_file.exists()
     assert context_file.stat().st_size > 0
     assert wire_file.stat().st_size > 0
-    assert sorted(p.name for p in session_dir.iterdir()) == snapshot(
-        ["context.jsonl", "state.json", "wire.jsonl"]
-    )
+    # Ignore the ephemeral per-process rtk cache dir (.kimix_cache).
+    names = sorted(p.name for p in session_dir.iterdir() if p.name != ".kimix_cache")
+    assert names == snapshot(["context.db", "history.db", "state.json", "wire.jsonl"])
 
 
 def test_continue_session_appends(tmp_path) -> None:
@@ -88,11 +114,14 @@ def test_continue_session_appends(tmp_path) -> None:
     work_dir = make_work_dir(tmp_path)
     home_dir = make_home_dir(tmp_path)
 
+    # Anonymous (auto-id) sessions delete their context on close, so name the
+    # session to test that --continue appends to persisted context.
     wire = start_wire(
         config_path=config_path,
         config_text=None,
         work_dir=work_dir,
         home_dir=home_dir,
+        extra_args=["--session", "e2e-continue-session"],
         yolo=True,
     )
     try:
@@ -115,9 +144,9 @@ def test_continue_session_appends(tmp_path) -> None:
     assert len(session_ids) == 1
     session_id = session_ids[0]
     session_dir = session_root / session_id
-    context_file = session_dir / "context.jsonl"
+    context_file = session_dir / "context.db"
     wire_file = session_dir / "wire.jsonl"
-    context_before = _count_lines(context_file)
+    context_before = _count_db_entries(context_file)
     wire_before = _count_lines(wire_file)
 
     wire = start_wire(
@@ -143,7 +172,7 @@ def test_continue_session_appends(tmp_path) -> None:
     finally:
         wire.close()
 
-    context_after = _count_lines(context_file)
+    context_after = _count_db_entries(context_file)
     wire_after = _count_lines(wire_file)
     assert context_after > context_before
     assert wire_after > wire_before
@@ -152,18 +181,10 @@ def test_continue_session_appends(tmp_path) -> None:
         "context_after": context_after,
         "wire_before": wire_before,
         "wire_after": wire_after,
-    } == snapshot({"context_before": 5, "context_after": 9, "wire_before": 6, "wire_after": 11})
+    } == snapshot({"context_before": 3, "context_after": 5, "wire_before": 8, "wire_after": 14})
     assert _read_roles(context_file) == snapshot(
         [
-            "_system_prompt",
-            "_checkpoint",
-            "user",
-            "_checkpoint",
-            "assistant",
-            "_checkpoint",
-            "user",
-            "_checkpoint",
-            "assistant",
+            "_system_prompt", "user", "assistant", "user", "assistant",
         ]
     )
 
@@ -178,6 +199,7 @@ def test_clear_context(tmp_path) -> None:
         config_text=None,
         work_dir=work_dir,
         home_dir=home_dir,
+        extra_args=["--session", "e2e-clear-session"],
         yolo=True,
     )
     try:
@@ -233,7 +255,7 @@ def test_clear_context(tmp_path) -> None:
     session_ids = [p.name for p in session_root.iterdir() if p.is_dir()]
     assert len(session_ids) == 1
     session_dir = session_root / session_ids[0]
-    context_file = session_dir / "context.jsonl"
+    context_file = session_dir / "context.db"
     assert _read_roles(context_file) == snapshot(["_system_prompt"])
 
 
@@ -279,8 +301,8 @@ def test_manual_compact(tmp_path) -> None:
         assert summarize_messages(messages) == snapshot(
             [
                 {"method": "event", "type": "TurnBegin", "payload": {"user_input": "/compact"}},
-                {"method": "event", "type": "CompactionBegin", "payload": {}},
-                {"method": "event", "type": "CompactionEnd", "payload": {}},
+                {"method": "event", "type": "CompactionBegin", "payload": {"compaction_id": "<uuid>", "trigger": "manual", "shadowed_tokens": None}},
+                {"method": "event", "type": "CompactionEnd", "payload": {"compaction_id": "<uuid>", "trigger": "manual", "shadowed_tokens": 0, "estimated_token_count": 4133, "error": None}},
                 {
                     "method": "event",
                     "type": "ContentPart",
@@ -290,8 +312,8 @@ def test_manual_compact(tmp_path) -> None:
                     "method": "event",
                     "type": "StatusUpdate",
                     "payload": {
-                        "context_usage": 1e-05,
-                        "context_tokens": 1,
+                        "context_usage": 0.04133,
+                        "context_tokens": 4133,
                         "max_context_tokens": 100000,
                         "token_usage": None,
                         "message_id": None,
@@ -307,9 +329,13 @@ def test_manual_compact(tmp_path) -> None:
 
 def test_manual_compact_with_usage(tmp_path) -> None:
     """Compaction with enough messages to trigger an actual LLM call that returns usage."""
+    # The compaction guard rejects summaries that are not smaller than the
+    # shadowed content, so the conversation text must be substantially longer
+    # than the scripted "compacted summary".
+    long_text = "lorem ipsum dolor sit amet " * 120
     scripts = [
-        "text: hello\nusage: input_other=10 output=5",
-        "text: I'm good\nusage: input_other=30 output=8",
+        f"text: {long_text}\nusage: input_other=10 output=5",
+        f"text: {long_text}\nusage: input_other=30 output=8",
         "text: compacted summary\nusage: input_other=50 output=20",
     ]
     config_path = write_scripted_config(tmp_path, scripts)
@@ -389,6 +415,7 @@ def test_replay_streams_wire_history(tmp_path) -> None:
         config_text=None,
         work_dir=work_dir,
         home_dir=home_dir,
+        agent_file=write_shell_agent_file(tmp_path),
         extra_args=["--session", "replay-session"],
         yolo=False,
     )
@@ -437,7 +464,7 @@ def test_replay_streams_wire_history(tmp_path) -> None:
                     "payload": {
                         "type": "function",
                         "id": "tc-1",
-                        "function": {"name": "Shell", "arguments": '{"command": "echo ok"}'},
+                        "function": {"name": "bash", "arguments": '{"command": "echo ok"}'},
                         "extras": None,
                     },
                 },
@@ -460,9 +487,22 @@ def test_replay_streams_wire_history(tmp_path) -> None:
                         "tool_call_id": "tc-1",
                         "return_value": {
                             "is_error": False,
-                            "output": "ok\n",
-                            "message": "Command executed successfully.",
-                            "display": [],
+                            "output": """\
+task_id: bash
+status: completed
+exit_code: 0
+exit_code_meaning: null
+failure_hint: null
+output: |
+  ok
+output_truncated: false
+output_path: null
+wait_matched: null
+elapsed_seconds: null
+original_path: <rtk_tmp>/0.txt\
+""",
+                            "message": "success [original saved to <rtk_tmp>/0.txt]",
+                            "display": [{"type": "shell", "language": "shell"}],
                             "extras": None,
                         },
                     },

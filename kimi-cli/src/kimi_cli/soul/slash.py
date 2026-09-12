@@ -104,7 +104,9 @@ async def cmd_init(soul: KimiSoul, args: str):
 
 async def cmd_compact(soul: KimiSoul, args: str):
     """Compact the context (optionally with a custom focus, e.g. /compact keep db discussions)"""
-    if soul.context.n_checkpoints == 0:
+    # The soul no longer maintains checkpoints; emptiness is determined from
+    # the persisted history itself.
+    if not soul.context.history:
         wire_send(TextPart(text="The context is empty."))
         return
 

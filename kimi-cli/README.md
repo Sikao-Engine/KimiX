@@ -162,9 +162,7 @@ uv run kimi  # run Kimi Code CLI
 make format  # format code
 make check  # run linting and type checking
 make test  # run tests
-make test-kimi-cli  # run Kimi Code CLI tests only
-make test-kosong  # run kosong tests only
-make test-pykaos  # run pykaos tests only
+make test-kimi-cli  # run Kimi Code CLI tests only (includes the vendored kosong/kaos suites)
 make build-web  # build the web UI and sync it into the package (requires Node.js/npm)
 make build  # build python packages
 make build-bin  # build standalone binary

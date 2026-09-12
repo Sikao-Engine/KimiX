@@ -39,14 +39,9 @@ async def test_run_emits_turn_end_when_step_interrupts(
     soul = _make_soul(runtime, tmp_path)
     sent: list[object] = []
 
-    async def fake_checkpoint() -> None:
-        return None
-
     async def fake_step():
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(soul, "_checkpoint", fake_checkpoint)
-    monkeypatch.setattr(soul._denwa_renji, "set_n_checkpoints", lambda _n: None)
     monkeypatch.setattr(soul, "_step", fake_step)
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda msg: sent.append(msg))
 
@@ -69,14 +64,9 @@ async def test_run_emits_turn_end_on_cancelled_error(
     soul = _make_soul(runtime, tmp_path)
     sent: list[object] = []
 
-    async def fake_checkpoint() -> None:
-        return None
-
     async def fake_step():
         raise asyncio.CancelledError()
 
-    monkeypatch.setattr(soul, "_checkpoint", fake_checkpoint)
-    monkeypatch.setattr(soul._denwa_renji, "set_n_checkpoints", lambda _n: None)
     monkeypatch.setattr(soul, "_step", fake_step)
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda msg: sent.append(msg))
 

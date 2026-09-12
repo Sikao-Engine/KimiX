@@ -80,14 +80,10 @@ link-mode = "symlink"
 [tool.uv.workspace]
 members = [
     "kimi-cli",
-    "kimi-cli/packages/kosong",
-    "kimi-cli/packages/kaos",
 ]
 
 [tool.uv.sources]
 kimi-cli-x = { workspace = true }
-kosong-x = { workspace = true }
-pykaos = { workspace = true }
 
 [tool.ruff]
 target-version = "py314"

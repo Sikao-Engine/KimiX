@@ -127,8 +127,10 @@ def test_kimix_mcp_serve_stdio_lists_tools_and_resources(tmp_path: Path) -> None
             {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
         )
         tool_names = {tool["name"] for tool in tools["result"]["tools"]}
-        assert "ReadFile" in tool_names
-        assert "Shell" in tool_names
+        # Tools are exposed under their report-canonical LLM-facing names
+        # (ReadFile -> read, ...); shell tools are intentionally not served.
+        assert "read" in tool_names
+        assert "write" in tool_names
 
         resources = _send_json(
             process,

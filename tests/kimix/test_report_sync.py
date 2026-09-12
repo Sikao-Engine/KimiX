@@ -47,17 +47,17 @@ REPORT_TOOLS: dict[str, dict[str, Any]] = {
         "aliases": {"path": "file_path"},
         "desc_lead": "Edit an existing UTF-8 text file by replacing literal text.",
         "param_desc": {
-            "file_path": "Path to edit, resolved by the filesystem backend.",
-            "old_string": "Literal text to replace. Must match exactly.",
-            "new_string": "Literal replacement text. Use an empty string to delete the match.",
-            "replace_all": "Replace all matches. Defaults to false; when false, old_string must appear exactly once.",
+            "file_path": "Path to edit. Accepts `file_path` or `path`.",
+            "old_string": "Literal text to replace. Single-edit shorthand for `edit`.",
+            "new_string": "Literal replacement text. Single-edit shorthand for `edit`.",
+            "replace_all": "Replace all matches. Only used with the single-edit shorthand.",
         },
     },
     "glob": {
         "class": "Glob",
         "canonical": ["pattern", "path"],
         "aliases": {"directory": "path"},
-        "desc_lead": "Find files whose paths match a glob pattern.",
+        "desc_lead": "Find files by glob.",
         "param_desc": {
             "pattern": "Glob pattern to match file paths against",
             "path": "Directory to search in.",
@@ -88,9 +88,9 @@ REPORT_TOOLS: dict[str, dict[str, Any]] = {
         "aliases": {"cmd": "command", "timeoutMs": "timeout"},
         "desc_lead": "Execute a PowerShell command",
         "param_desc": {
-            "command": "The PowerShell command to execute.",
-            "timeout": "Timeout in seconds.",
-            "workdir": "Working directory for this command.",
+            "command": "PowerShell command, or path to an existing `.ps1` script file, executed via PowerShell. Accepts `command` or `cmd`.",
+            "timeout": "Timeout in seconds; kills the command on expiry. Accepts `timeout` or `timeoutMs`.",
+            "workdir": "Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.",
         },
     },
     "web_search": {
@@ -125,7 +125,7 @@ REPORT_TOOLS: dict[str, dict[str, Any]] = {
         "canonical": ["scope"],
         "aliases": {},
         "desc_lead": "List your continuable background subagents by durable id and label.",
-        "param_desc": {"scope": "`children` (default) lists direct children only;"},
+        "param_desc": {"scope": "`children` (default) lists direct children only."},
     },
     "interrupt_agent": {
         "class": "AgentClose",
@@ -216,10 +216,14 @@ def _build_tools() -> dict[str, Any]:
 
     from kimi_cli.tools.web.search import SearchWeb
     from kimi_cli.config import Config
+    from pydantic import SecretStr
     cfg = Config()
+    # api_key must be a real SecretStr: KimiServiceProvider.is_available()
+    # calls get_secret_value(), and without an available provider SearchWeb
+    # raises SkipThisTool (the optional ddgs package is not installed here).
     with mock.patch.object(
         cfg.services, "search",
-        mock.MagicMock(base_url="http://x", api_key="k", oauth=None, custom_headers=None),
+        mock.MagicMock(base_url="http://x", api_key=SecretStr("k"), oauth=None, custom_headers=None),
     ):
         tools["web_search"] = SearchWeb(config=cfg, runtime=runtime)
 

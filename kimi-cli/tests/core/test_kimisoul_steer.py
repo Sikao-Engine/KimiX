@@ -189,12 +189,7 @@ async def test_agent_loop_injects_steer_between_completed_steps(
     async def fake_request(sender: str, action: str, description: str, display=None):
         await asyncio.Future()
 
-    async def fake_checkpoint() -> None:
-        return None
-
     monkeypatch.setattr(soul._approval, "request", fake_request)
-    monkeypatch.setattr(soul, "_checkpoint", fake_checkpoint)
-    monkeypatch.setattr(soul._denwa_renji, "set_n_checkpoints", lambda _n: None)
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda msg: sent.append(msg))
 
     async def fake_step():
@@ -252,12 +247,7 @@ async def test_agent_loop_continues_after_tool_rejected_when_steer_is_injected(
     async def fake_request(sender: str, action: str, description: str, display=None):
         await asyncio.Future()
 
-    async def fake_checkpoint() -> None:
-        return None
-
     monkeypatch.setattr(soul._approval, "request", fake_request)
-    monkeypatch.setattr(soul, "_checkpoint", fake_checkpoint)
-    monkeypatch.setattr(soul._denwa_renji, "set_n_checkpoints", lambda _n: None)
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda msg: sent.append(msg))
 
     async def fake_step():

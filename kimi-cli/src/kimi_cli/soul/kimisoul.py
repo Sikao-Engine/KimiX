@@ -27,12 +27,6 @@ from kosong.message import Message
 from tenacity import RetryCallState, retry_if_exception, stop_after_attempt
 from tenacity.wait import wait_base
 
-from kimi_cli.approval_runtime import (
-    ApprovalSource,
-    get_current_approval_source_or_none,
-    reset_current_approval_source,
-    set_current_approval_source,
-)
 from kimi_cli.background import build_active_task_snapshot
 from kimi_cli.hooks.engine import HookEngine
 from kimi_cli.llm import ModelCapability
@@ -48,6 +42,7 @@ from kimi_cli.soul import (
     SessionRestartRequired,
     Soul,
     StatusSnapshot,
+    _user_input_is_empty,
     wire_send,
 )
 from kimi_cli.session_state import TodoItemState
@@ -228,32 +223,6 @@ def _message_has_reasoning(message: Message | None) -> bool:
     )
 
 
-def _user_input_is_empty(user_input: str | list[ContentPart]) -> bool:
-    """Return ``True`` when *user_input* contains no sendable content.
-
-    An empty turn is produced when callers invoke the soul with a blank
-    prompt (an empty Enter, a reconnect/replay, or a stray empty steer from
-    the JSON-RPC wire server, which passes ``user_input`` straight through).
-    Forwarding it appends an empty ``user`` message to the session and makes
-    the LLM answer with a spurious "the user sent an empty message" turn.
-
-    A string is empty when it is ``""`` or whitespace-only. A part list is
-    empty when it has no parts or every part is a whitespace-only
-    ``TextPart``; non-text parts (e.g. images) are always sendable.
-    """
-    if isinstance(user_input, str):
-        return not user_input.strip()
-    if not user_input:
-        return True
-    for part in user_input:
-        if isinstance(part, TextPart):
-            if part.text.strip():
-                return False
-        else:
-            return False
-    return True
-
-
 class _RateLimitAwareWait(wait_base):
     """Tenacity wait callable that honors ``Retry-After`` for 429 responses."""
 
@@ -405,7 +374,6 @@ class KimiSoul:
         self._agent = agent
         self._runtime = agent.runtime
         self._anonymous = anonymous
-        self._denwa_renji = agent.runtime.denwa_renji
         self._approval = agent.runtime.approval
         self._loop_control = agent.runtime.config.loop_control
 
@@ -494,8 +462,6 @@ class KimiSoul:
                 agent.toolset.add(retrieve_tool)
             retrieve_tool.attach_history_index(self._history_index)
             agent.toolset.add(context_prune(self))
-
-        self._checkpoint_with_user_message = False
 
         self._llm_request_recorder = LLMRequestRecorder()
         self._recorder_restored = False
@@ -1012,9 +978,6 @@ class KimiSoul:
             return
         await self._agent.toolset.wait_for_mcp_tools()
 
-    async def _checkpoint(self):
-        await self._context.checkpoint(self._checkpoint_with_user_message)
-
     def steer(self, content: str | list[ContentPart]) -> None:
         """Queue a steer message for injection into the current turn.
 
@@ -1082,28 +1045,18 @@ class KimiSoul:
         self,
         user_input: str | list[ContentPart],
     ):
-        # ── Empty-input guard ──────────────────────────────────────────
-        # Never start a turn for blank input. Some callers (notably the
-        # JSON-RPC wire server's ``_handle_prompt``, which passes
-        # ``msg.params.user_input`` straight into ``run_soul``, plus legacy
-        # CLIs) can invoke ``run`` with an empty/whitespace prompt — an
-        # empty Enter, a reconnect/replay, or a stray empty steer. Without
-        # this guard the soul appends an empty ``user`` message to the
-        # session and the LLM answers with a spurious "the user sent an
-        # empty message" turn. The SDK (``kimi_agent_sdk.Session.prompt``)
-        # and the web backend already reject empty input; this guard covers
-        # every remaining path so no empty turn is ever started.
-        if _user_input_is_empty(user_input):
-            logger.debug("Ignoring empty user input; no turn started")
-            return
+        """Run one agent turn for *user_input*.
 
-        approval_source_token = None
-        created_approval_source: ApprovalSource | None = None
+        This is the core turn entry point: it only frames the turn on the
+        wire (``TurnBegin``/``TurnEnd``) and drives ``_turn``. Entry-point
+        hygiene — the empty-input guard, slash-command dispatch,
+        approval-source lifecycle, and session auto-titling — lives in
+        :func:`kimi_cli.soul.run_soul`, the common funnel used by all
+        clients. Callers invoking ``run`` directly must handle those
+        concerns themselves.
+        """
         turn_started = False
         turn_finished = False
-        if get_current_approval_source_or_none() is None:
-            created_approval_source = ApprovalSource(kind="foreground_turn", id=uuid.uuid4().hex)
-            approval_source_token = set_current_approval_source(created_approval_source)
         try:
             self._loop = asyncio.get_running_loop()
             # The soul persists across prompts, and each prompt may run in a
@@ -1126,61 +1079,15 @@ class KimiSoul:
             wire_send(TurnBegin(user_input=user_input))
             turn_started = True
 
-
             user_message = Message(role="user", content=user_input)
-            text_input = user_message.extract_text(" ").strip()
-
-            command_call = soul_slash.parse_slash_command_call(text_input)
-            if command_call is not None:
-                command_func = soul_slash.find_command(command_call.name)
-                if command_func is None:
-                    wire_send(TextPart(text=f'Unknown slash command "/{command_call.name}".'))
-                else:
-                    ret = command_func(self, command_call.args)
-                    if isinstance(ret, Awaitable):
-                        await ret
-            else:
-                await self._turn(user_message)
+            await self._turn(user_message)
 
             wire_send(TurnEnd())
             turn_finished = True
-
-            # Auto-set title after first real turn (skip slash commands)
-            if not command_call:
-                session = self._runtime.session
-                if session.state.custom_title is None:
-                    from kimi_cli.utils.string import shorten
-
-                    title = shorten(
-                        Message(role="user", content=user_input).extract_text(" "),
-                        width=50,
-                    )
-                    if title:
-                        from kimi_cli.session_state import (
-                            load_session_state,
-                            save_session_state,
-                        )
-
-                        # Read-modify-write: load fresh state to avoid
-                        # overwriting concurrent web changes
-                        fresh = load_session_state(session.dir)
-                        if fresh.custom_title is None:
-                            fresh.custom_title = title
-                            save_session_state(fresh, session.dir)
-                        session.state.custom_title = fresh.custom_title
         finally:
             self._run_active = False
             if turn_started and not turn_finished:
                 wire_send(TurnEnd())
-
-
-            if created_approval_source is not None and self._runtime.approval_runtime is not None:
-                self._runtime.approval_runtime.cancel_by_source(
-                    created_approval_source.kind,
-                    created_approval_source.id,
-                )
-            if approval_source_token is not None:
-                reset_current_approval_source(approval_source_token)
 
     async def _turn(self, user_message: Message) -> TurnOutcome:
         if self._runtime.llm is None:
@@ -1190,9 +1097,9 @@ class KimiSoul:
             raise LLMNotSupported(self._runtime.llm, list(missing_caps))
 
         self._current_turn_id = uuid.uuid4().hex
+        self._current_turn_id = uuid.uuid4().hex
         self._current_turn_user_text = user_message.extract_text(" ").strip()
         self._last_tool_calls = []
-        await self._checkpoint()  # this creates the checkpoint 0 on first run
         await self._context.append_message(user_message)
         logger.debug("Appended user message to context")
         return await self._agent_loop()
@@ -1201,16 +1108,15 @@ class KimiSoul:
         """The main agent loop for one run.
 
         Lifecycle:
-            1. Turn Initialization   - clean up stale steers, load MCP tools.
-            2. Step Loop             - iterate until the turn stops or fails.
-               a. Step Guard         - enforce max-steps-per-turn limit.
-               b. Step Begin         - emit StepBegin wire event.
+            1. Turn Initialization - clean up stale steers, load MCP tools.
+            2. Step Loop - iterate until the turn stops or fails.
+               a. Step Guard - enforce max-steps-per-turn limit.
+               b. Step Begin - emit StepBegin wire event.
                c. Context Compaction - auto-compact if context exceeds trigger ratio.
-               d. Checkpoint         - persist current state before calling LLM.
-               e. Step Execution     - run _step() (LLM call + tool execution).
-               f. Error Handling     - BackToTheFuture (revert) or fatal exception.
-               g. Outcome Resolution - steers / stop / continue.
-            3. Turn Resolution       - return TurnOutcome to the caller.
+               d. Step Execution - run _step() (LLM call + tool execution).
+               e. Error Handling - fatal exception propagation.
+               f. Outcome Resolution - steers / stop / continue.
+            3. Turn Resolution - return TurnOutcome to the caller.
         """
         assert self._runtime.llm is not None
 
@@ -1263,7 +1169,6 @@ class KimiSoul:
 
             # ── 2b. Step Begin ──────────────────────────────────────────────────
             wire_send(StepBegin(n=step_no))
-            back_to_the_future: BackToTheFuture | None = None
             step_outcome: StepOutcome | None = None
 
             try:
@@ -1341,12 +1246,7 @@ class KimiSoul:
                         )
                         raise
 
-                # ── 2d. Checkpoint ──────────────────────────────────────────────
-                logger.debug("Beginning step {step_no}", step_no=step_no)
-                await self._checkpoint()
-                self._denwa_renji.set_n_checkpoints(self._context.n_checkpoints)
-
-                # ── 2e. Step Execution ──────────────────────────────────────────
+                # ── 2d. Step Execution ──────────────────────────────────────────
                 # Race the step against the steer wake event so a steer can
                 # interrupt the step mid-stream (while reasoning/text parts are
                 # still printing). The interrupted step's partial output is not
@@ -1384,19 +1284,15 @@ class KimiSoul:
                     continue
 
             except SessionRestartRequired:
-                # ── 2f-i. Session restart signal ─────────────────────────────
+                # ── 2e-i. Session restart signal ─────────────────────────────
                 # Propagate to outer layers (Session.prompt) for auto-restart.
                 # Do NOT send StepInterrupted here — the session will be cleared
                 # and restarted, so reporting an error on the old session is
                 # misleading.
                 raise
 
-            except BackToTheFuture as e:
-                # ── 2f-ii. D-Mail revert signal ────────────────────────────────
-                back_to_the_future = e
-
             except Exception as e:
-                # ── 2f-iii. Fatal step error ──────────────────────────────────
+                # ── 2e-ii. Fatal step error ──────────────────────────────────
                 req_id = getattr(e, "request_id", None)
                 logger.error(
                     "Agent step {step_no} failed: {error_type}: {error}"
@@ -1427,14 +1323,14 @@ class KimiSoul:
                 # break the agent loop
                 raise
 
-            # ── 2g. Outcome Resolution ──────────────────────────────────────────
+            # ── 2f. Outcome Resolution ──────────────────────────────────────────
             if step_outcome is not None:
                 # Step returned a stop reason -- check for steers before finishing.
                 has_steers = await self._consume_pending_steers()
                 if has_steers:
                     continue  # steers injected, force another LLM step
 
-                # ── 2h. Verification Gate (P2, B-3) ────────────────────────────
+                # ── 2g. Verification Gate (P2, B-3) ────────────────────────────
                 # Before ending the turn on no_tool_calls, check whether the
                 # turn is actually finished (todos done, verifications run).
                 if (
@@ -1451,7 +1347,7 @@ class KimiSoul:
                         )
                         continue  # do not end the turn; force another step
 
-                # ── 2h-ii. Loop-recovery gate (repeated tool calls) ───────────
+                # ── 2g-ii. Loop-recovery gate (repeated tool calls) ──────────
                 # When the toolset's cycle / streak / different-args loop
                 # detectors fire we must NOT end the turn silently: the user's
                 # request would be dropped with no answer.  Feed the model a
@@ -1606,13 +1502,6 @@ class KimiSoul:
                     step_count=step_no,
                 )
 
-            if back_to_the_future is not None:
-                # Revert context to the checkpoint and inject D-Mail message.
-                await self._context.revert_to(back_to_the_future.checkpoint_id)
-                self._last_tool_calls = []
-                await self._checkpoint()
-                await self._context.append_message(back_to_the_future.messages)
-
             # Consume any pending steers between steps before next iteration.
             await self._consume_pending_steers()
 
@@ -1637,7 +1526,9 @@ class KimiSoul:
     ) -> StepOutcome | None:
         """Run a single step and return a stop outcome, or None to continue.
 
-        This is the implementation of ``2e. Step Execution`` in ``_agent_loop``.
+        This is the implementation of the *Step Execution* phase of
+        ``_agent_loop``. (The ``2e.*`` sub-lifecycle numbering below is this
+        method's own internal labeling, kept stable for cross-referencing.)
 
         Args:
             _overflow_state: Per-step overflow retry budget shared across the
@@ -2025,34 +1916,7 @@ class KimiSoul:
             # Pure rejection (no user feedback) — stop the turn.
             # Subagents skip this so the LLM can see the rejection and try
             # an alternative approach instead of terminating immediately.
-            _ = self._denwa_renji.fetch_pending_dmail()
             return StepOutcome(stop_reason="tool_rejected", assistant_message=result.message)
-
-        # handle pending D-Mail
-        if dmail := self._denwa_renji.fetch_pending_dmail():
-            assert dmail.checkpoint_id >= 0, "DenwaRenji guarantees checkpoint_id >= 0"
-            assert dmail.checkpoint_id < self._context.n_checkpoints, (
-                "DenwaRenji guarantees checkpoint_id < n_checkpoints"
-            )
-            # raise to let the main loop take us back to the future
-            raise BackToTheFuture(
-                dmail.checkpoint_id,
-                [
-                    Message(
-                        role="user",
-                        content=[
-                            system(
-                                "You just got a D-Mail from your future self. "
-                                "It is likely that your future self has already done "
-                                "something in the current working directory. Please read "
-                                "the D-Mail and decide what to do next. You MUST NEVER "
-                                "mention to the user about this information. "
-                                f"D-Mail content:\n\n{dmail.message.strip()}"
-                            )
-                        ],
-                    )
-                ],
-            )
 
         if isinstance(self._agent.toolset, KimiToolset) and self._agent.toolset.force_stop_turn:
             return StepOutcome(stop_reason="tool_call_repeat", assistant_message=result.message)
@@ -2309,7 +2173,6 @@ class KimiSoul:
             )
             self._agent.system_prompt_cached = system_prompt_text
             await self._context.write_system_prompt(system_prompt_text)
-            await self._checkpoint()
             await self._context.append_message(compaction_result.messages)
 
             if self.is_root:
@@ -2625,15 +2488,4 @@ class KimiSoul:
                 status_code=error.status_code if isinstance(error, APIStatusError) else None,
             )
         )
-
-
-class BackToTheFuture(Exception):
-    """
-    Raise when we need to revert the context to a previous checkpoint.
-    The main agent loop should catch this exception and handle it.
-    """
-
-    def __init__(self, checkpoint_id: int, messages: Sequence[Message]):
-        self.checkpoint_id = checkpoint_id
-        self.messages = messages
 

@@ -164,11 +164,6 @@ async def test_turn_force_stops_on_adjacent_identical_calls(
 
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
 
-    async def _noop_checkpoint() -> None:
-        return None
-
-    monkeypatch.setattr(soul, "_checkpoint", _noop_checkpoint)
-    monkeypatch.setattr(soul._denwa_renji, "set_n_checkpoints", lambda _n: None)
 
     outcome = await soul._turn(Message(role="user", content="go"))
 
@@ -208,11 +203,6 @@ async def test_turn_force_stops_on_interleaved_cycle(
 
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
 
-    async def _noop_checkpoint() -> None:
-        return None
-
-    monkeypatch.setattr(soul, "_checkpoint", _noop_checkpoint)
-    monkeypatch.setattr(soul._denwa_renji, "set_n_checkpoints", lambda _n: None)
 
     outcome = await soul._turn(Message(role="user", content="go"))
 
@@ -255,11 +245,6 @@ async def test_loop_recovery_prompt_reaches_llm_and_requirement_kept(
 
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
 
-    async def _noop_checkpoint() -> None:
-        return None
-
-    monkeypatch.setattr(soul, "_checkpoint", _noop_checkpoint)
-    monkeypatch.setattr(soul._denwa_renji, "set_n_checkpoints", lambda _n: None)
 
     outcome = await soul._turn(Message(role="user", content="deploy the service"))
 

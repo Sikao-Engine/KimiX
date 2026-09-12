@@ -3,8 +3,8 @@ from __future__ import annotations
 from inline_snapshot import snapshot
 
 from tests_e2e.wire_helpers import (
-    build_approval_response,
-    build_shell_tool_call,
+    build_ask_user_tool_call,
+    build_question_response,
     collect_until_request,
     collect_until_response,
     make_home_dir,
@@ -57,20 +57,31 @@ def test_steer_no_active_turn(tmp_path) -> None:
 def test_steer_during_active_turn(tmp_path) -> None:
     """Steer during an active turn returns 'steered' and the model sees
     the instruction in the next step."""
-    # Script: step 1 calls a shell tool (blocks on approval), step 2 echoes back.
+    # Script: step 1 asks the user a question (blocks on the wire client),
+    # then echoes back.  A third line covers the extra step forced when the
+    # pending steer is consumed at the step-2 outcome boundary.
+    question = {
+        "question": "Continue?",
+        "header": "Steer",
+        "options": [
+            {"label": "Yes", "description": "go on"},
+            {"label": "No", "description": "stop here"},
+        ],
+        "multi_select": False,
+    }
     scripts = [
         "\n".join(
             [
                 "text: working",
-                build_shell_tool_call("tc-1", "echo hi"),
+                build_ask_user_tool_call("tc-1", [question]),
             ]
         ),
         "text: done after steer",
+        "text: final",
     ]
     config_path = write_scripted_config(tmp_path, scripts)
     work_dir = make_work_dir(tmp_path)
     home_dir = make_home_dir(tmp_path)
-
     wire = start_wire(
         config_path=config_path,
         config_text=None,
@@ -79,8 +90,8 @@ def test_steer_during_active_turn(tmp_path) -> None:
         yolo=False,
     )
     try:
-        send_initialize(wire)
-        # Start a prompt that will block on tool approval
+        send_initialize(wire, capabilities={"supports_question": True})
+        # Start a prompt that will block on the question request
         wire.send_json(
             {
                 "jsonrpc": "2.0",
@@ -89,9 +100,8 @@ def test_steer_during_active_turn(tmp_path) -> None:
                 "params": {"user_input": "run"},
             }
         )
-        # Wait until the approval request arrives (turn is active)
+        # Wait until the question request arrives (turn is active)
         request_msg, _ = collect_until_request(wire)
-
         # Send steer while the turn is active
         wire.send_json(
             {
@@ -103,10 +113,8 @@ def test_steer_during_active_turn(tmp_path) -> None:
         )
         steer_resp = normalize_response(read_response(wire, "steer-1"))
         assert steer_resp == snapshot({"result": {"status": "steered"}})
-
-        # Approve the tool call to let the turn continue
-        wire.send_json(build_approval_response(request_msg, "approve"))
-
+        # Answer the question to let the turn continue
+        wire.send_json(build_question_response(request_msg, {"Continue?": "Yes"}))
         # Collect the rest of the turn
         resp, _ = collect_until_response(wire, "prompt-1")
         assert resp.get("result", {}).get("status") == "finished"

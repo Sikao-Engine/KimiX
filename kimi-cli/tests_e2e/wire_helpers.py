@@ -4,6 +4,7 @@ import contextlib
 import json
 import os
 import queue
+import re
 import shlex
 import subprocess
 import threading
@@ -18,6 +19,7 @@ TRACE_ENV = "KIMI_TEST_TRACE"
 WIRE_COMMAND_ENV = "KIMI_E2E_WIRE_CMD"
 DEFAULT_TIMEOUT = 5.0
 _PATH_REPLACEMENTS: dict[str, str] = {}
+_RTK_TMP_RE = re.compile(r"\.kimix_cache[/\\]tmp_\d+")
 
 
 def repo_root() -> Path:
@@ -107,18 +109,57 @@ def write_scripted_config(
             "env": {"KIMI_SCRIPTED_ECHO_SCRIPTS": str(scripts_path)},
         },
     }
+    # Scripted echoes cannot react to the verification gate's nudges
+    # (unfinished todos / edit-without-verify), which would force extra LLM
+    # steps and exhaust the script.  Disable the gate for wire e2e tests by
+    # default; callers may override via loop_control.
+    merged_loop_control: dict[str, Any] = {"verification_gate_enabled": False}
     if loop_control:
-        config_data["loop_control"] = loop_control
-
+        merged_loop_control.update(loop_control)
+    config_data["loop_control"] = merged_loop_control
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps(config_data), encoding="utf-8")
     return config_path
 
 
+def shell_tool_name() -> str:
+    """Shell tool name the spawned CLI enables on this machine.
+
+    On Windows the CLI enables ``pwsh`` only when no Bash is available (or
+    ``USE_SYSTEM_PWSH_ON_WINDOWS`` is set); otherwise the ``bash`` tool is
+    used.  Scripting the enabled name keeps the wire tests platform-neutral.
+    """
+    from kimix.tools.file.bash import pwsh_tool as _pt
+
+    return "pwsh" if _pt._bash_tool._should_enable_powershell() else "bash"
+
+
+def write_shell_agent_file(tmp_path: Path) -> Path:
+    """Agent file with the default agent's tools plus the platform shell tool.
+
+    The default agent intentionally ships without a shell tool, while several
+    wire e2e tests exercise shell approvals/display.  ``extend`` replaces the
+    tools list, so materialize default tools + shell explicitly.
+    """
+    import yaml
+    from kimi_cli.agentspec import DEFAULT_AGENT_FILE
+
+    spec = yaml.safe_load(DEFAULT_AGENT_FILE.read_text(encoding="utf-8"))
+    tools = list(spec["agent"]["tools"])
+    shell = shell_tool_name()
+    tools.append(f"kimix.tools.file.bash:{shell}")
+    agent_path = tmp_path / "agent_with_shell.yaml"
+    agent_path.write_text(
+        yaml.safe_dump({"version": 1, "agent": {"extend": "default", "tools": tools}}),
+        encoding="utf-8",
+    )
+    return agent_path
+
+
 def build_shell_tool_call(tool_call_id: str, command: str) -> str:
     payload = {
         "id": tool_call_id,
-        "name": "Shell",
+        "name": shell_tool_name(),
         "arguments": json.dumps({"command": command}),
     }
     return f"tool_call: {json.dumps(payload)}"
@@ -387,6 +428,7 @@ def normalize_value(value: Any, *, replacements: Mapping[str, str] | None = None
         value = _replace_paths(value, active_replacements)
         value = _normalize_line_endings(value)
         value = _normalize_path_separators(value, active_replacements)
+        value = _normalize_rtk_tmp_paths(value)
         value = _normalize_echo_error_message(value)
         try:
             uuid.UUID(value)
@@ -442,7 +484,25 @@ def _replace_paths(value: str, replacements: Mapping[str, str]) -> str:
     for old, new in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
         if old and old in value:
             value = value.replace(old, new)
+    if "\\" in value or "/" in value:
+        # Retry with separator-normalized forms: some payloads render paths
+        # with forward slashes while the registered keys use native separators.
+        normalized = value.replace("\\", "/")
+        for old, new in sorted(replacements.items(), key=lambda item: len(item[0]), reverse=True):
+            old_norm = old.replace("\\", "/")
+            if old_norm and old_norm in normalized:
+                normalized = normalized.replace(old_norm, new)
+        value = normalized
     return value
+
+
+def _normalize_rtk_tmp_paths(value: str) -> str:
+    """Replace per-process rtk cache dirs (``.kimix_cache/tmp_<pid>``) with a stable token.
+
+    Shell tool results embed the rtk output-export path, which contains the
+    spawned CLI's PID and therefore differs on every test run.
+    """
+    return _RTK_TMP_RE.sub("<rtk_tmp>", value)
 
 
 def _normalize_echo_error_message(value: str) -> str:
@@ -459,6 +519,24 @@ def _normalize_echo_error_message(value: str) -> str:
     return f"{prefix}: '{raw}'"
 
 
+def _scrub_volatile_payload(event_type: Any, payload: Any) -> Any:
+    """Replace run-volatile payload fields with stable placeholders.
+
+    ``LLMRequest`` carries the full ``system_prompt`` text and its hash; both
+    embed the current date/time (minute precision) and so differ on every
+    test run.  Their content is covered by dedicated unit tests
+    (e.g. ``test_system_prompt_stability.py``), so scrub them here.
+    """
+    if event_type != "LLMRequest" or not isinstance(payload, dict):
+        return payload
+    scrubbed = dict(payload)
+    if "system_prompt" in scrubbed:
+        scrubbed["system_prompt"] = "<SYSTEM_PROMPT>"
+    if "system_prompt_hash" in scrubbed:
+        scrubbed["system_prompt_hash"] = "<SYSTEM_PROMPT_HASH>"
+    return scrubbed
+
+
 def summarize_messages(
     messages: list[dict[str, Any]], *, replacements: Mapping[str, str] | None = None
 ) -> list[dict[str, Any]]:
@@ -471,7 +549,10 @@ def summarize_messages(
         entry = {
             "method": method,
             "type": params.get("type"),
-            "payload": normalize_value(params.get("payload"), replacements=replacements),
+            "payload": _scrub_volatile_payload(
+                params.get("type"),
+                normalize_value(params.get("payload"), replacements=replacements),
+            ),
         }
         summary.append(entry)
     return _normalize_message_order(summary)
@@ -510,10 +591,10 @@ def base_command() -> list[str]:
 
 
 def _wire_base_command() -> list[str]:
-    cmd = base_command()
-    if "--wire" not in cmd:
-        cmd.append("--wire")
-    return cmd
+    # Wire stdio is the default (and only) UI mode since commit 3dae608; the
+    # standalone ``--wire`` CLI flag no longer exists. base_command() already
+    # strips a legacy ``--wire`` from the WIRE_COMMAND env override.
+    return base_command()
 
 
 def _normalize_message_order(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:

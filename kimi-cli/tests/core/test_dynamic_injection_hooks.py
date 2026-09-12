@@ -91,7 +91,6 @@ def _make_compactable_soul() -> Any:
     loop_control.max_retries_per_step = 1
     soul._loop_control = loop_control
 
-    soul._checkpoint = AsyncMock()
     soul._history_index = MagicMock()
     soul._recently_retrieved_turn_ids = set()
 
