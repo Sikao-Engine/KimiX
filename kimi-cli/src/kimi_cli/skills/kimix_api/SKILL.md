@@ -9,18 +9,18 @@ High-level guide to `kimix.utils`, `kimix.base`, the full public API of `src/kim
 
 ## Initialization & Config (`kimix.utils.config`)
 
-- `init(config_path=None, config_json=None, yolo=True, think=True, skill_dir=None, ralph=None, manually_cot=False, colorful_print=True, clean=False)` — initialize global state (auto-resolves provider from `default_config.json` → env vars → OAuth if skipped).
+- `init(config_path=None, config_json=None, yolo=True, think=True, skill_dir=None, manually_cot=False, colorful_print=True, clean=False)` — initialize global state (auto-resolves provider from `default_config.json` → env vars → OAuth if skipped).
 - `_create_config(provider_dict) -> (Config, provider_dict)` — build a validated `Config` from a provider dict.
 
 ## Session Management (`kimix.utils`)
 
-- `create_session(session_id=None, work_dir=KaosPath, skills_dir=None, agent_file=None, resume=False, provider_dict=None, chat_provider=None, agent_type=SystemPromptType.Worker, vfs_path=None, extra_system_prompt=None, max_ralph_iterations=None, anonymous=False, custom_data=None)`; close with `close_session(session)` / `await close_session_async(session)`.
+- `create_session(session_id=None, work_dir=KaosPath, skills_dir=None, agent_file=None, resume=False, provider_dict=None, chat_provider=None, agent_type=SystemPromptType.Worker, vfs_path=None, extra_system_prompt=None, anonymous=False, custom_data=None)`; close with `close_session(session)` / `await close_session_async(session)`.
 - `_create_session_async(...)` — async version; `create_supervisor_session(...)` — Supervisor role with `agent_boss.json`.
 - Default session: `_create_default_session(resume=True)`, `get_default_session()`, `_create_default_session_async(resume=True)`.
 - `prompt(prompt_str, session=None, output_function=None, info_print=True, cancel_callable=None, close_session_after_prompt=False, merge_wire_messages=None, ensure_todo_finished=True, export_todo_list_path=None, format_output=False, timeout=None)` / `await prompt_async(...)` — auto-escapes file paths, exports >64 KiB prompts to temp files, retries non-API errors up to 3×, runs todo reminders, clears todos.
 - Cancel: `cancel_prompt(session)`, `get_cancel_event(session)`.
 - Context: `clear_default_context(force_create=True, resume=True, print_info=True)`, `compact_default_context()`, `print_usage(session)`, `context_path()`, `delete_session_dir()`; per-session `clear_context`/`compact_context` (+ async) from `kimix.utils.session`.
-- Ralph loop: `set_ralph_loop(value, session=None)`; tool errors: `get_tool_call_errors(session)`.
+- Tool errors: `get_tool_call_errors(session)`.
 
 ## System Prompt Types (`kimix.utils.system_prompt`)
 
@@ -44,7 +44,7 @@ High-level guide to `kimix.utils`, `kimix.base`, the full public API of `src/kim
 
 ## Configuration Variables (`kimix.base`)
 
-`_default_thinking`, `_default_yolo`, `_default_agent_file(_dir)`, `_default_skill_dirs`, `_default_provider`, `_default_sub_providers`, `_default_ralph`, `_default_manually_cot`, `_quiet`, `_colorful_print`, `_print_func`, `COMMON_SKILL_DIRS`; setters `set_default_*`; `get_default_sub_provider(role)`; `get_skill_dirs(use_kaos_path=True)`; utils `percentage_str`, `percentage_and_token(session)`, `generate_memory`, `make_kaos_dir(path)`.
+`_default_thinking`, `_default_yolo`, `_default_agent_file(_dir)`, `_default_skill_dirs`, `_default_provider`, `_default_sub_providers`, `_default_manually_cot`, `_quiet`, `_colorful_print`, `_print_func`, `COMMON_SKILL_DIRS`; setters `set_default_*`; `get_default_sub_provider(role)`; `get_skill_dirs(use_kaos_path=True)`; utils `percentage_str`, `percentage_and_token(session)`, `generate_memory`, `make_kaos_dir(path)`.
 
 ## Prompt String Utilities (`kimix.utils.prompt_str`)
 
@@ -57,8 +57,8 @@ High-level guide to `kimix.utils`, `kimix.base`, the full public API of `src/kim
 
 ## `kimi_agent_sdk`
 
-- `kimi_agent_sdk.prompt(user_input, *, work_dir, config, model, thinking, yolo, approval_handler_fn, agent_file, mcp_configs, skills_dir(s), max_steps_per_turn, max_retries_per_step, max_ralph_iterations, final_message_only)` — async generator of `Message`.
-- `Session.create(work_dir=None, *, session_id, config, model, thinking, yolo, plan_mode, agent_file, mcp_configs, skills_dir(s), anonymous, max_steps_per_turn, max_retries_per_step, max_ralph_iterations, **custom)` / `Session.resume(work_dir, session_id)` — async context manager: `prompt(user_input, merge_wire_messages=False)`, `cancel()`, `close()`, `clear()`, `rename(new_id)`, `compact(custom_instruction="")`, `export(output_path=None)`, properties `id`, `model_name`, `status`.
+- `kimi_agent_sdk.prompt(user_input, *, work_dir, config, model, thinking, yolo, approval_handler_fn, agent_file, mcp_configs, skills_dir(s), max_steps_per_turn, max_retries_per_step, final_message_only)` — async generator of `Message`.
+- `Session.create(work_dir=None, *, session_id, config, model, thinking, yolo, plan_mode, agent_file, mcp_configs, skills_dir(s), anonymous, max_steps_per_turn, max_retries_per_step, **custom)` / `Session.resume(work_dir, session_id)` — async context manager: `prompt(user_input, merge_wire_messages=False)`, `cancel()`, `close()`, `clear()`, `rename(new_id)`, `compact(custom_instruction="")`, `export(output_path=None)`, properties `id`, `model_name`, `status`.
 - Re-exports: `CallableTool2`/`ToolOk`/`ToolError`, wire/message types, `Config`/`MCPConfig`, exceptions, `ApprovalHandlerFn`/`ApprovalRequest`, `MessageAggregator(final_message_only)` (`feed`/`flush`).
 
 ## `kimix.dag` — DAG Execution

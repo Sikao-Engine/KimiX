@@ -38,7 +38,6 @@ async def prompt(
     # Loop control
     max_steps_per_turn: int | None = None,
     max_retries_per_step: int | None = None,
-    max_ralph_iterations: int | None = None,
     # Output control
     final_message_only: bool = False,
 ) -> AsyncGenerator[Message, None]:
@@ -65,7 +64,6 @@ async def prompt(
         skills_dirs: Multiple skills directories (KaosPath list) for newer kimi-cli.
         max_steps_per_turn: Maximum number of steps in one turn.
         max_retries_per_step: Maximum number of retries per step.
-        max_ralph_iterations: Extra iterations in Ralph mode (-1 for unlimited).
         final_message_only: Only return the final Message of the last step.
 
     Yields:
@@ -107,7 +105,6 @@ async def prompt(
         skills_dirs=skills_dirs,
         max_steps_per_turn=max_steps_per_turn,
         max_retries_per_step=max_retries_per_step,
-        max_ralph_iterations=max_ralph_iterations,
     ) as session:
         aggregator = MessageAggregator(final_message_only=final_message_only)
         async for wire_msg in session.prompt(user_input, merge_wire_messages=True):

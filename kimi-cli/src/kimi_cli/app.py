@@ -154,7 +154,6 @@ class KimiCLI:
         # Loop control
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
-        max_ralph_iterations: int | None = None,
         **load_agent_custom_arguments,  # Add by maxwell
     ) -> KimiCLI:
         """
@@ -184,8 +183,6 @@ class KimiCLI:
                 Defaults to None.
             max_retries_per_step (int | None, optional): Maximum number of retries in one step.
                 Defaults to None.
-            max_ralph_iterations (int | None, optional): Extra iterations after the first turn in
-                Ralph mode. Defaults to None.
 
 
         Raises:
@@ -209,8 +206,6 @@ class KimiCLI:
             config.loop_control.max_steps_per_turn = max_steps_per_turn
         if max_retries_per_step is not None:
             config.loop_control.max_retries_per_step = max_retries_per_step
-        if max_ralph_iterations is not None:
-            config.loop_control.max_ralph_iterations = max_ralph_iterations
         logger.info("Loaded config: {config}", config=config)
 
         _phase_t = time.monotonic()

@@ -77,7 +77,7 @@ Run `/init` in the interactive terminal to create the default config interactive
 | `api_key` | No | API key (falls back to env vars) |
 | `custom_headers` | No | Custom HTTP headers |
 | `oauth` | No | OAuth config, e.g. `{"storage": "file", "key": "my-key"}` |
-| `loop_control` | No | Loop params: `max_steps_per_turn`, `max_retries_per_step`, `max_ralph_iterations`, `reserved_context_size`, `compaction_trigger_ratio` |
+| `loop_control` | No | Loop params: `max_steps_per_turn`, `max_retries_per_step`, `reserved_context_size`, `compaction_trigger_ratio` |
 | `max_tokens` | No | Max tokens per request |
 | `show_thinking_stream` | No | Stream thinking process |
 | `thinking_effort` | No | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
@@ -135,7 +135,6 @@ kimix --config=<path>
 | `--no_yolo` | Disable YOLO mode |
 | `--no_color` | Disable colored output |
 | `--manually-cot` | Enable manual CoT (may use multiple sessions) |
-| `--ralph` | Enable Ralph mode (optional iteration count) |
 | `-s`, `--skill-dir` | Custom skill directory (repeatable) |
 | `--config` | JSON config path. Searches: cwd parents, package parents, `PATH` |
 
@@ -161,7 +160,6 @@ kimix --config=<path>
 | `/resume:<id>` | Close current session and resume a session by ID |
 | `/store:<id>` | Copy the current session to a new named session |
 | `/load:<id>` | Copy a named session into a new anonymous session |
-| `/ralph:on/off/<num>` | Set Ralph mode |
 | `/reflection` | Reflect on the current conversation context, find misunderstandings caused by the current agent design, and change the source code to improve the project (requires a non-empty context; writes a change report to `docs/reflection_report_*.md`) |
 | `/supervisor` | Enter multi-line input mode to create a session with the Supervisor role and execute one task (end with `/end`, cancel with `/cancel`) |
 | `/plan` / `/plan:<file>` | Use the TodoMaker Agent to generate a task plan. Task requirements are provided via multi-line input (end with `/end`); `<file>` specifies the plan output file path, and will be overwritten if it already exists. After generation, you can review and modify the plan, then confirm to execute; a review prompt is appended after execution |

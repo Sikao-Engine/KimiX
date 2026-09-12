@@ -300,7 +300,6 @@ def init(
     yolo: bool = True,
     think: bool = True,
     skill_dir: list[str] | None = None,
-    ralph: int | None = None,
     manually_cot: bool = False,
     colorful_print: bool = True,
     clean: bool = False,
@@ -313,7 +312,6 @@ def init(
         yolo: Enable YOLO mode (auto-approve tool calls).
         think: Enable thinking mode.
         skill_dir: Additional skill directories to load.
-        ralph: Ralph mode iteration limit.
         manually_cot: Enable manually CoT mode.
         colorful_print: Enable ANSI-colorful output.
         clean: Delete session cache after quit.
@@ -340,7 +338,6 @@ def init(
     base.set_default_thinking(think)
     base.set_default_yolo(yolo)
     base.set_default_manually_cot(manually_cot)
-    base._default_ralph = ralph
 
     # 3. Clean mode
     constants.CLEAN_MODE = clean
@@ -398,13 +395,6 @@ def init(
                     _load_and_set_provider(config_data)
             except (orjson.JSONDecodeError, Exception):
                 pass
-
-    # 6. Ralph override on provider
-    if ralph is not None and base._default_provider is not None:
-        if "loop_control" not in base._default_provider:
-            base._default_provider["loop_control"] = {}
-        base._default_provider["loop_control"]["max_ralph_iterations"] = ralph
-        print_debug(f"Ralph mode set to {ralph}.")
 
 
 # ── Generic config construction from a provider dict ───────────────────────
@@ -530,10 +520,6 @@ def _create_config(provider_dict: dict[str, Any] | None = None) -> tuple[Config,
         config_data["provider"] = _build_llm_provider(provider_dict)
 
         cfg = Config.model_validate(config_data)
-
-        # Ralph override only when not explicitly set in provider_dict.
-        if base._default_ralph is not None and 'max_ralph_iterations' not in (provider_dict.get('loop_control') or {}):
-            cfg.loop_control.max_ralph_iterations = base._default_ralph
 
         # Warn about unrecognized keys.
         unrecognized_keys = [k for k in provider_dict if k not in _get_config_recognized_keys()]

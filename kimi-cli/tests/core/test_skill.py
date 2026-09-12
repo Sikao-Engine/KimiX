@@ -86,7 +86,6 @@ description: Alpha description
                 type="standard",
                 dir=KaosPath.unsafe_from_local_path(Path("/path/to/alpha")),
                 skill_md_file=KaosPath.unsafe_from_local_path(Path("/path/to/alpha/SKILL.md")),
-                flow=None,
                 scope="user",
             ),
             Skill(
@@ -95,7 +94,6 @@ description: Alpha description
                 type="standard",
                 dir=KaosPath.unsafe_from_local_path(Path("/path/to/beta")),
                 skill_md_file=KaosPath.unsafe_from_local_path(Path("/path/to/beta/SKILL.md")),
-                flow=None,
                 scope="user",
             ),
         ]
@@ -103,7 +101,8 @@ description: Alpha description
 
 
 @pytest.mark.asyncio
-async def test_discover_skills_parses_flow_type(tmp_path):
+async def test_discover_skills_flow_type_degrades_to_standard(tmp_path):
+    """Legacy ``type: flow`` skills are loaded as standard skills."""
     root = tmp_path / "skills"
     root.mkdir()
 
@@ -125,35 +124,7 @@ A --> END([END])
     skills = await discover_skills(KaosPath.unsafe_from_local_path(root), scope="user")
 
     assert len(skills) == 1
-    assert skills[0].type == "flow"
-    assert skills[0].flow is not None
-    assert skills[0].flow.begin_id == "BEGIN"
-
-
-@pytest.mark.asyncio
-async def test_discover_skills_flow_parse_failure_falls_back(tmp_path):
-    root = tmp_path / "skills"
-    root.mkdir()
-
-    _write_skill(
-        root / "broken-flow",
-        """---
-name: broken-flow
-description: Broken flow skill
-type: flow
----
-```mermaid
-flowchart TD
-A --> B
-```
-""",
-    )
-
-    skills = await discover_skills(KaosPath.unsafe_from_local_path(root), scope="user")
-
-    assert len(skills) == 1
     assert skills[0].type == "standard"
-    assert skills[0].flow is None
 
 
 @pytest.mark.asyncio

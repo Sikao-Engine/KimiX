@@ -11,8 +11,8 @@ from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.dynamic_injection import DynamicInjection, DynamicInjectionProvider
 from kimi_cli.soul.kimisoul import KimiSoul
-from kimi_cli.soul.slash import afk as afk_slash
-from kimi_cli.soul.slash import yolo as yolo_slash
+from kimi_cli.soul.slash import cmd_afk as afk_slash
+from kimi_cli.soul.slash import cmd_yolo as yolo_slash
 from kimi_cli.wire.types import TextPart
 
 

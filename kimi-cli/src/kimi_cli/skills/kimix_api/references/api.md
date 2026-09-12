@@ -22,9 +22,8 @@ init(
     config_json=None,                # Optional: JSON string with provider settings (alternative to config_path)
     yolo=True,                       # Enable YOLO mode (auto-approve tool calls)
     think=True,                      # Enable thinking mode
-    skill_dir=None,                  # Optional: additional skill directories to load
-    ralph=None,                      # Optional: Ralph mode iteration limit
-    manually_cot=False,              # Enable manually CoT mode
+    skill_dir=None, # Optional: additional skill directories to load
+    manually_cot=False, # Enable manually CoT mode
     colorful_print=True,             # Enable ANSI-colorful output
     clean=False,                     # Delete session cache after quit
 )
@@ -32,11 +31,10 @@ init(
 
 **What `init` does (in order):**
 1. Disposes the existing default session (if any) via `close_session`.
-2. Resets base globals: `_colorful_print`, `set_default_thinking(think)`, `set_default_yolo(yolo)`, `set_default_manually_cot(manually_cot)`, `_default_ralph = ralph`.
+2. Resets base globals: `_colorful_print`, `set_default_thinking(think)`, `set_default_yolo(yolo)`, `set_default_manually_cot(manually_cot)`.
 3. Sets `CLEAN_MODE` when `clean=True` (deletes cache after quit).
 4. Resets skill dirs to empty, auto-loads `.kimix/skill.json` (key `skill_dir`, relative paths resolved against CWD), then appends any explicit `skill_dir` entries.
 5. Loads provider config from `config_path` / `config_json`, or falls back to `src/kimix/default_config.json`. `sub_provider`/`sub_providers` entries are normalized (missing required keys `type`/`max_context_size`/`model`/`url` are dropped, empty `role` defaults to `sub_agent`); if the root lacks `model`, a sub-provider is promoted to main provider (priority: no role → `sub_agent` → `planner`).
-6. Applies the `ralph` override into `loop_control.max_ralph_iterations` of the provider dict.
 
 ### _create_config
 
@@ -54,7 +52,6 @@ cfg, provider_dict = _create_config(provider_dict)  # provider_dict=None → use
 - Resolves `api_key` from the dict, else `KIMI_API_KEY`, else `KIMIX_API_KEY` env vars.
 - Builds `LLMModel` / `LLMProvider` from declared fields (with special handling for `base_url`/`url`, `api_key` as `SecretStr`, `oauth` as `OAuthRef`, `openai_settings` as `OpenAISettings`).
 - Warns about unrecognized provider keys.
-- Applies `base._default_ralph` when `loop_control.max_ralph_iterations` is not set in the dict.
 
 ## Session Management (kimix.utils)
 
@@ -79,9 +76,8 @@ session = create_session(
     chat_provider=None,                # Optional: custom ChatProvider instance
     agent_type=SystemPromptType.Worker, # Optional: Worker, TodoMaker, Thinker, etc.
     vfs_path=None,                     # Optional: Path for virtual file system
-    extra_system_prompt=None,          # Optional: additional system prompt text
-    max_ralph_iterations=None,         # Optional: max Ralph loop iterations
-    anonymous=False,                   # Optional: anonymous session mode
+    extra_system_prompt=None, # Optional: additional system prompt text
+    anonymous=False, # Optional: anonymous session mode
     custom_data=None,                  # Optional: arbitrary dict stored on the session
 )
 
@@ -103,7 +99,6 @@ from kimix.utils.session import _create_session_async
 session = await _create_session_async(
     session_id="my_session",
     resume=True,
-    max_ralph_iterations=None,
     anonymous=False,
     custom_data={"foo": "bar"},  # Optional: arbitrary dict stored on the session
     # ... same parameters as create_session
@@ -234,17 +229,6 @@ path = context_path()  # Returns ~/.kimi/sessions
 
 # Delete all session directories (~/.kimi/sessions)
 delete_session_dir()
-```
-
-### Ralph Loop Control
-
-```python
-# File: src/kimix/utils/session.py
-from kimix.utils import set_ralph_loop
-
-# Set max Ralph iterations for a session (and default for future sessions)
-set_ralph_loop(value=4, session=session)  # session=None uses default session
-# Negative values are normalized to -1
 ```
 
 ### Tool Call Errors
@@ -546,7 +530,6 @@ from kimix.base import (
     _default_skill_dirs,     # List of skill directories
     _default_provider,       # Custom provider dict or None
     _default_sub_providers,  # List of role-tagged auxiliary provider dicts
-    _default_ralph,          # Max Ralph iterations override or None
     _default_manually_cot,   # Manual chain-of-thought mode (default: False)
     _quiet,                  # If True, suppresses print_debug
     _colorful_print,         # If False, disables ANSI colors
@@ -705,8 +688,7 @@ finally:
 8. **Fix errors automatically** - Use `fix_error()` for iterative debugging
 9. **Skill directories** - Place skills in `.agents/skills/` for auto-discovery
 10. **Cancel long prompts** - Use `cancel_prompt()` to stop running prompts
-11. **Ralph loop** - Use `set_ralph_loop()` to control max agent iterations
-12. **Sanitize prompts** - Use `escape_file_paths()` before sending untrusted text
+11. **Sanitize prompts** - Use `escape_file_paths()` before sending untrusted text
 
 ## Common Imports
 
@@ -724,7 +706,6 @@ from kimix.utils import (
     prompt_path, prompt_plan, prompt_plan_async,
     fix_error, async_prompt, async_fix_error,
     context_path, delete_session_dir, make_kaos_dir,
-    set_ralph_loop,
     refresh_env_from_registry,
     # Internal/advanced
     _create_config, _ensure_skill_dirs, _print_usage,
@@ -784,7 +765,7 @@ async def main():
 asyncio.run(main())
 ```
 
-- `kimi_agent_sdk.prompt(user_input, *, work_dir=None, config=None, model=None, thinking=False, yolo=False, approval_handler_fn=None, agent_file=None, mcp_configs=None, skills_dir=None, skills_dirs=None, max_steps_per_turn=None, max_retries_per_step=None, max_ralph_iterations=None, final_message_only=False)` — async generator yielding `Message` objects.
+- `kimi_agent_sdk.prompt(user_input, *, work_dir=None, config=None, model=None, thinking=False, yolo=False, approval_handler_fn=None, agent_file=None, mcp_configs=None, skills_dir=None, skills_dirs=None, max_steps_per_turn=None, max_retries_per_step=None, final_message_only=False)` — async generator yielding `Message` objects.
 - `ApprovalHandlerFn` — type alias for sync/async callback `(ApprovalRequest) -> None`.
 
 ### Low-level API
@@ -826,7 +807,7 @@ asyncio.run(main())
 ```
 
 - `kimi_agent_sdk.Session` — async context manager with methods:
-  - `Session.create(work_dir=None, *, session_id=None, config=None, model=None, thinking=False, yolo=False, plan_mode=False, agent_file=None, mcp_configs=None, skills_dir=None, skills_dirs=None, anonymous=False, max_steps_per_turn=None, max_retries_per_step=None, max_ralph_iterations=None, **custom_arguments)`
+  - `Session.create(work_dir=None, *, session_id=None, config=None, model=None, thinking=False, yolo=False, plan_mode=False, agent_file=None, mcp_configs=None, skills_dir=None, skills_dirs=None, anonymous=False, max_steps_per_turn=None, max_retries_per_step=None, **custom_arguments)`
   - `Session.resume(work_dir, session_id=None, *, ...)`
   - `session.prompt(user_input, *, merge_wire_messages=False)` — async generator yielding `WireMessage`
   - `session.cancel()`

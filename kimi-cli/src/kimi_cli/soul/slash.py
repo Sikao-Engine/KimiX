@@ -1,11 +1,21 @@
+"""Built-in soul slash commands.
+
+Core session commands (context management, approval modes, workspace dirs,
+export/import) implemented as plain functions over a static dispatch table.
+``KimiSoul.run`` parses a leading ``/name [args]`` token and dispatches here;
+wire/ACP clients discover the available commands via :func:`list_command_infos`.
+"""
+
 from __future__ import annotations
 
 import asyncio
 import tempfile
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import regex as re
 from kaos.path import KaosPath
 from kosong.message import Message
 
@@ -18,7 +28,6 @@ from kimi_cli.soul.context import Context
 from kimi_cli.soul.message import system
 from kimi_cli.utils.export import is_sensitive_file
 from kimi_cli.utils.path import sanitize_cli_path, shorten_home
-from kimi_cli.utils.slashcmd import SlashCommandRegistry
 from kimi_cli.wire.types import StatusUpdate, TextPart
 
 if TYPE_CHECKING:
@@ -32,11 +41,50 @@ Raises:
     Any exception that can be raised by `Soul.run`.
 """
 
-registry = SlashCommandRegistry[SoulSlashCmdFunc]()
+_COMMAND_NAME_RE = re.compile(r"^\/([a-zA-Z0-9_-]+)")
 
 
-@registry.command
-async def init(soul: KimiSoul, args: str):
+@dataclass(frozen=True, slots=True)
+class SlashCommandInfo:
+    """Public description of a soul slash command (for wire/ACP clients)."""
+
+    name: str
+    description: str
+    aliases: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SlashCommandCall:
+    name: str
+    args: str
+    raw_input: str
+
+
+def parse_slash_command_call(user_input: str) -> SlashCommandCall | None:
+    """
+    Parse a slash command call from user input.
+
+    Returns:
+        SlashCommandCall if a slash command is found, else None. The `args` field contains
+        the raw argument string after the command name.
+    """
+    user_input = user_input.strip()
+    if not user_input or not user_input.startswith("/"):
+        return None
+
+    name_match = _COMMAND_NAME_RE.match(user_input)
+
+    if not name_match:
+        return None
+
+    command_name = name_match.group(1)
+    if len(user_input) > name_match.end() and not user_input[name_match.end()].isspace():
+        return None
+    raw_args = user_input[name_match.end() :].lstrip()
+    return SlashCommandCall(name=command_name, args=raw_args, raw_input=user_input)
+
+
+async def cmd_init(soul: KimiSoul, args: str):
     """Analyze the codebase and generate an `AGENTS.md` file"""
     from kimi_cli.soul.kimisoul import KimiSoul
 
@@ -54,9 +102,7 @@ async def init(soul: KimiSoul, args: str):
     await soul.context.append_message(Message(role="user", content=[system_message]))
 
 
-
-@registry.command
-async def compact(soul: KimiSoul, args: str):
+async def cmd_compact(soul: KimiSoul, args: str):
     """Compact the context (optionally with a custom focus, e.g. /compact keep db discussions)"""
     if soul.context.n_checkpoints == 0:
         wire_send(TextPart(text="The context is empty."))
@@ -90,8 +136,7 @@ async def compact(soul: KimiSoul, args: str):
     )
 
 
-@registry.command
-async def prune(soul: KimiSoul, args: str):
+async def cmd_prune(soul: KimiSoul, args: str):
     """Manually trigger context pruning (smart history removal)"""
     logger.info("Running `/prune`")
 
@@ -133,8 +178,7 @@ async def prune(soul: KimiSoul, args: str):
     )
 
 
-@registry.command(aliases=["reset"])
-async def clear(soul: KimiSoul, args: str):
+async def cmd_clear(soul: KimiSoul, args: str):
     """Clear the context"""
     logger.info("Running `/clear`")
     await soul.context.clear()
@@ -150,8 +194,7 @@ async def clear(soul: KimiSoul, args: str):
     )
 
 
-@registry.command
-async def yolo(soul: KimiSoul, args: str):
+async def cmd_yolo(soul: KimiSoul, args: str):
     """Toggle YOLO mode (auto-approve all actions)"""
 
     # Inspect only the yolo flag: afk is independent and is toggled by /afk.
@@ -175,8 +218,7 @@ async def yolo(soul: KimiSoul, args: str):
         wire_send(TextPart(text="You only live once! All actions will be auto-approved."))
 
 
-@registry.command
-async def afk(soul: KimiSoul, args: str):
+async def cmd_afk(soul: KimiSoul, args: str):
     """Toggle afk mode (auto-dismiss AskUserQuestion, auto-approve tool calls)"""
 
     if soul.runtime.approval.is_afk():
@@ -203,8 +245,7 @@ async def afk(soul: KimiSoul, args: str):
         )
 
 
-@registry.command(name="add-dir")
-async def add_dir(soul: KimiSoul, args: str):
+async def cmd_add_dir(soul: KimiSoul, args: str):
     """Add a directory to the workspace. Usage: /add-dir <path>. Run without args to list added dirs"""  # noqa: E501
     from kaos.path import KaosPath
 
@@ -278,8 +319,7 @@ async def add_dir(soul: KimiSoul, args: str):
     logger.info("Added additional directory: {path}", path=path)
 
 
-@registry.command
-async def export(soul: KimiSoul, args: str):
+async def cmd_export(soul: KimiSoul, args: str):
     """Export current session context to a markdown file"""
     from kimi_cli.utils.export import perform_export
 
@@ -306,8 +346,7 @@ async def export(soul: KimiSoul, args: str):
     )
 
 
-@registry.command(name="refresh-env")
-async def refresh_env(soul: KimiSoul, args: str):
+async def cmd_refresh_env(soul: KimiSoul, args: str):
     """Refresh PATH/PATHEXT from the Windows registry (no restart required)"""
     import platform
 
@@ -321,8 +360,7 @@ async def refresh_env(soul: KimiSoul, args: str):
     wire_send(TextPart(text="PATH and PATHEXT have been refreshed from the registry."))
 
 
-@registry.command(name="import")
-async def import_context(soul: KimiSoul, args: str):
+async def cmd_import(soul: KimiSoul, args: str):
     """Import context from a file or session ID"""
     from kimi_cli.utils.export import perform_import
 
@@ -360,3 +398,43 @@ async def import_context(soul: KimiSoul, args: str):
                 "The content is now part of your session context."
             )
         )
+
+
+COMMANDS: dict[str, SoulSlashCmdFunc] = {
+    "init": cmd_init,
+    "compact": cmd_compact,
+    "prune": cmd_prune,
+    "clear": cmd_clear,
+    "yolo": cmd_yolo,
+    "afk": cmd_afk,
+    "add-dir": cmd_add_dir,
+    "export": cmd_export,
+    "refresh-env": cmd_refresh_env,
+    "import": cmd_import,
+}
+"""Primary command name -> handler."""
+
+ALIASES: dict[str, str] = {
+    "reset": "clear",
+}
+"""Alias -> primary command name."""
+
+
+def find_command(name: str) -> SoulSlashCmdFunc | None:
+    """Resolve a (possibly aliased) command name to its handler."""
+    return COMMANDS.get(ALIASES.get(name, name))
+
+
+def list_command_infos() -> list[SlashCommandInfo]:
+    """Public descriptions of all soul slash commands (for wire/ACP clients)."""
+    alias_map: dict[str, list[str]] = {}
+    for alias, canonical in ALIASES.items():
+        alias_map.setdefault(canonical, []).append(alias)
+    return [
+        SlashCommandInfo(
+            name=name,
+            description=(func.__doc__ or "").strip(),
+            aliases=tuple(alias_map.get(name, ())),
+        )
+        for name, func in COMMANDS.items()
+    ]

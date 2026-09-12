@@ -22,7 +22,7 @@ from kimi_cli.config import LLMModel, OAuthRef, load_config, save_config
 from kimi_cli.constant import NAME, VERSION
 from kimi_cli.llm import create_llm, derive_model_capabilities
 from kimi_cli.session import Session
-from kimi_cli.soul.slash import registry as soul_slash_registry
+from kimi_cli.soul.slash import list_command_infos as list_soul_slash_command_infos
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.utils.logging import logger
 
@@ -178,8 +178,8 @@ class ACPServer:
             )
 
         available_commands = [
-            acp.schema.AvailableCommand(name=cmd.name, description=cmd.description)
-            for cmd in soul_slash_registry.list_commands()
+            acp.schema.AvailableCommand(name=info.name, description=info.description)
+            for info in list_soul_slash_command_infos()
         ]
         asyncio.create_task(
             self.conn.session_update(

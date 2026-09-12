@@ -99,7 +99,6 @@ async def _create_session_async(
     agent_type: SystemPromptType = SystemPromptType.Worker,
     vfs_path: Path | None = None,
     extra_system_prompt: SystemPromptCallback | None = None,
-    max_ralph_iterations: int | None = None,
     anonymous: bool = False,
     custom_data: dict[str, Any] | None = None,
 ) -> Session:
@@ -141,7 +140,6 @@ async def _create_session_async(
             custom_system_prompt=system_prompts,
             chat_provider=chat_provider,
             vfs_path=vfs_path,
-            max_ralph_iterations=max_ralph_iterations,
             anonymous=anonymous,
             custom_data=custom_data,
             start_mcp_loading=False,
@@ -162,7 +160,6 @@ async def _create_session_async(
             custom_system_prompt=system_prompts,
             chat_provider=chat_provider,
             vfs_path=vfs_path,
-            max_ralph_iterations=max_ralph_iterations,
             anonymous=anonymous,
             custom_data=custom_data,
             start_mcp_loading=False,
@@ -188,7 +185,6 @@ def create_session(
     agent_type: SystemPromptType = SystemPromptType.Worker,
     vfs_path: Path | None = None,
     extra_system_prompt: SystemPromptCallback | None = None,
-    max_ralph_iterations: int | None = None,
     anonymous: bool = False,
     custom_data: dict[str, Any] | None = None,
 ) -> Session:
@@ -203,7 +199,6 @@ def create_session(
         agent_type=agent_type,
         vfs_path=vfs_path,
         extra_system_prompt=extra_system_prompt,
-        max_ralph_iterations=max_ralph_iterations,
         anonymous=anonymous,
         custom_data=custom_data,
     ))
@@ -218,7 +213,6 @@ def create_supervisor_session(
     chat_provider: ChatProvider | None = None,
     vfs_path: Path | None = None,
     extra_system_prompt: SystemPromptCallback | None = None,
-    max_ralph_iterations: int | None = None,
     anonymous: bool = False,
     custom_data: dict[str, Any] | None = None,
 ) -> Session:
@@ -233,20 +227,9 @@ def create_supervisor_session(
         agent_type=SystemPromptType.Supervisor,
         vfs_path=vfs_path,
         extra_system_prompt=extra_system_prompt,
-        max_ralph_iterations=max_ralph_iterations,
         anonymous=anonymous,
         custom_data=custom_data,
     )
-
-
-def set_ralph_loop(value: int, session: Session | None = None) -> None:
-    if session is None:
-        session = get_default_session()
-    if value < 0:
-        value = -1
-    base._default_ralph = value
-    if session:
-        session._cli._runtime.config.loop_control.max_ralph_iterations = value
 
 
 def close_session(session: Session) -> None:

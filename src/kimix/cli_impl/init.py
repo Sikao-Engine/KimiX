@@ -51,11 +51,10 @@ default_config = kimi_default_config
 _DEFAULT_CONFIG_PATH = Path(__file__).parent.parent / "default_config.json"
 
 _CONTEXT_SIZE_OPTIONS: dict[str, int] = {
-    "128k": 131072,
-    "200k": 204800,
-    "256k": 262144,
-    "512k": 524288,
-    "1M": 1048576,
+    "128k": 128000,
+    "256k": 256000,
+    "512k": 512000,
+    "1M": 1000000,
 }
 
 _VALID_TYPES = (
@@ -261,12 +260,6 @@ def _ask_sub_provider(defaults: dict[str, Any] | None = None) -> dict[str, Any] 
     reserved = 50000
     max_tokens = _ask_max_token(context_size, reserved, _default("max_tokens", 128000))
     sub["max_tokens"] = max_tokens
-
-    # Ensure loop_control for sub-provider disables ralph
-    sub["loop_control"] = {
-        "max_ralph_iterations": 0,
-    }
-
 
     print_success("Sub-provider configuration complete.")
     return sub

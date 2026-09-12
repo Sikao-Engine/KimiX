@@ -19,7 +19,6 @@ HELP_STR = f'''Command line options:
   --no_yolo           - Disable YOLO mode
   --no_color          - Disable colorful print
   --manually-cot      - Enable manually CoT mode
-  --ralph             - Enable Ralph mode or set iterations
   -s, --skill-dir     - Specify custom skill directory
   --config            - Specify a JSON config file (see config_example.json for example)
 
@@ -40,9 +39,6 @@ Available commands:
   {colorful_text('/store:<id>', fg=Color.YELLOW)}   - Copy the current session to a new named session
   {colorful_text('/load:<id>', fg=Color.YELLOW)}    - Copy a named session into a new anonymous session
   {colorful_text('/sessions', fg=Color.YELLOW)}       - List resumable sessions for the current working directory
-  {colorful_text('/ralph:on', fg=Color.YELLOW)}       - Enable Ralph mode
-  {colorful_text('/ralph:off', fg=Color.YELLOW)}      - Disable Ralph mode
-  {colorful_text('/ralph:<num>', fg=Color.YELLOW)} - Set Ralph iterations
   {colorful_text('/reflection', fg=Color.YELLOW)} - Reflect on current context and refactor agent source code
   {colorful_text('/supervisor', fg=Color.YELLOW)} - Start a supervisor session with multi-line input text
   {colorful_text('/swarm', fg=Color.YELLOW)}          - Start a swarm session with multi-line input text

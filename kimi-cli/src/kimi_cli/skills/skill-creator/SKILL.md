@@ -36,10 +36,10 @@ Priority (most specific wins): `--skills-dir` → project (`.kimi`/`.claude`/`.c
 
 **Naming**: lowercase letters/digits/hyphens, <64 chars, verb-led (e.g. `gh-address-comments`); folder name matches skill name.
 
-**Frontmatter**: `name`, `description` (what + when to use); `type: flow` adds a `mermaid`/`d2` block.
+Frontmatter: `name`, `description` (what + when to use).
 
 **Body**: imperative form; multi-step workflows with decision points; output formats/quality standards; links to reference files.
 
 ## Testing & Validation
 
-Test scripts (representative sample for many similar ones); verify discovery with `kimi --skills-dir <parent-root>`. Before complete: frontmatter starts/ends with `---`; `name` matches dir/stem; `description` present (what + when); `type` is `standard` or `flow` (omit for standard); flow skills have a valid `mermaid`/`d2` block; no README.md/CHANGELOG.md; resources referenced clearly from SKILL.md.
+Test scripts (representative sample for many similar ones); verify discovery with kimi --skills-dir <parent-root>. Before complete: frontmatter starts/ends with ---; name matches dir/stem; description present (what + when); no README.md/CHANGELOG.md; resources referenced clearly from SKILL.md.

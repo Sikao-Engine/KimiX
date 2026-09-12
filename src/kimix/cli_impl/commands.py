@@ -57,7 +57,6 @@ from kimix.utils import (
     print_usage,
     prompt,
     prompt_plan,
-    set_ralph_loop,
 )
 
 from .init import init
@@ -501,30 +500,6 @@ def _cmd_file(task_split: list[str], text_arr: list[str]) -> tuple[str | None, b
     return file_path.read_text(encoding='utf-8', errors='replace'), False
 
 
-def _cmd_ralph(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
-    if len(task_split) < 2:
-        print_error(f'command format error, must be /ralph:path')
-        return None, False
-    val = task_split[1].strip().lower()
-    session = get_default_session()
-    if val == 'on':
-        set_ralph_loop(1)
-        print_success(f'Ralph mode set to 1.')
-    elif val == 'off':
-        base._default_ralph = None
-        set_ralph_loop(0)
-        print_success(f'Ralph mode set to default.')
-    else:
-        try:
-            num = int(val)
-            set_ralph_loop(num)
-            print_success(f'Ralph mode set to {num}.')
-        except ValueError:
-            print_error('Command must be /ralph:on, /ralph:off, /ralph:<num>')
-    return None, False
-
-
-
 def _cmd_init(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     init()
     _globals._default_session = None
@@ -964,7 +939,6 @@ _command_map = {
     'store': _cmd_store,
     'load': _cmd_load,
     'sessions': _cmd_sessions,
-    'ralph': _cmd_ralph,
     'reflection': _cmd_reflection,
     'supervisor': _cmd_supervisor,
     'swarm': _cmd_swarm,
@@ -980,7 +954,6 @@ _command_arg_types: dict[str, str] = {
     "todo": "file",
     "export": "file",
     "plan": "file",
-    "ralph": "ralph",
     "swarm": "swarm",
     "code": "file",
 }

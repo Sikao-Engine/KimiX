@@ -44,25 +44,6 @@ async def test_pre_tool_use_block_flow():
         assert "rm -rf" in results[0].reason
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Unix shell commands")
-@pytest.mark.asyncio
-async def test_stop_hook_feedback():
-    """Stop hook returns block with reason."""
-    hooks = [
-        HookDef(
-            event="Stop",
-            command="""echo '{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"tests not written"}}' """,
-            timeout=5,
-        )
-    ]
-    engine = HookEngine(hooks)
-
-    results = await engine.trigger("Stop", input_data={"stop_hook_active": False})
-    assert len(results) == 1
-    assert results[0].action == "block"
-    assert "tests not written" in results[0].reason
-
-
 @pytest.mark.asyncio
 async def test_notification_hook():
     """Notification hook fires for matching type."""
@@ -129,11 +110,11 @@ def test_hook_engine_summary():
     hooks = [
         HookDef(event="PreToolUse", matcher="Shell", command="echo 1"),
         HookDef(event="PreToolUse", matcher="WriteFile", command="echo 2"),
-        HookDef(event="Stop", command="echo 3"),
+        HookDef(event="SessionEnd", command="echo 3"),
     ]
     engine = HookEngine(hooks)
     summary = engine.summary
-    assert summary == {"PreToolUse": 2, "Stop": 1}
+    assert summary == {"PreToolUse": 2, "SessionEnd": 1}
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unix shell commands")
@@ -186,23 +167,6 @@ async def test_post_tool_use_failure_hook():
     assert len(results) == 1
     assert results[0].action == "allow"
     assert "failure_caught" in results[0].stdout
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="Unix shell commands")
-@pytest.mark.asyncio
-async def test_user_prompt_submit_block():
-    """UserPromptSubmit hook can block a prompt."""
-    hooks = [
-        HookDef(event="UserPromptSubmit", command="echo 'no profanity' >&2; exit 2", timeout=5)
-    ]
-    engine = HookEngine(hooks)
-    results = await engine.trigger(
-        "UserPromptSubmit",
-        input_data={"prompt": "bad words here"},
-    )
-    assert len(results) == 1
-    assert results[0].action == "block"
-    assert "no profanity" in results[0].reason
 
 
 @pytest.mark.asyncio

@@ -603,7 +603,6 @@ class DummySessionManager:
         self,
         title: Optional[str] = None,
         supervisor: bool = False,
-        ralph_loop: int = 0,
     ) -> SessionInfo:
         """POST /session
 
@@ -614,7 +613,7 @@ class DummySessionManager:
 
         print(
             f"[DummySessionManager] create_session("
-            f"title={title!r}, supervisor={supervisor!r}, ralph_loop={ralph_loop!r})"
+            f"title={title!r}, supervisor={supervisor!r})"
         )
 
         # Create the appropriate SDK session type (async, no asyncio.run)
@@ -623,12 +622,10 @@ class DummySessionManager:
                 session_id=session_id,
                 agent_file=_default_agent_file_dir / 'agent_boss.json',
                 agent_type=SystemPromptType.Supervisor,
-                max_ralph_iterations=ralph_loop if ralph_loop > 0 else None,
             )
         else:
             sdk_session = await _create_session_async(
                 session_id=session_id,
-                max_ralph_iterations=ralph_loop if ralph_loop > 0 else None,
             )
 
         info = SessionInfo(

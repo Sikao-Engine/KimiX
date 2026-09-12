@@ -107,7 +107,6 @@ Kimix 通过 JSON 配置文件初始化 LLM Provider。若启动时未通过 `--
     "loop_control": {
         "max_steps_per_turn": 5000,
         "max_retries_per_step": 3,
-        "max_ralph_iterations": 0,
         "reserved_context_size": 50000,
         "compaction_trigger_ratio": 0.85
     },
@@ -137,7 +136,7 @@ Kimix 通过 JSON 配置文件初始化 LLM Provider。若启动时未通过 `--
 | `api_key` | 否 | API 密钥。若省略，将依次读取环境变量 `KIMI_API_KEY`、`KIMIX_API_KEY` |
 | `custom_headers` | 否 | 自定义 HTTP 请求头 |
 | `oauth` | 否 | OAuth 配置，例如 `{"storage": "file", "key": "my-key"}` |
-| `loop_control` | 否 | 循环控制参数，含 `max_steps_per_turn`、`max_retries_per_step`、`max_ralph_iterations`、`reserved_context_size`、`compaction_trigger_ratio` |
+| `loop_control` | 否 | 循环控制参数，含 `max_steps_per_turn`、`max_retries_per_step`、`reserved_context_size`、`compaction_trigger_ratio` |
 | `max_tokens` | 否 | 单次请求最大生成 token 数 |
 | `show_thinking_stream` | 否 | 是否流式展示思考过程 |
 | `thinking_effort` | 否 | 思考力度，可选 `off`、`low`、`medium`、`high`、`xhigh`、`max` |
@@ -210,9 +209,8 @@ Kimix 通过 JSON 配置文件初始化 LLM Provider。若启动时未通过 `--
 | `--no_think` | 关闭思考模式（thinking mode） |
 | `--no_yolo` | 关闭 YOLO 模式 |
 | `--no_color` | 关闭彩色输出 |
-| `--manually-cot` | 开启手动 CoT 模式（可能使用多个会话并消耗额外 token） |
-| `--ralph` | 开启 Ralph 模式，可指定迭代次数（不传参数则设为 1） |
-| `-s`, `--skill-dir` | 指定自定义的 skill 目录（可多次使用以指定多个目录） |
+| --manually-cot | 开启手动 CoT 模式（可能使用多个会话并消耗额外 token） |
+| -s, --skill-dir | 指定自定义的 skill 目录（可多次使用以指定多个目录） |
 | `--config` | 指定 JSON 格式的配置文件路径。若直接路径不存在，会依次在当前工作目录的各级父目录中递归查找、在 kimix 安装目录的各级父目录中递归查找，最后在系统 `PATH` 中查找同名文件（格式可参考 `docs/*.json` 示例） |
 
 **示例：**
@@ -245,7 +243,6 @@ kimix --clean --manually-cot
 | `/resume:<id>` | 关闭当前会话并按 ID 恢复已有会话 |
 | `/store:<id>` | 将当前会话复制为一个新的命名会话 |
 | `/load:<id>` | 将指定命名会话复制到一个新的匿名会话并切换 |
-| `/ralph:on` / `/ralph:off` / `/ralph:<num>` | 设置 Ralph 模式循环次数 |
 | `/reflection` | 反思当前对话上下文，找出由当前 Agent 设计导致的误解，并修改源代码以改进项目（需要非空上下文；完成后将变更报告写入 `docs/reflection_report_*.md`） |
 | `/supervisor` | 进入多行输入模式，以 Supervisor 角色创建会话并执行一次任务（以 `/end` 结束，`/cancel` 取消） |
 | `/plan` / `/plan:<file>` | 使用 TodoMaker Agent 生成任务计划。任务需求通过多行输入提供（以 `/end` 结束）；`<file>` 用于指定计划输出文件路径，若该文件已存在会被覆盖。生成后支持用户审阅、修改，确认后再执行，执行后会追加一次 review 提示 |

@@ -813,7 +813,6 @@ class Agent(CallableTool2):
             chat_provider=chat_provider,
             resume=True,
             anonymous=False,
-            max_ralph_iterations=0,
         )
 
         sub_custom_config = session.get_custom_config()

@@ -35,7 +35,7 @@ async def test_import_directory_path_reports_clear_error(tmp_path: Path, monkeyp
     target_dir.mkdir()
 
     soul = Mock()
-    await soul_slash.import_context(soul, str(target_dir))  # type: ignore[reportGeneralTypeIssues]
+    await soul_slash.cmd_import(soul, str(target_dir))  # type: ignore[reportGeneralTypeIssues]
 
     assert len(captured) == 1
     assert "directory" in captured[0].text.lower()
@@ -57,7 +57,7 @@ async def test_export_writes_file_and_sends_wire(tmp_path: Path, monkeypatch) ->
     ]
 
     output = tmp_path / "export.md"
-    await soul_slash.export(soul, str(output))  # type: ignore[reportGeneralTypeIssues]
+    await soul_slash.cmd_export(soul, str(output))  # type: ignore[reportGeneralTypeIssues]
 
     assert output.exists()
     content = output.read_text(encoding="utf-8")
@@ -82,7 +82,7 @@ async def test_import_file_sends_wire_markers(tmp_path: Path, monkeypatch) -> No
     source = tmp_path / "context.md"
     source.write_text("important context from before", encoding="utf-8")
 
-    await soul_slash.import_context(soul, str(source))  # type: ignore[reportGeneralTypeIssues]
+    await soul_slash.cmd_import(soul, str(source))  # type: ignore[reportGeneralTypeIssues]
 
     # Context message appended
     assert soul.context.append_message.await_count == 1
@@ -109,7 +109,7 @@ async def test_import_env_file_sends_warning(tmp_path: Path, monkeypatch) -> Non
     env_file = tmp_path / ".env"
     env_file.write_text("API_KEY=secret123", encoding="utf-8")
 
-    await soul_slash.import_context(soul, str(env_file))  # type: ignore[reportGeneralTypeIssues]
+    await soul_slash.cmd_import(soul, str(env_file))  # type: ignore[reportGeneralTypeIssues]
 
     assert len(captured) == 2
     assert "Imported context" in captured[0].text

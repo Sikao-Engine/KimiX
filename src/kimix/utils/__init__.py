@@ -29,7 +29,6 @@ from .session import (
     print_usage,
     clear_default_context,
     compact_default_context,
-    set_ralph_loop,
 )
 from .prompt import (
     prompt_async,
@@ -81,6 +80,5 @@ __all__ = [
     "async_prompt",
     "async_fix_error",
     "compact_default_context",
-    "set_ralph_loop",
     "refresh_env_from_registry",
 ]

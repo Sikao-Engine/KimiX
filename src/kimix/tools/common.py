@@ -881,7 +881,6 @@ async def _summarize_long_output_async(session: Session, command: str, output: s
             chat_provider=chat_provider,
             resume=False,
             anonymous=True,
-            max_ralph_iterations=0,
         )
         sub_custom_config = sub_session.get_custom_config()
         if sub_custom_config is not None:

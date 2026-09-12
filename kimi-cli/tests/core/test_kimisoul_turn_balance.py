@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from kosong.tooling.empty import EmptyToolset
@@ -90,26 +89,3 @@ async def test_run_emits_turn_end_on_cancelled_error(
     assert [msg for msg in sent if isinstance(msg, TurnEnd)] == [TurnEnd()]
     assert isinstance(sent[-1], TurnEnd)
 
-
-@pytest.mark.asyncio
-async def test_run_does_not_duplicate_turn_end_for_blocked_prompt(
-    runtime: Runtime,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    soul = _make_soul(runtime, tmp_path)
-    sent: list[object] = []
-
-    async def fake_trigger(*args, **kwargs):
-        return [SimpleNamespace(action="block", reason="blocked by hook")]
-
-    monkeypatch.setattr(soul._hook_engine, "trigger", fake_trigger)
-    monkeypatch.setattr(kimisoul_module, "wire_send", lambda msg: sent.append(msg))
-
-    await soul.run("hello")
-
-    assert sent == [
-        TurnBegin(user_input="hello"),
-        TextPart(text="blocked by hook"),
-        TurnEnd(),
-    ]

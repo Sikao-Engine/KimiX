@@ -6,8 +6,6 @@ HookEventType = Literal[
     "PreToolUse",
     "PostToolUse",
     "PostToolUseFailure",
-    "UserPromptSubmit",
-    "Stop",
     "StopFailure",
     "SessionStart",
     "SessionEnd",

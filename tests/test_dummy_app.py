@@ -95,7 +95,7 @@ def test_event_stream(app) -> None:
 
 @pytest.mark.asyncio
 async def test_create_session_defaults(client: httpx.AsyncClient) -> None:
-    """Verify that supervisor and ralph_loop default to False/0."""
+    """Verify that supervisor defaults to False."""
     with patch.object(
         session_manager,
         "create_session",
@@ -106,7 +106,7 @@ async def test_create_session_defaults(client: httpx.AsyncClient) -> None:
     data = resp.json()
     assert data["id"].startswith("ses_")
     mock_create.assert_awaited_once_with(
-        title=None, supervisor=False, ralph_loop=0
+        title=None, supervisor=False
     )
     _log_result("test_create_session_defaults", resp.status_code, resp.text)
 
@@ -123,14 +123,14 @@ async def test_create_session(client: httpx.AsyncClient) -> None:
     ) as mock_create:
         resp = await client.post(
             "/session",
-            json={"title": "My Session", "supervisor": True, "ralph_loop": 4},
+            json={"title": "My Session", "supervisor": True},
         )
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"].startswith("ses_")
     assert data["title"] == "My Session"
     mock_create.assert_awaited_once_with(
-        title="My Session", supervisor=True, ralph_loop=4
+        title="My Session", supervisor=True
     )
     _log_result("test_create_session", resp.status_code, resp.text)
 

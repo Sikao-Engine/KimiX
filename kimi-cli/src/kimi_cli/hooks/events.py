@@ -61,27 +61,6 @@ def post_tool_use_failure(
     }
 
 
-def user_prompt_submit(
-    *,
-    session_id: str,
-    cwd: str,
-    prompt: str,
-) -> dict[str, Any]:
-    return {**_base("UserPromptSubmit", session_id, cwd), "prompt": prompt}
-
-
-def stop(
-    *,
-    session_id: str,
-    cwd: str,
-    stop_hook_active: bool = False,
-) -> dict[str, Any]:
-    return {
-        **_base("Stop", session_id, cwd),
-        "stop_hook_active": stop_hook_active,
-    }
-
-
 def stop_failure(
     *,
     session_id: str,

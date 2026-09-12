@@ -1043,22 +1043,7 @@ class SessionManager:
                     )
                     return asst_msg.to_dict()
 
-            ralph_count = 0
-            try:
-                ralph_count = sdk_session._cli._runtime.config.loop_control.max_ralph_iterations or 0
-            except Exception:
-                pass
-
-            if ralph_count < 0:
-                loop_iter = iter(int, 1)
-            elif ralph_count > 0:
-                loop_iter = range(ralph_count + 1)
-            else:
-                loop_iter = range(1)
-
-            for _ in loop_iter:
-                if entry._cancel_event is not None and entry._cancel_event.is_set():
-                    break
+            if entry._cancel_event is None or not entry._cancel_event.is_set():
                 async for wire_msg in sdk_session.prompt(text, merge_wire_messages=True):
                     # ── ApprovalRequest: auto-approve in server mode ─
                     if isinstance(wire_msg, ApprovalRequest):
@@ -1288,20 +1273,8 @@ class SessionManager:
                             pass
                         continue
 
-                    if ralph_count != 0:
-                        todos = []
-                        try:
-                            if hasattr(sdk_session, '_cli') and sdk_session._cli is not None and sdk_session._cli.session is not None:
-                                todos = load_session_state(sdk_session._cli.session.dir).todos
-                        except Exception:
-                            pass
-
-                        if not todos or all(todo.status == 'done' for todo in todos):
-                            break
-
-            # When max_ralph_iterations is 0 the SDK prompt returns after
-            # exactly one LLM turn, so the turn is naturally finished once
-            # the generator above exhausts.
+            # The SDK prompt returns after exactly one LLM turn, so the turn
+            # is naturally finished once the generator above exhausts.
 
             # If no final visible text/reasoning part reached the wire (e.g.
             # the LLM produced an empty/truncated stream), flush accumulated

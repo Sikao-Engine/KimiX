@@ -242,17 +242,6 @@ def kimi(
             help="Maximum number of retries in one step. Default: from config.",
         ),
     ] = None,
-    max_ralph_iterations: Annotated[
-        int | None,
-        typer.Option(
-            "--max-ralph-iterations",
-            min=-1,
-            help=(
-                "Extra iterations after the first turn in Ralph mode. Use -1 for unlimited. "
-                "Default: from config."
-            ),
-        ),
-    ] = None,
 ):
     """Kimi, your next CLI agent."""
     import asyncio
@@ -465,7 +454,6 @@ def kimi(
             skills_dirs=skills_dirs,
             max_steps_per_turn=max_steps_per_turn,
             max_retries_per_step=max_retries_per_step,
-            max_ralph_iterations=max_ralph_iterations,
         )
 
         # --- SessionStart hook ---

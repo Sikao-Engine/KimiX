@@ -40,11 +40,6 @@ def test_load_config_text_invalid():
         load_config_from_string("not valid {")
 
 
-def test_load_config_invalid_ralph_iterations():
-    with pytest.raises(ConfigError, match="max_ralph_iterations"):
-        load_config_from_string('{"loop_control": {"max_ralph_iterations": -2}}')
-
-
 def test_load_config_reserved_context_size():
     config = load_config_from_string('{"loop_control": {"reserved_context_size": 30000}}')
     assert config.loop_control.reserved_context_size == 30000

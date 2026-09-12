@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
@@ -14,12 +14,9 @@ from kaos.path import KaosPath
 from pydantic import BaseModel, ConfigDict, Field
 
 from kimi_cli import logger
-from kimi_cli.skill.flow import Flow, FlowError
-from kimi_cli.skill.flow.d2 import parse_d2_flowchart
-from kimi_cli.skill.flow.mermaid import parse_mermaid_flowchart
 from kimi_cli.utils.frontmatter import parse_frontmatter
 
-SkillType = Literal["standard", "flow"]
+SkillType = Literal["standard"]
 
 SkillScope = Literal["builtin", "user", "project", "extra"]
 """Where a skill was discovered from.
@@ -388,20 +385,6 @@ def format_skills_for_prompt(skills: Iterable[Skill]) -> str:
         return "No skills found."
     return "\n\n".join(sections)
 
-
-async def read_skill_text(skill: Skill) -> str | None:
-    """Read the SKILL.md contents for a skill."""
-    try:
-        return (await skill.skill_md_file.read_text(encoding="utf-8")).strip()
-    except OSError as exc:
-        logger.warning(
-            "Failed to read skill file {path}: {error}",
-            path=skill.skill_md_file,
-            error=exc,
-        )
-        return None
-
-
 class Skill(BaseModel):
     """Information about a single skill."""
 
@@ -417,7 +400,6 @@ class Skill(BaseModel):
     """Path to the markdown file that holds the skill body. For subdirectory
     skills this is ``dir/SKILL.md``; for flat skills this is the ``.md`` file
     itself."""
-    flow: Flow | None = None
     scope: SkillScope = Field(...)
     """Which scope this skill was discovered from. Required; discovery always
     stamps it. The system-prompt renderer groups skills by this label so the
@@ -584,14 +566,15 @@ def parse_skill_text(
     skill_type = frontmatter.get("type") or "standard"
     if skill_type not in ("standard", "flow"):
         raise ValueError(f'Invalid skill type "{skill_type}"')
-    flow = None
     if skill_type == "flow":
-        try:
-            flow = _parse_flow_from_skill(content)
-        except ValueError as exc:
-            logger.error("Failed to parse flow skill {name}: {error}", name=name, error=exc)
-            skill_type = "standard"
-            flow = None
+        # Flow skills are no longer supported; degrade gracefully to a
+        # standard skill so the markdown body remains usable as a prompt.
+        logger.warning(
+            "Skill {name} declares type 'flow', which is no longer supported; "
+            "loading it as a standard skill.",
+            name=name,
+        )
+        skill_type = "standard"
 
     return Skill(
         name=name,
@@ -599,7 +582,6 @@ def parse_skill_text(
         type=skill_type,
         dir=dir_path,
         skill_md_file=skill_md_file,
-        flow=flow,
         scope=scope,
     )
 
@@ -640,87 +622,3 @@ def _first_meaningful_line(content: str) -> str | None:
         return stripped
     return None
 
-
-def _parse_flow_from_skill(content: str) -> Flow:
-    for lang, code in _iter_fenced_codeblocks(content):
-        if lang == "mermaid":
-            return _parse_flow_block(parse_mermaid_flowchart, code)
-        if lang == "d2":
-            return _parse_flow_block(parse_d2_flowchart, code)
-    raise ValueError("Flow skills require a mermaid or d2 code block in SKILL.md.")
-
-
-def _parse_flow_block(parser: Callable[[str], Flow], code: str) -> Flow:
-    try:
-        return parser(code)
-    except FlowError as exc:
-        raise ValueError(f"Invalid flow diagram: {exc}") from exc
-
-
-def _iter_fenced_codeblocks(content: str) -> Iterator[tuple[str, str]]:
-    fence = ""
-    fence_char = ""
-    lang = ""
-    buf: list[str] = []
-    in_block = False
-
-    for line in content.splitlines():
-        stripped = line.lstrip()
-        if not in_block:
-            if match := _parse_fence_open(stripped):
-                fence, fence_char, info = match
-                lang = _normalize_code_lang(info)
-                in_block = True
-                buf = []
-            continue
-
-        if _is_fence_close(stripped, fence_char, len(fence)):
-            yield lang, "\n".join(buf).strip("\n")
-            in_block = False
-            fence = ""
-            fence_char = ""
-            lang = ""
-            buf = []
-            continue
-
-        buf.append(line)
-
-
-def _normalize_code_lang(info: str) -> str:
-    if not info:
-        return ""
-    lang = info.split()[0].strip().lower()
-    if lang.startswith("{") and lang.endswith("}"):
-        lang = lang[1:-1].strip()
-    return lang
-
-
-def _parse_fence_open(line: str) -> tuple[str, str, str] | None:
-    if not line or line[0] not in ("`", "~"):
-        return None
-    fence_char = line[0]
-    count = 0
-    for ch in line:
-        if ch == fence_char:
-            count += 1
-        else:
-            break
-    if count < 3:
-        return None
-    fence = fence_char * count
-    info = line[count:].strip()
-    return fence, fence_char, info
-
-
-def _is_fence_close(line: str, fence_char: str, fence_len: int) -> bool:
-    if not fence_char or not line or line[0] != fence_char:
-        return False
-    count = 0
-    for ch in line:
-        if ch == fence_char:
-            count += 1
-        else:
-            break
-    if count < fence_len:
-        return False
-    return not line[count:].strip()

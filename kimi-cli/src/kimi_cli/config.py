@@ -262,8 +262,6 @@ class LoopControl(BaseModel):
     """Maximum number of automatic session restarts when step retries are
 expected. Set to 0 to disable auto-restart entirely.
 Default is 3."""
-    max_ralph_iterations: int = Field(default=0, ge=-1)
-    """Extra iterations after the first turn in Ralph mode. Use -1 for unlimited."""
     reserved_context_size: int = Field(default=75_000, ge=1000)
     """Reserved token count for the compaction trigger, also the input floor.
 

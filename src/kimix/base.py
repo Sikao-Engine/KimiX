@@ -190,7 +190,6 @@ _default_skill_dirs: list[Any] = []
 _default_provider: dict[str, Any] | None = None
 _default_sub_providers: list[dict[str, Any]] = []
 _default_manually_cot: bool = False
-_default_ralph: int | None = None
 
 # Common skill directory paths (relative to current working directory)
 COMMON_SKILL_DIRS: list[str] = [

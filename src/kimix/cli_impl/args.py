@@ -102,7 +102,6 @@ def _maybe_run_default_config_init(args: argparse.Namespace) -> None:
             yolo=not args.no_yolo,
             think=not args.no_think,
             skill_dir=args.skill_dir,
-            ralph=args.ralph,
             manually_cot=args.manually_cot,
             colorful_print=not args.no_color,
             clean=args.clean,
@@ -191,14 +190,6 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
         help="Specify custom skill directory(s)",
     )
 
-    parser.add_argument(
-        "--ralph",
-        nargs="?",
-        const=1,
-        type=int,
-        default=None,
-        help="Enable Ralph mode (unlimited iterations) or set to specific number",
-    )
     # Parse args using parse_known_args first so we can detect a subcommand,
     # then re-parse with the appropriate subparser so subcommand-specific
     # arguments (e.g. --fe-port, --no-fe) are recognized.
@@ -241,7 +232,6 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
         yolo=not args.no_yolo,
         think=not args.no_think,
         skill_dir=args.skill_dir,
-        ralph=args.ralph,
         manually_cot=args.manually_cot,
         colorful_print=not args.no_color,
         clean=args.clean,

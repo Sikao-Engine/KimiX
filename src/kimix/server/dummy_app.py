@@ -35,7 +35,6 @@ VERSION = "0.1.0"
 class CreateSessionRequest(BaseModel):
     title: Optional[str] = Field(None, description="Session title")
     supervisor: bool = Field(False, description="Create a supervisor session")
-    ralph_loop: int = Field(0, description="Max Ralph loop iterations (0 = default)")
 
 
 class PromptPart(BaseModel):
@@ -180,7 +179,6 @@ def create_app() -> FastAPI:
         info = await session_manager.create_session(
             title=body.title,
             supervisor=body.supervisor,
-            ralph_loop=body.ralph_loop,
         )
         return info.to_dict()
 

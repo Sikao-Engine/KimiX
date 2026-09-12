@@ -41,8 +41,6 @@ from kimi_cli.notifications import (
     build_notification_message,
     extract_notification_ids,
 )
-from kimi_cli.skill import Skill, read_skill_text
-from kimi_cli.skill.flow import Flow, FlowEdge, FlowNode, parse_choice
 from kimi_cli.soul import (
     LLMNotSet,
     LLMNotSupported,
@@ -94,14 +92,13 @@ from kimi_cli.soul.message import (
     system_reminder,
     tool_result_to_message,
 )
-from kimi_cli.soul.slash import registry as soul_slash_registry
+from kimi_cli.soul import slash as soul_slash
 from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.tools.context_prune import context_prune
 from kimi_cli.tools.todo import Todo, TodoList
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.export import perform_export
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.slashcmd import SlashCommand, parse_slash_command_call
 from kimi_cli.utils.tokens import count_message_tokens, count_tokens
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
@@ -127,9 +124,6 @@ if TYPE_CHECKING:
         _: Soul = soul
 
 
-SKILL_COMMAND_PREFIX = "skill:"
-FLOW_COMMAND_PREFIX = "flow:"
-DEFAULT_MAX_FLOW_MOVES = 1000
 
 _MAX_TEXT_BLOCK_CONTINUATION_ROUNDS = 2
 """Maximum number of continuation steps used to force a turn to end on a
@@ -569,15 +563,12 @@ class KimiSoul:
             ),
         ]
         self._hook_engine: HookEngine = HookEngine()
-        self._stop_hook_active: bool = False
         self._verification_gate = VerificationGate(
             max_nudges=self._loop_control.verification_gate_max_nudges,
         )
         if self.is_root:
             self._runtime.notifications.ack_ids("llm", extract_notification_ids(context.history))
 
-        self._slash_commands = self._build_slash_commands()
-        self._slash_command_map = self._index_slash_commands(self._slash_commands)
 
         # Track rotated compaction export files for cleanup on close.
         # We keep an explicit list of exported pre-compact markdown files so
@@ -1082,15 +1073,14 @@ class KimiSoul:
             raise LLMNotSupported(self._runtime.llm, list(missing_caps))
         await self._context.append_message(message)
 
+
     @property
-    def available_slash_commands(self) -> list[SlashCommand[Any]]:
-        return self._slash_commands
+    def available_slash_commands(self) -> list[soul_slash.SlashCommandInfo]:
+        return soul_slash.list_command_infos()
 
     async def run(
         self,
         user_input: str | list[ContentPart],
-        *,
-        skip_user_prompt_hook: bool = False,
     ):
         # ── Empty-input guard ──────────────────────────────────────────
         # Never start a turn for blank input. Some callers (notably the
@@ -1133,35 +1123,6 @@ class KimiSoul:
 
             set_session_id(self._runtime.session.id)
 
-            from kimi_cli.hooks import events
-
-            # --- UserPromptSubmit hook ---
-            # Synthetic internal prompts (e.g. background-task notification
-            # follow-ups injected by ``Print`` after a bg task finishes or
-            # the wait ceiling is hit) must bypass ``UserPromptSubmit``:
-            # they are not user input, and a user-configured prompt-blocking
-            # hook would drop the notification and hang the wait loop.
-            if not skip_user_prompt_hook:
-                text_input_for_hook = user_input if isinstance(user_input, str) else ""
-
-                hook_results = await self._hook_engine.trigger(
-                    "UserPromptSubmit",
-                    matcher_value=text_input_for_hook,
-                    input_data=events.user_prompt_submit(
-                        session_id=self._runtime.session.id,
-                        cwd=str(self._runtime.session.work_dir),
-                        prompt=text_input_for_hook,
-                    ),
-                )
-                for result in hook_results:
-                    if result.action == "block":
-                        wire_send(TurnBegin(user_input=user_input))
-                        turn_started = True
-                        wire_send(TextPart(text=result.reason or "Prompt blocked by hook."))
-                        wire_send(TurnEnd())
-                        turn_finished = True
-                        return
-
             wire_send(TurnBegin(user_input=user_input))
             turn_started = True
 
@@ -1169,42 +1130,17 @@ class KimiSoul:
             user_message = Message(role="user", content=user_input)
             text_input = user_message.extract_text(" ").strip()
 
-            if command_call := parse_slash_command_call(text_input):
-                command = self._find_slash_command(command_call.name)
-                if command is None:
-                    # this should not happen actually, the shell should have filtered it out
+            command_call = soul_slash.parse_slash_command_call(text_input)
+            if command_call is not None:
+                command_func = soul_slash.find_command(command_call.name)
+                if command_func is None:
                     wire_send(TextPart(text=f'Unknown slash command "/{command_call.name}".'))
                 else:
-                    ret = command.func(self, command_call.args)
+                    ret = command_func(self, command_call.args)
                     if isinstance(ret, Awaitable):
                         await ret
-            elif self._loop_control.max_ralph_iterations != 0:
-                runner = FlowRunner.ralph_loop(
-                    user_message,
-                    self._loop_control.max_ralph_iterations,
-                )
-                await runner.run(self, "")
             else:
                 await self._turn(user_message)
-
-            # --- Stop hook (max 1 re-trigger to prevent infinite loop) ---
-            if not self._stop_hook_active:
-                stop_results = await self._hook_engine.trigger(
-                    "Stop",
-                    input_data=events.stop(
-                        session_id=self._runtime.session.id,
-                        cwd=str(self._runtime.session.work_dir),
-                        stop_hook_active=False,
-                    ),
-                )
-                for result in stop_results:
-                    if result.action == "block" and result.reason:
-                        self._stop_hook_active = True
-                        try:
-                            await self._turn(Message(role="user", content=result.reason))
-                        finally:
-                            self._stop_hook_active = False
-                        break
 
             wire_send(TurnEnd())
             turn_finished = True
@@ -1260,87 +1196,6 @@ class KimiSoul:
         await self._context.append_message(user_message)
         logger.debug("Appended user message to context")
         return await self._agent_loop()
-
-    def _build_slash_commands(self) -> list[SlashCommand[Any]]:
-        commands: list[SlashCommand[Any]] = list(soul_slash_registry.list_commands())
-        seen_names = {cmd.name for cmd in commands}
-
-        for skill in self._runtime.skills.values():
-            if skill.type not in ("standard", "flow"):
-                continue
-            name = f"{SKILL_COMMAND_PREFIX}{skill.name}"
-            if name in seen_names:
-                logger.warning(
-                    "Skipping skill slash command /{name}: name already registered",
-                    name=name,
-                )
-                continue
-            commands.append(
-                SlashCommand(
-                    name=name,
-                    func=self._make_skill_runner(skill),
-                    description=skill.description or "",
-                    aliases=[],
-                )
-            )
-            seen_names.add(name)
-
-        for skill in self._runtime.skills.values():
-            if skill.type != "flow":
-                continue
-            if skill.flow is None:
-                logger.warning("Flow skill {name} has no flow; skipping", name=skill.name)
-                continue
-            command_name = f"{FLOW_COMMAND_PREFIX}{skill.name}"
-            if command_name in seen_names:
-                logger.warning(
-                    "Skipping prompt flow slash command /{name}: name already registered",
-                    name=command_name,
-                )
-                continue
-            runner = FlowRunner(skill.flow, name=skill.name)
-            commands.append(
-                SlashCommand(
-                    name=command_name,
-                    func=runner.run,
-                    description=skill.description or "",
-                    aliases=[],
-                )
-            )
-            seen_names.add(command_name)
-
-        return commands
-
-    @staticmethod
-    def _index_slash_commands(
-        commands: list[SlashCommand[Any]],
-    ) -> dict[str, SlashCommand[Any]]:
-        indexed: dict[str, SlashCommand[Any]] = {}
-        for command in commands:
-            indexed[command.name] = command
-            for alias in command.aliases:
-                indexed[alias] = command
-        return indexed
-
-    def _find_slash_command(self, name: str) -> SlashCommand[Any] | None:
-        return self._slash_command_map.get(name)
-
-    def _make_skill_runner(self, skill: Skill) -> Callable[[KimiSoul, str], None | Awaitable[None]]:
-        async def _run_skill(soul: KimiSoul, args: str, *, _skill: Skill = skill) -> None:
-
-            skill_text = await read_skill_text(_skill)
-            if skill_text is None:
-                wire_send(
-                    TextPart(text=f'Failed to load skill "/{SKILL_COMMAND_PREFIX}{_skill.name}".')
-                )
-                return
-            extra = args.strip()
-            if extra:
-                skill_text = f"{skill_text}\n\nUser request:\n{extra}"
-            await soul._turn(Message(role="user", content=skill_text))
-
-        _run_skill.__doc__ = skill.description
-        return _run_skill
 
     async def _agent_loop(self) -> TurnOutcome:
         """The main agent loop for one run.
@@ -2782,177 +2637,3 @@ class BackToTheFuture(Exception):
         self.checkpoint_id = checkpoint_id
         self.messages = messages
 
-
-class FlowRunner:
-    def __init__(
-        self,
-        flow: Flow,
-        *,
-        name: str | None = None,
-        max_moves: int = DEFAULT_MAX_FLOW_MOVES,
-    ) -> None:
-        self._flow = flow
-        self._name = name
-        self._max_moves = max_moves
-
-    @staticmethod
-    def ralph_loop(
-        user_message: Message,
-        max_ralph_iterations: int,
-    ) -> FlowRunner:
-        prompt_content = list(user_message.content)
-        prompt_text = Message(role="user", content=prompt_content).extract_text(" ").strip()
-        total_runs = max_ralph_iterations + 1
-        if max_ralph_iterations < 0:
-            total_runs = 1000000000000000  # effectively infinite
-
-        nodes: dict[str, FlowNode] = {
-            "BEGIN": FlowNode(id="BEGIN", label="BEGIN", kind="begin"),
-            "END": FlowNode(id="END", label="END", kind="end"),
-        }
-        outgoing: dict[str, list[FlowEdge]] = {"BEGIN": [], "END": []}
-
-        nodes["R1"] = FlowNode(id="R1", label=prompt_content, kind="task")
-        nodes["R2"] = FlowNode(
-            id="R2",
-            label=(
-                f"{prompt_text}. (Automated loop — choose STOP only when fully complete. "
-                "If unsure, choose CONTINUE.)"
-            ).strip(),
-            kind="decision",
-        )
-        outgoing["R1"] = []
-        outgoing["R2"] = []
-
-        outgoing["BEGIN"].append(FlowEdge(src="BEGIN", dst="R1", label=None))
-        outgoing["R1"].append(FlowEdge(src="R1", dst="R2", label=None))
-        outgoing["R2"].append(FlowEdge(src="R2", dst="R2", label="CONTINUE"))
-        outgoing["R2"].append(FlowEdge(src="R2", dst="END", label="STOP"))
-
-        flow = Flow(nodes=nodes, outgoing=outgoing, begin_id="BEGIN", end_id="END")
-        max_moves = total_runs
-        return FlowRunner(flow, max_moves=max_moves)
-
-    async def run(self, soul: KimiSoul, args: str) -> None:
-        if args.strip():
-            command = f"/{FLOW_COMMAND_PREFIX}{self._name}" if self._name else "/flow"
-            logger.warning("Agent flow {command} ignores args: {args}", command=command, args=args)
-            return
-        if self._name:
-            pass
-
-        current_id = self._flow.begin_id
-        moves = 0
-        total_steps = 0
-        while True:
-            node = self._flow.nodes[current_id]
-            edges = self._flow.outgoing.get(current_id, [])
-
-            if node.kind == "end":
-                logger.info("Agent flow reached END node {node_id}", node_id=current_id)
-                return
-
-            if node.kind == "begin":
-                if not edges:
-                    logger.error(
-                        'Agent flow BEGIN node "{node_id}" has no outgoing edges; stopping.',
-                        node_id=node.id,
-                    )
-                    return
-                current_id = edges[0].dst
-                continue
-
-            if moves >= self._max_moves:
-                raise MaxStepsReached(total_steps)
-            next_id, steps_used = await self._execute_flow_node(soul, node, edges)
-            total_steps += steps_used
-            if next_id is None:
-                return
-            moves += 1
-            current_id = next_id
-
-    async def _execute_flow_node(
-        self,
-        soul: KimiSoul,
-        node: FlowNode,
-        edges: list[FlowEdge],
-    ) -> tuple[str | None, int]:
-        if not edges:
-            logger.error(
-                'Agent flow node "{node_id}" has no outgoing edges; stopping.',
-                node_id=node.id,
-            )
-            return None, 0
-
-        base_prompt = self._build_flow_prompt(node, edges)
-        prompt = base_prompt
-        steps_used = 0
-        while True:
-            result = await self._flow_turn(soul, prompt)
-            steps_used += result.step_count
-            if result.stop_reason == "tool_rejected":
-                logger.error("Agent flow stopped after tool rejection.")
-                return None, steps_used
-
-            if node.kind != "decision":
-                return edges[0].dst, steps_used
-
-            choice = (
-                parse_choice(result.final_message.extract_text(" "))
-                if result.final_message
-                else None
-            )
-            next_id = self._match_flow_edge(edges, choice)
-            if next_id is not None:
-                return next_id, steps_used
-
-            options = ", ".join(edge.label or "" for edge in edges)
-            logger.warning(
-                "Agent flow invalid choice. Got: {choice}. Available: {options}.",
-                choice=choice or "<missing>",
-                options=options,
-            )
-            prompt = (
-                f"{base_prompt}\n\n"
-                "Your last response did not include a valid choice. "
-                "Reply with one of the choices using <choice>...</choice>."
-            )
-
-    @staticmethod
-    def _build_flow_prompt(node: FlowNode, edges: list[FlowEdge]) -> str | list[ContentPart]:
-        if node.kind != "decision":
-            return node.label
-
-        if not isinstance(node.label, str):
-            label_text = Message(role="user", content=node.label).extract_text(" ")
-        else:
-            label_text = node.label
-        choices = [edge.label for edge in edges if edge.label]
-        lines = [
-            label_text,
-            "",
-            "Available branches:",
-            *(f"- {choice}" for choice in choices),
-            "",
-            "Reply with a choice using <choice>...</choice>.",
-        ]
-        return "\n".join(lines)
-
-    @staticmethod
-    def _match_flow_edge(edges: list[FlowEdge], choice: str | None) -> str | None:
-        if not choice:
-            return None
-        for edge in edges:
-            if edge.label == choice:
-                return edge.dst
-        return None
-
-    @staticmethod
-    async def _flow_turn(
-        soul: KimiSoul,
-        prompt: str | list[ContentPart],
-    ) -> TurnOutcome:
-        wire_send(TurnBegin(user_input=prompt))
-        res = await soul._turn(Message(role="user", content=prompt))  # type: ignore[reportPrivateUsage]
-        wire_send(TurnEnd())
-        return res

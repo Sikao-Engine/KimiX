@@ -449,7 +449,6 @@ class Session:
         # Loop control
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
-        max_ralph_iterations: int | None = None,
         **custom_arguments,  # Add by maxwell
     ) -> Session:
         """
@@ -471,7 +470,6 @@ class Session:
             skills_dirs: Multiple skills directories (KaosPath list) for newer kimi-cli.
             max_steps_per_turn: Maximum number of steps in one turn.
             max_retries_per_step: Maximum number of retries per step.
-            max_ralph_iterations: Extra iterations in Ralph mode (-1 for unlimited).
 
         Returns:
             Session: A new Session instance.
@@ -511,7 +509,6 @@ class Session:
             skills_dirs=resolved_skills_dirs,
             max_steps_per_turn=max_steps_per_turn,
             max_retries_per_step=max_retries_per_step,
-            max_ralph_iterations=max_ralph_iterations,
             **custom_arguments,
         )
         session = Session(cli)
@@ -533,7 +530,6 @@ class Session:
             "skills_dirs": resolved_skills_dirs,
             "max_steps_per_turn": max_steps_per_turn,
             "max_retries_per_step": max_retries_per_step,
-            "max_ralph_iterations": max_ralph_iterations,
         }
         session._create_kwargs.update(custom_arguments)
         return session
@@ -559,7 +555,6 @@ class Session:
         # Loop control
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
-        max_ralph_iterations: int | None = None,
         **custom_arguments,  # Add by maxwell
     ) -> Session | None:
         """
@@ -582,7 +577,6 @@ class Session:
             skills_dirs: Multiple skills directories (KaosPath list) for newer kimi-cli.
             max_steps_per_turn: Maximum number of steps in one turn.
             max_retries_per_step: Maximum number of retries per step.
-            max_ralph_iterations: Extra iterations in Ralph mode (-1 for unlimited).
 
         Returns:
             Session | None: The resumed session, or None if not found.
@@ -623,7 +617,6 @@ class Session:
             skills_dirs=resolved_skills_dirs,
             max_steps_per_turn=max_steps_per_turn,
             max_retries_per_step=max_retries_per_step,
-            max_ralph_iterations=max_ralph_iterations,
             **custom_arguments,
         )
         session = Session(cli)
@@ -641,7 +634,6 @@ class Session:
             "skills_dirs": resolved_skills_dirs,
             "max_steps_per_turn": max_steps_per_turn,
             "max_retries_per_step": max_retries_per_step,
-            "max_ralph_iterations": max_ralph_iterations,
         }
         session._create_kwargs.update(custom_arguments)
         return session
