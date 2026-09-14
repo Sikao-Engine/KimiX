@@ -806,6 +806,7 @@ class Bash(CallableTool2[BashParams]):
                     wait_matched=matched, elapsed_seconds=elapsed,
                     message=(
                         f"Interactive Bash started. task_id: `{task_id}`. "
+                        "Use task_id to send commands and job_output to read results. "
                         "Send 'exit' to close the session."
                     ),
                     brief="Interactive Bash started",
@@ -848,6 +849,10 @@ class Bash(CallableTool2[BashParams]):
 
         wait_matched: bool | None = None
         elapsed_seconds: float | None = None
+        # Seconds actually waited by the plain (no-pattern) monitor; used to
+        # report an accurate "no output after Ns" hint (the inactivity early
+        # return can fire well before ``params.timeout``).
+        waited_seconds: float | None = None
         try:
             if params.wait_for_pattern is not None and process_task.stream is not None:
                 from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
@@ -861,7 +866,10 @@ class Bash(CallableTool2[BashParams]):
                         return await self._format_session_result(
                             task_id, process_task.stream, params, output, "running",
                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-                            message="Matched pattern, still running",
+                            message=(
+                                f"Pattern matched; still running. task_id: `{task_id}`. "
+                                "Use `job_output` to read more output."
+                            ),
                             brief="Pattern matched",
                         )
                     # The pattern never matched within the timeout.  Keep the
@@ -875,7 +883,7 @@ class Bash(CallableTool2[BashParams]):
                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
                             message=(
                                 f"Running in background. task_id: `{task_id}`. "
-                                f"use `job_output` {guidance}"
+                                f"{guidance}"
                             ),
                             brief="Pattern matched",
                         )
@@ -886,7 +894,9 @@ class Bash(CallableTool2[BashParams]):
                         f"Command timed out after {params.timeout}s without matching pattern",
                     )
             else:
-                await process_task.wait_with_monitor(params.timeout)
+                _completed, waited_seconds, _inactivity_timed_out = (
+                    await process_task.wait_with_monitor(params.timeout)
+                )
         except asyncio.CancelledError:
             # The tool call was cancelled (e.g. by a tool-level timeout or
             # shutdown). Stop the subprocess and return a tool error so the
@@ -909,23 +919,35 @@ class Bash(CallableTool2[BashParams]):
             if guidance is not None:
                 # Long-running command (server/watcher/trailing `&`): keep the
                 # process running and hand the task id to the model so it can
-                # poll or kill the job with ``job_output``.
+                # wait for it with ``job_output`` (or stop it).
                 output = await _maybe_export_output_async(output)
-                message = (
-                    f"Running in background. task_id: `{task_id}`. "
-                    f"use `job_output` {guidance}"
-                )
                 return ToolError(
                     output=output,
-                    message=message,
+                    message=f"Running in background. task_id: `{task_id}`. {guidance}",
                     brief="Timeout",
                 )
-            # Ordinary command exceeded the foreground timeout.  The command may
-            # be stuck forever (e.g. a pipeline whose EOF is held open by a
-            # reparented grandchild never completes on its own), so leaving it
-            # running would create a zombie background task that ``job_output``
-            # reports as "running" indefinitely.  Kill the tree and report a
-            # definitive timeout instead of silently handing off.
+            if not output:
+                # The command is still running and produced no output at all.
+                # That is the signature of a quiet long-running task (build,
+                # install, watcher), so keep it in the background and hand the
+                # task id over — the model can wait for it with ``job_output``
+                # instead of losing the work to a kill.
+                waited = waited_seconds if waited_seconds is not None else params.timeout
+                return ToolError(
+                    output="",
+                    message=(
+                        f"No output after {waited:.0f}s; command still running. "
+                        f"task_id: `{task_id}`. Use `job_output` (wait=true) to "
+                        "wait for it."
+                    ),
+                    brief="Timeout",
+                )
+            # The command produced output and then stalled: it may be stuck
+            # forever (e.g. a pipeline whose EOF is held open by a reparented
+            # grandchild never completes on its own), so leaving it running
+            # would create a zombie background task that ``job_output`` reports
+            # as "running" indefinitely.  Kill the tree and report a definitive
+            # timeout instead of silently handing off.
             return await self._stop_after_timeout(
                 process_task,
                 task_id,

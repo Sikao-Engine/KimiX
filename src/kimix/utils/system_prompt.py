@@ -20,7 +20,7 @@ _TEMPLATES: dict[str, str] = {
 - **`rtk`**: invoke known CLI tools as `rtk <process> <arguments...>` — deduplicates and truncates output.
 - **`wait_for_pattern`**: blocks up to `timeout` seconds until the pattern appears.
 - **`timeout`**: seconds; range/default are in each tool's parameter schema.
-- **Working directory**: `Run` takes `cwd`/`workdir`; `Bash`/`pwsh`: `cd <dir> && <cmd>` / `cd <dir>; <cmd>`; `python` runs in the process cwd.
+- **Working directory**: `Run` takes `cwd`/`workdir`; `bash`/`pwsh`: `cd <dir> && <cmd>` / `cd <dir>; <cmd>`; `python` runs in the process cwd.
 ''',
     'sp_base_items': '''\
 Call tools in parallel.

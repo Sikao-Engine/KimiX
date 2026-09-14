@@ -292,14 +292,14 @@ class ErrorKind(str, Enum):
 
 # Common suggested actions for frequent error scenarios.
 _SUGGESTED_ACTIONS: dict[str, str] = {
-    "file_not_found": "Check the file path with `Glob` or verify with `Bash ls -la`.",
+    "file_not_found": "Check the file path with `glob` or verify with `bash ls -la`.",
     "timeout": "Increase the `timeout` parameter or simplify the command/query.",
-    "permission_denied": "Check file permissions with `Bash ls -la`.",
+    "permission_denied": "Check file permissions with `bash ls -la`.",
     "network_error": "Check network connectivity and try again. The server may be unreachable.",
     "rate_limited": "Wait a moment and retry with a longer delay between calls.",
     "invalid_parameter": "Review the parameter description and provide a valid value.",
     "execution_failed": "Check the command syntax and try again. Use simpler arguments.",
-    "context_full": "Call `Compact` with mode='auto' or mode='aggressive' to free up context.",
+    "context_full": "Call `compact` with mode='auto' or mode='aggressive' to free up context.",
     "unsupported": "Use an alternative tool or method that supports this operation.",
 }
 

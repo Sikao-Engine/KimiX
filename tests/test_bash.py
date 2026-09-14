@@ -3335,7 +3335,7 @@ class TestEdgeCases:
     reason="Bash tool is not available on this platform",
 )
 class TestBashInactivityTimeout:
-    async def test_bash_inactivity_timeout_kills_and_reports_timeout(
+    async def test_bash_inactivity_timeout_keeps_background_task(
         self, mock_session: MagicMock
     ) -> None:
         with patch(
@@ -3343,13 +3343,19 @@ class TestBashInactivityTimeout:
         ):
             bash = Bash(session=mock_session)
             params = BashParams(cmd="sleep 120", timeout=90)
-            result = await bash(params)
-            assert isinstance(result, ToolError)
-            assert result.brief == "Timeout"
-            assert "timed out" in result.message
-            assert "task_id" not in result.message
-            # The foreground timeout must not leave a zombie background task.
-            assert get_all_tasks(mock_session) == {}
+            try:
+                result = await bash(params)
+                assert isinstance(result, ToolError)
+                assert result.brief == "Timeout"
+                # A command that produced no output is handed off to the
+                # background (not killed) so the model can wait for it.
+                assert "No output after" in result.message
+                assert "task_id" in result.message
+                assert "job_output" in result.message
+                assert get_all_tasks(mock_session) != {}
+            finally:
+                for stream in list(get_all_tasks(mock_session).values()):
+                    await stream.stop()
 
     async def test_bash_short_timeout_unchanged(self, mock_session: MagicMock) -> None:
         bash = Bash(session=mock_session)
@@ -3382,7 +3388,7 @@ class TestPowershellInactivityTimeout:
         ):
             yield
 
-    async def test_pwsh_inactivity_timeout_kills_and_reports_timeout(
+    async def test_pwsh_inactivity_timeout_keeps_background_task(
         self, mock_session: MagicMock
     ) -> None:
         with patch(
@@ -3390,13 +3396,19 @@ class TestPowershellInactivityTimeout:
         ):
             pwsh = Powershell(session=mock_session)
             params = PowershellParams(cmd="Start-Sleep -Seconds 120", timeout=90)
-            result = await pwsh(params)
-            assert isinstance(result, ToolError)
-            assert result.brief == "Timeout"
-            assert "timed out" in result.message
-            assert "task_id" not in result.message
-            # The foreground timeout must not leave a zombie background task.
-            assert get_all_tasks(mock_session) == {}
+            try:
+                result = await pwsh(params)
+                assert isinstance(result, ToolError)
+                assert result.brief == "Timeout"
+                # A command that produced no output is handed off to the
+                # background (not killed) so the model can wait for it.
+                assert "No output after" in result.message
+                assert "task_id" in result.message
+                assert "job_output" in result.message
+                assert get_all_tasks(mock_session) != {}
+            finally:
+                for stream in list(get_all_tasks(mock_session).values()):
+                    await stream.stop()
 
     async def test_pwsh_short_timeout_unchanged(self, mock_session: MagicMock) -> None:
         pwsh = Powershell(session=mock_session)
@@ -5001,9 +5013,10 @@ class TestShellSafetyWiring:
         assert isinstance(result, ToolError)
         assert result.brief == "Timeout"
         assert "Running in background" in result.message
-        assert "Long-running process detected" in result.message
+        assert "Long-running command detected" in result.message
+        assert "job_output" in result.message
 
-    async def test_timeout_branch_plain_command_no_guidance(
+    async def test_timeout_branch_silent_command_keeps_background_task(
         self, bash_instance: Bash
     ) -> None:
         process_task = self._completed_process_task()
@@ -5016,9 +5029,30 @@ class TestShellSafetyWiring:
             result = await bash_instance(BashParams(cmd="sleep 5", timeout=1))
         assert isinstance(result, ToolError)
         assert result.brief == "Timeout"
+        # No output: keep the task and hand off with a `job_output` hint.
+        assert "No output after" in result.message
+        assert "task_id" in result.message
+        assert "job_output" in result.message
+        assert "Long-running command detected" not in result.message
+        # The still-alive silent command is NOT killed (it stays in the
+        # background so the handed-off task_id remains valid).
+        process_task.stop.assert_not_awaited()
+
+    async def test_timeout_branch_after_output_kills_and_reports_timeout(
+        self, bash_instance: Bash
+    ) -> None:
+        process_task = self._completed_process_task()
+        process_task.thread_is_alive = AsyncMock(return_value=True)
+        process_task.stream.pop_output = AsyncMock(return_value="partial output")
+        process_task.stop = AsyncMock()
+        with patch(
+            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+        ):
+            result = await bash_instance(BashParams(cmd="make", timeout=1))
+        assert isinstance(result, ToolError)
+        assert result.brief == "Timeout"
+        # Output then a stall: the tree is killed and the task removed.
         assert "timed out" in result.message
-        assert "Long-running process detected" not in result.message
-        # The process tree is stopped and the task is removed on timeout.
         process_task.stop.assert_awaited_once()
         assert get_all_tasks(bash_instance._session) == {}
 

@@ -359,7 +359,7 @@ class Run(CallableTool2[RunParams]):
 
             if not is_process:
                 # Not a real process - check if it's a bash built-in command.
-                error_msg = " This tool does not support shell commands; use `Bash` tool."
+                error_msg = " This tool does not support shell commands; use the `bash` tool."
                 return ToolError(
                     output='',
                     message=error_msg,
@@ -467,9 +467,13 @@ class Run(CallableTool2[RunParams]):
                     output = await task.stream.pop_output() if task.stream else ""
                     output = await _maybe_export_output_async(output)
                     guidance = foreground_background_guidance(params.command)
-                    message = f"Running in background. task_id: `{task_id}`. use `job_output`"
                     if guidance:
-                        message += f" {guidance}"
+                        message = f"Running in background. task_id: `{task_id}`. {guidance}"
+                    else:
+                        message = (
+                            f"Running in background. task_id: `{task_id}`. "
+                            "Use `job_output` to read output or to stop it."
+                        )
                     return ToolError(
                         output=output,
                         message=message,

@@ -646,8 +646,7 @@ _LONG_RUNNING_PATTERNS = [
 ]
 
 _FG_BG_HINT = (
-    "Long-running process detected. Consider mode='send' (background) + "
-    "TaskOutput to avoid blocking on timeout."
+    "Long-running command detected; use `job_output` to wait for it or to stop it."
 )
 
 
@@ -947,7 +946,7 @@ def _compat_annotate_failure(output: str, command: str, exit_code: int | None) -
     if "no such file or directory" in lowered:
         return (
             "A file or directory referenced by the command does not exist. "
-            "Verify the path with `Glob`/ReadFile."
+            "Verify the path with `glob`/`read`."
         )
     module_match = re.search(
         r"modulenotfounderror:\s*no module named '([^']+)'", sample, re.IGNORECASE

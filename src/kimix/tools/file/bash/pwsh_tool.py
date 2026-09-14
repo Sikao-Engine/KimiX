@@ -248,7 +248,8 @@ class PowershellParams(BaseModel):
         default=False,
         description=(
             "Run in the background and return a job id immediately "
-            "(collect with job_output, stop with job_kill). No timeout applies."
+            "(read with job_output; stop with job_output action='kill'). "
+            "No timeout applies."
         ),
     )
     sandbox_permissions: Literal["workspace-write", "danger-full-access"] | None = Field(
@@ -553,6 +554,7 @@ class Powershell(CallableTool2[PowershellParams]):
                     wait_matched=matched, elapsed_seconds=elapsed,
                     message=(
                         f"Interactive PowerShell started. task_id: `{task_id}`. "
+                        "Use task_id to send commands and job_output to read results. "
                         "Send 'exit' to close the session."
                     ) + transform_warning,
                     brief="Interactive PowerShell started",
@@ -606,6 +608,10 @@ class Powershell(CallableTool2[PowershellParams]):
 
         wait_matched: bool | None = None
         elapsed_seconds: float | None = None
+        # Seconds actually waited by the plain (no-pattern) monitor; used to
+        # report an accurate "no output after Ns" hint (the inactivity early
+        # return can fire well before ``params.timeout``).
+        waited_seconds: float | None = None
         try:
             if params.wait_for_pattern is not None and process_task.stream is not None:
                 from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
@@ -619,7 +625,10 @@ class Powershell(CallableTool2[PowershellParams]):
                         return await self._format_session_result(
                             task_id, process_task.stream, params, output, "running",
                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-                            message="Matched pattern, still running" + transform_warning,
+                            message=(
+                                f"Pattern matched; still running. task_id: `{task_id}`. "
+                                "Use `job_output` to read more output."
+                            ) + transform_warning,
                             brief="Pattern matched",
                         )
                     # The pattern never matched within the timeout.  Keep the
@@ -633,7 +642,7 @@ class Powershell(CallableTool2[PowershellParams]):
                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
                             message=(
                                 f"Running in background. task_id: `{task_id}`. "
-                                f"use `job_output` {guidance}" + transform_warning
+                                f"{guidance}" + transform_warning
                             ),
                             brief="Pattern matched",
                         )
@@ -644,7 +653,9 @@ class Powershell(CallableTool2[PowershellParams]):
                         f"Command timed out after {params.timeout}s without matching pattern" + transform_warning,
                     )
             else:
-                await process_task.wait_with_monitor(params.timeout)
+                _completed, waited_seconds, _inactivity_timed_out = (
+                    await process_task.wait_with_monitor(params.timeout)
+                )
         except asyncio.CancelledError:
             # The tool call was cancelled (e.g. by a tool-level timeout or
             # shutdown). Stop the subprocess and return a tool error so the
@@ -668,19 +679,32 @@ class Powershell(CallableTool2[PowershellParams]):
             if guidance is not None:
                 # Long-running command (server/watcher/trailing `&`): keep the
                 # process running and hand the task id to the model so it can
-                # poll or kill the job with ``job_output``.
+                # wait for it with ``job_output`` (or stop it).
                 output = await _maybe_export_output_async(output)
-                message = (
-                    f"Running in background. task_id: `{task_id}`. "
-                    f"use `job_output` {guidance}" + transform_warning
-                )
                 return ToolError(
                     output=output,
-                    message=message,
+                    message=(
+                        f"Running in background. task_id: `{task_id}`. "
+                        f"{guidance}" + transform_warning
+                    ),
                     brief="Timeout",
                 )
-            # Ordinary command exceeded the foreground timeout: kill the tree
-            # and report a definitive timeout instead of leaving a zombie task.
+            if not output:
+                # Still running with no output at all: keep this quiet
+                # long-running task in the background and hand the task id over
+                # so the model can wait for it with ``job_output``.
+                waited = waited_seconds if waited_seconds is not None else params.timeout
+                return ToolError(
+                    output="",
+                    message=(
+                        f"No output after {waited:.0f}s; command still running. "
+                        f"task_id: `{task_id}`. Use `job_output` (wait=true) to "
+                        "wait for it."
+                    ) + transform_warning,
+                    brief="Timeout",
+                )
+            # The command produced output and then stalled: kill the tree and
+            # report a definitive timeout instead of leaving a zombie task.
             return await self._stop_after_timeout(
                 process_task,
                 task_id,

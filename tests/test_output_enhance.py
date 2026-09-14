@@ -178,6 +178,48 @@ class TestAnnotateFailure:
     def test_no_hint_on_empty_output(self) -> None:
         assert annotate_failure("", "ls", 1) is None
 
+    def test_missing_path_hint_uses_current_tool_names(self) -> None:
+        """The hint must name the current tools (`glob`/`read`), never the
+        retired `Glob`/`ReadFile` spellings, on BOTH the native and the
+        pure-Python path."""
+        legacy = ("`Glob`", "ReadFile", "`Grep`", "`Bash`", "TaskOutput")
+        for native in (True, False):
+            from unittest import mock
+
+            import kimix.tools.file.bash.output_enhance as mod
+
+            with mock.patch.object(mod, "_native_use_native", lambda _k, _n=native: _n):
+                hint = mod.annotate_failure("ls: cannot access 'x': No such file or directory", "ls", 2)
+            assert hint is not None
+            assert "`glob`/`read`" in hint
+            for name in legacy:
+                assert name not in hint, f"legacy tool name {name!r} leaked on native={native}"
+
+
+# ============================================================================
+# foreground_background_guidance (shell timeout hint)
+# ============================================================================
+
+class TestForegroundBackgroundGuidance:
+    def test_hint_names_job_output(self) -> None:
+        """The long-running-command hint must name `job_output` (not the
+        retired `TaskOutput` tool) on BOTH the native and the pure-Python path."""
+        for native in (True, False):
+            from unittest import mock
+
+            import kimix.tools.file.bash.safety as mod
+
+            with mock.patch.object(mod, "_native_use_native", lambda _k, _n=native: _n):
+                hint = mod.foreground_background_guidance("npm run dev")
+            assert hint is not None
+            assert "`job_output`" in hint
+            assert "TaskOutput" not in hint
+
+    def test_no_hint_for_ordinary_command(self) -> None:
+        from kimix.tools.file.bash.safety import foreground_background_guidance
+
+        assert foreground_background_guidance("ls -la") is None
+
 
 # ============================================================================
 # redact_sensitive_output
