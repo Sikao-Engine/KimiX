@@ -12,6 +12,11 @@ if TYPE_CHECKING:
 
 _COMPACT_REMINDER_TYPE = "compact_reminder"
 
+# Hard floor: never inject the compact reminder while context usage is below
+# this ratio, regardless of the configured ``threshold``. Context is not "full"
+# enough to warrant compaction below this point.
+MIN_CONTEXT_USAGE = 0.30
+
 _COMPACT_REMINDER_TEMPLATE = (
     "Context {usage:.0%} full ({tokens}/{max_tokens} tokens). "
     "Call `Compact` after completing the current atomic task, "
@@ -27,9 +32,13 @@ class CompactReminderProvider(DynamicInjectionProvider):
         self,
         threshold: float = 0.70,
         cooldown_steps: int = 5,
+        min_usage: float = MIN_CONTEXT_USAGE,
     ) -> None:
         self._threshold = threshold
         self._cooldown_steps = cooldown_steps
+        # Never trigger below this absolute floor, even if ``threshold`` is set
+        # lower than it.
+        self._min_usage = min_usage
         self._last_injected_step: int | None = None
         self._last_injected_usage: float = 0.0
 
@@ -52,6 +61,12 @@ class CompactReminderProvider(DynamicInjectionProvider):
             context_usage = soul.context.token_count_with_pending / max_tokens
         else:
             context_usage = soul.status.context_usage
+
+        if context_usage < self._min_usage:
+            # Context is nowhere near full; never nag about compaction below
+            # the hard floor (defaults to 30%), even if ``threshold`` is set
+            # lower than it.
+            return []
 
         if context_usage < self._threshold:
             return []

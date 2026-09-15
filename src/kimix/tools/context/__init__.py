@@ -4,6 +4,7 @@ from __future__ import annotations
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimi_cli.soul import get_current_soul_or_none
 from kimi_cli.soul.compaction import CompactMode
+from kimi_cli.soul.dynamic_injections.compact_reminder import MIN_CONTEXT_USAGE
 from kimi_cli.soul.kimisoul import KimiSoul
 from pydantic import BaseModel, Field, model_validator
 
@@ -56,7 +57,8 @@ class compact(CallableTool2):
         "Optionally pass an instruction and a compaction mode (balanced, aggressive, "
         "retentive, technical, auto) to control the summary style. "
         "[IMPORTANT] Do NOT call compact more than once every 5 steps, "
-        "and only call it when context usage exceeds 70%."
+        "and only call it when context usage exceeds 70%. "
+        "Calls are rejected while context usage is below 30% (not high enough to compact)."
     )
     params = CompactParams
 
@@ -67,6 +69,18 @@ class compact(CallableTool2):
                 message="No active KimiSoul to compact.",
                 output="",
                 brief="No active soul",
+            )
+
+        # Hard floor: refuse to compact while context usage is not high enough.
+        usage = soul.status.context_usage
+        if usage < MIN_CONTEXT_USAGE:
+            return ToolError(
+                message=(
+                    f"Context usage is only {usage:.0%}, which is not high enough to compact "
+                    f"(minimum is {MIN_CONTEXT_USAGE:.0%}). Skip compaction until usage grows."
+                ),
+                output="",
+                brief="Usage too low to compact",
             )
 
         # Cooldown check

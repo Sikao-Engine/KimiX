@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from kimi_cli.soul.dynamic_injections.compact_reminder import (
     _COMPACT_REMINDER_TYPE,
+    MIN_CONTEXT_USAGE,
     CompactReminderProvider,
 )
 
@@ -185,3 +186,40 @@ async def test_on_afk_changed_resets_throttling() -> None:
         [], _mock_soul(context_usage=0.80, step_no=3)
     )
     assert len(result3) == 1
+
+
+async def test_min_context_usage_floor_value() -> None:
+    """The module exposes a 30% hard floor constant."""
+    assert MIN_CONTEXT_USAGE == 0.30
+
+
+async def test_no_reminder_below_min_floor_even_with_low_threshold() -> None:
+    """Even if threshold is configured below 30%, usage under the floor must
+    never trigger the reminder."""
+    provider = CompactReminderProvider(threshold=0.10)  # aggressive, but floored
+    # 20% is above threshold (0.10) but below the 30% floor -> suppressed.
+    result = await provider.get_injections(
+        [], _mock_soul(context_usage=0.20)
+    )
+    assert result == []
+
+
+async def test_reminder_fires_above_floor_when_threshold_lower() -> None:
+    """When threshold is below the floor, the floor becomes the effective gate:
+    usage at/above 30% triggers, below does not."""
+    provider = CompactReminderProvider(threshold=0.10)
+    below = await provider.get_injections([], _mock_soul(context_usage=0.29))
+    assert below == []
+    above = await provider.get_injections(
+        [], _mock_soul(context_usage=0.35, step_no=1)
+    )
+    assert len(above) == 1
+
+
+async def test_default_threshold_suppresses_low_usage() -> None:
+    """With the default 70% threshold, a typical low-usage context (e.g. 15%)
+    never gets a reminder (also covered by the floor)."""
+    provider = CompactReminderProvider()
+    result = await provider.get_injections([], _mock_soul(context_usage=0.15))
+    assert result == []
+
