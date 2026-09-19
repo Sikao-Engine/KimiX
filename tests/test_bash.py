@@ -624,24 +624,22 @@ def _fix_for_windows(command: str) -> BashFix:
     return _fix_for_platform(command, "win32")
 
 
-def _decode_startup_command(argv_command: str) -> str:
-    """Decode the base64+gzip one-liner used to deliver interactive startups.
+def _decode_startup_payload(process_task_call_args: Any) -> str:
+    """Decode the base64+gzip payload used to deliver interactive startups.
 
-    ``bash_tool._encode_startup_script`` wraps multi-line startup scripts so
-    they survive Windows argv quoting; tests reverse the wrapping to assert on
-    the original script text.  Any trailing suffix appended after the encoded
-    payload (e.g. ``; exec bash -i``) is preserved verbatim.
+    ``bash_tool`` carries the startup script (compatibility prelude + initial
+    command) in the ``KIMIX_BASH_PAYLOAD`` environment entry because the
+    decoded script is far beyond the MSYS2 ``bash -c`` argv length limit; the
+    ``bash -c`` string itself only references the variable (the payload's
+    first line unsets it).  Tests reverse the wrapping to assert on the
+    original script text.
     """
-    prefix = "eval \"$(printf '%s' '"
-    suffix = "' | base64 -d | gzip -d)\""
-    assert argv_command.startswith(prefix), argv_command[:80]
-    payload_end = argv_command.index(suffix)
-    payload = argv_command[len(prefix):payload_end]
-    trailer = argv_command[payload_end + len(suffix):]
+    env = process_task_call_args.args[3]
+    payload = env["KIMIX_BASH_PAYLOAD"]
     import base64 as _b64
     import gzip as _gz
 
-    return _gz.decompress(_b64.b64decode(payload)).decode("utf-8") + trailer
+    return _gz.decompress(_b64.b64decode(payload)).decode("utf-8")
 
 
 class TestBashFixResult:
@@ -770,18 +768,15 @@ class TestBashFixMappings:
             "flock lockfile app",
             "script transcript.txt",
             "getent passwd",
-            "ip address",
-            "ss -ltn",
             "lsof file",
-            "free -h",
-            "systemctl status service",
             "service app status",
               "apt update",
               "apt-get update",
-              "sudo command",
           ],
     )
     def test_commands_without_faithful_mapping_are_preserved(self, command: str) -> None:
+        # No fallback exists AND the command is not known-unsupported: the
+        # text must pass through untouched for Bash to resolve (or reject).
         assert _fix_for_windows(command) == BashFix(command)
 
 
@@ -1484,6 +1479,16 @@ class TestBashFixNewFallbacks:
             "pidof bash",
             "column -t file",
             "column -s , -t file",
+            # Common-cheat-sheet utilities missing from Git Bash (new set).
+            "free -h",
+            "uptime",
+            "top -b -n 1",
+            "htop",
+            "ss -tlnp",
+            "ip addr",
+            "man ls",
+            "systemctl status svc",
+            "sudo ls",
         ],
     )
     def test_new_fallbacks_are_rewritten(self, source: str) -> None:
@@ -1530,6 +1535,11 @@ class TestBashFixNewFallbacks:
             "which copy",
             "echo tasklist",
             "echo watch date",
+            "echo free -h",
+            "top=1",
+            "x=journalctl",
+            "echo systemctl",
+            "echo 'journalctl -u svc'",
         ],
     )
     def test_new_fallback_data_and_declarations_unchanged(
@@ -1542,6 +1552,406 @@ class TestBashFixNewFallbacks:
         source = "copy a b; tasklist; watch -n 1 date"
         result = _fix_for_platform(source, platform)
         assert result == BashFix(source)
+
+
+class TestBashFixCommonCommands:
+    """Every command from the common bash cheat-sheet parses as intended.
+
+    Native Git Bash commands pass through byte-for-byte; POSIX utilities
+    missing from Git Bash gain fallback definitions; commands with no faithful
+    Windows equivalent are reported via ``BashFix.unsupported`` with a reason
+    (the Bash tool turns that into an error message instead of executing a
+    guaranteed "command not found").
+    """
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # File and directory operations.
+            "ls -la",
+            "ls -lah --sort=size .",
+            "cd src",
+            "cd ..",
+            "pwd",
+            "mkdir -p a/b/c",
+            "rmdir empty",
+            "touch file.txt",
+            "cp -r src dst",
+            "mv old new",
+            "rm -rf build",
+            "find . -name '*.py' -type f",
+            "ln -s target link",
+            # Viewing and editing files.
+            "cat file.txt",
+            "less file.txt",
+            "head -n 100 file.txt",
+            "tail -f app.log",
+            "tail -n 20 app.log",
+            "grep -rn 'rev' .",
+            "grep -i error app.log",
+            "sed -i 's/old/new/g' file.txt",
+            "awk '{print $1, $3}' file.txt",
+            "sort -k2 -nr file.txt",
+            "sort file.txt | uniq -c",
+            "wc -l file.txt",
+            # Permissions and ownership.
+            "chmod 755 script.sh",
+            "chmod +x script.sh",
+            "chown user:group file",
+            # System and processes (tools Git Bash ships natively).
+            "ps aux | grep python",
+            "kill -9 1234",
+            "df -h",
+            "du -sh dir",
+            "uname -a",
+            # Network.
+            "ping -c 4 example.com",
+            "curl -X POST -d 'a=1' https://example.com",
+            "ssh user@host -p 2222",
+            "scp file user@host:/path",
+            "netstat -ano",
+            # Archives.
+            "tar -czvf a.tgz dir",
+            "tar -xzvf a.tgz",
+            "unzip a.zip -d dir",
+            # Miscellaneous utilities.
+            "echo hello > f.txt",
+            "echo $HOME",
+            "date +'%Y-%m-%d %H:%M:%S'",
+            "which bash",
+            "history | grep ssh",
+            "xargs -n1 echo",
+            "find . -name '*.log' | xargs rm",
+            "cut -d: -f1 /etc/passwd",
+            "tr 'a-z' 'A-Z' < file.txt",
+        ],
+    )
+    def test_native_git_bash_commands_pass_through(self, command: str) -> None:
+        """Commands Git Bash ships must not be rewritten in any cheat-sheet form."""
+        assert _fix_for_windows(command) == BashFix(command)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "free",
+            "free -h",
+            "free -m",
+            "free -g",
+            "free -b",
+            "uptime",
+            "uptime -s",
+            "top",
+            "top -b -n 1",
+            "top -d 5 -n 2",
+            "htop",
+            "htop -d 1",
+            "ss -tln",
+            "ss -tlnp",
+            "ss -s",
+            "ss --summary",
+            "ip",
+            "ip addr",
+            "ip address",
+            "ip -br addr",
+            "ip link",
+            "ip route",
+            "ip neigh",
+            "man ls",
+            "man 1 grep",
+            "man git status",
+            "systemctl status svc",
+            "systemctl start svc",
+            "systemctl stop svc",
+            "systemctl restart svc",
+            "systemctl reload svc",
+            "systemctl enable svc",
+            "systemctl disable svc",
+            "systemctl is-active svc",
+            "systemctl is-enabled svc",
+            "systemctl list-units",
+            "systemctl list-unit-files",
+            "wget https://example.com/f.zip",
+            "zip -r out.zip dir",
+        ],
+    )
+    def test_missing_commands_gain_fallback_definitions(self, command: str) -> None:
+        """Cheat-sheet commands Git Bash lacks get a fallback definition."""
+        result = _fix_for_windows(command)
+        name = command.split()[0]
+        assert name in result.replacements
+        assert f"command -v {name}" in result.command
+        assert result.command.endswith("\n" + command)
+
+    def test_sudo_is_a_fallback_wrapper(self) -> None:
+        """``sudo`` keeps its wrapper operand semantics AND records its
+        definition (used only on hosts without ``sudo.exe``)."""
+        result = _fix_for_windows("sudo systemctl status svc")
+        assert result.replacements == ("sudo", "systemctl")
+        assert "command -v sudo" in result.command
+        # ``systemctl`` is the wrapped command word of an executable wrapper:
+        # it is swapped for the standalone runner.
+        assert "_wrapper_runner" not in result.command  # runner is inline text
+        assert "/usr/bin/bash -c" in result.command
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "journalctl",
+            "journalctl -u svc",
+            "journalctl -u svc -f",
+            "journalctl --since today",
+            "journalctl -n 50 --no-pager",
+            "journalctl | grep error",
+        ],
+    )
+    def test_unsupported_commands_keep_text_and_report_reason(
+        self, command: str
+    ) -> None:
+        """Commands with no Windows equivalent: text untouched, reason recorded."""
+        result = _fix_for_windows(command)
+        assert result.unsupported == ("journalctl",)
+        assert result.command == command
+        assert not result.changed
+        assert "journalctl" in result.warning
+        assert "no Windows Git Bash equivalent" in result.warning
+        assert "Get-WinEvent" in result.warning  # suggested alternative
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "sudo journalctl -u svc",
+            "bash -c 'journalctl -n 5'",
+            "echo ok && journalctl -f",
+        ],
+    )
+    def test_unsupported_commands_in_wrapped_positions(self, command: str) -> None:
+        """Unsupported names are detected inside wrappers and ``bash -c`` too."""
+        result = _fix_for_windows(command)
+        assert result.unsupported == ("journalctl",)
+        assert "journalctl" in result.warning
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "echo journalctl",
+            "journalctl=1",
+            "x=journalctl",
+            "echo 'journalctl -u svc'",
+            "alias journalctl='printf x'",
+            "journalctl() { printf fn; }",
+        ],
+    )
+    def test_unsupported_names_as_data_and_declarations_unchanged(
+        self, command: str
+    ) -> None:
+        """``journalctl`` as argument/assignment/declaration is not a command."""
+        assert _fix_for_windows(command) == BashFix(command)
+
+    @pytest.mark.parametrize("platform", ["linux", "darwin", "freebsd", "cygwin"])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "free -h",
+            "ss -tlnp",
+            "ip addr",
+            "man ls",
+            "systemctl status svc",
+            "sudo journalctl -u svc",
+            "journalctl -f",
+        ],
+    )
+    def test_noop_on_non_windows(self, platform: str, command: str) -> None:
+        result = _fix_for_platform(command, platform)
+        assert result == BashFix(command)
+
+
+class TestBashToolUnsupportedCommand:
+    """The Bash tool surfaces the parser's unsupported reason as an error message."""
+
+    @pytest.fixture
+    def windows_tool(self, mock_session: MagicMock) -> Any:
+        with (
+            patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"),
+            patch("kimix.tools.file.bash.bash_fix.sys.platform", "win32"),
+            patch(
+                "kimix.tools.file.bash.bash_tool.find_bash",
+                return_value=r"C:\Git\bin\bash.exe",
+            ),
+            patch(
+                "kimix.tools.file.bash.bash_tool._configured_shell",
+                return_value=None,
+            ),
+            patch(
+                "kimix.tools.file.bash.bash_tool.USE_SYSTEM_PWSH_ON_WINDOWS",
+                False,
+            ),
+        ):
+            yield Bash(mock_session)
+
+    def test_prepare_command_rejects_unsupported_with_reason(
+        self, windows_tool: Bash
+    ) -> None:
+        error = windows_tool._prepare_command("journalctl -u svc -f")
+        assert isinstance(error, ToolError)
+        assert "journalctl" in error.message
+        assert "no Windows Git Bash equivalent" in error.message
+        assert "Get-WinEvent" in error.message  # the suggested alternative
+        assert error.brief == "Unsupported command on Windows"
+
+    def test_prepare_command_allows_supported_commands(
+        self, windows_tool: Bash
+    ) -> None:
+        prepared = windows_tool._prepare_command("free -h")
+        assert isinstance(prepared, str)
+        assert "free()" in prepared
+
+    def test_prepare_command_allows_native_commands(
+        self, windows_tool: Bash
+    ) -> None:
+        prepared = windows_tool._prepare_command("ls -la")
+        assert prepared == "ls -la"
+
+    async def test_call_returns_error_message_without_executing(
+        self, windows_tool: Bash, mock_session: MagicMock
+    ) -> None:
+        with patch(
+            "kimix.tools.file.bash.bash_tool.ProcessTask"
+        ) as process_task:
+            result = await windows_tool(BashParams(cmd="journalctl -u svc -f"))
+        assert isinstance(result, ToolError)
+        assert "journalctl" in result.message
+        process_task.assert_not_called()  # rejected before any subprocess spawn
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="requires Windows Git Bash")
+class TestBashFixCommonCommandsRealGitBash:
+    """Execute the new cheat-sheet fallbacks on the real Git Bash of this host.
+
+    A fallback is dormant whenever the real executable exists on PATH (the
+    definition's ``command -v`` guard), so cases whose tool is installed
+    natively (e.g. a third-party coreutils ``uptime``) are skipped here — the
+    guard, not the body, is what this host exercises for them.
+    """
+
+    @staticmethod
+    def _native_tool(name: str) -> bool:
+        """Mirror the fallback guard: does ``command -v`` find *name* in bash?"""
+        bash = find_bash()
+        assert bash is not None
+        found = subprocess.run(
+            [bash, "-c", f"command -v {name}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return found.returncode == 0
+
+    @staticmethod
+    def _run(command: str, *, timeout: int = 90) -> subprocess.CompletedProcess[str]:
+        bash = find_bash()
+        assert bash is not None
+        fixed = _fix_for_windows(command)
+        for attempt in range(2):
+            try:
+                return subprocess.run(
+                    [bash, "-lc", fixed.command],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=timeout,
+                    check=False,
+                )
+            except subprocess.TimeoutExpired:
+                if attempt == 1:
+                    raise
+                time.sleep(1)
+        raise AssertionError("unreachable")
+
+    @pytest.mark.parametrize(
+        ("command", "needles"),
+        [
+            ("free", ("Mem",)),
+            ("free -h", ("Mem",)),
+            ("free -m", ("Mem",)),
+            ("ss -tln", ("TCP",)),
+            ("ss -s", ()),
+            ("man ls", ("Usage",)),
+            ("man 1 grep", ("Usage",)),
+            ("systemctl status w32time", ("Running",)),
+            ("systemctl is-active w32time", ("active",)),
+            ("systemctl is-enabled w32time", ("enabled",)),
+            ("systemctl list-units", ("W32Time",)),
+            ("top -b -n 1", ("ProcessName",)),
+            ("htop -b -n 1", ("ProcessName",)),
+        ],
+    )
+    def test_fallback_executes(
+        self, command: str, needles: tuple[str, ...]
+    ) -> None:
+        name = command.split()[0]
+        if self._native_tool(name):
+            pytest.skip(f"native {name} on PATH; fallback guard is dormant here")
+        result = self._run(command)
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, output
+        for needle in needles:
+            assert needle in output, f"{needle!r} missing from {output[:500]!r}"
+
+    @pytest.mark.parametrize(
+        ("command", "needles"),
+        [
+            ("uptime", ("up", "load average")),
+        ],
+    )
+    def test_fallback_executes_native_spelling(
+        self, command: str, needles: tuple[str, ...]
+    ) -> None:
+        # Output spellings asserted here match this fallback's own body; skip
+        # on hosts where a native tool (e.g. coreutils ``uptime``) wins.
+        name = command.split()[0]
+        if self._native_tool(name):
+            pytest.skip(f"native {name} on PATH; fallback guard is dormant here")
+        result = self._run(command)
+        output = result.stdout + result.stderr
+        assert result.returncode == 0, output
+        for needle in needles:
+            assert needle in output, f"{needle!r} missing from {output[:500]!r}"
+
+    def test_ip_family_executes(self) -> None:
+        if self._native_tool("ip"):
+            pytest.skip("native ip on PATH; fallback guard is dormant here")
+        for command in ("ip addr", "ip link", "ip route", "ip neigh"):
+            result = self._run(command)
+            assert result.returncode == 0, result.stdout + result.stderr
+            assert result.stdout.strip(), command
+
+    @pytest.mark.parametrize(
+        ("command", "reason"),
+        [
+            ("ip", "Usage"),
+            ("htop --badflag", "unsupported option"),
+            ("free --nonsense", "unsupported option"),
+            ("systemctl badcmd", "unsupported subcommand"),
+            ("man", "missing command name"),
+        ],
+    )
+    def test_fallback_error_paths_report_reason(
+        self, command: str, reason: str
+    ) -> None:
+        name = command.split()[0]
+        if self._native_tool(name):
+            pytest.skip(f"native {name} on PATH; fallback guard is dormant here")
+        result = self._run(command)
+        output = result.stdout + result.stderr
+        assert result.returncode != 0, output
+        assert reason in output, f"{reason!r} missing from {output[:500]!r}"
+
+    def test_journalctl_is_rejected_by_tool_not_bash(self) -> None:
+        """The tool refuses before bash runs: 'command not found' never appears."""
+        result = _fix_for_windows("journalctl -u svc")
+        assert result.unsupported == ("journalctl",)
+        assert "no Windows Git Bash equivalent" in result.warning
 
 
 class TestBashFixRobustness:
@@ -1631,13 +2041,12 @@ class TestBashFixWindowsPaths:
             ("env -C D:\\x cmd", "env -C D:/x cmd"),
             ("env --chdir D:\\x cmd", "env --chdir D:/x cmd"),
             ("env --chdir=D:\\x cmd", "env --chdir=D:/x cmd"),
-            ("time -o D:\\out.txt cmd", "time -o D:/out.txt cmd"),
-            ("time --output=D:\\out.txt cmd", "time --output=D:/out.txt cmd"),
-              ("sudo -D D:\\x cmd", "sudo -D D:/x cmd"),
-              # A Windows executable path as the command word itself: Bash
-              # quote removal would eat the backslashes and lose the command.
-              ("env -u FOO D:\\x cmd", "env -u FOO D:/x cmd"),
-          ],
+        ("time -o D:\\out.txt cmd", "time -o D:/out.txt cmd"),
+        ("time --output=D:\\out.txt cmd", "time --output=D:/out.txt cmd"),
+        # A Windows executable path as the command word itself: Bash
+        # quote removal would eat the backslashes and lose the command.
+        ("env -u FOO D:\\x cmd", "env -u FOO D:/x cmd"),
+        ],
     )
     def test_windows_backslash_paths_rewritten(
         self, source: str, expected: str
@@ -1647,6 +2056,16 @@ class TestBashFixWindowsPaths:
         assert result.changed
         assert result.replacements == ()
         assert result.path_changes
+
+    def test_sudo_path_option_rewritten_with_fallback_prefix(self) -> None:
+        # ``sudo`` is also a fallback name now (for hosts without sudo.exe),
+        # so its definition is prepended; the wrapped path option is still
+        # rewritten exactly like the other wrappers.
+        result = _fix_for_windows(r"sudo -D D:\x cmd")
+        assert result.path_changes == (r"D:\x",)
+        assert result.replacements == ("sudo",)
+        assert result.command.split("\n")[-1] == "sudo -D D:/x cmd"
+        assert "command -v sudo" in result.command
 
     def test_path_with_spaces_is_quoted(self) -> None:
         result = _fix_for_windows("cd D:\\Program\\ Files\\Git")
@@ -4117,8 +4536,10 @@ class TestBashFixToolIntegration:
             result = await bash_instance(BashParams(cmd="printf abc | rev", mode="interactive"))
 
         assert isinstance(result, ToolOk)
-        command = _decode_startup_command(process_task_class.call_args.args[1][1])
-        assert command.endswith("\nprintf abc | rev; exec bash -i")
+        bash_args = process_task_class.call_args.args[1]
+        assert bash_args[1].endswith("; exec bash -i")
+        command = _decode_startup_payload(process_task_class.call_args)
+        assert command.endswith("\nprintf abc | rev")
         for name in ("gtimeout", "rev", "xdg-open", "open", "pbcopy", "pbpaste"):
             assert f"{name}()" in command
             assert f"declare -F {name}" in command
@@ -4490,9 +4911,9 @@ class TestBashInteractiveArgumentBuilding:
             args = mock_pt.call_args
             bash_args = args[0][1]
             assert "-c" in bash_args
-            decoded = _decode_startup_command(bash_args[1])
+            assert bash_args[1].endswith("; exec bash -i")
+            decoded = _decode_startup_payload(args)
             assert "echo start" in decoded
-            assert "exec bash -i" in decoded
             assert args.kwargs.get("append_newline") is True or args[0][4] is True
 
     async def test_interactive_args_without_cmd(self, mock_session: MagicMock) -> None:
@@ -4515,7 +4936,7 @@ class TestBashInteractiveArgumentBuilding:
             bash_args = args[0][1]
             assert bash_args[0] == "-c"
             assert bash_args[1].endswith("; exec bash -i")
-            decoded = _decode_startup_command(bash_args[1])
+            decoded = _decode_startup_payload(args)
             assert "gtimeout()" in decoded
             assert "rev()" in decoded
             assert "export -f rev" in decoded
@@ -5715,7 +6136,13 @@ class TestBashFixCommandOperandWrappers:
 
     def test_fallbacks_are_exported_for_nested_shells(self) -> None:
         result = _fix_for_windows("rev <<< abc")
-        assert "\nexport -f rev\n" in result.command
+        # Conditional export: the definition's ``command -v`` guard may have
+        # found a real executable on PATH (e.g. coreutils ``uptime``), in
+        # which case there is no function to export and an unconditional
+        # ``export -f`` would pollute stderr with "not a function" noise.
+        assert (
+            "if declare -F rev >/dev/null; then export -f rev; fi" in result.command
+        )
 
     @pytest.mark.parametrize("platform", ["linux", "darwin", "freebsd"])
     def test_operand_wrappers_noop_on_non_windows(self, platform: str) -> None:
@@ -5734,19 +6161,23 @@ class TestBashFixShellWrapperUnderCommandWrapper:
     """
 
     @pytest.mark.parametrize(
-        "source",
+        ("source", "expected_replacements"),
         [
-            "env bash -c 'rev <<< abc'",
-            "sudo bash -c 'rev <<< abc'",
-            "timeout 5 bash -c 'rev <<< abc'",
-            "nohup bash -c 'rev <<< abc'",
+            ("env bash -c 'rev <<< abc'", ("rev",)),
+            # ``sudo`` is a fallback name too: its definition is recorded
+            # alongside the wrapped command's.
+            ("sudo bash -c 'rev <<< abc'", ("sudo", "rev")),
+            ("timeout 5 bash -c 'rev <<< abc'", ("rev",)),
+            ("nohup bash -c 'rev <<< abc'", ("rev",)),
         ],
     )
-    def test_dash_c_script_is_fixed_in_place(self, source: str) -> None:
+    def test_dash_c_script_is_fixed_in_place(
+        self, source: str, expected_replacements: tuple[str, ...]
+    ) -> None:
         result = _fix_for_windows(source)
-        assert result.replacements == ("rev",)
+        assert result.replacements == expected_replacements
         assert result.command.split("\n")[-1] == source
-        assert "\nexport -f rev\n" in result.command
+        assert "if declare -F rev >/dev/null; then export -f rev; fi" in result.command
 
     def test_dash_c_script_inner_path_is_fixed_in_place(self) -> None:
         result = _fix_for_windows(r"nohup bash -c 'cd C:\x && rev'")

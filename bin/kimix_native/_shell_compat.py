@@ -449,10 +449,199 @@ _FALLBACK_BODIES = {
         "-t) shift;; "
         "-s) __kimix_sep=$2; shift 2;; "
         "-s?*) __kimix_sep=${1#-s}; shift;; "
-        "-*) printf '%s\\n' \"column: unsupported option for perl fallback: $1\" >&2; return 1;; "
+        "-*) printf '%s\n' \"column: unsupported option for perl fallback: $1\" >&2; return 1;; "
         "*) break;; esac; done; "
         + _COLUMN_PERL
         + " \"$__kimix_sep\" \"$@\""
+    ),
+    # POSIX utilities from the common command cheat-sheet that are absent
+    # from a bare Git Bash userland and map onto native Windows tools.
+    "free": (
+        "local __kimix_unit=K; "
+        "while (( $# )); do case $1 in "
+        "-b|--bytes) __kimix_unit=B; shift;; "
+        "-k|--kibi|--kilo) __kimix_unit=K; shift;; "
+        "-m|--mebi|--mega) __kimix_unit=M; shift;; "
+        "-g|--gibi|--giga) __kimix_unit=G; shift;; "
+        "-h|--human) __kimix_unit=H; shift;; "
+        "--help) printf '%s\n' 'free: report memory usage (Windows: Win32_OperatingSystem; no swap row)'; return 0;; "
+        "-*) printf '%s\n' \"free: unsupported option: $1\" >&2; return 1;; "
+        "*) shift;; esac; done; "
+        "local -a __kimix_m=(); "
+        "mapfile -t __kimix_m < <(powershell.exe -NoProfile -NonInteractive -Command "
+        "'$o=Get-CimInstance Win32_OperatingSystem; "
+        "Write-Output $o.TotalVisibleMemorySize; Write-Output $o.FreePhysicalMemory' "
+        "2>/dev/null | tr -d '\\r'); "
+        "if [[ ${#__kimix_m[@]} -lt 2 ]]; then "
+        "printf '%s\n' 'free: failed to query memory information' >&2; return 1; fi; "
+        "local __kimix_total=${__kimix_m[0]} __kimix_free=${__kimix_m[1]}; "
+        "local __kimix_used=$(( __kimix_total - __kimix_free )); "
+        "printf '%s\n' '               total        used        free'; "
+        "case $__kimix_unit in "
+        "B) printf 'Mem: %12d %11d %11d\n' $(( __kimix_total * 1024 )) $(( __kimix_used * 1024 )) $(( __kimix_free * 1024 ));; "
+        "M) printf 'Mem: %12d %11d %11d\n' $(( __kimix_total / 1024 )) $(( __kimix_used / 1024 )) $(( __kimix_free / 1024 ));; "
+        "G) printf 'Mem: %12d %11d %11d\n' $(( __kimix_total / 1024 / 1024 )) $(( __kimix_used / 1024 / 1024 )) $(( __kimix_free / 1024 / 1024 ));; "
+        "H) awk -v t=\"$__kimix_total\" -v f=\"$__kimix_free\" '"
+        "function h(x,  i){i=1; while(x>=10240&&i<4){x=x/1024;i++} "
+        "return sprintf(\"%.1f%s\", x, substr(\"KMGT\", i, 1))} "
+        "BEGIN{printf \"Mem: %11s %10s %10s\\n\", h(t), h(t-f), h(f)}';; "
+        "*) printf 'Mem: %12d %11d %11d\n' \"$__kimix_total\" \"$__kimix_used\" \"$__kimix_free\";; esac"
+    ),
+    "uptime": (
+        "local __kimix_since=0; "
+        "while (( $# )); do case $1 in "
+        "-s|--since) __kimix_since=1; shift;; "
+        "--help) printf '%s\n' 'uptime: tell how long the system has been running (Windows approximation; no user count)'; return 0;; "
+        "-*) printf '%s\n' \"uptime: unsupported option: $1\" >&2; return 1;; "
+        "*) printf '%s\n' \"uptime: unsupported argument: $1\" >&2; return 1;; esac; done; "
+        "local -a __kimix_u=(); "
+        "mapfile -t __kimix_u < <(powershell.exe -NoProfile -NonInteractive -Command "
+        "'$b=(Get-CimInstance Win32_OperatingSystem).LastBootUpTime; "
+        "Write-Output $b.ToString(\"yyyy-MM-dd HH:mm:ss\"); "
+        "$up=New-TimeSpan -Start $b -End (Get-Date); "
+        "Write-Output $up.Days; Write-Output $up.Hours; Write-Output $up.Minutes' "
+        "2>/dev/null | tr -d '\\r'); "
+        "if [[ ${#__kimix_u[@]} -lt 4 ]]; then "
+        "printf '%s\n' 'uptime: failed to query boot time' >&2; return 1; fi; "
+        "if (( __kimix_since )); then printf '%s\n' \"${__kimix_u[0]}\"; return 0; fi; "
+        "local __kimix_days=${__kimix_u[1]} __kimix_hours=${__kimix_u[2]} __kimix_mins=${__kimix_u[3]}; "
+        "printf -v __kimix_mins '%02d' \"$__kimix_mins\"; "
+        "local __kimix_up; "
+        "if (( __kimix_days > 0 )); then "
+        "printf -v __kimix_up '%d day(s), %d:%s' \"$__kimix_days\" \"$__kimix_hours\" \"$__kimix_mins\"; "
+        "else printf -v __kimix_up '%d:%s' \"$__kimix_hours\" \"$__kimix_mins\"; fi; "
+        "printf '%s up %s, load average: n/a (not reported on Windows)\n' \"$(date '+%H:%M:%S')\" \"$__kimix_up\""
+    ),
+    "top": (
+        "local __kimix_delay=3 __kimix_iters=0 __kimix_batch=0 __kimix_count=0; "
+        "while (( $# )); do case $1 in "
+        "-b) __kimix_batch=1; shift;; "
+        "-d) __kimix_delay=$2; shift 2;; "
+        "-d?*) __kimix_delay=${1#-d}; shift;; "
+        "-n) __kimix_iters=$2; shift 2;; "
+        "-n?*) __kimix_iters=${1#-n}; shift;; "
+        "-h|--help) printf '%s\n' 'top: display processes (Windows approximation via Get-Process; Ctrl+C quits)'; return 0;; "
+        "-*) printf '%s\n' \"${FUNCNAME[0]}: unsupported option: $1\" >&2; return 1;; "
+        "*) shift;; esac; done; "
+        "__kimix_snapshot() { powershell.exe -NoProfile -NonInteractive -Command "
+        "'Get-Process | Sort-Object -Property CPU -Descending | "
+        "Select-Object -First 25 Id,ProcessName,CPU,WorkingSet | Format-Table -AutoSize'; }; "
+        "if (( __kimix_batch )); then "
+        "local __kimix_n=$__kimix_iters; (( __kimix_n > 0 )) || __kimix_n=1; "
+        "while (( __kimix_count < __kimix_n )); do "
+        "__kimix_snapshot; __kimix_count=$(( __kimix_count + 1 )); done; return 0; fi; "
+        "while (( __kimix_iters == 0 || __kimix_count < __kimix_iters )); do "
+        "clear; __kimix_snapshot; __kimix_count=$(( __kimix_count + 1 )); "
+        "(( __kimix_iters > 0 && __kimix_count >= __kimix_iters )) && break; "
+        "sleep \"$__kimix_delay\"; done"
+    ),
+    "ss": (
+        "local __kimix_stats=0; "
+        "local -a __kimix_split=(); "
+        "local __kimix_combo='' __kimix_i=0; "
+        "while (( $# )); do "
+        "if [[ $1 == -[!-]* && ${#1} -gt 2 ]]; then "
+        "__kimix_combo=${1#-}; __kimix_split=(); shift; "
+        "for (( __kimix_i=0; __kimix_i<${#__kimix_combo}; __kimix_i++ )); do "
+        "__kimix_split+=(-${__kimix_combo:__kimix_i:1}); done; "
+        "set -- \"${__kimix_split[@]}\" \"$@\"; continue; fi; "
+        "case $1 in "
+        "-s|--summary) __kimix_stats=1; shift;; "
+        "-t|-u|-l|-n|-a|-p|-e|-m|-r|-i|-x|-4|-6|-T|--tcp|--udp|--listening|--numeric|--all|--process|--extended|--memory|--resolve|--inet|--inet4|--inet6) shift;; "
+        "--*) shift;; "
+        "-*) printf '%s\n' \"ss: unsupported option: $1\" >&2; return 1;; "
+        "*) shift;; esac; done; "
+        "if (( __kimix_stats )); then netstat -s; else netstat -ano; fi"
+    ),
+    "ip": (
+        "local __kimix_sub=''; "
+        "while (( $# )); do case $1 in "
+        "-4|-6|-br|--brief|-details|-s|-human|-iec|-o|-oneline|-c|--color|-color) shift;; "
+        "-h|--help) __kimix_sub=help; shift;; "
+        "-*) printf '%s\n' \"ip: unsupported option: $1\" >&2; return 1;; "
+        "*) if [[ -z $__kimix_sub ]]; then __kimix_sub=$1; fi; shift;; esac; done; "
+        "case $__kimix_sub in "
+        "help) printf '%s\n' 'Usage: ip [addr|link|route|neigh] (Windows equivalents: ipconfig / Get-NetAdapter / route print / arp -a)'; return 0;; "
+        "'') printf '%s\n' 'Usage: ip [addr|link|route|neigh] (Windows equivalents: ipconfig / Get-NetAdapter / route print / arp -a)' >&2; return 1;; "
+        "addr|address|a) ipconfig;; "
+        "link|l) powershell.exe -NoProfile -NonInteractive -Command "
+        "'Get-NetAdapter | ForEach-Object { \"$($_.Name) $($_.Status) $($_.LinkSpeed) $($_.MacAddress)\" }';; "
+        "route|r) route print;; "
+        "neigh|n) arp -a;; "
+        "*) printf '%s\n' \"ip: unsupported object: $__kimix_sub (supported: addr link route neigh)\" >&2; return 1;; esac"
+    ),
+    "man": (
+        "local __kimix_rc=0 __kimix_seen=0; "
+        "while (( $# )); do case $1 in "
+        "--help) printf '%s\n' 'man: show command help (fallback prints <command> --help)'; return 0;; "
+        "--) shift; break;; "
+        "-*) printf '%s\n' \"man: unsupported option for --help fallback: $1\" >&2; return 1;; "
+        "*) break;; esac; done; "
+        "while (( $# )); do "
+        "if [[ $1 =~ ^[0-9]+$ ]]; then shift; continue; fi; "
+        "__kimix_seen=1; \"$1\" --help || __kimix_rc=1; shift; done; "
+        "if (( ! __kimix_seen )); then printf '%s\n' 'man: missing command name' >&2; return 1; fi; "
+        "return $__kimix_rc"
+    ),
+    "systemctl": (
+        "local __kimix_cmd=''; "
+        "local -a __kimix_names=(); "
+        "while (( $# )); do case $1 in "
+        "-q|--quiet|--no-pager|--plain|--full|-l|--no-legend|--no-ask-password|--user|--system|--global) shift;; "
+        "--type=*) shift;; "
+        "--) shift; break;; "
+        "-*) printf '%s\n' \"systemctl: unsupported option: $1\" >&2; return 1;; "
+        "*) if [[ -z $__kimix_cmd ]]; then __kimix_cmd=$1; else __kimix_names+=(\"$1\"); fi; shift;; esac; done; "
+        "if [[ -z $__kimix_cmd ]]; then "
+        "printf '%s\n' 'systemctl: missing subcommand (Windows service equivalents; supported: status start stop restart reload enable disable is-active is-enabled list-units list-unit-files)' >&2; return 1; fi; "
+        "case $__kimix_cmd in "
+        "status) (( ${#__kimix_names[@]} )) || { printf '%s\n' 'systemctl: missing unit name' >&2; return 1; }; "
+        "local __kimix_csv=$(IFS=,; echo \"${__kimix_names[*]}\"); "
+        "powershell.exe -NoProfile -NonInteractive -Command "
+        "\"Get-Service -Name '$__kimix_csv' | Format-List Name,DisplayName,Status,StartType\";; "
+        "start|stop|restart|reload) (( ${#__kimix_names[@]} )) || { printf '%s\n' 'systemctl: missing unit name' >&2; return 1; }; "
+        "local __kimix_ps='' __kimix_n; "
+        "for __kimix_n in \"${__kimix_names[@]}\"; do "
+        "if [[ $__kimix_cmd == stop || $__kimix_cmd == restart || $__kimix_cmd == reload ]]; then "
+        "__kimix_ps+=\"Stop-Service -Name '$__kimix_n' -ErrorAction Stop; \"; fi; "
+        "if [[ $__kimix_cmd == start || $__kimix_cmd == restart || $__kimix_cmd == reload ]]; then "
+        "__kimix_ps+=\"Start-Service -Name '$__kimix_n' -ErrorAction Stop; \"; fi; done; "
+        "powershell.exe -NoProfile -NonInteractive -Command \"$__kimix_ps\";; "
+        "enable|disable) (( ${#__kimix_names[@]} )) || { printf '%s\n' 'systemctl: missing unit name' >&2; return 1; }; "
+        "local __kimix_start=demand; [[ $__kimix_cmd == enable ]] && __kimix_start=auto; "
+        "local __kimix_rc=0 __kimix_n; "
+        "for __kimix_n in \"${__kimix_names[@]}\"; do "
+        "sc.exe config \"$__kimix_n\" start= \"$__kimix_start\" >/dev/null || __kimix_rc=1; done; "
+        "return $__kimix_rc;; "
+        "is-active) (( ${#__kimix_names[@]} )) || { printf '%s\n' 'systemctl: missing unit name' >&2; return 1; }; "
+        "local __kimix_rc=0 __kimix_n; "
+        "for __kimix_n in \"${__kimix_names[@]}\"; do "
+        "if sc.exe query \"$__kimix_n\" 2>/dev/null | grep -q 'RUNNING'; then "
+        "printf '%s\n' active; else printf '%s\n' inactive; __kimix_rc=3; fi; done; "
+        "return $__kimix_rc;; "
+        "is-enabled) (( ${#__kimix_names[@]} )) || { printf '%s\n' 'systemctl: missing unit name' >&2; return 1; }; "
+        "local __kimix_rc=0 __kimix_n; "
+        "for __kimix_n in \"${__kimix_names[@]}\"; do "
+        "if sc.exe qc \"$__kimix_n\" 2>/dev/null | grep -q 'DISABLED'; then "
+        "printf '%s\n' disabled; __kimix_rc=1; else printf '%s\n' enabled; fi; done; "
+        "return $__kimix_rc;; "
+        "list-units|list-unit-files) "
+        "powershell.exe -NoProfile -NonInteractive -Command "
+        "'Get-Service | ForEach-Object { \"$($_.Status) $($_.Name) $($_.DisplayName)\" }';; "
+        "*) printf '%s\n' \"systemctl: unsupported subcommand: $__kimix_cmd (supported: status start stop restart reload enable disable is-active is-enabled list-units list-unit-files)\" >&2; return 1;; esac"
+    ),
+    # Windows 11 ships sudo.exe in system32; older Windows releases have no
+    # sudo at all, so the guard below only defines this on those hosts.  The
+    # body elevates through a UAC prompt: output is NOT captured (it shows in
+    # the elevated window), which is an honest, documented deviation.
+    "sudo": (
+        "if (( $# == 0 )); then printf '%s\n' 'sudo: missing command' >&2; return 1; fi; "
+        "local __kimix_bash; __kimix_bash=$(type -P bash) || { printf '%s\n' 'sudo: bash not found' >&2; return 1; }; "
+        "local __kimix_wbash; __kimix_wbash=$(cygpath -w -- \"$__kimix_bash\") || return 1; "
+        "printf '%s\n' 'sudo: elevating via UAC in a separate window; output is not captured here' >&2; "
+        "__KIMIX_SUDO_CMD=\"$*\" powershell.exe -NoProfile -NonInteractive -Command "
+        "\"Start-Process -Verb RunAs -Wait -FilePath '$__kimix_wbash' -ArgumentList '-c', \\$env:__KIMIX_SUDO_CMD\"; "
+        "local __kimix_rc=$?; return $__kimix_rc"
     ),
 }
 
@@ -507,7 +696,24 @@ def _wrapper_runner(name: str) -> str:
 # same ``/dev/tcp`` zero-I/O fallback.
 _FALLBACK_BODIES.setdefault("netcat", _FALLBACK_BODIES["nc"])
 
+# ``htop`` is the fancy TUI spelling of the same live-process view; the
+# Windows approximation is identical to ``top``'s.
+_FALLBACK_BODIES.setdefault("htop", _FALLBACK_BODIES["top"])
+
 _FALLBACKS = {name: _fallback_definition(name) for name in _FALLBACK_BODIES}
+
+# Commands with no faithful Windows Git Bash equivalent at all.  The scanner
+# records these in ``BashFix.unsupported`` (command text is left untouched)
+# so the app layer can refuse to run the command and return the reason in its
+# error message instead of letting Bash fail with a bare "command not found".
+_UNSUPPORTED_BODIES = {
+    "journalctl": (
+        "systemd's journal does not exist on Windows and Git Bash has no "
+        "journal daemon, so there is no faithful equivalent. Read the "
+        "application's own log file(s), or query the Windows Event Log "
+        "instead: powershell.exe Get-WinEvent -LogName Application -MaxEvents 50"
+    ),
+}
 
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\+)?=")
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -528,8 +734,15 @@ _COMMAND_WRAPPERS = frozenset(
 # command the wrapper executes.  ``gtimeout`` runs ``timeout "$@"`` (an
 # executable that execs argv, so its command operand needs the standalone
 # runner), while ``watch`` runs its command inside the same shell (its body
-# uses ``eval "$*"``, so a same-shell function call suffices).
-_FALLBACK_COMMAND_WRAPPERS = {"gtimeout": "timeout", "watch": "watch"}
+# uses ``eval "$*"``, so a same-shell function call suffices).  ``sudo`` maps
+# to its own wrapper semantics (option table and executable operand); the
+# fallback definition only engages on hosts without ``sudo.exe`` (pre-Windows
+# 11), where it elevates through a UAC prompt.
+_FALLBACK_COMMAND_WRAPPERS = {
+    "gtimeout": "timeout",
+    "watch": "watch",
+    "sudo": "sudo",
+}
 
 # Wrappers that require a fixed number of plain operands (options excluded)
 # before the command word.  GNU ``timeout`` takes exactly one DURATION operand
@@ -720,8 +933,11 @@ class BashFix:
     so the command runs directly in the Bash tool.  ``nul_fixes`` records each
     unquoted redirection target ``nul``/``NUL`` that was rewritten to
     ``/dev/null`` (Git Bash treats ``nul`` as an ordinary filename, silently
-    creating an empty ``nul`` file instead of discarding output).  Empty
-    tuples mean the command was returned byte-for-byte unchanged.
+    creating an empty ``nul`` file instead of discarding output).
+    ``unsupported`` records each command name that has no faithful Windows
+    Git Bash equivalent (see ``_UNSUPPORTED_BODIES`` for the reasons); the
+    command text is left byte-for-byte unchanged for those.  Empty tuples
+    mean the command was returned byte-for-byte unchanged.
     """
 
     command: str
@@ -729,6 +945,7 @@ class BashFix:
     path_changes: tuple[str, ...] = ()
     shell_wrappers: tuple[str, ...] = ()
     nul_fixes: tuple[str, ...] = ()
+    unsupported: tuple[str, ...] = ()
 
     @property
     def changed(self) -> bool:
@@ -744,6 +961,14 @@ class BashFix:
     def warning(self) -> str:
         """Return a concise description of compatibility changes."""
         parts: list[str] = []
+        if self.unsupported:
+            details = "; ".join(
+                f"`{name}` — {_UNSUPPORTED_BODIES[name]}" for name in self.unsupported
+            )
+            parts.append(
+                "Command(s) with no Windows Git Bash equivalent: "
+                f"{details}."
+            )
         if self.replacements:
             names = ", ".join(f"`{name}`" for name in self.replacements)
             parts.append(
@@ -789,7 +1014,7 @@ class _BashHereDoc:
 class _BashFixScanner:
     """Conservative scanner for Bash executable command positions."""
 
-    __slots__ = ("s", "n", "edits", "names", "path_notes", "shell_notes", "heredoc_events", "nest_depth", "nul_fixes")
+    __slots__ = ("s", "n", "edits", "names", "path_notes", "shell_notes", "heredoc_events", "nest_depth", "nul_fixes", "unsupported")
 
     def __init__(self, command: str) -> None:
         self.s = command
@@ -801,6 +1026,7 @@ class _BashFixScanner:
         self.heredoc_events: list[tuple[int, int]] = []
         self.nest_depth = 0
         self.nul_fixes: list[str] = []
+        self.unsupported: list[str] = []
 
     def fix(self) -> BashFix:
         try:
@@ -814,6 +1040,7 @@ class _BashFixScanner:
             and not self.edits
             and not self.shell_notes
             and not self.nul_fixes
+            and not self.unsupported
         ):
             return BashFix(self.s)
         unique_names = list(dict.fromkeys(self.names))
@@ -822,8 +1049,16 @@ class _BashFixScanner:
         # operand of a command wrapper, the standalone runner scripts), where
         # the definitions above are not otherwise visible: ``env bash -c
         # 'rev <<< abc'`` keeps ``bash -c`` but the child shell still needs
-        # ``rev`` to resolve to the function.
-        exports = "\n".join(f"export -f {name}" for name in unique_names)
+        # ``rev`` to resolve to the function.  The export is conditional on
+        # the function actually being defined: a fallback whose ``command -v``
+        # guard found a real executable on PATH (coreutils ``uptime``, Windows
+        # 11 ``sudo.exe``) installs nothing, and an unconditional ``export -f``
+        # would then pollute stderr with "not a function" noise (the
+        # interactive prelude guards its exports the same way).
+        exports = "\n".join(
+            f"if declare -F {name} >/dev/null; then export -f {name}; fi"
+            for name in unique_names
+        )
         source = self._build_source()
         source = _fix_heredoc_trailing_operators(source)
         prefix = definitions + "\n" + exports + "\n" if definitions else ""
@@ -833,6 +1068,7 @@ class _BashFixScanner:
             tuple(self.path_notes),
             tuple(self.shell_notes),
             tuple(self.nul_fixes),
+            tuple(self.unsupported),
         )
 
     def _build_source(self) -> str:
@@ -906,6 +1142,12 @@ class _BashFixScanner:
         """Return the fallback command name produced by Bash quote removal."""
         name = _BashFixScanner._literal_word_value(raw)
         return name if name is not None and name in _FALLBACKS else None
+
+    @staticmethod
+    def _literal_unsupported_name(raw: str) -> str | None:
+        """Return the unsupported command name produced by Bash quote removal."""
+        name = _BashFixScanner._literal_word_value(raw)
+        return name if name is not None and name in _UNSUPPORTED_BODIES else None
 
     @staticmethod
     def _shell_wrapper_name(raw: str) -> str | None:
@@ -1045,6 +1287,9 @@ class _BashFixScanner:
             self.shell_notes.extend(
                 n for n in inner.shell_notes if n not in self.shell_notes
             )
+            self.unsupported.extend(
+                n for n in inner.unsupported if n not in self.unsupported
+            )
             if wrapped:
                 # Keep ``<wrapper> bash -c '<script>'`` and fix the script in
                 # place: the wrapper runs bash natively and the nested bash
@@ -1096,6 +1341,9 @@ class _BashFixScanner:
         self.path_notes.extend(inner.path_notes)
         self.shell_notes.extend(
             n for n in inner.shell_notes if n not in self.shell_notes
+        )
+        self.unsupported.extend(
+            n for n in inner.unsupported if n not in self.unsupported
         )
         if inner.edits:
             self.edits.append((word_start, word_end, _single_quote(fixed)))
@@ -1462,18 +1710,16 @@ class _BashFixScanner:
                     self._watch_command_operand(word_start, word_end, raw)
                     wrapper = None
 
-            if raw in _COMMAND_WRAPPERS:
-                wrapper = _BashWrapper(
-                    raw, operands=_WRAPPER_OPERAND_COUNTS.get(raw, 0)
-                )
-                command_expected = True
-                continue
+            # Fallback wrappers are checked first: ``sudo`` is both a plain
+            # command wrapper (operand semantics, option tables) and a
+            # fallback name whose definition must be recorded for hosts
+            # without ``sudo.exe``.
             fallback_wrapper = _FALLBACK_COMMAND_WRAPPERS.get(raw)
             if fallback_wrapper is not None:
-                # ``gtimeout 5 rev``/``watch -n1 rev``: the wrapper word is
-                # itself a fallback (its definition is recorded) and the
-                # command that follows its options/operands is scanned like a
-                # wrapped command word.
+                # ``gtimeout 5 rev``/``watch -n1 rev``/``sudo rev``: the
+                # wrapper word is itself a fallback (its definition is
+                # recorded) and the command that follows its
+                # options/operands is scanned like a wrapped command word.
                 self.names.append(raw)
                 if executable_wrapper:
                     # The wrapping executable (``xargs gtimeout ...``) cannot
@@ -1488,6 +1734,12 @@ class _BashFixScanner:
                 wrapper = _BashWrapper(
                     fallback_wrapper,
                     operands=_WRAPPER_OPERAND_COUNTS.get(fallback_wrapper, 0),
+                )
+                command_expected = True
+                continue
+            if raw in _COMMAND_WRAPPERS:
+                wrapper = _BashWrapper(
+                    raw, operands=_WRAPPER_OPERAND_COUNTS.get(raw, 0)
                 )
                 command_expected = True
                 continue
@@ -1523,6 +1775,8 @@ class _BashFixScanner:
                     self.edits.append(
                         (word_start, word_end, _wrapper_runner(fallback_name))
                     )
+            elif self._record_unsupported(raw):
+                pass
             else:
                 # A command word can itself be a Windows executable path
                 # (``C:\tools\rg.exe``) or a Git Bash virtual absolute path
@@ -1535,6 +1789,21 @@ class _BashFixScanner:
                     self.path_notes.append(raw)
             command_expected = False
             wrapper = None
+
+    def _record_unsupported(self, raw: str) -> bool:
+        """Record a command word with no Windows Git Bash equivalent.
+
+        Returns True when *raw* literal-resolved to an unsupported command
+        name; the command text is left untouched so the app layer can surface
+        ``_UNSUPPORTED_BODIES``' reason instead of executing a guaranteed
+        "command not found".
+        """
+        name = self._literal_unsupported_name(raw)
+        if name is None:
+            return False
+        if name not in self.unsupported:
+            self.unsupported.append(name)
+        return True
 
     def _read_word(
         self, start: int, end: int, *, scan_substitutions: bool = True
@@ -2614,6 +2883,7 @@ def fix_bash_command(command: str) -> BashFix:
         result.path_changes,
         result.shell_wrappers,
         result.nul_fixes,
+        result.unsupported,
     )
 
 

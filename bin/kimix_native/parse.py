@@ -53,8 +53,22 @@ _KIND_NAMES = ("line", "block", "doc")
 # ``bash_fix.py``).  This keeps behaviour bit-identical without waiting for a
 # kernel rebuild.
 _POST_KERNEL_FALLBACKS = frozenset({
-    # Empty: all post-kernel fallback aliases have been promoted into the
-    # native scanner.  This set is kept as a documented extension point.
+    # Fallback/unsupported names added after the compiled PARSE kernel was
+    # built: the kernel scanner does not know these words, so any ASCII
+    # command that likely contains one of them as an executable word is
+    # routed to the pure-Python reference implementation
+    # (``_shell_compat`` mirrors ``bash_fix.py``) to keep behaviour
+    # bit-identical until the kernel is rebuilt.
+    "free",
+    "htop",
+    "ip",
+    "journalctl",
+    "man",
+    "ss",
+    "sudo",
+    "systemctl",
+    "top",
+    "uptime",
 })
 _POST_KERNEL_RE = re.compile(
     r"(?:^|[\s;|&(){}!\n])"
@@ -526,7 +540,13 @@ def fix_bash_command(cmd: str) -> BashFix:
     definitions = "\n".join(_shell._FALLBACKS[n] for n in unique_names)
     # Mirror the reference scanner's prefix: exported fallbacks are inherited
     # by nested bash processes (``bash -c`` operands, standalone runners).
-    exports = "\n".join(f"export -f {n}" for n in unique_names)
+    # The export is conditional on the function actually being defined: a
+    # fallback whose ``command -v`` guard found a real executable on PATH
+    # (coreutils ``uptime``, Windows 11 ``sudo.exe``) installs nothing, and an
+    # unconditional ``export -f`` would pollute stderr with "not a function".
+    exports = "\n".join(
+        f"if declare -F {n} >/dev/null; then export -f {n}; fi" for n in unique_names
+    )
     prefix = definitions + "\n" + exports + "\n" if definitions else ""
     path_changes = tuple(n.decode("utf-8", "surrogatepass") for n in notes_bytes)
     return BashFix(prefix + source, tuple(names), path_changes)

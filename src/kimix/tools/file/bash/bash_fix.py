@@ -51,8 +51,8 @@ as their own command contexts.
 
 The scanner implementation is the canonical pure-Python reference that lives
 in ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim); this
-module keeps only the public API, the Windows-platform gate, and the native
-acceleration fast path, so the scanner logic exists in exactly one place.
+module keeps only the public API and the Windows-platform gate, so the
+scanner logic exists in exactly one place.
 """
 
 from __future__ import annotations
@@ -61,12 +61,6 @@ import sys
 
 from kimi_cli.native_loader import (
     get_compat as _native_get_compat,
-)
-from kimi_cli.native_loader import (
-    get_module as _native_get_module,
-)
-from kimi_cli.native_loader import (
-    use_native as _native_use_native,
 )
 
 # The canonical pure-Python implementation (the historical body of this
@@ -109,8 +103,11 @@ _FALLBACK_COMMAND_WRAPPERS = _shell._FALLBACK_COMMAND_WRAPPERS
 _WRAPPER_OPERAND_COUNTS = _shell._WRAPPER_OPERAND_COUNTS
 _SAME_SHELL_WRAPPERS = _shell._SAME_SHELL_WRAPPERS
 
-# Resolved once at import time (stable runtime: result never changes).
-_NATIVE_PARSE = _native_get_module("parse")
+# Commands with no faithful Windows Git Bash equivalent: name -> reason.
+# ``BashFix.unsupported`` lists which of these the scanner found; consumers
+# (the Bash tool) surface the reason instead of executing a guaranteed
+# "command not found".
+_UNSUPPORTED_BODIES = _shell._UNSUPPORTED_BODIES
 
 
 def fix_bash_command(command: str) -> BashFix:
@@ -122,17 +119,6 @@ def fix_bash_command(command: str) -> BashFix:
     """
     if sys.platform != "win32" or not command:
         return BashFix(command)
-    # Native acceleration: kimix_native.parse.fix_bash_command.
-    if _native_use_native("PARSE") and _NATIVE_PARSE is not None:
-        result = _NATIVE_PARSE.fix_bash_command(command)
-        fixed = _fix_heredoc_trailing_operators(result.command)
-        return BashFix(
-            command=fixed,
-            replacements=tuple(result.replacements),
-            path_changes=tuple(result.path_changes),
-            shell_wrappers=tuple(getattr(result, "shell_wrappers", ())),
-            nul_fixes=tuple(getattr(result, "nul_fixes", ())),
-        )
     # Quoting and escaping can form a literal command name without the source
     # containing it contiguously (for example ``r""ev`` or ``\rev``), so a
     # substring fast path would miss legal executable words.  The scanner is
@@ -145,4 +131,5 @@ def fix_bash_command(command: str) -> BashFix:
         path_changes=tuple(result.path_changes),
         shell_wrappers=tuple(getattr(result, "shell_wrappers", ())),
         nul_fixes=tuple(getattr(result, "nul_fixes", ())),
+        unsupported=tuple(getattr(result, "unsupported", ())),
     )

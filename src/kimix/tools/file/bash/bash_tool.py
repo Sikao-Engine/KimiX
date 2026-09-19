@@ -83,20 +83,56 @@ if TYPE_CHECKING:
 USE_SYSTEM_SHELL = True
 
 
-def _encode_startup_script(script: str) -> str:
-    """Encode a multi-line startup script as a self-decoding one-liner.
+#: Environment variable that carries a base64+gzip script payload when the
+#: decoded script is too large for the Windows command line (see
+#: :func:`_bash_argv_env`).
+_PAYLOAD_ENV_VAR = "KIMIX_BASH_PAYLOAD"
 
-    Long multi-line scripts passed through the Windows command line to MSYS2
-    bash get corrupted (argv quoting heuristics).  A single-line base64+gzip
-    payload contains only safe ASCII characters and sidesteps every quoting
-    issue; the receiving shell decodes and evals it.
+#: MSYS2 argument handling corrupts ``bash -c`` command strings whose total
+#: length approaches ~8 KB (empirically ~8.2 KB on Git for Windows: the
+#: parser fails with an unbalanced-quote error, no matter whether path
+#: conversion is disabled).  Prepared commands at or above this threshold
+#: are delivered through the environment instead, which has no practical
+#: length limit and is never path-converted.
+_MAX_INLINE_BASH_ARGV = 6000
+
+
+def _encode_startup_script(script: str) -> str:
+    """Encode a multi-line script as a single-line base64+gzip payload.
+
+    The payload contains only safe ASCII characters, sidestepping the argv
+    quoting heuristics that corrupt multi-line scripts in the Windows command
+    line.  Small payloads stay inline inside the command string itself;
+    oversized ones travel in :data:`_PAYLOAD_ENV_VAR` and are decoded by
+    :func:`_payload_eval_command`.
     """
     import gzip
 
     import pybase64
 
-    payload = pybase64.b64encode(gzip.compress(script.encode("utf-8"))).decode("ascii")
-    return "eval \"$(printf '%s' '" + payload + "' | base64 -d | gzip -d)\""
+    return pybase64.b64encode(gzip.compress(script.encode("utf-8"))).decode("ascii")
+
+
+def _payload_eval_command() -> str:
+    """Return the constant ``bash -c`` string decoding the env-carried payload."""
+    return (
+        'eval "$(printf "%s" "$' + _PAYLOAD_ENV_VAR + '" | base64 -d | gzip -d)"'
+    )
+
+
+def _bash_argv_env(script: str) -> tuple[list[str], dict[str, str]]:
+    """Return ``(argv, env)`` running *script* via ``bash -c``.
+
+    Short scripts are passed inline (historical behavior).  Scripts whose
+    command-line rendering would approach the MSYS2 corruption threshold are
+    gzip+base64-encoded into :data:`_PAYLOAD_ENV_VAR` so the command line
+    stays tiny; the receiving shell decodes and evals the payload.
+    """
+    env = _bash_subprocess_env()
+    if len(script) <= _MAX_INLINE_BASH_ARGV:
+        return ["-c", script], env
+    env[_PAYLOAD_ENV_VAR] = _encode_startup_script(script)
+    return ["-c", _payload_eval_command()], env
 
 # Default Windows shell policy: "Git Bash first, PowerShell as fallback".  The
 # Bash tool is enabled whenever a real bash (typically shipped with Git for
@@ -778,13 +814,19 @@ class Bash(CallableTool2[BashParams]):
                 blocked = self._self_kill_blocked(startup_cmd)
                 if blocked is not None:
                     return blocked
-                encoded = _encode_startup_script(
-                    _with_msystem_neutralized(startup_cmd, self._bash)
+                # The startup script is the full compatibility prelude plus
+                # the initial command — far beyond the MSYS2 argv length
+                # limit — so it always travels in the payload env var.
+                neutralized = _with_msystem_neutralized(startup_cmd, self._bash)
+                startup_env = _bash_subprocess_env()
+                startup_env[_PAYLOAD_ENV_VAR] = _encode_startup_script(
+                    "unset " + _PAYLOAD_ENV_VAR + "\n" + neutralized
                 )
-                bash_args = ["-c", encoded + "; exec bash -i"]
+                bash_args = ["-c", _payload_eval_command() + "; exec bash -i"]
             else:
+                startup_env = _bash_subprocess_env()
                 bash_args = ["-i"]
-            process_task = ProcessTask(self._bash, bash_args, None, _bash_subprocess_env(), append_newline=True)
+            process_task = ProcessTask(self._bash, bash_args, None, startup_env, append_newline=True)
             task_id = await process_task.start(self._session, "bash")
             if process_task.stream is not None:
                 process_task.stream.format_output = functools.partial(
@@ -838,7 +880,10 @@ class Bash(CallableTool2[BashParams]):
         blocked = self._self_kill_blocked(rtk_cmd)
         if blocked is not None:
             return blocked
-        process_task = ProcessTask(self._bash, ["-c", _with_msystem_neutralized(_PIPEFAIL_PREFIX + rtk_cmd, self._bash)], None, _bash_subprocess_env())
+        one_shot_argv, one_shot_env = _bash_argv_env(
+            _with_msystem_neutralized(_PIPEFAIL_PREFIX + rtk_cmd, self._bash)
+        )
+        process_task = ProcessTask(self._bash, one_shot_argv, None, one_shot_env)
         task_id = await process_task.start(self._session, "bash")
         if process_task.stream is not None:
             process_task.stream.format_output = functools.partial(
@@ -1033,10 +1078,24 @@ class Bash(CallableTool2[BashParams]):
         return None
 
     def _prepare_command(self, command: str) -> str | ToolError:
-        """Normalize and add Windows fallbacks, enforcing policy on generated text."""
+        """Normalize and add Windows fallbacks, enforcing policy on generated text.
+
+        Commands the parser flags as having no Windows Git Bash equivalent
+        (``BashFix.unsupported``) are rejected here: the tool returns an error
+        carrying the reason (and the native alternatives) in the message
+        string instead of spawning a process that is guaranteed to fail with
+        a bare "command not found".
+        """
         from kimix.tools.file.bash import shell_common
 
-        prepared = shell_common.prepare_bash_command(command)
+        fix = shell_common.inspect_bash_command(command)
+        if fix.unsupported:
+            return ToolError(
+                output="",
+                message=fix.warning,
+                brief="Unsupported command on Windows",
+            )
+        prepared = fix.command
         forbidden = self._forbidden_error(prepared, display_command=command)
         return forbidden if forbidden is not None else prepared
 
@@ -1139,7 +1198,10 @@ class Bash(CallableTool2[BashParams]):
         blocked = self._self_kill_blocked(rtk_cmd)
         if blocked is not None:
             return blocked
-        process_task = ProcessTask(self._bash, ["-c", _with_msystem_neutralized(rtk_cmd, self._bash)], None, _bash_subprocess_env())
+        background_argv, background_env = _bash_argv_env(
+            _with_msystem_neutralized(rtk_cmd, self._bash)
+        )
+        process_task = ProcessTask(self._bash, background_argv, None, background_env)
         task_id = await process_task.start(self._session, "bash")
         if process_task.stream is not None:
             process_task.stream.format_output = functools.partial(

@@ -46,6 +46,18 @@ def _pwsh_tool() -> Any:
 
 # ── Bash ─────────────────────────────────────────────────────────────────────
 
+def inspect_bash_command(command: str) -> bash_fix.BashFix:
+    """Normalize a raw command and return the full :class:`BashFix` result.
+
+    Same pipeline as :func:`prepare_bash_command` (backslash normalization +
+    native-command fallbacks) but keeps the diagnostics — replacements,
+    path changes, and ``unsupported`` command names with their reasons — so
+    callers can surface them (the Bash tool turns ``unsupported`` into an
+    error message instead of executing a guaranteed "command not found").
+    """
+    return bash_fix.fix_bash_command(_bash_tool()._prepare_bash_cmd(command))
+
+
 def prepare_bash_command(command: str) -> str:
     """Normalize a raw command for ``bash -c`` on Windows Git Bash.
 
@@ -54,7 +66,7 @@ def prepare_bash_command(command: str) -> str:
     (``fix_bash_command``) — the exact pipeline the Bash tool applies to a
     one-shot command before policy checks / RTK rewriting.
     """
-    return bash_fix.fix_bash_command(_bash_tool()._prepare_bash_cmd(command)).command
+    return inspect_bash_command(command).command
 
 
 def bash_argv(command: str, *, login: bool = True) -> tuple[list[str], dict[str, str]]:
