@@ -1,4 +1,6 @@
 import asyncio
+import collections
+import dataclasses
 import inspect
 import io
 import regex as re
@@ -32,11 +34,25 @@ DEFAULT_INACTIVITY_TIMEOUT = 120.0
 # Maximum characters retained in an output buffer before it is rewritten to
 # head 40% + tail 60% with a marker line (see ``bounded_append``).  Read at
 # call time so it stays patchable in tests.
-BACKGROUND_MAX_OUTPUT_CHARS = 200_000
+BACKGROUND_MAX_OUTPUT_CHARS = 2_000_000
 
 # Maximum queued output chunks before the oldest chunk is dropped (see
 # ``bounded_put``).  Read at call time so it stays patchable in tests.
 MAX_QUEUE_CHUNKS = 10_000
+
+# Maximum number of finished-task records retained for post-completion
+# retrieval (see ``record_finished_task``).  The oldest record is evicted
+# once the history exceeds this size, so the history can never hold more
+# than this many entries.  Read at call time so it stays patchable in
+# tests.
+MAX_FINISHED_TASKS = 25
+
+# Guards every finished-task history mutation (store, removal safety net)
+# so the size cap invariant holds even if registry/history calls race
+# across threads.  Lock order: this lock may be held while taking a
+# stream's ``_lock`` (via ``drain_output_sync``); the reverse order never
+# happens, so there is no deadlock cycle.
+_FINISHED_TASKS_LOCK = threading.Lock()
 
 
 def bounded_append(buf: io.StringIO, text: str, cap: int) -> bool:
@@ -91,10 +107,41 @@ def bounded_put(q: queue.Queue[str], text: str, max_chunks: int = MAX_QUEUE_CHUN
     q.put_nowait(text)
 
 
+@dataclasses.dataclass
+class FinishedTask:
+    """Final result of a completed background task.
+
+    Kept in a bounded per-session history so ``job_output`` can still
+    retrieve a job's data after the job left the active task registry.
+    """
+
+    task_id: str
+    """Identifier of the finished task."""
+    output: str
+    """Raw final output captured when the task completed."""
+    processed: str
+    """Output after the owning tool's post-processing (what the caller saw)."""
+    message: str
+    """Explanatory message (e.g. original-output saved suffixes)."""
+    success: bool
+    """Whether the task completed successfully."""
+    exit_code: int | None
+    """Subprocess exit code, when applicable."""
+    elapsed: float | None
+    """Total running time in seconds, when known."""
+    wait_matched: bool | None = None
+    """Last ``wait_for_pattern`` match state, when a wait was requested."""
+    original_path: str | None = None
+    """Path of the exported original output, when one was saved."""
+    finished_at: float = dataclasses.field(default_factory=time.time)
+    """Wall-clock timestamp (``time.time``) of completion."""
+
+
 class TaskData:
     def __init__(self) -> None:
         self.task_names: dict[str, int] = {}
         self.tasks: dict[str, BackgroundStream] = {}
+        self.finished_tasks: collections.OrderedDict[str, FinishedTask] = collections.OrderedDict()
 
 
 def _get_or_add_task_data(session: Session) -> TaskData:
@@ -226,6 +273,29 @@ class BackgroundStream:
         if new_data:
             with self._lock:
                 self._last_output_time = time.monotonic()
+        return self._output.getvalue()
+
+    def drain_output_sync(self) -> str:
+        """Drain queued chunks into the buffer and return the full output.
+
+        Synchronous twin of :meth:`get_output` for callers that cannot await
+        (e.g. task-registry removal).  Only the consumer side touches
+        ``_output``, so this is safe to call while the producer thread is
+        still alive.
+        """
+        if self._queue is not None:
+            new_data = False
+            while True:
+                try:
+                    chunk = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                if bounded_append(self._output, chunk, BACKGROUND_MAX_OUTPUT_CHARS):
+                    self._output_truncated = True
+                new_data = True
+            if new_data:
+                with self._lock:
+                    self._last_output_time = time.monotonic()
         return self._output.getvalue()
 
     async def pop_output(self) -> str:
@@ -410,17 +480,94 @@ def remove_task_id(session: Session, task_id: str) -> BackgroundStream | None:
     task_id = task_id.strip()
     """Remove a task_id from the session task registry.
 
+    The task's final output is preserved in the bounded finished-task
+    history (unless the caller already stored a record for it), so a later
+    ``job_output`` call can still retrieve the job's data instead of
+    getting a "not found" dead-end.
+
     Args:
         session: The session instance.
         task_id: The task identifier to remove.
+
+    Returns:
+        The removed BackgroundStream, or None if it was not registered.
     """
     try:
         data = _get_task_data(session)
         if data is not None:
-            data.tasks.pop(task_id)
+            # The pop and the safety-net store must be atomic vs concurrent
+            # record_finished_task calls (same _FINISHED_TASKS_LOCK) so a
+            # rich record is never overwritten by a best-effort one and the
+            # size cap always holds.
+            with _FINISHED_TASKS_LOCK:
+                stream = data.tasks.pop(task_id)
+                if task_id not in data.finished_tasks:
+                    _store_finished_locked(
+                        data, _record_from_stream(task_id, stream)
+                    )
+            return stream
     except KeyError:
         pass
     return None
+
+
+def _record_from_stream(task_id: str, stream: BackgroundStream) -> FinishedTask:
+    """Build a best-effort history record from a stream's retained output.
+
+    Called when a task is dropped from the active registry without an
+    explicitly recorded result; whatever output is still buffered is kept
+    so later retrieval does not hit a "not found" dead-end.
+    """
+    output = stream.drain_output_sync()
+    return FinishedTask(
+        task_id=task_id,
+        output=output,
+        processed=output,
+        message="",
+        success=stream._success,
+        exit_code=stream._exit_code,
+        elapsed=stream._process_elapsed,
+    )
+
+
+def _store_finished_locked(data: TaskData, record: FinishedTask) -> None:
+    """Store a finished-task record; caller must hold ``_FINISHED_TASKS_LOCK``.
+
+    Invariants (atomic under the lock):
+
+    - after insertion the history never exceeds ``MAX_FINISHED_TASKS``
+      entries — the oldest entries are evicted first, so the bounded
+      history cannot grow without limit (no memory leak);
+    - re-inserting an existing id refreshes its recency and fields.
+    """
+    data.finished_tasks.pop(record.task_id, None)
+    data.finished_tasks[record.task_id] = record
+    while len(data.finished_tasks) > MAX_FINISHED_TASKS:
+        data.finished_tasks.popitem(last=False)
+
+
+def _store_finished(data: TaskData, record: FinishedTask) -> None:
+    """Locked wrapper around :func:`_store_finished_locked`."""
+    with _FINISHED_TASKS_LOCK:
+        _store_finished_locked(data, record)
+
+
+def record_finished_task(session: Session, record: FinishedTask) -> None:
+    """Store a finished-task record in the session history.
+
+    Oldest records are released so the history never exceeds
+    ``MAX_FINISHED_TASKS`` entries.
+    """
+    _store_finished(_get_or_add_task_data(session), record)
+
+
+def get_finished_task(session: Session, task_id: str) -> FinishedTask | None:
+    """Return the finished-task record for *task_id*, or None."""
+    data = _get_task_data(session)
+    if data is None:
+        return None
+    with _FINISHED_TASKS_LOCK:
+        return data.finished_tasks.get(task_id.strip())
 
 
 def add_task(session: Session, task_id: str, stream: BackgroundStream) -> None:

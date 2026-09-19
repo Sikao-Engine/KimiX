@@ -17,6 +17,7 @@ from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
 
 from kimi_agent_sdk import ToolError, ToolOk
+from kimix.tools.background import TaskOutput, TaskOutputParams
 from kimix.tools.background.utils import TaskData, _pop_task_data, get_all_tasks
 from kimix.tools.common import _env_with_rg_bin_path
 from kimix.tools.file.bash import (
@@ -3366,6 +3367,79 @@ class TestBashInactivityTimeout:
         assert isinstance(result, ToolError)
         assert result.brief == "Timeout"
         assert 2.5 <= elapsed <= 4.0
+
+
+@pytest.mark.skipif(
+    not BASH_AVAILABLE,
+    reason="Bash tool is not available on this platform",
+)
+class TestBashFinishedJobHistory:
+    """End-to-end: a finished background bash job stays retrievable via job_output.
+
+    Regression coverage for the reported bug where the first ``job_output``
+    read of a completed task dropped it from the active registry, and a
+    second read answered ``Task '<id>' not found``.
+    """
+
+    @staticmethod
+    def _task_id_of(result: ToolOk) -> str:
+        import re
+
+        match = re.search(r"task_id: `([^`]+)`", result.output)
+        assert match is not None, f"no task_id in: {result.output}"
+        return match.group(1)
+
+    async def test_failed_background_job_readable_after_first_completed_get(
+        self, mock_session: MagicMock
+    ) -> None:
+        bash = Bash(session=mock_session)
+        started = await bash(
+            BashParams(cmd="echo line1; echo 'error: something broke'; exit 1", mode="send")
+        )
+        assert isinstance(started, ToolOk)
+        task_id = self._task_id_of(started)
+
+        to = TaskOutput(session=mock_session)
+        # Wait until the command has finished.
+        done = await to(TaskOutputParams(job_id=task_id, wait=True, timeout=30))
+        assert done.is_error  # exit code 1 → failed
+        assert "not found" not in done.message
+
+        # First completed get: reports the failure (and records history).
+        first = await to(TaskOutputParams(job_id=task_id, action="get"))
+        assert first.is_error
+        assert "not found" not in first.message
+
+        # Second get — previously "not found", now served from history.
+        second = await to(
+            TaskOutputParams(job_id=task_id, wait_for_pattern="error: something")
+        )
+        assert second.is_error  # the underlying command still failed
+        assert "not found" not in second.message
+        assert "not found" not in second.output
+        assert "error: something broke" in second.output
+        assert "wait_matched: true" in second.output
+        assert "finished-task history" in second.output
+
+    async def test_successful_background_job_readable_after_first_completed_get(
+        self, mock_session: MagicMock
+    ) -> None:
+        bash = Bash(session=mock_session)
+        started = await bash(BashParams(cmd="echo hello_world", mode="send"))
+        assert isinstance(started, ToolOk)
+        task_id = self._task_id_of(started)
+
+        to = TaskOutput(session=mock_session)
+        done = await to(TaskOutputParams(job_id=task_id, wait=True, timeout=30))
+        assert not done.is_error
+
+        # The wait above already completed and deregistered the task; the next
+        # read must come from the finished-task history.
+        again = await to(TaskOutputParams(job_id=task_id, action="get"))
+        assert not again.is_error
+        assert "not found" not in again.message
+        assert "hello_world" in again.output
+        assert "finished-task history" in again.output
 
 
 @pytest.mark.skipif(

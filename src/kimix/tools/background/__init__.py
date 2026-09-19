@@ -8,7 +8,18 @@ from pydantic import AliasChoices, BaseModel, Field, model_validator
 from typing import Literal
 from kimi_cli.session import Session
 
-from .utils import generate_task_id, remove_task_id, add_task, get_all_tasks, BackgroundStream, discard_all_tasks
+from .utils import (
+    MAX_FINISHED_TASKS,
+    BackgroundStream,
+    FinishedTask,
+    add_task,
+    discard_all_tasks,
+    generate_task_id,
+    get_all_tasks,
+    get_finished_task,
+    record_finished_task,
+    remove_task_id,
+)
 from kimix.tools.common import _maybe_export_output_async, _maybe_export_rtk_original_async, _original_saved_message
 from kimix.tools.prompt_common import accepts_alias_text, wait_for_pattern_field
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock
@@ -91,7 +102,9 @@ class TaskOutput(CallableTool2):
         "Read a background job. Stream jobs return only output since the "
         "previous read; final-output jobs return their result after settlement. "
         "Every response ends with `[status: ...]`. Reads are non-blocking "
-        "unless `wait: true`, which waits up to the configured cap."
+        "unless `wait: true`, which waits up to the configured cap. "
+        f"Jobs that already finished stay retrievable from a history of the "
+        f"last {MAX_FINISHED_TASKS} completed jobs."
     )
     params: type[BaseModel] = TaskOutputParams
 
@@ -171,8 +184,14 @@ class TaskOutput(CallableTool2):
 
     async def _kill_task(self, tasks: dict, params: TaskOutputParams) -> ToolReturnValue:
         """Kill a specific task and return its final output."""
-        stream: BackgroundStream | None = tasks.get(params.job_id.strip())
+        job_id = params.job_id.strip()
+        stream: BackgroundStream | None = tasks.get(job_id)
         if stream is None:
+            record = get_finished_task(self._session, job_id)
+            if record is not None:
+                # Already finished (and already removed from the active
+                # registry): serve the saved result instead of a dead-end.
+                return await self._get_history_output(record, params)
             started = [tid for tid, s in tasks.items() if await s.is_started()]
             if not started:
                 return ToolError(
@@ -189,12 +208,21 @@ class TaskOutput(CallableTool2):
 
         await stream.stop()
         output = await stream.pop_output()
-        remove_task_id(self._session, params.job_id.strip())
 
         processed, message, original_path, _output_path, _output_truncated = await self._process_completed_output(
             stream, output, None
         )
         success = await stream.success()
+        record_finished_task(self._session, FinishedTask(
+            task_id=job_id,
+            output=output,
+            processed=processed,
+            message=message,
+            success=success,
+            exit_code=stream.exit_code,
+            elapsed=stream.process_elapsed,
+        ))
+        remove_task_id(self._session, job_id)
         if not success:
             elapsed = stream.process_elapsed
             if elapsed is not None:
@@ -238,10 +266,75 @@ class TaskOutput(CallableTool2):
         message = _original_saved_message(rtk_original_path)
         return processed, message, rtk_original_path, None, False
 
+    async def _get_history_output(
+        self, record: FinishedTask, params: TaskOutputParams
+    ) -> ToolReturnValue:
+        """Serve a finished task's saved result from the history queue.
+
+        Applies the caller's ``wait_for_pattern`` (matched against the saved
+        raw output) and ``output_path`` (the saved raw output is exported)
+        so a history read behaves like a read of the live completed task.
+        """
+        job_id = record.task_id
+        wait_matched: bool | None = None
+        if params.wait_for_pattern is not None:
+            try:
+                pattern = re.compile(params.wait_for_pattern)
+            except re.error as exc:
+                return ToolError(
+                    message=f"Invalid wait_for_pattern: {exc}",
+                    output="",
+                    brief="Invalid pattern",
+                )
+            wait_matched = pattern.search(record.output) is not None
+
+        if params.output_path:
+            from pathlib import Path
+            import anyio
+            path = Path(params.output_path)
+            async with await anyio.open_file(path, 'w', encoding='utf-8') as f:
+                await f.write(record.output)
+            display_path = str(path).replace("\\", "/")
+            output_text = f"output exported to file `{display_path}`"
+        else:
+            output_text = record.processed if record.processed else "(no output)"
+
+        if wait_matched is not None:
+            output_text += f"\nwait_matched: {str(wait_matched).lower()}"
+        if record.elapsed is not None:
+            output_text += f"\n[Process completed in {record.elapsed:.2f}s]"
+        output_text += "\n[retrieved from finished-task history]"
+
+        kind = job_id.split("_")[0] if "_" in job_id else "task"
+        display_block = BackgroundTaskDisplayBlock(
+            task_id=job_id,
+            kind=kind,
+            status="completed",
+            description=output_text[:200] if output_text else "(no output)",
+        )
+        if not record.success:
+            return ToolError(
+                message=record.message,
+                output=output_text,
+                brief=f"Task '{job_id}' failed",
+            )
+        return ToolOk(
+            output=output_text,
+            message=record.message,
+            brief=f"Task '{job_id}' (finished)",
+            display_block=display_block,
+        )
+
     async def _get_output(self, tasks: dict, params: TaskOutputParams) -> ToolReturnValue:
         """Get output from a specific task."""
-        stream: BackgroundStream | None = tasks.get(params.job_id.strip())
+        job_id = params.job_id.strip()
+        stream: BackgroundStream | None = tasks.get(job_id)
         if stream is None:
+            record = get_finished_task(self._session, job_id)
+            if record is not None:
+                # Already finished (and already removed from the active
+                # registry): serve the saved result instead of a dead-end.
+                return await self._get_history_output(record, params)
             started = [tid for tid, s in tasks.items() if await s.is_started()]
             if not started:
                 return ToolError(
@@ -292,11 +385,26 @@ class TaskOutput(CallableTool2):
             output = await stream.pop_output()
 
         if not task_alive:
-            remove_task_id(self._session, params.job_id.strip())
             processed, message, original_path, _output_path, _output_truncated = await self._process_completed_output(
                 stream, output, wait_matched
             )
-            if not await stream.success():
+            success = await stream.success()
+            # Keep the final result in the bounded finished-task history so
+            # later job_output calls can retrieve it again after the task
+            # leaves the active registry.
+            record_finished_task(self._session, FinishedTask(
+                task_id=job_id,
+                output=output,
+                processed=processed,
+                message=message,
+                success=success,
+                exit_code=stream.exit_code,
+                elapsed=stream.process_elapsed,
+                wait_matched=wait_matched,
+                original_path=original_path,
+            ))
+            remove_task_id(self._session, job_id)
+            if not success:
                 elapsed = stream.process_elapsed
                 if elapsed is not None:
                     message += f" ({elapsed:.1f}s)"
@@ -380,4 +488,7 @@ __all__ = [
     "remove_task_id",
     "add_task",
     "get_all_tasks",
+    "FinishedTask",
+    "record_finished_task",
+    "get_finished_task",
 ]

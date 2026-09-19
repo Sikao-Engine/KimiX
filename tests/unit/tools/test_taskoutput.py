@@ -4,6 +4,11 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 from kimix.tools.background import TaskOutput, TaskOutputParams
+from kimix.tools.background.utils import (
+    BackgroundStream,
+    _get_or_add_task_data,
+    add_task,
+)
 
 
 # ── Timeout units: canonical seconds, legacy timeout_ms alias ────────────
@@ -238,4 +243,169 @@ class TestTaskOutputFormatterCallback:
         assert "failed [command saved to y]" in result.message
         assert "processed output" in result.output
         stream.format_output.assert_awaited_once_with("raw output", False, 0, 1.23, None)
+
+
+# ── Finished-task history: completed jobs stay retrievable ────────────────
+
+
+class TestTaskOutputFinishedHistory:
+    """A job that already finished must remain retrievable via job_output.
+
+    Regression coverage for the reported bug: the first ``job_output`` read of
+    a completed task removed it from the active registry, so a second read
+    returned ``Task 'bash_23' not found`` even though the data existed.
+    """
+
+    @staticmethod
+    def _register(mock_session: MagicMock, task_id: str, stream: BackgroundStream) -> None:
+        add_task(mock_session, task_id, stream)
+
+    @staticmethod
+    async def _run_to_completion(stream: BackgroundStream, failed: bool = False) -> None:
+        def worker(q) -> None:
+            q.put("line1\nerror: something broke\nline2\n")
+
+        await stream.start(worker, stop_function=lambda: None)
+        await stream.wait()
+        if failed:
+            # Simulate a non-zero exit after the thread finished.
+            stream._success = False
+            stream._exit_code = 1
+
+    async def test_second_read_of_failed_task_comes_from_history(
+        self, mock_session: MagicMock
+    ) -> None:
+        to = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+        await self._run_to_completion(stream, failed=True)
+        self._register(mock_session, "bash_23", stream)
+
+        # First read: task is completed+failed, returns the failure output and
+        # (previously) dropped the task from the registry.
+        first = await to(TaskOutputParams(job_id="bash_23", action="get"))
+        assert first.is_error
+        assert "error: something broke" in first.output
+
+        # Second read (e.g. with wait_for_pattern to grep the failure): must be
+        # served from the finished-task history, not "not found".
+        second = await to(
+            TaskOutputParams(job_id="bash_23", wait_for_pattern="error: something")
+        )
+        assert second.is_error  # the underlying task still failed
+        assert "not found" not in second.message
+        assert "not found" not in second.output
+        assert "error: something broke" in second.output
+        assert "wait_matched: true" in second.output
+        assert "finished-task history" in second.output
+
+    async def test_second_read_of_successful_task_comes_from_history(
+        self, mock_session: MagicMock
+    ) -> None:
+        to = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+        await self._run_to_completion(stream)
+        self._register(mock_session, "bash_23", stream)
+
+        first = await to(TaskOutputParams(job_id="bash_23", action="get"))
+        assert not first.is_error
+        assert "line1" in first.output
+
+        second = await to(TaskOutputParams(job_id="bash_23", action="get"))
+        assert not second.is_error
+        assert "not found" not in second.message
+        assert "line1" in second.output
+        assert "error: something broke" in second.output
+        assert "finished-task history" in second.output
+
+    async def test_history_read_wait_for_pattern_no_match(
+        self, mock_session: MagicMock
+    ) -> None:
+        to = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+        await self._run_to_completion(stream)
+        self._register(mock_session, "bash_23", stream)
+
+        await to(TaskOutputParams(job_id="bash_23", action="get"))
+        second = await to(TaskOutputParams(job_id="bash_23", wait_for_pattern="zzz_no_match"))
+
+        assert not second.is_error
+        assert "wait_matched: false" in second.output
+
+    async def test_history_read_invalid_pattern_returns_tool_error(
+        self, mock_session: MagicMock
+    ) -> None:
+        to = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+        await self._run_to_completion(stream)
+        self._register(mock_session, "bash_23", stream)
+
+        await to(TaskOutputParams(job_id="bash_23", action="get"))
+        second = await to(TaskOutputParams(job_id="bash_23", wait_for_pattern="["))
+
+        assert second.is_error
+        assert "Invalid wait_for_pattern" in second.message
+
+    async def test_history_read_exports_output_path(
+        self, mock_session: MagicMock, tmp_path
+    ) -> None:
+        to = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+        await self._run_to_completion(stream)
+        self._register(mock_session, "bash_23", stream)
+
+        await to(TaskOutputParams(job_id="bash_23", action="get"))
+        out_file = tmp_path / "history_output.txt"
+        second = await to(TaskOutputParams(job_id="bash_23", output_path=str(out_file)))
+
+        assert not second.is_error
+        assert "output exported to file" in second.output
+        assert "error: something broke" in out_file.read_text(encoding="utf-8")
+
+    async def test_kill_of_already_finished_task_comes_from_history(
+        self, mock_session: MagicMock
+    ) -> None:
+        to = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+        await self._run_to_completion(stream)
+        self._register(mock_session, "bash_23", stream)
+
+        # Consume the completed task so it is removed from the registry.
+        await to(TaskOutputParams(job_id="bash_23", action="get"))
+
+        killed = await to(TaskOutputParams(job_id="bash_23", action="kill"))
+        assert not killed.is_error
+        assert "not found" not in killed.message
+        assert "line1" in killed.output
+        assert "finished-task history" in killed.output
+
+    async def test_unknown_task_still_not_found(self, mock_session: MagicMock) -> None:
+        to = TaskOutput(session=mock_session)
+        result = await to(TaskOutputParams(job_id="never_existed"))
+        assert result.is_error
+        # With an empty registry the legacy message is "No running task".
+        assert "not found" in result.message or "No running task" in result.message
+        assert "finished-task history" not in result.output
+
+    async def test_task_removed_by_originating_tool_comes_from_history(
+        self, mock_session: MagicMock
+    ) -> None:
+        """Tasks dropped via remove_task_id (e.g. bash/python tools) stay retrievable."""
+        from kimix.tools.background.utils import remove_task_id
+
+        to = TaskOutput(session=mock_session)
+        stream = BackgroundStream()
+        await self._run_to_completion(stream, failed=True)
+        self._register(mock_session, "bash_23", stream)
+
+        # The originating tool drops the task from the registry without going
+        # through job_output (mirrors bash_tool.py: remove_task_id runs before
+        # the final pop_output, so the buffered output is captured by the
+        # removal safety net).
+        remove_task_id(mock_session, "bash_23")
+
+        result = await to(TaskOutputParams(job_id="bash_23", action="get"))
+        assert result.is_error  # the task failed
+        assert "not found" not in result.message
+        assert "line1" in result.output
+        assert "finished-task history" in result.output
 

@@ -13,6 +13,7 @@ import pytest
 
 from kimix.tools.background.utils import (
     BackgroundStream,
+    FinishedTask,
     TaskData,
     _get_or_add_task_data,
     _get_task_data,
@@ -23,7 +24,9 @@ from kimix.tools.background.utils import (
     discard_all_tasks,
     generate_task_id,
     get_all_tasks,
+    get_finished_task,
     join_task,
+    record_finished_task,
     remove_task_id,
 )
 
@@ -551,6 +554,149 @@ async def test_discard_all_tasks(mock_session: MagicMock) -> None:
 async def test_discard_all_tasks_no_data(mock_session: MagicMock) -> None:
     # should not raise
     await discard_all_tasks(mock_session)
+
+
+# ---------------------------------------------------------------------------
+# Finished-task history (record / get / eviction / removal safety net)
+# ---------------------------------------------------------------------------
+
+
+def _make_record(task_id: str, output: str = "out", success: bool = True) -> FinishedTask:
+    return FinishedTask(
+        task_id=task_id,
+        output=output,
+        processed=output,
+        message="",
+        success=success,
+        exit_code=0 if success else 1,
+        elapsed=1.0,
+    )
+
+
+def test_record_and_get_finished_task(mock_session: MagicMock) -> None:
+    record = _make_record("bash_1", output="hello")
+    record_finished_task(mock_session, record)
+    assert get_finished_task(mock_session, "bash_1") is record
+    # Unknown ids return None.
+    assert get_finished_task(mock_session, "missing") is None
+    # Missing session data returns None instead of raising.
+    empty_session = MagicMock()
+    empty_session.custom_data = {}
+    assert get_finished_task(empty_session, "bash_1") is None
+
+
+def test_finished_history_evicts_oldest(
+    mock_session: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("kimix.tools.background.utils.MAX_FINISHED_TASKS", 3)
+    for i in range(5):
+        record_finished_task(mock_session, _make_record(f"t{i}"))
+    data = _get_task_data(mock_session)
+    assert data is not None
+    assert list(data.finished_tasks.keys()) == ["t2", "t3", "t4"]
+    assert get_finished_task(mock_session, "t0") is None
+    assert get_finished_task(mock_session, "t1") is None
+
+
+def test_finished_history_rerecording_refreshes_recency(
+    mock_session: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("kimix.tools.background.utils.MAX_FINISHED_TASKS", 3)
+    for i in range(3):
+        record_finished_task(mock_session, _make_record(f"t{i}"))
+    # Re-record t0: it becomes the most recent ([t1, t2, t0]), so t1 is the
+    # oldest and gets evicted when t3 arrives.
+    record_finished_task(mock_session, _make_record("t0", output="updated"))
+    record_finished_task(mock_session, _make_record("t3"))
+    data = _get_task_data(mock_session)
+    assert data is not None
+    assert list(data.finished_tasks.keys()) == ["t2", "t0", "t3"]
+    assert get_finished_task(mock_session, "t0").output == "updated"
+
+
+async def test_remove_task_id_records_history_safety_net(
+    mock_session: MagicMock, stream: BackgroundStream
+) -> None:
+    """Dropping a task from the registry preserves its buffered output."""
+
+    def worker(q: queue.Queue[str]) -> None:
+        q.put("kept-output")
+
+    add_task(mock_session, "t1", stream)
+    await stream.start(worker, stop_function=lambda: None)
+    await stream.wait()
+
+    removed = remove_task_id(mock_session, "t1")
+    assert removed is stream
+    record = get_finished_task(mock_session, "t1")
+    assert record is not None
+    assert record.task_id == "t1"
+    assert record.output == "kept-output"
+    assert record.processed == "kept-output"
+    assert record.success is True
+
+
+def test_remove_task_id_does_not_overwrite_explicit_record(
+    mock_session: MagicMock, stream: BackgroundStream
+) -> None:
+    """A rich record stored by job_output wins over the removal safety net."""
+    add_task(mock_session, "t1", stream)
+    record_finished_task(mock_session, _make_record("t1", output="rich-output"))
+    remove_task_id(mock_session, "t1")
+    assert get_finished_task(mock_session, "t1").output == "rich-output"
+
+
+def test_remove_task_id_missing_records_nothing(mock_session: MagicMock) -> None:
+    # should not raise, and no history entry is created
+    assert remove_task_id(mock_session, "missing") is None
+    assert get_finished_task(mock_session, "missing") is None
+
+
+def test_finished_history_size_never_exceeds_cap(
+    mock_session: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The history is hard-capped: it can never hold more entries than allowed."""
+    monkeypatch.setattr("kimix.tools.background.utils.MAX_FINISHED_TASKS", 5)
+    for i in range(20):
+        record_finished_task(mock_session, _make_record(f"t{i}"))
+        data = _get_task_data(mock_session)
+        assert data is not None
+        assert len(data.finished_tasks) <= 5
+    data = _get_task_data(mock_session)
+    assert data is not None
+    assert list(data.finished_tasks.keys()) == ["t15", "t16", "t17", "t18", "t19"]
+
+
+def test_finished_history_concurrent_mutation_respects_cap(
+    mock_session: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Hammer the history from many threads; the cap must always hold."""
+    monkeypatch.setattr("kimix.tools.background.utils.MAX_FINISHED_TASKS", 16)
+    data = _get_or_add_task_data(mock_session)  # stable shared TaskData
+    threads: list[threading.Thread] = []
+
+    def record_many(offset: int) -> None:
+        for i in range(25):
+            record_finished_task(mock_session, _make_record(f"t{offset + i}"))
+
+    def remove_some(offset: int) -> None:
+        for i in range(10):
+            stream = BackgroundStream()
+            add_task(mock_session, f"r{offset + i}", stream)
+            remove_task_id(mock_session, f"r{offset + i}")
+
+    for n in range(4):
+        threads.append(threading.Thread(target=record_many, args=(n * 100,)))
+        threads.append(threading.Thread(target=remove_some, args=(n * 100,)))
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(data.finished_tasks) <= 16
+    # Safety-net records from remove_some carry the stream's (empty) output.
+    for rec in data.finished_tasks.values():
+        assert rec.task_id in data.finished_tasks
 
 
 # ---------------------------------------------------------------------------
