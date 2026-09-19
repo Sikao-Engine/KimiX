@@ -7,7 +7,7 @@ import regex as re
 import time
 import uuid
 import weakref
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -189,6 +189,13 @@ def _is_final_text_block(message: Message | None) -> bool:
     with tool calls or reasoning. Empty messages and messages whose last
     meaningful part is a ``ThinkPart`` or ``ToolCall`` are rejected so the
     soul can force a continuation.
+
+    Trailing *empty* content blocks (empty ``ThinkPart``/``TextPart``, see
+    :func:`_is_empty_content_block`) are ignored: some OpenAI-compatible
+    backends interleave empty ``reasoning_content``/text deltas with real
+    deltas (see :func:`_EmptyPartFilteredChatProvider`), and the stream-merge
+    logic can leave a zero-length part after the final text block. Such a
+    part carries no content and must not trip the text-block gate.
     """
     if message is None:
         return False
@@ -197,10 +204,159 @@ def _is_final_text_block(message: Message | None) -> bool:
         return False
     if not parts:
         return False
-    last_part = parts[-1]
+    # Skip trailing empty content blocks when locating the last meaningful part.
+    last_part = None
+    for part in reversed(parts):
+        if _is_empty_content_block(part):
+            continue
+        last_part = part
+        break
     if isinstance(last_part, TextPart) and last_part.text.strip():
         return True
     return False
+
+
+def _is_empty_content_block(part: Any) -> bool:
+    """True for a streamed message part that carries **no visible content**.
+
+    Covers *every* empty string-bearing block, so the soul is robust to
+    backends that emit empty placeholders between real deltas (not just
+    ``ThinkPart``):
+
+    * ``ThinkPart``  — empty ``think`` **and** no ``encrypted`` payload.
+    * ``TextPart``   — empty ``text``.
+    * ``ToolCallPart`` — empty/``None`` ``arguments_part``.
+
+    ``ToolCall`` headers are *never* treated as empty even when their
+    ``arguments`` is ``None``/``""``: that is the standard OpenAI shape for
+    the first streamed chunk of a tool call (name present, arguments stream
+    in afterwards via ``ToolCallPart``). Dropping such a header would delete
+    the whole tool call.
+
+    Why this matters: some OpenAI-compatible backends (e.g. scnet/Qwen in
+    thinking mode) interleave ``reasoning_content: ""`` deltas between text
+    *and* between streamed tool-call argument chunks. The provider layer
+    intentionally preserves present-but-empty reasoning fields as empty
+    ``ThinkPart``(s) so the field round-trips for backends that require it
+    (Moonshot). But an empty block landing mid-stream breaks
+    :func:`kosong._generate.generate`'s single-``pending_part`` merge chain
+    (an empty part cannot merge into the pending ``ToolCall``/``TextPart``),
+    so it force-flushes the pending part early — truncating tool-call
+    arguments or dropping them entirely (→ ``{}``), and fragmenting text.
+    It also makes the CLI print a spurious ``[Think]`` banner per empty
+    delta. Filter these blocks out of the *stream* (before merging) to fix
+    both. Encrypted think parts (opaque provider signatures) are never
+    filtered — they must pass through.
+    """
+    from kosong.message import TextPart as _TextPart
+    from kosong.message import ThinkPart as _ThinkPart
+    from kosong.message import ToolCallPart as _ToolCallPart
+
+    if isinstance(part, _ThinkPart):
+        return not part.think and not part.encrypted
+    if isinstance(part, _TextPart):
+        return part.text == ""
+    if isinstance(part, _ToolCallPart):
+        return not part.arguments_part
+    return False
+
+
+async def _aiter_without_empty_parts(
+    stream: Any,
+) -> AsyncIterator[Any]:
+    """Yield every streamed part except empty content blocks.
+
+    See :func:`_is_empty_content_block` for what counts as empty and why
+    those parts are dropped.
+    """
+    async for part in stream:
+        if _is_empty_content_block(part):
+            continue
+        yield part
+
+
+class _EmptyPartFilteredStreamedMessage:
+    """Adapter hiding empty content blocks from a provider stream.
+
+    Wraps a kosong ``StreamedMessage`` (duck-typed: ``__aiter__`` + ``id`` /
+    ``usage`` properties) so the empty-part filter runs *inside* the async
+    iteration — i.e. before :func:`kosong._generate.generate` merges the
+    stream. That is what fixes the tool-call argument corruption, which a
+    display-path-only filter (``on_message_part``) cannot reach.
+    """
+
+    def __init__(self, original: Any) -> None:
+        self._original = original
+
+    def __aiter__(self) -> AsyncIterator[Any]:
+        return _aiter_without_empty_parts(self._original)
+
+    @property
+    def id(self) -> str | None:
+        return self._original.id
+
+    @property
+    def usage(self) -> Any:
+        return self._original.usage
+
+
+class _EmptyPartFilteredChatProvider:
+    """Delegating provider that hides empty content blocks from its stream.
+
+    Forwards every attribute to the wrapped provider (``model_name``,
+    ``thinking_effort``, private ``_generation_kwargs`` the retry path
+    mutates, ``with_thinking`` / ``with_generation_kwargs`` results, …) via
+    :meth:`__getattr__`, overriding only :meth:`generate` to wrap the
+    returned stream in :class:`_EmptyPartFilteredStreamedMessage`. The
+    provider's *back-pass* serialization (``_convert_message``) is
+    unaffected: it keys off the message ``content`` list, which never
+    carries the filtered-out empty stream deltas.
+    """
+
+    def __init__(self, inner: Any) -> None:
+        object.__setattr__(self, "_inner", inner)
+
+    def __getattr__(self, name: str) -> Any:
+        # __getattr__ only fires for names not found normally, so _inner and
+        # generate resolve without recursion; everything else delegates.
+        return getattr(object.__getattribute__(self, "_inner"), name)
+
+    async def generate(self, system_prompt: str, tools: Any, history: Any) -> Any:
+        inner = object.__getattribute__(self, "_inner")
+        stream = await inner.generate(system_prompt, tools, history)
+        return _EmptyPartFilteredStreamedMessage(stream)
+
+
+def _make_empty_part_filtering_callback(
+    on_message_part: Callable[[Any], Any] | None,
+) -> Callable[[Any], Any] | None:
+    """Wrap ``on_message_part`` to drop empty content blocks before forwarding.
+
+    The stream-level filter already removes empty parts, so this is a
+    belt-and-suspenders guard ensuring the *wire* never sees an empty
+    ``[Think]``/text block even if the stream wrapper is bypassed (e.g. a
+    future refactor routes a different provider). Preserves sync/async
+    callback shape transparently.
+    """
+    if on_message_part is None:
+        return None
+    import inspect
+
+    def _forward(part: Any) -> Any:
+        if _is_empty_content_block(part):
+            return None
+        result = on_message_part(part)
+        return result
+
+    if inspect.iscoroutinefunction(on_message_part):
+
+        async def _afwd(part: Any) -> Any:
+            if _is_empty_content_block(part):
+                return None
+            return await on_message_part(part)
+
+        return _afwd
+    return _forward
 
 
 def _message_has_reasoning(message: Message | None) -> bool:
@@ -1426,7 +1582,7 @@ class KimiSoul:
                     else None
                 )
 
-                # ── Text-block gate (LLM-service protection) ───────────────────
+                # ── Text-block gate (LLM-service protection), disabled ───────────────────
                 # Do not let the turn end on an empty message, a reasoning-only
                 # block, or a tool call. When this happens (often caused by a
                 # truncated stream after tool execution), force another step
@@ -1439,58 +1595,58 @@ class KimiSoul:
                 # runs at the start of every ``_step`` (2e.2a) and would remove a
                 # reminder before the LLM ever sees it, silently defeating this
                 # gate and letting the turn end on an empty message.
-                if (
-                    step_outcome.stop_reason == "no_tool_calls"
-                    and not _is_final_text_block(final_message)
-                ):
-                    if continuation_rounds < _MAX_TEXT_BLOCK_CONTINUATION_ROUNDS:
-                        continuation_rounds += 1
-                        logger.info(
-                            "Turn would end without a plain text block "
-                            "(continuation {round}/{max_rounds}); forcing another step",
-                            round=continuation_rounds,
-                            max_rounds=_MAX_TEXT_BLOCK_CONTINUATION_ROUNDS,
-                        )
-                        wire_send(
-                            TextPart(
-                                text="\n[Continue] The previous response did not end with a plain text block. Continuing...\n"
-                            )
-                        )
-                        await self._context.append_message(
-                            Message(
-                                role="user",
-                                content=[
-                                    TextPart(
-                                        text=(
-                                            "The previous response did not end with a plain text block. "
-                                            "Continue and finish with a plain text block summarizing what was done. "
-                                            "No trailing tool calls or reasoning."
-                                        )
-                                    )
-                                ],
-                            )
-                        )
-                        continue
-                    logger.warning(
-                        "Turn still ends without a plain text block after "
-                        "{max_rounds} continuation attempts; giving up",
-                        max_rounds=_MAX_TEXT_BLOCK_CONTINUATION_ROUNDS,
-                    )
-                    # Never end the turn without a plain text answer.  If the
-                    # model keeps refusing to emit text even after the
-                    # continuation rounds, synthesize a fallback that names the
-                    # original user requirement.
-                    fallback_text = _synthesize_loop_recovery_text(
-                        self._current_turn_user_text
-                        or "<original user request is not available in this context>"
-                    )
-                    fallback_message = Message(
-                        role="assistant",
-                        content=[TextPart(text=fallback_text)],
-                    )
-                    await self._context.append_message(fallback_message)
-                    wire_send(TextPart(text=fallback_text))
-                    final_message = fallback_message
+                # if (
+                #     step_outcome.stop_reason == "no_tool_calls"
+                #     and not _is_final_text_block(final_message)
+                # ):
+                #     if continuation_rounds < _MAX_TEXT_BLOCK_CONTINUATION_ROUNDS:
+                #         continuation_rounds += 1
+                #         logger.info(
+                #             "Turn would end without a plain text block "
+                #             "(continuation {round}/{max_rounds}); forcing another step",
+                #             round=continuation_rounds,
+                #             max_rounds=_MAX_TEXT_BLOCK_CONTINUATION_ROUNDS,
+                #         )
+                #         wire_send(
+                #             TextPart(
+                #                 text="\n[Continue] The previous response did not end with a plain text block. Continuing...\n"
+                #             )
+                #         )
+                #         await self._context.append_message(
+                #             Message(
+                #                 role="user",
+                #                 content=[
+                #                     TextPart(
+                #                         text=(
+                #                             "The previous response did not end with a plain text block. "
+                #                             "Continue and finish with a plain text block summarizing what was done. "
+                #                             "No trailing tool calls or reasoning."
+                #                         )
+                #                     )
+                #                 ],
+                #             )
+                #         )
+                #         continue
+                #     logger.warning(
+                #         "Turn still ends without a plain text block after "
+                #         "{max_rounds} continuation attempts; giving up",
+                #         max_rounds=_MAX_TEXT_BLOCK_CONTINUATION_ROUNDS,
+                #     )
+                #     # Never end the turn without a plain text answer.  If the
+                #     # model keeps refusing to emit text even after the
+                #     # continuation rounds, synthesize a fallback that names the
+                #     # original user requirement.
+                #     fallback_text = _synthesize_loop_recovery_text(
+                #         self._current_turn_user_text
+                #         or "<original user request is not available in this context>"
+                #     )
+                #     fallback_message = Message(
+                #         role="assistant",
+                #         content=[TextPart(text=fallback_text)],
+                #     )
+                #     await self._context.append_message(fallback_message)
+                #     wire_send(TextPart(text=fallback_text))
+                #     final_message = fallback_message
 
                 return TurnOutcome(
                     stop_reason=(
@@ -1707,12 +1863,21 @@ class KimiSoul:
                 attempt=step_attempt,
             )
             # run an LLM step (may be interrupted)
+            #
+            # Wrap the provider so empty content blocks (empty
+            # reasoning/text/tool-call-arg deltas some backends interleave
+            # mid-stream — see _is_empty_content_block) are filtered out of
+            # the stream *before* kosong.generate merges it. This fixes both
+            # the spurious [Think] print spam and — critically — tool-call
+            # argument truncation/dropping (arguments arriving as "{" then
+            # cut off, yielding invalid/empty tool args).
+            filtered_provider = _EmptyPartFilteredChatProvider(chat_provider)
             return await kosong.step(
-                chat_provider,
+                filtered_provider,
                 system_prompt,
                 self._agent.toolset,
                 effective_history,
-                on_message_part=wire_send,
+                on_message_part=_make_empty_part_filtering_callback(wire_send),
                 on_tool_result=wire_send,
             )
 
