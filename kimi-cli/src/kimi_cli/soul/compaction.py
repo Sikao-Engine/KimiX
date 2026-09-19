@@ -19,6 +19,7 @@ from kimi_cli.session_state import TodoItemState, format_todo_injection
 from kimi_cli.soul.compaction_ledger import CompactionLedger, CompactionRecord
 from kimi_cli.soul.llm_request_recorder import LLMRequestRecorder
 from kimi_cli.soul.message import system
+from kimi_cli.soul.stream_filter import _EmptyPartFilteredChatProvider
 from kimi_cli.soul.tool_pairing import balanced_cut_indices, nearest_balanced_cut_before
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.tokens import count_message_tokens
@@ -527,6 +528,13 @@ class SimpleCompaction:
                 )
 
         surface_before = _surface_fingerprint(messages)
+        # Filter empty content blocks (empty reasoning/text/tool-call-arg
+        # deltas some OpenAI-compatible backends interleave mid-stream) out
+        # of the compaction LLM stream before kosong merges it — the same
+        # defense as the main agent step (see kimi_cli.soul.stream_filter).
+        # Without it, a single empty delta splits the summary into fragments
+        # or drops content entirely.
+        filtered_provider = _EmptyPartFilteredChatProvider(llm.chat_provider)
         try:
             if (
                 aligned_system_prompt is not None
@@ -550,7 +558,7 @@ class SimpleCompaction:
                         dropped_count=len(messages) - len(to_preserve),
                     )
                 result = await kosong.generate(
-                    chat_provider=llm.chat_provider,
+                    chat_provider=filtered_provider,
                     system_prompt=aligned_system_prompt,
                     tools=list(aligned_tools or []),
                     history=history,
@@ -571,7 +579,7 @@ class SimpleCompaction:
                         dropped_count=len(messages) - len(to_preserve),
                     )
                 result = await kosong.step(
-                    chat_provider=llm.chat_provider,
+                    chat_provider=filtered_provider,
                     system_prompt=system_prompt,
                     toolset=toolset,
                     history=[compact_message],

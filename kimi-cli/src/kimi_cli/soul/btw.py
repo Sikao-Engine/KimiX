@@ -21,6 +21,7 @@ from kosong.tooling import Tool, ToolError, ToolResult
 from kimi_cli.soul import LLMNotSet, wire_send
 from kimi_cli.soul.dynamic_injection import normalize_history
 from kimi_cli.soul.message import strip_system_reminders, system_reminder
+from kimi_cli.soul.stream_filter import _EmptyPartFilteredChatProvider
 from kimi_cli.utils.logging import logger
 from kimi_cli.wire.types import BtwBegin, BtwEnd, TextPart
 
@@ -135,6 +136,11 @@ async def execute_side_question(
             return None, "LLM is not set."
 
         chat_provider = soul._runtime.llm.chat_provider  # pyright: ignore[reportPrivateUsage]
+        # Filter empty content blocks (empty reasoning/text deltas some
+        # OpenAI-compatible backends interleave mid-stream) before kosong
+        # merges the stream — same defense as the main agent step and
+        # compaction (see kimi_cli.soul.stream_filter).
+        filtered_provider = _EmptyPartFilteredChatProvider(chat_provider)
         system_prompt, history, toolset = _build_btw_context(soul, question)
 
         text_chunks: list[str] = []
@@ -148,7 +154,7 @@ async def execute_side_question(
         # Multi-turn loop: give the LLM a second chance if it calls tools
         for turn in range(_BTW_MAX_TURNS):
             result = await kosong.step(
-                chat_provider,
+                filtered_provider,
                 system_prompt,
                 toolset,
                 history,
