@@ -68,9 +68,6 @@ from kimi_cli.soul.stream_filter import (
     # deltas.  Re-exported here for backward compatibility (existing imports
     # and tests reference ``kimisoul._...``).
     _EmptyPartFilteredChatProvider,
-    _EmptyPartFilteredStreamedMessage,
-    _aiter_without_empty_parts,
-    _is_async_callable,
     _is_empty_content_block,
     _make_empty_part_filtering_callback,
 )
@@ -78,7 +75,7 @@ from kimi_cli.soul.context_overflow import (
     OverflowRecoveryState,
     is_context_overflow_error,
 )
-from kimi_cli.soul.context_pruning import ContextPruner, is_pruned_stub
+from kimi_cli.soul.context_pruning import ContextPruner
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.dynamic_injection import (
     DynamicInjection,
@@ -102,7 +99,6 @@ from kimi_cli.soul.message import (
 )
 from kimi_cli.soul import slash as soul_slash
 from kimi_cli.soul.toolset import KimiToolset
-from kimi_cli.tools.context_prune import context_prune
 from kimi_cli.tools.todo import Todo, TodoList
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.export import perform_export

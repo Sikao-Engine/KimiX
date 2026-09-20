@@ -13,8 +13,6 @@ from kimi_cli.tools.file.read import Params as ReadFileParams, ReadFile
 from kimi_cli.tools.file.read_profiles import (
     is_cpuprofile_path,
     is_sample_profile_path,
-    render_cpu_profile,
-    render_sample_profile,
 )
 
 import pytest

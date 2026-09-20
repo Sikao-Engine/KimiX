@@ -7,7 +7,6 @@ compression / data-URL delivery pipeline as ``read_image``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 from kosong.tooling import ToolError, ToolOk, ToolReturnValue
 
@@ -23,7 +22,6 @@ from kimi_cli.wire.types import ImageURLPart, TextPart
 from .read_media_shared import (
     ImageDelivery,
     build_image_delivery_limit_error,
-    build_media_note,
     to_data_url,
 )
 

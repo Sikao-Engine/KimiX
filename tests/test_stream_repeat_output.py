@@ -12,7 +12,7 @@ import asyncio
 import queue
 import time
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -21,8 +21,6 @@ from kimix.tools.background.utils import (
     _pop_task_data,
 )
 
-from kimix.tools.background import TaskOutput
-from kimix.tools.common import ProcessTask
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import pytest
 
 # Import the module directly to avoid the bash_tool.py Python 3.14 issue
 _MODULE_PATH = Path(__file__).parent.parent / "src" / "kimix" / "tools" / "file" / "bash" / "process_pwsh.py"

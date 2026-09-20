@@ -49,7 +49,6 @@ from .glob import (
     _is_unsafe_recursive_pattern,
 )
 from .read_archive import (
-    ARCHIVE_EXTENSIONS,
     ArchiveReader,
     format_archive_listing,
     is_archive_path,

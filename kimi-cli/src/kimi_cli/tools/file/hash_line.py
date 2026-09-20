@@ -30,7 +30,6 @@ from kimi_cli.vfs import VFS
 from .auto_generated import assert_editable_file_content
 from .fs_cache import invalidate_fs_scan_after_write
 from .snapshot_store import (
-    canonical_snapshot_key,
     get_file_snapshot_store,
     record_content_snapshot,
 )

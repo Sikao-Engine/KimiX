@@ -28,7 +28,6 @@ from kimi_cli.tools.web.fetch import Params as FetchParams
 from kimi_cli.tools.web.fetch import fetch_url
 from kimi_cli.tools.web.providers import (
     BraveFreeProvider,
-    DDGSProvider,
     ExaProvider,
     FirecrawlProvider,
     KimiServiceProvider,

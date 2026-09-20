@@ -1435,7 +1435,9 @@ class TodoUpdateParams(BaseModel):
             "One or more update operations. Each item has the same shape as a single "
             "todo_update call (title, status, notes, rename_to, parent, fuzzy, force, complete). "
             "Use this to batch multiple lightweight edits in one call. When provided, "
-            "top-level title/status/notes/rename_to/complete must not be used."
+            "top-level title/status/notes/rename_to/complete must not be used. "
+            "Accepts a list of items, a single item, a bare title string, or a JSON "
+            "string encoding any of those forms (bare strings default to pending)."
         ),
     )
 
@@ -1468,6 +1470,18 @@ class TodoUpdateParams(BaseModel):
             return None
         if isinstance(v, TodoUpdateItem):
             return [v]
+        if isinstance(v, str):
+            # Models often serialize the whole batch as a JSON string (valid or
+            # broken); repair and re-dispatch, mirroring todo_write's `todos`.
+            # A non-JSON string is taken as a bare title (toolset-level repair
+            # maps it to a single pending item the same way).
+            parsed = repair_json_string(v)
+            if parsed is None:
+                stripped = v.strip()
+                if not stripped:
+                    raise ValueError("updates title string cannot be empty")
+                return [TodoUpdateItem(title=stripped)]
+            return cls._validate_updates(parsed)
         if isinstance(v, dict):
             return [TodoUpdateItem.model_validate(v)]
         if isinstance(v, list):
@@ -1483,13 +1497,23 @@ class TodoUpdateParams(BaseModel):
                         msg = _first_pydantic_message(exc)
                         raise ValueError(f"Invalid update at index {idx}: {msg}") from exc
                     continue
+                if isinstance(item, str):
+                    # Bare title in a batch (e.g. updates=["A", "B"]): a title-only
+                    # item, matching the toolset-level repair semantics.
+                    try:
+                        out.append(TodoUpdateItem(title=item))
+                    except ValidationError as exc:
+                        msg = _first_pydantic_message(exc)
+                        raise ValueError(f"Invalid update at index {idx}: {msg}") from exc
+                    continue
                 raise ValueError(
-                    f"Invalid update at index {idx}: expected a dict or TodoUpdateItem, "
-                    f"got {type(item).__name__}"
+                    f"Invalid update at index {idx}: expected a dict, TodoUpdateItem, "
+                    f"or title string, got {type(item).__name__}"
                 )
             return out
         raise ValueError(
-            "updates must be a list of updates, a single update dict/object, or None"
+            "updates must be a list of updates, a single update dict/object, "
+            "a bare title string, a JSON string of those forms, or None"
         )
 
     @model_validator(mode="after")

@@ -9,7 +9,7 @@ import apsw
 import pytest
 
 from kaos.path import KaosPath
-from kosong.tooling import ToolOk, ToolError
+from kosong.tooling import ToolOk
 
 from kimi_cli.tools.file.read import Params as ReadFileParams, ReadFile
 from kimi_cli.tools.file.read_sqlite import validate_where, WhereValidationError

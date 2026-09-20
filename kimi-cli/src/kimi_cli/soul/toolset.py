@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Callable, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Callable, Literal, overload
 
 from kosong.tooling import (
     CallableTool,
@@ -76,9 +76,6 @@ if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
 
     from kimi_cli.mcp.client import MCPClient
-    from kimi_cli.mcp.prompts import MCPPromptManager
-    from kimi_cli.mcp.resources import MCPResourceManager
-    from kimi_cli.mcp.roots import MCPRootsHandler
     from kimi_cli.soul.agent import Runtime
 
 current_tool_call = ContextVar[ToolCall | None]("current_tool_call", default=None)

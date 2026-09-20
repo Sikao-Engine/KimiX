@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
 
 from kimi_cli.session import Session
 from kimi_cli.tools.file.snapshot_store import (

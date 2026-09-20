@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import functools
 import inspect
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 

@@ -8,7 +8,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
 
 from kimi_cli.tools.file.check_fmt import (
     check_json_text,
@@ -16,7 +15,6 @@ from kimi_cli.tools.file.check_fmt import (
     check_xml_text,
     check_yaml_text,
 )
-from kimi_cli.utils.logging import logger
 
 
 def source_parses(text: str, file_path: str | Path) -> bool:

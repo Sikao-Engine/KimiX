@@ -1,6 +1,5 @@
 """Tests for prompt_str utilities."""
 
-import pytest
 from unittest.mock import patch
 from kimix.utils.prompt_str import (
     escape_file_paths,

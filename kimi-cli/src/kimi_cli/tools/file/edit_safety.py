@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 from kimi_cli.session import Session
-from kimi_cli.tools.display import DisplayBlock
 from kimi_cli.tools.file.auto_repair import (
     CompleteFn,
-    EditAutoRepairOutcome,
     attempt_edit_auto_repair,
 )
 from kimi_cli.tools.file.blackbox import (

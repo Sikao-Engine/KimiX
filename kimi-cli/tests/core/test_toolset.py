@@ -17,7 +17,6 @@ from kimi_cli.soul.toolset import (
     _DIFF_ARGS_REMINDER_TEXT_1,
     _DIFF_ARGS_WARN_THRESHOLDS,
     _PLATFORM_REDIRECTS_NORM,
-    _TURN_TOTAL_REMINDER_INTERVAL,
     _TURN_TOTAL_REMINDER_START,
     KimiToolset,
     _build_platform_redirects,

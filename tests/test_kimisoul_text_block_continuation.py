@@ -4,7 +4,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from kimi_cli.llm import ALL_MODEL_CAPABILITIES, LLM
 from kimi_cli.soul import run_soul
 from kimi_cli.soul.agent import Agent
 from kimi_cli.soul.context import Context

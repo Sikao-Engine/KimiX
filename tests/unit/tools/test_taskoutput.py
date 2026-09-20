@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 from kimix.tools.background import TaskOutput, TaskOutputParams
 from kimix.tools.background.utils import (
     BackgroundStream,
-    _get_or_add_task_data,
     add_task,
 )
 

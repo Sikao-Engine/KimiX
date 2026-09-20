@@ -11,7 +11,7 @@ from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
-from kimi_cli.wire.types import StepBegin, StepInterrupted, TextPart, TurnBegin, TurnEnd
+from kimi_cli.wire.types import StepBegin, StepInterrupted, TurnBegin, TurnEnd
 
 
 @pytest.fixture

@@ -8,7 +8,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from kaos.path import KaosPath
-from kosong.tooling import ToolError
 
 from kimi_cli.tools.file.read import Params as ReadFileParams, ReadFile
 

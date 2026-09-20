@@ -1,7 +1,6 @@
 """Shared fixtures for tool unit/integration/regression tests."""
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -120,14 +119,13 @@ def mock_soul() -> MagicMock:
 @pytest.fixture
 def running_task(mock_session: MagicMock) -> str:
     """Register a mock running background task and return its ID."""
-    from unittest.mock import AsyncMock
     from kimix.tools.background.utils import add_task, BackgroundStream
 
     stream = BackgroundStream()
     stream._started = True
 
     async def fake_worker(q: Any) -> tuple[bool, int | None]:
-        import queue, time
+        import time
         q.put("partial output")
         time.sleep(30)
         return True, 0

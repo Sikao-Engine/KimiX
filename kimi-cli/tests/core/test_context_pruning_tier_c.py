@@ -9,7 +9,6 @@ the protected-set / Tier-B-exclusion guards.
 
 from __future__ import annotations
 
-import pytest
 from kosong.message import Message
 
 from kimi_cli.soul.context_pruning import (

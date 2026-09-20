@@ -10,7 +10,6 @@ import pytest
 
 from kimi_cli.tools.file.grep_archive import (
     MAX_ARCHIVE_MEMBER_BYTES,
-    MAX_ARCHIVE_TOTAL_BYTES,
     materialize_archive_members,
     parse_archive_path_candidates,
     read_archive_member_bytes,

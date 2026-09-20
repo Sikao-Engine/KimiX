@@ -560,6 +560,102 @@ class TestTodoUpdateMultiple:
             TodoUpdateParams(title="A", updates=[{"title": "B"}])
 
 
+class TestTodoUpdateBatchStringForms:
+    """`updates` accepts JSON-string and bare-title shorthand forms so a whole
+    batch of edits still lands in one call when the model mis-serializes it
+    (mirroring todo_write's `todos` string repair)."""
+
+    async def test_updates_as_json_string_batch(self, runtime: Runtime) -> None:
+        lst = TodoList(runtime)
+        update = todo_update(runtime)
+        await lst(
+            Params(
+                todos=[
+                    Todo(content="A", status="pending"),
+                    Todo(content="B", status="pending"),
+                ]
+            )
+        )
+
+        res = await update.call(
+            {
+                "updates": '[{"title": "A", "status": "done"}, '
+                '{"title": "B", "status": "in_progress"}]'
+            }
+        )
+        assert not res.is_error
+        assert _find_todo(update, "A").status == "done"
+        assert _find_todo(update, "B").status == "in_progress"
+        assert 'Updated "A" (status=done)' in res.output
+        assert 'Updated "B" (status=in_progress)' in res.output
+
+    async def test_updates_as_broken_json_string(self, runtime: Runtime) -> None:
+        lst = TodoList(runtime)
+        update = todo_update(runtime)
+        await lst(
+            Params(
+                todos=[
+                    Todo(content="A", status="pending"),
+                    Todo(content="B", status="pending"),
+                ]
+            )
+        )
+
+        res = await update.call(
+            {"updates": '[{"title": "A", "status": "done",}, {"title": "B",},]'}
+        )
+        assert not res.is_error
+        assert _find_todo(update, "A").status == "done"
+        assert _find_todo(update, "B").status == "pending"
+
+    async def test_updates_as_single_json_dict_string(self, runtime: Runtime) -> None:
+        lst = TodoList(runtime)
+        update = todo_update(runtime)
+        await lst(Params(todos=[Todo(content="A", status="pending")]))
+
+        res = await update.call({"updates": '{"title": "A", "status": "done"}'})
+        assert not res.is_error
+        assert _find_todo(update, "A").status == "done"
+
+    async def test_updates_as_bare_title_string(self, runtime: Runtime) -> None:
+        lst = TodoList(runtime)
+        update = todo_update(runtime)
+        await lst(Params(todos=[Todo(content="Fix the bug", status="pending")]))
+
+        res = await update.call({"updates": "Fix the bug"})
+        assert not res.is_error
+        assert _find_todo(update, "Fix the bug") is not None
+
+    async def test_updates_list_with_bare_string_titles(self, runtime: Runtime) -> None:
+        lst = TodoList(runtime)
+        update = todo_update(runtime)
+        await lst(
+            Params(
+                todos=[
+                    Todo(content="A", status="pending"),
+                    Todo(content="B", status="pending"),
+                ]
+            )
+        )
+
+        res = await update(
+            TodoUpdateParams(
+                updates=[{"title": "A", "status": "done"}, "B"],
+            )
+        )
+        assert not res.is_error
+        assert _find_todo(update, "A").status == "done"
+        assert _find_todo(update, "B").status == "pending"
+
+    def test_updates_whitespace_string_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            TodoUpdateParams(updates="   ")
+
+    def test_updates_unsupported_type_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            TodoUpdateParams(updates=123)
+
+
 class TestTodoUpdateContentAlias:
     """`content` is accepted as an alias for `title` so todo_write-style items
     ({content, status, notes}) can be reused in todo_update — single and batch."""

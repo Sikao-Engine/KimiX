@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from kosong.message import Message
 
@@ -11,13 +10,12 @@ from kimi_cli.notifications.llm import is_notification_message
 from kimi_cli.soul.message import (
     coalesce_tool_metadata,
     is_system_reminder_message,
-    system,
 )
 from kimi_cli.tools.file.micro_compress import (
     MicroCompressConfig,
     compress as _mc_compress,
 )
-from kimi_cli.utils.tokens import count_message_tokens, count_tokens
+from kimi_cli.utils.tokens import count_message_tokens
 from kimi_cli.wire.types import ContentPart, TextPart
 
 

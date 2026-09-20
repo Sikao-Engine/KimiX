@@ -1,9 +1,7 @@
 """Unit tests for Context, TaskNode, DAG, TopologicalSorter, and utilities."""
 from __future__ import annotations
 
-import asyncio
 import threading
-from typing import Any
 
 import pytest
 from kimix.dag import (
@@ -11,7 +9,6 @@ from kimix.dag import (
     Context,
     CycleError,
     DAGValidationError,
-    ExecutionError,
     TaskNode,
     TopologicalSorter,
     detect_cycle,

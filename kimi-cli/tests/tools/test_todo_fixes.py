@@ -17,7 +17,6 @@ tools are instantiated directly as ``TodoList(runtime)`` / ``todo_update(runtime
 
 from __future__ import annotations
 
-import pytest
 
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.todo import (

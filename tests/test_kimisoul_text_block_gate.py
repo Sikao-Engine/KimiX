@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from kosong.message import Message, TextPart, ThinkPart, ToolCall
 
 from kimi_cli.soul.kimisoul import _is_final_text_block

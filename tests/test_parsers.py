@@ -13,9 +13,7 @@ from kimix.parser import (
     PascalParser,
     LispParser,
     SqlParser,
-    Comment,
     ParseResult,
-    BaseParser,
 )
 
 EXAMPLES_DIR = Path(__file__).parent / "parser" / "examples"

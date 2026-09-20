@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Literal
 
 from kaos.path import KaosPath
 from kosong.tooling import ToolError, ToolReturnValue
@@ -14,7 +13,7 @@ from kimi_cli.tools.file import FileActions
 from kimi_cli.tools.file.edit.params import EditMode, EditParams
 from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
 from kimi_cli.utils.diff import build_diff_blocks
-from kimi_cli.utils.path import is_within_directory, kaos_path_from_tool_input
+from kimi_cli.utils.path import kaos_path_from_tool_input
 
 from ..base import BaseEditTool
 

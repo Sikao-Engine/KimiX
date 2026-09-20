@@ -34,7 +34,6 @@ from kimi_cli.wire.types import ApprovalRequest, ApprovalResponse, ContentPart, 
 
 if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
-    from kimi_cli.mcp.config import discover_mcp_configs
 
 
 def __getattr__(name: str) -> Any:

@@ -6,10 +6,8 @@ from inline_snapshot import snapshot
 
 from tests_e2e.wire_helpers import (
     build_ask_user_tool_call,
-    build_approval_response,
     build_question_response,
     build_todo_call,
-    build_shell_tool_call,
     collect_until_request,
     collect_until_response,
     make_home_dir,
@@ -20,7 +18,6 @@ from tests_e2e.wire_helpers import (
     start_wire,
     summarize_messages,
     write_scripted_config,
-    write_shell_agent_file,
 )
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from kaos.path import KaosPath
 
 from kimi_cli.tools.file import EditFile
 from kimi_cli.tools.file.edit.params import EditParams, ReplaceEditItem

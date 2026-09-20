@@ -7,14 +7,11 @@ rar, and epub are left for a later phase.
 
 from __future__ import annotations
 
-import io
-import os
 import tarfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import regex as re
 
 __all__ = [
     "ARCHIVE_EXTENSIONS",

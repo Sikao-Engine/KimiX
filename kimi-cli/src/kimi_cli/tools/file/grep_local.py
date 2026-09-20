@@ -12,7 +12,6 @@ import os
 import platform
 import regex as re
 import shlex
-import stat
 import tempfile
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -38,7 +37,6 @@ from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from kimi_cli._ripgrep_common import (
     RG_VERSION,
-    RG_BASE_URL,
     _detect_rg_target,
     _extract_rg_archive,
     _rg_archive_name,

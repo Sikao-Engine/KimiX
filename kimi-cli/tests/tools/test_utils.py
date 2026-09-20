@@ -1,6 +1,5 @@
 """Tests for shared tool utilities."""
 
-import pytest
 from pydantic import BaseModel
 
 from kimi_cli.tools.utils import repair_json_string, repair_tool_arguments

@@ -3,9 +3,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 from kimi_cli.tools.todo import Params as TodoListParams
-from kimi_cli.tools.todo import Todo, TodoList
+from kimi_cli.tools.todo import Todo
 
 
 class TestTodoListSingleInProgress:

@@ -5,7 +5,6 @@ import threading
 import time
 from typing import Any
 
-import pytest
 
 from kimix.dag import DAG, Context, Executor, TaskNode
 

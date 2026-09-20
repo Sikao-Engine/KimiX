@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
-import pytest
 
 from kimi_cli.session import Session
 from kimi_cli.tools.file.snapshot_store import (
     SNAPSHOT_MAX_BYTES,
-    STORE_MAX_ENTRIES,
     EditSnapshotStore,
     canonical_snapshot_key,
     get_edit_snapshot_store,

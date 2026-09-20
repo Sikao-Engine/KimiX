@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal, Union
 
-from kosong.tooling import ToolError, alias_note
+from kosong.tooling import alias_note
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 EditMode = Literal["replace", "sloppy"]

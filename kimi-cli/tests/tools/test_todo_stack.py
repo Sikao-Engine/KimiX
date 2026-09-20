@@ -22,7 +22,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import orjson
-import pytest
 
 from kimi_cli.session_state import (
     TODO_INJECTION_HEADER,
@@ -32,7 +31,6 @@ from kimi_cli.session_state import (
 )
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.dynamic_injections.todo_reminder import TodoReminderProvider
-from kimi_cli.tools.display import TodoDisplayBlock
 from kimi_cli.tools.todo import (
     Params,
     Todo,

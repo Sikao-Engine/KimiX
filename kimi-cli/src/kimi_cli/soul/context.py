@@ -6,7 +6,7 @@ import regex as re
 import orjson
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import aiofiles
 import aiofiles.os

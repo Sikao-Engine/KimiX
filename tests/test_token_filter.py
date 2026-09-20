@@ -8,7 +8,6 @@ import pytest
 
 from kimix.tools.common import (
     _dedup_output,
-    _display_temp_path,
     _is_known_rtk_command,
     _maybe_export_rtk_original_async,
     _maybe_rewrite_shell_command_with_rtk,

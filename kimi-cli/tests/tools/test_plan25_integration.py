@@ -11,7 +11,6 @@ Covers:
 
 from __future__ import annotations
 
-import pytest
 from kaos.path import KaosPath
 
 from kimi_cli.session import Session

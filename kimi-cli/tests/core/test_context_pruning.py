@@ -5,11 +5,8 @@ import pytest
 from kosong.message import Message
 
 
-from kimi_cli.notifications.llm import build_notification_message
 from kimi_cli.soul.context_pruning import (
     ContextPruner,
-    ElidedRecord,
-    PruningResult,
     _compute_protected_indices,
     _is_active_task_snapshot_message,
     _is_dmail_notice_message,

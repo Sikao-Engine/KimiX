@@ -19,7 +19,6 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-import httpx
 
 OUT_DIR = Path(__file__).parent / "probe_out"
 OUT_DIR.mkdir(exist_ok=True)

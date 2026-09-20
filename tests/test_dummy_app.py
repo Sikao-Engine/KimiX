@@ -6,10 +6,8 @@ and verifies that DummySessionManager methods are actually invoked.
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
-from typing import Any, Dict, List
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -17,7 +15,7 @@ import pytest
 from starlette.testclient import TestClient
 
 from kimix.server.dummy_app import create_app, session_manager
-from kimix.server.dummy_session_manager import DummySessionManager, SessionInfo
+from kimix.server.dummy_session_manager import SessionInfo
 
 _RESULT_FILE = Path(__file__).parent / "test_result.txt"
 

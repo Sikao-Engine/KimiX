@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import orjson
-import pytest
 from kaos.path import KaosPath
 
 from kimi_cli.session import Session

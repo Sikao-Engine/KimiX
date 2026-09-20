@@ -70,13 +70,12 @@ from kimi_cli.wire.types import ImageURLPart, TextPart, VideoURLPart
 
 from .read_media_shared import (
     ImageDelivery as _ImageDelivery,
-    build_image_delivery_limit_error,
     build_media_note,
     to_data_url as _to_data_url,
 )
 
 if TYPE_CHECKING:
-    from kosong.chat_provider.kimi import Kimi
+    pass
 
 MAX_MEDIA_MEGABYTES = 100
 

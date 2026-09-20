@@ -6,7 +6,6 @@ Existing plan-04 tests live above; marker strings are assembled at runtime.
 from __future__ import annotations
 
 import pytest
-from kaos.path import KaosPath
 
 from kimi_cli.tools.file import EditFile
 from kimi_cli.tools.file.conflict_detect import get_conflict_history

@@ -2,7 +2,6 @@
 """A sample Python module with various comment styles."""
 
 # This is a line comment
-import os  # inline comment
 
 '''
 A block string used as a comment

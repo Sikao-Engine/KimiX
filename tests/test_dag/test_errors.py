@@ -1,8 +1,6 @@
 """Error handling tests: cycles, failures, propagation, cancellation."""
 from __future__ import annotations
 
-import time
-from typing import Any
 
 import pytest
 
@@ -10,7 +8,6 @@ from kimix.dag import (
     DAG,
     Context,
     CycleError,
-    DAGValidationError,
     DependencyError,
     ExecutionError,
     Executor,

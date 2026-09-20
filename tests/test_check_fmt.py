@@ -1,9 +1,7 @@
 """Tests for kimix.tools.check_fmt JSON/XML validation functions."""
 
-import json
 from pathlib import Path
 
-import pytest
 
 from kimix.tools.check_fmt import check_json, check_json_str
 

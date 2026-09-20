@@ -13,7 +13,7 @@ from kaos.path import KaosPath
 from kosong.chat_provider.mock import MockChatProvider
 
 from kimi_cli.background import BackgroundTaskManager
-from kimi_cli.config import Config, get_default_config
+from kimi_cli.config import get_default_config
 from kimi_cli.llm import ALL_MODEL_CAPABILITIES, LLM
 from kimi_cli.metadata import WorkDirMeta
 from kimi_cli.notifications import NotificationManager

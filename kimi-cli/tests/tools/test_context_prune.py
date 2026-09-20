@@ -13,7 +13,7 @@ from kimi_cli.soul.context import Context
 from kimi_cli.soul.context_pruning import ContextPruner
 from kimi_cli.soul.history_index import HistoryIndex
 from kimi_cli.tools.context_prune import context_prune, Params
-from kimi_cli.wire.types import StatusUpdate, TextPart, ThinkPart
+from kimi_cli.wire.types import TextPart, ThinkPart
 
 
 def _make_soul(tmp_path: Path, **overrides: Any) -> SimpleNamespace:

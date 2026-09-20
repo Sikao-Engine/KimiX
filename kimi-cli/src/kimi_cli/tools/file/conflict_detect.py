@@ -12,8 +12,8 @@ helper), so read/write/edit can all share it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal, Sequence
 
 import regex as re
 

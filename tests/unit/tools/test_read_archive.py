@@ -18,7 +18,6 @@ from kimi_cli.tools.file.read import Params as ReadFileParams, ReadFile
 from kimi_cli.tools.file.read_archive import (
     ArchiveReader,
     MAX_ARCHIVE_MEMBER_BYTES,
-    MAX_ARCHIVE_TOTAL_BYTES,
     normalize_member_path,
 )
 

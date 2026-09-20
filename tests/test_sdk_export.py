@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import orjson
-import pendulum
 import pytest
 from kaos.path import KaosPath
 from kosong.message import Message, TextPart, ThinkPart, ToolCall

@@ -156,7 +156,7 @@ class HistoryIndex:
     # ------------------------------------------------------------------
 
     def _init_legacy_state(self) -> None:
-        from kimix.retrieval import InvertedIndex, NgramTokenizer, Searcher
+        from kimix.retrieval import InvertedIndex, NgramTokenizer
 
         self._index = InvertedIndex()
         self._tokenizer = NgramTokenizer(n=2)

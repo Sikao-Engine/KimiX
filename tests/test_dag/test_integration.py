@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import time
-from typing import Any
 
-import pytest
 
-from kimix.dag import DAG, Context, ExecutionError, Executor, TaskNode
+from kimix.dag import DAG, Context, Executor, TaskNode
 
 from tests.test_dag.conftest import make_adder, make_slow_task, async_add_one
 

@@ -10,9 +10,7 @@ Tests cover:
 
 import os
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -28,7 +26,6 @@ from kimix.tools.common import (
     _extract_content_from_malformed,
     _extract_and_save_long_param,
     _build_long_param_retry_msg,
-    _create_script_file,
     _temp_folder,
 )
 

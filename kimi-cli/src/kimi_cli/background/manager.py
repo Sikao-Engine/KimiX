@@ -7,7 +7,6 @@ import subprocess
 import sys
 import time
 import pendulum
-from collections.abc import Coroutine
 from typing import TYPE_CHECKING, Any
 
 from kaos.local import local_kaos

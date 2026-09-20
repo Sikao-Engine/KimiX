@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from kimi_cli.tools.file.output_utils import (
     DEFAULT_MAX_LINES,

@@ -12,7 +12,7 @@ from typing import Literal
 
 import pybase64
 
-from kimi_cli.utils.image_compress import CropRegion, format_byte_size, IMAGE_BYTE_BUDGET
+from kimi_cli.utils.image_compress import CropRegion, format_byte_size
 
 __all__ = [
     "ImageDelivery",
