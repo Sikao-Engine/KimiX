@@ -5,13 +5,12 @@ import contextlib
 import ntpath
 import os
 import platform
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Literal
 
-import kaos
 from kaos.path import KaosPath
 
 if sys.platform == "win32":
@@ -126,27 +125,20 @@ class Environment:
             await asyncio.to_thread(refresh_windows_env)
             candidates: list[tuple[str, KaosPath]] = []
 
+            # Shell discovery is a pure PATH scan (``_which_all``) instead of
+            # spawning ``where.exe``: each ``where.exe`` invocation costs tens
+            # of milliseconds on Windows and this whole routine runs on every
+            # session creation — including ``/clear``, which recreates the CLI.
+            #
             # 1. pwsh
-            try:
-                proc = await kaos.exec("where.exe", "pwsh")
-                out = await asyncio.create_task(proc.stdout.read())
-                if await proc.wait() == 0:
-                    p = out.decode("utf-8").strip().splitlines()[0]
-                    if p:
-                        candidates.append(("pwsh", KaosPath(p)))
-            except Exception:
-                pass
+            pwsh_path = _which_first("pwsh")
+            if pwsh_path:
+                candidates.append(("pwsh", KaosPath(pwsh_path)))
 
             # 2. powershell
-            try:
-                proc = await kaos.exec("where.exe", "powershell")
-                out = await asyncio.create_task(proc.stdout.read())
-                if await proc.wait() == 0:
-                    p = out.decode("utf-8").strip().splitlines()[0]
-                    if p:
-                        candidates.append(("powershell", KaosPath(p)))
-            except Exception:
-                pass
+            powershell_path = _which_first("powershell")
+            if powershell_path:
+                candidates.append(("powershell", KaosPath(powershell_path)))
 
             # 3. git bash
             with contextlib.suppress(GitBashNotFoundError):
@@ -267,14 +259,91 @@ def refresh_windows_env() -> None:
 refresh_env_from_registry = refresh_windows_env
 
 
+# ── PATH lookups ─────────────────────────────────────────────────────────
+
+_DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD"
+"""Fallback ``PATHEXT`` used when the environment does not define one."""
+
+
+def _which_all(exe: str, path: str | None = None) -> list[str]:
+    """Return every PATH match for *exe*, preserving PATH order.
+
+    Pure-Python replacement for ``where.exe``. Spawning ``where.exe`` costs
+    tens of milliseconds per call on Windows and ``Environment.detect()``
+    runs on every session creation (session start, ``/clear``, subagents),
+    so paying for three subprocesses there is pure overhead. Scanning PATH
+    ourselves is effectively free and keeps the "check every match"
+    semantics the git-bash resolution relies on (e.g. a broken Scoop shim
+    shadowing the real Git for Windows install).
+
+    The scan is memoized on the effective PATH/PATHEXT so the repeated
+    lookups done by :meth:`Environment.detect` cost nothing after the first
+    one. Both are part of the key, so a change (e.g. a tool installed while
+    the process is running, picked up by ``refresh_windows_env``) naturally
+    invalidates the entry.
+    """
+    if path is None:
+        path = os.environ.get("PATH", "")
+    pathext = os.environ.get("PATHEXT") or _DEFAULT_PATHEXT
+    return list(_which_all_cached(exe, path, pathext))
+
+
+@lru_cache(maxsize=64)
+def _which_all_cached(exe: str, path: str, pathext: str) -> tuple[str, ...]:
+    if not path:
+        return ()
+
+    # Build the candidate file names: ``pwsh`` -> ``pwsh.com``, ``pwsh.exe``, ...
+    # PATHEXT entries are always separated by ``;`` (it is a Windows variable),
+    # even when we are running the scan on another host in a test.
+    extensions = [ext.lower() for ext in pathext.split(";") if ext]
+    names = [f"{exe}{ext}" for ext in extensions]
+    names.append(exe)
+
+    matches: list[str] = []
+    seen: set[str] = set()
+    for directory in path.split(os.pathsep):
+        directory = directory.strip().strip('"')
+        if not directory:
+            continue
+        for name in names:
+            candidate = os.path.join(directory, name)
+            key = os.path.normcase(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            if os.path.isfile(candidate):
+                matches.append(candidate)
+                break
+    return tuple(matches)
+
+
+def _which_first(exe: str, path: str | None = None) -> str | None:
+    """Return the first PATH match for *exe*, or ``None``."""
+    matches = _which_all(exe, path)
+    return matches[0] if matches else None
+
+
+# ── Git bash resolution ──────────────────────────────────────────────────
+
+_GIT_BASH_ANCESTOR_DEPTH = 6
+"""How many directory levels above ``git.exe`` to probe for a bash sibling."""
+
+
 async def _find_git_bash_path() -> KaosPath:
     """Locate ``bash.exe`` from Git for Windows.
 
     Resolution order:
       1. ``KIMI_CLI_GIT_BASH_PATH`` environment variable (validated to exist).
-      2. ``where.exe git`` -> ``<gitDir>/../bin/bash.exe``.
-      3. ``git --exec-path`` -> Git for Windows install root -> ``bin\\bash.exe``.
-      4. Common install locations (``C:\\Program Files\\Git\\bin\\bash.exe``).
+      2. Every ``git`` on PATH -> ``<gitDir>/../bin/bash.exe``.
+      3. Every ``git`` on PATH -> ``<ancestor>/bin/bash.exe`` /
+         ``<ancestor>/git-bash.exe`` for each ancestor of ``git.exe``.
+      4. ``git --exec-path`` -> Git for Windows install root -> ``bin\\bash.exe``.
+      5. Common install locations (``C:\\Program Files\\Git\\bin\\bash.exe``).
+
+    Step 3 exists purely for speed: Git for Windows puts ``<Git>\\mingw64\\bin``
+    first on PATH, and step 4 would spawn a full git process (> 1 second) to
+    discover the install root that step 3 finds by walking up the tree.
 
     Raises:
         GitBashNotFoundError: if no candidate path resolves to an existing file.
@@ -293,6 +362,15 @@ async def _find_git_bash_path() -> KaosPath:
         bash_candidate = _git_bash_candidate_from_git_path(git_path)
         if await bash_candidate.is_file():
             return bash_candidate
+
+        # Probe the ancestors of git.exe for a ``bin/bash.exe`` (or
+        # ``git-bash.exe``) sibling. This resolves the extremely common
+        # ``<Git>\mingw64\bin\git.exe`` layout without running
+        # ``git --exec-path``, which spawns a full Git for Windows process and
+        # is by far the slowest step of shell detection (often > 1 second).
+        for ancestor_candidate in _git_bash_candidates_from_ancestors(git_path):
+            if await ancestor_candidate.is_file():
+                return ancestor_candidate
 
         git_exec_path = await asyncio.to_thread(_git_exec_path, git_path)
         if git_exec_path is None:
@@ -318,6 +396,29 @@ def _git_bash_candidate_from_git_path(git_path: str) -> KaosPath:
     # Use ntpath explicitly so this works regardless of the host OS that imports
     # this module (tests on macOS pass Windows-style paths through this code).
     return KaosPath(ntpath.join(ntpath.dirname(git_path), "..", "bin", "bash.exe"))
+
+
+def _git_bash_candidates_from_ancestors(git_path: str) -> list[KaosPath]:
+    """Derive bash candidates from the parent directories of ``git.exe``.
+
+    Git for Windows ships ``bash.exe`` at ``<Git>\\bin\\bash.exe`` and a
+    launcher at ``<Git>\\git-bash.exe``, but ``git.exe`` is also reachable as
+    ``<Git>\\mingw64\\bin\\git.exe`` (the directory Git for Windows puts first
+    on PATH). Walking up a few levels finds those siblings without having to
+    ask git itself via the very slow ``git --exec-path`` subprocess.
+    """
+    candidates: list[KaosPath] = []
+    current = ntpath.dirname(ntpath.normpath(git_path))
+    for _ in range(_GIT_BASH_ANCESTOR_DEPTH):
+        if not current:
+            break
+        candidates.append(KaosPath(ntpath.join(current, "bin", "bash.exe")))
+        candidates.append(KaosPath(ntpath.join(current, "git-bash.exe")))
+        parent = ntpath.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    return candidates
 
 
 def _git_exec_path(git_path: str) -> str | None:
@@ -366,33 +467,18 @@ def _git_install_root_from_exec_path(exec_path: str) -> str | None:
 
 async def _find_git_executables() -> list[str]:
     """Find candidate git.exe paths on Windows, preserving PATH order."""
-    candidates = await asyncio.to_thread(_where_git_executables)
-
-    # Non-Windows test hosts do not have where.exe. Keep the helper directly
-    # unit-testable there while the real Windows path still uses all where.exe hits.
-    if not candidates:
-        git_path = await asyncio.to_thread(shutil.which, "git")
-        if isinstance(git_path, str):
-            candidates.append(git_path)
-
-    return _dedupe_paths(candidates)
+    return _dedupe_paths(await asyncio.to_thread(_where_git_executables))
 
 
 def _where_git_executables() -> list[str]:
-    try:
-        result = subprocess.run(
-            ["where.exe", "git"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError:
-        return []
+    """Return every git executable on PATH, in PATH order.
 
-    if result.returncode != 0:
-        return []
-
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    Implemented as a pure-Python PATH scan (see ``_which_all``) rather than
+    spawning ``where.exe git``: the scan returns the same candidates without a
+    subprocess, which matters because shell detection runs on every session
+    creation.
+    """
+    return _which_all("git")
 
 
 def _dedupe_paths(paths: list[str]) -> list[str]:

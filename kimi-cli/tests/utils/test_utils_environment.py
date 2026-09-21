@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import platform
-import subprocess
 
-import kaos
 import pytest
 from kaos.path import KaosPath
 
+from kimi_cli.utils import environment as env_mod
 from kimi_cli.utils.environment import (
     Environment,
     GitBashNotFoundError,
@@ -17,46 +16,26 @@ from kimi_cli.utils.environment import (
 )
 
 
-class _FakeKaosProc:
-    def __init__(self, stdout_data: bytes = b"", returncode: int = 0):
-        self._stdout_data = stdout_data
-        self._returncode = returncode
-
-    @property
-    def stdout(self):
-        return self
-
-    @property
-    def stdin(self):
-        return self
-
-    async def read(self, n: int = -1) -> bytes:
-        return self._stdout_data
-
-    def close(self) -> None:
-        pass
-
-    async def wait(self) -> int:
-        return self._returncode
+@pytest.fixture(autouse=True)
+def _clear_which_cache():
+    """Keep the memoized PATH scan from leaking between tests."""
+    env_mod._which_all_cached.cache_clear()
+    yield
+    env_mod._which_all_cached.cache_clear()
 
 
-async def _fake_kaos_exec_fail(*args, **kwargs):
-    return _FakeKaosProc(b"", 1)
+def _patch_which(monkeypatch, mapping: dict[str, list[str]]):
+    """Patch PATH lookups so ``exe`` resolves to the given candidates.
 
+    Shell discovery is a pure-Python PATH scan (``_which_all``); faking it is
+    both faster and more precise than spawning ``where.exe`` in tests.
+    """
 
-def _make_fake_kaos_exec(pwsh: str | None = None, powershell: str | None = None):
-    async def _exec(*args, **kwargs):
-        if args == ("where.exe", "pwsh"):
-            if pwsh:
-                return _FakeKaosProc(pwsh.encode(), 0)
-            return _FakeKaosProc(b"", 1)
-        if args == ("where.exe", "powershell"):
-            if powershell:
-                return _FakeKaosProc(powershell.encode(), 0)
-            return _FakeKaosProc(b"", 1)
-        return _FakeKaosProc(b"", 1)
+    def fake_which_all(exe: str, path: str | None = None) -> list[str]:
+        return list(mapping.get(exe, []))
 
-    return _exec
+    monkeypatch.setattr(env_mod, "_which_all", fake_which_all)
+    monkeypatch.setattr(env_mod, "_where_git_executables", lambda: list(mapping.get("git", [])))
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
@@ -101,7 +80,7 @@ async def test_environment_detection_windows_with_env_override(monkeypatch):
     monkeypatch.setattr(platform, "version", lambda: "10.0.19044")
     monkeypatch.setenv("KIMI_CLI_GIT_BASH_PATH", r"D:\custom\bash.exe")
 
-    monkeypatch.setattr(kaos, "exec", _fake_kaos_exec_fail)
+    _patch_which(monkeypatch, {})
 
     async def _mock_is_file(self: KaosPath) -> bool:
         return str(self) == r"D:\custom\bash.exe"
@@ -115,13 +94,13 @@ async def test_environment_detection_windows_with_env_override(monkeypatch):
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
-async def test_environment_detection_windows_invalid_override_raises(monkeypatch):
-    monkeypatch.setattr(platform, "system", lambda: "Windows")
-    monkeypatch.setattr(platform, "machine", lambda: "AMD64")
-    monkeypatch.setattr(platform, "version", lambda: "10.0.19044")
-    monkeypatch.setenv("KIMI_CLI_GIT_BASH_PATH", r"D:\nonexistent\bash.exe")
+async def test_invalid_git_bash_override_raises(monkeypatch):
+    """An override that does not point at a file must be reported loudly.
 
-    monkeypatch.setattr(kaos, "exec", _fake_kaos_exec_fail)
+    ``Environment.detect()`` deliberately swallows this so the session can
+    still start with PowerShell, so the helper is asserted directly.
+    """
+    monkeypatch.setenv("KIMI_CLI_GIT_BASH_PATH", r"D:\nonexistent\bash.exe")
 
     async def _mock_is_file(self: KaosPath) -> bool:
         return False
@@ -129,27 +108,21 @@ async def test_environment_detection_windows_invalid_override_raises(monkeypatch
     monkeypatch.setattr(KaosPath, "is_file", _mock_is_file)
 
     with pytest.raises(GitBashNotFoundError) as excinfo:
-        await Environment.detect()
+        await _find_git_bash_path()
 
     assert "KIMI_CLI_GIT_BASH_PATH" in str(excinfo.value)
     assert "D:\\nonexistent\\bash.exe" in str(excinfo.value)
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
-async def test_environment_detection_windows_via_where_git(monkeypatch):
+async def test_environment_detection_windows_via_git_path(monkeypatch):
     monkeypatch.setattr(platform, "system", lambda: "Windows")
     monkeypatch.setattr(platform, "machine", lambda: "AMD64")
     monkeypatch.setattr(platform, "version", lambda: "10.0.19044")
     monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
 
-    monkeypatch.setattr(kaos, "exec", _fake_kaos_exec_fail)
-
-    # Simulate where.exe git -> C:\Program Files\Git\cmd\git.exe
-    import shutil
-
-    monkeypatch.setattr(
-        shutil, "which", lambda exe: r"C:\Program Files\Git\cmd\git.exe" if exe == "git" else None
-    )
+    # ``git.exe`` lives in <Git>\cmd, bash.exe in <Git>\bin.
+    _patch_which(monkeypatch, {"git": [r"C:\Program Files\Git\cmd\git.exe"]})
 
     expected_bash = r"C:\Program Files\Git\cmd\..\bin\bash.exe"
 
@@ -164,31 +137,48 @@ async def test_environment_detection_windows_via_where_git(monkeypatch):
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
-async def test_environment_detection_windows_checks_all_where_git_matches(monkeypatch):
+async def test_find_git_bash_path_resolves_mingw64_layout_without_git_subprocess(monkeypatch):
+    """<Git>\\mingw64\\bin\\git.exe must resolve via the ancestor scan.
+
+    Git for Windows puts the mingw64 directory first on PATH, and its
+    ``<Git>\\bin\\bash.exe`` sibling is two levels up. Finding it this way
+    avoids the very slow ``git --exec-path`` subprocess.
+    """
+    monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
+
+    _patch_which(monkeypatch, {"git": [r"C:\Program Files\Git\mingw64\bin\git.exe"]})
+
+    expected_bash = r"C:\Program Files\Git\bin\bash.exe"
+
+    async def _mock_is_file(self: KaosPath) -> bool:
+        return str(self) == expected_bash
+
+    monkeypatch.setattr(KaosPath, "is_file", _mock_is_file)
+
+    # Fail loudly if the resolution ever falls back to spawning git.
+    def _boom(git_path: str) -> str | None:
+        raise AssertionError("git --exec-path must not be spawned for a standard install")
+
+    monkeypatch.setattr(env_mod, "_git_exec_path", _boom)
+
+    path = await _find_git_bash_path()
+    assert str(path) == expected_bash
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+async def test_environment_detection_windows_checks_all_git_matches(monkeypatch):
     monkeypatch.setattr(platform, "system", lambda: "Windows")
     monkeypatch.setattr(platform, "machine", lambda: "AMD64")
     monkeypatch.setattr(platform, "version", lambda: "10.0.19044")
     monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
 
-    monkeypatch.setattr(kaos, "exec", _fake_kaos_exec_fail)
-
     shim_git = r"C:\Users\me\scoop\shims\git.exe"
-
-    def fake_run(args, **kwargs):
-        assert kwargs["capture_output"] is True
-        assert kwargs["text"] is True
-        assert kwargs["check"] is False
-        if args == [shim_git, "--exec-path"]:
-            return subprocess.CompletedProcess(args, 1, stdout="", stderr="shim failed")
-        assert args == ["where.exe", "git"]
-        return subprocess.CompletedProcess(
-            args,
-            0,
-            stdout=shim_git + "\n" + r"C:\Program Files\Git\cmd\git.exe" + "\n",
-            stderr="",
-        )
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    _patch_which(
+        monkeypatch,
+        {"git": [shim_git, r"C:\Program Files\Git\cmd\git.exe"]},
+    )
+    # The Scoop shim is broken: asking it for --exec-path fails.
+    monkeypatch.setattr(env_mod, "_git_exec_path", lambda git_path: None)
 
     expected_bash = r"C:\Program Files\Git\cmd\..\bin\bash.exe"
 
@@ -209,26 +199,14 @@ async def test_environment_detection_windows_resolves_shim_only_git(monkeypatch)
     monkeypatch.setattr(platform, "version", lambda: "10.0.19044")
     monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
 
-    monkeypatch.setattr(kaos, "exec", _fake_kaos_exec_fail)
-
     shim_git = r"C:\Users\me\scoop\shims\git.exe"
+    _patch_which(monkeypatch, {"git": [shim_git]})
 
-    def fake_run(args, **kwargs):
-        assert kwargs["capture_output"] is True
-        assert kwargs["text"] is True
-        assert kwargs["check"] is False
-        if args == ["where.exe", "git"]:
-            return subprocess.CompletedProcess(args, 0, stdout=shim_git + "\n", stderr="")
-        if args == [shim_git, "--exec-path"]:
-            return subprocess.CompletedProcess(
-                args,
-                0,
-                stdout="C:/Users/me/scoop/apps/git/current/mingw64/libexec/git-core\n",
-                stderr="",
-            )
-        raise AssertionError(f"Unexpected subprocess args: {args!r}")
+    def fake_exec_path(git_path: str) -> str | None:
+        assert git_path == shim_git
+        return "C:/Users/me/scoop/apps/git/current/mingw64/libexec/git-core"
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(env_mod, "_git_exec_path", fake_exec_path)
 
     expected_bash = r"C:\Users\me\scoop\apps\git\current\bin\bash.exe"
 
@@ -249,12 +227,7 @@ async def test_environment_detection_windows_default_install_location(monkeypatc
     monkeypatch.setattr(platform, "version", lambda: "10.0.19044")
     monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
 
-    monkeypatch.setattr(kaos, "exec", _fake_kaos_exec_fail)
-
-    import shutil
-
-    # Simulate `where.exe git` returning nothing
-    monkeypatch.setattr(shutil, "which", lambda exe: None)
+    _patch_which(monkeypatch, {})  # git is not on PATH at all
 
     fallback = r"C:\Program Files\Git\bin\bash.exe"
 
@@ -275,11 +248,7 @@ async def test_environment_detection_windows_no_git_bash_anywhere(monkeypatch):
     monkeypatch.setattr(platform, "version", lambda: "10.0.19044")
     monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
 
-    import shutil
-
-    monkeypatch.setattr(shutil, "which", lambda exe: None)
-
-    monkeypatch.setattr(kaos, "exec", _fake_kaos_exec_fail)
+    _patch_which(monkeypatch, {})
 
     async def _mock_is_file(self: KaosPath) -> bool:
         return False
@@ -299,8 +268,7 @@ async def test_environment_detection_windows_prefers_pwsh(monkeypatch):
     monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
 
     pwsh_path = r"C:\Program Files\PowerShell\7\pwsh.exe"
-
-    monkeypatch.setattr(kaos, "exec", _make_fake_kaos_exec(pwsh=pwsh_path))
+    _patch_which(monkeypatch, {"pwsh": [pwsh_path]})
 
     async def _mock_is_file(self: KaosPath) -> bool:
         return str(self) == pwsh_path
@@ -320,8 +288,7 @@ async def test_environment_detection_windows_falls_back_to_powershell(monkeypatc
     monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
 
     ps_path = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-
-    monkeypatch.setattr(kaos, "exec", _make_fake_kaos_exec(powershell=ps_path))
+    _patch_which(monkeypatch, {"powershell": [ps_path]})
 
     async def _mock_is_file(self: KaosPath) -> bool:
         return str(self) == ps_path
@@ -340,11 +307,7 @@ async def test_environment_detection_windows_falls_back_to_git_bash(monkeypatch)
     monkeypatch.setattr(platform, "version", lambda: "10.0.19044")
     monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
 
-    monkeypatch.setattr(kaos, "exec", _fake_kaos_exec_fail)
-
-    import shutil
-
-    monkeypatch.setattr(shutil, "which", lambda exe: None)
+    _patch_which(monkeypatch, {})
 
     fallback = r"C:\Program Files\Git\bin\bash.exe"
 
@@ -365,18 +328,12 @@ async def test_environment_detection_windows_ultimate_fallback(monkeypatch):
     monkeypatch.setattr(platform, "version", lambda: "10.0.19044")
     monkeypatch.delenv("KIMI_CLI_GIT_BASH_PATH", raising=False)
 
-    monkeypatch.setattr(kaos, "exec", _fake_kaos_exec_fail)
-
-    import shutil
-
-    monkeypatch.setattr(shutil, "which", lambda exe: None)
+    _patch_which(monkeypatch, {})
 
     async def _mock_find_git_bash_path():
         raise GitBashNotFoundError("not found")
 
-    monkeypatch.setattr(
-        "kimi_cli.utils.environment._find_git_bash_path", _mock_find_git_bash_path
-    )
+    monkeypatch.setattr(env_mod, "_find_git_bash_path", _mock_find_git_bash_path)
 
     async def _mock_is_file(self: KaosPath) -> bool:
         return False

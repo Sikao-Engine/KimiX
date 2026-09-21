@@ -31,6 +31,27 @@ _META_SCHEMA_VALIDATOR = jsonschema.Draft202012Validator(
 )
 
 
+@lru_cache(maxsize=512)
+def _validate_parameters_schema(schema_json: bytes) -> None:
+    """Validate a tool parameter schema against the JSON Schema meta-schema.
+
+    ``Tool._validate_parameters`` runs for every tool every time a toolset is
+    built. Validating the full Draft 2020-12 meta-schema is expensive (tens of
+    milliseconds for a realistic tool schema, because the meta-schema is large
+    and full of ``allOf``/``dynamicRef``), and the CLI rebuilds the whole
+    toolset on every session creation — most visibly on ``/clear``, which
+    recreates the CLI just to reset its context.
+
+    Tool schemas are static Python-generated definitions, so validating the
+    same schema twice can never change the outcome. The results are memoized
+    on the canonical JSON encoding of the schema, which turns the second and
+    subsequent toolset builds from ~O(#tools × schema) into a handful of
+    microseconds each. Invalid schemas still raise (``lru_cache`` never caches
+    exceptions), so the safety net is preserved.
+    """
+    _META_SCHEMA_VALIDATOR.validate(orjson.loads(schema_json))
+
+
 class Tool(BaseModel):
     """The definition of a tool that can be recognized by the model."""
 
@@ -45,7 +66,16 @@ class Tool(BaseModel):
 
     @model_validator(mode="after")
     def _validate_parameters(self) -> Self:
-        _META_SCHEMA_VALIDATOR.validate(self.parameters)
+        try:
+            # ``OPT_SORT_KEYS`` makes the digest insensitive to key ordering so
+            # semantically identical schemas share a cache entry.
+            schema_json = orjson.dumps(self.parameters, option=orjson.OPT_SORT_KEYS)
+        except (TypeError, orjson.JSONEncodeError):
+            # Non-JSON-encodable defaults (rare): fall back to a direct,
+            # uncached validation rather than skipping the check.
+            _META_SCHEMA_VALIDATOR.validate(self.parameters)
+            return self
+        _validate_parameters_schema(schema_json)
         return self
 
 
@@ -2468,6 +2498,34 @@ class _GenerateJsonSchemaNoTitles(GenerateJsonSchema):
         json_schema.pop("title", None)
 
 
+@lru_cache(maxsize=256)
+def _parameters_schema_json(params: type[BaseModel]) -> bytes:
+    """Return the deref'd JSON schema of a params model, serialized.
+
+    Generating the JSON schema via pydantic and de-referencing ``$defs`` costs
+    several milliseconds per tool, and the CLI rebuilds its whole toolset on
+    every session creation (including ``/clear``). A params model is a static
+    class, so its schema never changes: deriving it once and handing out a
+    fresh decode per tool keeps the caller from sharing mutable state.
+    """
+    schema = deref_json_schema(
+        params.model_json_schema(schema_generator=_GenerateJsonSchemaNoTitles)
+    )
+    return orjson.dumps(schema)
+
+
+def _parameters_schema(params: type[BaseModel]) -> ParametersType:
+    try:
+        schema_json = _parameters_schema_json(params)
+    except (TypeError, orjson.JSONEncodeError):
+        # A params model whose schema is not plain JSON (should not happen):
+        # fall back to deriving it directly rather than caching.
+        return deref_json_schema(
+            params.model_json_schema(schema_generator=_GenerateJsonSchemaNoTitles)
+        )
+    return orjson.loads(schema_json)
+
+
 class CallableTool2[Params: BaseModel](ABC):
     """
     The abstract base class of tools that can be called as callables, with typed parameters.
@@ -2520,9 +2578,7 @@ class CallableTool2[Params: BaseModel](ABC):
         self._base = Tool(
             name=self.name,
             description=self.description,
-            parameters=deref_json_schema(
-                self.params.model_json_schema(schema_generator=_GenerateJsonSchemaNoTitles)
-            ),
+            parameters=_parameters_schema(self.params),
         )
 
     @property
