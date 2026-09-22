@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from unittest.mock import patch
 
 import pytest
@@ -28,6 +29,18 @@ from kimi_cli.tools.file.parse_check import introduced_parse_failure, source_par
 )
 def test_source_parses(text: str, path: str, expected: bool) -> None:
     assert source_parses(text, path) is expected
+
+
+def test_source_parses_python_no_syntax_warning_for_invalid_escapes() -> None:
+    r"""Invalid escape sequences ("\g", "\l", "\p") must not leak SyntaxWarning.
+
+    The parse guard runs in the background of edit/write tool calls; warnings
+    about the checked file's content would otherwise pollute the tool output.
+    """
+    text = 'path = "C:\\path\\file"\nname = "\\group\\label"\n'
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", SyntaxWarning)
+        assert source_parses(text, "foo.py") is True
 
 
 @pytest.mark.parametrize(

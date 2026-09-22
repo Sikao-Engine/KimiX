@@ -7,6 +7,7 @@ import contextlib
 import shutil
 import subprocess
 import tempfile
+import warnings
 from pathlib import Path
 
 from kimi_cli.tools.file.check_fmt import (
@@ -27,7 +28,12 @@ def source_parses(text: str, file_path: str | Path) -> bool:
 
     if suffix == ".py":
         try:
-            ast.parse(text)
+            # Silence SyntaxWarning (e.g. invalid escape sequences like "\g"
+            # in the checked text): the parse guard runs in the background of
+            # an edit call, and those warnings must not leak into tool output.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                ast.parse(text, filename=str(file_path))
             return True
         except SyntaxError:
             return False
