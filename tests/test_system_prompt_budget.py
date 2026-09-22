@@ -13,14 +13,9 @@ from kimix.utils.system_prompt import get_system_prompt, SystemPromptType
 
 def _make_runtime(tmp_path: Path, custom_data: dict[str, Any] | None = None) -> SimpleNamespace:
     builtin_args = SimpleNamespace(
-        KIMI_NOW="1970-01-01T00:00:00+00:00",
         KIMI_WORK_DIR=tmp_path,
-        KIMI_WORK_DIR_LS="",
-        KIMI_AGENTS_MD="",
         KIMI_SKILLS="",
-        KIMI_ADDITIONAL_DIRS_INFO="",
         KIMI_OS="Windows",
-        KIMI_SHELL="bash",
     )
     session = SimpleNamespace(
         dir=tmp_path,

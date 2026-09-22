@@ -13,8 +13,6 @@ from kimi_cli.soul.agent import Runtime
 
 @pytest.fixture
 def lightweight_runtime_create(monkeypatch: pytest.MonkeyPatch, environment) -> None:
-    monkeypatch.setattr(agent_module, "list_directory", AsyncMock(return_value=""))
-    monkeypatch.setattr(agent_module, "load_agents_md", AsyncMock(return_value=None))
     monkeypatch.setattr(agent_module.Environment, "detect", AsyncMock(return_value=environment))
     monkeypatch.setattr(agent_module, "resolve_skills_roots", AsyncMock(return_value=[]))
     monkeypatch.setattr(agent_module, "discover_skills_from_roots", AsyncMock(return_value=[]))

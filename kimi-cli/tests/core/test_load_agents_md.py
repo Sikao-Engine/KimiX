@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from kaos.path import KaosPath
 
-from kimi_cli.soul.agent import _AGENTS_MD_MAX_BYTES, load_agents_md
+from kimi_cli.utils.path import _AGENTS_MD_MAX_BYTES, load_agents_md
 
 # ---------------------------------------------------------------------------
 # Basic loading

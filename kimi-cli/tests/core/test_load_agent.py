@@ -25,13 +25,12 @@ def test_load_system_prompt(system_prompt_file: Path, builtin_args: BuiltinSyste
     prompt = _load_system_prompt(system_prompt_file, {"CUSTOM_ARG": "test_value"}, builtin_args)
 
     assert "Test system prompt with " in prompt
-    assert "1970-01-01" in prompt  # Should contain the actual timestamp
-    assert builtin_args.KIMI_NOW in prompt
+    assert builtin_args.KIMI_OS in prompt  # Should contain the OS kind
     assert "test_value" in prompt
 
 
 def test_system_prompt_contains_platform_info(builtin_args: BuiltinSystemPromptArgs):
-    """System prompt should contain OS and shell information (issue #1649).
+    """System prompt should contain OS information (issue #1649).
 
     On Windows, the model needs to know it's on Windows so it doesn't
     generate Linux commands. The platform info must be in the system prompt,
@@ -45,39 +44,33 @@ def test_system_prompt_contains_platform_info(builtin_args: BuiltinSystemPromptA
         builtin_args,
     )
 
-    # System prompt must include OS kind and shell info
+    # System prompt must include OS kind
     assert builtin_args.KIMI_OS in prompt
-    assert builtin_args.KIMI_SHELL in prompt
 
 
 _WINDOWS_SHELL_HINT = "Use Unix shell syntax inside Shell commands"
 
 
 @pytest.mark.parametrize(
-    "os_kind, shell, expect_shell_hint",
+    "os_kind, expect_shell_hint",
     [
-        ("Windows", r"pwsh (`C:\Program Files\PowerShell\7\pwsh.exe`)", True),
-        ("macOS", "bash (`/bin/bash`)", False),
-        ("Linux", "bash (`/usr/bin/bash`)", False),
+        ("Windows", True),
+        ("macOS", False),
+        ("Linux", False),
     ],
     ids=["windows", "macos", "linux"],
 )
-def test_system_prompt_renders_os_and_shell(temp_work_dir, os_kind, shell, expect_shell_hint):
-    """Surface OS name and shell binary on every platform. On Windows, append a
-    one-line hint right after the Shell line so the model uses Unix syntax in
+def test_system_prompt_renders_os(temp_work_dir, os_kind, expect_shell_hint):
+    """Surface OS name on every platform. On Windows, append a
+    one-line hint right after the OS line so the model uses Unix syntax in
     Shell commands (the only failure mode where path-form actually matters,
     since file tools accept both forms)."""
     from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 
     args = BuiltinSystemPromptArgs(
-        KIMI_NOW="1970-01-01T00:00:00+00:00",
         KIMI_WORK_DIR=temp_work_dir,
-        KIMI_WORK_DIR_LS="Test ls content",
-        KIMI_AGENTS_MD="Test agents content",
         KIMI_SKILLS="No skills found.",
-        KIMI_ADDITIONAL_DIRS_INFO="",
         KIMI_OS=os_kind,
-        KIMI_SHELL=shell,
     )
     prompt = _load_system_prompt(
         DEFAULT_AGENT_FILE.parent / "system.md",
@@ -86,7 +79,6 @@ def test_system_prompt_renders_os_and_shell(temp_work_dir, os_kind, shell, expec
     )
 
     assert os_kind in prompt
-    assert shell in prompt
     if expect_shell_hint:
         assert _WINDOWS_SHELL_HINT in prompt
     else:
@@ -98,12 +90,12 @@ def test_load_system_prompt_allows_literal_dollar(builtin_args: BuiltinSystemPro
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)
         system_md = tmpdir / "system.md"
-        system_md.write_text("Price is $100, path $PATH, time ${KIMI_NOW}.")
+        system_md.write_text("Price is $100, path $PATH, os ${KIMI_OS}.")
         prompt = _load_system_prompt(system_md, {}, builtin_args)
 
     assert "$100" in prompt
     assert "$PATH" in prompt
-    assert builtin_args.KIMI_NOW in prompt
+    assert builtin_args.KIMI_OS in prompt
 
 
 def test_load_system_prompt_include(builtin_args: BuiltinSystemPromptArgs):
@@ -404,6 +396,6 @@ def system_prompt_file() -> Generator[Path, Any, Any]:
         tmpdir = Path(tmpdir)
 
         system_md = tmpdir / "system.md"
-        system_md.write_text("Test system prompt with ${KIMI_NOW} and ${CUSTOM_ARG}")
+        system_md.write_text("Test system prompt with ${KIMI_OS} and ${CUSTOM_ARG}")
 
         yield system_md

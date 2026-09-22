@@ -43,14 +43,9 @@ def _make_runtime(work_dir: KaosPath) -> Runtime:
         capabilities=ALL_MODEL_CAPABILITIES,
     )
     builtin_args = BuiltinSystemPromptArgs(
-        KIMI_NOW="1970-01-01T00:00:00+00:00",
         KIMI_WORK_DIR=work_dir,
-        KIMI_WORK_DIR_LS="Test ls content",
-        KIMI_AGENTS_MD="Test agents content",
         KIMI_SKILLS="No skills found.",
-        KIMI_ADDITIONAL_DIRS_INFO="",
         KIMI_OS="macOS",
-        KIMI_SHELL="bash (`/bin/bash`)",
     )
     share_dir = Path(tempfile.mkdtemp())
     session = Session(

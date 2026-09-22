@@ -11,6 +11,7 @@ import aiofiles.os
 from kaos.path import KaosPath
 
 from kimi_cli.utils.environment import is_windows
+from kimi_cli.utils.logging import logger
 from kimi_cli.utils.windows_paths import posix_path_to_windows
 
 _ROTATION_OPEN_FLAGS = os.O_CREAT | os.O_EXCL | os.O_WRONLY
@@ -88,7 +89,8 @@ async def list_directory(work_dir: KaosPath) -> str:
     """Return a compact tree listing of *work_dir* (up to 2 levels).
 
     This helper is used mainly to provide context to the LLM (for example
-    ``KIMI_WORK_DIR_LS``) and to show top-level directory contents in tools.
+    the additional-directories section of the system prompt) and to show
+    top-level directory contents in tools.
 
     Both depth and width are capped to keep the system-prompt token budget
     bounded (see GH-1809):
@@ -271,3 +273,106 @@ async def find_project_root(work_dir: KaosPath) -> KaosPath:
         if parent == current:  # filesystem root
             return work_dir
         current = parent
+
+
+_AGENTS_MD_MAX_BYTES = 32 * 1024  # 32 KiB
+
+
+async def _dirs_root_to_leaf(work_dir: KaosPath, project_root: KaosPath) -> list[KaosPath]:
+    """Return the list of directories from *project_root* down to *work_dir* (inclusive)."""
+    dirs: list[KaosPath] = []
+    current = work_dir
+    while True:
+        dirs.append(current)
+        if current == project_root:
+            break
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    dirs.reverse()  # root → leaf
+    return dirs
+
+
+async def load_agents_md(work_dir: KaosPath) -> str | None:
+    """Discover and merge ``AGENTS.md`` files from the project root down to *work_dir*.
+
+    For each directory on the path, the following candidates are checked in order:
+
+    1. ``.kimi/AGENTS.md``  — project-local kimi config (highest priority)
+    2. ``AGENTS.md``        — standard location
+    3. ``agents.md``        — lowercase variant (mutually exclusive with 2)
+
+    Within a single directory, ``.kimi/AGENTS.md`` and ``AGENTS.md``/``agents.md``
+    are **both** loaded (with ``.kimi/`` first), but ``AGENTS.md`` and ``agents.md``
+    are mutually exclusive (uppercase wins).
+
+    All discovered files are concatenated root→leaf, separated by ``\\n\\n``, with
+    source annotations.  Total size is capped at :data:`_AGENTS_MD_MAX_BYTES`.
+    Budget is allocated leaf-first so deeper (more specific) files are never
+    truncated in favour of shallower ones.
+    """
+    project_root = await find_project_root(work_dir)
+    dirs = await _dirs_root_to_leaf(work_dir, project_root)
+
+    # Phase 1: collect all candidate files (root → leaf order)
+    discovered: list[tuple[KaosPath, str]] = []  # (path, content)
+    for d in dirs:
+        # .kimi/AGENTS.md is always checked independently (can coexist with root-level file)
+        kimi_path = d / ".kimi" / "AGENTS.md"
+        # AGENTS.md and agents.md are mutually exclusive (uppercase wins)
+        root_candidates = [d / "AGENTS.md", d / "agents.md"]
+
+        candidates: list[KaosPath] = []
+        if await kimi_path.is_file():
+            candidates.append(kimi_path)
+        for rc in root_candidates:
+            if await rc.is_file():
+                candidates.append(rc)
+                break
+
+        for path in candidates:
+            content = (await path.read_text()).strip()
+            if content:
+                discovered.append((path, content))
+                logger.info("Loaded agents.md: {path}", path=path)
+
+    if not discovered:
+        logger.info(
+            "No AGENTS.md found from {root} to {cwd}",
+            root=project_root,
+            cwd=work_dir,
+        )
+        return None
+
+    # Phase 2: allocate budget leaf-first so deeper (more specific) files
+    # are never truncated in favour of shallower ones.
+    # The annotation overhead (<!-- From: ... -->\n and \n\n separators)
+    # is included in the budget so the final output never exceeds the limit.
+    remaining = _AGENTS_MD_MAX_BYTES
+    budgeted: list[tuple[KaosPath, str]] = [None] * len(discovered)  # type: ignore[list-item]
+    for i in reversed(range(len(discovered))):
+        path, content = discovered[i]
+        annotation = f"<!-- From: {path} -->\n"
+        # Reserve space for the annotation and the \n\n separator between parts
+        separator_cost = len(b"\n\n") if i < len(discovered) - 1 else 0
+        overhead = len(annotation.encode()) + separator_cost
+        remaining -= overhead
+        if remaining <= 0:
+            budgeted[i] = (path, "")
+            remaining = 0
+            continue
+        encoded = content.encode()
+        if len(encoded) > remaining:
+            content = encoded[:remaining].decode(errors="ignore").strip()
+            logger.warning("AGENTS.md truncated due to size limit: {path}", path=path)
+        remaining -= len(content.encode())
+        budgeted[i] = (path, content)
+
+    # Phase 3: assemble in root → leaf order, skipping entries emptied by truncation
+    parts: list[str] = []
+    for path, content in budgeted:
+        if content:
+            parts.append(f"<!-- From: {path} -->\n{content}")
+
+    return "\n\n".join(parts) if parts else None

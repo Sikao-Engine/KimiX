@@ -22,12 +22,11 @@ from kosong.message import Message
 import kimi_cli.prompts as prompts
 from kimi_cli import logger
 from kimi_cli.soul import wire_send
-from kimi_cli.soul.agent import load_agents_md
 from kimi_cli.soul.compaction import ManualCompactionError
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.message import system
 from kimi_cli.utils.export import is_sensitive_file
-from kimi_cli.utils.path import sanitize_cli_path, shorten_home
+from kimi_cli.utils.path import load_agents_md, sanitize_cli_path, shorten_home
 from kimi_cli.wire.types import StatusUpdate, TextPart
 
 if TYPE_CHECKING:

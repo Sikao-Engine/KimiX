@@ -116,14 +116,9 @@ def _make_runtime(tmp_path: Path, provider: object) -> Runtime:
         capabilities=ALL_MODEL_CAPABILITIES,
     )
     builtin_args = BuiltinSystemPromptArgs(
-        KIMI_NOW="1970-01-01T00:00:00+00:00",
         KIMI_WORK_DIR=work_kaos,
-        KIMI_WORK_DIR_LS="Test ls content",
-        KIMI_AGENTS_MD="Test agents content",
         KIMI_SKILLS="No skills found.",
-        KIMI_ADDITIONAL_DIRS_INFO="",
         KIMI_OS="Windows",
-        KIMI_SHELL="pwsh",
     )
     session = Session(
         id="parent-cli",

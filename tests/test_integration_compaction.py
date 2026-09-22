@@ -70,14 +70,9 @@ class TestIntegrationCompaction:
         )
         runtime = SimpleNamespace(
             builtin_args=SimpleNamespace(
-                KIMI_NOW="t",
                 KIMI_WORK_DIR=tmp_path,
-                KIMI_WORK_DIR_LS="",
-                KIMI_AGENTS_MD="",
                 KIMI_SKILLS="",
-                KIMI_ADDITIONAL_DIRS_INFO="",
                 KIMI_OS="Linux",
-                KIMI_SHELL="bash",
             ),
             session=SimpleNamespace(dir=tmp_path, id="s", custom_data={}),
         )

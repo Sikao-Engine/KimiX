@@ -177,14 +177,9 @@ def require_long_paths(long_paths_supported: bool) -> None:
 def builtin_args(temp_work_dir: KaosPath) -> BuiltinSystemPromptArgs:
     """Create builtin arguments with temporary work directory."""
     return BuiltinSystemPromptArgs(
-        KIMI_NOW="1970-01-01T00:00:00+00:00",
         KIMI_WORK_DIR=temp_work_dir,
-        KIMI_WORK_DIR_LS="Test ls content",
-        KIMI_AGENTS_MD="Test agents content",
         KIMI_SKILLS="No skills found.",
-        KIMI_ADDITIONAL_DIRS_INFO="",
         KIMI_OS="macOS",
-        KIMI_SHELL="bash (`/bin/bash`)",
     )
 
 
