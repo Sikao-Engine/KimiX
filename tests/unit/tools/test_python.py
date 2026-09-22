@@ -231,7 +231,7 @@ def _fake_process_task(monkeypatch: pytest.MonkeyPatch, output: str = "fake outp
     inst = um.AsyncMock()
     inst.start.return_value = "fake-task-id"
     inst.thread_is_alive.return_value = False
-    inst.wait_with_monitor = um.AsyncMock()
+    inst.wait_with_monitor = um.AsyncMock(return_value=(True, 0.0, False))
     inst.stream = um.AsyncMock()
     inst.stream.pop_output.return_value = output
     inst.stream.success.return_value = True

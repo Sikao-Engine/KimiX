@@ -15,7 +15,7 @@ from kimi_cli.app import KimiCLI
 from kimi_cli.config import Config
 from kimi_cli.llm import LLM
 from kimi_cli.safety_check import sanitize_for_tokenizer
-from kimi_cli.session import Session as CliSession
+from kimi_cli.session import KIMIX_CACHE_DIR_NAME, Session as CliSession
 from kimi_cli.soul import SessionRestartRequired, StatusSnapshot
 from kimi_cli.wire.types import ContentPart, TextPart, ThinkPart, WireMessage
 from kosong.chat_provider import ChatProvider
@@ -62,6 +62,20 @@ def _resolve_skills_dirs(
         resolved.extend(skills_dirs)
 
     return resolved or None
+
+
+def _sdk_sessions_dir(work_dir: KaosPath) -> Path:
+    """Resolve the SDK session cache root: ``<work dir>/.kimix_cache``.
+
+    Sessions created or resumed through the SDK are stored inside the work
+    directory itself — ``<work dir>/.kimix_cache/<session id>`` — instead of
+    the hashed share-dir location under ``~/.kimi``, so they live next to the
+    project they belong to.
+    """
+    canonical = getattr(work_dir, "canonical", None)
+    if callable(canonical):
+        work_dir = canonical()
+    return Path(str(work_dir)) / KIMIX_CACHE_DIR_NAME
 
 
 async def _load_config_json(work_dir: KaosPath) -> dict[str, Any]:
@@ -218,7 +232,9 @@ class Session:
         # Clear custom data from the old session
         self._cli.session.custom_data.clear()
 
-        cli_session = await CliSession.create(work_dir, session_id)
+        cli_session = await CliSession.create(
+            work_dir, session_id, _sessions_dir=_sdk_sessions_dir(work_dir)
+        )
         kwargs = self._create_kwargs.copy()
         kwargs.pop("resumed", None)
         kwargs.update(custom_arguments)
@@ -262,9 +278,12 @@ class Session:
         old_custom_config = self._cli.session.custom_config.copy()
 
         # Reload the existing session so context/state/wire history are kept.
-        cli_session = await CliSession.find(work_dir, session_id)
+        sessions_dir = _sdk_sessions_dir(work_dir)
+        cli_session = await CliSession.find(work_dir, session_id, _sessions_dir=sessions_dir)
         if cli_session is None:
-            cli_session = await CliSession.create(work_dir, session_id)
+            cli_session = await CliSession.create(
+                work_dir, session_id, _sessions_dir=sessions_dir
+            )
 
         # Preserve provider_dict/chat_provider overrides if the config file
         # does not already contain them (mirrors the logic in :meth:`rename`).
@@ -295,6 +314,7 @@ class Session:
         """
         self._tmp_data.clear()
         work_dir = self._cli.session.work_dir
+        sessions_dir = _sdk_sessions_dir(work_dir)
         old_session_id: str | None = None
 
         if not self._closed:
@@ -317,12 +337,16 @@ class Session:
             await self._cli.session.close_context_db()
 
             old_session_id = self._cli.session.id
-            cli_session = await CliSession.rename(work_dir, old_session_id, new_session_id)
+            cli_session = await CliSession.rename(
+                work_dir, old_session_id, new_session_id, _sessions_dir=sessions_dir
+            )
         else:
             cli_session = None
 
         if cli_session is None:
-            cli_session = await CliSession.create(work_dir, new_session_id)
+            cli_session = await CliSession.create(
+                work_dir, new_session_id, _sessions_dir=sessions_dir
+            )
 
         # Preserve provider_dict from old session's custom_config for sub-agent spawning
         old_custom_config = self._cli.session.custom_config
@@ -341,7 +365,12 @@ class Session:
             # Rollback: attempt to rename the session directory back
             if old_session_id:
                 try:
-                    await CliSession.rename(work_dir, new_session_id, old_session_id)
+                    await CliSession.rename(
+                        work_dir,
+                        new_session_id,
+                        old_session_id,
+                        _sessions_dir=_sdk_sessions_dir(work_dir),
+                    )
                 except Exception:
                     pass
             raise
@@ -489,7 +518,9 @@ class Session:
             _ensure_type("work_dir", work_dir, KaosPath)
             work_dir_path = work_dir
         resolved_skills_dirs = _resolve_skills_dirs(skills_dir, skills_dirs)
-        cli_session = await CliSession.create(work_dir_path, session_id)
+        cli_session = await CliSession.create(
+            work_dir_path, session_id, _sessions_dir=_sdk_sessions_dir(work_dir_path)
+        )
         custom_config = await _load_config_json(work_dir_path)
         cli_session.custom_config = custom_config
         llm: LLM | None = None
@@ -592,10 +623,11 @@ class Session:
         """
         _ensure_type("work_dir", work_dir, KaosPath)
         resolved_skills_dirs = _resolve_skills_dirs(skills_dir, skills_dirs)
+        sessions_dir = _sdk_sessions_dir(work_dir)
         if session_id is None:
-            cli_session = await CliSession.continue_(work_dir)
+            cli_session = await CliSession.continue_(work_dir, _sessions_dir=sessions_dir)
         else:
-            cli_session = await CliSession.find(work_dir, session_id)
+            cli_session = await CliSession.find(work_dir, session_id, _sessions_dir=sessions_dir)
         if cli_session is None:
             return None
         custom_config = await _load_config_json(work_dir)

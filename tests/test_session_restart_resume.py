@@ -135,7 +135,9 @@ async def test_prompt_restart_preserves_context(tmp_path: Path, monkeypatch: pyt
     create_called = False
     captured_kwargs: dict[str, Any] = {}
 
-    async def fake_find(work_dir: KaosPath, session_id: str) -> _FakeCLISession:
+    async def fake_find(
+        work_dir: KaosPath, session_id: str, _sessions_dir: Any = None
+    ) -> _FakeCLISession:
         nonlocal find_called
         find_called = True
         return _old_cli_session

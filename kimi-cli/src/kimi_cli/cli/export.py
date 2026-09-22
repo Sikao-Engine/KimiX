@@ -57,16 +57,12 @@ async def _find_session_by_id(session_id: str, *, work_dir: KaosPath | None = No
         if session is not None:
             return session.dir
 
-    from kimi_cli.share import get_share_dir
+    # Fall back to scanning every known work directory's session cache
+    # (``<work dir>/.kimix_cache``).  The share dir is never used.
+    from kimi_cli.metadata import KIMIX_CACHE_DIR_NAME, load_metadata
 
-    sessions_root = get_share_dir() / "sessions"
-    if not sessions_root.exists():
-        return None
-
-    for work_dir_hash_dir in sessions_root.iterdir():
-        if not work_dir_hash_dir.is_dir():
-            continue
-        candidate = work_dir_hash_dir / session_id
+    for wd in load_metadata().work_dirs:
+        candidate = Path(wd.path) / KIMIX_CACHE_DIR_NAME / session_id
         if candidate.is_dir():
             return candidate
 

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-import xxhash
 from inline_snapshot import snapshot
 from tests_e2e.wire_helpers import (
     build_approval_response,
@@ -11,7 +9,6 @@ from tests_e2e.wire_helpers import (
     make_home_dir,
     make_work_dir,
     send_initialize,
-    share_dir,
     start_wire,
     summarize_messages,
     write_scripted_config,
@@ -20,9 +17,8 @@ from tests_e2e.wire_helpers import (
 
 
 def _session_dir(home_dir: Path, work_dir: Path) -> Path:
-    # Mirrors WorkDirMeta.sessions_dir (xxh64 of the work-dir path).
-    digest = xxhash.xxh64(str(work_dir).encode("utf-8")).hexdigest()
-    return share_dir(home_dir) / "sessions" / digest
+    # Mirrors WorkDirMeta.sessions_dir (<work dir>/.kimix_cache).
+    return work_dir / ".kimix_cache"
 
 
 def _count_lines(path: Path) -> int:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import xxhash
 from pathlib import Path
 
 import orjson
@@ -12,6 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from kimi_cli.share import get_share_dir
 from kimi_cli.utils.io import atomic_json_write
 from kimi_cli.utils.logging import logger
+
+#: Name of the per-work-directory session cache directory.  Sessions are
+#: stored inside the work directory itself — ``<work dir>/.kimix_cache`` —
+#: never under the share dir (``~/.kimi/sessions``).
+KIMIX_CACHE_DIR_NAME = ".kimix_cache"
 
 
 def get_metadata_file() -> Path:
@@ -32,10 +36,13 @@ class WorkDirMeta(BaseModel):
 
     @property
     def sessions_dir(self) -> Path:
-        """The directory to store sessions for this work directory."""
-        path_md5 = xxhash.xxh64(self.path.encode(encoding="utf-8")).hexdigest()
-        dir_basename = path_md5 if self.kaos == local_kaos.name else f"{self.kaos}_{path_md5}"
-        session_dir = get_share_dir() / "sessions" / dir_basename
+        """The directory to store sessions for this work directory.
+
+        Sessions live inside the work directory itself
+        (``<work dir>/.kimix_cache``) so they stay next to the project they
+        belong to.  The share dir (``~/.kimi/sessions``) is never used.
+        """
+        session_dir = Path(self.path) / KIMIX_CACHE_DIR_NAME
         session_dir.mkdir(parents=True, exist_ok=True)
         return session_dir
 

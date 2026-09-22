@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Literal
 import anyio
 import regex as re
 from kimix.tools.common import (
+    _append_elapsed,
     _build_session_output_block,
     _create_script_file,
     _display_temp_path,
@@ -19,6 +20,7 @@ from kimix.tools.common import (
     _maybe_export_rtk_original_async,
     _original_saved_message,
     _save_original_output_async,
+    _subprocess_elapsed,
     _summarize_long_output_async,
     _token_filter_output,
     ProcessTask,
@@ -452,6 +454,9 @@ class python(CallableTool2[Params]):
 
         wait_matched: bool | None = None
         elapsed_seconds: float | None = None
+        # Seconds actually waited by the plain (no-pattern) monitor; used as a
+        # fallback "spent time" when the stream has not recorded the runtime.
+        waited_seconds: float | None = None
         try:
             if params.wait_for_pattern is not None and process_task.stream is not None:
                 pattern = self._compile_pattern(params.wait_for_pattern)
@@ -472,7 +477,9 @@ class python(CallableTool2[Params]):
                     )
             else:
                 # Wait for completion with timeout (allow a small buffer for cleanup)
-                await process_task.wait_with_monitor(params.timeout)
+                _completed, waited_seconds, _inactivity_timed_out = (
+                    await process_task.wait_with_monitor(params.timeout)
+                )
         except asyncio.CancelledError:
             await process_task.stop()
             from kimix.tools.background.utils import remove_task_id
@@ -503,6 +510,9 @@ class python(CallableTool2[Params]):
         stream = process_task.stream
         success = await stream.success() if stream else False
         real_exit_code = stream.exit_code if stream else None
+        # Real sub-process "spent time": the runtime recorded when the child
+        # exited, falling back to the measured wait for either monitor path.
+        spent_seconds = _subprocess_elapsed(stream, elapsed_seconds, waited_seconds)
 
         # Handle output_path parameter if provided
         if params.output_path:
@@ -514,14 +524,19 @@ class python(CallableTool2[Params]):
             if not success:
                 return ToolError(
                     output=output,
-                    message=(
+                    message=_append_elapsed(
                         f"Python execution failed (interpreter: {python_exe})"
-                        + self._module_not_found_hint(output, python_exe)
+                        + self._module_not_found_hint(output, python_exe),
+                        spent_seconds,
                     ),
                     brief="Python execution error"
                 )
             success_message = f"{source_label}: `{display_script_path}`"
-            return ToolOk(output=f"{success_message}\n\n{output}", brief=f"Python file executed: {display_script_path}")
+            return ToolOk(
+                output=f"{success_message}\n\n{output}",
+                message=_append_elapsed(success_message, spent_seconds),
+                brief=f"Python file executed: {display_script_path}",
+            )
 
         # Process output through token filter and summarization
         processed, output_path, output_truncated, original_path = await self._process_output(
@@ -533,7 +548,7 @@ class python(CallableTool2[Params]):
             output=processed,
             exit_code=real_exit_code,
             wait_matched=wait_matched,
-            elapsed_seconds=elapsed_seconds,
+            elapsed_seconds=spent_seconds,
             output_path=output_path,
             output_truncated=output_truncated,
             original_path=original_path,
@@ -550,7 +565,7 @@ class python(CallableTool2[Params]):
                 msg = f"{msg} {suffix}"
             return ToolError(
                 output=block,
-                message=msg,
+                message=_append_elapsed(msg, spent_seconds),
                 brief="Python execution error"
             )
 
@@ -559,7 +574,7 @@ class python(CallableTool2[Params]):
             success_message = f"{success_message} {suffix}"
         return ToolOk(
             output=block,
-            message=success_message,
+            message=_append_elapsed(success_message, spent_seconds),
             brief=f"Python {'file' if is_file_mode else 'code'} executed successfully"
         )
 
@@ -717,6 +732,12 @@ class python(CallableTool2[Params]):
         suffix = _original_saved_message(original_path)
         if suffix:
             message = f"{message} {suffix}" if message else suffix
+        if status == "completed":
+            # Only a finished sub-process has a meaningful "spent time"; a
+            # still-running task would report the wait time instead.
+            message = _append_elapsed(
+                message, _subprocess_elapsed(stream, elapsed_seconds)
+            )
         return ToolOk(output=block, message=message, brief=brief)
 
     async def _format_background_output(

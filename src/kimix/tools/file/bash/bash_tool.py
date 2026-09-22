@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field, model_validator
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimix.tools.common import (
     ProcessTask,
+    _append_elapsed,
     _build_session_output_block,
     _command_saved_message,
     _env_with_rg_bin_path,
@@ -41,6 +42,7 @@ from kimix.tools.common import (
     _maybe_rewrite_shell_command_with_rtk,
     _original_saved_message,
     _save_original_output_async,
+    _subprocess_elapsed,
     _summarize_long_output_async,
     _token_filter_output,
 )
@@ -1007,6 +1009,9 @@ class Bash(CallableTool2[BashParams]):
         stream = process_task.stream
         success = await stream.success() if stream else False
         real_exit_code = stream.exit_code if stream else None
+        # Real sub-process "spent time": the runtime recorded when the child
+        # exited, falling back to the measured wait for either monitor path.
+        spent_seconds = _subprocess_elapsed(stream, elapsed_seconds, waited_seconds)
 
         # Exit-code semantics + failure hints run on the raw output (the
         # redacted text is what gets displayed/exported below).
@@ -1026,7 +1031,7 @@ class Bash(CallableTool2[BashParams]):
             exit_code_meaning=meaning,
             failure_hint=hint,
             wait_matched=wait_matched,
-            elapsed_seconds=elapsed_seconds,
+            elapsed_seconds=spent_seconds,
             output_path=output_path,
             output_truncated=output_truncated,
             original_path=original_path,
@@ -1041,7 +1046,11 @@ class Bash(CallableTool2[BashParams]):
                 msg = f"{msg} {cmd_suffix}"
             if suffix:
                 msg = f"{msg} {suffix}"
-            return ToolError(output=block, message=msg, brief="Command execution failed")
+            return ToolError(
+                output=block,
+                message=_append_elapsed(msg, spent_seconds),
+                brief="Command execution failed",
+            )
 
         if not success:
             # Expected/benign non-zero exit (grep "no matches", diff "files
@@ -1055,7 +1064,7 @@ class Bash(CallableTool2[BashParams]):
             msg = f"{msg} {suffix}"
         return ToolOk(
             output=block,
-            message=msg,
+            message=_append_elapsed(msg, spent_seconds),
             brief="Command executed successfully",
             display_block=ShellDisplayBlock(language="shell"),
         )
@@ -1375,6 +1384,12 @@ class Bash(CallableTool2[BashParams]):
         suffix = _original_saved_message(original_path)
         if suffix:
             message = f"{message} {suffix}" if message else suffix
+        if status == "completed":
+            # Only a finished sub-process has a meaningful "spent time"; a
+            # still-running task would report the wait time instead.
+            message = _append_elapsed(
+                message, _subprocess_elapsed(stream, elapsed_seconds)
+            )
         return ToolOk(output=block, message=message, brief=brief)
 
     async def _format_background_output(

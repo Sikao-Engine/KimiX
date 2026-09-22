@@ -950,6 +950,134 @@ def _extract_export_path(output: str) -> str | None:
     return None
 
 
+#: Sub-process runtimes below this many seconds are not worth reporting in a
+#: tool message: the timing of a fast command is pure noise for the model.
+ELAPSED_REPORT_MINIMUM_SECONDS = 1.0
+
+#: Matches an already appended ``(1.23s)`` / ``(1m05s)`` / ``(1h02m)`` suffix.
+_ELAPSED_SUFFIX_RE = re.compile(r"\(\s*\d+(?:\.\d+)?(?:s|m\d+s|h\d+m)\s*\)\s*$")
+
+
+def _coerce_seconds(value: Any) -> float | None:
+    """Return *value* as a non-negative float number of seconds, else None.
+
+    Deliberately strict (real ``int``/``float`` only): timing values come from
+    ``time.monotonic`` deltas, and rejecting everything else keeps placeholder
+    stand-ins — whose ``__float__`` may invent a number — from fabricating a
+    duration that was never measured.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    seconds = float(value)
+    # ``not (0 <= seconds < inf)`` also filters NaN (all comparisons are False).
+    return seconds if 0 <= seconds < float("inf") else None
+
+
+def _format_elapsed_seconds(elapsed_seconds: float | None) -> str:
+    """Return a concise duration string, or ``""`` when it is unknown.
+
+    Formats:
+      * ``1.23s``   — under a minute (hundredths of a second),
+      * ``1m05s``   — under an hour,
+      * ``1h02m``   — an hour or more.
+    """
+    seconds = _coerce_seconds(elapsed_seconds)
+    if seconds is None:
+        return ""
+    if seconds < 60:
+        return f"{seconds:.2f}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m{int(seconds % 60):02d}s"
+    return f"{int(seconds // 3600)}h{int((seconds % 3600) // 60):02d}m"
+
+
+def _reportable_seconds(
+    elapsed_seconds: float | None,
+    *,
+    minimum: float = ELAPSED_REPORT_MINIMUM_SECONDS,
+) -> float | None:
+    """Return *elapsed_seconds* when it is worth reporting, else None.
+
+    Sub-processes that finished in less than *minimum* seconds (default 1s) or
+    whose runtime is unknown are not worth mentioning: the timing of a fast
+    command is pure noise.
+    """
+    seconds = _coerce_seconds(elapsed_seconds)
+    if seconds is None or seconds < minimum:
+        return None
+    return seconds
+
+
+def _elapsed_suffix(
+    elapsed_seconds: float | None,
+    *,
+    minimum: float = ELAPSED_REPORT_MINIMUM_SECONDS,
+) -> str:
+    """Return ``" (1.23s)"`` for *elapsed_seconds*, or ``""`` when not worth it."""
+    seconds = _reportable_seconds(elapsed_seconds, minimum=minimum)
+    if seconds is None:
+        return ""
+    return f" ({_format_elapsed_seconds(seconds)})"
+
+
+def _elapsed_tag(
+    elapsed_seconds: float | None,
+    *,
+    label: str = "Process completed in",
+    minimum: float = ELAPSED_REPORT_MINIMUM_SECONDS,
+) -> str:
+    """Return ``"[Process completed in 1.23s]"``, or ``""`` when not worth it."""
+    seconds = _reportable_seconds(elapsed_seconds, minimum=minimum)
+    if seconds is None:
+        return ""
+    return f"[{label} {_format_elapsed_seconds(seconds)}]"
+
+
+def _append_elapsed(
+    message: str,
+    elapsed_seconds: float | None,
+    *,
+    minimum: float = ELAPSED_REPORT_MINIMUM_SECONDS,
+) -> str:
+    """Append the spent-time suffix to *message* and return the result.
+
+    Idempotent: a message that already ends with a ``(1.23s)``-style suffix is
+    returned unchanged, so the same message can travel through a tool's own
+    completion path and through ``job_output`` without being annotated twice.
+    """
+    suffix = _elapsed_suffix(elapsed_seconds, minimum=minimum)
+    if not suffix:
+        return message or ""
+    text = message or ""
+    if not text:
+        # No message to decorate: the timing itself is the message.
+        return suffix.lstrip()
+    if _ELAPSED_SUFFIX_RE.search(text):
+        return text
+    return f"{text}{suffix}"
+
+
+def _subprocess_elapsed(
+    stream: Any,
+    *fallbacks: float | None,
+) -> float | None:
+    """Return the measured sub-process runtime in seconds, or None.
+
+    Prefers the runtime recorded by the process machinery
+    (:attr:`BackgroundStream.process_elapsed`, set when the child exits) and
+    falls back to the caller's own wait measurements — the elapsed time of a
+    plain wait *is* the sub-process lifetime for a one-shot command.
+    """
+    recorded = _coerce_seconds(getattr(stream, "process_elapsed", None))
+    if recorded is not None:
+        return recorded
+    for candidate in fallbacks:
+        seconds = _coerce_seconds(candidate)
+        if seconds is not None:
+            return seconds
+    return None
+
+
 def _build_session_output_block(
     *,
     task_id: str,
@@ -1803,6 +1931,10 @@ class ProcessTask:
         """
         process = None
         output_buffer = io.StringIO()
+        # Wall-clock start of the child: the delta measured to the end of this
+        # function is the sub-process "spent time" reported by the bash/python/
+        # pwsh tools and by ``job_output``.
+        elapsed_start = time.monotonic()
         # Lazy imports: kimix.tools.security is a light module, but importing it
         # here (rather than at module top) keeps kimix.tools.common importable
         # even when only the process machinery is needed.  The cap is read from
@@ -2054,6 +2186,11 @@ class ProcessTask:
             return False, None
         finally:
             self._stop_event.set()
+            # Publish the sub-process lifetime before the stream is marked as
+            # completed, so every caller that observes completion (foreground
+            # tools, ``job_output``, finished-task history) can report it.
+            if self._stream is not None and self._stream.process_elapsed is None:
+                self._stream.process_elapsed = time.monotonic() - elapsed_start
             if process is not None:
                 # The tree has been reaped (or was never spawned); stop
                 # tracking it so the atexit hook only sees live trees.

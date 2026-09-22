@@ -59,8 +59,13 @@ def _register_shutdown_hook() -> None:
 
 
 def context_path() -> Path:
-    user_home = Path.home()
-    return user_home / '.kimi' / 'sessions'
+    """Session cache of the current work directory.
+
+    Sessions are stored inside each work directory
+    (``<work dir>/.kimix_cache``); the share dir (``~/.kimi/sessions``) is
+    never created or used.
+    """
+    return Path.cwd() / '.kimix_cache'
 
 
 def delete_session_dir() -> None:

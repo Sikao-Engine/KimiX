@@ -198,6 +198,16 @@ class BackgroundStream:
         """The total running time of the subprocess in seconds, or None."""
         return self._process_elapsed
 
+    @process_elapsed.setter
+    def process_elapsed(self, value: float | None) -> None:
+        """Record the total running time of the subprocess (seconds).
+
+        Set by the process machinery when the child exits; read by
+        ``job_output`` and by the bash/python/pwsh tools to report how long the
+        sub-process spent running.
+        """
+        self._process_elapsed = value
+
     async def start(self, function: Callable[[queue.Queue[str]], Any] | Callable[[queue.Queue[str]], Awaitable[Any]], stop_function: Callable[[], Any] | Callable[[], Awaitable[Any]], input_function: Callable[[str], Any] | Callable[[str], Awaitable[Any]] | None = None) -> None:
         """Start the background thread with the given function.
 

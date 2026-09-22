@@ -17,7 +17,12 @@ from kosong.message import Message
 from kosong.utils.jsonx import loads_relaxed
 
 from kimi_cli.file_mtine import FileMTime
-from kimi_cli.metadata import WorkDirMeta, load_metadata, save_metadata
+from kimi_cli.metadata import (
+    KIMIX_CACHE_DIR_NAME,
+    WorkDirMeta,
+    load_metadata,
+    save_metadata,
+)
 from kimi_cli.session_state import SessionState, load_session_state, save_session_state
 from kimi_cli.soul.context_db import ContextDB
 from kimi_cli.soul.context_records import ExportedContext
@@ -25,6 +30,9 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.string import shorten
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import TurnBegin
+
+# ``KIMIX_CACHE_DIR_NAME`` is re-exported here for convenience (the SDK
+# imports it from this module).
 
 
 @dataclass(slots=True, kw_only=True)
@@ -75,10 +83,23 @@ class Session:
     # Closed before session-dir operations so Windows file locks are released.
     _history_index: Any | None = field(default=None, repr=False, compare=False)
 
+    # Internal: optional override for the root directory holding session
+    # sub-directories.  When set (e.g. by the SDK to pin sessions to
+    # ``<work dir>/.kimix_cache``), it replaces the default
+    # ``work_dir_meta.sessions_dir``.
+    sessions_dir_override: Path | None = field(default=None, repr=False, compare=False)
+
+    @property
+    def _sessions_root(self) -> Path:
+        """Root directory holding this session's directory."""
+        if self.sessions_dir_override is not None:
+            return self.sessions_dir_override
+        return self.work_dir_meta.sessions_dir
+
     @property
     def dir(self) -> Path:
         """The absolute path of the session directory."""
-        path = self.work_dir_meta.sessions_dir / self.id
+        path = self._sessions_root / self.id
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -183,7 +204,7 @@ class Session:
         """Delete the session directory."""
         await self.close_context_db()
         self.close_history_index()
-        session_dir = self.work_dir_meta.sessions_dir / self.id
+        session_dir = self._sessions_root / self.id
         if not session_dir.exists():
             return
         await asyncio.to_thread(shutil.rmtree, session_dir, True)
@@ -196,7 +217,7 @@ class Session:
         is retried briefly because the thread may still hold the file handles
         for a moment after it has been stopped.
         """
-        session_dir = self.work_dir_meta.sessions_dir / self.id
+        session_dir = self._sessions_root / self.id
         if not session_dir.exists():
             return
         db = self._context_db
@@ -324,8 +345,19 @@ class Session:
         work_dir: KaosPath,
         session_id: str | None = None,
         _context_file: Path | None = None,
+        _sessions_dir: Path | None = None,
     ) -> Session:
-        """Create a new session for a work directory."""
+        """Create a new session for a work directory.
+
+        Args:
+            work_dir: The work directory of the session.
+            session_id: Optional session ID; a random one is generated when omitted.
+            _context_file: Custom context file (backward compat / tests).
+            _sessions_dir: Override for the root directory holding the session
+                directory (the SDK pins ``<work dir>/.kimix_cache``).
+                When omitted, the default ``work_dir_meta.sessions_dir``
+                (``<work dir>/.kimix_cache``) is used.
+        """
         work_dir = work_dir.canonical()
         logger.debug("Creating new session for work directory: {work_dir}", work_dir=work_dir)
 
@@ -336,7 +368,8 @@ class Session:
 
         if session_id is None:
             session_id = uuid.uuid4().hex
-        session_dir = work_dir_meta.sessions_dir / session_id
+        sessions_root = _sessions_dir if _sessions_dir is not None else work_dir_meta.sessions_dir
+        session_dir = sessions_root / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
         if _context_file is not None:
@@ -372,13 +405,25 @@ class Session:
             updated_at=0.0,
             custom_data={},
             custom_config={},
+            sessions_dir_override=_sessions_dir,
         )
         await session.refresh()
         return session
 
     @staticmethod
-    async def find(work_dir: KaosPath, session_id: str) -> Session | None:
-        """Find a session by work directory and session ID."""
+    async def find(
+        work_dir: KaosPath,
+        session_id: str,
+        _sessions_dir: Path | None = None,
+    ) -> Session | None:
+        """Find a session by work directory and session ID.
+
+        Args:
+            work_dir: The work directory of the session.
+            session_id: The session ID to find.
+            _sessions_dir: Override for the root directory holding the session
+                directory (e.g. ``<work dir>/.kimix_cache`` used by the SDK).
+        """
         work_dir = work_dir.canonical()
         logger.debug(
             "Finding session for work directory: {work_dir}, session ID: {session_id}",
@@ -392,9 +437,15 @@ class Session:
             logger.debug("Work directory never been used")
             return None
 
-        _migrate_session_context_file(work_dir_meta, session_id)
+        if _sessions_dir is None:
+            _migrate_session_context_file(work_dir_meta, session_id)
+            sessions_root = work_dir_meta.sessions_dir
+        else:
+            # An explicit sessions root is a fresh layout with no legacy
+            # flat files to migrate.
+            sessions_root = _sessions_dir
 
-        session_dir = work_dir_meta.sessions_dir / session_id
+        session_dir = sessions_root / session_id
         if not session_dir.is_dir():
             logger.debug("Session directory not found: {session_dir}", session_dir=session_dir)
             return None
@@ -420,13 +471,23 @@ class Session:
             updated_at=0.0,
             custom_data={},
             custom_config={},
+            sessions_dir_override=_sessions_dir,
         )
         await session.refresh()
         return session
 
     @staticmethod
-    async def list(work_dir: KaosPath) -> builtins.list[Session]:
-        """List all sessions for a work directory."""
+    async def list(
+        work_dir: KaosPath,
+        _sessions_dir: Path | None = None,
+    ) -> builtins.list[Session]:
+        """List all sessions for a work directory.
+
+        Args:
+            work_dir: The work directory of the sessions.
+            _sessions_dir: Override for the root directory holding the session
+                directories (e.g. ``<work dir>/.kimix_cache`` used by the SDK).
+        """
         work_dir = work_dir.canonical()
         logger.debug("Listing sessions for work directory: {work_dir}", work_dir=work_dir)
 
@@ -436,8 +497,11 @@ class Session:
             logger.debug("Work directory never been used")
             return []
 
+        sessions_root = _sessions_dir if _sessions_dir is not None else work_dir_meta.sessions_dir
         session_ids = set()
-        for path in work_dir_meta.sessions_dir.iterdir():
+        if not sessions_root.is_dir():
+            return []
+        for path in sessions_root.iterdir():
             if path.is_dir():
                 session_ids.add(path.name)
             elif path.suffix in (".jsonl", ".db") and path.stem not in session_ids:
@@ -446,8 +510,9 @@ class Session:
 
         sessions: list[Session] = []
         for session_id in session_ids:
-            _migrate_session_context_file(work_dir_meta, session_id)
-            session_dir = work_dir_meta.sessions_dir / session_id
+            if _sessions_dir is None:
+                _migrate_session_context_file(work_dir_meta, session_id)
+            session_dir = sessions_root / session_id
             if not session_dir.is_dir():
                 logger.debug("Session directory not found: {session_dir}", session_dir=session_dir)
                 continue
@@ -470,10 +535,11 @@ class Session:
                 wire_file=WireFile(path=session_dir / "wire.jsonl"),
                 state=load_session_state(session_dir),
                 title="",
-                updated_at=0.0,
-                custom_data={},
-                custom_config={},
-            )
+            updated_at=0.0,
+            custom_data={},
+            custom_config={},
+            sessions_dir_override=_sessions_dir,
+        )
             if session.is_empty():
                 logger.debug(
                     "Session context file is empty: {context_file}", context_file=context_file
@@ -495,8 +561,17 @@ class Session:
         return all_sessions
 
     @staticmethod
-    async def continue_(work_dir: KaosPath) -> Session | None:
-        """Get the last session for a work directory."""
+    async def continue_(
+        work_dir: KaosPath,
+        _sessions_dir: Path | None = None,
+    ) -> Session | None:
+        """Get the last session for a work directory.
+
+        Args:
+            work_dir: The work directory of the session.
+            _sessions_dir: Override for the root directory holding the session
+                directory (e.g. ``<work dir>/.kimix_cache`` used by the SDK).
+        """
         work_dir = work_dir.canonical()
         logger.debug("Continuing session for work directory: {work_dir}", work_dir=work_dir)
 
@@ -513,11 +588,16 @@ class Session:
             "Found last session for work directory: {session_id}",
             session_id=work_dir_meta.last_session_id,
         )
-        return await Session.find(work_dir, work_dir_meta.last_session_id)
+        return await Session.find(
+            work_dir, work_dir_meta.last_session_id, _sessions_dir=_sessions_dir
+        )
 
     @staticmethod
     async def rename(
-        work_dir: KaosPath, session_id: str, new_session_id: str
+        work_dir: KaosPath,
+        session_id: str,
+        new_session_id: str,
+        _sessions_dir: Path | None = None,
     ) -> Session | None:
         """Rename a session to a new session ID.
 
@@ -525,6 +605,8 @@ class Session:
             work_dir: Working directory containing the session.
             session_id: The current session ID to rename.
             new_session_id: The new session ID.
+            _sessions_dir: Override for the root directory holding the session
+                directory (e.g. ``<work dir>/.kimix_cache`` used by the SDK).
 
         Returns:
             Session | None: The renamed session, or None if the session
@@ -545,7 +627,8 @@ class Session:
             logger.debug("Work directory never been used")
             return None
 
-        old_session_dir = work_dir_meta.sessions_dir / session_id
+        sessions_root = _sessions_dir if _sessions_dir is not None else work_dir_meta.sessions_dir
+        old_session_dir = sessions_root / session_id
         if not old_session_dir.is_dir():
             logger.debug(
                 "Session directory not found: {session_dir}",
@@ -563,7 +646,7 @@ class Session:
             )
             return None
 
-        new_session_dir = work_dir_meta.sessions_dir / new_session_id
+        new_session_dir = sessions_root / new_session_id
         if new_session_dir.exists():
             logger.debug(
                 "Target session directory already exists: {session_dir}",
@@ -593,11 +676,14 @@ class Session:
             work_dir_meta.last_session_id = new_session_id
             save_metadata(metadata)
 
-        return await Session.find(work_dir, new_session_id)
+        return await Session.find(work_dir, new_session_id, _sessions_dir=_sessions_dir)
 
     @staticmethod
     async def copy(
-        work_dir: KaosPath, source_session_id: str, target_session_id: str
+        work_dir: KaosPath,
+        source_session_id: str,
+        target_session_id: str,
+        _sessions_dir: Path | None = None,
     ) -> Session:
         """Copy an existing session directory to a new session ID.
 
@@ -605,6 +691,8 @@ class Session:
             work_dir: Working directory containing the sessions.
             source_session_id: ID of the session to copy.
             target_session_id: ID for the new copied session.
+            _sessions_dir: Override for the root directory holding the session
+                directories (e.g. ``<work dir>/.kimix_cache`` used by the SDK).
 
         Returns:
             Session: The newly created target session.
@@ -624,18 +712,22 @@ class Session:
         if work_dir_meta is None:
             raise ValueError(f"Source session not found: {source_session_id}")
 
-        _migrate_session_context_file(work_dir_meta, source_session_id)
-        source_dir = work_dir_meta.sessions_dir / source_session_id
+        if _sessions_dir is None:
+            _migrate_session_context_file(work_dir_meta, source_session_id)
+            sessions_root = work_dir_meta.sessions_dir
+        else:
+            sessions_root = _sessions_dir
+        source_dir = sessions_root / source_session_id
         if not source_dir.is_dir():
             raise ValueError(f"Source session not found: {source_session_id}")
 
-        target_dir = work_dir_meta.sessions_dir / target_session_id
+        target_dir = sessions_root / target_session_id
         if target_dir.exists():
             raise ValueError(f"Target session already exists: {target_session_id}")
 
         await asyncio.to_thread(shutil.copytree, source_dir, target_dir)
 
-        copied = await Session.find(work_dir, target_session_id)
+        copied = await Session.find(work_dir, target_session_id, _sessions_dir=_sessions_dir)
         if copied is None:
             raise RuntimeError(f"Failed to open copied session: {target_session_id}")
         return copied

@@ -20,7 +20,13 @@ from .utils import (
     record_finished_task,
     remove_task_id,
 )
-from kimix.tools.common import _maybe_export_output_async, _maybe_export_rtk_original_async, _original_saved_message
+from kimix.tools.common import (
+    _append_elapsed,
+    _elapsed_tag,
+    _maybe_export_output_async,
+    _maybe_export_rtk_original_async,
+    _original_saved_message,
+)
 from kimix.tools.prompt_common import accepts_alias_text, wait_for_pattern_field
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 
@@ -213,6 +219,9 @@ class TaskOutput(CallableTool2):
             stream, output, None
         )
         success = await stream.success()
+        # Sub-process "spent time": reported in the message (success *and*
+        # failure) unless the job finished in under a second.
+        spent_seconds = stream.process_elapsed
         record_finished_task(self._session, FinishedTask(
             task_id=job_id,
             output=output,
@@ -220,22 +229,19 @@ class TaskOutput(CallableTool2):
             message=message,
             success=success,
             exit_code=stream.exit_code,
-            elapsed=stream.process_elapsed,
+            elapsed=spent_seconds,
         ))
         remove_task_id(self._session, job_id)
         if not success:
-            elapsed = stream.process_elapsed
-            if elapsed is not None:
-                message += f" ({elapsed:.1f}s)"
             return ToolError(
-                message=message,
+                message=_append_elapsed(message, spent_seconds),
                 output=processed if processed else "",
                 brief=f"Task '{params.job_id}' killed (non-zero exit)"
             )
 
         return ToolOk(
             output=processed if processed else "(no output)",
-            message=message,
+            message=_append_elapsed(message, spent_seconds),
             brief=f"Task '{params.job_id}' killed",
         )
 
@@ -301,8 +307,9 @@ class TaskOutput(CallableTool2):
 
         if wait_matched is not None:
             output_text += f"\nwait_matched: {str(wait_matched).lower()}"
-        if record.elapsed is not None:
-            output_text += f"\n[Process completed in {record.elapsed:.2f}s]"
+        elapsed_tag = _elapsed_tag(record.elapsed)
+        if elapsed_tag:
+            output_text += f"\n{elapsed_tag}"
         output_text += "\n[retrieved from finished-task history]"
 
         kind = job_id.split("_")[0] if "_" in job_id else "task"
@@ -312,15 +319,16 @@ class TaskOutput(CallableTool2):
             status="completed",
             description=output_text[:200] if output_text else "(no output)",
         )
+        message = _append_elapsed(record.message, record.elapsed)
         if not record.success:
             return ToolError(
-                message=record.message,
+                message=message,
                 output=output_text,
                 brief=f"Task '{job_id}' failed",
             )
         return ToolOk(
             output=output_text,
-            message=record.message,
+            message=message,
             brief=f"Task '{job_id}' (finished)",
             display_block=display_block,
         )
@@ -389,6 +397,9 @@ class TaskOutput(CallableTool2):
                 stream, output, wait_matched
             )
             success = await stream.success()
+            # Sub-process "spent time": appended to the returned message for
+            # both success and failure, unless the job ran under a second.
+            spent_seconds = stream.process_elapsed
             # Keep the final result in the bounded finished-task history so
             # later job_output calls can retrieve it again after the task
             # leaves the active registry.
@@ -399,15 +410,12 @@ class TaskOutput(CallableTool2):
                 message=message,
                 success=success,
                 exit_code=stream.exit_code,
-                elapsed=stream.process_elapsed,
+                elapsed=spent_seconds,
                 wait_matched=wait_matched,
                 original_path=original_path,
             ))
             remove_task_id(self._session, job_id)
             if not success:
-                elapsed = stream.process_elapsed
-                if elapsed is not None:
-                    message += f" ({elapsed:.1f}s)"
                 if params.output_path:
                     from pathlib import Path
                     import anyio
@@ -419,7 +427,7 @@ class TaskOutput(CallableTool2):
                 else:
                     output_text = processed if processed else "(no output)"
                 return ToolError(
-                    message=message,
+                    message=_append_elapsed(message, spent_seconds),
                     output=output_text,
                     brief=f"Task '{params.job_id}' failed"
                 )
@@ -427,6 +435,7 @@ class TaskOutput(CallableTool2):
             processed = await _maybe_export_output_async(output)
             message = ""
             original_path = None
+            spent_seconds = None
             if output:
                 rtk_original_path, _ = await _maybe_export_rtk_original_async(output)
                 if rtk_original_path:
@@ -453,9 +462,9 @@ class TaskOutput(CallableTool2):
         if wait_matched is not None:
             output_text += f"\nwait_matched: {str(wait_matched).lower()}"
         if not task_alive:
-            elapsed = stream.process_elapsed
-            if elapsed is not None:
-                output_text += f"\n[Process completed in {elapsed:.2f}s]"
+            elapsed_tag = _elapsed_tag(spent_seconds)
+            if elapsed_tag:
+                output_text += f"\n{elapsed_tag}"
 
         # For completed tasks with a registered formatter, the message already
         # contains the original-saved / command-saved suffixes.  Otherwise,
@@ -467,7 +476,7 @@ class TaskOutput(CallableTool2):
         status = "running" if task_alive else "completed"
         return ToolOk(
             output=output_text,
-            message=message,
+            message=_append_elapsed(message, spent_seconds),
             brief="Task output retrieved",
             display_block=BackgroundTaskDisplayBlock(
                 task_id=params.job_id,

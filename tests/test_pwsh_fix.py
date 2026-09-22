@@ -606,7 +606,7 @@ class TestPwshToolValidationFlow:
         instance.start = MagicMock(return_value=asyncio.Future())
         instance.start.return_value.set_result(task_id)
         instance.wait_with_monitor = MagicMock(return_value=asyncio.Future())
-        instance.wait_with_monitor.return_value.set_result(None)
+        instance.wait_with_monitor.return_value.set_result((False, 0.0, False))
         instance.thread_is_alive = MagicMock(return_value=asyncio.Future())
         instance.thread_is_alive.return_value.set_result(False)
         instance.stream = MagicMock()
