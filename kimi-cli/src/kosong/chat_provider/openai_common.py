@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import copy
+import json
 import os
 import ssl
 import sys
@@ -219,7 +220,21 @@ def convert_error(error: OpenAIError | httpx.HTTPError) -> ChatProviderError:
             # mid-reasoning cut does not abort the whole agent turn.
             return APIConnectionError(error.message)
         case _:
-            return ChatProviderError(f"Error: {error}")
+              return ChatProviderError(f"Error: {error}")
+
+
+def convert_invalid_json_error(exc: json.JSONDecodeError) -> APIConnectionError:
+    """Map a JSON decode failure on a *successful* HTTP response to a retryable
+    :class:`APIConnectionError`.
+
+    A glitching backend can answer a 200 request with a body that is not valid
+    JSON (truncated mid-object, prose, HTML error page).  The SDKs surface this
+    as a raw ``json.JSONDecodeError`` (or ``orjson.JSONDecodeError``, which
+    subclasses it), which the agent loop does not understand — it escapes the
+    retry machinery and aborts the whole turn.  The body *did* arrive, so
+    retrying the step is a reasonable recovery.
+    """
+    return APIConnectionError(f"Backend returned invalid JSON ({exc})")
 
 
 _MISSING_REASONING_CONTENT_RE = re.compile(
@@ -943,6 +958,13 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
     ) -> AsyncIterator[StreamedMessagePart]:
         self._id = response.id
         self._usage = response.usage
+        if not response.choices:
+            # JSON-valid but schema-invalid body (the SDK constructs
+            # leniently): nothing usable arrived, so treat it like a
+            # garbled response.
+            raise APIConnectionError(
+                "Backend returned a chat completion without choices"
+            )
         message = response.choices[0].message
         # Backends disagree on which field carries reasoning content (e.g.
         # ``reasoning_content`` for DeepSeek/Moonshot, ``reasoning`` for Command
@@ -1019,5 +1041,10 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
                         tool_call, buffered_tool_calls
                     ):
                         yield part
+        except json.JSONDecodeError as e:
+            # A glitching backend answered a 200 request with a body that is
+            # not valid JSON; surface it as a retryable connection error
+            # instead of a foreign json.JSONDecodeError that aborts the turn.
+            raise convert_invalid_json_error(e) from e
         except (OpenAIError, httpx.HTTPError) as e:
             raise convert_error(e) from e

@@ -13,6 +13,7 @@ provider from a profile alone.
 from __future__ import annotations
 
 import copy
+import json
 import os
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Self, Unpack, cast
@@ -28,6 +29,7 @@ from kosong.chat_provider import (
     ThinkingEffort,
 )
 from kosong.chat_provider.openai_common import (
+    convert_invalid_json_error,
     clamp_max_tokens,
     clamp_thinking_effort,
     convert_error,
@@ -146,6 +148,8 @@ class ThinkingControlledOpenAIProvider(CompatibleOpenAIProvider):
                 **generation_kwargs,
             )
             return OpenAILegacyStreamedMessage(response, self._reasoning_key)
+        except json.JSONDecodeError as e:
+            raise convert_invalid_json_error(e) from e
         except (OpenAIError, httpx.HTTPError) as e:
             raise convert_error(e) from e
 

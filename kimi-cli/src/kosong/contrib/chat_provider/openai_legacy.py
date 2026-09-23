@@ -1,4 +1,5 @@
 import copy
+import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Self, Unpack, cast
 
@@ -17,6 +18,7 @@ from kosong.chat_provider import (
     ThinkingEffort,
 )
 from kosong.chat_provider.openai_common import (
+    convert_invalid_json_error,
     CommonGenerationKwargs,
     OpenAICompatibleProviderMixin,
     OpenAICompatibleStreamedMessage,
@@ -253,6 +255,8 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
                 **generation_kwargs,
             )
             return OpenAILegacyStreamedMessage(response, self._reasoning_key)
+        except json.JSONDecodeError as e:
+            raise convert_invalid_json_error(e) from e
         except (OpenAIError, httpx.HTTPError) as e:
             # Debug logging for the Moonshot/Kimi "reasoning_content must be passed back"
             # 400 is disabled by default. Uncomment the block below to enable it.

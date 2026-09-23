@@ -6,6 +6,7 @@ except ModuleNotFoundError as exc:
         'Install with `pip install "kosong[contrib]"`.'
     ) from exc
 
+import json
 import mimetypes
 from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Self, TypedDict, Unpack, cast
@@ -43,7 +44,10 @@ from kosong.chat_provider import (
     TokenUsage,
     convert_httpx_error,
 )
-from kosong.chat_provider.openai_common import apply_generation_kwargs
+from kosong.chat_provider.openai_common import (
+    apply_generation_kwargs,
+    convert_invalid_json_error,
+)
 from kosong.contrib.chat_provider.common import (
     get_stream_iteration_timeout,
     validate_tool_call_arguments,
@@ -317,6 +321,10 @@ class GoogleGenAIStreamedMessage:
                             yield message_part
         except genai_errors.APIError as exc:
             raise _convert_error(exc) from exc
+        except (genai_errors.UnknownApiResponseError, json.JSONDecodeError) as exc:
+            # The SDK raises this plain ValueError subclass (not an APIError)
+            # when a response body cannot be parsed as JSON.
+            raise convert_invalid_json_error(exc) from exc
         except httpx.HTTPError as exc:
             raise convert_httpx_error(exc) from exc
 

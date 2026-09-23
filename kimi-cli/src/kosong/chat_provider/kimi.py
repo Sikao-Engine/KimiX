@@ -1,4 +1,5 @@
 import copy
+import json
 import mimetypes
 import os
 from collections.abc import Sequence
@@ -24,6 +25,7 @@ from kosong.chat_provider import (
     TokenUsage,
 )
 from kosong.chat_provider.openai_common import (
+    convert_invalid_json_error,
     CommonGenerationKwargs,
     OpenAICompatibleProviderMixin,
     OpenAICompatibleStreamedMessage,
@@ -193,6 +195,9 @@ class Kimi(OpenAICompatibleProviderMixin):
                 **generation_kwargs,
             )
             return KimiStreamedMessage(response)
+        except json.JSONDecodeError as e:
+            raise convert_invalid_json_error(e) from e
+            raise convert_invalid_json_error(e) from e
         except (OpenAIError, httpx.HTTPError) as e:
             # Debug logging for the Moonshot/Kimi "reasoning_content must be passed back"
             # 400 is disabled by default. Uncomment the block below to enable it.
@@ -286,6 +291,9 @@ class KimiFiles:
                 files=files,
                 options=options,
             )
+        except json.JSONDecodeError as e:
+            raise convert_invalid_json_error(e) from e
+            raise convert_invalid_json_error(e) from e
         except (OpenAIError, httpx.HTTPError) as e:
             raise convert_error(e) from e
         return f"ms://{response.id}"

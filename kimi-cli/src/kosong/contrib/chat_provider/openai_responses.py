@@ -1,4 +1,5 @@
 import uuid
+import json
 from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Any, Self, Unpack, cast, get_args
 
@@ -38,6 +39,7 @@ from kosong.chat_provider import (
     TokenUsage,
 )
 from kosong.chat_provider.openai_common import (
+    convert_invalid_json_error,
     CommonGenerationKwargs,
     OpenAICompatibleProviderMixin,
     apply_generation_kwargs,
@@ -252,8 +254,12 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
                 raise convert_error(e) from e
             try:
                 response = await self.client.responses.create(**create_kwargs)
+            except json.JSONDecodeError as retry_error:
+                raise convert_invalid_json_error(retry_error) from retry_error
             except (OpenAIError, httpx.HTTPError) as retry_error:
                 raise convert_error(retry_error) from retry_error
+        except json.JSONDecodeError as e:
+            raise convert_invalid_json_error(e) from e
         except (OpenAIError, httpx.HTTPError) as e:
             # Debug logging for the Moonshot/Kimi "reasoning_content must be passed back"
             # 400 is disabled by default. Uncomment the block below to enable it.
@@ -744,6 +750,8 @@ class OpenAIResponsesStreamedMessage(BaseStreamedMessage):
                         yield ThinkPart(think=chunk.text)
                 elif chunk.type == "response.completed":
                     self._usage = chunk.response.usage
+        except json.JSONDecodeError as e:
+            raise convert_invalid_json_error(e) from e
         except (OpenAIError, httpx.HTTPError) as e:
             raise convert_error(e) from e
 

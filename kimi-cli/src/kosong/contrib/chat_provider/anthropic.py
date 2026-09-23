@@ -82,7 +82,10 @@ from kosong.chat_provider import (
     TokenUsage,
     convert_httpx_error,
 )
-from kosong.chat_provider.openai_common import apply_generation_kwargs
+from kosong.chat_provider.openai_common import (
+    apply_generation_kwargs,
+    convert_invalid_json_error,
+)
 from kosong.contrib.chat_provider.common import (
     BaseStreamedMessage,
     ToolMessageConversion,
@@ -468,6 +471,8 @@ class Anthropic:
                 **generation_kwargs,
             )
             return AnthropicStreamedMessage(response)
+        except json.JSONDecodeError as e:
+            raise convert_invalid_json_error(e) from e
         except (AnthropicError, httpx.HTTPError, httpx2.HTTPError) as e:
             raise _convert_error(e) from e
 
@@ -742,6 +747,12 @@ class AnthropicStreamedMessage(BaseStreamedMessage):
     ) -> AsyncIterator[StreamedMessagePart]:
         self._id = response.id
         self._usage = response.usage
+        if not response.content:
+            # A glitching backend answered 200 with a non-JSON body the
+            # SDK's lenient constructor turned into an empty message.
+            raise APIConnectionError(
+                "Backend returned a message without content blocks"
+                    )
         for block in response.content:
             match block.type:
                 case "text":
@@ -839,6 +850,8 @@ class AnthropicStreamedMessage(BaseStreamedMessage):
                             self._update_usage(event.usage)
                     elif isinstance(event, MessageStopEvent):
                         continue
+        except json.JSONDecodeError as exc:
+            raise convert_invalid_json_error(exc) from exc
         except (AnthropicError, httpx.HTTPError, httpx2.HTTPError) as exc:
             raise _convert_error(exc) from exc
 
