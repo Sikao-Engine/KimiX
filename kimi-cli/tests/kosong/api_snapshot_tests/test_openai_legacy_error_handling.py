@@ -38,12 +38,14 @@ class TestInvalidToolCallArguments:
         result = provider._convert_message(message)
         assert result["role"] == "assistant"
         content = result["content"]
-        # loads_relaxed repairs the broken JSON to a valid dict, so no error is emitted.
-        # When there is exactly one TextPart, Message serializes it as a string.
-        assert content == "Let me call a tool."
-        # loads_relaxed validates successfully (repairs internally), but the original
-        # argument string is preserved in the output.
-        assert result["tool_calls"][0]["function"]["arguments"] == '{"a": 1, "b": 2'
+        # Strict validation: json_repair-style lenient parsing is NOT accepted here
+        # (it passes strings like '{}{}' that strict backends 400 on).  The broken
+        # arguments are reset to '{}' and an error text block is prepended so the
+        # LLM sees the problem.
+        assert isinstance(content, list)
+        assert "invalid JSON arguments" in content[0]["text"]
+        assert content[1]["text"] == "Let me call a tool."
+        assert result["tool_calls"][0]["function"]["arguments"] == "{}"
 
     def test_non_dict_json_returns_error_to_llm(self) -> None:
         provider = OpenAILegacy(

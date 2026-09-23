@@ -136,3 +136,67 @@ def test_generate_think_with_tool_calls_succeeds():
     result = asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
     assert any(isinstance(p, ThinkPart) for p in result.message.content)
     assert result.message.tool_calls
+
+
+def test_generate_repairs_duplicated_argument_chunks():
+    """Duplicated gateway chunks merge into '{}{}' — the stored message and the
+    dispatched tool call must both receive repaired, strict-parseable arguments
+    so the poison never enters the persisted history (regression: scnet/Qwen
+    400 code 10013 on '{}{}' in tool_calls[].function.arguments)."""
+    chat_provider = MockChatProvider(
+        message_parts=[
+            ToolCall(
+                id="bash#1",
+                function=ToolCall.FunctionBody(name="bash", arguments=None),
+            ),
+            ToolCallPart(arguments_part="{}"),
+            ToolCallPart(arguments_part="{}"),
+        ]
+    )
+    output_tool_calls: list[ToolCall] = []
+
+    async def on_tool_call(tool_call: ToolCall):
+        output_tool_calls.append(tool_call)
+
+    result = asyncio.run(
+        generate(
+            chat_provider,
+            system_prompt="",
+            tools=[],
+            history=[],
+            on_tool_call=on_tool_call,
+        )
+    )
+    assert result.message.tool_calls is not None
+    assert result.message.tool_calls[0].function.arguments == "{}"
+    assert output_tool_calls == result.message.tool_calls
+
+
+def test_generate_repairs_truncated_arguments():
+    """Truncated arguments (cut-off stream) fall back to '{}' instead of
+    persisting invalid JSON into the history."""
+    chat_provider = MockChatProvider(
+        message_parts=[
+            ToolCall(
+                id="bash#2",
+                function=ToolCall.FunctionBody(name="bash", arguments='{"command": '),
+            ),
+        ]
+    )
+    result = asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
+    assert result.message.tool_calls is not None
+    assert result.message.tool_calls[0].function.arguments == "{}"
+
+
+def test_generate_leaves_valid_arguments_untouched():
+    chat_provider = MockChatProvider(
+        message_parts=[
+            ToolCall(
+                id="bash#3",
+                function=ToolCall.FunctionBody(name="bash", arguments='{"command": "ls"}'),
+            ),
+        ]
+    )
+    result = asyncio.run(generate(chat_provider, system_prompt="", tools=[], history=[]))
+    assert result.message.tool_calls is not None
+    assert result.message.tool_calls[0].function.arguments == '{"command": "ls"}'

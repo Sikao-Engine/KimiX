@@ -1124,11 +1124,11 @@ async def test_anthropic_valid_tool_call_ids_pass_through_unchanged():
 @pytest.mark.parametrize(
     ("arguments", "expected_error_substring"),
     [
-        ('{"a": 1, "b": 2', ""),  # broken JSON — loads_relaxed repairs it
-        ("<args><a>1</a></args>", "must be a JSON object, got str."),  # XML
-        ("a: 1\nb: 2", "must be a JSON object, got str."),  # YAML
-        ("{{a=1, b=2}}", "must be a JSON object, got list."),  # DSML-like
-        ("not json at all", "must be a JSON object, got str."),  # garbage
+        ('{"a": 1, "b": 2', "invalid JSON arguments"),  # broken JSON — strict parse fails
+        ("<args><a>1</a></args>", "invalid JSON arguments"),  # XML
+        ("a: 1\nb: 2", "invalid JSON arguments"),  # YAML
+        ("{{a=1, b=2}}", "invalid JSON arguments"),  # DSML-like
+        ("not json at all", "invalid JSON arguments"),  # garbage
         ("[1, 2, 3]", "must be a JSON object"),  # valid JSON, but array
     ],
     ids=["broken_json", "xml", "yaml", "dsml", "garbage", "json_array"],
@@ -1169,7 +1169,7 @@ async def test_anthropic_malformed_tool_call_arguments_in_request(
     assert content[0]["type"] == "text"
     assert content[0]["text"] == "I'll call a tool."
     if not expected_error_substring:
-        # loads_relaxed successfully repaired the JSON
+        # (reserved for inputs that need no repair — all current cases do)
         assert content[1]["type"] == "tool_use"
         assert content[1]["input"] == {"a": 1, "b": 2}
         assert content[1]["name"] == "add"

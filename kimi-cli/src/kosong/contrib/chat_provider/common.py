@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Literal, TypeVar
@@ -20,23 +19,37 @@ type ToolMessageConversion = Literal["extract_text"]
 def validate_tool_call_arguments(tool_calls: list[ToolCall]) -> list[str]:
     """Validate and sanitize tool call arguments. Returns error messages.
 
-    Each tool call with non-empty arguments is parsed as JSON.  Invalid
-    JSON and non-object values are both reset to ``"{}"`` and reported
-    via the returned error list.
+    Each tool call's arguments are strictly parsed as JSON — ``loads_relaxed``
+    is intentionally NOT used here because ``json_repair`` accepts inputs like
+    ``'{}{}'`` (duplicated gateway chunks) that strict backends reject with a
+    400 when echoed back in history.  Invalid JSON is first repaired to the
+    first complete JSON value, otherwise reset to ``"{}"``; non-object values
+    are reset to ``"{}"``.  All repairs are reported via the returned error
+    list so the model can see what happened.
     """
-    from kosong.utils.jsonx import loads_relaxed
+    import orjson
+
+    from kosong.utils.jsonx import sanitize_tool_arguments
 
     errors: list[str] = []
     for tc in tool_calls:
-        if not tc.function.arguments:
-            continue
-        try:
-            parsed = loads_relaxed(tc.function.arguments)
-        except json.JSONDecodeError as exc:
-            errors.append(
-                f"Error: Tool call '{tc.function.name}' has invalid JSON arguments: {exc}"
-            )
+        original = tc.function.arguments
+        if not original:
+            # Missing/empty arguments: silently fill so the backend always
+            # receives a parseable JSON object.  Some backends reject an
+            # absent ``arguments`` key outright.
             tc.function.arguments = "{}"
+            continue
+        sanitized = sanitize_tool_arguments(original)
+        if sanitized != original:
+            tc.function.arguments = sanitized
+            errors.append(
+                f"Error: Tool call '{tc.function.name}' had invalid JSON arguments; "
+                f"reset to '{sanitized}'."
+            )
+        try:
+            parsed = orjson.loads(tc.function.arguments)
+        except orjson.JSONDecodeError:  # pragma: no cover - sanitize guarantees validity
             continue
         if not isinstance(parsed, dict):
             errors.append(

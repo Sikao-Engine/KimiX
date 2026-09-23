@@ -262,12 +262,16 @@ class TestInvalidToolCallArguments:
         result = provider._convert_message(message)
         assert result["role"] == "assistant"
         content = result["content"]
-        # loads_relaxed repairs the broken JSON to a valid dict, so no error is emitted
-        assert len(content) == 2  # text + tool_use
+        # Strict validation: the broken arguments are reset to '{}' and an error
+        # text block is appended after the original content so the LLM sees the
+        # problem (Anthropic places error text after content blocks, before tool_use).
+        assert len(content) == 3  # original text + error text + tool_use
         assert content[0]["type"] == "text"
         assert content[0]["text"] == "Let me call a tool."
-        assert content[1]["type"] == "tool_use"
-        assert content[1]["input"] == {"a": 1, "b": 2}
+        assert content[1]["type"] == "text"
+        assert "invalid JSON arguments" in content[1]["text"]
+        assert content[2]["type"] == "tool_use"
+        assert content[2]["input"] == {}
 
     def test_non_dict_json_returns_error_to_llm(self) -> None:
         provider = Anthropic(

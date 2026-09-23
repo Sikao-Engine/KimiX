@@ -109,11 +109,36 @@ class GenerateResult:
     """The token usage of the generated message."""
 
 
+def _sanitize_tool_call_arguments(tool_call: ToolCall) -> None:
+    """Repair invalid-JSON tool call arguments in place before the call is
+    dispatched to tools and appended to the generated message.
+
+    Some gateways stream duplicated argument chunks which merge into strings
+    like ``'{}{}'``; such arguments may execute leniently (json_repair) but
+    poison the persisted history — strict backends 400 on them when echoed
+    back.  The repair keeps history sendable.  See
+    ``kosong.utils.jsonx.sanitize_tool_arguments``.
+    """
+    from kosong.utils.jsonx import sanitize_tool_arguments
+
+    original = tool_call.function.arguments
+    sanitized = sanitize_tool_arguments(original)
+    if sanitized != original:
+        logger.warning(
+            "Repaired invalid tool call arguments for '{name}': {original!r} -> {sanitized!r}",
+            name=tool_call.function.name,
+            original=original,
+            sanitized=sanitized,
+        )
+        tool_call.function.arguments = sanitized
+
+
 def _message_append(message: Message, part: StreamedMessagePart) -> None:
     match part:
         case ContentPart():
             message.content.append(part)
         case ToolCall():
+            _sanitize_tool_call_arguments(part)
             if message.tool_calls is None:
                 message.tool_calls = []
             message.tool_calls.append(part)

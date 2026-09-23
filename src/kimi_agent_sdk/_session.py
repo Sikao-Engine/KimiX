@@ -18,13 +18,36 @@ from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.session import KIMIX_CACHE_DIR_NAME, Session as CliSession
 from kimi_cli.soul import SessionRestartRequired, StatusSnapshot
 from kimi_cli.wire.types import ContentPart, TextPart, ThinkPart, WireMessage
-from kosong.chat_provider import ChatProvider
+from kosong.chat_provider import APIStatusError, ChatProvider
 
 from kimi_agent_sdk._exception import SessionStateError
 
 logger = logging.getLogger(__name__)
 
 _prompt_semaphore = asyncio.Semaphore(5)
+
+# Status codes that justify an automatic session restart: transient server or
+# rate-limit failures where retrying with a fresh provider may succeed.
+_RESTARTABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+
+
+def _is_restartable_error(original_error: BaseException | None) -> bool:
+    """Decide whether a ``SessionRestartRequired`` warrants an auto-restart.
+
+    Deterministic client errors (e.g. 400 "invalid request") re-send the exact
+    same (already sanitized) history and will fail identically every time, so
+    restarting only burns the restart budget and delays the real error.
+    Restart only for transient failures: connection/timeout errors and
+    retryable HTTP statuses.
+    """
+    if original_error is None:
+        # No original error attached (e.g. recovery/compaction failure) —
+        # keep the traditional restart behavior.
+        return True
+    if isinstance(original_error, APIStatusError):
+        return original_error.status_code in _RESTARTABLE_STATUS_CODES
+    # Connection errors, timeouts, and other transient failures: restart.
+    return True
 
 if TYPE_CHECKING:
     from kimi_agent_sdk import MCPConfig
@@ -865,6 +888,19 @@ class Session:
                         yield msg
                 break  # success — exit the restart loop
             except SessionRestartRequired as e:
+                if not _is_restartable_error(e.original_error):
+                    # Deterministic client error (e.g. 400): restarting would
+                    # re-send the identical request and fail the same way.
+                    # Surface the original error immediately instead of
+                    # burning the restart budget on phantom "Connection lost"
+                    # retries.
+                    logger.error(
+                        "Session restart skipped for non-restartable error: %s",
+                        e,
+                    )
+                    if e.original_error:
+                        raise e.original_error from e
+                    raise
                 restart_count += 1
                 if restart_count > max_restarts:
                     logger.error(
