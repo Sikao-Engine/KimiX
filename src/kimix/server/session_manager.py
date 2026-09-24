@@ -30,6 +30,7 @@ from kimi_cli.soul import RunCancelled
 from kimix.server.bus import bus, BusEvent
 from kimix.utils import (
     _create_session_async,
+    clear_session_async,
     close_session_async,
     build_plan_retry_reminder,
 )
@@ -1373,7 +1374,10 @@ class SessionManager:
         entry = self._get_entry(session_id)
         print('cleared server')
         if entry.sdk_session:
-            await entry.sdk_session.clear()
+            # Also tears down the sessions this one spawned (sub-agents): they
+            # belong to the conversation being discarded and are anonymous, so
+            # their directories must not survive it.
+            await clear_session_async(entry.sdk_session)
         entry.messages.clear()
         entry.info.updatedAt = _now_ms()
         logger.info("[SessionManager] Cleared session %s", session_id)
@@ -1406,7 +1410,7 @@ class SessionManager:
         entry = self._get_entry(session_id)
         print('cleared server')
         if entry.sdk_session:
-            await entry.sdk_session.clear()
+            await clear_session_async(entry.sdk_session)
         entry.messages.clear()
         entry.info.updatedAt = time.time()
         logger.info("[SessionManager] Cleared session %s", session_id)

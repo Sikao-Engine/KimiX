@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel
 from kimi_agent_sdk import Session
@@ -44,8 +44,24 @@ class AgentSessionEntry:
 class AgentSessionStore:
     MAX_SESSIONS: int = 10
 
-    def __init__(self) -> None:
+    def __init__(self, on_close: "Callable[[str], None] | None" = None) -> None:
+        """``on_close`` is notified with a session id whenever it leaves the store.
+
+        The store only owns sessions it kept alive (``close_session=False``);
+        the module-level registries (live SDK session, parent/child ownership,
+        queued messages) are notified so an evicted session does not stay
+        referenced — or listed — after it was closed.
+        """
         self.entries: dict[str, AgentSessionEntry] = {}
+        self._on_close = on_close
+
+    def _notify_closed(self, session_id: str) -> None:
+        if self._on_close is None:
+            return
+        try:
+            self._on_close(session_id)
+        except Exception:
+            pass
 
     def get(self, session_id: str) -> AgentSessionEntry | None:
         return self.entries.get(session_id)
@@ -55,6 +71,8 @@ class AgentSessionStore:
 
     def close(self, session_id: str) -> bool:
         entry = self.entries.pop(session_id, None)
+        if entry is not None:
+            self._notify_closed(session_id)
         return entry is not None
 
     def list_active(self) -> list[dict[str, Any]]:
@@ -79,6 +97,7 @@ class AgentSessionStore:
             )
             entry = self.entries.pop(lru_id)
             entry.is_active = False
+            self._notify_closed(lru_id)
             try:
                 await close_session_async(entry.session)
             except Exception:

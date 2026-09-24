@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 import time
 import uuid
 from pathlib import Path
@@ -16,11 +15,13 @@ import kimix.base as base
 import kimix.utils as utils
 from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimi_agent_sdk import Session as SdkSession
+from kimi_agent_sdk._session import _sdk_sessions_dir
 from kimix.tools.common import _create_script_file, _display_temp_path
 from kimix.tools.prompt_common import accepts_alias_text
 from kimix.ui.printing import MessageType
 from kimix.utils import _create_session_async, close_session_async
 from kimix.utils import _globals as _session_globals
+from kimix.utils.session import register_session_close_hook
 from kimix.utils.system_prompt import SystemPromptType
 
 from .store import AgentSessionEntry, AgentSessionStore, ConversationTurn
@@ -38,6 +39,102 @@ _agent_sessions: dict[str, SdkSession] = {}
 def _register_agent_session(session_id: str, session: SdkSession | None) -> None:
     if session_id and session is not None:
         _agent_sessions[session_id] = session
+
+
+# Parent session id -> ids of the sub-agent sessions it spawned that are still
+# alive.  The parent hands its sub-agents' ids to the model so it can talk to
+# them (``AskAgent``/``AgentRespond``), which means those sessions are
+# *continuable* — but only for as long as the parent session lives.  When the
+# parent closes (CLI exit, web-server delete, destructor, process shutdown) the
+# children are anonymous scratch sessions whose directories must go away with
+# it, so the cascade below runs from a session close hook.
+_children_by_parent: dict[str, set[str]] = {}
+
+# Reverse lookup so forgetting a child (it closed on its own) is O(1).
+_child_parent: dict[str, str] = {}
+
+
+def _register_child_session(parent_id: str, child_id: str) -> None:
+    """Remember that *parent_id* spawned the still-open session *child_id*."""
+    if not parent_id or not child_id:
+        return
+    _children_by_parent.setdefault(parent_id, set()).add(child_id)
+    _child_parent[child_id] = parent_id
+
+
+def _forget_child_session(child_id: str) -> None:
+    """Drop *child_id* from its parent's registry (it is closed/forgotten)."""
+    parent_id = _child_parent.pop(child_id, None)
+    if parent_id is None:
+        return
+    siblings = _children_by_parent.get(parent_id)
+    if siblings is None:
+        return
+    siblings.discard(child_id)
+    if not siblings:
+        _children_by_parent.pop(parent_id, None)
+
+
+def _take_child_sessions(parent_id: str) -> list[str]:
+    """Pop and return the sub-agent session ids registered for *parent_id*."""
+    if not parent_id:
+        return []
+    child_ids = sorted(_children_by_parent.pop(parent_id, set()))
+    for child_id in child_ids:
+        _child_parent.pop(child_id, None)
+    return child_ids
+
+
+def _forget_child_session_record(child_id: str) -> None:
+    """Drop every bookkeeping record of *child_id* (its session is gone)."""
+    _unregister_entry(child_id)
+    _unregister_agent_session(child_id)
+    _forget_child_session(child_id)
+    # Queued messages exist only to be listed at the child's next prompt; once
+    # the child (or its parent) is gone there is no next prompt.
+    _pending_messages.pop(child_id, None)
+
+
+def _release_child_session(child_id: str) -> SdkSession | None:
+    """Forget *child_id* and return the live session that has to be closed."""
+    session = _agent_sessions.get(child_id)
+    _forget_child_session_record(child_id)
+    return session if session is not None else _sdk_session_by_id(child_id)
+
+
+async def _destroy_child_sessions_async(parent_id: str) -> list[str]:
+    """Close and delete every sub-agent session spawned by *parent_id*.
+
+    Called when the parent session closes or its conversation is cleared.  The
+    children are anonymous sessions (see ``Agent._resolve_session``), so closing
+    them also removes their ``.kimix_cache/<id>`` directories.  Best-effort: a
+    child that cannot be closed is dropped anyway and its own destructor /
+    shutdown callback still reclaims the directory.  Returns the child ids.
+    """
+    destroyed: list[str] = []
+    for child_id in _take_child_sessions(parent_id):
+        session = _release_child_session(child_id)
+        if session is not None:
+            try:
+                await close_session_async(session)
+            except Exception:
+                pass
+        destroyed.append(child_id)
+    return destroyed
+
+
+async def _on_parent_session_closed(session: Any) -> list[str]:
+    """Session close hook: tear down the sub-agents of the closing session."""
+    parent_id = _cli_session_id(session)
+    if not parent_id or parent_id not in _children_by_parent:
+        return []
+    return await _destroy_child_sessions_async(parent_id)
+
+
+# Registered once per process: every session closed through kimix (CLI exit,
+# web server, the sub-agent store, the interpreter-shutdown hook) cascades to
+# the sub-agent sessions it spawned.
+register_session_close_hook(_on_parent_session_closed)
 
 
 def _get_agent_session(session_id: str) -> SdkSession | None:
@@ -85,6 +182,18 @@ def _session_work_dir(session: Any) -> KaosPath | None:
     if nested:
         return nested if isinstance(nested, KaosPath) else KaosPath(str(nested))
     return None
+
+
+def _session_dir(session: Any, session_id: str) -> Path:
+    """On-disk directory the SDK uses for *session_id* in *session*'s work dir.
+
+    Delegates to ``kimi_agent_sdk._session._sdk_sessions_dir`` so this check can
+    never drift from where the SDK actually stores sessions
+    (``<work dir>/.kimix_cache/<session id>``).  A session without a work dir
+    falls back to ``KaosPath('.')``, exactly like ``_create_session_async``.
+    """
+    work_dir = _session_work_dir(session) or KaosPath(".")
+    return _sdk_sessions_dir(work_dir) / session_id
 
 
 def _sdk_session_by_id(session_id: str) -> SdkSession | None:
@@ -249,12 +358,20 @@ class SubAgentParams(BaseModel):
         alias="session",  # common LLM variant
         description=(
             "Optional session ID to resume an existing sub-agent session. "
+            "Sub-agent sessions are scratch space: one created by this tool is "
+            "anonymous, so its directory is deleted once the session closes "
+            "and the id then resumes from a fresh conversation. "
             + accepts_alias_text("session_id", "session", word=False)
         ),
     )
     close_session: bool = Field(
         default=True,
-        description="Close the subagent session after this prompt. Set to False to keep it open for future follow-up."
+        description=(
+            "Close the subagent session after this prompt. Set to False to keep it open for "
+            "future follow-up. Closing deletes the scratch session directory "
+            "(`.kimix_cache/<session id>`), so a closed sub-agent session can no longer be "
+            "resumed with its history."
+        ),
     )
     return_history: bool = Field(
         default=False,
@@ -298,7 +415,10 @@ class SubAgentParams(BaseModel):
 def _get_store(session: Session) -> AgentSessionStore:
     store = session.custom_data.get("agent_conversation_store")
     if store is None:
-        store = AgentSessionStore()
+        # The store keeps sessions alive across ``subagent`` calls; tell the
+        # module registries when it releases one (LRU eviction) so nothing keeps
+        # pointing at a closed session.
+        store = AgentSessionStore(on_close=_forget_child_session_record)
         session.custom_data["agent_conversation_store"] = store
     return store
 
@@ -535,7 +655,10 @@ class Agent(CallableTool2):
         "final assistant message; send_message starts a later turn in the same "
         "child conversation. Set run_in_background: false only when your next "
         "action depends on receiving the result. "
-        "Use send_message to answer a sub-agent's pending question."
+        "Use send_message to answer a sub-agent's pending question. "
+        "Sub-agents belong to the session that spawned them: closing or clearing "
+        "that session closes them all and deletes their scratch session "
+        "directories, so their ids are only usable while the parent session lives."
     )
     params: type[SubAgentParams] = SubAgentParams
 
@@ -544,22 +667,16 @@ class Agent(CallableTool2):
         self._session = session
         self._semaphore = asyncio.Semaphore(8)
 
-    def __del__(self):
-        if sys.is_finalizing():
-            return
-        store = self._session.custom_data.pop("agent_conversation_store", None)
-        if isinstance(store, AgentSessionStore):
-            for entry in list(store.entries.values()):
-                _unregister_entry(entry.session_id)
-                _unregister_agent_session(entry.session_id)
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(close_session_async(entry.session))
-                except RuntimeError:
-                    try:
-                        asyncio.run(close_session_async(entry.session))
-                    except Exception:
-                        pass
+    # NOTE: there is deliberately no ``__del__`` here.  The sub-agent sessions
+    # belong to the *parent session*, not to this tool object: throwaway
+    # instances are created all the time (``AgentRespond`` builds one per call,
+    # and the whole toolset is rebuilt on ``/clear``) while the parent
+    # conversation keeps running.  Reaping them from ``__del__`` therefore used
+    # to wipe the parent's sub-agent store — and would delete its live sessions —
+    # whenever such a helper was garbage collected.  Teardown happens where the
+    # session lifecycle says so: ``kimix.utils.session`` runs the close hooks
+    # (``_on_parent_session_closed``) when the parent session is closed, cleared
+    # or destroyed at process exit.
 
     async def __call__(self, params: SubAgentParams) -> ToolReturnValue:
         if self._session is not None and self._session.custom_config.get("is_sub_agent"):
@@ -676,6 +793,7 @@ class Agent(CallableTool2):
                     store.close(session_id)
                     _unregister_entry(session_id)
                     _unregister_agent_session(session_id)
+                    _forget_child_session(session_id)
                     return result
 
                 # Check if sub-agent asked parent for clarification
@@ -788,6 +906,25 @@ class Agent(CallableTool2):
 
         session_id = params.session_id or str(uuid.uuid4())
 
+        # Sub-agent sessions are scratch space owned by this tool: it creates
+        # them here and closes them again on ``close_session`` (the default), on
+        # LRU eviction and on ``interrupt_agent``.  They must therefore be
+        # *anonymous* — the SDK only deletes ``<work dir>/.kimix_cache/<id>``
+        # when an anonymous session closes (``kimi_agent_sdk.Session.close``),
+        # so a non-anonymous sub-agent leaves its session directory behind for
+        # good, and that stale directory is then indexed as a user session by
+        # the web UI (``kimix.server.session_manager`` lists ``.kimix_cache``
+        # through ``CliSession.list``).
+        #
+        # Exception: a caller-supplied session id whose directory already exists
+        # was *not* created here (a previously saved sub-agent conversation, or
+        # a named session the caller owns), so it is resumed as a durable, named
+        # session and its files are left alone.
+        #
+        # Evaluated before ``inherit_context`` copies the parent directory in,
+        # so the copied scratch session stays anonymous.
+        anonymous = not _session_dir(self._session, session_id).exists()
+
         # Inherit the parent agent's context: copy the parent session
         # directory into the new sub-agent session id (mirrors the CLI
         # `/store` + `/load` logic in src/kimix/cli_impl/commands.py) so the
@@ -812,7 +949,7 @@ class Agent(CallableTool2):
             provider_dict=default_sub_provider,
             chat_provider=chat_provider,
             resume=True,
-            anonymous=False,
+            anonymous=anonymous,
         )
 
         sub_custom_config = session.get_custom_config()
@@ -898,7 +1035,9 @@ class Agent(CallableTool2):
         """Register the parent and child SDK sessions for cross-agent messaging.
 
         ``AskAgent`` resolves its target through ``_agent_sessions``; the parent
-        is registered under its own id so any sub-agent can steer it back.
+        is registered under its own id so any sub-agent can steer it back.  The
+        child is also recorded as belonging to the parent session so that
+        closing/destroying the parent tears the child down with it.
         """
         parent_id = _cli_session_id(self._session)
         parent_sdk = _sdk_session_by_id(parent_id)
@@ -906,6 +1045,7 @@ class Agent(CallableTool2):
             _register_agent_session(parent_id, parent_sdk)
         if child_session_id:
             _register_agent_session(child_session_id, child_session)
+            _register_child_session(parent_id, child_session_id)
 
     async def _update_store(
         self,
@@ -921,6 +1061,7 @@ class Agent(CallableTool2):
             store.close(session_id)
             _unregister_entry(session_id)
             _unregister_agent_session(session_id)
+            _forget_child_session(session_id)
         else:
             existing = store.get(session_id)
             if existing is None:
@@ -1070,6 +1211,7 @@ class AgentClose(CallableTool2):
         await close_session_async(entry.session)
         store.close(params.agent_id)
         _unregister_agent_session(params.agent_id)
+        _forget_child_session(params.agent_id)
         return ToolOk(
             output=f"Session {params.agent_id} closed.",
             brief="Session closed",

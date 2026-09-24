@@ -138,6 +138,65 @@ async def test_store_lru_eviction(mock_sub_session: MagicMock) -> None:
     assert store.get("s3") is not None
 
 
+async def test_store_notifies_when_a_session_leaves(
+    mock_sub_session: MagicMock,
+) -> None:
+    """Releases are reported so no registry keeps a closed session around."""
+    closed: list[str] = []
+    store = AgentSessionStore(on_close=closed.append)
+    for i in range(4):
+        store.put(
+            AgentSessionEntry(
+                session=mock_sub_session,
+                session_id=f"s{i}",
+                created_at=time.time(),
+                last_accessed=time.time() + i,
+                conversation_history=[],
+                total_turns=0,
+            )
+        )
+
+    assert store.close("s3") is True
+    assert closed == ["s3"]
+
+    store.MAX_SESSIONS = 3
+    with patch(
+        "kimix.tools.agent.store.close_session_async", new_callable=AsyncMock
+    ):
+        await store.evict_lru_if_needed()
+
+    assert store.get("s0") is None  # oldest, evicted to get back under the cap
+    assert sorted(closed) == ["s0", "s3"]
+
+
+async def test_store_notification_failure_does_not_break_eviction(
+    mock_sub_session: MagicMock,
+) -> None:
+    def boom(session_id: str) -> None:
+        raise RuntimeError("notify boom")
+
+    store = AgentSessionStore(on_close=boom)
+    store.MAX_SESSIONS = 2
+    for i in range(3):
+        store.put(
+            AgentSessionEntry(
+                session=mock_sub_session,
+                session_id=f"b{i}",
+                created_at=time.time(),
+                last_accessed=time.time() + i,
+                conversation_history=[],
+                total_turns=0,
+            )
+        )
+
+    with patch(
+        "kimix.tools.agent.store.close_session_async", new_callable=AsyncMock
+    ):
+        await store.evict_lru_if_needed()
+
+    assert len(store.entries) == 1  # eviction completed despite the callback
+
+
 # ---------------------------------------------------------------------------
 # _AgentConversationCollector tests
 # ---------------------------------------------------------------------------

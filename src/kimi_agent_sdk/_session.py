@@ -87,6 +87,30 @@ def _resolve_skills_dirs(
     return resolved or None
 
 
+def _cli_session_dir(cli_session: Any) -> Path | None:
+    """Directory of *cli_session* **without** creating it (``None`` if unknown).
+
+    ``CliSession.dir`` is a property that *creates* the directory
+    (``mkdir(parents=True, exist_ok=True)``), so it must never be used to check
+    whether a deletion succeeded — probing it would resurrect the directory that
+    was just removed.  ``CliSession._sessions_root`` is what
+    ``CliSession.delete``/``delete_sync`` resolve the root with (it honours the
+    SDK's ``<work dir>/.kimix_cache`` override).
+    """
+    if cli_session is None:
+        return None
+    session_id = getattr(cli_session, "id", None)
+    if not session_id:
+        return None
+    root = getattr(cli_session, "_sessions_root", None)
+    if root is not None:
+        return Path(root) / str(session_id)
+    work_dir = getattr(cli_session, "work_dir", None)
+    if work_dir is None:
+        return None
+    return _sdk_sessions_dir(work_dir) / str(session_id)
+
+
 def _sdk_sessions_dir(work_dir: KaosPath) -> Path:
     """Resolve the SDK session cache root: ``<work dir>/.kimix_cache``.
 
@@ -164,15 +188,13 @@ class Session:
         except Exception:
             self._shutdown_cleanup = None
 
-    def _delete_sync_best_effort(self) -> None:
-        """Synchronously close the soul's storage backend and delete the session dir.
+    def _close_storage_sync(self) -> None:
+        """Stop the soul's storage backends synchronously (best-effort).
 
-        Never raises: this runs from ``__del__`` and the process-shutdown
-        callback where an exception would only be printed and ignored anyway.
-        Closing the aiosqlite worker thread synchronously is required on
-        Windows — the open ``context.db`` handle otherwise makes
-        ``shutil.rmtree`` fail silently and the anonymous session directory
-        survives a ``KeyboardInterrupt``-killed process.
+        Closes the aiosqlite context worker thread and the FTS5 history index
+        without touching the session directory; used by the destructor paths and
+        by :meth:`close_sync` for sessions whose files must survive.
+        Never raises.
         """
         cli = getattr(self, "_cli", None)
         if cli is None:
@@ -195,9 +217,51 @@ class Session:
                     close_index()
                 except Exception:
                     pass
+
+    def _delete_sync_best_effort(self) -> None:
+        """Synchronously close the soul's storage backend and delete the session dir.
+
+        Never raises: this runs from ``__del__`` and the process-shutdown
+        callback where an exception would only be printed and ignored anyway.
+        Closing the aiosqlite worker thread synchronously is required on
+        Windows — the open ``context.db`` handle otherwise makes
+        ``shutil.rmtree`` fail silently and the anonymous session directory
+        survives a ``KeyboardInterrupt``-killed process.
+        """
+        cli = getattr(self, "_cli", None)
+        if cli is None:
+            return
+        self._close_storage_sync()
         try:
             cli.session.delete_sync()
         except Exception:
+            pass
+
+    def close_sync(self) -> None:
+        """Best-effort *synchronous* close of the session.
+
+        The awaiting-free counterpart of :meth:`close`, for destructor and
+        shutdown paths where no event loop can be used — including a parent
+        session cascading the teardown to the sub-agent sessions it spawned.
+        Anonymous sessions lose their directory (same rule as :meth:`close`),
+        named ones only have their storage released.  Never raises.
+        """
+        try:
+            if getattr(self, "_closed", False) and not self._session_dir_exists():
+                return
+            self._closed = True
+            cancel_event = getattr(self, "_cancel_event", None)
+            if cancel_event is not None:
+                try:
+                    cancel_event.set()
+                except Exception:
+                    pass
+            if getattr(self, "_anonymous", False):
+                self._delete_sync_best_effort()
+            else:
+                self._close_storage_sync()
+        except Exception:
+            # Teardown helper: never raise (called from __del__/shutdown paths).
             pass
 
     async def clear(self, **custom_arguments) -> None:
@@ -947,6 +1011,39 @@ class Session:
         if self._cancel_event is not None:
             self._cancel_event.set()
 
+    async def _delete_session_dir(self) -> None:
+        """Best-effort removal of this session's directory.
+
+        ``CliSession.delete`` removes the tree with a single
+        ``shutil.rmtree(..., ignore_errors=True)``, which reports nothing when a
+        file inside is still held and silently leaves a half-deleted directory
+        behind — on Windows that is exactly what a just-stopped aiosqlite worker
+        thread, an anti-virus scan or a tool that has not released a file does.
+        Verify the result and fall back to the synchronous deleter, which stops
+        the aiosqlite worker thread (``ContextDB.stop_sync``) and retries for a
+        couple of seconds.  Never raises: callers are teardown paths.
+        """
+        cli = getattr(self, "_cli", None)
+        cli_session = getattr(cli, "session", None)
+        if cli_session is None:
+            return
+        try:
+            session_dir = _cli_session_dir(cli_session)
+        except Exception:
+            session_dir = None
+        try:
+            await cli_session.delete()
+        except Exception:
+            logger.exception("Failed to delete session directory")
+        if session_dir is not None and not session_dir.exists():
+            return
+        try:
+            await asyncio.to_thread(cli_session.delete_sync)
+        except Exception:
+            logger.exception("Failed to delete session directory synchronously")
+        if session_dir is not None and session_dir.exists():
+            logger.warning("Session directory %s could not be removed", session_dir)
+
     async def close(self) -> None:
         """
         Close the Session and release resources.
@@ -955,32 +1052,66 @@ class Session:
         For anonymous sessions (created or resumed without a session_id),
         this also deletes the session's context file (context.db or context.jsonl)
         and state.json files.
+
+        Teardown is ordered so that the anonymous session directory is always
+        removed: a failure while releasing one resource (tool cleanup, the chat
+        provider, the soul) is recorded, the remaining steps and the directory
+        deletion still run, and the first error is re-raised afterwards.  Without
+        that, a raising tool ``cleanup()`` aborted ``close()`` *before* the
+        deletion while ``_closed`` was already set — which also blocked
+        ``__del__`` and every later ``close()``, leaking the directory for the
+        rest of the process.
         """
         if self._closed:
             return
         self._closed = True
         if self._cancel_event is not None:
             self._cancel_event.set()
-        await self._cleanup_tools()
-        await self._close_chat_provider()
+
+        failure: BaseException | None = None
+        for step in (self._cleanup_tools, self._close_chat_provider):
+            try:
+                await step()
+            except Exception as exc:
+                logger.exception("Failed to %s while closing session", step.__name__)
+                if failure is None:
+                    failure = exc
+
         # Close the underlying KimiSoul so its context storage backend
         # (aiosqlite worker thread) is shut down before process exit.
         soul = getattr(self._cli, "soul", None)
         if soul is not None:
             try:
                 await soul.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.exception("Failed to close the session soul")
+                if failure is None:
+                    failure = exc
+
         if getattr(self, "_anonymous", False):
-            await self._cli.session.delete()
+            await self._delete_session_dir()
+
+        if failure is not None:
+            raise failure
+
+    def _session_dir_exists(self) -> bool:
+        """Whether this session's directory is still on disk (never creates it)."""
+        cli = getattr(self, "_cli", None)
+        try:
+            session_dir = _cli_session_dir(getattr(cli, "session", None))
+            return session_dir is not None and session_dir.exists()
+        except Exception:
+            # Used from __del__/shutdown paths: never let a probe raise.
+            return False
 
     def __del__(self):
-        if getattr(self, "_closed", False):
-            return
-        if not getattr(self, "_anonymous", False):
-            return
+        # ``close_sync`` applies the anonymous/named rule (anonymous sessions
+        # lose their directory, named ones only have their storage released) and
+        # never raises, so the destructor is a single call.  It retries the
+        # removal when a previous ``close()`` could not finish it — ``_closed``
+        # alone must not disarm the last cleanup path of the process.
         try:
-            self._delete_sync_best_effort()
+            self.close_sync()
         except Exception:
             # Never raise from __del__; the directory removal is best-effort.
             pass
@@ -990,9 +1121,13 @@ class Session:
         return self
 
     async def __aexit__(self, *args: Any) -> None:
-        """Async context manager exit."""
-        await self.close()
-        await self._cli.session.delete()
+        try:
+            await self.close()
+        finally:
+            # A context-managed session is temporary: its directory is removed
+            # even when teardown reported an error (``close`` already removed it
+            # for anonymous sessions; this covers named ones too).
+            await self._delete_session_dir()
 
 
 def _build_shutdown_cleanup(session: Session) -> Any:

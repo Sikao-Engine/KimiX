@@ -796,7 +796,12 @@ class DummySessionManager:
             raise KeyError(f"Session not found: {session_id}")
         if state.session is not None:
             try:
-                await state.session.clear()
+                # ``clear_session_async`` also tears down the sessions this one
+                # spawned (anonymous sub-agents), which belong to the discarded
+                # conversation.
+                from kimix.utils import clear_session_async
+
+                await clear_session_async(state.session)
             except Exception:
                 pass
         # Drain queues

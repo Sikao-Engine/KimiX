@@ -1,5 +1,6 @@
 import asyncio
 import atexit
+import inspect
 import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -237,12 +238,54 @@ def create_supervisor_session(
     )
 
 
+# ---------------------------------------------------------------------------
+# Close hooks
+# ---------------------------------------------------------------------------
+# Callbacks run right before a session is closed or cleared.  They exist so
+# resources created *for* a session cannot outlive it: the ``subagent`` tool
+# registers one to close and delete the (anonymous) sub-agent sessions it
+# spawned as soon as the parent session goes away.
+#
+# Hooks are best-effort: a failing hook is reported and never prevents the
+# session from being closed.
+_session_close_hooks: list[Callable[[Any], Any]] = []
+
+
+def register_session_close_hook(hook: Callable[[Any], Any]) -> None:
+    """Register ``hook(session)`` to run before a session is closed/cleared.
+
+    The hook may be sync or async and is called with the session being torn
+    down.  Registering the same callable twice is a no-op.
+    """
+    if hook not in _session_close_hooks:
+        _session_close_hooks.append(hook)
+
+
+async def _run_session_close_hooks(session: Any) -> None:
+    """Notify the registered hooks that *session* is going away (never raises)."""
+    if not _session_close_hooks:
+        return
+    for hook in list(_session_close_hooks):
+        try:
+            result = hook(session)
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            from kimix.ui.printing import print_debug
+
+            name = getattr(hook, "__name__", repr(hook))
+            print_debug(
+                f"session close hook {name} failed for "
+                f"{getattr(session, 'id', session)!r}: {exc}"
+            )
+
+
 def close_session(session: Session) -> None:
     if not session:
         return
     _globals._untrack_session(session)
     try:
-        asyncio.run(session.close())
+        asyncio.run(_close_session_with_hooks(session))
     except KeyboardInterrupt:
         # Ctrl+C can land inside asyncio.run() while it is creating the
         # event loop (e.g. ProactorEventLoop's socketpair() on Windows),
@@ -260,11 +303,17 @@ def close_session(session: Session) -> None:
             raise
 
 
+async def _close_session_with_hooks(session: Session) -> None:
+    """Run the close hooks, then close *session* (used by ``close_session``)."""
+    await _run_session_close_hooks(session)
+    await session.close()
+
+
 async def close_session_async(session: Session) -> None:
     if not session:
         return
     _globals._untrack_session(session)
-    await session.close()
+    await _close_session_with_hooks(session)
 
 
 async def compact_context_async(session: Session | None = None) -> None:
@@ -281,13 +330,25 @@ def compact_context(session: Session | None = None) -> None:
     asyncio.run(compact_context_async(session))
 
 
-async def clear_context_async(session: Session | None = None) -> None:
-    """Clear the context of a session."""
+async def clear_session_async(session: Session | None = None) -> None:
+    """Clear a session's context, tearing down what the conversation spawned.
+
+    The conversation is discarded, so everything created by it (e.g. the
+    anonymous sub-agent sessions of the ``subagent`` tool) is closed and
+    deleted with it instead of leaking a session directory and an aiosqlite
+    worker thread.
+    """
     if session is None:
         session = get_default_session()
     if session is None:
         return
+    await _run_session_close_hooks(session)
     await session.clear()
+
+
+async def clear_context_async(session: Session | None = None) -> None:
+    """Clear the context of a session (alias of :func:`clear_session_async`)."""
+    await clear_session_async(session)
 
 
 def clear_context(session: Session | None = None) -> None:
@@ -394,7 +455,7 @@ def clear_default_context(force_create: bool = False, resume: bool = False, prin
             if print_info:
                 _print_usage(_globals._default_session)
             return
-        asyncio.run(_globals._default_session.clear())
+        asyncio.run(clear_session_async(_globals._default_session))
         session = _globals._default_session
     else:
         session = _create_default_session(resume)
