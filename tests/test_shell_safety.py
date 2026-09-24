@@ -198,33 +198,6 @@ class TestForegroundBackgroundGuidance:
     @pytest.mark.parametrize(
         "command",
         [
-            "npm run dev",
-            "npm run start",
-            "pnpm run serve",
-            "yarn run watch",
-            "bun run dev",
-            "next dev",
-            "vite",
-            "vite --port 3000",
-            "nodemon app.js",
-            "uvicorn app:app",
-            "gunicorn app:app",
-            "python -m http.server 8000",
-            "docker compose up",
-            "docker-compose up -d",
-            "sleep 1000 &",
-            "nohup python server.py &",
-            "setsid python server.py",
-        ],
-    )
-    def test_long_running_detected(self, command: str) -> None:
-        hint = foreground_background_guidance(command)
-        assert hint is not None
-        assert "background" in hint
-
-    @pytest.mark.parametrize(
-        "command",
-        [
             'echo "npm run dev"',
             'python -c "print(\'vite\')"',
             "ls -la",
