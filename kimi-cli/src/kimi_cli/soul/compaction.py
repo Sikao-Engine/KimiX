@@ -83,10 +83,13 @@ class SurfaceChangedError(Exception):
 
 
 class CompactionShrinkError(Exception):
-    """The compaction summary is not smaller than the content it replaces.
+    """Deprecated: the compaction summary was not smaller than the content it replaced.
 
-    Raised when ``summary_tokens >= shadowed_tokens`` (DSH ``region.ts``
-    shrink check): applying the summary would not actually free context.
+    Retained only for backwards compatibility of this module's public names.
+    The shrink check (:meth:`SimpleCompaction.compact`) no longer raises: a
+    summary that fails to shrink the region is now silently discarded and the
+    compaction degrades to a no-op, because compaction is best-effort and a
+    "did not help" outcome must never surface as an error to the caller.
     """
 
 
@@ -95,7 +98,8 @@ class ManualCompactionError(Exception):
 
     ``slash.py /compact`` wraps :meth:`KimiSoul.compact_context` and maps the
     codes to user-facing messages: ``changed`` → history changed during
-    compaction; ``summary`` → summary not smaller than compacted content;
+    compaction; ``summary`` → (legacy, never raised any more: a summary that is
+    not smaller than the compacted content is silently discarded);
     ``commit``/``persistence`` → compaction did not commit cleanly;
     ``busy`` → compaction already in progress; ``cancelled`` → aborted.
     """
@@ -464,13 +468,17 @@ class SimpleCompaction:
         the provider KV cache stays aligned. Otherwise the legacy flattened path
         (``kosong.step`` + ``EmptyToolset``) is used unchanged.
 
-        Phase 3: every LLM-backed compaction is a transaction — a ``compaction_id``
-        is generated up front, a pre-call :class:`SurfaceFingerprint` snapshot is
-        taken, and after the call the surface is re-checked (stability) and the
-        summary is required to be smaller than the shadowed region (shrink).
-        When a ``ledger`` is provided the transaction is persisted; ledger I/O
-        failures never propagate (they degrade to warnings).
-        """
+    Phase 3: every LLM-backed compaction is a transaction — a ``compaction_id``
+    is generated up front, a pre-call :class:`SurfaceFingerprint` snapshot is
+    taken, and after the call the surface is re-checked (stability). When a
+    ``ledger`` is provided the transaction is persisted; ledger I/O failures
+    never propagate (they degrade to warnings).
+
+    Shrink is not a hard requirement: when the generated summary is not smaller
+    than the shadowed region, the summary is discarded and the compaction
+    returns the original *messages* unchanged (an empty ``compaction_id`` and
+    ``shadowed_tokens=0`` mark the no-op) instead of raising.
+    """
         options = options if options is not None else CompactionOptions()
         compaction_id = uuid.uuid4().hex
         prepare_result = self.prepare(
@@ -610,17 +618,44 @@ class SimpleCompaction:
                     after=surface_after.token_count,
                 )
 
-            # Phase 3 shrink check (§5.2 item 4): never apply a summary that is
-            # not smaller than the region it replaces.
+            # Phase 3 shrink check (§5.2 item 4): a summary that is not smaller
+            # than the region it replaces is silently given up on. Compaction is
+            # best-effort — short/low-information regions routinely produce a
+            # summary longer than the original text — so this is not an error:
+            # the summary is discarded, the conversation surface is returned
+            # unchanged (a no-op compaction) and the ledger records the
+            # transaction as started-and-finished with ``shrank=False``.
             summary_tokens = (
                 result.usage.output
                 if result.usage is not None
                 else count_message_tokens([result.message])
             )
             if summary_tokens >= shadowed_tokens:
-                raise CompactionShrinkError(
-                    f"compaction summary ({summary_tokens} tokens) is not smaller than "
-                    f"the compacted content ({shadowed_tokens} tokens)"
+                logger.debug(
+                    "Compaction summary ({summary} tokens) is not smaller than the "
+                    "compacted content ({shadowed} tokens); discarding the summary "
+                    "and leaving the context unchanged",
+                    summary=summary_tokens,
+                    shadowed=shadowed_tokens,
+                )
+                if ledger is not None:
+                    try:
+                        ledger.record_end(
+                            compaction_id,
+                            summary_tokens=summary_tokens,
+                            shrank=False,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "Failed to finalize compaction {cid} in ledger: {err}",
+                            cid=compaction_id,
+                            err=exc,
+                        )
+                return CompactionResult(
+                    messages=list(messages),
+                    usage=result.usage,
+                    compaction_id="",
+                    shadowed_tokens=0,
                 )
 
             content: list[ContentPart] = [

@@ -51,7 +51,6 @@ from kimi_cli.soul.compaction import (
     SAFETY_MARGIN_TOKENS,
     CompactionOptions,
     CompactionResult,
-    CompactionShrinkError,
     CompactMode,
     ManualCompactionError,
     SimpleCompaction,
@@ -2013,7 +2012,10 @@ class KimiSoul:
             LLMNotSet: When the LLM is not set.
             ChatProviderError: When the chat provider returns an error.
             ManualCompactionError: For manual compactions, classified failures
-                (``changed``/``summary``) raised by the stability/shrink checks.
+                (``changed``) raised by the stability check. A summary that is
+                not smaller than the compacted region is not a failure: the
+                compaction degrades to a no-op (see
+                :meth:`SimpleCompaction.compact`).
         """
 
         chat_provider = self._runtime.llm.chat_provider if self._runtime.llm is not None else None
@@ -2149,17 +2151,7 @@ class KimiSoul:
                     raise
 
         try:
-            try:
-                compaction_result = await _compact_with_stability_retry()
-            except CompactionShrinkError as shrink_err:
-                # Phase 3 shrink check: the summary must be smaller than the
-                # region it replaces. Manual compactions surface a classified
-                # error (``summary``); auto compactions re-raise as-is.
-                if manual:
-                    raise ManualCompactionError(
-                        "summary", str(shrink_err)
-                    ) from shrink_err
-                raise
+            compaction_result = await _compact_with_stability_retry()
 
             # Mark all indexed turns as archived before clearing context
             self._history_index.mark_compacted()

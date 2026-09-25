@@ -13,7 +13,6 @@ from kimi_cli.llm import LLM
 from kimi_cli.soul.compaction import (
     CompactionOptions,
     CompactionResult,
-    CompactionShrinkError,
     SimpleCompaction,
     SummarizationInput,
     SurfaceChangedError,
@@ -1124,30 +1123,142 @@ async def test_compact_legacy_path_uses_flattened_message_and_empty_tools():
 # ---------------------------------------------------------------------------
 
 
-async def test_compact_shrink_check_raises_when_usage_output_not_smaller():
+async def test_compact_gives_up_when_usage_output_not_smaller():
     messages = _compaction_messages()
-    # usage.output (1000) >= shadowed tokens of the compacted region
+    # usage.output (1000) >= shadowed tokens of the compacted region: the summary
+    # is silently given up on and the compaction degrades to a no-op.
     usage = TokenUsage(input_other=0, output=1000)
     provider = RecordingProvider(parts=[TextPart(text="tiny")], usage=usage)
     llm = _fake_llm(provider)
 
-    with pytest.raises(CompactionShrinkError, match="not smaller"):
-        await SimpleCompaction(max_preserved_messages=2).compact(
-            messages, llm, aligned_system_prompt="SYSTEM PROMPT", aligned_tools=[]
-        )
+    result = await SimpleCompaction(max_preserved_messages=2).compact(
+        messages, llm, aligned_system_prompt="SYSTEM PROMPT", aligned_tools=[]
+    )
+
+    # the conversation surface comes back untouched, summary discarded ...
+    assert list(result.messages) == messages
+    assert "Previous context has been compacted" not in "".join(
+        msg.extract_text(" ") for msg in result.messages
+    )
+    # ... and the result is marked as a no-op (empty id, nothing shadowed) while
+    # the token usage of the LLM call that did happen is still reported.
+    assert result.usage is usage
+    assert result.compaction_id == ""
+    assert result.shadowed_tokens == 0
+    assert len(provider.calls) == 1
 
 
-async def test_compact_shrink_check_raises_for_long_summary_without_usage():
+def test_compaction_shrink_error_is_retained_but_never_raised():
+    """Deprecated public name: kept importable for back-compat, unused by the
+    shrink check (which now discards an oversized summary instead of raising)."""
+    from kimi_cli.soul.compaction import CompactionShrinkError
+
+    assert issubclass(CompactionShrinkError, Exception)
+
+
+async def test_compact_gives_up_for_long_summary_without_usage():
     messages = _compaction_messages()
     # no usage → summary tokens estimated from text; a 20k-char summary is
     # far larger than the compacted region
     provider = RecordingProvider(parts=[TextPart(text="x" * 20_000)])
     llm = _fake_llm(provider)
 
-    with pytest.raises(CompactionShrinkError, match="not smaller"):
-        await SimpleCompaction(max_preserved_messages=2).compact(
-            messages, llm, aligned_system_prompt="SYSTEM PROMPT"
-        )
+    result = await SimpleCompaction(max_preserved_messages=2).compact(
+        messages, llm, aligned_system_prompt="SYSTEM PROMPT"
+    )
+
+    assert list(result.messages) == messages
+    assert result.compaction_id == ""
+    assert result.shadowed_tokens == 0
+
+
+async def test_compact_context_silently_noops_on_oversized_summary(tmp_path):
+    """Regression for the reported `/compact` traceback.
+
+    ``KimiSoul.compact_context`` used to abort with ``CompactionShrinkError``
+    (``manual`` variants became ``ManualCompactionError('summary')``) when the
+    generated summary was not smaller than the region it replaced. The oversized
+    summary is now silently given up on: the compaction completes as a no-op, the
+    history is re-appended untouched and the wire sees a clean ``CompactionEnd``.
+    """
+    from pathlib import Path
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from kimi_cli.soul.kimisoul import KimiSoul
+    from kimi_cli.wire.types import CompactionEnd
+    from kosong.tooling.empty import EmptyToolset
+
+    messages = _compaction_messages()
+    # huge usage.output → the shrink check rejects the summary
+    usage = TokenUsage(input_other=0, output=999_999)
+    provider = RecordingProvider(parts=[TextPart(text="tiny")], usage=usage)
+    llm = _fake_llm(provider)
+
+    soul = object.__new__(KimiSoul)
+    runtime = MagicMock()
+    runtime.llm = llm
+    runtime.role = "non-root"  # skip the active-task-snapshot branch
+    runtime.background_tasks = MagicMock()
+    runtime.session.id = "test-session"
+    runtime.session.work_dir = tmp_path
+    runtime.session.dir = tmp_path
+    soul._runtime = runtime
+
+    ctx = MagicMock()
+    ctx.history = list(messages)
+    ctx.token_count = 10_000
+    ctx.clear = AsyncMock()
+    ctx.write_system_prompt = AsyncMock()
+    ctx.append_message = AsyncMock()
+    ctx.update_token_count = AsyncMock()
+    soul._context = ctx
+
+    agent = MagicMock()
+    agent.toolset = EmptyToolset()  # → legacy flattened compaction path
+    agent.get_system_prompt.return_value = "sys"
+    soul._agent = agent
+
+    loop_control = MagicMock()
+    loop_control.max_retries_per_step = 1
+    loop_control.todo_compact_injection_enabled = False
+    loop_control.todo_compact_injection_max_items = 20
+    soul._loop_control = loop_control
+
+    soul._compaction = SimpleCompaction(max_preserved_messages=2)
+    soul._compaction_ledger = None
+    soul._llm_request_recorder = MagicMock()
+    soul._recorder_restored = True
+    soul._history_index = MagicMock()
+    soul._hook_engine = MagicMock()
+    soul._hook_engine.trigger = AsyncMock()
+    soul._injection_providers = []
+    soul._recently_retrieved_turn_ids = set()
+    soul._recently_restored_refs = set()
+    soul._pruner = MagicMock()
+    soul._compact_cache_dir = []
+
+    ends: list[object] = []
+    with (
+        patch("kimi_cli.soul.kimisoul.wire_send", side_effect=lambda evt: ends.append(evt)),
+        patch(
+            "kimi_cli.soul.kimisoul.perform_export",
+            new_callable=AsyncMock,
+            return_value=(Path("/tmp/fake-export.md"), 0),
+        ),
+    ):
+        await soul.compact_context(manual=True)  # must not raise
+
+    # the summary was generated once and then discarded
+    assert len(provider.calls) == 1
+    # ... and the untouched history was written back after the context clear
+    appended = ctx.append_message.await_args.args[0]
+    assert list(appended) == messages
+    # a clean CompactionEnd (no error, nothing shadowed) closes the transaction
+    assert len(ends) == 2
+    end = ends[-1]
+    assert isinstance(end, CompactionEnd)
+    assert getattr(end, "error", None) is None
+    assert end.shadowed_tokens == 0
 
 
 async def test_compact_stability_check_raises_when_messages_mutated():
@@ -1214,28 +1325,33 @@ async def test_compact_writes_ledger_record_on_success(tmp_path):
     )
 
 
-async def test_compact_writes_ledger_error_on_failure(tmp_path):
+async def test_compact_abandoned_summary_finalizes_ledger_without_error(tmp_path):
     messages = _compaction_messages()
     ledger = CompactionLedger(tmp_path / "ledger.jsonl")
-    # huge usage.output → shrink check fails after the transaction started
+    # huge usage.output → the shrink check rejects the summary after the
+    # transaction started; the transaction still finishes cleanly (no error,
+    # shrank=False) instead of being recorded as a failure.
     usage = TokenUsage(input_other=0, output=999_999)
     provider = RecordingProvider(parts=[TextPart(text="tiny")], usage=usage)
     llm = _fake_llm(provider)
 
-    with pytest.raises(CompactionShrinkError):
-        await SimpleCompaction(max_preserved_messages=2).compact(
-            messages,
-            llm,
-            aligned_system_prompt="SYSTEM PROMPT",
-            aligned_tools=[],
-            ledger=ledger,
-        )
+    result = await SimpleCompaction(max_preserved_messages=2).compact(
+        messages,
+        llm,
+        aligned_system_prompt="SYSTEM PROMPT",
+        aligned_tools=[],
+        ledger=ledger,
+    )
 
+    assert list(result.messages) == messages
     rec = ledger.latest()
     assert rec is not None
-    assert rec.error is not None
-    assert "not smaller" in rec.error
+    assert rec.error is None
     assert rec.shrank is False
+    assert rec.summary_tokens == 999_999
+    assert rec.shadowed_tokens == count_message_tokens(messages[1:5])
+    assert rec.compaction_id  # the started transaction is still accounted for
+    assert rec.compaction_id != result.compaction_id  # result reports a no-op
 
 
 async def test_compact_legacy_path_with_ledger_records_shadowed_tokens(tmp_path):
@@ -1287,11 +1403,14 @@ async def test_compact_error_ledger_failure_does_not_mask_real_exception(tmp_pat
     blocker = tmp_path / "blocker.txt"
     blocker.write_text("file")
     ledger = CompactionLedger(blocker / "ledger.jsonl")  # broken path
-    usage = TokenUsage(input_other=0, output=999_999)
-    provider = RecordingProvider(parts=[TextPart(text="tiny")], usage=usage)
+
+    async def boom(*_args) -> None:
+        raise RuntimeError("provider exploded")
+
+    provider = RecordingProvider(parts=[TextPart(text="tiny")], on_generate=boom)
     llm = _fake_llm(provider)
 
-    with pytest.raises(CompactionShrinkError):
+    with pytest.raises(RuntimeError, match="provider exploded"):
         await SimpleCompaction(max_preserved_messages=2).compact(
             messages,
             llm,
