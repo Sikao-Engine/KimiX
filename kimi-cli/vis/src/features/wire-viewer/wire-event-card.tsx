@@ -190,7 +190,7 @@ function getSummary(event: WireEvent): string {
             if (args.subagent_type) detail += ` [${args.subagent_type}]`;
           } else if (name === "web_search" || name === "SearchWeb" || name === "fetch_url") {
             detail = ` ${truncate(String(args.query ?? args.url ?? ""), 80)}`;
-          } else if (name === "todo_write" || name === "TodoList") {
+          } else if (name === "todo_list" || name === "TodoList") {
             const items = (args.items ?? args.todos) as Array<Record<string, unknown>> | undefined;
             detail = items ? ` (${items.length} items)` : "";
           } else if (name === "AskUserQuestion") {

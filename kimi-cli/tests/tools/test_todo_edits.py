@@ -1,4 +1,4 @@
-"""Tests for todo_update lightweight single-todo edits."""
+"""Tests for TodoList lightweight single-todo edits."""
 
 from __future__ import annotations
 
@@ -11,15 +11,13 @@ from kimi_cli.tools.todo import (
     Params,
     Todo,
     TodoList,
-    TodoUpdateParams,
-    todo_update,
 )
 
 
-def _find_todo(tool: todo_update, title: str) -> Todo:
+def _find_todo(tool: TodoList, title: str) -> Todo:
     """Return the first todo with ``title`` from persisted state."""
     for t in tool._load_todos():
-        if t.content == title:
+        if t.title == title:
             return t
     raise AssertionError(f"todo {title!r} not found")
 
@@ -29,7 +27,7 @@ class TestTodoUpdateFuzzyArgumentRepair:
 
     async def test_call_task_alias_maps_to_title(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="in_progress")]))
 
         res = await update.call({"task": "Task A", "status": "done"})
@@ -38,7 +36,7 @@ class TestTodoUpdateFuzzyArgumentRepair:
 
     async def test_call_todo_alias_maps_to_title(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="pending")]))
 
         res = await update.call({"todo": "Task A", "status": "done"})
@@ -47,7 +45,7 @@ class TestTodoUpdateFuzzyArgumentRepair:
 
     async def test_call_edits_alias_maps_to_updates(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="pending")]))
 
         res = await update.call(
@@ -58,7 +56,7 @@ class TestTodoUpdateFuzzyArgumentRepair:
 
     async def test_call_operations_alias_maps_to_updates(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="pending")]))
 
         res = await update.call(
@@ -67,8 +65,8 @@ class TestTodoUpdateFuzzyArgumentRepair:
         assert not res.is_error
         assert 'Updated "Task A" (status=done)' in res.output
 
-    async def test_call_todo_write_nested_task_alias(self, runtime: Runtime) -> None:
-        """todo_write items accept `task` as an alias of `content`/`title`."""
+    async def test_call_nested_task_alias(self, runtime: Runtime) -> None:
+        """Items accept `task` as an alias of `title`."""
         lst = TodoList(runtime)
 
         res = await lst.call({"todos": [{"task": "New", "status": "done"}]})
@@ -79,20 +77,20 @@ class TestTodoUpdateFuzzyArgumentRepair:
 class TestTodoUpdateBasics:
     async def test_update_status_to_done(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="in_progress")]))
 
-        res = await update(TodoUpdateParams(title="Task A", status="done"))
+        res = await update(Params(title="Task A", status="done"))
         assert not res.is_error
         assert 'Updated "Task A" (status=done)' in res.output
-        assert res.message == 'Updated "Task A".'
+        assert res.message.startswith('Updated "Task A".')
 
         todo = _find_todo(update, "Task A")
         assert todo.status == "done"
 
     async def test_update_status_to_in_progress(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -102,47 +100,49 @@ class TestTodoUpdateBasics:
             )
         )
 
-        res = await update(TodoUpdateParams(title="Task A", status="in_progress"))
+        res = await update(Params(title="Task A", status="in_progress"))
         assert not res.is_error
         todo = _find_todo(update, "Task A")
         assert todo.status == "in_progress"
 
     async def test_omitted_status_preserves_existing(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="in_progress")]))
 
-        res = await update(TodoUpdateParams(title="Task A", notes="new note"))
+        res = await update(Params(title="Task A", notes="new note"))
         assert not res.is_error
         todo = _find_todo(update, "Task A")
         assert todo.status == "in_progress"
         assert todo.notes == "new note"
 
-    async def test_update_notes_clears_with_empty_string(self, runtime: Runtime) -> None:
+    async def test_update_notes_blank_keeps_existing(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="pending", notes="old")]))
 
-        res = await update(TodoUpdateParams(title="Task A", notes=""))
+        res = await update(Params(title="Task A", notes=""))
         assert not res.is_error
         todo = _find_todo(update, "Task A")
-        assert todo.notes is None
+        # Non-destructive default: an omitted or blank `notes` keeps what is
+        # stored, because models send "" to mean "nothing to add".
+        assert todo.notes == "old"
 
 
 class TestTodoUpdateRename:
     async def test_rename_root_todo(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Old", status="pending")]))
 
-        res = await update(TodoUpdateParams(title="Old", rename_to="New"))
+        res = await update(Params(title="Old", rename_to="New"))
         assert not res.is_error
         assert 'Updated "Old" (renamed to "New")' in res.output
         assert _find_todo(update, "New").status == "pending"
 
     async def test_rename_collision_errors(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -152,56 +152,78 @@ class TestTodoUpdateRename:
             )
         )
 
-        res = await update(TodoUpdateParams(title="A", rename_to="B"))
+        res = await update(Params(title="A", rename_to="B"))
         assert res.is_error
         assert 'Cannot rename "A" to "B"' in res.output
 
         # Nothing changed.
-        assert _find_todo(update, "A").content == "A"
+        assert _find_todo(update, "A").title == "A"
 
 
-class TestTodoUpdateFuzzy:
-    async def test_fuzzy_match_finds_near_title(self, runtime: Runtime) -> None:
+class TestTodoListNearDuplicate:
+    async def test_same_words_different_case_is_a_conflict(self, runtime: Runtime) -> None:
+        """A re-declared title (same words, new casing) is refused, not duplicated."""
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Implement feature", status="pending")]))
 
-        res = await update(TodoUpdateParams(title="implement feature", status="done"))
-        assert not res.is_error
-        assert 'Fuzzy matched' in res.output
+        res = await update(Params(title="implement feature", status="done"))
+        assert res.is_error
+        assert 'near-duplicate of the existing "Implement feature"' in res.output
+        # nothing was created or changed
         todo = _find_todo(update, "Implement feature")
-        assert todo.status == "done"
+        assert todo.status == "pending"
 
-    async def test_fuzzy_disabled_errors_when_exact_missing(self, runtime: Runtime) -> None:
+    async def test_on_conflict_reuse_patches_the_existing_item(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
+        await lst(Params(todos=[Todo(content="Implement feature", status="pending")]))
+
+        res = await update(Params(title="implement feature", status="done", on_conflict="reuse"))
+        assert not res.is_error
+        assert _find_todo(update, "Implement feature").status == "done"
+        assert len(update._load_todos()) == 1
+
+    async def test_typo_is_warned_and_created(self, runtime: Runtime) -> None:
+        """A different *word* is a different task: advisory warning, no refusal."""
+        lst = TodoList(runtime)
+        update = TodoList(runtime)
+        await lst(Params(todos=[Todo(content="Implement feature", status="pending")]))
+
+        res = await update(Params(title="Implement featuer", status="done"))
+        assert not res.is_error
+        assert "looks like existing" in res.output or "looks like existing" in res.message
+        assert _find_todo(update, "Implement featuer") is not None
+
+    async def test_fuzzy_disabled_skips_the_conflict_check(self, runtime: Runtime) -> None:
+        lst = TodoList(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="pending")]))
 
-        res = await update(
-            TodoUpdateParams(title="task a", status="done", fuzzy=False)
-        )
-        assert res.is_error
-        assert 'No todo titled "task a" found' in res.output
+        res = await update(Params(title="task a", status="done", fuzzy=False))
+        assert not res.is_error
+        assert _find_todo(update, "task a") is not None
+        assert _find_todo(update, "Task A").status == "pending"
 
 
 class TestTodoUpdateRegression:
     async def test_regression_blocked_without_force(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="done")]))
 
-        res = await update(TodoUpdateParams(title="Task A", status="in_progress"))
+        res = await update(Params(title="Task A", status="in_progress"))
         assert res.is_error
         assert "Cannot regress completed todo" in res.output
         assert _find_todo(update, "Task A").status == "done"
 
     async def test_regression_allowed_with_force(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="done")]))
 
         res = await update(
-            TodoUpdateParams(title="Task A", status="in_progress", force=True)
+            Params(title="Task A", status="in_progress", force=True)
         )
         assert not res.is_error
         assert _find_todo(update, "Task A").status == "in_progress"
@@ -210,7 +232,7 @@ class TestTodoUpdateRegression:
 class TestTodoUpdateInProgressConstraint:
     async def test_auto_fixes_multiple_in_progress(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -220,7 +242,7 @@ class TestTodoUpdateInProgressConstraint:
             )
         )
 
-        res = await update(TodoUpdateParams(title="Task B", status="in_progress"))
+        res = await update(Params(title="Task B", status="in_progress"))
         assert not res.is_error
         a = _find_todo(update, "Task A")
         b = _find_todo(update, "Task B")
@@ -232,7 +254,7 @@ class TestTodoUpdateInProgressConstraint:
 class TestTodoUpdateTreeSearch:
     async def test_updates_nested_todo(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -245,14 +267,22 @@ class TestTodoUpdateTreeSearch:
             )
         )
 
-        res = await update(TodoUpdateParams(title="Child", status="done"))
+        res = await update(Params(title="Child", status="done"))
         assert not res.is_error
         parent = _find_todo(update, "Parent")
         assert parent.children[0].status == "done"
 
-    async def test_empty_tree_errors(self, runtime: Runtime) -> None:
-        update = todo_update(runtime)
-        res = await update(TodoUpdateParams(title="Task A", status="done"))
+    async def test_empty_tree_upserts_the_first_item(self, runtime: Runtime) -> None:
+        """An empty tree is the normal starting point: merge creates, it does not error."""
+        update = TodoList(runtime)
+        res = await update(Params(title="Task A", status="done"))
+        assert not res.is_error
+        assert _find_todo(update, "Task A").status == "done"
+
+    async def test_empty_tree_edit_still_errors(self, runtime: Runtime) -> None:
+        """An edit (rename) cannot create, so the empty tree is an error there."""
+        update = TodoList(runtime)
+        res = await update(Params(title="Task A", rename_to="B"))
         assert res.is_error
         assert "No todos exist" in res.output
 
@@ -262,7 +292,7 @@ class TestTodoUpdateComplete:
 
     async def test_complete_marks_subtree_done(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -282,10 +312,10 @@ class TestTodoUpdateComplete:
             )
         )
 
-        res = await update(TodoUpdateParams(title="Parent", complete=True))
+        res = await update(Params(title="Parent", complete=True))
         assert not res.is_error
         assert "completed with 4 sub-todos marked done" in res.output
-        assert res.message == 'Updated "Parent".'
+        assert res.message.startswith('Updated "Parent".')
 
         parent = _find_todo(update, "Parent")
         assert parent.status == "done"
@@ -295,17 +325,17 @@ class TestTodoUpdateComplete:
 
     async def test_complete_single_item(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="A", status="in_progress")]))
 
-        res = await update(TodoUpdateParams(title="A", complete=True))
+        res = await update(Params(title="A", complete=True))
         assert not res.is_error
         assert "completed with 1 sub-todo marked done" in res.output
         assert _find_todo(update, "A").status == "done"
 
     async def test_complete_with_status_done_ok(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -318,7 +348,7 @@ class TestTodoUpdateComplete:
             )
         )
 
-        res = await update(TodoUpdateParams(title="P", status="done", complete=True))
+        res = await update(Params(title="P", status="done", complete=True))
         assert not res.is_error
         parent = _find_todo(update, "P")
         assert parent.status == "done"
@@ -326,21 +356,21 @@ class TestTodoUpdateComplete:
 
     async def test_complete_with_pending_status_errors(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="A", status="pending")]))
 
-        res = await update(TodoUpdateParams(title="A", status="pending", complete=True))
+        res = await update(Params(title="A", status="pending", complete=True))
         assert res.is_error
         assert "complete=True cannot be combined with status=\"pending\"" in res.output
         assert _find_todo(update, "A").status == "pending"
 
     async def test_complete_missing_title_errors(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="P", status="pending")]))
 
         res = await update(
-            TodoUpdateParams(parent="P", title="ghost", complete=True)
+            Params(parent="P", title="ghost", complete=True)
         )
         assert res.is_error
         assert "complete=True requires an existing todo" in res.output
@@ -348,7 +378,7 @@ class TestTodoUpdateComplete:
 
     async def test_complete_in_batch(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -363,7 +393,7 @@ class TestTodoUpdateComplete:
         )
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 updates=[
                     {"title": "P", "complete": True},
                     {"title": "Q", "status": "done"},
@@ -383,10 +413,10 @@ class TestTodoUpdateComplete:
 class TestTodoUpdateDisplay:
     async def test_returns_display_block(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="pending")]))
 
-        res = await update(TodoUpdateParams(title="Task A", status="done"))
+        res = await update(Params(title="Task A", status="done"))
         assert not res.is_error
         assert len(res.display) == 1
         assert isinstance(res.display[0], TodoDisplayBlock)
@@ -395,7 +425,7 @@ class TestTodoUpdateDisplay:
 class TestTodoUpdateMultiple:
     async def test_update_multiple_statuses(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -406,7 +436,7 @@ class TestTodoUpdateMultiple:
         )
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 updates=[
                     {"title": "A", "status": "done"},
                     {"title": "B", "status": "in_progress"},
@@ -420,17 +450,17 @@ class TestTodoUpdateMultiple:
         assert b.status == "in_progress"
         assert 'Updated "A" (status=done)' in res.output
         assert 'Updated "B" (status=in_progress)' in res.output
-        assert res.message == 'Updated "A".; Updated "B".'
+        assert res.message.startswith('Updated "A".; Updated "B".')
 
     async def test_create_multiple_children_under_common_parent(
         self, runtime: Runtime
     ) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Parent", status="pending")]))
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 parent="Parent",
                 updates=[
                     {"title": "Child1"},
@@ -440,7 +470,7 @@ class TestTodoUpdateMultiple:
         )
         assert not res.is_error
         parent = _find_todo(update, "Parent")
-        assert [c.content for c in parent.children] == ["Child1", "Child2"]
+        assert [c.title for c in parent.children] == ["Child1", "Child2"]
         assert parent.children[0].status == "pending"
         assert parent.children[1].status == "in_progress"
         assert 'Created "Child1" under "Parent".' in res.output
@@ -448,7 +478,7 @@ class TestTodoUpdateMultiple:
 
     async def test_updates_alias_todos(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -459,7 +489,7 @@ class TestTodoUpdateMultiple:
         )
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 todos=[{"title": "A", "status": "done"}, {"title": "B", "status": "done"}]
             )
         )
@@ -469,7 +499,7 @@ class TestTodoUpdateMultiple:
 
     async def test_batch_error_leaves_state_unchanged(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -480,7 +510,7 @@ class TestTodoUpdateMultiple:
         )
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 updates=[
                     {"title": "A", "status": "done"},
                     {"title": "B", "status": "in_progress"},
@@ -494,7 +524,7 @@ class TestTodoUpdateMultiple:
 
     async def test_batch_auto_fixes_multiple_in_progress(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -505,7 +535,7 @@ class TestTodoUpdateMultiple:
         )
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 updates=[
                     {"title": "A", "status": "in_progress"},
                     {"title": "B", "status": "in_progress"},
@@ -521,7 +551,7 @@ class TestTodoUpdateMultiple:
 
     async def test_batch_rename_then_update_child(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -535,7 +565,7 @@ class TestTodoUpdateMultiple:
         )
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 updates=[
                     {"title": "Parent", "rename_to": "NewParent"},
                     {"parent": "NewParent", "title": "Child", "status": "done"},
@@ -547,27 +577,27 @@ class TestTodoUpdateMultiple:
         assert new_parent.children[0].status == "done"
 
     async def test_batch_creates_root_children_when_empty(self, runtime: Runtime) -> None:
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         res = await update(
-            TodoUpdateParams(parent="", updates=[{"title": "A"}, {"title": "B"}])
+            Params(parent="", updates=[{"title": "A"}, {"title": "B"}])
         )
         assert not res.is_error
         todos = update._load_todos()
-        assert [t.content for t in todos] == ["A", "B"]
+        assert [t.title for t in todos] == ["A", "B"]
 
     def test_cannot_mix_top_level_title_with_updates(self) -> None:
         with pytest.raises(ValidationError):
-            TodoUpdateParams(title="A", updates=[{"title": "B"}])
+            Params(title="A", updates=[{"title": "B"}])
 
 
 class TestTodoUpdateBatchStringForms:
     """`updates` accepts JSON-string and bare-title shorthand forms so a whole
     batch of edits still lands in one call when the model mis-serializes it
-    (mirroring todo_write's `todos` string repair)."""
+    (mirroring the `todos` string repair)."""
 
     async def test_updates_as_json_string_batch(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -591,7 +621,7 @@ class TestTodoUpdateBatchStringForms:
 
     async def test_updates_as_broken_json_string(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -610,7 +640,7 @@ class TestTodoUpdateBatchStringForms:
 
     async def test_updates_as_single_json_dict_string(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="A", status="pending")]))
 
         res = await update.call({"updates": '{"title": "A", "status": "done"}'})
@@ -619,7 +649,7 @@ class TestTodoUpdateBatchStringForms:
 
     async def test_updates_as_bare_title_string(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Fix the bug", status="pending")]))
 
         res = await update.call({"updates": "Fix the bug"})
@@ -628,7 +658,7 @@ class TestTodoUpdateBatchStringForms:
 
     async def test_updates_list_with_bare_string_titles(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -639,7 +669,7 @@ class TestTodoUpdateBatchStringForms:
         )
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 updates=[{"title": "A", "status": "done"}, "B"],
             )
         )
@@ -649,24 +679,24 @@ class TestTodoUpdateBatchStringForms:
 
     def test_updates_whitespace_string_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            TodoUpdateParams(updates="   ")
+            Params(updates="   ")
 
     def test_updates_unsupported_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
-            TodoUpdateParams(updates=123)
+            Params(updates=123)
 
 
 class TestTodoUpdateContentAlias:
-    """`content` is accepted as an alias for `title` so todo_write-style items
-    ({content, status, notes}) can be reused in todo_update — single and batch."""
+    """`content` is accepted as an alias for `title` so items written with
+    the retired {content, status, notes} shape can still be reused — single and batch."""
 
     async def test_single_top_level_content_alias(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="in_progress")]))
 
         res = await update(
-            TodoUpdateParams.model_validate({"content": "Task A", "status": "done"})
+            Params.model_validate({"content": "Task A", "status": "done"})
         )
         assert not res.is_error
         assert 'Updated "Task A" (status=done)' in res.output
@@ -674,11 +704,11 @@ class TestTodoUpdateContentAlias:
 
     async def test_single_top_level_content_alias_with_notes(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Task A", status="pending")]))
 
         res = await update(
-            TodoUpdateParams.model_validate(
+            Params.model_validate(
                 {"content": "Task A", "notes": "from content-shape"}
             )
         )
@@ -689,7 +719,7 @@ class TestTodoUpdateContentAlias:
 
     async def test_updates_accept_content_shape_items(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -700,7 +730,7 @@ class TestTodoUpdateContentAlias:
         )
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 updates=[
                     {"content": "A", "status": "done"},
                     {"content": "B", "status": "in_progress"},
@@ -717,7 +747,7 @@ class TestTodoUpdateContentAlias:
         self, runtime: Runtime
     ) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -728,7 +758,7 @@ class TestTodoUpdateContentAlias:
         )
 
         res = await update(
-            TodoUpdateParams(
+            Params(
                 updates=[
                     {"title": "A", "status": "done"},
                     {"content": "B", "status": "done"},
@@ -738,15 +768,15 @@ class TestTodoUpdateContentAlias:
         assert not res.is_error
         assert _find_todo(update, "A").status == "done"
         assert _find_todo(update, "B").status == "done"
-        assert res.message == 'Updated "A".; Updated "B".'
+        assert res.message.startswith('Updated "A".; Updated "B".')
 
     async def test_todos_alias_accepts_content_shape(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="A", status="pending")]))
 
         res = await update(
-            TodoUpdateParams.model_validate(
+            Params.model_validate(
                 {"todos": [{"content": "A", "status": "done"}]}
             )
         )
@@ -755,7 +785,7 @@ class TestTodoUpdateContentAlias:
 
     async def test_content_cannot_mix_with_updates(self, runtime: Runtime) -> None:
         with pytest.raises(ValidationError):
-            TodoUpdateParams.model_validate(
+            Params.model_validate(
                 {"content": "A", "updates": [{"title": "B"}]}
             )
 
@@ -763,19 +793,19 @@ class TestTodoUpdateContentAlias:
 class TestTodoUpdateParent:
     async def test_creates_child_under_parent(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(Params(todos=[Todo(content="Parent", status="pending")]))
 
-        res = await update(TodoUpdateParams(parent="Parent", title="Child"))
+        res = await update(Params(parent="Parent", title="Child"))
         assert not res.is_error
         assert 'Created "Child" under "Parent".' in res.output
         parent = _find_todo(update, "Parent")
-        assert [c.content for c in parent.children] == ["Child"]
+        assert [c.title for c in parent.children] == ["Child"]
         assert parent.children[0].status == "pending"
 
     async def test_updates_existing_child_under_parent(self, runtime: Runtime) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -789,7 +819,7 @@ class TestTodoUpdateParent:
         )
 
         res = await update(
-            TodoUpdateParams(parent="Parent", title="Child", status="done")
+            Params(parent="Parent", title="Child", status="done")
         )
         assert not res.is_error
         assert 'Updated "Child" (status=done)' in res.output
@@ -797,19 +827,19 @@ class TestTodoUpdateParent:
         assert parent.children[0].status == "done"
 
     async def test_creates_root_child_with_empty_parent(self, runtime: Runtime) -> None:
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await TodoList(runtime)(Params(todos=[Todo(content="Existing", status="pending")]))
 
-        res = await update(TodoUpdateParams(parent="", title="New Root"))
+        res = await update(Params(parent="", title="New Root"))
         assert not res.is_error
         assert 'Created "New Root" under "root".' in res.output
-        assert [t.content for t in update._load_todos()] == ["Existing", "New Root"]
+        assert [t.title for t in update._load_todos()] == ["Existing", "New Root"]
 
     async def test_missing_parent_errors(self, runtime: Runtime) -> None:
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await TodoList(runtime)(Params(todos=[Todo(content="A", status="pending")]))
 
-        res = await update(TodoUpdateParams(parent="Missing", title="Child"))
+        res = await update(Params(parent="Missing", title="Child"))
         assert res.is_error
         assert 'No parent todo matching "Missing" found' in res.output
 
@@ -817,7 +847,7 @@ class TestTodoUpdateParent:
         self, runtime: Runtime
     ) -> None:
         lst = TodoList(runtime)
-        update = todo_update(runtime)
+        update = TodoList(runtime)
         await lst(
             Params(
                 todos=[
@@ -836,7 +866,7 @@ class TestTodoUpdateParent:
         )
 
         res = await update(
-            TodoUpdateParams(parent="P2", title="Child", status="done")
+            Params(parent="P2", title="Child", status="done")
         )
         assert not res.is_error
         p1 = _find_todo(update, "P1")

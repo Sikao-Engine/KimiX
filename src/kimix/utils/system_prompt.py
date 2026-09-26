@@ -56,7 +56,7 @@ Before delegating: outline goals, constraints, unknowns, acceptance criteria.
 Decompose into non-overlapping tasks (Explorer/Worker/Reviewer/Verifier); serial if same output.
 Dispatch via `subagent` (background by default; `send_message` follow-ups; `interrupt_agent` to stop).
 Never do sub-agent work yourself. Route failures through inquiry, then narrow correction.
-Track with `todo_write`; accept or inquire/reject each result, then run one overall verification.
+Track with `todo_list`; accept or inquire/reject each result, then run one overall verification.
 Final: report tasks, deliverables, verification, unresolved work, merged conclusion.
 ''',
     'sp_swarm_leader_items': '''\

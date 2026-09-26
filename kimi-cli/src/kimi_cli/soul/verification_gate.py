@@ -18,8 +18,9 @@ from typing import TYPE_CHECKING
 import orjson
 from kosong.message import Message
 
-from kimi_cli.soul.message import is_system_reminder_message
 from kimi_cli.soul.tool_taxonomy import EDIT_TOOLS, VERIFICATION_TOOL_HINTS
+from kimi_cli.tools import RETIRED_TODO_TOOL_NAMES
+from kimi_cli.soul.message import is_system_reminder_message
 
 if TYPE_CHECKING:
     from kimi_cli.soul.kimisoul import KimiSoul
@@ -75,9 +76,9 @@ class VerificationGate:
                 if name in EDIT_TOOLS:
                     has_edits = True
                 if name in VERIFICATION_TOOL_HINTS:
-                    # A todo_write call only counts as verification when it
+                    # A todo_list call only counts as verification when it
                     # actually marks something done.
-                    if name == "todo_write":
+                    if name == "todo_list" or name in RETIRED_TODO_TOOL_NAMES:
                         if VerificationGate._todolist_marks_done(tool_call.function.arguments):
                             has_verification = True
                     else:
@@ -123,7 +124,7 @@ class VerificationGate:
             todos = []
         unfinished = [t for t in todos if t.status != "done"]
         if unfinished:
-            lines = ["Unfinished todo_write tasks remain:"]
+            lines = ["Unfinished todo items remain:"]
             for item in unfinished[:_MAX_UNFINISHED_LISTED]:
                 lines.append(f"- [{item.status}] {item.title}")
             if len(unfinished) > _MAX_UNFINISHED_LISTED:

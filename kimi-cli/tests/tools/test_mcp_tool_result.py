@@ -11,7 +11,11 @@ from kosong.message import ImageURLPart, TextPart
 from kosong.tooling import ToolError, ToolOk
 from pydantic import AnyUrl
 
-from kimi_cli.soul.toolset import MCP_MAX_OUTPUT_CHARS, convert_mcp_tool_result
+from kimi_cli.soul.toolset import (
+    _OUTPUT_DUMP_SUBDIR,
+    MCP_MAX_OUTPUT_CHARS,
+    convert_mcp_tool_result,
+)
 
 
 def _make_result(content: Sequence[mcp.types.ContentBlock], *, is_error: bool = False) -> MagicMock:
@@ -19,6 +23,13 @@ def _make_result(content: Sequence[mcp.types.ContentBlock], *, is_error: bool = 
     r.content = content
     r.is_error = is_error
     return r
+
+
+def _make_runtime(session_dir) -> MagicMock:
+    """A runtime stub whose session points at *session_dir*."""
+    runtime = MagicMock()
+    runtime.session.dir = session_dir
+    return runtime
 
 
 def _text(part: object) -> str:
@@ -191,3 +202,60 @@ class TestMCPUnsupportedContent:
         assert len(out.output) == 2
         assert _text(out.output[0]) == "valid"
         assert "unsupported" in _text(out.output[1]).lower()
+
+
+class TestMCPOversizedOutputDump:
+    """Truncated MCP output is also saved to the session dir, losslessly."""
+
+    def test_truncated_text_is_dumped_to_session_dir(self, tmp_path):
+        session_dir = tmp_path / "session-mcp"
+        big_text = "y" * (MCP_MAX_OUTPUT_CHARS + 5000)
+        result = _make_result([mcp.types.TextContent(type="text", text=big_text)])
+
+        out = convert_mcp_tool_result(
+            result, runtime=_make_runtime(session_dir), tool_name="playwright:fetch"
+        )
+
+        assert isinstance(out, ToolOk)
+        notice = _text(out.output[-1])
+        assert "truncated" in notice.lower()
+        assert "full output was saved to" in notice
+        dumps = list((session_dir / _OUTPUT_DUMP_SUBDIR).glob("*.txt"))
+        assert len(dumps) == 1
+        # the dump keeps everything the inline budget dropped
+        assert dumps[0].read_text(encoding="utf-8") == big_text
+        assert dumps[0].name in notice
+
+    def test_dropped_parts_are_kept_in_the_dump(self, tmp_path):
+        """Parts skipped by the budget still land in the dump file."""
+        session_dir = tmp_path / "session-mcp-parts"
+        full = mcp.types.TextContent(type="text", text="x" * MCP_MAX_OUTPUT_CHARS)
+        extra = mcp.types.TextContent(type="text", text="should be dropped from the inline output")
+        result = _make_result([full, extra])
+
+        out = convert_mcp_tool_result(result, runtime=_make_runtime(session_dir))
+
+        assert not any("should be dropped" in _text(p) for p in out.output[:-1])
+        dumps = list((session_dir / _OUTPUT_DUMP_SUBDIR).glob("*.txt"))
+        assert len(dumps) == 1
+        assert "should be dropped from the inline output" in dumps[0].read_text(encoding="utf-8")
+
+    def test_no_dump_when_within_budget(self, tmp_path):
+        session_dir = tmp_path / "session-mcp-small"
+        result = _make_result([mcp.types.TextContent(type="text", text="hello")])
+
+        out = convert_mcp_tool_result(result, runtime=_make_runtime(session_dir))
+
+        assert isinstance(out, ToolOk)
+        assert len(out.output) == 1
+        assert not (session_dir / _OUTPUT_DUMP_SUBDIR).exists()
+
+    def test_without_runtime_the_notice_is_unchanged(self):
+        """No runtime means no place to dump: keep the old pagination notice."""
+        big_text = "z" * (MCP_MAX_OUTPUT_CHARS + 5000)
+        result = _make_result([mcp.types.TextContent(type="text", text=big_text)])
+
+        out = convert_mcp_tool_result(result)
+
+        assert isinstance(out, ToolOk)
+        assert "pagination" in _text(out.output[-1]).lower()

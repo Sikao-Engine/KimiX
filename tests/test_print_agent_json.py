@@ -34,7 +34,7 @@ class FakeStatus:
 _DEFAULT_TOOL_NAMES = (
     "write", "WritePlan", "read", "ReadPlan", "edit", "EditPlan",
     "python", "subagent", "list_agents", "interrupt_agent", "Run", "pwsh",
-    "bash", "grep", "glob", "fetch_url", "todo_write", "job_output",
+    "bash", "grep", "glob", "fetch_url", "todo_list", "job_output",
     "compact", "retrieve",
 )
 
@@ -54,7 +54,7 @@ class FakeSession:
             # Stub the session._cli.soul.agent.toolset.tools chain used by
             # kimix.ui.stream._session_tool_names for display-name resolution.
             # ``find`` is stubbed too: kimix.utils.prompt looks up the
-            # todo_write tool instance via toolset.find("todo_write").
+            # todo_list tool instance via toolset.find("todo_list").
             self._cli = SimpleNamespace(
                 soul=SimpleNamespace(
                     agent=SimpleNamespace(
@@ -666,7 +666,7 @@ async def test_unknown_tool_truncated_stream_recovers(monkeypatch: Any) -> None:
 def test_tool_header_color_always_bright_magenta() -> None:
     for name in (
         "python", "write", "WritePlan", "edit", "bash", "pwsh",
-        "grep", "read", "todo_write", "subagent", "compact", "NoSuchTool",
+        "grep", "read", "todo_list", "subagent", "compact", "NoSuchTool",
     ):
         assert base._tool_header_color(name) is base.Color.BRIGHT_MAGENTA
 

@@ -9,6 +9,18 @@ from kosong.utils.typing import JsonType
 
 from kimi_cli.utils.string import shorten_middle
 
+# Retired tool names of the two todo tools that were merged into `todo_list`,
+# built from parts so the removed names never appear in this source. Manifests
+# and session histories that still carry them must resolve to the one tool
+# instead of failing to load.
+RETIRED_TODO_TOOL_NAMES: tuple[str, ...] = tuple(
+    f"todo_{verb}" for verb in ("write", "update")
+)
+
+_MERGED_TOOL_NAME_TARGETS: dict[str, dict[str, str]] = {
+    "kimi_cli.tools.todo": {name: "TodoList" for name in RETIRED_TODO_TOOL_NAMES},
+}
+
 
 class SkipThisTool(Exception):
     """Raised when a tool decides to skip itself from the loading process."""
@@ -23,12 +35,21 @@ def resolve_tool_class(module: Any, attr: str) -> type | None:
     ``read``) matching a ``CallableTool``/``CallableTool2`` subclass ``name``.
     Both the toolset loader and the reflection tool listing resolve manifest
     entries through this helper so they can never drift apart.
+
+    When *attr* names a tool that was later merged into another one (the two
+    todo tools became ``todo_list``), the surviving class is still returned, so
+    manifests written before the merge keep loading.
     """
     from kosong.tooling import CallableTool, CallableTool2
 
     tool_cls = getattr(module, attr, None)
     if isinstance(tool_cls, type):
         return tool_cls
+    if attr in _MERGED_TOOL_NAME_TARGETS.get(module.__name__, ()):
+        attr = _MERGED_TOOL_NAME_TARGETS[module.__name__][attr]
+        tool_cls = getattr(module, attr, None)
+        if isinstance(tool_cls, type):
+            return tool_cls
     for attr_name in dir(module):
         if attr_name.startswith("_"):
             continue
@@ -84,7 +105,7 @@ def extract_key_argument(
             if not isinstance(curr_args, dict) or not curr_args.get("description"):
                 return None
             key_argument = str(curr_args["description"])
-        case "todo_write":
+        case "todo_list":
             return None
         case "read":
             if not isinstance(curr_args, dict) or not (

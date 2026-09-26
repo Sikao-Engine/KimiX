@@ -7,13 +7,14 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import orjson
-from kosong.message import Message, TextPart, ToolCall
-from kosong.tooling.empty import EmptyToolset
 
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.verification_gate import VerificationGate
+from kimi_cli.tools import RETIRED_TODO_TOOL_NAMES
+from kosong.message import Message, TextPart, ToolCall
+from kosong.tooling.empty import EmptyToolset
 
 
 def _todo(title: str, status: str) -> Any:
@@ -122,7 +123,10 @@ async def test_edits_with_todolist_done_no_block() -> None:
     history = [
         _user("implement the feature"),
         _assistant_call("write", {"path": "a.py", "content": "x"}),
-        _assistant_call("todo_write", {"todos": [{"title": "impl", "status": "done"}]}),
+        _assistant_call(
+            RETIRED_TODO_TOOL_NAMES[0],
+            {"todos": [{"title": "impl", "status": "done"}]},
+        ),
     ]
     soul = _make_soul(history=history)
     assert await gate.check(soul) is None

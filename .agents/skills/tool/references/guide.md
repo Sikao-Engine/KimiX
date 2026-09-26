@@ -250,7 +250,7 @@ At startup, `KimiToolset.load_tools()` (in `kimi-cli/src/kimi_cli/soul/toolset.p
 
 | File | Purpose |
 |------|---------|
-| `agent.yaml` | Default base agent with full toolset (bash/pwsh, todo_write, read_image, web_search, etc.) |
+| `agent.yaml` | Default base agent with full toolset (bash/pwsh, todo_list, read_image, web_search, etc.) |
 | `coder.yaml` | Subagent coder — extends agent.yaml, restricts to code-editing tools |
 | `explore.yaml` | Subagent explorer — extends agent.yaml, read-only exploration tools only |
 | `plan.yaml` | Subagent planner — extends agent.yaml, read-only planning tools, no Shell |
@@ -282,7 +282,7 @@ All kimix agent YAML files use `extend: default`, which resolves to `kimi-cli/sr
 
 | Prefix | Source |
 |--------|--------|
-| `kimi_cli.tools.*` | Built-in kimi-cli tools (read, write, edit, glob, grep, todo_write, etc.) |
+| `kimi_cli.tools.*` | Built-in kimi-cli tools (read, write, edit, glob, grep, todo_list, etc.) |
 | `kimix.tools.*` | Kimix-extended tools (Run, fetch_url, subagent, Note, etc.) |
 
 Use `kimix.tools.*` for new tools created under `src/kimix/tools/`.

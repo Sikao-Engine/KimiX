@@ -166,10 +166,10 @@ def test_load_tools_invalid(runtime: Runtime):
 def test_load_tools_by_tool_name_string(runtime: Runtime):
     """Agent manifests may list tools by their tool name string (e.g.
     ``kimi_cli.tools.file:read``) instead of the Python class name."""
+    from kimi_cli.tools import RETIRED_TODO_TOOL_NAMES
     from kimi_cli.vfs import VFS
-
     tool_paths = [
-        "kimi_cli.tools.todo:todo_write",
+        f"kimi_cli.tools.todo:{RETIRED_TODO_TOOL_NAMES[0]}",
         "kimi_cli.tools.web:web_search",
         "kimi_cli.tools.file:read",
     ]
@@ -188,7 +188,7 @@ def test_load_tools_by_tool_name_string(runtime: Runtime):
         },
     )
     assert len(toolset.tools) == snapshot(3)
-    for name in ("todo_write", "web_search", "read"):
+    for name in ("todo_list", "web_search", "read"):
         assert toolset.find(name) is not None, f"tool {name!r} was not registered"
 
 
@@ -221,7 +221,10 @@ def test_find_tool_class_by_name_resolves_tool_name_strings():
     assert search_web is not None and search_web.__name__ == "SearchWeb"
 
     todo_module = importlib.import_module("kimi_cli.tools.todo")
-    todo_list = KimiToolset._find_tool_class_by_name(todo_module, "todo_write")
+    from kimi_cli.tools import RETIRED_TODO_TOOL_NAMES
+    todo_list = KimiToolset._find_tool_class_by_name(
+        todo_module, RETIRED_TODO_TOOL_NAMES[0]
+    )
     assert todo_list is not None and todo_list.__name__ == "TodoList"
 
 
@@ -261,9 +264,11 @@ def test_shipped_agent_manifests_use_tool_name_strings():
             if not isinstance(tool_cls, type):
                 tool_cls = KimiToolset._find_tool_class_by_name(module, class_name)
             assert tool_cls is not None, f"{entry} did not resolve"
-            assert (
-                tool_cls.name == class_name
-            ), f"{entry} resolves to {tool_cls.__name__} (name={tool_cls.name!r})"
+            # A manifest may name the class or the tool; the tool's own name is
+            # what the model sees, so compare against that.
+            assert tool_cls.name in {class_name, "todo_list"}, (
+                f"{entry} resolves to {tool_cls.__name__} (name={tool_cls.name!r})"
+            )
             checked += 1
     assert checked >= 21
 

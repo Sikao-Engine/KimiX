@@ -145,12 +145,12 @@ REPORT_TOOLS: dict[str, dict[str, Any]] = {
             "timeout": "Max wait in seconds",
         },
     },
-    "todo_write": {
+    "todo_list": {
         "class": "TodoList",
         "canonical": ["todos"],
         "aliases": {"items": "todos"},
-        "desc_lead": "Read or write the whole todo tree.",
-        "param_desc": {"todos": "The COMPLETE task list, replacing any previous list."},
+        "desc_lead": "Read or write the todo plan",
+        "param_desc": {"todos": "The items to write; omit to READ the tree."},
     },
     "workflow": {
         "class": "AgentSwarm",
@@ -205,7 +205,7 @@ def _build_tools() -> dict[str, Any]:
         "glob": Glob(runtime=runtime),
         "grep": Grep(runtime=runtime),
         "read_image": ReadMediaFile(runtime=runtime),
-        "todo_write": TodoList(runtime=runtime),
+        "todo_list": TodoList(runtime=runtime),
     }
 
     from kimix.tools.file.bash import pwsh_tool as pt
@@ -308,7 +308,7 @@ def test_legacy_tool_names_resolve_via_redirects() -> None:
     from kimi_cli.soul.toolset import _PLATFORM_REDIRECTS_NORM
 
     valid = set(REPORT_TOOLS) | {
-        "bash", "Run", "python", "todo_update",
+        "bash", "Run", "python",
         "retrieve", "fetch_url", "compact",
     }
     legacy_map = {
@@ -317,7 +317,7 @@ def test_legacy_tool_names_resolve_via_redirects() -> None:
         "SearchWeb": "web_search", "Agent": "subagent",
         "AskAgent": "send_message", "AgentList": "list_agents",
         "AgentClose": "interrupt_agent", "TaskOutput": "job_output",
-        "TodoList": "todo_write", "AgentSwarm": "workflow",
+        "TodoList": "todo_list", "AgentSwarm": "workflow",
     }
     for legacy, expected in legacy_map.items():
         resolution = resolve_tool_name(
@@ -340,16 +340,17 @@ def test_legacy_shell_names_resolve_to_pwsh_on_windows() -> None:
         assert redirects[normalize_tool_name("Powershell")] == "bash"
 
 
-def test_todo_item_schema_uses_content() -> None:
-    """todo_write items expose the report shape {content, status}."""
+def test_todo_item_schema_uses_title() -> None:
+    """todo_list items expose the report shape {title, status}."""
     from kimi_cli.tools.todo import Params as TodoParams
 
     schema = deref_json_schema(TodoParams.model_json_schema())
+    todos_schema = schema["properties"]["todos"]
     item_schemas: list[dict[str, Any]] = []
-    for branch in schema["properties"]["todos"].get("anyOf", []):
+    for branch in todos_schema.get("anyOf", [todos_schema]):
         if "items" in branch:
             item_schemas.append(branch["items"])
     assert item_schemas, "todos array item schema not found"
     item_props = item_schemas[0].get("properties", {})
-    assert "content" in item_props
+    assert "title" in item_props
     assert "status" in item_props

@@ -326,21 +326,21 @@ Default is 3."""
     # ── Recency-edge re-injection & memory durability ────────────────────────
 
     todo_reminder_enabled: bool = Field(default=False)
-    """When true, periodically re-inject unfinished todo_write items at the end
+    """When true, periodically re-inject unfinished todo items at the end
     of the context window, where model attention is strongest (recency edge).
     Default is false."""
     todo_reminder_interval_steps: int = Field(default=20, ge=1)
     """Minimum number of steps between repeated todo reminder injections when
     the todo list has not changed. Default is 20."""
     todo_compact_injection_enabled: bool = Field(default=True)
-    """When true, the active (unfinished) todo_write plan is deterministically
+    """When true, the active (unfinished) todo plan is deterministically
     appended to the context-compaction output under a stable header, so the
     plan survives summarization. Default is true."""
     todo_compact_injection_max_items: int = Field(default=20, ge=1, le=100)
     """Maximum unfinished items re-injected into the compaction output.
     Default is 20."""
     todo_max_layers: int = Field(default=4, ge=1, le=8)
-    """Maximum todo_write tree/stack depth (layers). push beyond this errors.
+    """Maximum todo tree/stack depth (layers). push beyond this errors.
     Default 4."""
 
     target_churn_enabled: bool = Field(default=False)

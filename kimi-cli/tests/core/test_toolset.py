@@ -6,7 +6,8 @@ import asyncio
 import contextlib
 import json
 import sys
-from typing import override
+from pathlib import Path
+from typing import Any, override
 
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kosong.tooling.error import ToolNotFoundError as KosongToolNotFoundError
@@ -16,6 +17,8 @@ from kimi_cli.soul.toolset import (
     _DIFF_ARGS_HARD_STOP_START,
     _DIFF_ARGS_REMINDER_TEXT_1,
     _DIFF_ARGS_WARN_THRESHOLDS,
+    _OUTPUT_DUMP_MAX_FILES,
+    _OUTPUT_DUMP_SUBDIR,
     _PLATFORM_REDIRECTS_NORM,
     _TURN_TOTAL_REMINDER_START,
     KimiToolset,
@@ -23,13 +26,17 @@ from kimi_cli.soul.toolset import (
     _collect_candidates,
     _has_reasoning_parts,
     _make_diff_args_reminder,
+    _output_to_dump_text,
     _parse_stringified_arguments,
     _repair_argument_format,
     _repair_todo_arguments,
     _unwrap_nested_arguments,
+    _write_output_dump,
 )
+from kimi_cli.tools import RETIRED_TODO_TOOL_NAMES
 from kimi_cli.wire.types import (
     ContentPart,
+    ImageURLPart,
     TextPart,
     ThinkPart,
     ToolCall,
@@ -1078,8 +1085,17 @@ class _MockLLM:
 
 
 class _MockRuntime:
-    def __init__(self, max_context_size: int) -> None:
+    def __init__(self, max_context_size: int, session: object | None = None) -> None:
         self.llm = _MockLLM(max_context_size)
+        self.read_only = False
+        # a session is always present (the toolset reads `session.work_dir` for
+        # hook events); the default one has no `dir`, so output dumps are skipped
+        self.session = session if session is not None else _SessionWithoutDir()
+
+
+def _mock_runtime(max_context_size: int, session: object | None = None) -> Any:
+    """Build a `_MockRuntime`, typed loosely so it fits `KimiToolset(runtime=...)`."""
+    return _MockRuntime(max_context_size, session=session)
 
 
 class _EchoTool(CallableTool2[DummyParams]):
@@ -1244,6 +1260,197 @@ async def test_oversized_content_part_output_is_truncated():
     assert len(output[0].text.encode("utf-8")) == ts._get_max_output_bytes()
     assert "exceeded the maximum allowed size" in tr.return_value.message
     assert large_output.startswith(output[0].text)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Oversized tool output: dump to the session directory instead of truncating
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class _MockSession:
+    """Minimal stand-in for ``Session``, exposing ``dir`` and ``work_dir``."""
+
+    def __init__(self, dir_path: Path) -> None:
+        self._dir = dir_path
+        self.work_dir = str(dir_path.parent)
+
+    @property
+    def dir(self) -> Path:
+        self._dir.mkdir(parents=True, exist_ok=True)
+        return self._dir
+
+
+class _SessionWithoutDir:
+    """A session-like object with no ``dir``: oversized output cannot be dumped."""
+
+    work_dir = "."
+
+
+def _non_compressible(size: int) -> str:
+    """A non-repeating A-Z pattern that survives sanitize / micro-compression."""
+    return "".join(chr(65 + i % 26) for i in range(size))
+
+
+async def _call_echo(ts: KimiToolset, tool_name: str, value: str, call_id: str) -> ToolResult:
+    tool_call = ToolCall(
+        id=call_id,
+        function=ToolCall.FunctionBody(
+            name=tool_name,
+            arguments=json.dumps({"value": value}),
+        ),
+    )
+    result = ts.handle(tool_call)
+    assert isinstance(result, asyncio.Task)
+    return await result
+
+
+async def test_oversized_string_output_is_dumped_to_session_dir(tmp_path):
+    """With a session, oversized output is saved to a file, not returned truncated."""
+    session_dir = tmp_path / "session-str"
+    ts = KimiToolset(runtime=_mock_runtime(4096, session=_MockSession(session_dir)))
+    ts.add(_EchoTool())
+    max_bytes = ts._get_max_output_bytes()
+
+    large_output = _non_compressible(200_000)
+    tr = await _call_echo(ts, "EchoTool", large_output, "tc-dump-str")
+
+    assert isinstance(tr.return_value, ToolError)
+    # nothing is returned inline any more, only the pointer message
+    assert tr.return_value.output == ""
+    assert tr.return_value.brief == "Output too large"
+    message = tr.return_value.message
+    assert "exceeded the maximum allowed size" in message
+    assert "the full output was saved to" in message
+    assert "The result has been truncated" not in message
+
+    dumps = list((session_dir / _OUTPUT_DUMP_SUBDIR).glob("*.txt"))
+    assert len(dumps) == 1
+    assert dumps[0].name in message
+    # the dump is not cut at the inline budget: it keeps more than the budget
+    dumped = dumps[0].read_text(encoding="utf-8")
+    assert len(dumped.encode("utf-8")) > max_bytes
+    assert len(dumped.encode("utf-8")) <= len(large_output.encode("utf-8"))
+
+
+async def test_oversized_content_part_output_is_dumped_to_session_dir(tmp_path):
+    """ContentPart outputs are flattened into the dump file, with no inline output."""
+    session_dir = tmp_path / "session-parts"
+    ts = KimiToolset(runtime=_mock_runtime(4096, session=_MockSession(session_dir)))
+    ts.add(_PartEchoTool())
+    max_bytes = ts._get_max_output_bytes()
+
+    large_output = _non_compressible(200_000)
+    tr = await _call_echo(ts, "PartEchoTool", large_output, "tc-dump-parts")
+
+    assert isinstance(tr.return_value, ToolError)
+    assert tr.return_value.output == ""
+    assert "was saved to" in tr.return_value.message
+
+    dumps = list((session_dir / _OUTPUT_DUMP_SUBDIR).glob("*.txt"))
+    assert len(dumps) == 1
+    assert len(dumps[0].read_text(encoding="utf-8").encode("utf-8")) > max_bytes
+
+
+async def test_oversized_output_falls_back_to_truncation_without_session():
+    """A runtime without a usable session dir keeps the old truncating behavior."""
+    ts = KimiToolset(runtime=_mock_runtime(4096))  # session has no `dir`
+    ts.add(_EchoTool())
+
+    large_output = _non_compressible(200_000)
+    tr = await _call_echo(ts, "EchoTool", large_output, "tc-no-session")
+
+    assert isinstance(tr.return_value, ToolError)
+    assert "The result has been truncated." in tr.return_value.message
+    inline = tr.return_value.output
+    assert isinstance(inline, str)
+    assert len(inline.encode("utf-8")) == ts._get_max_output_bytes()
+
+
+def test_output_to_dump_text_flattens_parts():
+    """Dump text keeps text/think content and media URLs."""
+    parts: list[ContentPart] = [
+        TextPart(text="hello"),
+        ThinkPart(think="why"),
+        ImageURLPart(image_url=ImageURLPart.ImageURL(url="data:image/png;base64,AAA")),
+    ]
+    text = _output_to_dump_text(parts)
+    assert "hello" in text
+    assert "[think #1]\nwhy" in text
+    assert "[image #2] data:image/png;base64,AAA" in text
+    assert _output_to_dump_text("plain") == "plain"
+    assert _output_to_dump_text(TextPart(text="single")) == "single"
+
+
+def test_write_output_dump_is_lossless_and_unique(tmp_path):
+    """A plain string dump is written verbatim; names never collide."""
+    dump_dir = tmp_path / _OUTPUT_DUMP_SUBDIR
+    dump_dir.mkdir()
+    first = _write_output_dump(dump_dir, "line one", "Some Tool")
+    second = _write_output_dump(dump_dir, "line two", "Some Tool")
+    assert first is not None and second is not None
+    assert first != second
+    assert first.read_text(encoding="utf-8") == "line one"
+    assert second.read_text(encoding="utf-8") == "line two"
+    # the tool name is slugged into the file name
+    assert "Some_Tool" in first.name
+
+
+def test_write_output_dump_prunes_old_files(tmp_path):
+    """Only the newest ``_OUTPUT_DUMP_MAX_FILES`` dumps are kept."""
+    dump_dir = tmp_path / _OUTPUT_DUMP_SUBDIR
+    dump_dir.mkdir()
+    total = _OUTPUT_DUMP_MAX_FILES + 5
+    last = None
+    for i in range(total):
+        last = _write_output_dump(dump_dir, f"payload-{i}", "EchoTool")
+        assert last is not None
+    files = list(dump_dir.glob("*.txt"))
+    assert len(files) == _OUTPUT_DUMP_MAX_FILES
+    assert last is not None
+    assert last.read_text(encoding="utf-8") == f"payload-{total - 1}"
+
+
+def test_write_output_dump_cuts_huge_content(tmp_path, monkeypatch):
+    """Content above the dump ceiling is cut with an explicit marker."""
+    import kimi_cli.soul.toolset as toolset_module
+
+    monkeypatch.setattr(toolset_module, "_OUTPUT_DUMP_MAX_BYTES", 1000)
+    dump_dir = tmp_path / _OUTPUT_DUMP_SUBDIR
+    dump_dir.mkdir()
+    path = _write_output_dump(dump_dir, "x" * 5000, "EchoTool")
+    assert path is not None
+    text = path.read_text(encoding="utf-8")
+    assert "[dump cut at 1000 bytes" in text
+    assert text.startswith("x" * 1000)
+
+
+async def test_dump_failure_falls_back_to_truncation(tmp_path, monkeypatch):
+    """When the dump write fails, the inline truncation path is still used."""
+    import kimi_cli.soul.toolset as toolset_module
+
+    monkeypatch.setattr(toolset_module, "_write_output_dump", lambda *args, **kwargs: None)
+    ts = KimiToolset(runtime=_mock_runtime(4096, session=_MockSession(tmp_path / "session-fail")))
+    ts.add(_EchoTool())
+
+    tr = await _call_echo(ts, "EchoTool", _non_compressible(200_000), "tc-dump-fail")
+    assert isinstance(tr.return_value, ToolError)
+    assert "The result has been truncated." in tr.return_value.message
+    inline = tr.return_value.output
+    assert isinstance(inline, str)
+    assert len(inline.encode("utf-8")) == ts._get_max_output_bytes()
+
+
+async def test_dump_message_mentions_cut_when_output_exceeds_ceiling(tmp_path, monkeypatch):
+    """The pointer message says only a prefix was saved when the ceiling is hit."""
+    import kimi_cli.soul.toolset as toolset_module
+
+    monkeypatch.setattr(toolset_module, "_OUTPUT_DUMP_MAX_BYTES", 1000)
+    ts = KimiToolset(runtime=_mock_runtime(4096, session=_MockSession(tmp_path / "session-cut")))
+    ts.add(_EchoTool())
+
+    tr = await _call_echo(ts, "EchoTool", _non_compressible(200_000), "tc-dump-cut")
+    assert isinstance(tr.return_value, ToolError)
+    assert "only the first 1000 bytes were saved to" in tr.return_value.message
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1542,85 +1749,61 @@ def test_repair_argument_format_noop_for_plain_dict():
 
 
 # --- _repair_todo_arguments: fuzzy todo argument repair -----------------
+# One tool owns the argument shape now; the retired names still route here so a
+# session recorded before the merge repairs the same way.
 
-
-def test_repair_todo_write_promotes_singular_key():
-    """todo_write accepts a single todo/task/item key as the todos field."""
-    assert _repair_todo_arguments("todo_write", {"todo": {"content": "A"}}) == {
-        "todos": {"content": "A", "status": "pending"}
+def test_repair_todo_wraps_bare_string_items():
+    """Bare-string items become `{title}` items; no status is injected."""
+    assert _repair_todo_arguments("todo_list", {"todos": ["Buy milk", "Walk dog"]}) == {
+        "todos": [{"title": "Buy milk"}, {"title": "Walk dog"}]
     }
-    assert _repair_todo_arguments("todo_write", {"task": "Implement X", "status": "done"}) == {
-        "todos": [{"content": "Implement X", "status": "done"}]
-    }
-    assert _repair_todo_arguments("todo_write", {"item": {"content": "B", "status": "done"}}) == {
-        "todos": {"content": "B", "status": "done"}
+    assert _repair_todo_arguments("todo_list", {"todos": "Single"}) == {
+        "todos": [{"title": "Single"}]
     }
 
 
-def test_repair_todo_write_wraps_bare_string_todos():
-    """Bare-string todos are wrapped into schema-valid item dicts."""
-    assert _repair_todo_arguments(
-        "todo_write", {"todos": ["Buy milk", "Walk dog"]}
-    ) == {
-        "todos": [
-            {"content": "Buy milk", "status": "pending"},
-            {"content": "Walk dog", "status": "pending"},
-        ]
+def test_repair_todo_promotes_batch_synonyms():
+    """edits/changes/operations/updates all land on `todos`."""
+    assert _repair_todo_arguments("todo_list", {"edits": [{"title": "A"}, {"content": "B"}]}) == {
+        "todos": [{"title": "A"}, {"content": "B"}]
     }
-    assert _repair_todo_arguments("todo_write", {"todos": "Single"}) == {
-        "todos": [{"content": "Single", "status": "pending"}]
+    assert _repair_todo_arguments("todo_list", {"operations": [{"title": "C"}]}) == {
+        "todos": [{"title": "C"}]
+    }
+    assert _repair_todo_arguments("todo_list", {"changes": "Just one"}) == {
+        "todos": [{"title": "Just one"}]
     }
 
 
-def test_repair_todo_write_fills_missing_status():
-    """Item dicts missing the required status get a pending default."""
-    assert _repair_todo_arguments("todo_write", {"todos": [{"content": "A"}]}) == {
-        "todos": [{"content": "A", "status": "pending"}]
-    }
-    # Valid statuses are preserved.
-    assert _repair_todo_arguments(
-        "todo_write", {"todos": [{"content": "A", "status": "done"}]}
-    ) == {"todos": [{"content": "A", "status": "done"}]}
+def test_repair_todo_passes_wellformed_arguments_through():
+    """A call that already matches the schema is never rewritten."""
+    args = {"todos": [{"title": "K", "parent": "P"}], "mode": "merge"}
+    assert _repair_todo_arguments("todo_list", dict(args)) == args
 
 
-def test_repair_todo_update_promotes_title_synonyms():
-    """todo_update accepts task/todo/item/name as the title field."""
-    assert _repair_todo_arguments("todo_update", {"task": "Fix bug", "status": "done"}) == {
-        "title": "Fix bug",
-        "status": "done",
-    }
-    assert _repair_todo_arguments("todo_update", {"todo": "Write docs"}) == {
-        "title": "Write docs"
-    }
-
-
-def test_repair_todo_update_promotes_batch_synonyms():
-    """todo_update accepts edits/changes/operations as the updates field."""
-    assert _repair_todo_arguments(
-        "todo_update", {"edits": [{"title": "A"}, {"content": "B"}]}
-    ) == {"updates": [{"title": "A"}, {"content": "B"}]}
-    assert _repair_todo_arguments("todo_update", {"operations": [{"title": "C"}]}) == {
-        "updates": [{"title": "C"}]
-    }
-
-
-def test_repair_todo_update_wraps_bare_string_updates():
-    """Bare-string update lists are wrapped into title items."""
-    assert _repair_todo_arguments("todo_update", {"todos": ["X", "Y"]}) == {
-        "todos": [{"title": "X", "status": "pending"}, {"title": "Y", "status": "pending"}]
-    }
-    assert _repair_todo_arguments("todo_update", {"changes": "Just one"}) == {
-        "updates": [{"title": "Just one", "status": "pending"}]
-    }
+def test_repair_todo_accepts_retired_tool_names():
+    """A session recorded before the merge repaired the same way."""
+    for retired in RETIRED_TODO_TOOL_NAMES:
+        assert _repair_todo_arguments(retired, {"todos": ["X"]}) == {
+            "todos": [{"title": "X"}]
+        }
+    # any other tool is untouched
+    assert _repair_todo_arguments("bash", {"command": "ls"}) == {"command": "ls"}
 
 
 def test_repair_todo_arguments_keeps_valid_calls_unchanged():
     """Well-formed todo calls and non-todo tools are not modified."""
     valid_write = {"todos": [{"content": "A", "status": "done"}], "mode": "append"}
-    assert _repair_todo_arguments("todo_write", dict(valid_write)) == valid_write
+    assert (
+        _repair_todo_arguments(RETIRED_TODO_TOOL_NAMES[0], dict(valid_write))
+        == valid_write
+    )
 
     valid_update = {"title": "A", "status": "in_progress", "force": True}
-    assert _repair_todo_arguments("todo_update", dict(valid_update)) == valid_update
+    assert (
+        _repair_todo_arguments(RETIRED_TODO_TOOL_NAMES[1], dict(valid_update))
+        == valid_update
+    )
 
     other = {"value": "x", "task": "ignored"}
     assert _repair_todo_arguments("bash", dict(other)) == other

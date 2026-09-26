@@ -44,7 +44,7 @@ def test_build_reflection_prompt_includes_architecture_map():
         "Run",
         "python",
         "job_output",
-        "todo_write",
+        "todo_list",
         "retrieve",
         "read",
         "edit",

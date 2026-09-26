@@ -14,7 +14,7 @@ A coding agent's power comes from efficient interaction with the environment. Th
 | **Code Execution** | `Run`, `Python`, `Bash`, `pwsh` | Execute executables, bash / powershell commands, or Python code |
 | **Process Management** | `job_output` | Read, list, export, or kill background tasks |
 | **Search & Info** | `fetch_url` | Fetch web content |
-| **State & Tracking** | `todo_write`, `todo_update` | Track progress |
+| **State & Tracking** | `todo_list` | Read, write and edit the plan |
 | **Sub-agent & Session Management** | `subagent`, `list_agents`, `interrupt_agent` | Create, list, and close sub-agent sessions |
 
 ---
@@ -84,11 +84,10 @@ Fetch web content as Markdown via headless browser. Use for docs, API references
 
 ## State & Tracking
 
-#### `todo_write`
-Track multi-step task progress. States: `pending`, `in_progress`, `done`. Always pass the **complete list** on update. For lightweight single-item edits, prefer `todo_update`.
+#### `todo_list`
+The one todo tool. Omit `todos` to read the plan; `mode='merge'` (default) upserts the items you send — an existing title is patched in place (omitted fields keep their value) and an unknown title is created; `mode='replace'` makes the list the whole tree; `mode='clear'` empties it. States: `pending`, `in_progress`, `done`, each item with optional `notes`.
 
-#### `todo_update`
-Update a single existing todo by title without rewriting the whole list. Supports status changes, notes edits, and renaming. Fuzzy matching is enabled by default.
+Use `parent=`/`scope=` to work inside a sub-tree, `complete=true` to finish a subtree in one call, and `rename_to` to rename. A title that differs from an existing one only in numbering, punctuation, case or word order is treated as the same task and refused — `on_conflict='reuse'` patches it, `'append'` really adds a second item.
 
 
 ---
@@ -132,7 +131,7 @@ Break complex tasks into tool-annotated steps.
 > "1. **Research**: `glob` + `read` existing CLI commands
 > 2. **Implement**: `write` or `edit` for new command
 > 3. **Verify**: `Run` tests
-> 4. **Track**: `todo_write` to mark complete"
+> 4. **Track**: `todo_list` to mark complete"
 
 ### 5. Meta-Prompting
 Embed tool guidelines in system prompts.
@@ -163,7 +162,7 @@ Embed tool guidelines in system prompts.
 1. `glob` + `read` to research existing structure
 2. Draft implementation plan
 3. `edit`/`write` changes
-4. `todo_write` track subtasks
+4. `todo_list` track subtasks
 5. `Run` tests
 
 **External document analysis:**

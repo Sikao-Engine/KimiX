@@ -677,7 +677,7 @@ class KimiSoul:
         def convert(todo: Todo) -> TodoItemState:
             # Todo models store the title as ``content``; TodoItemState uses ``title``.
             return TodoItemState(
-                title=todo.content,
+                title=todo.title,
                 status=todo.status,
                 notes=todo.notes,
                 children=[convert(child) for child in todo.children],

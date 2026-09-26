@@ -23,7 +23,7 @@ class FakeToolset:
         self.has_set_todo = has_set_todo
 
     def find(self, name: str) -> object | None:
-        if name == "todo_write" and self.has_set_todo:
+        if name == "todo_list" and self.has_set_todo:
             return object()
         return None
 
@@ -144,7 +144,7 @@ def test_reminder_injected_when_todos_unfinished(monkeypatch: Any) -> None:
     assert len(session.prompts) == 3
     assert session.prompts[0] == "hello"
     reminder = session.prompts[1]
-    assert "You have unfinished `todo_write` tasks" in reminder
+    assert "You have unfinished todo items" in reminder
     assert "- [pending] Analyze requirement" in reminder
     assert "- [in_progress] Implement helper" in reminder
     # Done todos are excluded from the reminder
@@ -153,7 +153,7 @@ def test_reminder_injected_when_todos_unfinished(monkeypatch: Any) -> None:
     strong_reminder = session.prompts[2]
     assert "CRITICAL" in strong_reminder
     assert (
-        "Mark every remaining item `completed` with `todo_update` (or `todo_write` for bulk edits)"
+        "Mark every remaining item `completed` with `todo_list`"
         in strong_reminder
     )
     assert "- [pending] Analyze requirement" in strong_reminder
@@ -215,7 +215,7 @@ def test_reminder_stops_when_todos_marked_done(monkeypatch: Any) -> None:
     session = FakeSessionWithCLI(has_set_todo=True, todos=todos)
 
     async def mark_done_prompt(self: Any, prompt: str, *, merge_wire_messages: bool = False) -> Any:
-        if "unfinished" in prompt and "todo_write" in prompt:
+        if "unfinished" in prompt and "todo_list" in prompt:
             session._cli.session.state.todos[0].status = "done"
         self.last_prompt = prompt
         self.prompts.append(prompt)
@@ -227,7 +227,7 @@ def test_reminder_stops_when_todos_marked_done(monkeypatch: Any) -> None:
 
     assert len(session.prompts) == 2
     assert session.prompts[0] == "hello"
-    assert "You have unfinished `todo_write` tasks" in session.prompts[1]
+    assert "You have unfinished todo items" in session.prompts[1]
 
 
 def test_no_reminder_when_ensure_todo_finished_false(monkeypatch: Any) -> None:
@@ -375,7 +375,7 @@ def test_todos_cleared_even_when_reminder_fails(monkeypatch: Any) -> None:
     _suppress_stream(monkeypatch)
 
     async def failing_prompt(self: Any, prompt: str, *, merge_wire_messages: bool = False) -> Any:
-        if "unfinished" in prompt and "todo_write" in prompt:
+        if "unfinished" in prompt and "todo_list" in prompt:
             raise RuntimeError("reminder failed")
         self.last_prompt = prompt
         self.prompts.append(prompt)

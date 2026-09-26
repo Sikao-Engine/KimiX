@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.todo import Params, Todo, TodoList
+from kosong.tooling import ToolReturnValue
 
 
 @pytest.fixture
@@ -41,7 +40,7 @@ class TestTodoListOutputNotEmpty:
             "TodoList output must not be empty — this is the root cause of issue #1710. "
             "The model needs to see confirmation of the todo state it just set."
         )
-        assert result.message == "Todo list appended."
+        assert result.message == "Todo list updated."
 
     async def test_read_mode_returns_current_todos(self, todo_list_tool: TodoList):
         """When no todos are provided (None), the tool should return the current
@@ -238,7 +237,7 @@ class TestTodoListActiveSummary:
         result = await todo_list_tool(params)
         assert not result.is_error
         assert result.output.startswith(
-            "Todo list appended (1 total: 1 done, 0 in progress, 0 pending)"
+            "Todo list updated (1 total: 1 done, 0 in progress, 0 pending)"
         )
         assert "All todos are done." in result.output
         assert "All todos are done." in result.message
@@ -264,7 +263,7 @@ class TestTodoListActiveSummary:
         )
         assert not result.is_error
         assert result.output.startswith(
-            "Todo list appended (2 total: 2 done, 0 in progress, 0 pending)"
+            "Todo list updated (2 total: 2 done, 0 in progress, 0 pending)"
         )
         assert "All todos are done." in result.output
         assert "All todos are done." in result.message
@@ -408,7 +407,7 @@ class TestTodoListIncrementalUpdate:
         assert lines[2] == "- [pending] Second"
         assert lines[3].startswith("- [done] Third")
 
-    async def test_single_todo_update(self, todo_list_tool: TodoList):
+    async def test_single_item_patch(self, todo_list_tool: TodoList):
         """Passing a single Todo instance should update just that item."""
         await todo_list_tool(
             Params(
@@ -901,39 +900,50 @@ class TestTodoListFuzzyAppendWarning:
         assert "[pending] Implement feature" in read.output
         assert "[done] Implement featuer" in read.output
 
-    async def test_word_reorder_returns_warning(self, todo_list_tool: TodoList):
-        """Reordered words matching an existing title warn but still append."""
+    async def test_word_reorder_is_a_conflict_not_a_duplicate(self, todo_list_tool: TodoList):
+        """The same words in a new order is the same task: refuse, don't append."""
         await todo_list_tool(Params(todos=[Todo(content="Fix bug", status="pending", notes="")]))
-
         result = await todo_list_tool(
             Params(todos=[Todo(content="Bug fix", status="done", notes="")])
         )
-        assert not result.is_error
-        assert "looks like existing" in result.message
-        assert "Bug fix" in result.message
-        assert "Fix bug" in result.message
+        assert result.is_error
+        assert 'near-duplicate of the existing "Fix bug"' in result.output
+        assert '"status":"done"' in result.output  # the payload to send instead
+        read = await todo_list_tool(Params(todos=None))
+        assert "[pending] Fix bug" in read.output
+        assert "Bug fix" not in read.output
 
+    async def test_word_reorder_with_on_conflict_append(self, todo_list_tool: TodoList):
+        """The escape hatch really does add the second item."""
+        await todo_list_tool(Params(todos=[Todo(content="Fix bug", status="pending", notes="")]))
+        added = await todo_list_tool.call(
+            {"todos": [{"title": "Bug fix", "status": "done"}], "on_conflict": "append"}
+        )
+        assert not added.is_error, added.message
         read = await todo_list_tool(Params(todos=None))
         assert "[pending] Fix bug" in read.output
         assert "[done] Bug fix" in read.output
 
-    async def test_case_only_difference_returns_warning(self, todo_list_tool: TodoList):
-        """A case-only difference warns but appends the new-cased title."""
+    async def test_case_only_difference_is_a_conflict(self, todo_list_tool: TodoList):
+        """A case-only difference is the same item; on_conflict decides."""
         await todo_list_tool(
             Params(todos=[Todo(content="Implement Feature", status="pending", notes="")])
         )
-
         result = await todo_list_tool(
             Params(todos=[Todo(content="implement feature", status="done", notes="")])
         )
-        assert not result.is_error
-        assert "looks like existing" in result.message
-        assert "implement feature" in result.message
-        assert "Implement Feature" in result.message
-
+        assert result.is_error
+        assert "near-duplicate" in result.output
+        reuse = await todo_list_tool.call(
+            {
+                "todos": [{"title": "implement feature", "status": "done"}],
+                "on_conflict": "reuse",
+            }
+        )
+        assert not reuse.is_error, reuse.message
         read = await todo_list_tool(Params(todos=None))
-        assert "[pending] Implement Feature" in read.output
-        assert "[done] implement feature" in read.output
+        assert "[done] Implement Feature" in read.output
+        assert "implement feature" not in read.output
 
     async def test_mixed_exact_and_fuzzy_returns_warning(self, todo_list_tool: TodoList):
         """Exact matches update; fuzzy near-matches append with a warning."""
@@ -1059,107 +1069,81 @@ class TestTodoListInternals:
             ]
         ) == ["A", "B"]
 
-    def test_merge_one_updates_notes_when_filled_and_different(self):
-        """_merge_one replaces notes when the new value is filled and different."""
-        from kimi_cli.tools.todo import TodoList
+    def test_merge_node_updates_notes_when_filled_and_different(self) -> None:
+        """An upsert replaces filled-in notes and applies the sent status."""
+        tool = TodoList.__new__(TodoList)
+        old = Todo(title="A", status="pending", notes="old notes")
+        new = Todo.model_validate({"title": "A", "status": "done", "notes": "new notes"})
+        merged = tool._merge_node(old, new, Params(), [])
+        assert isinstance(merged, Todo)
+        assert (merged.title, merged.status, merged.notes) == ("A", "done", "new notes")
 
-        old = Todo(content="A", status="pending", notes="old notes")
-        new = Todo(content="A", status="done", notes="new notes")
-        merged = TodoList._merge_one(old, new)
-        assert merged.content == "A"
+    def test_merge_node_keeps_old_notes_when_new_none_or_empty(self) -> None:
+        """Omitted or blank notes keep what is stored (non-destructive upsert)."""
+        tool = TodoList.__new__(TodoList)
+        old = Todo(title="A", status="pending", notes="old notes")
+        for payload in ({"title": "A", "status": "done"}, {"title": "A", "notes": ""}):
+            merged = tool._merge_node(old, Todo.model_validate(payload), Params(), [])
+            assert isinstance(merged, Todo)
+            assert merged.notes == "old notes"
+
+    def test_merge_node_keeps_status_when_not_sent(self) -> None:
+        """An upsert that omits `status` must not reset progress."""
+        tool = TodoList.__new__(TodoList)
+        old = Todo(title="A", status="done", notes="n")
+        merged = tool._merge_node(old, Todo.model_validate({"title": "A", "notes": "x"}), Params(), [])
+        assert isinstance(merged, Todo)
         assert merged.status == "done"
-        assert merged.notes == "new notes"
 
-    def test_merge_one_keeps_old_notes_when_new_none_or_empty(self):
-        """_merge_one keeps old notes when the new value is None or empty."""
-        from kimi_cli.tools.todo import TodoList
-
-        old = Todo(content="A", status="pending", notes="old notes")
-        for new_notes in [None, "", "   "]:
-            new = Todo(content="A", status="done", notes=new_notes)
-            merged = TodoList._merge_one(old, new)
-            assert merged.notes == "old notes", f"notes lost for {new_notes!r}"
-            assert merged.status == "done"
-
-    def test_merge_one_updates_status_without_touching_notes(self):
-        """_merge_one can update status while preserving notes."""
-        from kimi_cli.tools.todo import TodoList
-
-        old = Todo(content="A", status="pending", notes="old notes")
-        merged = TodoList._merge_one(old, Todo(content="A", status="in_progress", notes=""))
-        assert merged.notes == "old notes"
-        assert merged.status == "in_progress"
-
-    def test_merge_todos_empty_old(self):
-        """_merge_todos with empty old returns new."""
-        from kimi_cli.tools.todo import TodoList
-
-        tool = object.__new__(TodoList)
-        result = tool._merge_todos([], [Todo(content="A", status="pending", notes="")])
-        assert result.error is None
-        assert result.todos is not None
-        assert len(result.todos) == 1
-        assert result.todos[0].content == "A"
-
-    def test_merge_todos_empty_new_keeps_old(self):
-        """_merge_todos with an explicit empty new list is a no-op: the old
-        list is returned unchanged (clearing moved to mode='clear')."""
-        from kimi_cli.tools.todo import TodoList
-
-        tool = object.__new__(TodoList)
-        result = tool._merge_todos([Todo(content="A", status="done", notes="")], [])
-        assert result.error is None
-        assert result.todos is not None
-        assert [t.content for t in result.todos] == ["A"]
-
-    def test_merge_todos_empty_new_keeps_pending_old(self):
-        """Empty new never clears: pending old items are preserved."""
-        from kimi_cli.tools.todo import TodoList
-
-        tool = object.__new__(TodoList)
-        result = tool._merge_todos([Todo(content="A", status="pending", notes="")], [])
-        assert result.error is None
-        assert result.todos is not None
-        assert [t.content for t in result.todos] == ["A"]
-        assert result.todos[0].status == "pending"
-
-    def test_merge_todos_superset_when_all_done(self):
-        """_merge_todos with superset titles when all old done returns new."""
-        from kimi_cli.tools.todo import TodoList
-
-        tool = object.__new__(TodoList)
-        result = tool._merge_todos(
-            [Todo(content="A", status="done", notes="")],
-            [
-                Todo(content="A", status="pending", notes=""),
-                Todo(content="B", status="pending", notes=""),
-            ],
+    def test_upsert_in_container_updates_existing_and_appends_new(self) -> None:
+        tool = TodoList.__new__(TodoList)
+        container = [Todo(title="A", status="pending", notes="")]
+        out, summary = tool._upsert_in_container(
+            container, Todo.model_validate({"title": "A", "status": "done"}), Params(), [], where="todos[0]"
         )
-        assert result.error is None
-        assert result.todos is not None
-        assert len(result.todos) == 2
+        assert not isinstance(out, ToolReturnValue)
+        assert [t.status for t in out] == ["done"]
+        assert summary == 'Updated "A" (status=done).'
+        out2, summary2 = tool._upsert_in_container(
+            list(out), Todo.model_validate({"title": "B"}), Params(), [], where="todos[1]"
+        )
+        assert not isinstance(out2, ToolReturnValue)
+        assert [t.title for t in out2] == ["A", "B"]
+        assert summary2 == "Created \"B\"."
 
-    def test_read_subagent_state_non_dict(self):
-        """_read_subagent_state handles non-JSON and non-dict data."""
-        import tempfile
+    def test_upsert_rejects_near_duplicate_titles_by_default(self) -> None:
+        """Same words, different numbering = the same task re-declared."""
+        tool = TodoList.__new__(TodoList)
+        container = [Todo(title="1. README lines 55-63", status="pending", notes="")]
+        out, _ = tool._upsert_in_container(
+            container,
+            Todo.model_validate({"title": "README: lines 55-63", "status": "done"}),
+            Params(),
+            [],
+            where="todos[0]",
+        )
+        assert isinstance(out, ToolReturnValue) and out.is_error
+        assert "README lines 55-63" in out.output
 
-        from kimi_cli.tools.todo import TodoList
+    def test_upsert_allows_numbered_siblings(self) -> None:
+        """"Task 10" is not "Task 0": different words, no conflict."""
+        tool = TodoList.__new__(TodoList)
+        container = [Todo(title="Task 0", status="pending", notes="")]
+        out, _ = tool._upsert_in_container(
+            container, Todo.model_validate({"title": "Task 10"}), Params(), [], where="todos[1]"
+        )
+        assert not isinstance(out, ToolReturnValue)
+        assert [t.title for t in out] == ["Task 0", "Task 10"]
 
-        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
-            f.write("[1, 2, 3]")  # valid JSON but not a dict
-            path = Path(f.name)
-
-        result = TodoList._read_subagent_state(path)
-        assert result == {}
-        path.unlink()
-
-    def test_read_subagent_state_nonexistent(self):
-        """_read_subagent_state returns empty dict for nonexistent file."""
-        from kimi_cli.tools.todo import TodoList
-
-        result = TodoList._read_subagent_state(Path("/nonexistent/state.json"))
-        assert result == {}
-
+    def test_find_conflict_matches_reordered_words_only(self) -> None:
+        tool = TodoList.__new__(TodoList)
+        container = [Todo(title="Fix login bug in auth", status="pending", notes="")]
+        probe = lambda t: tool._find_conflict(t, container)  # noqa: E731
+        assert probe("auth fix login bug in") == "Fix login bug in auth"
+        assert probe("1. Fix login bug in auth") == "Fix login bug in auth"
+        assert probe("FIX LOGIN BUG IN AUTH") == "Fix login bug in auth"
+        assert probe("Fix login bug in auth.py") is None  # a different word
+        assert probe("Fix logout bug in auth") is None
 
 class TestTodoListRegression:
     """Test edge cases around status regression and overwrite mode."""
@@ -1364,7 +1348,7 @@ class TestTodoListCallingJsonString:
         result = await todo_list_tool.call(
             {
                 "mode": "overwrite",
-                "todos": '[{"title": "Build DXC", "status": "in_progress", "priority": "high"}]',
+                "todos": '[{"title": "Build DXC", "status": "in_progress"}]',
             }
         )
         assert not result.is_error
@@ -1405,16 +1389,15 @@ class TestTodoListCallingJsonString:
         )
         assert result.is_error
 
-    async def test_plain_string_still_returns_validation_error(self, todo_list_tool: TodoList):
-        """A non-JSON string should still be rejected."""
+    async def test_plain_string_becomes_one_item(self, todo_list_tool: TodoList):
+        """A bare string for `todos` is one item, not a validation error."""
         result = await todo_list_tool.call(
             {
-                "mode": "overwrite",
                 "todos": "just a plain title",
             }
         )
-        assert result.is_error
-        assert "todos must be a list of todos" in result.message
+        assert not result.is_error, result.message
+        assert "just a plain title" in result.output
 
 
 class TestTodoListEmptyBody:
@@ -1467,7 +1450,7 @@ class TestTodoListProgressCounters:
         )
         assert not result.is_error
         assert result.output.startswith(
-            "Todo list appended (4 total: 1 done, 1 in progress, 2 pending)"
+            "Todo list updated (4 total: 1 done, 1 in progress, 2 pending)"
         )
 
     async def test_counts_correct_after_merge(self, todo_list_tool: TodoList):
@@ -1489,7 +1472,7 @@ class TestTodoListProgressCounters:
         )
         assert not result.is_error
         assert result.output.startswith(
-            "Todo list appended (3 total: 1 done, 1 in progress, 1 pending)"
+            "Todo list updated (3 total: 1 done, 1 in progress, 1 pending)"
         )
 
 
@@ -1873,7 +1856,9 @@ class TestTodoSchemaNotRecursive:
         child_items = todo_def["properties"]["children"]["items"]
         # Leaf copy carries the todo fields but no nested children property.
         assert "children" not in child_items["properties"]
-        assert {"content", "status", "notes"} <= set(child_items["properties"])
+        assert {"title", "status", "notes"} <= set(child_items["properties"])
+        # the edit-only keys make no sense inside a written sub-tree
+        assert not {"rename_to", "complete", "parent"} & set(child_items["properties"])
         assert "children" not in child_items.get("required", [])
 
     def test_runtime_recursion_still_validates(self) -> None:

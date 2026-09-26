@@ -330,7 +330,7 @@ def test_external_tool_call(tmp_path) -> None:
     "method": "event",
     "type": "LLMToolsSnapshot",
     "payload": {
-        "hash": "ebaabf484f5b65b8ca3ebb1584d17d47957f4d0fe05b1b1d5d665beee0ce368a",
+        "hash": "b93f99b3d6408e9f783d66134c1fb8e77e23d481cbb641b1e1753a4a24b70083",
         "tools": [
             {
                 "name": "subagent",
@@ -388,405 +388,452 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                     "type": "object",
                 },
             },
-            {
-                "name": "todo_write",
-                "description": """\
-Read or write the whole todo tree. Omit `todos` to read the current tree; send the complete list to set the plan. For targeted single/batch edits (status, notes, rename, or children via parent=...) use todo_update.
-
-Write modes:
-- append (default): merges root-level todos by exact title; new titles are appended.
-- replace: replaces the whole list; only allowed when all existing todos are done (use force=True to override).
-- clear: empties the list; only allowed when all todos are done (use force=True to override).
-
-Notes:
-- Send the complete list each write; there are no partial edits.
-- Keep exactly one item in_progress at a time; auto_fix=True resolves conflicts by keeping the last listed item.
-- Statuses: pending, in_progress, done (or completed).\
-""",
-                "parameters": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "todos": {
-                            "anyOf": [
-                                {
-                                    "items": {
-                                        "properties": {
-                                            "content": {
-                                                "description": "Title (report item shape: `content`).",
-                                                "maxLength": 65536,
-                                                "minLength": 1,
-                                                "type": "string",
-                                            },
-                                            "status": {
-                                                "description": "Status",
-                                                "enum": [
-                                                    "pending",
-                                                    "in_progress",
-                                                    "done",
-                                                ],
-                                                "type": "string",
-                                            },
-                                            "notes": {
-                                                "anyOf": [
-                                                    {
-                                                        "maxLength": 65536,
-                                                        "type": "string",
-                                                    },
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "Notes. MUST write, be comprehensively, detailed.",
-                                            },
-                                            "children": {
-                                                "description": "Sub todos (children). Leave empty for a leaf. Each child has the same fields as a todo (`content`/`status`/`notes`); a child's own `children` accepts the same todo shape (arbitrary nesting depth).",
-                                                "items": {
-                                                    "properties": {
-                                                        "content": {
-                                                            "description": "Title (report item shape: `content`).",
-                                                            "maxLength": 65536,
-                                                            "minLength": 1,
-                                                            "type": "string",
-                                                        },
-                                                        "status": {
-                                                            "description": "Status",
-                                                            "enum": [
-                                                                "pending",
-                                                                "in_progress",
-                                                                "done",
-                                                            ],
-                                                            "type": "string",
-                                                        },
-                                                        "notes": {
-                                                            "anyOf": [
-                                                                {
-                                                                    "maxLength": 65536,
-                                                                    "type": "string",
-                                                                },
-                                                                {"type": "null"},
-                                                            ],
-                                                            "default": None,
-                                                            "description": "Notes. MUST write, be comprehensively, detailed.",
-                                                        },
-                                                    },
-                                                    "required": ["content", "status"],
-                                                    "type": "object",
-                                                },
-                                                "type": "array",
-                                            },
-                                        },
-                                        "required": ["content", "status"],
-                                        "type": "object",
-                                    },
-                                    "type": "array",
-                                },
-                                {
-                                    "properties": {
-                                        "content": {
-                                            "description": "Title (report item shape: `content`).",
-                                            "maxLength": 65536,
-                                            "minLength": 1,
-                                            "type": "string",
-                                        },
-                                        "status": {
-                                            "description": "Status",
-                                            "enum": ["pending", "in_progress", "done"],
-                                            "type": "string",
-                                        },
-                                        "notes": {
-                                            "anyOf": [
-                                                {"maxLength": 65536, "type": "string"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "Notes. MUST write, be comprehensively, detailed.",
-                                        },
-                                        "children": {
-                                            "description": "Sub todos (children). Leave empty for a leaf. Each child has the same fields as a todo (`content`/`status`/`notes`); a child's own `children` accepts the same todo shape (arbitrary nesting depth).",
-                                            "items": {
-                                                "properties": {
-                                                    "content": {
-                                                        "description": "Title (report item shape: `content`).",
-                                                        "maxLength": 65536,
-                                                        "minLength": 1,
-                                                        "type": "string",
-                                                    },
-                                                    "status": {
-                                                        "description": "Status",
-                                                        "enum": [
-                                                            "pending",
-                                                            "in_progress",
-                                                            "done",
-                                                        ],
-                                                        "type": "string",
-                                                    },
-                                                    "notes": {
-                                                        "anyOf": [
-                                                            {
-                                                                "maxLength": 65536,
-                                                                "type": "string",
-                                                            },
-                                                            {"type": "null"},
-                                                        ],
-                                                        "default": None,
-                                                        "description": "Notes. MUST write, be comprehensively, detailed.",
-                                                    },
-                                                },
-                                                "required": ["content", "status"],
-                                                "type": "object",
-                                            },
-                                            "type": "array",
-                                        },
-                                    },
-                                    "required": ["content", "status"],
-                                    "type": "object",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "The COMPLETE task list, replacing any previous list. Each item: `content` (string, short imperative line) and `status` (enum: pending/in_progress/completed). Passing an empty list [] is a no-op (use mode='clear' to empty the list). Accepts `todos` or `items`.",
-                        },
-                        "mode": {
-                            "default": "append",
-                            "description": "Write mode: 'append' merges the provided todos into the existing list (existing root titles are updated, new titles are appended; empty list is a no-op); 'replace' replaces the existing todo list only when every existing todo is done (errors otherwise); 'clear' empties the list (errors unless every old todo is done). Set force=True to replace or clear even with unfinished todos.",
-                            "enum": ["append", "replace", "clear"],
-                            "type": "string",
-                        },
-                        "force": {
-                            "default": False,
-                            "description": "When True, mode='replace' and mode='clear' bypass the all-done guard (and skip regression and single-in_progress checks). Legacy 'force_overwrite' mode maps to mode='replace' with force=True.",
-                            "type": "boolean",
-                        },
-                        "auto_fix": {
-                            "default": True,
-                            "description": "When True and multiple items are in_progress, automatically mark the extra items as done before applying the update. The LAST in_progress item in the list (depth-first order) is treated as the current focus and kept; earlier in_progress items are completed. Set False to get an error instead.",
-                            "type": "boolean",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-            {
-                "name": "todo_update",
-                "description": """\
-Create, update, rename, or complete one or more todos by title — no need to resend the whole tree. Pass a single edit directly (title=..., status=...), or pass updates=[...] (alias todos=[...]) to batch several edits in one call.
-- title: the todo to update or create. `content` is accepted as an alias for title, so todo_write-style items ({content, status, notes}) may be reused here.
-- parent: scope the lookup/creation — omit to search the whole tree (update only),   "" for the root scope, or a parent title to create/update a child under it.
-- status: pending/in_progress/done; omit keeps the current status (new items default to pending).
-- notes: replace notes ("" clears, omit keeps).
-- rename_to: rename the matched todo.
-- complete: True marks the matched todo and all its sub-todos done (one call finishes a subtree).
-- force: allow reopening a done item or renaming over a done item.
-- fuzzy: default True — match near-miss titles when the exact title is not found.\
-""",
-                "parameters": {
-                    "additionalProperties": False,
-                    "description": "Parameters for todo_update: one or more lightweight todo edits without rewriting the tree.",
-                    "properties": {
-                        "title": {
-                            "anyOf": [
-                                {"maxLength": 65536, "minLength": 1, "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Title of the todo to update or create when using a single top-level update. Use `updates` to batch multiple edits. `content` is accepted as an alias for compatibility with todo_write items.",
-                        },
-                        "status": {
-                            "anyOf": [
-                                {
-                                    "enum": ["pending", "in_progress", "done"],
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "New status for the single top-level update. Ignored when `updates` is provided.",
-                        },
-                        "notes": {
-                            "anyOf": [
-                                {"maxLength": 65536, "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "New notes for the single top-level update. Ignored when `updates` is provided.",
-                        },
-                        "rename_to": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Rename for the single top-level update. Ignored when `updates` is provided.",
-                        },
-                        "parent": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Optional common parent title applied to items in `updates` that do not specify their own parent. Also usable as a top-level parent for a single update.",
-                        },
-                        "fuzzy": {
-                            "default": True,
-                            "description": "Fuzzy matching setting for the single top-level update. Ignored when `updates` is provided.",
-                            "type": "boolean",
-                        },
-                        "force": {
-                            "default": False,
-                            "description": "Force setting for the single top-level update. Ignored when `updates` is provided.",
-                            "type": "boolean",
-                        },
-                        "complete": {
-                            "default": False,
-                            "description": "When True, mark the matched todo and all of its sub-todos done. Ignored when `updates` is provided.",
-                            "type": "boolean",
-                        },
-                        "updates": {
-                            "anyOf": [
-                                {
-                                    "items": {
-                                        "additionalProperties": False,
-                                        "description": "Single update operation for todo_update.",
-                                        "properties": {
-                                            "title": {
-                                                "description": "Title of the todo to update or create. Exact match is tried first; fuzzy match is used when enabled and exact match fails. Alias `content` is accepted for compatibility with todo_write items.",
-                                                "maxLength": 65536,
-                                                "minLength": 1,
-                                                "type": "string",
-                                            },
-                                            "status": {
-                                                "anyOf": [
-                                                    {
-                                                        "enum": [
-                                                            "pending",
-                                                            "in_progress",
-                                                            "done",
-                                                        ],
-                                                        "type": "string",
-                                                    },
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "New status. One of: pending, in_progress, done. Omit to keep the current status (new items default to pending).",
-                                            },
-                                            "notes": {
-                                                "anyOf": [
-                                                    {
-                                                        "maxLength": 65536,
-                                                        "type": "string",
-                                                    },
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "New notes. Omit to keep current notes; pass an empty string to clear notes.",
-                                            },
-                                            "rename_to": {
-                                                "anyOf": [
-                                                    {"type": "string"},
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "Rename the matched todo to this title.",
-                                            },
-                                            "parent": {
-                                                "anyOf": [
-                                                    {"type": "string"},
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "Parent todo title that scopes the lookup and creation. When provided, the title is searched only under that parent. If the title does not exist there, a new child is created. Use an empty string for the root scope (creation allowed); omit to search globally and update only.",
-                                            },
-                                            "fuzzy": {
-                                                "default": True,
-                                                "description": "When True and the exact title is not found, use fuzzy matching to find the nearest title.",
-                                                "type": "boolean",
-                                            },
-                                            "force": {
-                                                "default": False,
-                                                "description": "Allow regressing a 'done' item back to pending/in_progress, or allow renaming that would collide with a done item.",
-                                                "type": "boolean",
-                                            },
-                                            "complete": {
-                                                "default": False,
-                                                "description": "When True, mark the matched todo and all of its sub-todos done (one-call subtree finish; replaces the old todo_pop). Cannot be combined with status='pending'/'in_progress'.",
-                                                "type": "boolean",
-                                            },
-                                        },
-                                        "required": ["title"],
-                                        "type": "object",
-                                    },
-                                    "type": "array",
-                                },
-                                {
-                                    "additionalProperties": False,
-                                    "description": "Single update operation for todo_update.",
-                                    "properties": {
-                                        "title": {
-                                            "description": "Title of the todo to update or create. Exact match is tried first; fuzzy match is used when enabled and exact match fails. Alias `content` is accepted for compatibility with todo_write items.",
-                                            "maxLength": 65536,
-                                            "minLength": 1,
-                                            "type": "string",
-                                        },
-                                        "status": {
-                                            "anyOf": [
-                                                {
-                                                    "enum": [
-                                                        "pending",
-                                                        "in_progress",
-                                                        "done",
-                                                    ],
-                                                    "type": "string",
-                                                },
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "New status. One of: pending, in_progress, done. Omit to keep the current status (new items default to pending).",
-                                        },
-                                        "notes": {
-                                            "anyOf": [
-                                                {"maxLength": 65536, "type": "string"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "New notes. Omit to keep current notes; pass an empty string to clear notes.",
-                                        },
-                                        "rename_to": {
-                                            "anyOf": [
-                                                {"type": "string"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "Rename the matched todo to this title.",
-                                        },
-                                        "parent": {
-                                            "anyOf": [
-                                                {"type": "string"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "Parent todo title that scopes the lookup and creation. When provided, the title is searched only under that parent. If the title does not exist there, a new child is created. Use an empty string for the root scope (creation allowed); omit to search globally and update only.",
-                                        },
-                                        "fuzzy": {
-                                            "default": True,
-                                            "description": "When True and the exact title is not found, use fuzzy matching to find the nearest title.",
-                                            "type": "boolean",
-                                        },
-                                        "force": {
-                                            "default": False,
-                                            "description": "Allow regressing a 'done' item back to pending/in_progress, or allow renaming that would collide with a done item.",
-                                            "type": "boolean",
-                                        },
-                                        "complete": {
-                                            "default": False,
-                                            "description": "When True, mark the matched todo and all of its sub-todos done (one-call subtree finish; replaces the old todo_pop). Cannot be combined with status='pending'/'in_progress'.",
-                                            "type": "boolean",
-                                        },
-                                    },
-                                    "required": ["title"],
-                                    "type": "object",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "One or more update operations. Each item has the same shape as a single todo_update call (title, status, notes, rename_to, parent, fuzzy, force, complete). Use this to batch multiple lightweight edits in one call. When provided, top-level title/status/notes/rename_to/complete must not be used.",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
+            {   'name': 'todo_list',
+                'description': 'Read or write the todo plan — one tool, one item shape, every operation.\n'
+                               '\n'
+                               'Item shape (all modes): `{title, status?, notes?, children?}` plus the edit '
+                               'keys `parent`, `rename_to`, `complete`. `title` is the one short imperative '
+                               'line that identifies the item and the only required key; `notes` is optional '
+                               'detail (an item of only `notes` has no identity).\n'
+                               '\n'
+                               'Dispatch:\n'
+                               '- `todos` omitted → read the current tree.\n'
+                               "- mode='merge' (default) → upsert each item: an existing title patches it in "
+                               'place (omitted fields keep their value), an unknown title creates it. `parent` '
+                               "/ top-level `scope` pick the sub-tree ('' = root).\n"
+                               "- mode='replace' → the list IS the tree (children included); needs all "
+                               'existing todos done unless force=True.\n'
+                               "- mode='clear' → empty the tree (all-done guard unless force=True).\n"
+                               '\n'
+                               'Near-duplicate titles are treated as the same task, not a new one: an incoming '
+                               'title that differs from an existing one only in numbering, punctuation, case '
+                               "or word order hits the conflict policy — on_conflict='error' (default) refuses "
+                               'the call and names the existing title plus the exact payload to send instead; '
+                               "'reuse' patches that item; 'append' really adds a second one.\n"
+                               '\n'
+                               'Invariants: exactly one item in_progress (auto_fix=True demotes earlier ones, '
+                               'keeping the last listed); done items never move back to pending/in_progress '
+                               'unless force=True; done items dropped by replace/clear are archived.',
+                'parameters': {   'additionalProperties': False,
+                                  'properties': {   'todos': {   'description': 'The items to write; omit to '
+                                                                                'READ the tree. In the default '
+                                                                                "mode='merge' this is an "
+                                                                                'upsert batch — send only the '
+                                                                                'items you mean to touch, each '
+                                                                                'with `title` plus any of '
+                                                                                'status / notes / children / '
+                                                                                'rename_to / parent / '
+                                                                                'complete: an existing title '
+                                                                                'is patched, an unknown one is '
+                                                                                "created. In mode='replace' "
+                                                                                'send the COMPLETE tree '
+                                                                                'instead. A single object, a '
+                                                                                'bare title string or a JSON '
+                                                                                'string of those forms also '
+                                                                                'work. Accepts `todos` or '
+                                                                                '`items`.',
+                                                                 'items': {   'additionalProperties': False,
+                                                                              'description': 'One todo item.\n'
+                                                                                             '\n'
+                                                                                             'The single item '
+                                                                                             'shape for the '
+                                                                                             'one todo tool: '
+                                                                                             'the same object '
+                                                                                             'expresses a\n'
+                                                                                             'whole-tree write '
+                                                                                             "(``mode='replace'``), "
+                                                                                             'an upsert '
+                                                                                             "(``mode='merge'``) "
+                                                                                             'and a\n'
+                                                                                             'targeted edit '
+                                                                                             '(``parent`` / '
+                                                                                             '``rename_to`` / '
+                                                                                             '``complete``). '
+                                                                                             'Fields that '
+                                                                                             'only\n'
+                                                                                             'make sense for '
+                                                                                             'an edit are '
+                                                                                             'ignored by a '
+                                                                                             'whole-tree '
+                                                                                             'write.',
+                                                                              'properties': {   'title': {   'description': 'Required. '
+                                                                                                                            'The '
+                                                                                                                            'task '
+                                                                                                                            'title: '
+                                                                                                                            'one '
+                                                                                                                            'short '
+                                                                                                                            'imperative '
+                                                                                                                            'line, '
+                                                                                                                            'and '
+                                                                                                                            'the '
+                                                                                                                            "item's "
+                                                                                                                            'identity '
+                                                                                                                            '— '
+                                                                                                                            "mode='merge' "
+                                                                                                                            'matches '
+                                                                                                                            'items '
+                                                                                                                            'by '
+                                                                                                                            'it '
+                                                                                                                            'and '
+                                                                                                                            '`parent`/`scope` '
+                                                                                                                            'look '
+                                                                                                                            'items '
+                                                                                                                            'up '
+                                                                                                                            'by '
+                                                                                                                            'it, '
+                                                                                                                            'so '
+                                                                                                                            'it '
+                                                                                                                            'must '
+                                                                                                                            'always '
+                                                                                                                            'be '
+                                                                                                                            'sent. '
+                                                                                                                            'Accepts '
+                                                                                                                            '`title`, '
+                                                                                                                            '`content`, '
+                                                                                                                            '`task`, '
+                                                                                                                            '`todo`, '
+                                                                                                                            '`item` '
+                                                                                                                            'or '
+                                                                                                                            '`name`.',
+                                                                                                             'maxLength': 65536,
+                                                                                                             'minLength': 1,
+                                                                                                             'type': 'string'},
+                                                                                                'status': {   'default': 'pending',
+                                                                                                              'description': 'One '
+                                                                                                                             'of: '
+                                                                                                                             'pending, '
+                                                                                                                             'in_progress, '
+                                                                                                                             'done '
+                                                                                                                             '(or '
+                                                                                                                             'completed). '
+                                                                                                                             'Omit '
+                                                                                                                             'to '
+                                                                                                                             'keep '
+                                                                                                                             'an '
+                                                                                                                             'existing '
+                                                                                                                             "item's "
+                                                                                                                             'status; '
+                                                                                                                             'created '
+                                                                                                                             'items '
+                                                                                                                             'default '
+                                                                                                                             'to '
+                                                                                                                             'pending.',
+                                                                                                              'enum': [   'pending',
+                                                                                                                          'in_progress',
+                                                                                                                          'done'],
+                                                                                                              'type': 'string'},
+                                                                                                'notes': {   'anyOf': [   {   'maxLength': 65536,
+                                                                                                                              'type': 'string'},
+                                                                                                                          {   'type': 'null'}],
+                                                                                                             'default': None,
+                                                                                                             'description': 'Optional '
+                                                                                                                            'supporting '
+                                                                                                                            'detail '
+                                                                                                                            '(evidence, '
+                                                                                                                            'file '
+                                                                                                                            'paths, '
+                                                                                                                            'findings). '
+                                                                                                                            'Not '
+                                                                                                                            'the '
+                                                                                                                            'title '
+                                                                                                                            '— '
+                                                                                                                            'an '
+                                                                                                                            'item '
+                                                                                                                            'with '
+                                                                                                                            'only '
+                                                                                                                            '`notes` '
+                                                                                                                            'has '
+                                                                                                                            'no '
+                                                                                                                            'identity, '
+                                                                                                                            'so '
+                                                                                                                            'always '
+                                                                                                                            'send '
+                                                                                                                            '`title` '
+                                                                                                                            'too. '
+                                                                                                                            'Omit '
+                                                                                                                            'it '
+                                                                                                                            '(or '
+                                                                                                                            'send '
+                                                                                                                            '"") '
+                                                                                                                            'to '
+                                                                                                                            'keep '
+                                                                                                                            'the '
+                                                                                                                            'current '
+                                                                                                                            'notes.'},
+                                                                                                'children': {   'description': 'Sub-todos '
+                                                                                                                               'of '
+                                                                                                                               'this '
+                                                                                                                               'item; '
+                                                                                                                               'same '
+                                                                                                                               'shape, '
+                                                                                                                               'any '
+                                                                                                                               'depth. '
+                                                                                                                               'Leave '
+                                                                                                                               'empty '
+                                                                                                                               'for '
+                                                                                                                               'a '
+                                                                                                                               'leaf. '
+                                                                                                                               'A '
+                                                                                                                               'bare '
+                                                                                                                               'title '
+                                                                                                                               'string '
+                                                                                                                               'is '
+                                                                                                                               'accepted '
+                                                                                                                               'and '
+                                                                                                                               'means '
+                                                                                                                               'a '
+                                                                                                                               'pending '
+                                                                                                                               'item.',
+                                                                                                                'items': {   'additionalProperties': False,
+                                                                                                                             'description': 'One '
+                                                                                                                                            'todo '
+                                                                                                                                            'item.\n'
+                                                                                                                                            '\n'
+                                                                                                                                            'The '
+                                                                                                                                            'single '
+                                                                                                                                            'item '
+                                                                                                                                            'shape '
+                                                                                                                                            'for '
+                                                                                                                                            'the '
+                                                                                                                                            'one '
+                                                                                                                                            'todo '
+                                                                                                                                            'tool: '
+                                                                                                                                            'the '
+                                                                                                                                            'same '
+                                                                                                                                            'object '
+                                                                                                                                            'expresses '
+                                                                                                                                            'a\n'
+                                                                                                                                            'whole-tree '
+                                                                                                                                            'write '
+                                                                                                                                            "(``mode='replace'``), "
+                                                                                                                                            'an '
+                                                                                                                                            'upsert '
+                                                                                                                                            "(``mode='merge'``) "
+                                                                                                                                            'and '
+                                                                                                                                            'a\n'
+                                                                                                                                            'targeted '
+                                                                                                                                            'edit '
+                                                                                                                                            '(``parent`` '
+                                                                                                                                            '/ '
+                                                                                                                                            '``rename_to`` '
+                                                                                                                                            '/ '
+                                                                                                                                            '``complete``). '
+                                                                                                                                            'Fields '
+                                                                                                                                            'that '
+                                                                                                                                            'only\n'
+                                                                                                                                            'make '
+                                                                                                                                            'sense '
+                                                                                                                                            'for '
+                                                                                                                                            'an '
+                                                                                                                                            'edit '
+                                                                                                                                            'are '
+                                                                                                                                            'ignored '
+                                                                                                                                            'by '
+                                                                                                                                            'a '
+                                                                                                                                            'whole-tree '
+                                                                                                                                            'write.',
+                                                                                                                             'properties': {   'title': {   'description': 'Sub-todo '
+                                                                                                                                                                           'title: '
+                                                                                                                                                                           'one '
+                                                                                                                                                                           'short '
+                                                                                                                                                                           'imperative '
+                                                                                                                                                                           'line '
+                                                                                                                                                                           '(required).',
+                                                                                                                                                            'maxLength': 65536,
+                                                                                                                                                            'minLength': 1,
+                                                                                                                                                            'type': 'string'},
+                                                                                                                                               'status': {   'default': 'pending',
+                                                                                                                                                             'description': 'One '
+                                                                                                                                                                            'of: '
+                                                                                                                                                                            'pending, '
+                                                                                                                                                                            'in_progress, '
+                                                                                                                                                                            'done '
+                                                                                                                                                                            '(or '
+                                                                                                                                                                            'completed). '
+                                                                                                                                                                            'Omit '
+                                                                                                                                                                            'to '
+                                                                                                                                                                            'keep '
+                                                                                                                                                                            'an '
+                                                                                                                                                                            'existing '
+                                                                                                                                                                            "item's "
+                                                                                                                                                                            'status; '
+                                                                                                                                                                            'created '
+                                                                                                                                                                            'items '
+                                                                                                                                                                            'default '
+                                                                                                                                                                            'to '
+                                                                                                                                                                            'pending.',
+                                                                                                                                                             'enum': [   'pending',
+                                                                                                                                                                         'in_progress',
+                                                                                                                                                                         'done'],
+                                                                                                                                                             'type': 'string'},
+                                                                                                                                               'notes': {   'anyOf': [   {   'maxLength': 65536,
+                                                                                                                                                                             'type': 'string'},
+                                                                                                                                                                         {   'type': 'null'}],
+                                                                                                                                                            'default': None,
+                                                                                                                                                            'description': 'Optional '
+                                                                                                                                                                           'detail '
+                                                                                                                                                                           'for '
+                                                                                                                                                                           'this '
+                                                                                                                                                                           'sub-todo; '
+                                                                                                                                                                           'the '
+                                                                                                                                                                           'title '
+                                                                                                                                                                           'is '
+                                                                                                                                                                           'the '
+                                                                                                                                                                           'identity.'}},
+                                                                                                                             'required': [   'title'],
+                                                                                                                             'type': 'object'},
+                                                                                                                'type': 'array'},
+                                                                                                'parent': {   'anyOf': [   {   'type': 'string'},
+                                                                                                                           {   'type': 'null'}],
+                                                                                                              'default': None,
+                                                                                                              'description': 'Scope '
+                                                                                                                             'this '
+                                                                                                                             'item '
+                                                                                                                             'to '
+                                                                                                                             'the '
+                                                                                                                             'children '
+                                                                                                                             'of '
+                                                                                                                             'the '
+                                                                                                                             'named '
+                                                                                                                             'todo '
+                                                                                                                             '(both '
+                                                                                                                             'its '
+                                                                                                                             'lookup '
+                                                                                                                             'and '
+                                                                                                                             'its '
+                                                                                                                             'creation). '
+                                                                                                                             '"" '
+                                                                                                                             '= '
+                                                                                                                             'root '
+                                                                                                                             'scope. '
+                                                                                                                             'Overrides '
+                                                                                                                             'the '
+                                                                                                                             'top-level '
+                                                                                                                             '`scope`.'},
+                                                                                                'rename_to': {   'anyOf': [   {   'type': 'string'},
+                                                                                                                              {   'type': 'null'}],
+                                                                                                                 'default': None,
+                                                                                                                 'description': 'Rename '
+                                                                                                                                'the '
+                                                                                                                                'matched '
+                                                                                                                                'item '
+                                                                                                                                'to '
+                                                                                                                                'this '
+                                                                                                                                'title '
+                                                                                                                                'instead '
+                                                                                                                                'of '
+                                                                                                                                'editing '
+                                                                                                                                'a '
+                                                                                                                                'field. '
+                                                                                                                                'Renaming '
+                                                                                                                                'onto '
+                                                                                                                                'an '
+                                                                                                                                'existing '
+                                                                                                                                'title '
+                                                                                                                                'is '
+                                                                                                                                'rejected.'},
+                                                                                                'complete': {   'default': False,
+                                                                                                                'description': 'Mark '
+                                                                                                                               'this '
+                                                                                                                               'item '
+                                                                                                                               'and '
+                                                                                                                               'its '
+                                                                                                                               'whole '
+                                                                                                                               'sub-tree '
+                                                                                                                               'done '
+                                                                                                                               'in '
+                                                                                                                               'one '
+                                                                                                                               'call. '
+                                                                                                                               'Not '
+                                                                                                                               'combined '
+                                                                                                                               'with '
+                                                                                                                               'an '
+                                                                                                                               'explicit '
+                                                                                                                               'pending/in_progress '
+                                                                                                                               'status '
+                                                                                                                               'or '
+                                                                                                                               'with '
+                                                                                                                               '`children`.',
+                                                                                                                'type': 'boolean'},
+                                                                                                'fuzzy': {   'default': True,
+                                                                                                             'description': 'Per-item '
+                                                                                                                            'override '
+                                                                                                                            'of '
+                                                                                                                            'the '
+                                                                                                                            'top-level '
+                                                                                                                            '`fuzzy`.',
+                                                                                                             'type': 'boolean'},
+                                                                                                'force': {   'default': False,
+                                                                                                             'description': 'Per-item '
+                                                                                                                            'override '
+                                                                                                                            'of '
+                                                                                                                            'the '
+                                                                                                                            'top-level '
+                                                                                                                            '`force`.',
+                                                                                                             'type': 'boolean'}},
+                                                                              'required': ['title'],
+                                                                              'type': 'object'},
+                                                                 'type': 'array'},
+                                                    'mode': {   'default': 'merge',
+                                                                'description': "'merge' (default) upserts the "
+                                                                               "given items; 'replace' makes "
+                                                                               'the given list the whole tree '
+                                                                               'and needs every existing todo '
+                                                                               'done unless force=True; '
+                                                                               '"clear" empties the tree (same '
+                                                                               'guard).',
+                                                                'enum': ['merge', 'replace', 'clear'],
+                                                                'type': 'string'},
+                                                    'scope': {   'anyOf': [   {'type': 'string'},
+                                                                              {'type': 'null'}],
+                                                                 'default': None,
+                                                                 'description': 'Restrict this call to the '
+                                                                                'children of the named todo; '
+                                                                                '"" means the root. An item\'s '
+                                                                                'own `parent` wins.'},
+                                                    'on_conflict': {   'default': 'error',
+                                                                       'description': 'What to do when an '
+                                                                                      'incoming title is a '
+                                                                                      'near-duplicate of an '
+                                                                                      'existing one (same '
+                                                                                      'words, different '
+                                                                                      'numbering / punctuation '
+                                                                                      "/ case): 'error' "
+                                                                                      '(default) refuses the '
+                                                                                      'call and names the '
+                                                                                      'existing title plus the '
+                                                                                      'exact payload to send '
+                                                                                      "instead; 'reuse' "
+                                                                                      'patches that item; '
+                                                                                      "'append' really adds a "
+                                                                                      'second one.',
+                                                                       'enum': ['error', 'reuse', 'append'],
+                                                                       'type': 'string'},
+                                                    'fuzzy': {   'default': True,
+                                                                 'description': 'When True (default) a title '
+                                                                                'that misses exactly may still '
+                                                                                'match the nearest existing '
+                                                                                'todo; False requires exact '
+                                                                                'titles.',
+                                                                 'type': 'boolean'},
+                                                    'force': {   'default': False,
+                                                                 'description': 'Bypass the guards: the '
+                                                                                'all-done requirement of '
+                                                                                'replace/clear, reopening a '
+                                                                                'done item, renaming onto one, '
+                                                                                'and the single-in_progress '
+                                                                                'and regression checks.',
+                                                                 'type': 'boolean'},
+                                                    'auto_fix': {   'default': True,
+                                                                    'description': 'When True (default) and '
+                                                                                   'several items are '
+                                                                                   'in_progress, the last '
+                                                                                   'listed one is kept and '
+                                                                                   'earlier ones are marked '
+                                                                                   'done; False errors '
+                                                                                   'instead.',
+                                                                    'type': 'boolean'}},
+                                  'type': 'object'}},
             {
                 "name": "retrieve",
                 "description": "Retrieve past conversation history, including compacted/archived turns. Use `query` to search (natural language, relevance-ranked with a recency boost) or `id` to fetch a specific turn (e.g. a `prune_<n>` reference left by context pruning).",
@@ -1572,7 +1619,7 @@ def test_prompt_without_initialize(tmp_path) -> None:
     "method": "event",
     "type": "LLMToolsSnapshot",
     "payload": {
-        "hash": "ca84214f72334d7d2e21737050eac5e86339525fce4c8d1dcd57a14b2df2fa2f",
+        "hash": "82a777df8fd492d239b44a3d29c62bae1594e166a46dfc86aea623acc7eab598",
         "tools": [
             {
                 "name": "subagent",
@@ -1687,405 +1734,452 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                     "type": "object",
                 },
             },
-            {
-                "name": "todo_write",
-                "description": """\
-Read or write the whole todo tree. Omit `todos` to read the current tree; send the complete list to set the plan. For targeted single/batch edits (status, notes, rename, or children via parent=...) use todo_update.
-
-Write modes:
-- append (default): merges root-level todos by exact title; new titles are appended.
-- replace: replaces the whole list; only allowed when all existing todos are done (use force=True to override).
-- clear: empties the list; only allowed when all todos are done (use force=True to override).
-
-Notes:
-- Send the complete list each write; there are no partial edits.
-- Keep exactly one item in_progress at a time; auto_fix=True resolves conflicts by keeping the last listed item.
-- Statuses: pending, in_progress, done (or completed).\
-""",
-                "parameters": {
-                    "additionalProperties": False,
-                    "properties": {
-                        "todos": {
-                            "anyOf": [
-                                {
-                                    "items": {
-                                        "properties": {
-                                            "content": {
-                                                "description": "Title (report item shape: `content`).",
-                                                "maxLength": 65536,
-                                                "minLength": 1,
-                                                "type": "string",
-                                            },
-                                            "status": {
-                                                "description": "Status",
-                                                "enum": [
-                                                    "pending",
-                                                    "in_progress",
-                                                    "done",
-                                                ],
-                                                "type": "string",
-                                            },
-                                            "notes": {
-                                                "anyOf": [
-                                                    {
-                                                        "maxLength": 65536,
-                                                        "type": "string",
-                                                    },
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "Notes. MUST write, be comprehensively, detailed.",
-                                            },
-                                            "children": {
-                                                "description": "Sub todos (children). Leave empty for a leaf. Each child has the same fields as a todo (`content`/`status`/`notes`); a child's own `children` accepts the same todo shape (arbitrary nesting depth).",
-                                                "items": {
-                                                    "properties": {
-                                                        "content": {
-                                                            "description": "Title (report item shape: `content`).",
-                                                            "maxLength": 65536,
-                                                            "minLength": 1,
-                                                            "type": "string",
-                                                        },
-                                                        "status": {
-                                                            "description": "Status",
-                                                            "enum": [
-                                                                "pending",
-                                                                "in_progress",
-                                                                "done",
-                                                            ],
-                                                            "type": "string",
-                                                        },
-                                                        "notes": {
-                                                            "anyOf": [
-                                                                {
-                                                                    "maxLength": 65536,
-                                                                    "type": "string",
-                                                                },
-                                                                {"type": "null"},
-                                                            ],
-                                                            "default": None,
-                                                            "description": "Notes. MUST write, be comprehensively, detailed.",
-                                                        },
-                                                    },
-                                                    "required": ["content", "status"],
-                                                    "type": "object",
-                                                },
-                                                "type": "array",
-                                            },
-                                        },
-                                        "required": ["content", "status"],
-                                        "type": "object",
-                                    },
-                                    "type": "array",
-                                },
-                                {
-                                    "properties": {
-                                        "content": {
-                                            "description": "Title (report item shape: `content`).",
-                                            "maxLength": 65536,
-                                            "minLength": 1,
-                                            "type": "string",
-                                        },
-                                        "status": {
-                                            "description": "Status",
-                                            "enum": ["pending", "in_progress", "done"],
-                                            "type": "string",
-                                        },
-                                        "notes": {
-                                            "anyOf": [
-                                                {"maxLength": 65536, "type": "string"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "Notes. MUST write, be comprehensively, detailed.",
-                                        },
-                                        "children": {
-                                            "description": "Sub todos (children). Leave empty for a leaf. Each child has the same fields as a todo (`content`/`status`/`notes`); a child's own `children` accepts the same todo shape (arbitrary nesting depth).",
-                                            "items": {
-                                                "properties": {
-                                                    "content": {
-                                                        "description": "Title (report item shape: `content`).",
-                                                        "maxLength": 65536,
-                                                        "minLength": 1,
-                                                        "type": "string",
-                                                    },
-                                                    "status": {
-                                                        "description": "Status",
-                                                        "enum": [
-                                                            "pending",
-                                                            "in_progress",
-                                                            "done",
-                                                        ],
-                                                        "type": "string",
-                                                    },
-                                                    "notes": {
-                                                        "anyOf": [
-                                                            {
-                                                                "maxLength": 65536,
-                                                                "type": "string",
-                                                            },
-                                                            {"type": "null"},
-                                                        ],
-                                                        "default": None,
-                                                        "description": "Notes. MUST write, be comprehensively, detailed.",
-                                                    },
-                                                },
-                                                "required": ["content", "status"],
-                                                "type": "object",
-                                            },
-                                            "type": "array",
-                                        },
-                                    },
-                                    "required": ["content", "status"],
-                                    "type": "object",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "The COMPLETE task list, replacing any previous list. Each item: `content` (string, short imperative line) and `status` (enum: pending/in_progress/completed). Passing an empty list [] is a no-op (use mode='clear' to empty the list). Accepts `todos` or `items`.",
-                        },
-                        "mode": {
-                            "default": "append",
-                            "description": "Write mode: 'append' merges the provided todos into the existing list (existing root titles are updated, new titles are appended; empty list is a no-op); 'replace' replaces the existing todo list only when every existing todo is done (errors otherwise); 'clear' empties the list (errors unless every old todo is done). Set force=True to replace or clear even with unfinished todos.",
-                            "enum": ["append", "replace", "clear"],
-                            "type": "string",
-                        },
-                        "force": {
-                            "default": False,
-                            "description": "When True, mode='replace' and mode='clear' bypass the all-done guard (and skip regression and single-in_progress checks). Legacy 'force_overwrite' mode maps to mode='replace' with force=True.",
-                            "type": "boolean",
-                        },
-                        "auto_fix": {
-                            "default": True,
-                            "description": "When True and multiple items are in_progress, automatically mark the extra items as done before applying the update. The LAST in_progress item in the list (depth-first order) is treated as the current focus and kept; earlier in_progress items are completed. Set False to get an error instead.",
-                            "type": "boolean",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-            {
-                "name": "todo_update",
-                "description": """\
-Create, update, rename, or complete one or more todos by title — no need to resend the whole tree. Pass a single edit directly (title=..., status=...), or pass updates=[...] (alias todos=[...]) to batch several edits in one call.
-- title: the todo to update or create. `content` is accepted as an alias for title, so todo_write-style items ({content, status, notes}) may be reused here.
-- parent: scope the lookup/creation — omit to search the whole tree (update only),   "" for the root scope, or a parent title to create/update a child under it.
-- status: pending/in_progress/done; omit keeps the current status (new items default to pending).
-- notes: replace notes ("" clears, omit keeps).
-- rename_to: rename the matched todo.
-- complete: True marks the matched todo and all its sub-todos done (one call finishes a subtree).
-- force: allow reopening a done item or renaming over a done item.
-- fuzzy: default True — match near-miss titles when the exact title is not found.\
-""",
-                "parameters": {
-                    "additionalProperties": False,
-                    "description": "Parameters for todo_update: one or more lightweight todo edits without rewriting the tree.",
-                    "properties": {
-                        "title": {
-                            "anyOf": [
-                                {"maxLength": 65536, "minLength": 1, "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Title of the todo to update or create when using a single top-level update. Use `updates` to batch multiple edits. `content` is accepted as an alias for compatibility with todo_write items.",
-                        },
-                        "status": {
-                            "anyOf": [
-                                {
-                                    "enum": ["pending", "in_progress", "done"],
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "New status for the single top-level update. Ignored when `updates` is provided.",
-                        },
-                        "notes": {
-                            "anyOf": [
-                                {"maxLength": 65536, "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "New notes for the single top-level update. Ignored when `updates` is provided.",
-                        },
-                        "rename_to": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Rename for the single top-level update. Ignored when `updates` is provided.",
-                        },
-                        "parent": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Optional common parent title applied to items in `updates` that do not specify their own parent. Also usable as a top-level parent for a single update.",
-                        },
-                        "fuzzy": {
-                            "default": True,
-                            "description": "Fuzzy matching setting for the single top-level update. Ignored when `updates` is provided.",
-                            "type": "boolean",
-                        },
-                        "force": {
-                            "default": False,
-                            "description": "Force setting for the single top-level update. Ignored when `updates` is provided.",
-                            "type": "boolean",
-                        },
-                        "complete": {
-                            "default": False,
-                            "description": "When True, mark the matched todo and all of its sub-todos done. Ignored when `updates` is provided.",
-                            "type": "boolean",
-                        },
-                        "updates": {
-                            "anyOf": [
-                                {
-                                    "items": {
-                                        "additionalProperties": False,
-                                        "description": "Single update operation for todo_update.",
-                                        "properties": {
-                                            "title": {
-                                                "description": "Title of the todo to update or create. Exact match is tried first; fuzzy match is used when enabled and exact match fails. Alias `content` is accepted for compatibility with todo_write items.",
-                                                "maxLength": 65536,
-                                                "minLength": 1,
-                                                "type": "string",
-                                            },
-                                            "status": {
-                                                "anyOf": [
-                                                    {
-                                                        "enum": [
-                                                            "pending",
-                                                            "in_progress",
-                                                            "done",
-                                                        ],
-                                                        "type": "string",
-                                                    },
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "New status. One of: pending, in_progress, done. Omit to keep the current status (new items default to pending).",
-                                            },
-                                            "notes": {
-                                                "anyOf": [
-                                                    {
-                                                        "maxLength": 65536,
-                                                        "type": "string",
-                                                    },
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "New notes. Omit to keep current notes; pass an empty string to clear notes.",
-                                            },
-                                            "rename_to": {
-                                                "anyOf": [
-                                                    {"type": "string"},
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "Rename the matched todo to this title.",
-                                            },
-                                            "parent": {
-                                                "anyOf": [
-                                                    {"type": "string"},
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "Parent todo title that scopes the lookup and creation. When provided, the title is searched only under that parent. If the title does not exist there, a new child is created. Use an empty string for the root scope (creation allowed); omit to search globally and update only.",
-                                            },
-                                            "fuzzy": {
-                                                "default": True,
-                                                "description": "When True and the exact title is not found, use fuzzy matching to find the nearest title.",
-                                                "type": "boolean",
-                                            },
-                                            "force": {
-                                                "default": False,
-                                                "description": "Allow regressing a 'done' item back to pending/in_progress, or allow renaming that would collide with a done item.",
-                                                "type": "boolean",
-                                            },
-                                            "complete": {
-                                                "default": False,
-                                                "description": "When True, mark the matched todo and all of its sub-todos done (one-call subtree finish; replaces the old todo_pop). Cannot be combined with status='pending'/'in_progress'.",
-                                                "type": "boolean",
-                                            },
-                                        },
-                                        "required": ["title"],
-                                        "type": "object",
-                                    },
-                                    "type": "array",
-                                },
-                                {
-                                    "additionalProperties": False,
-                                    "description": "Single update operation for todo_update.",
-                                    "properties": {
-                                        "title": {
-                                            "description": "Title of the todo to update or create. Exact match is tried first; fuzzy match is used when enabled and exact match fails. Alias `content` is accepted for compatibility with todo_write items.",
-                                            "maxLength": 65536,
-                                            "minLength": 1,
-                                            "type": "string",
-                                        },
-                                        "status": {
-                                            "anyOf": [
-                                                {
-                                                    "enum": [
-                                                        "pending",
-                                                        "in_progress",
-                                                        "done",
-                                                    ],
-                                                    "type": "string",
-                                                },
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "New status. One of: pending, in_progress, done. Omit to keep the current status (new items default to pending).",
-                                        },
-                                        "notes": {
-                                            "anyOf": [
-                                                {"maxLength": 65536, "type": "string"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "New notes. Omit to keep current notes; pass an empty string to clear notes.",
-                                        },
-                                        "rename_to": {
-                                            "anyOf": [
-                                                {"type": "string"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "Rename the matched todo to this title.",
-                                        },
-                                        "parent": {
-                                            "anyOf": [
-                                                {"type": "string"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "Parent todo title that scopes the lookup and creation. When provided, the title is searched only under that parent. If the title does not exist there, a new child is created. Use an empty string for the root scope (creation allowed); omit to search globally and update only.",
-                                        },
-                                        "fuzzy": {
-                                            "default": True,
-                                            "description": "When True and the exact title is not found, use fuzzy matching to find the nearest title.",
-                                            "type": "boolean",
-                                        },
-                                        "force": {
-                                            "default": False,
-                                            "description": "Allow regressing a 'done' item back to pending/in_progress, or allow renaming that would collide with a done item.",
-                                            "type": "boolean",
-                                        },
-                                        "complete": {
-                                            "default": False,
-                                            "description": "When True, mark the matched todo and all of its sub-todos done (one-call subtree finish; replaces the old todo_pop). Cannot be combined with status='pending'/'in_progress'.",
-                                            "type": "boolean",
-                                        },
-                                    },
-                                    "required": ["title"],
-                                    "type": "object",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "One or more update operations. Each item has the same shape as a single todo_update call (title, status, notes, rename_to, parent, fuzzy, force, complete). Use this to batch multiple lightweight edits in one call. When provided, top-level title/status/notes/rename_to/complete must not be used.",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
+            {   'name': 'todo_list',
+                'description': 'Read or write the todo plan — one tool, one item shape, every operation.\n'
+                               '\n'
+                               'Item shape (all modes): `{title, status?, notes?, children?}` plus the edit '
+                               'keys `parent`, `rename_to`, `complete`. `title` is the one short imperative '
+                               'line that identifies the item and the only required key; `notes` is optional '
+                               'detail (an item of only `notes` has no identity).\n'
+                               '\n'
+                               'Dispatch:\n'
+                               '- `todos` omitted → read the current tree.\n'
+                               "- mode='merge' (default) → upsert each item: an existing title patches it in "
+                               'place (omitted fields keep their value), an unknown title creates it. `parent` '
+                               "/ top-level `scope` pick the sub-tree ('' = root).\n"
+                               "- mode='replace' → the list IS the tree (children included); needs all "
+                               'existing todos done unless force=True.\n'
+                               "- mode='clear' → empty the tree (all-done guard unless force=True).\n"
+                               '\n'
+                               'Near-duplicate titles are treated as the same task, not a new one: an incoming '
+                               'title that differs from an existing one only in numbering, punctuation, case '
+                               "or word order hits the conflict policy — on_conflict='error' (default) refuses "
+                               'the call and names the existing title plus the exact payload to send instead; '
+                               "'reuse' patches that item; 'append' really adds a second one.\n"
+                               '\n'
+                               'Invariants: exactly one item in_progress (auto_fix=True demotes earlier ones, '
+                               'keeping the last listed); done items never move back to pending/in_progress '
+                               'unless force=True; done items dropped by replace/clear are archived.',
+                'parameters': {   'additionalProperties': False,
+                                  'properties': {   'todos': {   'description': 'The items to write; omit to '
+                                                                                'READ the tree. In the default '
+                                                                                "mode='merge' this is an "
+                                                                                'upsert batch — send only the '
+                                                                                'items you mean to touch, each '
+                                                                                'with `title` plus any of '
+                                                                                'status / notes / children / '
+                                                                                'rename_to / parent / '
+                                                                                'complete: an existing title '
+                                                                                'is patched, an unknown one is '
+                                                                                "created. In mode='replace' "
+                                                                                'send the COMPLETE tree '
+                                                                                'instead. A single object, a '
+                                                                                'bare title string or a JSON '
+                                                                                'string of those forms also '
+                                                                                'work. Accepts `todos` or '
+                                                                                '`items`.',
+                                                                 'items': {   'additionalProperties': False,
+                                                                              'description': 'One todo item.\n'
+                                                                                             '\n'
+                                                                                             'The single item '
+                                                                                             'shape for the '
+                                                                                             'one todo tool: '
+                                                                                             'the same object '
+                                                                                             'expresses a\n'
+                                                                                             'whole-tree write '
+                                                                                             "(``mode='replace'``), "
+                                                                                             'an upsert '
+                                                                                             "(``mode='merge'``) "
+                                                                                             'and a\n'
+                                                                                             'targeted edit '
+                                                                                             '(``parent`` / '
+                                                                                             '``rename_to`` / '
+                                                                                             '``complete``). '
+                                                                                             'Fields that '
+                                                                                             'only\n'
+                                                                                             'make sense for '
+                                                                                             'an edit are '
+                                                                                             'ignored by a '
+                                                                                             'whole-tree '
+                                                                                             'write.',
+                                                                              'properties': {   'title': {   'description': 'Required. '
+                                                                                                                            'The '
+                                                                                                                            'task '
+                                                                                                                            'title: '
+                                                                                                                            'one '
+                                                                                                                            'short '
+                                                                                                                            'imperative '
+                                                                                                                            'line, '
+                                                                                                                            'and '
+                                                                                                                            'the '
+                                                                                                                            "item's "
+                                                                                                                            'identity '
+                                                                                                                            '— '
+                                                                                                                            "mode='merge' "
+                                                                                                                            'matches '
+                                                                                                                            'items '
+                                                                                                                            'by '
+                                                                                                                            'it '
+                                                                                                                            'and '
+                                                                                                                            '`parent`/`scope` '
+                                                                                                                            'look '
+                                                                                                                            'items '
+                                                                                                                            'up '
+                                                                                                                            'by '
+                                                                                                                            'it, '
+                                                                                                                            'so '
+                                                                                                                            'it '
+                                                                                                                            'must '
+                                                                                                                            'always '
+                                                                                                                            'be '
+                                                                                                                            'sent. '
+                                                                                                                            'Accepts '
+                                                                                                                            '`title`, '
+                                                                                                                            '`content`, '
+                                                                                                                            '`task`, '
+                                                                                                                            '`todo`, '
+                                                                                                                            '`item` '
+                                                                                                                            'or '
+                                                                                                                            '`name`.',
+                                                                                                             'maxLength': 65536,
+                                                                                                             'minLength': 1,
+                                                                                                             'type': 'string'},
+                                                                                                'status': {   'default': 'pending',
+                                                                                                              'description': 'One '
+                                                                                                                             'of: '
+                                                                                                                             'pending, '
+                                                                                                                             'in_progress, '
+                                                                                                                             'done '
+                                                                                                                             '(or '
+                                                                                                                             'completed). '
+                                                                                                                             'Omit '
+                                                                                                                             'to '
+                                                                                                                             'keep '
+                                                                                                                             'an '
+                                                                                                                             'existing '
+                                                                                                                             "item's "
+                                                                                                                             'status; '
+                                                                                                                             'created '
+                                                                                                                             'items '
+                                                                                                                             'default '
+                                                                                                                             'to '
+                                                                                                                             'pending.',
+                                                                                                              'enum': [   'pending',
+                                                                                                                          'in_progress',
+                                                                                                                          'done'],
+                                                                                                              'type': 'string'},
+                                                                                                'notes': {   'anyOf': [   {   'maxLength': 65536,
+                                                                                                                              'type': 'string'},
+                                                                                                                          {   'type': 'null'}],
+                                                                                                             'default': None,
+                                                                                                             'description': 'Optional '
+                                                                                                                            'supporting '
+                                                                                                                            'detail '
+                                                                                                                            '(evidence, '
+                                                                                                                            'file '
+                                                                                                                            'paths, '
+                                                                                                                            'findings). '
+                                                                                                                            'Not '
+                                                                                                                            'the '
+                                                                                                                            'title '
+                                                                                                                            '— '
+                                                                                                                            'an '
+                                                                                                                            'item '
+                                                                                                                            'with '
+                                                                                                                            'only '
+                                                                                                                            '`notes` '
+                                                                                                                            'has '
+                                                                                                                            'no '
+                                                                                                                            'identity, '
+                                                                                                                            'so '
+                                                                                                                            'always '
+                                                                                                                            'send '
+                                                                                                                            '`title` '
+                                                                                                                            'too. '
+                                                                                                                            'Omit '
+                                                                                                                            'it '
+                                                                                                                            '(or '
+                                                                                                                            'send '
+                                                                                                                            '"") '
+                                                                                                                            'to '
+                                                                                                                            'keep '
+                                                                                                                            'the '
+                                                                                                                            'current '
+                                                                                                                            'notes.'},
+                                                                                                'children': {   'description': 'Sub-todos '
+                                                                                                                               'of '
+                                                                                                                               'this '
+                                                                                                                               'item; '
+                                                                                                                               'same '
+                                                                                                                               'shape, '
+                                                                                                                               'any '
+                                                                                                                               'depth. '
+                                                                                                                               'Leave '
+                                                                                                                               'empty '
+                                                                                                                               'for '
+                                                                                                                               'a '
+                                                                                                                               'leaf. '
+                                                                                                                               'A '
+                                                                                                                               'bare '
+                                                                                                                               'title '
+                                                                                                                               'string '
+                                                                                                                               'is '
+                                                                                                                               'accepted '
+                                                                                                                               'and '
+                                                                                                                               'means '
+                                                                                                                               'a '
+                                                                                                                               'pending '
+                                                                                                                               'item.',
+                                                                                                                'items': {   'additionalProperties': False,
+                                                                                                                             'description': 'One '
+                                                                                                                                            'todo '
+                                                                                                                                            'item.\n'
+                                                                                                                                            '\n'
+                                                                                                                                            'The '
+                                                                                                                                            'single '
+                                                                                                                                            'item '
+                                                                                                                                            'shape '
+                                                                                                                                            'for '
+                                                                                                                                            'the '
+                                                                                                                                            'one '
+                                                                                                                                            'todo '
+                                                                                                                                            'tool: '
+                                                                                                                                            'the '
+                                                                                                                                            'same '
+                                                                                                                                            'object '
+                                                                                                                                            'expresses '
+                                                                                                                                            'a\n'
+                                                                                                                                            'whole-tree '
+                                                                                                                                            'write '
+                                                                                                                                            "(``mode='replace'``), "
+                                                                                                                                            'an '
+                                                                                                                                            'upsert '
+                                                                                                                                            "(``mode='merge'``) "
+                                                                                                                                            'and '
+                                                                                                                                            'a\n'
+                                                                                                                                            'targeted '
+                                                                                                                                            'edit '
+                                                                                                                                            '(``parent`` '
+                                                                                                                                            '/ '
+                                                                                                                                            '``rename_to`` '
+                                                                                                                                            '/ '
+                                                                                                                                            '``complete``). '
+                                                                                                                                            'Fields '
+                                                                                                                                            'that '
+                                                                                                                                            'only\n'
+                                                                                                                                            'make '
+                                                                                                                                            'sense '
+                                                                                                                                            'for '
+                                                                                                                                            'an '
+                                                                                                                                            'edit '
+                                                                                                                                            'are '
+                                                                                                                                            'ignored '
+                                                                                                                                            'by '
+                                                                                                                                            'a '
+                                                                                                                                            'whole-tree '
+                                                                                                                                            'write.',
+                                                                                                                             'properties': {   'title': {   'description': 'Sub-todo '
+                                                                                                                                                                           'title: '
+                                                                                                                                                                           'one '
+                                                                                                                                                                           'short '
+                                                                                                                                                                           'imperative '
+                                                                                                                                                                           'line '
+                                                                                                                                                                           '(required).',
+                                                                                                                                                            'maxLength': 65536,
+                                                                                                                                                            'minLength': 1,
+                                                                                                                                                            'type': 'string'},
+                                                                                                                                               'status': {   'default': 'pending',
+                                                                                                                                                             'description': 'One '
+                                                                                                                                                                            'of: '
+                                                                                                                                                                            'pending, '
+                                                                                                                                                                            'in_progress, '
+                                                                                                                                                                            'done '
+                                                                                                                                                                            '(or '
+                                                                                                                                                                            'completed). '
+                                                                                                                                                                            'Omit '
+                                                                                                                                                                            'to '
+                                                                                                                                                                            'keep '
+                                                                                                                                                                            'an '
+                                                                                                                                                                            'existing '
+                                                                                                                                                                            "item's "
+                                                                                                                                                                            'status; '
+                                                                                                                                                                            'created '
+                                                                                                                                                                            'items '
+                                                                                                                                                                            'default '
+                                                                                                                                                                            'to '
+                                                                                                                                                                            'pending.',
+                                                                                                                                                             'enum': [   'pending',
+                                                                                                                                                                         'in_progress',
+                                                                                                                                                                         'done'],
+                                                                                                                                                             'type': 'string'},
+                                                                                                                                               'notes': {   'anyOf': [   {   'maxLength': 65536,
+                                                                                                                                                                             'type': 'string'},
+                                                                                                                                                                         {   'type': 'null'}],
+                                                                                                                                                            'default': None,
+                                                                                                                                                            'description': 'Optional '
+                                                                                                                                                                           'detail '
+                                                                                                                                                                           'for '
+                                                                                                                                                                           'this '
+                                                                                                                                                                           'sub-todo; '
+                                                                                                                                                                           'the '
+                                                                                                                                                                           'title '
+                                                                                                                                                                           'is '
+                                                                                                                                                                           'the '
+                                                                                                                                                                           'identity.'}},
+                                                                                                                             'required': [   'title'],
+                                                                                                                             'type': 'object'},
+                                                                                                                'type': 'array'},
+                                                                                                'parent': {   'anyOf': [   {   'type': 'string'},
+                                                                                                                           {   'type': 'null'}],
+                                                                                                              'default': None,
+                                                                                                              'description': 'Scope '
+                                                                                                                             'this '
+                                                                                                                             'item '
+                                                                                                                             'to '
+                                                                                                                             'the '
+                                                                                                                             'children '
+                                                                                                                             'of '
+                                                                                                                             'the '
+                                                                                                                             'named '
+                                                                                                                             'todo '
+                                                                                                                             '(both '
+                                                                                                                             'its '
+                                                                                                                             'lookup '
+                                                                                                                             'and '
+                                                                                                                             'its '
+                                                                                                                             'creation). '
+                                                                                                                             '"" '
+                                                                                                                             '= '
+                                                                                                                             'root '
+                                                                                                                             'scope. '
+                                                                                                                             'Overrides '
+                                                                                                                             'the '
+                                                                                                                             'top-level '
+                                                                                                                             '`scope`.'},
+                                                                                                'rename_to': {   'anyOf': [   {   'type': 'string'},
+                                                                                                                              {   'type': 'null'}],
+                                                                                                                 'default': None,
+                                                                                                                 'description': 'Rename '
+                                                                                                                                'the '
+                                                                                                                                'matched '
+                                                                                                                                'item '
+                                                                                                                                'to '
+                                                                                                                                'this '
+                                                                                                                                'title '
+                                                                                                                                'instead '
+                                                                                                                                'of '
+                                                                                                                                'editing '
+                                                                                                                                'a '
+                                                                                                                                'field. '
+                                                                                                                                'Renaming '
+                                                                                                                                'onto '
+                                                                                                                                'an '
+                                                                                                                                'existing '
+                                                                                                                                'title '
+                                                                                                                                'is '
+                                                                                                                                'rejected.'},
+                                                                                                'complete': {   'default': False,
+                                                                                                                'description': 'Mark '
+                                                                                                                               'this '
+                                                                                                                               'item '
+                                                                                                                               'and '
+                                                                                                                               'its '
+                                                                                                                               'whole '
+                                                                                                                               'sub-tree '
+                                                                                                                               'done '
+                                                                                                                               'in '
+                                                                                                                               'one '
+                                                                                                                               'call. '
+                                                                                                                               'Not '
+                                                                                                                               'combined '
+                                                                                                                               'with '
+                                                                                                                               'an '
+                                                                                                                               'explicit '
+                                                                                                                               'pending/in_progress '
+                                                                                                                               'status '
+                                                                                                                               'or '
+                                                                                                                               'with '
+                                                                                                                               '`children`.',
+                                                                                                                'type': 'boolean'},
+                                                                                                'fuzzy': {   'default': True,
+                                                                                                             'description': 'Per-item '
+                                                                                                                            'override '
+                                                                                                                            'of '
+                                                                                                                            'the '
+                                                                                                                            'top-level '
+                                                                                                                            '`fuzzy`.',
+                                                                                                             'type': 'boolean'},
+                                                                                                'force': {   'default': False,
+                                                                                                             'description': 'Per-item '
+                                                                                                                            'override '
+                                                                                                                            'of '
+                                                                                                                            'the '
+                                                                                                                            'top-level '
+                                                                                                                            '`force`.',
+                                                                                                             'type': 'boolean'}},
+                                                                              'required': ['title'],
+                                                                              'type': 'object'},
+                                                                 'type': 'array'},
+                                                    'mode': {   'default': 'merge',
+                                                                'description': "'merge' (default) upserts the "
+                                                                               "given items; 'replace' makes "
+                                                                               'the given list the whole tree '
+                                                                               'and needs every existing todo '
+                                                                               'done unless force=True; '
+                                                                               '"clear" empties the tree (same '
+                                                                               'guard).',
+                                                                'enum': ['merge', 'replace', 'clear'],
+                                                                'type': 'string'},
+                                                    'scope': {   'anyOf': [   {'type': 'string'},
+                                                                              {'type': 'null'}],
+                                                                 'default': None,
+                                                                 'description': 'Restrict this call to the '
+                                                                                'children of the named todo; '
+                                                                                '"" means the root. An item\'s '
+                                                                                'own `parent` wins.'},
+                                                    'on_conflict': {   'default': 'error',
+                                                                       'description': 'What to do when an '
+                                                                                      'incoming title is a '
+                                                                                      'near-duplicate of an '
+                                                                                      'existing one (same '
+                                                                                      'words, different '
+                                                                                      'numbering / punctuation '
+                                                                                      "/ case): 'error' "
+                                                                                      '(default) refuses the '
+                                                                                      'call and names the '
+                                                                                      'existing title plus the '
+                                                                                      'exact payload to send '
+                                                                                      "instead; 'reuse' "
+                                                                                      'patches that item; '
+                                                                                      "'append' really adds a "
+                                                                                      'second one.',
+                                                                       'enum': ['error', 'reuse', 'append'],
+                                                                       'type': 'string'},
+                                                    'fuzzy': {   'default': True,
+                                                                 'description': 'When True (default) a title '
+                                                                                'that misses exactly may still '
+                                                                                'match the nearest existing '
+                                                                                'todo; False requires exact '
+                                                                                'titles.',
+                                                                 'type': 'boolean'},
+                                                    'force': {   'default': False,
+                                                                 'description': 'Bypass the guards: the '
+                                                                                'all-done requirement of '
+                                                                                'replace/clear, reopening a '
+                                                                                'done item, renaming onto one, '
+                                                                                'and the single-in_progress '
+                                                                                'and regression checks.',
+                                                                 'type': 'boolean'},
+                                                    'auto_fix': {   'default': True,
+                                                                    'description': 'When True (default) and '
+                                                                                   'several items are '
+                                                                                   'in_progress, the last '
+                                                                                   'listed one is kept and '
+                                                                                   'earlier ones are marked '
+                                                                                   'done; False errors '
+                                                                                   'instead.',
+                                                                    'type': 'boolean'}},
+                                  'type': 'object'}},
             {
                 "name": "retrieve",
                 "description": "Retrieve past conversation history, including compacted/archived turns. Use `query` to search (natural language, relevance-ranked with a recency boost) or `id` to fetch a specific turn (e.g. a `prune_<n>` reference left by context pruning).",

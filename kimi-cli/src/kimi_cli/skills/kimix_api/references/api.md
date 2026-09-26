@@ -155,7 +155,7 @@ prompt(
     cancel_callable=None,              # Optional: callable that returns True to cancel
     close_session_after_prompt=False,  # Optional: close session after prompt completes
     merge_wire_messages=None,          # Optional: merge wire messages for output_function (defaults to True when output_function is set)
-    ensure_todo_finished=True,         # Optional: run todo_write reminder rounds after the prompt
+    ensure_todo_finished=True,         # Optional: run todo-list reminder rounds after the prompt
     export_todo_list_path=None,        # Optional: Path ending in .json — export the session's todos there after the prompt
     format_output=False,               # Optional: render text chunks as formatted markdown (used by prompt_plan)
     timeout=None,                      # Optional: max seconds for the whole prompt incl. retries; raises TimeoutError when reached
@@ -175,7 +175,7 @@ session = await _create_default_session_async(resume=True)
 - When `output_function` is provided, `merge_wire_messages` defaults to `True`.
 - **Retries:** non-API exceptions are retried up to 3 times with a 1s sleep (`APIStatusError` and timeouts are raised immediately). HTTP API errors are also retried with exponential backoff at the underlying chat-provider/soul layer.
 - **Timeout:** when `timeout` is set, `asyncio.wait_for` guards each prompt attempt and `TimeoutError` propagates immediately (not retried); the session is cancelled.
-- **Todo reminders (`ensure_todo_finished=True`):** after a successful prompt, unfinished `todo_write` items are collected and sent back as system reminders — up to `cli_closing_reminder_rounds` rounds (default 1; later rounds use a `strong=True` message).
+- **Todo reminders (`ensure_todo_finished=True`):** after a successful prompt, unfinished todo items are collected and sent back as system reminders — up to `cli_closing_reminder_rounds` rounds (default 1; later rounds use a `strong=True` message).
 - **Cleanup:** on finish the session's todos are cleared (`_clear_session_todos`, persisted to `SessionState` or the subagent `state.json`), optionally exported to `export_todo_list_path` (must end in `.json`), and the session is closed when `close_session_after_prompt=True`.
 
 ### Cancel Prompt

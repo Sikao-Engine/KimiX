@@ -35,7 +35,7 @@ from kosong.tooling import (
     FIELD_ALIASES_SUBAGENT,
     FIELD_ALIASES_TASK,
     FIELD_ALIASES_TODO,
-    FIELD_ALIASES_TODO_UPDATE,
+    FIELD_ALIASES_TODO_LIST,
     FIELD_ALIASES_WEB,
     CallableTool2,
     ToolOk,
@@ -306,35 +306,42 @@ def test_todo_list_compound_aliases() -> None:
         assert repaired == {"todos": ["a"]}
 
 
-def test_todo_update_aliases() -> None:
-    """todo_update-style aliases map task/todo/item/name -> title and
-    edits/changes/operations -> updates."""
+def test_todo_list_tool_aliases() -> None:
+    """The single todo tool's synonyms: task/todo/item/name -> title and
+    edits/changes/operations -> todos, parent -> scope."""
 
     class Model(BaseModel):
         title: str | None = None
-        updates: list[dict] | None = None
+        todos: list[dict] | None = None
+        scope: str | None = None
+        status: str | None = None
 
     data = {"task": "Fix bug", "status": "done"}
-    repaired = _repair_dict_for_model(data, Model, FIELD_ALIASES_TODO_UPDATE)
+    repaired = _repair_dict_for_model(data, Model, FIELD_ALIASES_TODO_LIST)
     assert repaired == {"title": "Fix bug", "status": "done"}
 
     data2 = {"edits": [{"title": "A"}, {"content": "B"}]}
-    repaired2 = _repair_dict_for_model(data2, Model, FIELD_ALIASES_TODO_UPDATE)
-    assert repaired2 == {"updates": [{"title": "A"}, {"content": "B"}]}
+    repaired2 = _repair_dict_for_model(data2, Model, FIELD_ALIASES_TODO_LIST)
+    assert repaired2 == {"todos": [{"title": "A"}, {"content": "B"}]}
 
     data3 = {"operations": [{"title": "C"}, {"title": "D"}]}
-    repaired3 = _repair_dict_for_model(data3, Model, FIELD_ALIASES_TODO_UPDATE)
-    assert repaired3 == {"updates": [{"title": "C"}, {"title": "D"}]}
+    repaired3 = _repair_dict_for_model(data3, Model, FIELD_ALIASES_TODO_LIST)
+    assert repaired3 == {"todos": [{"title": "C"}, {"title": "D"}]}
 
     # A single-element list is unwrapped to a dict (existing list↔scalar
-    # repair); Pydantic still accepts it as a single update item.
+    # repair); the tool still accepts it as one item.
     data4 = {"operations": [{"title": "C"}]}
-    repaired4 = _repair_dict_for_model(data4, Model, FIELD_ALIASES_TODO_UPDATE)
-    assert repaired4 == {"updates": {"title": "C"}}
+    repaired4 = _repair_dict_for_model(data4, Model, FIELD_ALIASES_TODO_LIST)
+    assert repaired4 == {"todos": {"title": "C"}}
+
+    data5 = {"parent": "Phase 1", "scope_note": "x"}
+    repaired5 = _repair_dict_for_model({"parent": "Phase 1"}, Model, FIELD_ALIASES_TODO_LIST)
+    assert repaired5 == {"scope": "Phase 1"}
+    assert data5["parent"] == "Phase 1"  # the caller's dict is never mutated
 
 
-def test_todo_update_aliases_not_in_common_set() -> None:
-    """todo_update aliases are per-tool opt-in.
+def test_todo_list_aliases_not_in_common_set() -> None:
+    """The todo-list item/scope synonyms are per-tool opt-in.
 
     In particular ``task`` must keep mapping to ``prompt`` globally (the
     FIELD_ALIASES_GENERAL behavior) so tools with a ``prompt`` field are not

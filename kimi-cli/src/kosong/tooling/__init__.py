@@ -543,21 +543,35 @@ FIELD_ALIASES_TODO: dict[str, str] = {
     "update": "mode",
 }
 
-FIELD_ALIASES_TODO_UPDATE: dict[str, str] = {
-    # todo_update single-edit title synonyms (canonical field: `title`).
-    # Nested todo_write items accept the same spellings directly through the
-    # Todo model's AliasChoices (see kimi_cli/tools/todo/__init__.py).
+FIELD_ALIASES_TODO_LIST: dict[str, str] = {
+    # Canonical field names of the single todo tool (`todo_list`): one item shape
+    # whose title is `title`, whose item list is `todos` and whose lookup scope is
+    # `scope`. The retired spellings of those three keys are still accepted.
+    # Item-title synonyms (the Todo model also takes them via AliasChoices).
     "task": "title",
     "todo": "title",
     "item": "title",
     "name": "title",
-    # todo_update batch-edit list synonyms (canonical field: `updates`).
-    "edits": "updates",
-    "changes": "updates",
-    "operations": "updates",
-    "actions": "updates",
-    "modifications": "updates",
-    "batch": "updates",
+    "subject": "title",
+    # Item-list synonyms.
+    "updates": "todos",
+    "edits": "todos",
+    "changes": "todos",
+    "operations": "todos",
+    "actions": "todos",
+    "modifications": "todos",
+    "batch": "todos",
+    "entries": "todos",
+    # Lookup-scope synonyms.
+    "parent": "scope",
+    "parent_title": "scope",
+    "under": "scope",
+    "namespace": "scope",
+    # Conflict-policy synonyms.
+    "duplicate": "on_conflict",
+    "duplicates": "on_conflict",
+    "on_duplicate": "on_conflict",
+    "conflict": "on_conflict",
 }
 
 FIELD_ALIASES_ACTIVE: dict[str, str] = {
@@ -595,7 +609,7 @@ FIELD_ALIASES_SUBAGENT: dict[str, str] = {
 # is a Literal type, as a first-pass before fuzzy matching.
 
 
-# --- todo_write status (Literal["pending", "in_progress", "done"]) ---
+# --- todo status (Literal["pending", "in_progress", "done"]) ---
 # source: kimi_cli/tools/todo/__init__.py:46
 VALUE_ALIASES_STATUS: dict[str, str] = {
     # "done" synonyms
@@ -1653,7 +1667,11 @@ TOOL_NAME_REDIRECTS: dict[str, str] = {
     "AgentList": "list_agents",
     "AgentClose": "interrupt_agent",
     "TaskOutput": "job_output",
-    "TodoList": "todo_write",
+    "TodoList": "todo_list",
+    "TodoWrite": "todo_list",
+    "TodoUpdate": "todo_list",
+    "TodoTree": "todo_list",
+    "SubTodo": "todo_list",
     "AgentSwarm": "workflow",
     "Cat": "read",
     "ViewFile": "read",
@@ -1706,17 +1724,17 @@ TOOL_NAME_REDIRECTS: dict[str, str] = {
     "Lookup": "grep",
     # ── TodoList hallucinations ──
     # NOTE: ``Tasks`` is intentionally redirected in the Background task
-    # section below (TaskList wins over this earlier todo_write entry).
-    "TaskList": "todo_write",
-    "Todo": "todo_write",
-    "Todos": "todo_write",
-    "TaskManager": "todo_write",
-    "TaskPlan": "todo_write",
-    "Plan": "todo_write",
-    "Checklist": "todo_write",
+    # section below (TaskList wins over this earlier todo_list entry).
+    "TaskList": "todo_list",
+    "Todo": "todo_list",
+    "Todos": "todo_list",
+    "TaskManager": "todo_list",
+    "TaskPlan": "todo_list",
+    "Plan": "todo_list",
+    "Checklist": "todo_list",
     # "TodoList" redirects above (legacy class name)
-    "TaskTracker": "todo_write",
-    "Progress": "todo_write",
+    "TaskTracker": "todo_list",
+    "Progress": "todo_list",
     # ── fetch_url hallucinations ──
     "Fetch": "fetch_url",
     "HttpGet": "fetch_url",

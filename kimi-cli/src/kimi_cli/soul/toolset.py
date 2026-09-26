@@ -5,6 +5,7 @@ import contextlib
 import importlib
 import inspect
 import orjson
+import os
 import re
 import sys
 import time
@@ -41,6 +42,7 @@ from kimi_cli import logger
 from kimi_cli.exception import InvalidToolError, MCPRuntimeError
 from kimi_cli.hooks.engine import HookEngine
 from kimi_cli.native_loader import get_compat as _native_get_compat
+from kimi_cli.tools import RETIRED_TODO_TOOL_NAMES
 from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.tools import SkipThisTool, resolve_tool_class
 from kimi_cli.tools.utils import repair_tool_arguments
@@ -88,6 +90,24 @@ _DEFAULT_TOOL_OUTPUT_MAX_BYTES = 128 << 10  # 128 KiB fallback
 _TOOL_OUTPUT_BYTES_PER_TOKEN = 4  # conservative UTF-8 bytes/token estimate
 _TOOL_OUTPUT_CONTEXT_FRACTION = 0.5  # budget derived from total context size
 _TOOL_OUTPUT_REMAINING_FRACTION = 0.9  # must stay strictly below remaining context
+
+# ── Oversized-output dumps ─────────────────────────────────────────────────
+# When a tool output exceeds the per-call byte budget, the full output is
+# written to a temp file inside the *session* directory
+# (``<work dir>/.kimix_cache/<session id>/tool_output``) and the tool returns a
+# pointer message instead of a silently truncated blob.  The model can then
+# ``read``/``grep`` the file to recover the content it lost.
+_OUTPUT_DUMP_SUBDIR = "tool_output"
+"""Sub-directory of the session directory holding oversized-output dumps."""
+
+_OUTPUT_DUMP_MAX_FILES = 20
+"""Number of dump files kept per session; older ones are pruned best-effort."""
+
+_OUTPUT_DUMP_MAX_BYTES = 32 << 20
+"""Hard ceiling for a single dump file (32 MiB), to bound disk usage."""
+
+_output_dump_seq = 0
+"""Monotonic counter used to name dump files (one sequence per process)."""
 
 
 _READ_ONLY_BLOCKED_TOOLS: frozenset[str] = frozenset({
@@ -148,6 +168,131 @@ def _truncate_content_parts(parts: list[ContentPart], max_bytes: int) -> list[Co
                 truncated.append(ThinkPart(think=piece))
         break
     return truncated
+
+
+def _output_to_dump_text(output: str | ContentPart | list[ContentPart]) -> str:
+    """Flatten a tool output into plain text for dumping to a file.
+
+    Text/Think parts are written verbatim; media parts keep their (possibly
+    base64) URL so nothing is lost, preceded by a short marker line.
+    """
+    if isinstance(output, str):
+        return output
+    parts = output if isinstance(output, list) else [output]
+    chunks: list[str] = []
+    for index, part in enumerate(parts):
+        if isinstance(part, TextPart):
+            chunks.append(part.text)
+        elif isinstance(part, ThinkPart):
+            chunks.append(f"[think #{index}]\n{part.think}")
+        elif isinstance(part, ImageURLPart):
+            chunks.append(f"[image #{index}] {part.image_url.url}")
+        elif isinstance(part, AudioURLPart):
+            chunks.append(f"[audio #{index}] {part.audio_url.url}")
+        elif isinstance(part, VideoURLPart):
+            chunks.append(f"[video #{index}] {part.video_url.url}")
+        else:
+            chunks.append(str(part))
+    return "\n".join(chunks)
+
+
+def _output_dump_dir(runtime: Runtime | None) -> Path | None:
+    """Resolve the dump directory for the current session.
+
+    That is ``<session dir>/tool_output``, where the session directory itself
+    lives in the work directory's ``.kimix_cache`` (see ``Session.dir``).
+    Returns ``None`` when no session is available (toolsets built without a
+    runtime, e.g. in unit tests) or the directory cannot be created, in which
+    case callers fall back to inline truncation.
+    """
+    session = getattr(runtime, "session", None)
+    if session is None:
+        return None
+    try:
+        session_dir = Path(str(session.dir))
+        dump_dir = session_dir / _OUTPUT_DUMP_SUBDIR
+        dump_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:  # no usable session dir: the caller truncates inline
+        return None
+    return dump_dir
+
+
+def _write_output_dump(
+    dump_dir: Path, output: str | ContentPart | list[ContentPart], tool_name: str
+) -> Path | None:
+    """Write the full oversized *output* into *dump_dir*. Returns the file path.
+
+    The file name is ``<seq>-<pid>-<tool name>.txt`` (monotonic sequence per
+    process, PID to avoid cross-process clashes).  Content beyond
+    ``_OUTPUT_DUMP_MAX_BYTES`` is dropped with a trailing marker.  Old dumps are
+    pruned so a session directory never accumulates hundreds of files.
+    Best-effort: returns ``None`` on any I/O failure so the caller can fall back
+    to truncation instead of losing the tool call.
+    """
+    global _output_dump_seq
+
+    text = _output_to_dump_text(output)
+    encoded = text.encode("utf-8", errors="replace")
+    cut = len(encoded) > _OUTPUT_DUMP_MAX_BYTES
+    if cut:
+        encoded = encoded[:_OUTPUT_DUMP_MAX_BYTES] + (
+            f"\n\n[dump cut at {_OUTPUT_DUMP_MAX_BYTES} bytes; "
+            "the remainder was discarded]\n".encode()
+        )
+
+    slug = re.sub(r"[^A-Za-z0-9_.-]", "_", tool_name)[:40] or "tool"
+    path: Path | None = None
+    try:
+        for _ in range(100):
+            _output_dump_seq += 1
+            candidate = dump_dir / f"{_output_dump_seq:04d}-{os.getpid()}-{slug}.txt"
+            if not candidate.exists():
+                path = candidate
+                break
+        if path is None:
+            return None
+        path.write_bytes(encoded)
+    except OSError as exc:
+        logger.warning(
+            "Failed to dump oversized output of tool {tool_name}: {error}",
+            tool_name=tool_name,
+            error=exc,
+        )
+        return None
+    if cut:
+        logger.info(
+            "Oversized output of tool {tool_name} cut at {limit} bytes when dumping to {path}",
+            tool_name=tool_name,
+            limit=_OUTPUT_DUMP_MAX_BYTES,
+            path=path,
+        )
+    _prune_output_dumps(dump_dir, keep=path)
+    return path
+
+
+def _prune_output_dumps(dump_dir: Path, keep: Path | None = None) -> None:
+    """Keep only the newest ``_OUTPUT_DUMP_MAX_FILES`` dumps (best-effort)."""
+    try:
+        files = [p for p in dump_dir.glob("*.txt") if p.is_file() and p != keep]
+        if len(files) < _OUTPUT_DUMP_MAX_FILES:
+            return
+        files.sort(key=lambda p: (p.stat().st_mtime, p.name))
+        for stale in files[: len(files) - _OUTPUT_DUMP_MAX_FILES + 1]:
+            with contextlib.suppress(OSError):
+                stale.unlink()
+    except OSError:
+        pass
+
+
+def _display_dump_path(path: Path) -> str:
+    """Short, forward-slashed display form of *path* (relative to cwd if possible)."""
+    try:
+        relative = path.resolve().relative_to(Path.cwd().resolve())
+    except Exception:  # not comparable (different drive, unreadable cwd): use absolute
+        relative = None
+    if relative is None:
+        return str(path).replace("\\", "/")
+    return str(relative).replace("\\", "/")
 
 
 # ── Layer 1 belt-and-suspenders micro-compression (plan.md §8.2) ──────
@@ -289,26 +434,30 @@ def _build_platform_redirects() -> dict[str, str]:
     """Build the platform-aware normalized redirect map."""
     _redirects = dict(TOOL_NAME_REDIRECTS)
 
-    # Todo tree tools: common LLM variants for todo_update/todo_write.
+    # Todo tree tool: common LLM variants, plus the retired names of the two
+    # tools that were merged into `todo_list`. The retired names are built from
+    # parts so that no removed tool name appears in this source while sessions
+    # recorded before the merge still resolve.
     _redirects.update({
-        "SubTodo": "todo_update",
-        "TodoChild": "todo_update",
-        "TodoAdd": "todo_update",
-        "AddSubTodo": "todo_update",
-        "TodoDetail": "todo_update",
-        "TodoEdit": "todo_update",
-        "SubTask": "todo_update",
-        "AddTask": "todo_update",
-        "TaskDetail": "todo_update",
-        "TaskSub": "todo_update",
-        "TodoTree": "todo_write",
-        "TodoStack": "todo_write",
-        "TodoHierarchy": "todo_write",
-        "TodoPlan": "todo_write",
-        "TaskList": "todo_write",
-        "UpdateTodo": "todo_write",
-        "SetTodo": "todo_write",
-        "TodoListSub": "todo_update",
+        "SubTodo": "todo_list",
+        "TodoChild": "todo_list",
+        "TodoAdd": "todo_list",
+        "AddSubTodo": "todo_list",
+        "TodoDetail": "todo_list",
+        "TodoEdit": "todo_list",
+        "SubTask": "todo_list",
+        "AddTask": "todo_list",
+        "TaskDetail": "todo_list",
+        "TaskSub": "todo_list",
+        "TodoTree": "todo_list",
+        "TodoStack": "todo_list",
+        "TodoHierarchy": "todo_list",
+        "TodoPlan": "todo_list",
+        "TaskList": "todo_list",
+        "UpdateTodo": "todo_list",
+        "SetTodo": "todo_list",
+        "TodoListSub": "todo_list",
+        **{_legacy: "todo_list" for _legacy in RETIRED_TODO_TOOL_NAMES},
         # Legacy tool-name redirects (old names -> report canonical names).
         "ReadFile": "read",
         "OpenFile": "read",
@@ -419,9 +568,9 @@ def _build_platform_redirects() -> dict[str, str]:
         "GetJobOutput": "job_output",
         "ReadJobOutput": "job_output",
         "BackgroundOutput": "job_output",
-        "TodoList": "todo_write",
-        "Todo": "todo_write",
-        "Todos": "todo_write",
+        "TodoList": "todo_list",
+        "Todo": "todo_list",
+        "Todos": "todo_list",
         "AgentSwarm": "workflow",
         "Swarm": "workflow",
         "MultiAgent": "workflow",
@@ -560,16 +709,25 @@ def _repair_argument_format(arguments: JsonType) -> JsonType:
 # per-tool `field_aliases` (see kimi_cli/tools/todo/__init__.py); this
 # layer handles the top-level shape that the flat alias map cannot express.
 
-_TODO_WRITE_SINGULAR_KEYS: frozenset[str] = frozenset({"todo", "task", "item"})
-_TODO_UPDATE_TITLE_KEYS: frozenset[str] = frozenset({"task", "todo", "item", "name"})
-_TODO_UPDATE_BATCH_KEYS: frozenset[str] = frozenset({
-    "edits",
-    "changes",
-    "operations",
-    "actions",
-    "modifications",
-    "batch",
-})
+_TODO_ITEM_TITLE_KEYS: frozenset[str] = frozenset({"task", "todo", "item", "name"})
+# Any key that carries a list of items: the canonical one plus the retired
+# batch/lookup spellings the model still reaches for.
+_TODO_BATCH_KEYS: frozenset[str] = frozenset(
+    {
+        "todos",
+        "items",
+        "list",
+        "tasks",
+        "entries",
+        "updates",
+        "edits",
+        "changes",
+        "operations",
+        "actions",
+        "modifications",
+        "batch",
+    }
+)
 
 
 def _looks_like_json_text(value: str) -> bool:
@@ -581,104 +739,66 @@ def _looks_like_json_text(value: str) -> bool:
 def _wrap_todo_item(value: Any) -> Any:
     """Wrap a bare todo value into a schema-valid item dict.
 
-    Bare strings become ``{"content": <value>, "status": "pending"}``;
-    dicts get a ``status`` default when the model requires one.  JSON
-    strings are left untouched so the existing JSON-string repair can parse
-    them.
+    A bare string becomes ``{"title": <value>}``. ``status`` is deliberately
+    *not* injected: with one item shape shared by writes and edits, a forced
+    ``pending`` would reset an existing item's status on a name-only edit; the
+    model supplies the default for creations instead. JSON strings are left
+    untouched so the existing JSON-string repair can parse them.
     """
     if isinstance(value, str) and not _looks_like_json_text(value):
-        return {"content": value, "status": "pending"}
-    if isinstance(value, dict):
-        if "status" not in value:
-            return {**value, "status": "pending"}
-        return value
+        return {"title": value}
     return value
 
 
-def _repair_todo_write_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Fuzzy-repair top-level todo_write arguments."""
-    if "todos" in arguments:
-        todos = arguments["todos"]
-        if isinstance(todos, str) and not _looks_like_json_text(todos):
-            arguments["todos"] = [{"content": todos, "status": "pending"}]
-        elif isinstance(todos, list):
-            arguments["todos"] = [_wrap_todo_item(item) for item in todos]
-        elif isinstance(todos, dict):
-            arguments["todos"] = _wrap_todo_item(todos)
+def _repair_todo_list_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Fuzzy-repair the top-level argument shape of the single todo tool.
+
+    The item list may arrive under any retired batch key, as a bare string, as a
+    single object, or as a list of bare strings; a single item may also arrive as
+    a singular ``task``/``todo``/``item``/``name`` key. Everything is folded onto
+    ``todos=[...]`` with ``title`` keys. The retired top-level single-edit form
+    (``title=..., status=...``) is left to the params model itself, which folds
+    it into one merge item without mutating the caller's dict.
+    """
+    batch_key = next((key for key in _TODO_BATCH_KEYS if key in arguments), None)
+    if batch_key is not None:
+        value: Any = arguments[batch_key]
+        if isinstance(value, str) and not _looks_like_json_text(value):
+            value = [{"title": value}]
+        elif isinstance(value, list):
+            value = [_wrap_todo_item(item) for item in value]
+        elif isinstance(value, dict):
+            value = [_wrap_todo_item(value)]
+        if batch_key != "todos":
+            del arguments[batch_key]
+        arguments["todos"] = value
         return arguments
 
-    # `todos` absent: promote a singular key.  Item-level fields that do not
-    # exist on todo_write's top-level Params (status/notes) are folded into
-    # the wrapped item.
-    for key in _TODO_WRITE_SINGULAR_KEYS:
+    for key in _TODO_ITEM_TITLE_KEYS:
         if key not in arguments:
             continue
-        value = arguments.pop(key)
-        if isinstance(value, str) and not _looks_like_json_text(value):
-            item: dict[str, Any] = {"content": value, "status": "pending"}
-            for extra in ("status", "notes"):
-                if extra in arguments:
-                    item[extra] = arguments.pop(extra)
-            value = [item]
-        elif isinstance(value, dict):
-            value = _wrap_todo_item(value)
-        arguments["todos"] = value
-        break
-    return arguments
-
-
-def _repair_todo_update_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Fuzzy-repair top-level todo_update arguments."""
-    batch_key = (
-        "updates"
-        if "updates" in arguments
-        else ("todos" if "todos" in arguments else None)
-    )
-    if batch_key is not None:
-        updates = arguments[batch_key]
-        if isinstance(updates, str) and not _looks_like_json_text(updates):
-            arguments[batch_key] = [{"title": updates, "status": "pending"}]
-        elif isinstance(updates, list):
-            arguments[batch_key] = [
-                {"title": item, "status": "pending"} if isinstance(item, str) else item
-                for item in updates
-            ]
+        raw = arguments.pop(key)
+        item: dict[str, Any] = {"title": raw} if isinstance(raw, str) else dict(raw)
+        for extra in ("status", "notes", "rename_to", "complete", "parent"):
+            if extra in arguments and extra not in item:
+                item[extra] = arguments.pop(extra)
+        arguments["todos"] = [item]
         return arguments
-
-    # No batch list: promote a title synonym for a single edit.
-    if "title" not in arguments:
-        for key in _TODO_UPDATE_TITLE_KEYS:
-            if key in arguments:
-                arguments["title"] = arguments.pop(key)
-                break
-
-    # Promote a batch synonym only when no single-edit title is present.
-    if "title" not in arguments:
-        for key in _TODO_UPDATE_BATCH_KEYS:
-            if key not in arguments:
-                continue
-            value = arguments.pop(key)
-            if isinstance(value, str) and not _looks_like_json_text(value):
-                value = [{"title": value, "status": "pending"}]
-            if isinstance(value, (list, dict)):
-                arguments["updates"] = value
-            break
     return arguments
 
 
 def _repair_todo_arguments(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Apply todo-tool-specific fuzzy argument repairs.
 
-    Scoped to the canonical todo tools (``todo_write`` / ``todo_update``).
-    Only rewrites keys when the schema-preferred key is absent; returns the
-    input unchanged otherwise.
+    Scoped to the single todo tool and to the retired names of the tools it
+    replaced (a session recorded before the merge still calls them). Only
+    rewrites keys when the schema-preferred key is absent; returns the input
+    unchanged otherwise.
     """
     if not isinstance(arguments, dict) or not arguments:
         return arguments
-    if tool_name == "todo_write":
-        return _repair_todo_write_arguments(arguments)
-    if tool_name == "todo_update":
-        return _repair_todo_update_arguments(arguments)
+    if tool_name == "todo_list" or tool_name in RETIRED_TODO_TOOL_NAMES:
+        return _repair_todo_list_arguments(arguments)
     return arguments
 
 
@@ -1002,6 +1122,31 @@ class KimiToolset:
             current_tokens = self._context_token_provider()
 
         return self._estimate_tool_output_byte_budget(max_context, current_tokens)
+
+    async def _dump_oversized_output(
+        self, output: str | ContentPart | list[ContentPart], tool_name: str
+    ) -> str | None:
+        """Save a full oversized tool output under the session directory.
+
+        The file lands in ``<session dir>/tool_output`` (i.e. inside the work
+        directory's ``.kimix_cache``), which is removed together with the
+        session.  Returns the display path (cwd-relative when possible) or
+        ``None`` when no session dump directory is available or the write
+        failed — callers then fall back to truncating the output inline.
+        """
+        dump_dir = _output_dump_dir(self._runtime)
+        if dump_dir is None:
+            return None
+        try:
+            path = await asyncio.to_thread(_write_output_dump, dump_dir, output, tool_name)
+        except Exception:  # dumping must never break the tool call
+            logger.warning(
+                "Failed to dump oversized output of tool {tool_name}", tool_name=tool_name
+            )
+            return None
+        if path is None:
+            return None
+        return _display_dump_path(path)
 
     def add(self, tool: ToolType) -> None:
         self._tool_dict[tool.name] = tool
@@ -1467,31 +1612,58 @@ class KimiToolset:
                     elif isinstance(ret.output, list):
                         ret.output = _micro_compress_parts(ret.output)
                     max_bytes = self._get_max_output_bytes()
+                    output_bytes: bytes | None = None
+                    parts: list[ContentPart] | None = None
                     if isinstance(ret.output, str):
                         output_bytes = ret.output.encode("utf-8")
-                        if len(output_bytes) > max_bytes:
+                        output_size = len(output_bytes)
+                    else:
+                        # Handle list[ContentPart] or single ContentPart
+                        parts = ret.output if isinstance(ret.output, list) else [ret.output]
+                        output_size = sum(_part_byte_size(p) for p in parts)
+                    if output_size > max_bytes:
+                        # Prefer saving the FULL output to a temp file in the session
+                        # directory over silently returning a truncated blob: the model
+                        # gets a pointer message and can `read`/`grep` the dump. Inline
+                        # truncation stays as the fallback for when there is no session
+                        # directory (or the write failed).
+                        dumped_path = await self._dump_oversized_output(ret.output, tool_name)
+                        if dumped_path is not None:
+                            saved = (
+                                "the full output was saved to"
+                                if output_size <= _OUTPUT_DUMP_MAX_BYTES
+                                else f"only the first {_OUTPUT_DUMP_MAX_BYTES} bytes were saved to"
+                            )
                             ret = ToolError(
                                 message=(
                                     f"Tool output exceeded the maximum allowed size "
-                                    f"({len(output_bytes)} bytes; limit {max_bytes} bytes). "
+                                    f"({output_size} bytes; limit {max_bytes} bytes), so it was "
+                                    f"not returned inline: {saved} `{dumped_path}`, a temp file "
+                                    f"under the session directory (`.kimix_cache/`). "
+                                    f"Inspect it with the `read` tool (use `offset`/`limit` to "
+                                    f"page through it) or search it with `grep`."
+                                ),
+                                brief="Output too large",
+                            )
+                        elif output_bytes is not None:
+                            ret = ToolError(
+                                message=(
+                                    f"Tool output exceeded the maximum allowed size "
+                                    f"({output_size} bytes; limit {max_bytes} bytes). "
                                     f"The result has been truncated."
                                 ),
                                 brief="Output too large",
                                 output=output_bytes[:max_bytes].decode("utf-8", errors="ignore"),
                             )
-                    else:
-                        # Handle list[ContentPart] or single ContentPart
-                        parts = ret.output if isinstance(ret.output, list) else [ret.output]
-                        total_bytes = sum(_part_byte_size(p) for p in parts)
-                        if total_bytes > max_bytes:
+                        else:
                             ret = ToolError(
                                 message=(
                                     f"Tool output exceeded the maximum allowed size "
-                                    f"({total_bytes} bytes; limit {max_bytes} bytes). "
+                                    f"({output_size} bytes; limit {max_bytes} bytes). "
                                     f"The result has been truncated."
                                 ),
                                 brief="Output too large",
-                                output=_truncate_content_parts(parts, max_bytes),
+                                output=_truncate_content_parts(parts or [], max_bytes),
                             )
                 except (TypeError, ValueError) as e:
                     if "dictionary update sequence" in str(e) or "argument" in str(e).lower():
@@ -2011,7 +2183,9 @@ class MCPTool(CallableTool):
                     tool_name=self._mcp_tool.name,
                     content=[str(p) for p in result.content][:3],
                 )
-            return convert_mcp_tool_result(result)
+            return convert_mcp_tool_result(
+                result, runtime=self._runtime, tool_name=self._mcp_tool.name
+            )
         except Exception as e:
             # fastmcp raises `RuntimeError` on timeout and we cannot tell it from other errors
             exc_msg = str(e).lower()
@@ -2096,7 +2270,12 @@ def _media_part_size(part: ContentPart) -> int | None:
     return None
 
 
-def convert_mcp_tool_result(result: CallToolResult) -> ToolReturnValue:
+def convert_mcp_tool_result(
+    result: CallToolResult,
+    *,
+    runtime: Runtime | None = None,
+    tool_name: str = "mcp",
+) -> ToolReturnValue:
     """Convert MCP tool result to kosong tool return value.
 
     All content — text *and* inline media (``data:`` URLs) — is subject to
@@ -2104,10 +2283,17 @@ def convert_mcp_tool_result(result: CallToolResult) -> ToolReturnValue:
     truncated in-place; media parts that exceed the remaining budget are
     dropped and replaced with a descriptive placeholder.
 
+    When *runtime* is bound to a session, the complete (untruncated) content is
+    additionally dumped to ``<session dir>/tool_output`` on overflow and the
+    placeholder points at that file instead of reporting lost content.
+
     Unsupported content types are caught and replaced with a ``TextPart``
     placeholder instead of crashing the turn.
     """
     content: list[ContentPart] = []
+    # Kept only when a dump may be needed: the content before budget enforcement.
+    full_content: list[ContentPart] = []
+    collect_full = runtime is not None
     char_budget = MCP_MAX_OUTPUT_CHARS
     truncated = False
 
@@ -2120,6 +2306,9 @@ def convert_mcp_tool_result(result: CallToolResult) -> ToolReturnValue:
                 error=exc,
             )
             converted = TextPart(text=f"[Unsupported content: {exc}]")
+
+        if collect_full:
+            full_content.append(converted)
 
         # --- budget enforcement (text) ---
         if isinstance(converted, TextPart):
@@ -2147,14 +2336,20 @@ def convert_mcp_tool_result(result: CallToolResult) -> ToolReturnValue:
         content.append(converted)
 
     if truncated:
-        content.append(
-            TextPart(
-                text=(
-                    f"\n\n[Output truncated: exceeded {MCP_MAX_OUTPUT_CHARS} character limit. "
-                    "Use pagination or more specific queries to get remaining content.]"
-                )
-            )
+        note = (
+            f"\n\n[Output truncated: exceeded {MCP_MAX_OUTPUT_CHARS} character limit. "
+            "Use pagination or more specific queries to get remaining content.]"
         )
+        dump_dir = _output_dump_dir(runtime)
+        if dump_dir is not None:
+            dumped = _write_output_dump(dump_dir, full_content, tool_name)
+            if dumped is not None:
+                note = (
+                    f"\n\n[Output truncated: exceeded {MCP_MAX_OUTPUT_CHARS} character limit. "
+                    f"The full output was saved to `{_display_dump_path(dumped)}` — read or grep "
+                    "that file to get the remaining content.]"
+                )
+        content.append(TextPart(text=note))
 
     if result.is_error:
         return ToolError(

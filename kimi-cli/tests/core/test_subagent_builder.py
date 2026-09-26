@@ -32,7 +32,7 @@ async def test_builder_builds_coder_with_write_tools(runtime):
     assert "edit" in tool_names
     assert "subagent" not in tool_names
     assert "AskUserQuestion" not in tool_names
-    assert "todo_write" not in tool_names
+    assert not [name for name in tool_names if name.startswith("todo_")]
 
 
 @pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")

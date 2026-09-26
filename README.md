@@ -113,10 +113,11 @@ The `KimiSoul` core loop actively keeps long runs on track — no manual babysit
 - **Decision-aware compaction** — compaction summaries preserve a `Decisions & Conclusions` and a `Verification Status` section, so early decisions and verified work survive.
 - **Context pruning** — stale tool outputs, thinking blocks, and near-duplicate content are automatically elided to reclaim context space.
 
-### todo_write
-The `todo_write` tool tracks multi-step plans:
-- Incremental updates with append/overwrite modes, fuzzy title matching, and per-todo notes.
-- Nested sub-todos via `todo_write` (send the full tree) or `todo_update(parent=...)`; `todo_update(complete=True)` finishes a subtree in one call.
+### todo_list
+The `todo_list` tool tracks multi-step plans — one tool, one item shape:
+- Read (omit `todos`), upsert (`mode='merge'`, default), whole-tree write (`mode='replace'`), `mode='clear'`, with per-todo notes.
+- Nested sub-todos via `parent=`/`scope=`; `complete=true` finishes a subtree in one call, `rename_to` renames in place.
+- Re-declaring an existing title with different numbering, punctuation, case or word order is refused instead of duplicating it (`on_conflict='reuse'|'append'` to opt out).
 
 ### Best-of-N Sampling
 

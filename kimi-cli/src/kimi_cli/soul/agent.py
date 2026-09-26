@@ -90,7 +90,7 @@ class Runtime:
     current_prompt: str | None = None
     """The current user prompt string, set by prompt_async before each prompt.
 
-    Consumed by todo_write (ALL_DONE_REMINDER) and _maybe_build_todo_reminder
+    Consumed by the todo tool (ALL_DONE_REMINDER) and _maybe_build_todo_reminder
     to inject the original request into reminders.
     """
 

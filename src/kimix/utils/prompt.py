@@ -169,7 +169,7 @@ async def _maybe_build_todo_reminder(session: Session, *, strong: bool = False) 
         return None
 
     try:
-        todo_tool = toolset.find("todo_write")
+        todo_tool = toolset.find("todo_list")
     except Exception:
         return None
     if todo_tool is None:
@@ -195,11 +195,11 @@ async def _maybe_build_todo_reminder(session: Session, *, strong: bool = False) 
         lines.append("")
     if strong:
         lines.append(
-            "CRITICAL: Unfinished `todo_write` tasks remain. Mark every remaining item `completed` with `todo_update` (or `todo_write` for bulk edits) before ending this session. Do not declare completion or run final verification until the todo list is empty or all entries show `[completed]`."
+            "CRITICAL: Unfinished todo items remain. Mark every remaining item `completed` with `todo_list` (mode='merge') before ending this session. Do not declare completion or run final verification until the todo list is empty or all entries show `[completed]`."
         )
     else:
         lines.append(
-            "You have unfinished `todo_write` tasks. Update statuses below with `todo_update` and mark every pending/in-progress item `completed` before finishing."
+            "You have unfinished todo items. Update statuses with `todo_list` (mode='merge') and mark every pending/in-progress item `completed` before finishing."
         )
 
     def _render_todo(item: Any, indent: int = 0) -> None:
@@ -262,7 +262,7 @@ async def _export_session_todos(session: Session, path: Path) -> None:
         return
 
     try:
-        todo_tool = toolset.find("todo_write")
+        todo_tool = toolset.find("todo_list")
     except Exception:
         return
     if todo_tool is None:
@@ -652,7 +652,7 @@ async def prompt_async(
         merge_wire_messages = output_function is not None
 
     # Store the (possibly transformed) prompt_str on the runtime so that
-    # todo_write and _maybe_build_todo_reminder can inject it into their
+    # todo tool and _maybe_build_todo_reminder can inject it into their
     # ALL_DONE_REMINDER / reminder messages.
     cli = getattr(session, "_cli", None)
     if cli is not None:
@@ -1041,10 +1041,10 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
         plan_size = len(plan_content.encode("utf-8"))
         regular_session = await _create_default_session_async()
         if plan_size > 100 * 1024:
-            impl_prompt = f"Read this plan `{plan_file}`, carefully research, read all related files first, call todo_write to record, then implement the plan step-by-step."
+            impl_prompt = f"Read this plan `{plan_file}`, carefully research, read all related files first, call todo_list to record, then implement the plan step-by-step."
             review_reminder = f"Review the plan in `{plan_file}` and ensure all tasks are completed."
         else:
-            impl_prompt = f"Read this plan:\n\n{plan_content}\n\ncarefully research, read all related files first, call todo_write to record, then implement the plan step-by-step:"
+            impl_prompt = f"Read this plan:\n\n{plan_content}\n\ncarefully research, read all related files first, call todo_list to record, then implement the plan step-by-step:"
             review_reminder = f"Review this plan and ensure all tasks are completed:\n\n{plan_content}"
         await prompt_async(
             impl_prompt,
