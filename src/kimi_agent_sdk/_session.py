@@ -17,6 +17,11 @@ from kimi_cli.llm import LLM
 from kimi_cli.safety_check import sanitize_for_tokenizer
 from kimi_cli.session import KIMIX_CACHE_DIR_NAME, Session as CliSession
 from kimi_cli.soul import SessionRestartRequired, StatusSnapshot
+from kimi_cli.soul.error_log import (
+    PHASE_NON_RESTARTABLE,
+    PHASE_RESTART_EXHAUSTED,
+    PHASE_SESSION_RESTART,
+)
 from kimi_cli.wire.types import ContentPart, TextPart, ThinkPart, WireMessage
 from kosong.chat_provider import APIStatusError, ChatProvider
 
@@ -48,6 +53,41 @@ def _is_restartable_error(original_error: BaseException | None) -> bool:
         return original_error.status_code in _RESTARTABLE_STATUS_CODES
     # Connection errors, timeouts, and other transient failures: restart.
     return True
+
+
+def _record_restart_error(
+    cli: KimiCLI | None,
+    *,
+    phase: str,
+    error: BaseException | None,
+    reason: str | None = None,
+    restart_attempt: int | None = None,
+    max_restarts: int | None = None,
+    restartable: bool | None = None,
+) -> Path | None:
+    """Record a comprehensive session-state snapshot for a restart failure.
+
+    Writes ``<work dir>/.kimix_cache/error_log/<snapshot>.json`` via
+    :func:`kimi_cli.soul.error_log.record_session_error` — a debug-only,
+    observability concern, so every failure here is swallowed and never
+    breaks the restart path itself.
+    """
+    try:
+        from kimi_cli.soul.error_log import record_session_error
+
+        return record_session_error(
+            phase=phase,
+            error=error,
+            reason=reason,
+            soul=getattr(cli, "soul", None),
+            session=getattr(cli, "session", None),
+            restart_attempt=restart_attempt,
+            max_restarts=max_restarts,
+            restartable=restartable,
+        )
+    except Exception:
+        logger.exception("Failed to record session restart error snapshot")
+        return None
 
 if TYPE_CHECKING:
     from kimi_agent_sdk import MCPConfig
@@ -962,6 +1002,14 @@ class Session:
                         "Session restart skipped for non-restartable error: %s",
                         e,
                     )
+                    _record_restart_error(
+                        self._cli,
+                        phase=PHASE_NON_RESTARTABLE,
+                        error=e,
+                        reason=str(e),
+                        restartable=False,
+                        max_restarts=max_restarts,
+                    )
                     if e.original_error:
                         raise e.original_error from e
                     raise
@@ -973,6 +1021,15 @@ class Session:
                         max_restarts,
                         e,
                     )
+                    _record_restart_error(
+                        self._cli,
+                        phase=PHASE_RESTART_EXHAUSTED,
+                        error=e,
+                        reason=str(e),
+                        restart_attempt=restart_count - 1,
+                        max_restarts=max_restarts,
+                        restartable=True,
+                    )
                     if e.original_error:
                         raise e.original_error from e
                     raise
@@ -982,11 +1039,29 @@ class Session:
                     max_restarts,
                     e,
                 )
+                # Record the comprehensive session state *before* the restart
+                # tears the failing CLI/provider down, so the "Connection
+                # lost" failure can be debugged offline from
+                # <work dir>/.kimix_cache/error_log/.
+                error_snapshot = _record_restart_error(
+                    self._cli,
+                    phase=PHASE_SESSION_RESTART,
+                    error=e,
+                    reason=str(e),
+                    restart_attempt=restart_count,
+                    max_restarts=max_restarts,
+                    restartable=True,
+                )
                 # Notify user via Wire
                 yield TextPart(
                     text=(
                         f"\n⚠️ Connection lost ({type(e.original_error).__name__ if e.original_error else 'unknown error'}). "
                         f"Restarting session (attempt {restart_count}/{max_restarts})...\n"
+                        + (
+                            f"Debug snapshot: {error_snapshot}\n"
+                            if error_snapshot is not None
+                            else ""
+                        )
                     )
                 )
                 # Restart while preserving the existing session context. This

@@ -87,6 +87,11 @@ from kimi_cli.soul.dynamic_injections.context_meter import ContextMeterProvider
 from kimi_cli.soul.dynamic_injections.target_churn import TargetChurnProvider
 from kimi_cli.soul.verification_gate import VerificationGate
 from kimi_cli.soul.dynamic_injections.todo_reminder import TodoReminderProvider
+from kimi_cli.soul.error_log import (
+    PHASE_OVERFLOW_RECOVERY_FAILED,
+    PHASE_STEP_RETRIES_EXHAUSTED,
+    record_session_error,
+)
 from kimi_cli.soul.llm_request_recorder import LLMRequestRecorder
 from kimi_cli.soul.message import (
     check_message,
@@ -1855,7 +1860,7 @@ class KimiSoul:
                         "Overflow compaction failed: {err}; preserving original error",
                         err=compact_err,
                     )
-                    raise SessionRestartRequired(
+                    overflow_reason = (
                         f"Step {self._current_step_no}: {type(e).__name__}"
                         + (
                             f" (status={e.status_code})"
@@ -1863,7 +1868,26 @@ class KimiSoul:
                             else ""
                         )
                         + " — context overflow recovery compaction failed, "
-                        "restarting session",
+                        "restarting session"
+                    )
+                    # Debug snapshot: full session state, so the failed
+                    # overflow recovery can be diagnosed offline.
+                    record_session_error(
+                        phase=PHASE_OVERFLOW_RECOVERY_FAILED,
+                        error=e,
+                        reason=overflow_reason,
+                        soul=self,
+                        secondary_errors={"overflow_compaction": compact_err},
+                        extra={
+                            "step_no": self._current_step_no,
+                            "context_overflow_retries_config": (
+                                self._loop_control.context_overflow_retries
+                            ),
+                            "context_overflow_retries_remaining": overflow_state.remaining,
+                        },
+                    )
+                    raise SessionRestartRequired(
+                        overflow_reason,
                         original_error=e,
                     ) from e
                 overflow_state.consumed()
@@ -1873,13 +1897,31 @@ class KimiSoul:
             # Existing generic handling: interrupt the session and restart with
             # the same user input.
             recovery_exhausted = getattr(e, "_kimi_recovery_exhausted", False)
-            raise SessionRestartRequired(
+            restart_reason = (
                 f"Step {self._current_step_no}: {type(e).__name__}"
                 + (f" (status={e.status_code})" if isinstance(e, APIStatusError) else "")
                 + (" [connection recovery exhausted]" if recovery_exhausted else "")
-                + " — retries exhausted, restarting session",
-                original_error=e,
-            ) from e
+                + " — retries exhausted, restarting session"
+            )
+            # Debug snapshot: the chat provider exhausted every retry for a
+            # remote connection error; record the comprehensive session state
+            # so the failure can be diagnosed from <work dir>/.kimix_cache.
+            record_session_error(
+                phase=PHASE_STEP_RETRIES_EXHAUSTED,
+                error=e,
+                reason=restart_reason,
+                soul=self,
+                extra={
+                    "step_no": self._current_step_no,
+                    "step_attempt": step_attempt,
+                    "max_retries_per_step": max_attempts,
+                    "connection_recovery_exhausted": recovery_exhausted,
+                    "context_overflow_retries_remaining": overflow_state.remaining,
+                    "history_length_for_llm": len(effective_history),
+                    "history_length_full": len(self._context.history),
+                },
+            )
+            raise SessionRestartRequired(restart_reason, original_error=e) from e
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.5. USAGE & STATUS UPDATE

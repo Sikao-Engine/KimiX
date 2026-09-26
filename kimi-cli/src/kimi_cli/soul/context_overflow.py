@@ -69,6 +69,16 @@ class OverflowRecoveryState:
         self._max_retries = max(0, max_retries)
         self._remaining = self._max_retries
 
+    @property
+    def remaining(self) -> int:
+        """Number of overflow retries still available for this step."""
+        return self._remaining
+
+    @property
+    def max_retries(self) -> int:
+        """Total overflow retry budget configured for this step."""
+        return self._max_retries
+
     def can_retry(self) -> bool:
         """True while at least one overflow retry is still available."""
         return self._remaining > 0
