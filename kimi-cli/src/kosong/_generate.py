@@ -4,7 +4,9 @@ from dataclasses import dataclass
 from loguru import logger
 
 from kosong.chat_provider import (
+    APIConnectionError,
     APIEmptyResponseError,
+    APITimeoutError,
     ChatProvider,
     StreamedMessagePart,
     TokenUsage,
@@ -51,19 +53,48 @@ async def generate(
 
     logger.trace("Generating with history: {history}", history=history)
     stream = await chat_provider.generate(system_prompt, tools, history)
-    async for part in stream:
-        logger.trace("Received part: {part}", part=part)
-        if on_message_part:
-            await callback(on_message_part, part.model_copy(deep=True))
+    try:
+        async for part in stream:
+            logger.trace("Received part: {part}", part=part)
+            if on_message_part:
+                await callback(on_message_part, part.model_copy(deep=True))
 
-        if pending_part is None:
-            pending_part = part
-        elif not pending_part.merge_in_place(part):  # try merge into the pending part
-            # unmergeable part must push the pending part to the buffer
+            if pending_part is None:
+                pending_part = part
+            elif not pending_part.merge_in_place(part):  # try merge into the pending part
+                # unmergeable part must push the pending part to the buffer
+                _message_append(message, pending_part)
+                if isinstance(pending_part, ToolCall) and on_tool_call:
+                    await callback(on_tool_call, pending_part)
+                pending_part = part
+    except (APITimeoutError, APIConnectionError) as exc:
+        # The stream died mid-flight (stalled connection / dropped transport)
+        # *after* some parts were already delivered. If a complete tool call
+        # was fully streamed before the failure, salvage it: the backend
+        # (observed with GLM/bigmodel while writing long tool call arguments)
+        # sometimes stops sending the trailing keep-alive/finish chunks after
+        # the arguments are complete. Discarding the message here would throw
+        # away perfectly valid work and push the caller into the retry /
+        # session-restart path, visibly "stopping" the turn right when the
+        # tool call was about to run.
+        if isinstance(pending_part, ToolCall) and _is_complete_tool_call(pending_part):
+            logger.warning(
+                "Stream failed with {error_type} after a complete tool call "
+                "'{name}'; salvaging the tool call instead of failing the step.",
+                error_type=type(exc).__name__,
+                name=pending_part.function.name,
+            )
             _message_append(message, pending_part)
-            if isinstance(pending_part, ToolCall) and on_tool_call:
+            if on_tool_call:
                 await callback(on_tool_call, pending_part)
-            pending_part = part
+            pending_part = None
+            if message.content or message.tool_calls:
+                return GenerateResult(
+                    id=stream.id,
+                    message=message,
+                    usage=stream.usage,
+                )
+        raise
 
     # end of message
     if pending_part is not None:
@@ -131,6 +162,28 @@ def _sanitize_tool_call_arguments(tool_call: ToolCall) -> None:
             sanitized=sanitized,
         )
         tool_call.function.arguments = sanitized
+
+
+def _is_complete_tool_call(tool_call: ToolCall) -> bool:
+    """Whether *tool_call* carries complete, strict-parseable JSON object arguments.
+
+    Used by the stream-failure salvage path: only a tool call whose arguments
+    form a valid JSON object is safe to execute when the stream died without a
+    terminal chunk. Truncated arguments stay on the normal error path (they are
+    unreliable to act on and are repaired to ``'{}'`` only for history reuse).
+    """
+    import orjson
+
+    arguments = tool_call.function.arguments
+    if not arguments:
+        # A tool call with no arguments at all is treated as complete (the
+        # same convention as ``validate_tool_call_arguments``).
+        return True
+    try:
+        parsed = orjson.loads(arguments)
+    except orjson.JSONDecodeError:
+        return False
+    return isinstance(parsed, dict)
 
 
 def _message_append(message: Message, part: StreamedMessagePart) -> None:

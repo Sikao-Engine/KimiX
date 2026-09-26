@@ -137,16 +137,38 @@ class _WireRecorder:
             await self._task
 
     async def _consume_loop(self, queue: Queue[WireMessage]) -> None:
-        await self._wire_file.open()
+        try:
+            await self._wire_file.open()
+        except Exception:
+            # Stay alive even when the file cannot be opened (e.g. a transient
+            # Windows file lock): keep consuming so a later message can still
+            # be recorded once the file becomes writable again, and so the
+            # queue never backlogs silently.
+            logger.exception("Failed to open wire file {file}:", file=self._wire_file.path)
         try:
             while True:
                 try:
                     msg = await queue.get()
-                    await self._record(msg)
                 except QueueShutDown:
                     break
+                try:
+                    await self._record(msg)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # A single unserializable/unpersistable message must not
+                    # kill the recorder task: that would silently disable the
+                    # wire.jsonl transcript (and the merged queue's only
+                    # consumer) for the rest of the session.
+                    logger.opt(exception=True).warning(
+                        "Failed to record wire message {type}; skipping it",
+                        type=type(msg).__name__,
+                    )
         finally:
-            await self._wire_file.close()
+            try:
+                await self._wire_file.close()
+            except Exception:
+                logger.exception("Failed to close wire file {file}:", file=self._wire_file.path)
 
     async def _record(self, msg: WireMessage) -> None:
         await self._wire_file.append_message(msg)
