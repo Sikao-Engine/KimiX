@@ -39,7 +39,7 @@ from kosong.chat_provider import (
     TokenUsage,
     convert_httpx_error,
 )
-from kosong.contrib.chat_provider.common import BaseStreamedMessage
+from kosong.contrib.chat_provider.common import BaseStreamedMessage, StallWatch
 from kosong.message import (
     ContentPart,
     TextPart,
@@ -362,16 +362,26 @@ class _TolerantSSEDecoder:
 
 async def _iter_sse_events(
     response: httpx.Response,
+    *,
+    watch: StallWatch | None = None,
 ) -> AsyncIterator[tuple[str | None, str]]:
     """Iterate SSE ``(event, data)`` pairs from an httpx streaming response.
 
     Handles events split across arbitrary network chunks and multiple events
     per chunk, mirroring the openai SDK's ``SSEDecoder`` behavior without ever
     raising on empty/whitespace ``data:`` payloads.
+
+    When *watch* is given, :meth:`StallWatch.touch` is called for every chunk
+    of raw bytes received from the wire — including SSE comments and empty
+    keep-alive events. This is the liveness signal that lets the stream-stall
+    watchdog distinguish a healthy-but-slow backend (keep-alives flowing while
+    the model thinks) from a genuinely dead connection.
     """
     decoder = _TolerantSSEDecoder()
     buffer = b""
     async for chunk in response.aiter_bytes():
+        if watch is not None:
+            watch.touch()
         for line in chunk.splitlines(keepends=True):
             buffer += line
             if buffer.endswith((b"\r\r", b"\n\n", b"\r\n\r\n")):
@@ -430,6 +440,8 @@ def _normalize_unknown_finish_reason(payload: Mapping[str, object]) -> Mapping[s
 
 async def _iter_tolerant_chunks(
     stream: AsyncStream[Any],
+    *,
+    watch: StallWatch | None = None,
 ) -> AsyncIterator[ChatCompletionChunk]:
     """Iterate an OpenAI ``AsyncStream``, skipping SSE events with invalid JSON.
 
@@ -443,10 +455,15 @@ async def _iter_tolerant_chunks(
     error-payload handling) over the underlying httpx response with a tolerant
     JSON step, so malformed keep-alive events are skipped instead of killing
     the stream.
+
+    The optional *watch* is the stream-liveness signal (see
+    :class:`~kosong.contrib.chat_provider.common.StallWatch`): it is fed with
+    every received byte chunk so the stall watchdog can tell a healthy
+    keep-alive stream from a dead connection.
     """
     response = stream.response
     try:
-        async for _event, data in _iter_sse_events(response):
+        async for _event, data in _iter_sse_events(response, watch=watch):
             if data.startswith("[DONE]"):
                 break
             try:
@@ -919,9 +936,14 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
         super().__init__()
         self._reasoning_key: str | None = reasoning_key
         if isinstance(response, ChatCompletion):
+            self._watch = None
             self._iter = self._convert_non_stream_response(response)
         else:
-            self._iter = self._convert_stream_response(response)
+            # Feed the stall watchdog with wire liveness: without this, a
+            # backend that only emits SSE keep-alives while the model thinks
+            # is killed as "stalled" even though the connection is healthy.
+            self._watch = StallWatch()
+            self._iter = self._convert_stream_response(response, watch=self._watch)
         self._usage: CompletionUsage | None = None
 
     # -- usage (OpenAI-standard CompletionUsage → TokenUsage) ------------------
@@ -998,6 +1020,8 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
     async def _convert_stream_response(
         self,
         response: AsyncIterator[ChatCompletionChunk],
+        *,
+        watch: StallWatch | None = None,
     ) -> AsyncIterator[StreamedMessagePart]:
         buffered_tool_calls: dict[int, BufferedChatCompletionToolCall] = {}
         try:
@@ -1006,10 +1030,16 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
                 # first SSE event with an empty/invalid ``data:`` payload (some
                 # backends emit such keep-alive events during long requests);
                 # iterate through the tolerant wrapper instead.
-                chunk_iter: AsyncIterator[ChatCompletionChunk] = _iter_tolerant_chunks(response)
+                chunk_iter: AsyncIterator[ChatCompletionChunk] = _iter_tolerant_chunks(
+                    response, watch=watch
+                )
             else:
                 chunk_iter = response
             async for chunk in chunk_iter:
+                if watch is not None:
+                    # Plain-iterator sources have no byte level to observe;
+                    # each delivered chunk is the only progress signal.
+                    watch.touch()
                 if chunk.id:
                     self._id = chunk.id
                 if usage := extract_usage_from_chunk(chunk):

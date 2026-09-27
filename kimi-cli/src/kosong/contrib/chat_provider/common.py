@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING, Literal, TypeVar
 
@@ -180,6 +181,8 @@ T = TypeVar("T")
 _STREAM_ITERATION_TIMEOUT_DEFAULT = 60.0
 _STREAM_ITERATION_TIMEOUT_ENV = "KOSONG_STREAM_ITERATION_TIMEOUT"
 
+_STREAM_IDLE_TIMEOUT_ENV = "KOSONG_STREAM_IDLE_TIMEOUT"
+
 
 def get_stream_iteration_timeout() -> float:
     """Return the per-chunk timeout for chat provider streaming iterators.
@@ -196,44 +199,200 @@ def get_stream_iteration_timeout() -> float:
         return _STREAM_ITERATION_TIMEOUT_DEFAULT
 
 
-class _StreamTimeoutIterator(AsyncIterator[T]):
-    """Wrap an async iterator so each ``__anext__`` has a per-item timeout.
+def get_stream_idle_timeout() -> float:
+    """Return the cap on time without a parseable chunk while data still flows.
 
-    This prevents a stalled network stream from blocking the caller forever
-    when the underlying SDK stream waits indefinitely for the next chunk.
+    Reads ``KOSONG_STREAM_IDLE_TIMEOUT`` from the environment. ``0`` (the
+    default) disables the cap, giving the stall watchdog pure liveness
+    semantics: a stream is only killed when the network is truly silent.
+    Unparseable or negative values are treated as disabled.
+    """
+    raw = os.environ.get(_STREAM_IDLE_TIMEOUT_ENV)
+    if raw is None:
+        return 0.0
+    try:
+        value = float(raw)
+    except ValueError:
+        return 0.0
+    return value if value > 0 else 0.0
+
+
+class StallWatch:
+    """Tracks when the network last delivered data for a streaming response.
+
+    The stream-stall watchdog treats a stream as healthy while *any* bytes
+    are arriving — SSE comment keep-alives, empty ``data:`` events and
+    partial decodes all count. The transport/decode loop calls :meth:`touch`
+    on every read so the watchdog can distinguish a dead connection from a
+    slow-but-alive backend (e.g. backends that hold the stream open with
+    keep-alive traffic during long reasoning windows).
     """
 
-    __slots__ = ("_iterator", "_timeout")
+    __slots__ = ("_last_data_ts", "touch_count")
 
-    def __init__(self, iterator: AsyncIterator[T], timeout: float) -> None:
+    def __init__(self) -> None:
+        self._last_data_ts: float = time.monotonic()
+        self.touch_count: int = 0
+
+    def touch(self) -> None:
+        """Record that data just arrived from the network."""
+        self._last_data_ts = time.monotonic()
+        self.touch_count += 1
+
+    @property
+    def got_data(self) -> bool:
+        """Whether any data has arrived since the watch was created."""
+        return self.touch_count > 0
+
+    def seconds_since_data(self) -> float:
+        """Seconds elapsed since the network last delivered data."""
+        return time.monotonic() - self._last_data_ts
+
+
+class _StreamTimeoutIterator(AsyncIterator[T]):
+    """Wrap an async iterator so a stalled stream surfaces as APITimeoutError.
+
+    Each next item is awaited with a per-attempt timeout. When a *watch* is
+    supplied, a per-attempt timeout does not immediately abort the stream: as
+    long as the network is still delivering data (SSE keep-alive comments,
+    empty ``data:`` events — anything at all), the wait is re-armed instead.
+    Only a wire that has been silent for at least *timeout* seconds — or a
+    stream without a watch — raises :class:`APITimeoutError`.
+
+    Re-arming must not cancel the wrapped iterator's in-flight ``__anext__``:
+    cancelling an async generator's ``__anext__`` terminates the generator for
+    good (the next ``__anext__`` would raise ``StopAsyncIteration``). The
+    in-flight call is therefore held in a task that survives timeouts (via
+    :func:`asyncio.shield`) and is cancelled only when the watchdog gives up
+    or the consuming task itself is cancelled.
+    """
+
+    __slots__ = (
+        "_idle_timeout",
+        "_iterator",
+        "_last_item_ts",
+        "_pending",
+        "_timeout",
+        "_watch",
+    )
+
+    def __init__(
+        self,
+        iterator: AsyncIterator[T],
+        timeout: float,
+        *,
+        watch: StallWatch | None = None,
+        idle_timeout: float = 0.0,
+    ) -> None:
         self._iterator = iterator
         self._timeout = timeout
+        self._watch = watch
+        self._idle_timeout = idle_timeout if idle_timeout and idle_timeout > 0 else 0.0
+        self._pending: asyncio.Future[T] | None = None
+        self._last_item_ts: float = time.monotonic()
 
     def __aiter__(self) -> AsyncIterator[T]:
         return self
 
     async def __anext__(self) -> T:
+        while True:
+            if self._pending is None:
+                self._pending = asyncio.ensure_future(self._iterator.__anext__())
+            try:
+                item = await asyncio.wait_for(
+                    asyncio.shield(self._pending), timeout=self._timeout
+                )
+            except TimeoutError:
+                now = time.monotonic()
+                if (
+                    self._watch is not None
+                    and self._watch.seconds_since_data() < self._timeout
+                ):
+                    # The wire is alive (keep-alives arriving): the lag is in
+                    # producing the next *complete* chunk, not in the network.
+                    # Re-arm instead of killing a healthy stream.
+                    if (
+                        self._idle_timeout
+                        and now - self._last_item_ts >= self._idle_timeout
+                    ):
+                        await self._give_up()
+                        raise APITimeoutError(
+                            "Stream idle: no parseable data for "
+                            f"{now - self._last_item_ts:.3g}s "
+                            "(connection still alive)"
+                        ) from None
+                    continue
+                await self._give_up()
+                silence = (
+                    self._watch.seconds_since_data() if self._watch else self._timeout
+                )
+                raise APITimeoutError(
+                    f"Stream stalled: no data received for {silence:.3g}s"
+                ) from None
+            except asyncio.CancelledError:
+                # This task was cancelled from outside (user interrupt,
+                # shutdown): unwind the wrapped generator exactly like the
+                # pre-watch implementation did on timeout.
+                if self._pending is not None and not self._pending.done():
+                    await self._give_up()
+                else:
+                    self._pending = None
+                raise
+            except BaseException:
+                # The wrapped iterator itself failed (or is exhausted); its
+                # exception/result was just consumed via the propagation.
+                self._pending = None
+                raise
+            self._pending = None
+            self._last_item_ts = time.monotonic()
+            return item
+
+    async def _give_up(self) -> None:
+        """Cancel the in-flight ``__anext__`` and wait for the wrapped
+        generator to unwind, so its cleanup (e.g. closing the HTTP response)
+        completes before the failure is surfaced to the caller — matching the
+        pre-watch ``asyncio.wait_for`` behavior."""
+        pending, self._pending = self._pending, None
+        if pending is None or pending.done():
+            return
+        pending.cancel()
         try:
-            return await asyncio.wait_for(self._iterator.__anext__(), timeout=self._timeout)
-        except TimeoutError as exc:
-            raise APITimeoutError(
-                f"Stream stalled: no data received for {self._timeout:.3g}s"
-            ) from exc
+            await pending
+        except BaseException:
+            # CancelledError from the cancelled task, or an exception raised
+            # by the generator's cleanup — both are expected here.
+            pass
 
 
 def with_stream_timeout[T](
-    iterator: AsyncIterator[T], timeout: float | None = None
+    iterator: AsyncIterator[T],
+    timeout: float | None = None,
+    *,
+    watch: StallWatch | None = None,
+    idle_timeout: float | None = None,
 ) -> AsyncIterator[T]:
-    """Wrap *iterator* with a per-item timeout.
+    """Wrap *iterator* with a stall watchdog.
 
     Args:
         iterator: The async iterator to wrap.
-        timeout: Per-item timeout in seconds. If ``None``, uses
+        timeout: Stall timeout in seconds. If ``None``, uses
             :func:`get_stream_iteration_timeout`.
+        watch: Optional liveness signal updated by the transport layer on
+            every received byte. When provided, a timeout only aborts the
+            stream if the network has also been silent for *timeout* seconds;
+            healthy-but-slow streams (keep-alive traffic without complete
+            chunks) are re-armed instead of killed.
+        idle_timeout: Optional cap on the time without a parseable item even
+            while the connection is alive. ``0``/``None`` disables the cap
+            (see :func:`get_stream_idle_timeout`).
     """
     if timeout is None:
         timeout = get_stream_iteration_timeout()
-    return _StreamTimeoutIterator(iterator, timeout=timeout)
+    if idle_timeout is None:
+        idle_timeout = get_stream_idle_timeout()
+    return _StreamTimeoutIterator(
+        iterator, timeout=timeout, watch=watch, idle_timeout=idle_timeout
+    )
 
 
 class BaseStreamedMessage:
@@ -242,20 +401,27 @@ class BaseStreamedMessage:
     Provides the common ``__aiter__`` / ``__anext__`` / ``id`` boilerplate.
     Subclasses must set ``self._iter`` in ``__init__``.
 
-    The underlying iterator is wrapped with a per-item timeout so that a stalled
-    network stream (e.g. the remote server stops sending SSE chunks) is surfaced
-    as :class:`~kosong.chat_provider.APITimeoutError` instead of hanging the
-    caller forever.
+    The underlying iterator is wrapped with a stall watchdog so that a stalled
+    network stream (e.g. the remote server stops sending SSE chunks) is
+    surfaced as :class:`~kosong.chat_provider.APITimeoutError` instead of
+    hanging the caller forever. Subclasses may set ``self._watch`` to a
+    :class:`StallWatch` fed by their transport layer; when present, the
+    watchdog re-arms while any data (keep-alives included) arrives and only
+    kills the stream when the wire is truly silent.
     """
 
     _iter: AsyncIterator[StreamedMessagePart]
     _id: str | None = None
     _timeout_iter: AsyncIterator[StreamedMessagePart] | None = None
+    _watch: StallWatch | None = None
 
     def __aiter__(self) -> AsyncIterator[StreamedMessagePart]:
         if self._timeout_iter is None:
             self._timeout_iter = with_stream_timeout(
-                self._iter, timeout=get_stream_iteration_timeout()
+                self._iter,
+                timeout=get_stream_iteration_timeout(),
+                watch=self._watch,
+                idle_timeout=get_stream_idle_timeout(),
             )
         return self._timeout_iter
 
