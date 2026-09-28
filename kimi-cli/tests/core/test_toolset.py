@@ -2053,3 +2053,167 @@ def test_has_reasoning_parts_accepts_generic_content_parts():
     """The helper is typed on ContentPart and accepts any part subclass at runtime."""
     parts: list[ContentPart] = [ThinkPart(think="reason")]
     assert _has_reasoning_parts(parts) is True
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Argument-coercion error handling inside KimiToolset.handle()
+# (kimi_cli/soul/toolset.py, the exception handler around line 1669)
+#
+# Regression tests for two defects in that branch:
+#   A. `ToolValidateError` was referenced but never imported, so the coercion
+#      branch raised `NameError` *inside* the tool task instead of returning a
+#      ToolValidateError.  The `NameError` escaped `handle()`'s task and was
+#      re-raised by `StepResult.tool_results()` (only CancelledError is
+#      converted there), which aborted the whole agent turn.
+#   B. A `TypeError`/`ValueError` whose message does *not* look like an argument
+#      problem hit a bare `raise`.  Python does not re-dispatch an exception
+#      raised inside a handler to the sibling `except Exception` clause, so such
+#      a tool error also escaped as a failed task instead of becoming a
+#      `ToolRuntimeError` (the contract `kosong.tooling.Toolset` documents:
+#      report failures as values, never as exceptions).
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class _CoercionParams(BaseModel):
+    value: str = ""
+
+
+class _DictCoercionTool(CallableTool2[_CoercionParams]):
+    """Raises the real-world ValueError you get from a bare ``dict(...)`` call.
+
+    This is the exact failure the coercion branch was written to catch: the LLM
+    passes a plain string where the tool expects key/value pairs, so the tool's
+    ``dict(params.value)`` fails with "dictionary update sequence element #0 has
+    length 1; 2 is required".
+    """
+
+    name: str = "DictCoercion"
+    description: str = "Tool that coerces its argument with dict()"
+    params: type[_CoercionParams] = _CoercionParams
+
+    @override
+    async def __call__(self, params: _CoercionParams) -> ToolReturnValue:
+        return ToolOk(output=str(dict(params.value)))
+
+
+class _ArityCoercionTool(CallableTool2[_CoercionParams]):
+    """Raises a TypeError that mentions ``argument`` (wrong-arity failure)."""
+
+    name: str = "ArityCoercion"
+    description: str = "Tool that fails with an argument-count TypeError"
+    params: type[_CoercionParams] = _CoercionParams
+
+    @override
+    async def __call__(self, params: _CoercionParams) -> ToolReturnValue:
+        raise TypeError("_helper() takes 1 positional argument but 2 were given")
+
+
+class _UnrelatedValueErrorTool(CallableTool2[_CoercionParams]):
+    """Raises a ValueError that has nothing to do with tool arguments."""
+
+    name: str = "UnrelatedValueError"
+    description: str = "Tool that fails with an unrelated ValueError"
+    params: type[_CoercionParams] = _CoercionParams
+
+    @override
+    async def __call__(self, params: _CoercionParams) -> ToolReturnValue:
+        raise ValueError("invalid literal for int() with base 10: 'x'")
+
+
+def _make_coercion_toolset(tool: CallableTool2[_CoercionParams]) -> KimiToolset:
+    ts = KimiToolset()
+    ts.add(tool)  # type: ignore[arg-type]
+    return ts
+
+
+def _coercion_call(tool_name: str, value: str) -> ToolCall:
+    return ToolCall(
+        id=f"tc-{tool_name}",
+        function=ToolCall.FunctionBody(name=tool_name, arguments=_call_args(value)),
+    )
+
+
+async def test_handle_dict_coercion_error_returns_tool_validate_error():
+    """``dict("ab")`` inside a tool must come back as a ToolValidateError.
+
+    Before the fix this raised ``NameError: name 'ToolValidateError' is not
+    defined`` from the task returned by ``handle()``.
+    """
+    from kosong.tooling.error import ToolValidateError
+
+    ts = _make_coercion_toolset(_DictCoercionTool())
+    result = ts.handle(_coercion_call("DictCoercion", "ab"))
+    assert isinstance(result, asyncio.Task)
+
+    tr = await result  # must not raise NameError
+    assert tr.tool_call_id == "tc-DictCoercion"
+    assert isinstance(tr.return_value, ToolValidateError), (
+        f"expected ToolValidateError, got {type(tr.return_value).__name__}: "
+        f"{tr.return_value.message}"
+    )
+    assert "Error validating JSON arguments" in tr.return_value.message
+    assert "Invalid arguments for tool `DictCoercion`" in tr.return_value.message
+    # The real cause stays visible to the model so it can reformat its call.
+    assert "dictionary update sequence" in tr.return_value.message
+    assert tr.return_value.is_error
+
+
+async def test_handle_argument_type_error_returns_tool_validate_error():
+    """A TypeError whose message mentions `argument` is also an argument error."""
+    from kosong.tooling.error import ToolValidateError
+
+    ts = _make_coercion_toolset(_ArityCoercionTool())
+    result = ts.handle(_coercion_call("ArityCoercion", "x"))
+    assert isinstance(result, asyncio.Task)
+
+    tr = await result
+    assert isinstance(tr.return_value, ToolValidateError), (
+        f"expected ToolValidateError, got {type(tr.return_value).__name__}: "
+        f"{tr.return_value.message}"
+    )
+    assert "positional argument" in tr.return_value.message
+
+
+async def test_handle_unrelated_value_error_returns_tool_runtime_error():
+    """A non-argument ValueError must degrade to ToolRuntimeError, not escape.
+
+    The whole agent turn must survive a tool that raises an ordinary ValueError:
+    `handle()`'s task failing would re-raise from
+    `StepResult.tool_results()` and interrupt the step.
+    """
+    from kosong.tooling.error import ToolRuntimeError
+
+    ts = _make_coercion_toolset(_UnrelatedValueErrorTool())
+    result = ts.handle(_coercion_call("UnrelatedValueError", "x"))
+    assert isinstance(result, asyncio.Task)
+
+    tr = await result
+    assert isinstance(tr.return_value, ToolRuntimeError), (
+        f"expected ToolRuntimeError, got {type(tr.return_value).__name__}: "
+        f"{tr.return_value.message}"
+    )
+    assert "invalid literal for int()" in tr.return_value.message
+    assert tr.return_value.is_error
+
+
+async def test_handle_coercion_error_does_not_fail_the_task():
+    """The tool task must settle with a value, never with an exception.
+
+    Pins the Toolset contract that `StepResult.tool_results()` relies on:
+    every tool call resolves to a `ToolResult`, so one broken call cannot abort
+    the turn.
+    """
+    ts = KimiToolset()
+    ts.add(_DictCoercionTool())  # type: ignore[arg-type]
+    ts.add(_ArityCoercionTool())  # type: ignore[arg-type]
+    ts.add(_UnrelatedValueErrorTool())  # type: ignore[arg-type]
+
+    tasks = [
+        ts.handle(_coercion_call("DictCoercion", "ab")),
+        ts.handle(_coercion_call("ArityCoercion", "x")),
+        ts.handle(_coercion_call("UnrelatedValueError", "x")),
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    assert [type(r).__name__ for r in results] == ["ToolResult"] * 3, (
+        f"tool tasks must return ToolResult, got {results}"
+    )

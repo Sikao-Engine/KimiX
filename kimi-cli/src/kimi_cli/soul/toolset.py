@@ -34,6 +34,7 @@ from kosong.tooling.error import (
     ToolNotFoundError,
     ToolParseError,
     ToolRuntimeError,
+    ToolValidateError,
 )
 from kosong.tooling.mcp import convert_mcp_content
 from kosong.utils.typing import JsonType
@@ -1665,8 +1666,24 @@ class KimiToolset:
                                 brief="Output too large",
                                 output=_truncate_content_parts(parts or [], max_bytes),
                             )
-                except (TypeError, ValueError) as e:
-                    if "dictionary update sequence" in str(e) or "argument" in str(e).lower():
+                except Exception as e:
+                    # Argument-coercion failures are reported as a *value*
+                    # (ToolValidateError) so the model can re-format its call.
+                    #
+                    # This branch must stay inside the generic handler: Python does
+                    # not re-dispatch an exception raised inside an `except` clause
+                    # to its sibling clauses, so the previous
+                    # `except (TypeError, ValueError) ... raise` shape let both
+                    # argument errors and unrelated TypeErrors/ValueErrors escape
+                    # as a failed task from handle(). StepResult.tool_results()
+                    # only converts CancelledError, so the escaped exception was
+                    # re-raised in the agent step and aborted the whole turn.
+                    # (Regression tests: tests/core/test_toolset.py,
+                    # test_handle_*_returns_tool_*_error.)
+                    if isinstance(e, (TypeError, ValueError)) and (
+                        "dictionary update sequence" in str(e)
+                        or "argument" in str(e).lower()
+                    ):
                         logger.exception(
                             "Tool argument coercion failed: {tool_name} (call_id={call_id})",
                             tool_name=tool_name,
@@ -1678,8 +1695,6 @@ class KimiToolset:
                                 f"Invalid arguments for tool `{tool_name}`: {e}"
                             ),
                         )
-                    raise
-                except Exception as e:
                     tool_elapsed = time.monotonic() - t0
                     logger.exception(
                         "Tool execution failed: {tool_name} (call_id={call_id})",

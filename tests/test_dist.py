@@ -14,15 +14,19 @@ import dist  # noqa: E402
 
 class TestNamingAndUrls:
     def test_native_archive_names(self):
-        assert dist.native_archive_name("win") == "kimix_base-windows-x64-1.2.1.zip"
-        assert dist.native_archive_name("ubuntu") == "kimix_base-linux-x64-1.2.1.zip"
+        # The version comes from the KIMIX_NATIVE_VERSION marker (single source
+        # of truth), so the expectation survives a native runtime bump.
+        v = dist.NATIVE_VERSION
+        assert dist.native_archive_name("win") == f"kimix_base-windows-x64-{v}.zip"
+        assert dist.native_archive_name("ubuntu") == f"kimix_base-linux-x64-{v}.zip"
 
     def test_native_archive_urls(self):
+        v = dist.NATIVE_VERSION
         assert dist.native_archive_url("win").endswith(
-            "/Release/kimix_base-windows-x64-1.2.1.zip"
+            f"/Release/kimix_base-windows-x64-{v}.zip"
         )
         assert dist.native_archive_url("ubuntu").endswith(
-            "/Release/kimix_base-linux-x64-1.2.1.zip"
+            f"/Release/kimix_base-linux-x64-{v}.zip"
         )
 
     def test_rg_urls(self):
