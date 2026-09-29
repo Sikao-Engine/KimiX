@@ -318,6 +318,23 @@ def _looks_like_readfile_text(text: str) -> bool:
     return substantial > 0 and numbered == substantial
 
 
+def _sanitize_tool_output_text(text: str) -> str:
+    """Sanitize tool-output text without eating the first line's padding.
+
+    ``sanitize_for_tokenizer`` strips leading/trailing whitespace of the
+    whole blob.  For column-aligned output (e.g. ReadFile's
+    ``{line_no:6d}\t`` rows, ``" 11\t…\n 12\t…"``) that removes the padding of
+    the FIRST row only — continuation rows keep theirs — so a ranged read
+    renders misaligned.  Re-attach the original leading horizontal whitespace
+    after sanitizing; trailing whitespace stays stripped.
+    """
+    lead = text[: len(text) - len(text.lstrip(" \t"))]
+    sanitized = sanitize_for_tokenizer(text)
+    if lead and sanitized and not sanitized.startswith((" ", "\t")):
+        sanitized = lead + sanitized
+    return sanitized
+
+
 def _micro_compress_parts(parts: list[ContentPart]) -> list[ContentPart]:
     """Belt-and-suspenders micro-compression for tools that do not integrate
     Layer 0 directly (MCP tools, third-party tools; plan.md §8.2).
@@ -1574,7 +1591,7 @@ class KimiToolset:
 
                     ret = await tool.call(repaired_arguments)
                     if isinstance(ret.output, str):
-                        ret.output = sanitize_for_tokenizer(ret.output)
+                        ret.output = _sanitize_tool_output_text(ret.output)
                     elif isinstance(ret.output, list):
                         sanitized_parts: list[ContentPart] = []
                         for part in ret.output:

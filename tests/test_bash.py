@@ -5709,6 +5709,49 @@ class TestBashOriginalSavedSuffix:
         assert isinstance(result, ToolOk)
         assert "[original saved to" not in result.message
 
+    async def test_max_lines_folding_sets_output_truncated(
+        self, bash_instance: Bash
+    ) -> None:
+        """max_lines folding drops lines, so the structured block must report
+        output_truncated: true (a consumer trusting the flag would otherwise
+        assume the full output was returned)."""
+        long_output = "\n".join(f"line_{i}" for i in range(500))
+        process_task = self._completed_process_task(output=long_output)
+        with patch(
+            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+        ):
+            result = await bash_instance(BashParams(cmd="echo hi", max_lines=10))
+        assert isinstance(result, ToolOk)
+        assert "output_truncated: true" in result.output
+        assert "lines omitted" in result.output
+
+    async def test_output_not_truncated_when_filter_unchanged(
+        self, bash_instance: Bash
+    ) -> None:
+        """Short, repeat-free output passes the filter verbatim: the block
+        must keep reporting output_truncated: false."""
+        process_task = self._completed_process_task(output="plain output")
+        with patch(
+            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+        ):
+            result = await bash_instance(BashParams(cmd="echo hi"))
+        assert isinstance(result, ToolOk)
+        assert "output_truncated: false" in result.output
+
+    async def test_dedup_sets_output_truncated(
+        self, bash_instance: Bash
+    ) -> None:
+        """Dedup collapses repeated lines, which also drops content: the
+        block must report output_truncated: true."""
+        repeated = "ERROR: timeout\n" * 10
+        process_task = self._completed_process_task(output=repeated)
+        with patch(
+            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+        ):
+            result = await bash_instance(BashParams(cmd="echo hi"))
+        assert isinstance(result, ToolOk)
+        assert "output_truncated: true" in result.output
+
     async def test_message_includes_original_path_after_summarize(
         self, bash_instance: Bash
     ) -> None:

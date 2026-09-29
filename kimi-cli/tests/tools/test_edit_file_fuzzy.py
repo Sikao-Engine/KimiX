@@ -285,6 +285,36 @@ def test_apply_fuzzy_fallback_chain():
     assert suggestion is None
 
 
+def test_apply_fuzzy_fallback_noop_match_not_counted():
+    """A fuzzy match whose text already equals `new` is a no-op: count 0, content unchanged.
+
+    Regression: the fuzzy matcher can re-match text that already reads as the
+    desired replacement; that silent no-op must not be counted as a real
+    replacement.
+    """
+    tool = object.__new__(EditFile)
+    content = "hello world\nnext line"
+    # "helo world" fuzzy-matches the existing "hello world" line, but the
+    # replacement text is identical to what is already there.
+    result, count, suggestion = _call_fuzzy_fallback(
+        tool, content, "helo world", "hello world"
+    )
+    assert count == 0
+    assert result == content
+
+
+def test_apply_fuzzy_fallback_legit_change_still_counts():
+    """A fuzzy match that genuinely changes the content still counts as 1."""
+    tool = object.__new__(EditFile)
+    result, count, suggestion = _call_fuzzy_fallback(
+        tool, "helo world\nnext line", "hello world", "hi universe"
+    )
+    assert count == 1
+    assert result == "hi universe\nnext line"
+    assert suggestion is not None
+    assert "fuzzy-matched" in suggestion
+
+
 # ---------------------------------------------------------------------------
 # _find_similar edge cases
 # ---------------------------------------------------------------------------

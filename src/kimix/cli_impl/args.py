@@ -42,7 +42,14 @@ def _load_project_mcp_config() -> dict[str, Any]:
 
 
 def _extract_config_from_remaining(args: argparse.Namespace, remaining: list[str]) -> None:
-    """Extract ``--config <value>`` or ``--config=<value>`` from remaining args."""
+    """Extract the config path from remaining (unparsed) args.
+
+    Supported forms:
+      - ``--config <value>`` / ``--config=<value>``  (canonical)
+      - ``--<name>.json``                            (shorthand: any leftover
+        ``--*.json`` token is treated as a config file path, e.g.
+        ``kimix --qwen_flash.json``)
+    """
     for i, token in enumerate(remaining):
         if token.startswith("--config="):
             args.config = token.split("=", 1)[1]
@@ -50,6 +57,17 @@ def _extract_config_from_remaining(args: argparse.Namespace, remaining: list[str
         if token == "--config" and i + 1 < len(remaining):
             args.config = remaining[i + 1]
             return
+    # Shorthand: treat a leftover `--<file>.json` token as the config path.
+    # Only accept it when the file actually exists, so genuinely unknown
+    # options are not silently misinterpreted.
+    for token in remaining:
+        if token.startswith("--") and token.lower().endswith(".json"):
+            candidate = Path(token[2:])
+            if not candidate.is_absolute():
+                candidate = Path.cwd() / candidate
+            if candidate.is_file():
+                args.config = str(candidate)
+                return
 
 
 def _maybe_run_default_config_init(args: argparse.Namespace) -> None:

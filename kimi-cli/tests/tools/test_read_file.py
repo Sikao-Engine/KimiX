@@ -111,6 +111,39 @@ async def test_read_with_line_offset_and_n_lines(read_file_tool: ReadFile, sampl
     assert result.message.endswith(f" Path: {display_path}")
 
 
+async def test_read_ranged_line_number_column_alignment(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """Every row of a ranged read keeps the same line-number column width.
+
+    The runtime sanitizes tool output with ``sanitize_for_tokenizer`` (which
+    strips edge whitespace of the whole blob); without the preservation in
+    ``_sanitize_tool_output_text`` the first row loses its padding while
+    continuation rows keep theirs, misaligning the column.
+    """
+    from kimi_cli.safety_check import sanitize_for_tokenizer
+    from kimi_cli.soul.toolset import _sanitize_tool_output_text
+
+    f = temp_work_dir / "align.txt"
+    await f.write_text("\n".join(f"line {i}" for i in range(1, 21)))
+    result = await read_file_tool(Params(path=str(f), offset=11, limit=3))
+    assert not result.is_error
+
+    # Sanity check: plain sanitization is what used to break alignment.
+    stripped = sanitize_for_tokenizer(result.output)
+    widths = {len(r) - len(r.lstrip(" ")) for r in stripped.splitlines()}
+    assert len(widths) > 1  # first row lost its padding
+
+    # The runtime path must keep every row's number column aligned.
+    sanitized = _sanitize_tool_output_text(result.output)
+    rows = sanitized.splitlines()
+    assert len(rows) == 3
+    widths = {len(r) - len(r.lstrip(" ")) for r in rows}
+    # "{line_no:6d}" right-aligned column: lines 11-13 are 2-digit -> 4 spaces.
+    assert widths == {4}
+    assert rows[0].startswith(" ")
+
+
 async def test_read_nonexistent_file(read_file_tool: ReadFile, temp_work_dir: KaosPath):
     """Test reading a non-existent file."""
     nonexistent_file = temp_work_dir / "nonexistent.txt"

@@ -645,3 +645,109 @@ class TestBackgroundFormatter:
         assert processed == "[summary]"
         assert "[original saved to .kimix_cache/tmp_" in message
         assert "Script: `script.py`" in message
+
+
+# ---------------------------------------------------------------------------
+# output_truncated must be reported honestly when the token filter drops
+# content (max_lines folding / dedup), not only on the 64KB summarize path.
+# ---------------------------------------------------------------------------
+class TestOutputTruncatedFlag:
+    @pytest.mark.asyncio
+    async def test_max_lines_folding_sets_output_truncated(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        long_output = "\n".join(f"line_{i}" for i in range(500))
+        _fake_process_task(monkeypatch, output=long_output)
+        result = await tool(PythonParams(code="print('x')", max_lines=10))
+        assert isinstance(result, ToolOk)
+        assert "output_truncated: true" in result.output
+        assert "lines omitted" in result.output
+
+    @pytest.mark.asyncio
+    async def test_dedup_sets_output_truncated(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repeated = "ERROR: timeout\n" * 10
+        _fake_process_task(monkeypatch, output=repeated)
+        result = await tool(PythonParams(code="print('x')"))
+        assert isinstance(result, ToolOk)
+        assert "output_truncated: true" in result.output
+
+    @pytest.mark.asyncio
+    async def test_output_not_truncated_when_filter_unchanged(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _fake_process_task(monkeypatch, output="plain output")
+        result = await tool(PythonParams(code="print('x')"))
+        assert isinstance(result, ToolOk)
+        assert "output_truncated: false" in result.output
+
+
+# ---------------------------------------------------------------------------
+# run_in_background=True must return immediately with a task_id (same
+# semantics as mode="send"), not block until the script finishes.
+# ---------------------------------------------------------------------------
+class TestRunInBackground:
+    def test_params_expose_run_in_background(self) -> None:
+        props = PythonParams.model_json_schema()["properties"]
+        assert "run_in_background" in props
+        assert PythonParams(code="print(1)").run_in_background is False
+        assert PythonParams(code="print(1)", run_in_background=True).run_in_background is True
+
+    @pytest.mark.asyncio
+    async def test_run_in_background_returns_task_id_without_waiting(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mock_cls = _fake_process_task(monkeypatch)
+        result = await tool(PythonParams(code="print('hello')", run_in_background=True))
+        assert isinstance(result, ToolOk)
+        assert "fake-task-id" in result.output
+        assert "Running in background" in result.output
+        # Non-blocking: the foreground wait must never run.
+        inst = mock_cls.return_value
+        inst.wait_with_monitor.assert_not_awaited()
+        inst.thread_is_alive.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_run_in_background_wins_over_default_execute_mode(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mock_cls = _fake_process_task(monkeypatch)
+        result = await tool(
+            PythonParams(code="print('hello')", mode="execute", run_in_background=True)
+        )
+        assert isinstance(result, ToolOk)
+        assert "fake-task-id" in result.output
+        mock_cls.return_value.wait_with_monitor.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_run_in_background_real_process_returns_promptly_and_pollable(
+        self, tool: python
+    ) -> None:
+        """End-to-end: a script that sleeps longer than the call itself must
+        not block the tool call; the result is retrievable via job_output."""
+        import re
+        import time
+
+        from kimix.tools.background import TaskOutput, TaskOutputParams
+
+        started_at = time.monotonic()
+        result = await tool(
+            PythonParams(
+                code="import time; time.sleep(2.0); print('bg-marker-123')",
+                run_in_background=True,
+            )
+        )
+        elapsed = time.monotonic() - started_at
+        assert isinstance(result, ToolOk)
+        # The call returns immediately — far less than the 2s script runtime.
+        assert elapsed < 1.5, f"run_in_background blocked for {elapsed:.2f}s"
+        match = re.search(r"task_id: `([^`]+)`", result.output)
+        assert match is not None, f"no task_id in: {result.output}"
+        task_id = match.group(1)
+
+        to = TaskOutput(session=tool._session)
+        done = await to(TaskOutputParams(job_id=task_id, wait=True, timeout=30))
+        assert not done.is_error
+        assert "bg-marker-123" in done.output
+

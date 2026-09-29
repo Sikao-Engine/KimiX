@@ -211,7 +211,7 @@ def test_truncate_no_errors_unchanged():
 @pytest.mark.asyncio
 async def test_token_filter_no_params_passthrough():
     out = "line1\nline2\nline3"
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=False, max_lines=None
     )
     assert result == out
@@ -221,7 +221,7 @@ async def test_token_filter_no_params_passthrough():
 @pytest.mark.asyncio
 async def test_token_filter_dedup_only():
     out = "ERROR\n" * 10
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None
     )
     assert "ERROR  (10 repeats)" in result
@@ -231,7 +231,7 @@ async def test_token_filter_dedup_only():
 @pytest.mark.asyncio
 async def test_token_filter_dedup_disabled():
     out = "ERROR\n" * 10
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=False, max_lines=None
     )
     assert result == out  # unchanged
@@ -239,10 +239,47 @@ async def test_token_filter_dedup_disabled():
 
 
 @pytest.mark.asyncio
+async def test_token_filter_reports_truncated_flag():
+    """The third return value must be True exactly when the pipeline drops
+    content (dedup collapse or max_lines folding), False when the output
+    passes through unchanged."""
+    out = "ERROR\n" * 10
+    result, orig_path, truncated = await _token_filter_output(
+        out, token_kill=True, max_lines=None
+    )
+    assert "ERROR  (10 repeats)" in result
+    assert orig_path is not None
+    assert truncated is True
+
+    lines = "\n".join(f"L{i}" for i in range(500))
+    result, orig_path, truncated = await _token_filter_output(
+        lines, token_kill=False, max_lines=50
+    )
+    assert "lines omitted" in result
+    assert orig_path is not None
+    assert truncated is True
+
+    plain = "line1\nline2\nline3"
+    result, orig_path, truncated = await _token_filter_output(
+        plain, token_kill=True, max_lines=None
+    )
+    assert result == plain
+    assert orig_path is None
+    assert truncated is False
+
+    result, orig_path, truncated = await _token_filter_output(
+        plain, token_kill=False, max_lines=None
+    )
+    assert result == plain
+    assert orig_path is None
+    assert truncated is False
+
+
+@pytest.mark.asyncio
 async def test_token_filter_truncate_only():
     lines = [f"L{i}" for i in range(500)]
     out = "\n".join(lines)
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=False, max_lines=50
     )
     assert "lines omitted" in result
@@ -261,7 +298,7 @@ async def test_token_filter_all_stages():
         + ["ERROR: retry"] * 5
     )
     out = "\n".join(lines)
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=3
     )
     assert "ERROR: timeout  (100 repeats)" in result  # first deduped line
@@ -273,7 +310,7 @@ async def test_token_filter_all_stages():
 @pytest.mark.asyncio
 async def test_token_filter_saves_original_content_when_changed():
     out = "ERROR\n" * 10
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None
     )
     assert "ERROR  (10 repeats)" in result
@@ -287,7 +324,7 @@ async def test_token_filter_saves_original_content_when_changed():
 
 @pytest.mark.asyncio
 async def test_token_filter_empty_output_no_temp_file():
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         "", token_kill=True, max_lines=10
     )
     assert result == ""
@@ -299,7 +336,7 @@ async def test_token_filter_empty_output_no_temp_file():
 async def test_token_filter_ansi_stripped_when_dedup_enabled():
     """ANSI escape codes are stripped via rich when dedup=True (merged behavior)."""
     out = "\x1B[31mHello\x1B[0m"
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None
     )
     assert result == "Hello"
@@ -310,7 +347,7 @@ async def test_token_filter_ansi_stripped_when_dedup_enabled():
 async def test_token_filter_ansi_left_intact_when_dedup_disabled():
     """ANSI codes are left intact when dedup=False (ANSI stripping is merged with dedup)."""
     out = "\x1B[31mHello\x1B[0m"
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=False, max_lines=None
     )
     assert result == out  # unchanged
@@ -321,7 +358,7 @@ async def test_token_filter_ansi_left_intact_when_dedup_disabled():
 async def test_token_filter_ansi_no_ansi_unchanged():
     """token_kill=True with no ANSI codes leaves plain text unchanged."""
     out = "plain text without any escape codes\nsecond line"
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None
     )
     assert result == out
@@ -333,7 +370,7 @@ async def test_token_filter_ansi_no_ansi_unchanged():
 async def test_token_filter_dedup_below_threshold_no_temp_file():
     """Dedup that does not collapse anything leaves output unchanged -> no temp file."""
     out = "a\nb\nc"
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None
     )
     assert result == out
@@ -344,7 +381,7 @@ async def test_token_filter_dedup_below_threshold_no_temp_file():
 async def test_token_filter_truncate_short_no_temp_file():
     """max_lines larger than line count leaves output unchanged -> no temp file."""
     out = "line1\nline2\nline3"
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=False, max_lines=100
     )
     assert result == out
@@ -355,7 +392,7 @@ async def test_token_filter_truncate_short_no_temp_file():
 async def test_token_filter_ansi_stripped_before_dedup():
     """ANSI stripping runs BEFORE dedup, so same text with different ANSI wrappers collapses."""
     out = "\x1B[31mERROR\x1B[0m\n\x1B[32mERROR\x1B[0m\n\x1B[31mERROR\x1B[0m\n\x1B[32mERROR\x1B[0m"
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None
     )
     # After ANSI stripping, all 4 lines become "ERROR" -> dedup collapses to "ERROR  (4 repeats)"
@@ -604,7 +641,7 @@ def test_rewrite_backtick_substitution_unchanged(rtk_available):
 async def test_rewrite_rtk_rewritten_skips_dedup():
     """When rtk_rewritten=True, token_kill=True skips the local dedup pipeline."""
     out = "ERROR\n" * 10
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None, rtk_rewritten=True
     )
     assert result == out  # no dedup
@@ -616,7 +653,7 @@ async def test_rewrite_rtk_rewritten_skips_dedup():
 async def test_token_filter_rtk_rewritten_with_max_lines_still_truncates():
     lines = [f"L{i}" for i in range(500)]
     out = "\n".join(lines)
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=50, rtk_rewritten=True
     )
     assert "lines omitted" in result
@@ -627,7 +664,7 @@ async def test_token_filter_rtk_rewritten_with_max_lines_still_truncates():
 @pytest.mark.asyncio
 async def test_token_filter_multiline_dedup():
     out = "ERROR\n  details\n" * 5
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None, max_block_lines=2
     )
     assert "ERROR\n  details  (5 repeats)" in result
@@ -637,7 +674,7 @@ async def test_token_filter_multiline_dedup():
 @pytest.mark.asyncio
 async def test_token_filter_default_still_single_line():
     out = "ERROR\n  details\n" * 5
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None
     )
     # With default max_block_lines=1, only individual lines collapse.
@@ -659,7 +696,7 @@ async def test_token_filter_keeps_distinct_error_lines_verbatim():
         f"error: file.cpp({n},5): error: no matching function for call to 'foo'"
         for n in range(12, 16)
     )
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None
     )
     assert "near-dup" not in result
@@ -679,7 +716,7 @@ async def test_token_filter_preserve_errors_opt_out_allows_near_dup():
         f"error: file.cpp({n},5): error: no matching function for call to 'foo'"
         for n in range(12, 16)
     )
-    result, _ = await _token_filter_output(
+    result, _orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=None, preserve_errors=False
     )
     assert "near-dup" in result
@@ -693,7 +730,7 @@ async def test_token_filter_disables_prefix_fold_for_errors():
     lines = [f"2026-01-01 00:00:00.000 INFO stage_{i} ok" for i in range(20)]
     lines.append("2026-01-01 00:00:00.000 ERROR boom")
     out = "\n".join(lines)
-    result, _ = await _token_filter_output(out, token_kill=True, max_lines=None)
+    result, _orig_path, _truncated = await _token_filter_output(out, token_kill=True, max_lines=None)
     assert "ts-prefix folded" not in result
     assert "prefix" not in result.splitlines()[0]
     assert "ERROR boom" in result
@@ -706,7 +743,7 @@ async def test_token_filter_truncate_keeps_error_in_middle():
     lines = [f"step_{i} ok" for i in range(500)]
     lines.insert(250, "error: stage 2 failed")
     out = "\n".join(lines)
-    result, orig_path = await _token_filter_output(
+    result, orig_path, _truncated = await _token_filter_output(
         out, token_kill=True, max_lines=50
     )
     assert "error: stage 2 failed" in result

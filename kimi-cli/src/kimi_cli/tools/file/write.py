@@ -19,7 +19,7 @@ from kimi_cli.tools.file.check_fmt import (
     check_xml_text,
     check_yaml_text,
 )
-from kimi_cli.utils.diff import build_diff_blocks
+from kimi_cli.utils.diff import build_diff_blocks, format_unified_diff
 from kimi_cli.utils.path import (
     is_within_directory,
     is_within_workspace,
@@ -300,18 +300,17 @@ class WriteFile(CallableTool2[Params]):
                 fmt_error = check_xml_text(new_text)
 
             # Try to repair broken JSON before building diff (if auto_fix_json is enabled)
-            _repair_diff = None
+            _repair_diff: str | None = None
             if is_json and fmt_error:
                 if params.auto_fix_json:
                     try:
                         repaired_text = json_repair.repair_json(new_text, return_objects=False)
                         if repaired_text and repaired_text != new_text:
-                            repair_diff_blocks = await build_diff_blocks(
-                                file_path_str, new_text, repaired_text
+                            _repair_diff = format_unified_diff(
+                                new_text, repaired_text, file_path_str
                             )
                             new_text = repaired_text
                             fmt_error = None
-                            _repair_diff = repair_diff_blocks
                     except Exception:
                         pass
                 # else: auto_fix_json=False — leave fmt_error as-is, error reported below
@@ -453,12 +452,11 @@ class WriteFile(CallableTool2[Params]):
             result_parts: list[str] = []
             if params.show_diff:
                 # Include diff in output if requested
-                diff_text = "\n".join(str(b) for b in diff_blocks)
+                diff_text = format_unified_diff(old_text, new_text, file_path_str)
                 if diff_text:
                     result_parts.append(f"Diff:\n{diff_text}\n")
             if _repair_diff:
-                repair_text = "\n".join(str(b) for b in _repair_diff)
-                result_parts.append(f"JSON auto-repair diff:\n{repair_text}")
+                result_parts.append(f"JSON auto-repair diff:\n{_repair_diff}")
 
             result_output = "\n".join(result_parts)
             if result_output:

@@ -336,11 +336,45 @@ def test_fold_per_line_prefix_idempotent():
 
 
 def test_drop_boilerplate_leading_banners():
-    text = "npm version 10.0.0\nnode version 20.0.0\n\nreal output line"
+    text = "npm 10.0.0\nnode v20.0.0\n\nreal output line"
     result = drop_boilerplate(text, kind="log")
     assert "banner lines dropped" in result
     assert "real output line" in result
-    assert "npm version" not in result
+    assert "npm 10.0.0" not in result
+
+
+def test_drop_boilerplate_real_interpreter_banner_still_dropped():
+    """A genuine interpreter banner (keyword immediately followed by a
+    version) is still dropped — only false positives were removed."""
+    text = "Python 3.12.4 (main)\nsecond line\nthird"
+    result = drop_boilerplate(text, kind="log")
+    assert "[1 banner lines dropped]" in result
+    assert "second line" in result
+    assert "third" in result
+    assert "3.12.4" not in result
+
+
+def test_drop_boilerplate_version_word_line_not_dropped():
+    """User text like ``python version: 3.12.0`` is NOT a banner — the
+    keyword must be immediately followed by the version."""
+    text = "python version: 3.12.0\nsecond line\nthird"
+    result = drop_boilerplate(text, kind="log")
+    assert result == text
+
+
+def test_drop_boilerplate_grep_result_not_dropped():
+    """Grep results like ``python.py:12:...`` are never mistaken for banners."""
+    text = "python.py:12: some grep hit\nsecond line\nthird"
+    result = drop_boilerplate(text, kind="log")
+    assert result == text
+
+
+def test_drop_boilerplate_kind_not_log_bypassed():
+    """Stage 6 C1/C2 only applies to log-kind text."""
+    text = "Python 3.12.4 (main)\nsecond line"
+    assert drop_boilerplate(text, kind="code") == text
+    assert drop_boilerplate(text, kind="prose") == text
+    assert drop_boilerplate(text, kind="data") == text
 
 
 def test_drop_boilerplate_ascii_art():

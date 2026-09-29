@@ -492,15 +492,14 @@ class Run(CallableTool2[RunParams]):
                     output = redact_sensitive_output(output)
 
                 # Apply token filter pipeline (dedup, truncate)
-                output, original_path = await _token_filter_output(
+                output, original_path, filter_truncated = await _token_filter_output(
                     output,
                     token_kill=True,
                     max_lines=params.max_lines,
                     rtk_rewritten=rtk_rewritten,
                 )
-
                 # Optionally offload a very long output to a sub-agent
-                output_truncated = False
+                output_truncated = filter_truncated
                 if len(output) > 65536 and not params.output_path:
                     # Preserve the full stream before replacing it with a
                     # summary: the token filter may have left it unchanged, so
@@ -727,10 +726,11 @@ class Run(CallableTool2[RunParams]):
         # removed), so the rtk full-stream save only applies to commands that
         # rtk itself rewrote — local dedup is skipped for those.
         rtk_original_path: str | None = None
+        rtk_truncated = False
         if output and rtk_rewritten and params.max_lines is None:
-            rtk_original_path, _ = await _maybe_export_rtk_original_async(output)
+            rtk_original_path, rtk_truncated = await _maybe_export_rtk_original_async(output)
         # Run token filter pipeline (dedup, truncate)
-        output, original_path = await _token_filter_output(
+        output, original_path, filter_truncated = await _token_filter_output(
             output,
             token_kill=True,
             max_lines=params.max_lines,
@@ -738,7 +738,7 @@ class Run(CallableTool2[RunParams]):
         )
         if original_path is None:
             original_path = rtk_original_path
-        output_truncated = False
+        output_truncated = filter_truncated or rtk_truncated
         if len(output) > 65536:
             # Preserve the full stream before replacing it with a summary: the
             # token filter may have left the output unchanged, so no original

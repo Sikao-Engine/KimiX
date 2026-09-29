@@ -68,6 +68,13 @@ class Params(BaseModel):
     task_id: str | None = task_id_field("code", tail="running a new script")
     wait_for_pattern: str | None = wait_for_pattern_field()
     max_lines: int | None = max_lines_field()
+    run_in_background: bool = Field(
+        default=False,
+        description=(
+            "Run the code in the background and return immediately with a "
+            "task_id (same as mode='send'). Poll with job_output."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -314,7 +321,7 @@ class python(CallableTool2[Params]):
         async with self._semaphore:
             if params.mode == "interactive":
                 return await self._start_interactive(params)
-            elif params.mode == "send":
+            elif params.mode == "send" or params.run_in_background:
                 # Execute in background mode
                 return await self._execute_code(params, background=True)
             else:
@@ -664,11 +671,12 @@ class python(CallableTool2[Params]):
         # rewrites commands itself and the local filter may leave the
         # rtk-folded stream unchanged.
         rtk_original_path: str | None = None
+        rtk_truncated = False
         if output and params.max_lines is None:
-            rtk_original_path, _ = await _maybe_export_rtk_original_async(output)
+            rtk_original_path, rtk_truncated = await _maybe_export_rtk_original_async(output)
         # Run token filter pipeline (dedup, truncate).
         # Python tool doesn't rewrite commands with RTK binary, so rtk_rewritten=False.
-        output, original_path = await _token_filter_output(
+        output, original_path, filter_truncated = await _token_filter_output(
             output,
             token_kill=True,
             max_lines=params.max_lines,
@@ -676,7 +684,7 @@ class python(CallableTool2[Params]):
         )
         if original_path is None:
             original_path = rtk_original_path
-        output_truncated = False
+        output_truncated = filter_truncated or rtk_truncated
         if len(output) > 65536:
             if self._python_config().get("summarize_long_output", True):
                 # Use the source (file path or inline code) as context for summarization

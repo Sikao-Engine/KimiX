@@ -591,6 +591,40 @@ async def test_show_diff_includes_diff_in_output(
     assert "Diff:" in result.output or "diff" in result.output.lower()
 
 
+async def test_show_diff_returns_unified_diff_not_dataclass_repr(
+    write_file_tool: WriteFile, temp_work_dir: KaosPath
+):
+    """show_diff=True returns a readable unified diff, not a raw dataclass repr.
+
+    Regression: the output used to contain the literal repr of the internal
+    DiffDisplayBlock pydantic model (``type='diff' path='...' old_text=...``).
+    """
+    file_path = temp_work_dir / "diff_repr_test.txt"
+    await file_path.write_text("FIRST\nSECOND\nTHIRD\n")
+
+    result = await write_file_tool(
+        Params(
+            path=str(file_path),
+            content="FIRST\nchanged content\nTHIRD\n",
+            show_diff=True,
+        )
+    )
+
+    assert not result.is_error
+    output = result.output
+    # Standard unified diff markers.
+    assert "--- " in output
+    assert "+++ " in output
+    assert "@@" in output
+    # The changed line appears with its +/- prefix.
+    assert "-SECOND" in output
+    assert "+changed content" in output
+    # Must not be a raw dataclass/pydantic model repr.
+    assert "type='diff'" not in output
+    assert "old_text=" not in output
+    assert "new_text=" not in output
+
+
 # ── JSON auto-repair diff tests ─────────────────────────────────────────────
 
 

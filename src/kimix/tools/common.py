@@ -1598,7 +1598,7 @@ async def _token_filter_output(
     rtk_rewritten: bool = False,
     max_block_lines: int = 1,
     preserve_errors: bool = True,
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, bool]:
     """Run the token filter post-process pipeline on shell output.
 
     Stages run in order:
@@ -1629,15 +1629,18 @@ async def _token_filter_output(
             verbatim instead of being treated like benign log spam.
 
     Returns:
-        (filtered_output, original_path).
+        (filtered_output, original_path, truncated).
         original_path is None if no filters were active or if the filters
-        left the output unchanged.
+        left the output unchanged.  truncated is True when the pipeline
+        dropped content (dedup collapse, micro-compress fold, or max_lines
+        head/tail folding) so callers can report ``output_truncated``
+        honestly; pure ANSI-code stripping does not count as truncation.
     """
     apply_dedup = token_kill and not rtk_rewritten
     has_filter = apply_dedup or (max_lines is not None)
 
     if not has_filter:
-        return output, None
+        return output, None, False
 
     # Keep the raw original so we can tell whether the post-process result
     # actually differs. Only generate a temp file when it does.
@@ -1654,6 +1657,10 @@ async def _token_filter_output(
     if apply_dedup and output:
         from rich.text import Text
         output = Text.from_ansi(output).plain
+    # Content-dropping stages (micro-compress, dedup, truncate) are measured
+    # against the post-ANSI baseline: stripping escape codes is a rendering
+    # cleanup, not a truncation of the visible output.
+    content_baseline = output
 
     # Step 2.5: Micro-compress — lossless stages (1-3, 5) plus the annotated
     # stages (4, 6, 7, 8): timestamp/path prefix folding, banner drop,
@@ -1688,12 +1695,13 @@ async def _token_filter_output(
 
     # Only save the original when the filter actually changed the output.
     if output == original_output:
-        return output, None
+        return output, None, False
 
     original_path, _ = await _export_to_temp_file_async(
         key=None, content=original_output, ext=".txt"
     )
-    return output, original_path
+    truncated = output != content_baseline
+    return output, original_path, truncated
 
 
 async def _save_original_output_async(output: str, original_path: str | None) -> str | None:

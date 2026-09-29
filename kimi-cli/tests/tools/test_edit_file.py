@@ -436,6 +436,38 @@ async def test_replace_all_no_match(edit_file_tool: EditFile, temp_work_dir: Kao
     assert "No replacements were made" in result.message
 
 
+async def test_replace_all_repeat_same_edit_reports_no_replacements(
+    edit_file_tool: EditFile, temp_work_dir: KaosPath
+):
+    """Re-running an identical replace_all edit must not report phantom replacements.
+
+    Regression: after replacing all `line` -> `LINE`, repeating the same edit
+    used to replay against the recorded snapshot and report "4 total
+    replacement(s)" even though the file content did not change.
+    """
+    file_path = temp_work_dir / "test.txt"
+    original = "line one\nline two\nline three\nline four\n"
+    await file_path.write_text(original)
+
+    first = await edit_file_tool(
+        Params(path=str(file_path), edit=Edit(old="line", new="LINE", replace_all=True))
+    )
+    assert not first.is_error
+    assert "4 total replacement" in first.message
+    expected = "LINE one\nLINE two\nLINE three\nLINE four\n"
+    assert await file_path.read_text() == expected
+
+    # Re-run the exact same edit: no lowercase `line` remains, so this is a
+    # no-op and must be reported as such — not as another 4 replacements.
+    second = await edit_file_tool(
+        Params(path=str(file_path), edit=Edit(old="line", new="LINE", replace_all=True))
+    )
+    assert second.is_error
+    assert "No replacements were made" in second.message
+    assert "total replacement" not in second.message
+    assert await file_path.read_text() == expected
+
+
 async def test_replace_oserror_on_write(runtime: Runtime, session: Session, temp_work_dir: KaosPath):
     """Test that an OSError during write is handled gracefully."""
     file_path = temp_work_dir / "test.txt"

@@ -208,11 +208,17 @@ _TIMESTAMP_START = re.compile(
 # (renumber_lines now delegates to the shim; _LINENO_RE lives in kimix_native.tools.)
 
 # Stage 6 — banner detection
-# Keyword must be followed by whitespace or EOL (not ``.``/``:``), so grep
+# The keyword must be IMMEDIATELY followed by a version-like token
+# (``[ \t]+v?\d+\.\d+``), matching real interpreter/tool banners such as
+# ``Python 3.12.4 (tags/v3.12.4:...)``, ``node v20.0.0`` or ``npm 10.2.3``.
+# This keeps arbitrary user text from being dropped as boilerplate: in
+# ``python version: 3.12.0`` the keyword is followed by the word ``version``,
+# not by the version itself, so the line is NOT a banner.  Requiring
+# whitespace right after the keyword (never ``.``/``:``) also means grep
 # results like ``python.py:12:...`` are never mistaken for banners.
 _BANNER_KEYWORDS = re.compile(
     r"^\s*(?:npm|cargo|pip|uv|tsc|yarn|pnpm|deno|bun|python|node|ruby|gem"
-    r"|gradle|maven|mvn|make|cmake|dotnet|rustc|gcc|clang)(?:\s|$)",
+    r"|gradle|maven|mvn|make|cmake|dotnet|rustc|gcc|clang)[ \t]+v?\d+\.\d+",
     re.IGNORECASE,
 )
 _SYSTEM_META_RE = re.compile(r"^<system>.*</system>$", re.DOTALL)

@@ -179,7 +179,7 @@ class ReplaceModeExecutor:
     ) -> tuple[str, int, str | None]:
         """Fallback chain for fuzzy mode after an exact single match fails."""
         strip_result = self._try_strip_match(content, edit.old, edit.new)
-        if strip_result is not None:
+        if strip_result is not None and strip_result != content:
             return strip_result, 1, None
 
         fuzzy = self._find_best_fuzzy_match(edit.old, content)
@@ -188,8 +188,13 @@ class ReplaceModeExecutor:
             new_content = norm_content.replace(
                 self._normalize_line_endings(matched_text), norm_new, 1
             )
-            suggestion = f"fuzzy-matched at {score:.0f}%: '{matched_text[:80]}'"
-            return new_content, 1, suggestion
+            # Only count the replacement when it actually changes the
+            # content: a fuzzy match whose text already equals the
+            # replacement is a silent no-op and must not be reported as
+            # a successful edit.
+            if new_content != norm_content:
+                suggestion = f"fuzzy-matched at {score:.0f}%: '{matched_text[:80]}'"
+                return new_content, 1, suggestion
 
         return content, 0, self._find_similar(edit.old, content)
 
@@ -266,6 +271,12 @@ class ReplaceModeExecutor:
                 base = norm_base.replace(norm_old, self._normalize_line_endings(edit.new), 1)
                 total += 1
         if total == 0:
+            return None
+        if base == live_norm:
+            # Replaying the edits against the recorded snapshot only
+            # reproduced the live file's current content (e.g. the exact
+            # same edit was applied earlier): nothing would change, so the
+            # recovery must not report phantom replacements.
             return None
         # Re-apply the live file's line endings.
         ending = detect_line_ending(live_content)
