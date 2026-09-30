@@ -136,7 +136,9 @@ class Params(BaseModel):
     max_char: int | list[int] = Field(
         default=16000,
         description=(
-            "Maximum number of characters to return (starting from char_offset). "
+            "Maximum number of content characters to return (starting from "
+            "char_offset). Content characters exclude line-number prefixes, "
+            "so the window is identical regardless of show_line_numbers. "
             "May be a scalar applied to all files, "
             "or a list with one value per file path. "
             "Default 16K balances completeness with context efficiency."
@@ -145,7 +147,8 @@ class Params(BaseModel):
     char_offset: int | list[int] = Field(
         default=0,
         description=(
-            "Character offset to start returning from. "
+            "Content-character offset to start returning from (excluding "
+            "line-number prefixes). "
             "May be a scalar applied to all files, "
             "or a list with one value per file path."
         ),
@@ -345,43 +348,50 @@ def _broadcast_option(value: int | list[int], n: int) -> list[int]:
     return value if isinstance(value, list) else [value] * n
 
 
-def _apply_char_window(
-    result: ToolReturnValue,
+def _apply_char_window_to_entries(
+    entries: list[tuple[int, str, bool, int]],
     char_offset: int,
     max_char: int,
-) -> ToolReturnValue:
-    """Apply the ``char_offset``/``max_char`` window to a read result.
+) -> tuple[list[tuple[int, str, bool, int]], int, int]:
+    """Slice rendered line entries to the ``char_offset``/``max_char`` window.
 
-    The line/byte budgets inside ``_render_result`` already surface in
-    ``message`` ("Max N bytes reached", "End of file reached"), but the char
-    window is applied afterwards and would otherwise hide content *silently*
-    while the message claims the whole file was shown. When the window hides
-    any rendered content, append an explicit notice so the agent knows the
-    read was partial and how to continue it.
+    The window counts *content* characters only — the joined line contents
+    without the line-number prefixes — so the same request yields the same
+    window regardless of ``show_line_numbers``. Each entry is a
+    ``(line_no, content, was_truncated, byte_len)`` tuple; edge lines are
+    sliced in place and keep their original line numbers.
+
+    Returns ``(windowed_entries, end, total)`` where ``total`` is the number
+    of content characters in the un-windowed output and ``end`` is
+    ``char_offset`` plus the number of content characters actually returned.
     """
-    if not isinstance(result, ToolOk) or not isinstance(result.output, str):
-        # PDF screenshots and other media parts carry non-string output; the
-        # char window does not apply to them.
-        return result
-    original = result.output
-    result.output = original[char_offset : char_offset + max_char]
-    total = len(original)
-    end = char_offset + max_char
-    if end < total or char_offset > 0:
-        if char_offset > 0 and end < total:
-            where = f"middle chars {char_offset}..{end} of {total}"
-            hidden = "content before and after is hidden"
-        elif char_offset > 0:
-            where = f"tail chars {char_offset}..{total} of {total}"
-            hidden = "content before is hidden"
-        else:
-            where = f"head chars 0..{end} of {total}"
-            hidden = "content after is hidden"
-        result.message = (result.message or "") + (
-            f" NOTE: output window shows {where} ({hidden}); max_char={max_char}. "
-            "Raise max_char / adjust char_offset to read the rest."
-        )
-    return result
+    total = sum(len(content) for _, content, _, _ in entries)
+    if char_offset <= 0 and char_offset + max_char >= total:
+        # Whole output fits in the window; nothing to slice.
+        return list(entries), total, total
+
+    windowed: list[tuple[int, str, bool, int]] = []
+    position = 0  # content characters consumed so far
+    end = char_offset
+    remaining = max_char
+    for line_no, content, was_truncated, b_len in entries:
+        line_start = position
+        position += len(content)
+        if remaining <= 0:
+            break
+        if line_start + len(content) <= char_offset:
+            continue  # entirely before the window
+        piece = content
+        skip = char_offset - line_start
+        if skip > 0:
+            piece = piece[skip:]
+        if len(piece) > remaining:
+            piece = piece[:remaining]
+        if piece:
+            windowed.append((line_no, piece, was_truncated, b_len))
+            end += len(piece)
+            remaining -= len(piece)
+    return windowed, end, total
 
 
 def _similar_names(
@@ -969,6 +979,8 @@ class ReadFile(CallableTool2[Params]):
                     line_offset,
                     n_lines,
                     show_line_numbers=show_line_numbers,
+                    char_offset=char_offset,
+                    max_char=max_char,
                 )
             else:
                 result, window_lines, window_start = await self._read_forward(
@@ -977,9 +989,10 @@ class ReadFile(CallableTool2[Params]):
                     line_offset,
                     n_lines,
                     show_line_numbers=show_line_numbers,
+                    char_offset=char_offset,
+                    max_char=max_char,
                 )
 
-            result = _apply_char_window(result, char_offset, max_char)
             result = await self._apply_conflict_footer(
                 result,
                 display_path,
@@ -1484,8 +1497,10 @@ class ReadFile(CallableTool2[Params]):
             n_lines,
             show_line_numbers=show_line_numbers,
             note=note,
+            char_offset=char_offset,
+            max_char=max_char,
         )
-        return _apply_char_window(rendered, char_offset, max_char)
+        return rendered
 
     async def _render_lines(
         self,
@@ -1496,12 +1511,18 @@ class ReadFile(CallableTool2[Params]):
         *,
         show_line_numbers: bool = True,
         note: str = "",
+        char_offset: int = 0,
+        max_char: int | None = None,
     ) -> tuple[ToolOk, list[str], int]:
         """Render an async iterable of lines (line endings included).
 
         Positive ``line_offset`` reads forward; negative reads the tail window.
         ``note`` is appended to the success message (e.g. the
         document-extraction notice). Shared by file reads and extracted text.
+        The ``char_offset``/``max_char`` window (in content characters, see
+        :func:`_apply_char_window_to_entries`) is applied before line-number
+        prefixes are added, so the window is independent of
+        ``show_line_numbers``; pass ``max_char=None`` to skip windowing.
         """
         assert n_lines >= 1
         assert line_offset != 0
@@ -1514,6 +1535,8 @@ class ReadFile(CallableTool2[Params]):
                 n_lines,
                 show_line_numbers=show_line_numbers,
                 note=note,
+                char_offset=char_offset,
+                max_char=max_char,
             )
         return await self._render_forward(
             lines,
@@ -1522,6 +1545,8 @@ class ReadFile(CallableTool2[Params]):
             n_lines,
             show_line_numbers=show_line_numbers,
             note=note,
+            char_offset=char_offset,
+            max_char=max_char,
         )
 
     async def _render_forward(
@@ -1533,6 +1558,8 @@ class ReadFile(CallableTool2[Params]):
         *,
         show_line_numbers: bool = True,
         note: str = "",
+        char_offset: int = 0,
+        max_char: int | None = None,
     ) -> tuple[ToolOk, list[str], int]:
         """Render lines forward from a positive line_offset with line/byte budgets."""
         entries: list[tuple[int, str, bool, int]] = []
@@ -1573,6 +1600,8 @@ class ReadFile(CallableTool2[Params]):
             max_bytes_reached=max_bytes_reached,
             end_of_file=len(entries) < n_lines,
             note=note,
+            char_offset=char_offset,
+            max_char=max_char,
         )
         return result, raw_collected, line_offset
 
@@ -1585,6 +1614,8 @@ class ReadFile(CallableTool2[Params]):
         *,
         show_line_numbers: bool = True,
         note: str = "",
+        char_offset: int = 0,
+        max_char: int | None = None,
     ) -> tuple[ToolOk, list[str], int]:
         """Render the tail window (negative line_offset) with line/byte budgets."""
         tail_count = abs(line_offset)
@@ -1641,6 +1672,8 @@ class ReadFile(CallableTool2[Params]):
             max_bytes_reached=max_bytes_reached,
             end_of_file=len(candidates) < n_lines,
             note=note,
+            char_offset=char_offset,
+            max_char=max_char,
         )
         raw_map = dict(tail_raw)
         collected = [raw_map[e[0]] for e in candidates if e[0] in raw_map]
@@ -1659,8 +1692,26 @@ class ReadFile(CallableTool2[Params]):
         max_bytes_reached: bool,
         end_of_file: bool,
         note: str = "",
+        char_offset: int = 0,
+        max_char: int | None = None,
     ) -> ToolOk:
-        """Build the final ToolOk (output + message) from budgeted candidates."""
+        """Build the final ToolOk (output + message) from budgeted candidates.
+
+        When ``max_char`` is given, the ``char_offset``/``max_char`` window is
+        applied to the entry *contents* before line-number prefixes are added
+        (see :func:`_apply_char_window_to_entries`), and an explicit notice is
+        appended to the message when the window hides any content — the
+        line/byte budgets alone already surface in the message ("Max N bytes
+        reached", "End of file reached"), but the char window would otherwise
+        hide content *silently* while the message claims the whole file was
+        shown.
+        """
+        window_end = 0
+        content_total = 0
+        if max_char is not None:
+            candidates, window_end, content_total = _apply_char_window_to_entries(
+                candidates, char_offset, max_char
+            )
         lines_with_no: list[str] = []
         truncated_line_numbers: list[int] = []
         for line_no, truncated, was_truncated, _ in candidates:
@@ -1688,6 +1739,22 @@ class ReadFile(CallableTool2[Params]):
             message += f" Lines {truncated_line_numbers} were truncated."
         if note:
             message += note
+        if max_char is not None and (window_end < content_total or char_offset > 0):
+            end_shown = min(window_end, content_total)
+            if char_offset > 0 and window_end < content_total:
+                where = f"middle chars {char_offset}..{end_shown} of {content_total}"
+                hidden = "content before and after is hidden"
+            elif char_offset > 0:
+                where = f"tail chars {char_offset}..{end_shown} of {content_total}"
+                hidden = "content before is hidden"
+            else:
+                where = f"head chars 0..{end_shown} of {content_total}"
+                hidden = "content after is hidden"
+            message += (
+                f" NOTE: output window shows {where} ({hidden}; offsets count "
+                f"content characters, excluding line-number prefixes); "
+                f"max_char={max_char}. Raise max_char / adjust char_offset to read the rest."
+            )
         message += f" Path: {display_path}"
         return ToolOk(
             output="".join(lines_with_no),
@@ -1715,6 +1782,8 @@ class ReadFile(CallableTool2[Params]):
                     line_offset,
                     n_lines,
                     show_line_numbers=show_line_numbers,
+                    char_offset=char_offset,
+                    max_char=max_char,
                 )
             else:
                 result, window_lines, window_start = await self._read_forward(
@@ -1723,8 +1792,9 @@ class ReadFile(CallableTool2[Params]):
                     line_offset,
                     n_lines,
                     show_line_numbers=show_line_numbers,
+                    char_offset=char_offset,
+                    max_char=max_char,
                 )
-            result = _apply_char_window(result, char_offset, max_char)
             result = await self._apply_conflict_footer(
                 result,
                 display_path,
@@ -1749,6 +1819,8 @@ class ReadFile(CallableTool2[Params]):
         n_lines: int,
         *,  # keyword-only
         show_line_numbers: bool = True,
+        char_offset: int = 0,
+        max_char: int | None = None,
     ) -> tuple[ToolOk, list[str], int]:
         """Read file from a positive line_offset."""
         return await self._render_lines(
@@ -1757,6 +1829,8 @@ class ReadFile(CallableTool2[Params]):
             line_offset,
             n_lines,
             show_line_numbers=show_line_numbers,
+            char_offset=char_offset,
+            max_char=max_char,
         )
 
     async def _read_tail(
@@ -1767,6 +1841,8 @@ class ReadFile(CallableTool2[Params]):
         n_lines: int,
         *,  # keyword-only
         show_line_numbers: bool = True,
+        char_offset: int = 0,
+        max_char: int | None = None,
     ) -> tuple[ToolOk, list[str], int]:
         """Read file from a negative line_offset (tail mode)."""
         return await self._render_lines(
@@ -1775,4 +1851,6 @@ class ReadFile(CallableTool2[Params]):
             line_offset,
             n_lines,
             show_line_numbers=show_line_numbers,
+            char_offset=char_offset,
+            max_char=max_char,
         )

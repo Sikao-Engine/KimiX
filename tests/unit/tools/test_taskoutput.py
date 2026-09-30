@@ -55,6 +55,71 @@ class TestTaskOutputActionKill:
         assert result.is_error
 
 
+# ── Bug fix: action="kill" must report success ────────────────────────────
+
+
+class TestTaskOutputKillReportsSuccess:
+    """An explicitly requested kill must return ToolOk.
+
+    Regression: ``_kill_task`` surfaced ``stream.success()`` as a ToolError,
+    but a killed process always exits non-zero, so every successful kill was
+    reported to the user as "ERROR: failed".  The kill result is now always
+    ToolOk with the killed process's exit code noted in the brief; the
+    finished task is still recorded and the task id removed as before.
+    """
+
+    @staticmethod
+    def _stream(exit_code: int) -> MagicMock:
+        stream = MagicMock()
+        stream.format_output = None
+        stream.stop = AsyncMock(return_value=True)
+        stream.wait = AsyncMock(return_value=None)
+        stream.pop_output = AsyncMock(return_value="partial output\n")
+        stream.success = AsyncMock(return_value=False)  # killed => non-zero exit
+        stream.exit_code = exit_code
+        stream.process_elapsed = 1.5
+        return stream
+
+    def _register(self, mock_session: MagicMock, stream: MagicMock) -> None:
+        from kimix.tools.background.utils import TaskData
+
+        data = TaskData()
+        data.tasks = {"bash_1": stream}
+        mock_session.custom_data["background_task_data"] = data
+
+    async def test_kill_returns_tool_ok_on_nonzero_exit(
+        self, mock_session: MagicMock
+    ) -> None:
+        to = TaskOutput(session=mock_session)
+        stream = self._stream(exit_code=1)
+        self._register(mock_session, stream)
+
+        result = await to(TaskOutputParams(job_id="bash_1", action="kill"))
+
+        assert not result.is_error
+        assert "killed" in result.brief
+        assert "exit code 1" in result.brief
+        assert "partial output" in result.output
+        stream.stop.assert_awaited_once()
+        stream.success.assert_awaited_once()
+
+    async def test_kill_removes_task_and_keeps_history_retrievable(
+        self, mock_session: MagicMock
+    ) -> None:
+        to = TaskOutput(session=mock_session)
+        self._register(mock_session, self._stream(exit_code=-9))
+
+        first = await to(TaskOutputParams(job_id="bash_1", action="kill"))
+        assert not first.is_error
+        assert "exit code -9" in first.brief
+
+        # The task id is gone from the active registry, but the saved record
+        # is still served from finished-task history (not "not found").
+        second = await to(TaskOutputParams(job_id="bash_1", action="get"))
+        assert "not found" not in second.message
+        assert "partial output" in second.output
+
+
 # ── Defect: __del__ cleanup safety ────────────────────────────────────────
 
 

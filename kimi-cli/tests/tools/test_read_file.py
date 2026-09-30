@@ -761,10 +761,11 @@ async def test_read_char_offset(read_file_tool: ReadFile, sample_file: KaosPath)
     """Test char_offset slices output correctly."""
     result = await read_file_tool(Params(path=str(sample_file), char_offset=10))
     assert not result.is_error
-    # Output should skip the first 10 characters
-    assert not result.output.startswith("     1\t")
+    # char_offset counts content characters only: the line-number prefix is
+    # kept, and the first 10 content chars of line 1 ("Line 1: He") are cut.
+    assert result.output.startswith("     1\tllo World")
     # The remaining content should be present
-    assert "Line 1" in result.output or "Line 2" in result.output
+    assert "Line 2" in result.output
 
 
 async def test_read_max_char(read_file_tool: ReadFile, temp_work_dir: KaosPath):
@@ -775,7 +776,13 @@ async def test_read_max_char(read_file_tool: ReadFile, temp_work_dir: KaosPath):
 
     result = await read_file_tool(Params(path=str(file_path), max_char=20))
     assert not result.is_error
-    assert len(result.output) <= 20
+    # max_char counts content characters only (line-number prefixes excluded):
+    # the first 20 content chars are "Line 1\nLine 2\nLine 3".
+    assert result.output == (
+        "     1\tLine 1\n     2\tLine 2\n     3\tLine 3"
+    )
+    assert "Line 4" not in result.output
+    assert "head chars 0..20 of" in result.message
 
 
 async def test_read_binary_unknown_file(read_file_tool: ReadFile, temp_work_dir: KaosPath):
@@ -857,25 +864,30 @@ class TestReadFileCharSlicing:
         await f.write_text("1234567890\n")
         result = await read_file_tool(Params(path=str(f), char_offset=7))
         assert not result.is_error
-        assert result.output == "1234567890\n"
+        # char_offset counts content characters (prefix excluded): chars 7.. of
+        # "1234567890\n" → "890\n", rendered with its line-number prefix.
+        assert result.output == "     1\t890\n"
+        assert "tail chars 7..11 of 11" in result.message
 
     async def test_max_char_cuts_end(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         f = temp_work_dir / "a.txt"
         await f.write_text("1234567890\n")
         result = await read_file_tool(Params(path=str(f), max_char=12))
         assert not result.is_error
-        assert result.output == "     1\t12345"
+        # Content is 11 chars (<= max_char), so the whole line is returned;
+        # max_char counts content characters, not the line-number prefix.
+        assert result.output == "     1\t1234567890\n"
+        assert "output window shows" not in result.message
 
     async def test_char_offset_and_max_char(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         f = temp_work_dir / "a.txt"
         await f.write_text("0123456789\n")
         result = await read_file_tool(Params(path=str(f), char_offset=7, max_char=12))
         assert not result.is_error
-        # char_offset = start position; max_char = MAX chars to RETURN.
-        # Offset 7 lands past the line-number prefix ("     1\t"), so the
-        # remaining 11 chars of the line are returned (12 max_char is a cap).
-        assert result.output == "0123456789\n"
-        assert len(result.output) <= 12
+        # char_offset/max_char count content characters only (no prefix):
+        # content "0123456789\n" sliced to chars 7..12 → "789\n" (4 chars).
+        assert result.output == "     1\t789\n"
+        assert "tail chars 7..11 of 11" in result.message
 
     async def test_char_offset_beyond_output(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         f = temp_work_dir / "a.txt"
@@ -910,46 +922,54 @@ class TestReadFileCharSlicing:
         await f.write_text("line one\nline two\nline three\n")
         result = await read_file_tool(Params(path=str(f), line_offset=2, char_offset=7))
         assert not result.is_error
-        assert result.output.startswith("line two")
+        # Window content starts at line 2; skipping 7 content chars cuts
+        # "line tw" off "line two\n", leaving "o\nline three\n".
+        assert result.output == "     2\to\n     3\tline three\n"
 
     async def test_line_offset_with_max_char(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         f = temp_work_dir / "a.txt"
         await f.write_text("line one\nline two\nline three\n")
         result = await read_file_tool(Params(path=str(f), line_offset=2, max_char=6))
         assert not result.is_error
-        assert len(result.output) == 6
+        # max_char counts content chars: 6 chars of "line two\nline three\n".
+        assert result.output == "     2\tline t"
 
     async def test_negative_line_offset_with_char_slice(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         f = temp_work_dir / "a.txt"
         await f.write_text("a\nb\nc\nd\n")
-        result = await read_file_tool(Params(path=str(f), line_offset=-2, char_offset=4))
+        result = await read_file_tool(Params(path=str(f), line_offset=-2, char_offset=2))
         assert not result.is_error
-        assert len(result.output) > 0
+        # Tail window content is "c\nd\n"; skipping 2 content chars leaves "d\n".
+        assert result.output == "     4\td\n"
 
     async def test_large_char_offset(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         f = temp_work_dir / "a.txt"
         await f.write_text("x" * 100 + "\n")
         result = await read_file_tool(Params(path=str(f), char_offset=57))
         assert not result.is_error
-        assert len(result.output) == 51
-        assert result.output == "x" * 50 + "\n"
+        # 101 content chars; skipping 57 leaves 44 ("x" * 43 + "\n"), plus the
+        # 7-char line-number prefix.
+        assert len(result.output) == 44 + len("     1\t")
+        assert result.output == "     1\t" + "x" * 43 + "\n"
 
     async def test_max_char_exact_boundary(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         f = temp_work_dir / "a.txt"
         await f.write_text("1234567890\n")
         result = await read_file_tool(Params(path=str(f), max_char=7))
         assert not result.is_error
-        assert result.output == "     1\t"
+        # 7 content chars of "1234567890\n" → "1234567".
+        assert result.output == "     1\t1234567"
 
     async def test_multibyte_utf8_slicing(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         f = temp_work_dir / "a.txt"
         await f.write_text("你好世界\n")
-        result = await read_file_tool(Params(path=str(f), char_offset=7, max_char=9))
+        result = await read_file_tool(Params(path=str(f), char_offset=1, max_char=9))
         assert not result.is_error
-        # max_char caps the RETURNED length (not the end index): offset 7 is
-        # past the line-number prefix, so the whole 5-char line is returned.
-        assert result.output == "你好世界\n"
-        assert len(result.output) <= 9
+        # Offsets count content characters (not the prefix): content is
+        # "你好世界\n" (6 chars); skipping 1 leaves the 5-char line, under the
+        # 9-char cap.
+        assert result.output == "     1\t好世界\n"
+        assert len(result.output) <= len("     1\t") + 9
 
     async def test_char_offset_pagination_pages(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         """Page 1 / page 2 via char_offset: disjoint windows, each <= max_char."""
@@ -957,17 +977,79 @@ class TestReadFileCharSlicing:
         content = "\n".join(f"line {i:04d} content here" for i in range(1, 101)) + "\n"
         await f.write_text(content)
 
-        page1 = await read_file_tool(Params(path=str(f), char_offset=0, max_char=100))
-        page2 = await read_file_tool(Params(path=str(f), char_offset=100, max_char=100))
-        full = await read_file_tool(Params(path=str(f), char_offset=0, max_char=200000))
+        page1 = await read_file_tool(
+            Params(path=str(f), char_offset=0, max_char=100, show_line_numbers=False)
+        )
+        page2 = await read_file_tool(
+            Params(path=str(f), char_offset=100, max_char=100, show_line_numbers=False)
+        )
+        full = await read_file_tool(
+            Params(path=str(f), char_offset=0, max_char=200000, show_line_numbers=False)
+        )
 
         assert not page1.is_error and not page2.is_error and not full.is_error
         assert len(page1.output) <= 100
         assert len(page2.output) <= 100
-        # Disjoint windows of the same rendered output.
+        # Disjoint windows of the same content output.
         assert page1.output == full.output[0:100]
         assert page2.output == full.output[100:200]
         assert page1.output != page2.output
+
+    async def test_pagination_window_identical_with_line_numbers(
+        self, read_file_tool: ReadFile, temp_work_dir: KaosPath
+    ):
+        """Regression: the char window must not depend on show_line_numbers.
+
+        The same char_offset/max_char request must select the same *content*
+        window whether or not line-number prefixes are rendered; only the
+        prefixes differ.
+        """
+        f = temp_work_dir / "long.txt"
+        content = "\n".join(f"line {i:04d} content here" for i in range(1, 101)) + "\n"
+        await f.write_text(content)
+
+        def _strip_prefixes(output: str) -> str:
+            return "".join(
+                re.sub(r"^\s*\d+\t", "", line) for line in output.splitlines(keepends=True)
+            )
+
+        for char_offset, max_char in ((0, 100), (100, 100), (57, 33), (500, 1000)):
+            plain = await read_file_tool(
+                Params(
+                    path=str(f),
+                    char_offset=char_offset,
+                    max_char=max_char,
+                    show_line_numbers=False,
+                )
+            )
+            numbered = await read_file_tool(
+                Params(
+                    path=str(f),
+                    char_offset=char_offset,
+                    max_char=max_char,
+                    show_line_numbers=True,
+                )
+            )
+            assert not plain.is_error and not numbered.is_error
+            assert plain.output == numbered.output or _strip_prefixes(
+                numbered.output
+            ) == plain.output
+
+        # The "chars X..Y of N" hint describes content characters and matches
+        # the returned window for both modes.
+        windowed = await read_file_tool(
+            Params(path=str(f), char_offset=100, max_char=100, show_line_numbers=True)
+        )
+        plain_windowed = await read_file_tool(
+            Params(path=str(f), char_offset=100, max_char=100, show_line_numbers=False)
+        )
+        hint = re.search(r"output window shows (\w+) chars (\d+)\.\.(\d+) of (\d+)", windowed.message)
+        assert hint is not None
+        start, end, total = (int(hint.group(2)), int(hint.group(3)), int(hint.group(4)))
+        assert (start, end) == (100, 200)
+        assert end - start <= 100
+        assert len(plain_windowed.output) == end - start
+        assert total == len(content)
 
     async def test_char_offset_zero_unchanged(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         """char_offset=0 behaves exactly like no char slicing."""
@@ -1162,9 +1244,9 @@ async def test_read_multiple_files_per_file_list_char_offset(
     b_section = result.output.split(f"======== {display_b} ========")[1]
     # a: offset 0 → full rendered line with prefix.
     assert "     1\t0123456789\n" in a_section
-    # b: offset 7 → past the prefix, remaining "0123456789\n".
-    assert "0123456789\n" in b_section
-    assert "\t" not in b_section[:5]
+    # b: offset 7 → content chars 7.. of "0123456789\n" → "789\n" (prefix kept).
+    assert "     1\t789\n" in b_section
+    assert "0123456789\n" not in b_section
 
 
 async def test_read_multiple_files_mismatched_option_length(

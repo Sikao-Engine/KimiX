@@ -213,6 +213,11 @@ class TaskOutput(CallableTool2):
             )
 
         await stream.stop()
+        # Give the worker thread a brief, bounded chance to record the killed
+        # child's exit code so the kill result (and the finished-task record)
+        # can show the real exit status instead of None.  The child was just
+        # terminated, so this returns almost immediately.
+        await stream.wait(timeout=5)
         output = await stream.pop_output()
 
         processed, message, original_path, _output_path, _output_truncated = await self._process_completed_output(
@@ -232,17 +237,17 @@ class TaskOutput(CallableTool2):
             elapsed=spent_seconds,
         ))
         remove_task_id(self._session, job_id)
-        if not success:
-            return ToolError(
-                message=_append_elapsed(message, spent_seconds),
-                output=processed if processed else "",
-                brief=f"Task '{params.job_id}' killed (non-zero exit)"
-            )
-
+        # An explicitly requested kill is a success regardless of the killed
+        # process's exit code — a terminated process always exits non-zero,
+        # so surfacing ``not success`` here would report every successful
+        # kill as an ERROR.  The exit code stays visible in the brief.
+        exit_note = (
+            f" (exit code {stream.exit_code})" if stream.exit_code is not None else ""
+        )
         return ToolOk(
             output=processed if processed else "(no output)",
             message=_append_elapsed(message, spent_seconds),
-            brief=f"Task '{params.job_id}' killed",
+            brief=f"Task '{params.job_id}' killed{exit_note}",
         )
 
     async def _process_completed_output(

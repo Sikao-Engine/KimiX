@@ -142,8 +142,9 @@ class context_prune(CallableTool2[Params]):
         if params.mode == "compact":
             return await self._run_compact(params=params)
 
+        changed_indices: set[int] | None = None
         if params.mode == "strip_reasoning":
-            pruned_messages, result = self._run_strip_reasoning(
+            pruned_messages, result, changed_indices = self._run_strip_reasoning(
                 history=history,
                 params=params,
                 pruner=pruner,
@@ -174,6 +175,7 @@ class context_prune(CallableTool2[Params]):
             history=history,
             pruned_messages=pruned_messages,
             result=result,
+            changed_indices=changed_indices,
         )
 
         if params.dry_run:
@@ -255,12 +257,16 @@ class context_prune(CallableTool2[Params]):
         params: Params,
         pruner: ContextPruner,
         current_turn_index: int | None = None,
-    ) -> tuple[list[Message], PruningResult]:
+    ) -> tuple[list[Message], PruningResult, set[int]]:
         """Build a new history with ThinkPart removed outside the protected tail.
 
         When thinking mode is active, removed ``ThinkPart`` entries are replaced
         with empty ``ThinkPart(think="")`` so the provider back-pass invariant
         is preserved.
+
+        Returns ``(messages, result, changed_indices)`` where ``changed_indices``
+        holds the history indices whose messages were modified in place (no
+        messages are dropped by this mode).
         """
         protected = _compute_protected_indices(
             history,
@@ -312,7 +318,7 @@ class context_prune(CallableTool2[Params]):
             freed_tokens=freed_tokens,
             earliest_removed_index=earliest,
         )
-        return pruned_messages, result
+        return pruned_messages, result, changed_indices
 
     # ------------------------------------------------------------------ #
     # Validation
@@ -394,9 +400,27 @@ class context_prune(CallableTool2[Params]):
         history: Sequence[Message],
         pruned_messages: Sequence[Message],
         result: PruningResult,
+        changed_indices: set[int] | None = None,
     ) -> str:
-        """Build a markdown summary of the prune result."""
-        changed = len(history) - len(pruned_messages) + len(result.elided)
+        """Build a markdown summary of the prune result.
+
+        ``changed_indices`` carries the history indices modified in place by
+        ``strip_reasoning`` (which never drops messages); when provided, the
+        changed/dropped count unions those indices with the dropped/replaced
+        message indices so the count stays consistent with
+        ``earliest_removed_index`` and ``freed_tokens`` for every mode.
+        """
+        if changed_indices is not None:
+            # In-place modifications (strip_reasoning): message count is
+            # unchanged, so count the modified indices directly.
+            dropped = {
+                i
+                for i in range(len(history))
+                if i >= len(pruned_messages) or history[i] is not pruned_messages[i]
+            }
+            changed = len(dropped | changed_indices)
+        else:
+            changed = len(history) - len(pruned_messages) + len(result.elided)
         lines: list[str] = [
             f"- **Mode:** {mode}",
             f"- **Messages before:** {len(history)}",

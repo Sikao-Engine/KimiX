@@ -456,13 +456,23 @@ async def test_read_extract_size_guard(
 
 
 async def test_read_extract_pagination(read_file_tool: ReadFile, temp_work_dir: KaosPath):
-    """char_offset/max_char pagination applies to extracted text."""
+    """char_offset/max_char pagination applies to extracted text.
+
+    The window counts content characters only (no line-number prefixes), so
+    page with and without line numbers cover the same content.
+    """
     nb = temp_work_dir / "nb.ipynb"
     await nb.write_bytes(orjson.dumps(NB_JSON))
 
-    full = await read_file_tool(Params(path=str(nb), char_offset=0, max_char=200000))
-    p1 = await read_file_tool(Params(path=str(nb), char_offset=0, max_char=30))
-    p2 = await read_file_tool(Params(path=str(nb), char_offset=30, max_char=30))
+    full = await read_file_tool(
+        Params(path=str(nb), char_offset=0, max_char=200000, show_line_numbers=False)
+    )
+    p1 = await read_file_tool(
+        Params(path=str(nb), char_offset=0, max_char=30, show_line_numbers=False)
+    )
+    p2 = await read_file_tool(
+        Params(path=str(nb), char_offset=30, max_char=30, show_line_numbers=False)
+    )
 
     assert not full.is_error and not p1.is_error and not p2.is_error
     assert len(p1.output) <= 30

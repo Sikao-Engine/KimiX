@@ -1227,7 +1227,12 @@ class TodoList(CallableTool2[Params]):
             )
             hits = nearest.get(new_todo.title, [])
             if hits:
-                warnings.append(f'"{new_todo.title}" looks like existing "{hits[0].choice}"')
+                warnings.append(
+                    f'"{new_todo.title}" looks like existing "{hits[0].choice}" '
+                    "(advisory only — different word set, so the conflict "
+                    "policy/on_conflict does not apply; the new item was still "
+                    "created)"
+                )
         return warnings
 
     @staticmethod

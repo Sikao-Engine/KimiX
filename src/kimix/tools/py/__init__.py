@@ -429,6 +429,13 @@ class python(CallableTool2[Params]):
                 brief="Missing code/file",
             )
 
+        # Compile/validate the pattern BEFORE spawning: an invalid regex
+        # returns a ToolError and the process is never started (mirrors the
+        # bash tool's ``_execute_background``).
+        pattern = self._compile_pattern(params.wait_for_pattern)
+        if isinstance(pattern, ToolError):
+            return pattern
+
         python_exe = self._resolve_python(params)
         args = [script_path]
 
@@ -454,6 +461,30 @@ class python(CallableTool2[Params]):
             )
 
         if background:
+            if params.wait_for_pattern is not None and process_task.stream is not None:
+                # The user explicitly asked to block: poll the task's output
+                # until the pattern appears, the task settles, or the timeout
+                # expires, then return the output collected so far (mirrors
+                # the bash tool's background-wait behavior).  Without a
+                # pattern the immediate fire-and-forget return is preserved.
+                from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+                inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
+                output, wait_matched, elapsed_seconds = await process_task.stream.wait_for_output(
+                    timeout=params.timeout, pattern=pattern,
+                    inactivity_timeout=inactivity_timeout,
+                )
+                alive = await process_task.thread_is_alive()
+                status = "running" if alive else "completed"
+                return await self._format_session_result(
+                    task_id, process_task.stream, params, output, status,
+                    wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
+                    message=(
+                        f"{source_label} saved to `{display_script_path}`. "
+                        f"Running in background. task_id: `{task_id}`. "
+                        f"Status: {status}."
+                    ),
+                    brief="Background task started",
+                )
             return ToolOk(
                 output=f"{source_label} saved to `{display_script_path}`. Running in background. task_id: `{task_id}`. Use `job_output` tool to retrieve output.",
                 brief="Background task started"
@@ -466,9 +497,6 @@ class python(CallableTool2[Params]):
         waited_seconds: float | None = None
         try:
             if params.wait_for_pattern is not None and process_task.stream is not None:
-                pattern = self._compile_pattern(params.wait_for_pattern)
-                if isinstance(pattern, ToolError):
-                    return pattern
                 from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
                 inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
                 output, wait_matched, elapsed_seconds = await process_task.stream.wait_for_output(

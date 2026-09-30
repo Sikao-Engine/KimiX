@@ -751,3 +751,110 @@ class TestRunInBackground:
         assert not done.is_error
         assert "bg-marker-123" in done.output
 
+
+
+# ---------------------------------------------------------------------------
+# mode="send" (background) with wait_for_pattern must block until the pattern
+# appears, the task settles, or the timeout expires — mirroring the bash
+# tool's _execute_background.  An invalid pattern must error BEFORE the
+# process is spawned.  Without a pattern the send path must still return
+# immediately (fire-and-forget).
+# ---------------------------------------------------------------------------
+class TestSendWaitForPattern:
+    @pytest.mark.asyncio
+    async def test_send_with_pattern_blocks_until_match(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import unittest.mock as um
+
+        mock_cls = _fake_process_task(monkeypatch)
+        inst = mock_cls.return_value
+        inst.thread_is_alive.return_value = True  # still running after match
+        inst.stream.wait_for_output = um.AsyncMock(
+            return_value=("ready output\n", True, 0.25)
+        )
+
+        result = await tool(
+            PythonParams(
+                code="print('ready')",
+                mode="send",
+                wait_for_pattern="ready",
+                timeout=30,
+            )
+        )
+
+        assert isinstance(result, ToolOk)
+        inst.stream.wait_for_output.assert_awaited_once()
+        _, kwargs = inst.stream.wait_for_output.call_args
+        assert kwargs["timeout"] == 30
+        # inactivity timeout is capped by params.timeout
+        assert kwargs["inactivity_timeout"] <= 30
+        assert "ready output" in result.output
+        assert "wait_matched: true" in result.output
+        assert "status: running" in result.output
+        assert "fake-task-id" in result.output
+
+    @pytest.mark.asyncio
+    async def test_send_with_pattern_and_completed_task(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import unittest.mock as um
+
+        mock_cls = _fake_process_task(monkeypatch)
+        inst = mock_cls.return_value
+        inst.thread_is_alive.return_value = False  # task settled
+        inst.stream.process_elapsed = 0.5
+        inst.stream.wait_for_output = um.AsyncMock(
+            return_value=("done output\n", False, 0.4)
+        )
+
+        result = await tool(
+            PythonParams(
+                code="print('x')",
+                mode="send",
+                wait_for_pattern="never-appears",
+                timeout=30,
+            )
+        )
+
+        assert isinstance(result, ToolOk)
+        inst.stream.wait_for_output.assert_awaited_once()
+        assert "done output" in result.output
+        assert "wait_matched: false" in result.output
+        assert "status: completed" in result.output
+
+    @pytest.mark.asyncio
+    async def test_send_without_pattern_returns_immediately(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mock_cls = _fake_process_task(monkeypatch)
+        result = await tool(PythonParams(code="print('hello')", mode="send"))
+        assert isinstance(result, ToolOk)
+        assert "fake-task-id" in result.output
+        assert "Running in background" in result.output
+        mock_cls.return_value.stream.wait_for_output.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_send_invalid_pattern_errors_before_spawn(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mock_cls = _fake_process_task(monkeypatch)
+        result = await tool(
+            PythonParams(code="print('x')", mode="send", wait_for_pattern="[")
+        )
+        assert isinstance(result, ToolError)
+        assert "Invalid wait_for_pattern" in result.message
+        # The process was never started.
+        mock_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_invalid_pattern_errors_before_spawn(
+        self, tool: python, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        mock_cls = _fake_process_task(monkeypatch)
+        result = await tool(
+            PythonParams(code="print('x')", wait_for_pattern="[")
+        )
+        assert isinstance(result, ToolError)
+        assert "Invalid wait_for_pattern" in result.message
+        mock_cls.assert_not_called()

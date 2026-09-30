@@ -224,6 +224,64 @@ class TestContextPruneTool:
         assert any(isinstance(p, ThinkPart) and p.think == "" for p in old_assistant.content)
 
     @pytest.mark.asyncio
+    async def test_strip_reasoning_dry_run_summary_counts_modified_messages(
+        self, tool: context_prune
+    ):
+        """Regression: strip_reasoning modifies messages in place (never drops),
+        so the summary's changed/dropped count must come from the changed
+        indices — not from the message-count delta, which is always 0 and made
+        the summary contradict earliest_changed/freed_tokens."""
+        await tool._soul.context.append_message(_assistant_with_think("a" * 400))
+        await tool._soul.context.append_message(_user("first"))
+        await tool._soul.context.append_message(_assistant_with_think("b" * 400))
+        await tool._soul.context.append_message(_user("tail"))
+        await tool._soul.context.append_message(_assistant("tail reply"))
+
+        result = await tool(
+            Params(mode="strip_reasoning", keep_recent_turns=1, dry_run=True)
+        )
+
+        assert not result.is_error
+        assert "**Messages changed/dropped:** 2" in result.output
+        assert "**Earliest changed index:** 0" in result.output
+        assert "**Messages before:** 5" in result.output
+        assert "**Messages after:** 5" in result.output
+        freed_line = next(
+            line
+            for line in result.output.splitlines()
+            if "Estimated tokens freed" in line
+        )
+        freed = int(freed_line.rsplit(":", 1)[1].strip().strip("*"))
+        assert freed > 0
+        # Dry run must not mutate the session.
+        assert len(tool._soul.context.history) == 5
+
+    @pytest.mark.asyncio
+    async def test_strip_reasoning_applied_summary_matches_dry_run(
+        self, tool: context_prune
+    ):
+        """Dry-run and applied summaries must use the same computation."""
+        await tool._soul.context.append_message(_assistant_with_think("a" * 400))
+        await tool._soul.context.append_message(_user("first"))
+        await tool._soul.context.append_message(_assistant_with_think("b" * 400))
+        await tool._soul.context.append_message(_user("tail"))
+        await tool._soul.context.append_message(_assistant("tail reply"))
+
+        dry = await tool(
+            Params(mode="strip_reasoning", keep_recent_turns=1, dry_run=True)
+        )
+        applied = await tool(
+            Params(mode="strip_reasoning", keep_recent_turns=1, dry_run=False)
+        )
+
+        assert not dry.is_error and not applied.is_error
+        # Same bullet lines (mode/dry-run banner differs outside the summary).
+        dry_summary = dry.output.split("\n\n", 1)[1]
+        applied_summary = applied.output.split("\n\n", 1)[1]
+        assert "**Messages changed/dropped:** 2" in applied_summary
+        assert dry_summary == applied_summary
+
+    @pytest.mark.asyncio
     async def test_tool_refuses_to_remove_only_turn(self, tool: context_prune):
         await tool._soul.context.append_message(_user("hello"))
         await tool._soul.context.append_message(_assistant("hi"))

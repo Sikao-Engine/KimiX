@@ -902,9 +902,33 @@ class Agent(CallableTool2):
         text = result.output or result.message or "(no output)"
         if len(text) > 2000:
             text = text[:2000] + "..."
-        notice = (
-            f"Background subagent '{session_id}' {status}. Final message:\n{text}"
+        extras = getattr(result, "extras", None) or {}
+        store = _get_store(self._session)
+        externally_closed = (
+            not result.is_error
+            and extras.get("status") == "continued"
+            and store.get(session_id) is None
+            and store.was_closed(session_id)
         )
+        if externally_closed:
+            # The run was interrupted (its session was closed mid-turn), so
+            # the output is partial — never present it as a clean completion
+            # with a bogus "(no text output)" final message.
+            partial = text
+            if partial.startswith("Session ID:") and "\n\n" in partial:
+                partial = partial.split("\n\n", 1)[1]
+            if partial == "(no text output)":
+                partial = "(interrupted before producing any text output)"
+            if len(partial) > 1500:
+                partial = partial[:1500] + "..."
+            notice = (
+                f"Background subagent '{session_id}' was interrupted. "
+                f"Partial output:\n{partial}"
+            )
+        else:
+            notice = (
+                f"Background subagent '{session_id}' {status}. Final message:\n{text}"
+            )
         try:
             from kimi_cli.soul.steer import Steer
 
@@ -1148,6 +1172,10 @@ class Agent(CallableTool2):
         if inherited:
             await self._reset_inherited_system_prompt(session)
 
+        # A fresh session for this id: any tombstone left by an earlier
+        # close (interrupt_agent / close_session) is stale now — the new run
+        # owns the id and registers normally at the end of its run.
+        store.discard_closed(session_id)
         self._register_agent_sessions(session, session_id)
 
         return session, session_id, False
@@ -1249,6 +1277,12 @@ class Agent(CallableTool2):
         else:
             existing = store.get(session_id)
             if existing is None:
+                if store.was_closed(session_id):
+                    # The session was closed externally (interrupt_agent)
+                    # while this run was still finishing.  Re-putting the
+                    # entry here would resurrect the dead session, listed as
+                    # completed/active, contradicting the close.
+                    return
                 await store.evict_lru_if_needed()
             created_at = existing.created_at if existing else time.time()
             entry = AgentSessionEntry(

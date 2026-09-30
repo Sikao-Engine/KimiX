@@ -212,6 +212,11 @@ class TestConflictBoundary:
         res = await tool(Params(todos=[Todo(title="Fix the login bugs")]))
         assert not res.is_error
         assert 'looks like existing "Fix the login bug"' in res.output
+        # The warning must say plainly that it is advisory and the item was
+        # still created — otherwise readers mistake it for a refused
+        # on_conflict='error' conflict (the epoch-2 e2e false-positive).
+        assert "advisory only" in res.output
+        assert "still created" in res.output
 
     async def test_reordering_words_is_a_conflict(self, runtime: Runtime) -> None:
         tool = TodoList(runtime)
