@@ -40,7 +40,12 @@ class TestReadCharWindowNotice:
         f.write_text("x" * 1000, encoding="utf-8")
         result = await read_tool(ReadFileParams(path=str(f), max_char=100))
         assert isinstance(result, ToolOk)
-        assert len(result.output) == 100
+        # The char window counts content characters only (see
+        # ``_apply_char_window_to_entries``); line-number prefixes are added
+        # after windowing, so the single rendered line is the 7-char prefix
+        # ``"{line_no:6d}\\t"`` plus the 100-char window.
+        assert result.output == f"{1:6d}\t" + "x" * 100
+        assert len(result.output) == 100 + len(f"{1:6d}\t")
         assert "head chars 0..100" in result.message
         assert "content after is hidden" in result.message
 

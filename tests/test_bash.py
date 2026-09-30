@@ -74,6 +74,34 @@ BASH_AVAILABLE = _bash_is_available()
 PWSH_AVAILABLE = _pwsh_is_available()
 
 
+def _bash_version() -> tuple[int, ...] | None:
+    """Return the installed bash version as a tuple, or None if unknown."""
+    if not BASH_AVAILABLE:
+        return None
+    try:
+        proc = subprocess.run(
+            ["bash", "-c", "echo ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"],
+            capture_output=True,
+            timeout=15,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        return tuple(int(part) for part in proc.stdout.strip().split("."))
+    except ValueError:
+        return None
+
+
+# bash 5.3 (released 2025) started accepting a heredoc delimiter line
+# followed by operators such as ``&&`` — older versions reject it with a
+# syntax error.  The ``_fix_for_windows`` rewrite only matters on < 5.3.
+BASH_REJECTS_HEREDOC_TRAILING_OPERATOR = (_bash_version() or (99,)) < (5, 3)
+
+
 # ============================================================================
 # Fixtures
 # ============================================================================
@@ -1427,21 +1455,26 @@ class TestBashFixHeredocTrailingOperators:
         # environment, so this integration check does not depend on an
         # interpreter being on PATH (many hosts only ship ``python3``).
         source = "cat <<'EOF'\nhello\nEOF\n&& echo next"
+        # ``errors="replace"``: some hosts (e.g. cygwin/git-bash on non-UTF-8
+        # locales) emit localized diagnostics that are not valid UTF-8.
         failed = subprocess.run(
             ["bash", "-c", source],
             capture_output=True,
-            text=True,
             timeout=15,
+            encoding="utf-8",
+            errors="replace",
         )
-        assert failed.returncode != 0
-        assert "syntax error" in failed.stderr
+        if BASH_REJECTS_HEREDOC_TRAILING_OPERATOR:
+            assert failed.returncode != 0
+            assert "syntax error" in failed.stderr
 
         fixed = _fix_for_windows(source).command
         passed = subprocess.run(
             ["bash", "-c", fixed],
             capture_output=True,
-            text=True,
             timeout=15,
+            encoding="utf-8",
+            errors="replace",
         )
         assert passed.returncode == 0
         assert "hello" in passed.stdout

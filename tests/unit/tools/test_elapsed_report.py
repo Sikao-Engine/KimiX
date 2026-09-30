@@ -338,6 +338,7 @@ class TestJobOutputSpentTime:
         stream.success = AsyncMock(return_value=success)
         stream.exit_code = exit_code
         stream.pop_output = AsyncMock(return_value="raw output")
+        stream.wait = AsyncMock()
         return stream
 
     async def test_completed_job_reports_spent_time(self, mock_session: MagicMock) -> None:
