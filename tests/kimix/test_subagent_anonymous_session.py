@@ -163,7 +163,7 @@ async def test_fresh_subagent_session_is_anonymous(
         patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = sub_session
-        result = await Agent(parent_session)(SubAgentParams(prompt="do X"))
+        result = await Agent(parent_session)(SubAgentParams(prompt="do X", run_in_background=False))
 
     assert not result.is_error
     assert mock_create.await_args.kwargs["session_id"]
@@ -196,7 +196,7 @@ async def test_resumed_existing_session_keeps_its_directory(
     ):
         mock_create.return_value = sub_session
         result = await Agent(parent_session)(
-            SubAgentParams(prompt="continue", session_id=session_id)
+            SubAgentParams(prompt="continue", session_id=session_id, run_in_background=False)
         )
 
     assert not result.is_error
@@ -225,7 +225,7 @@ async def test_subagent_session_dir_deleted_after_finish(
     # in the store, and the deletion must come from the tool's own close.
     agent = Agent(parent_session)
     with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
-        result = await agent(SubAgentParams(prompt="do X"))
+        result = await agent(SubAgentParams(prompt="do X", run_in_background=False))
 
     assert not result.is_error
     session_id = result.extras["session_id"]
@@ -267,7 +267,7 @@ async def test_subagent_session_dir_removed_while_a_file_is_locked(
 
     agent = Agent(parent_session)
     with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
-        result = await agent(SubAgentParams(prompt="do X"))
+        result = await agent(SubAgentParams(prompt="do X", run_in_background=False))
 
     assert not result.is_error
     session_dir = _cache_dir(parent_session.work_dir, result.extras["session_id"])
@@ -293,7 +293,7 @@ async def test_subagent_session_dir_kept_while_session_is_alive(
     agent = Agent(parent_session)
     with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
         result = await agent(
-            SubAgentParams(prompt="do X", close_session=False)
+            SubAgentParams(prompt="do X", close_session=False, run_in_background=False)
         )
 
     assert not result.is_error
@@ -328,12 +328,12 @@ async def test_resuming_a_closed_subagent_leaves_no_directory_behind(
 
     agent = Agent(parent_session)
     with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
-        first = await agent(SubAgentParams(prompt="do X"))
+        first = await agent(SubAgentParams(prompt="do X", run_in_background=False))
         session_id = first.extras["session_id"]
         assert not _cache_dir(parent_session.work_dir, session_id).exists()
 
         second = await agent(
-            SubAgentParams(prompt="follow up", session_id=session_id)
+            SubAgentParams(prompt="follow up", session_id=session_id, run_in_background=False)
         )
 
     assert not second.is_error
@@ -368,7 +368,7 @@ async def test_inherit_context_copy_is_anonymous(
     ):
         mock_create.return_value = sub_session
         result = await Agent(parent_session)(
-            SubAgentParams(prompt="do X", inherit_context=True)
+            SubAgentParams(prompt="do X", inherit_context=True, run_in_background=False)
         )
 
     assert not result.is_error
@@ -414,8 +414,8 @@ async def test_parent_close_deletes_all_subagent_sessions(
 
     agent = Agent(parent._cli.session)
     with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
-        first = await agent(SubAgentParams(prompt="a", close_session=False))
-        second = await agent(SubAgentParams(prompt="b", close_session=False))
+        first = await agent(SubAgentParams(prompt="a", close_session=False, run_in_background=False))
+        second = await agent(SubAgentParams(prompt="b", close_session=False, run_in_background=False))
 
     child_ids = [first.extras["session_id"], second.extras["session_id"]]
     for child_id in child_ids:
@@ -444,7 +444,7 @@ async def test_parent_clear_deletes_all_subagent_sessions(
 
     agent = Agent(parent._cli.session)
     with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
-        result = await agent(SubAgentParams(prompt="a", close_session=False))
+        result = await agent(SubAgentParams(prompt="a", close_session=False, run_in_background=False))
     child_id = result.extras["session_id"]
     assert _cache_dir(work_dir, child_id).exists()
 
@@ -467,7 +467,7 @@ async def test_parent_close_keeps_a_named_child_session_dir(
     agent = Agent(parent._cli.session)
     with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
         result = await agent(
-            SubAgentParams(prompt="continue", session_id=named_id, close_session=False)
+            SubAgentParams(prompt="continue", session_id=named_id, close_session=False, run_in_background=False)
         )
     assert result.extras["session_id"] == named_id
     child = _get_agent_session(named_id)
@@ -491,7 +491,7 @@ async def test_child_closed_normally_leaves_the_parent_registry(
 
     agent = Agent(parent._cli.session)
     with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
-        result = await agent(SubAgentParams(prompt="a"))  # close_session=True
+        result = await agent(SubAgentParams(prompt="a", run_in_background=False))  # close_session=True
 
     child_id = result.extras["session_id"]
     assert child_id not in _children_by_parent.get("parent-1", set())
@@ -525,7 +525,7 @@ def test_throwaway_agent_instance_keeps_parent_children(
         holder["agent"] = agent  # the principal toolset instance stays alive
         holder["parent"] = parent
         with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
-            result = await agent(SubAgentParams(prompt="a", close_session=False))
+            result = await agent(SubAgentParams(prompt="a", close_session=False, run_in_background=False))
         return result.extras["session_id"]
 
     child_id = asyncio.run(spawn())
@@ -560,7 +560,7 @@ def test_shutdown_path_cascades_to_subagent_sessions(
         parent = await _real_parent_session(tmp_path, monkeypatch)
         agent = Agent(parent._cli.session)
         with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
-            result = await agent(SubAgentParams(prompt="a", close_session=False))
+            result = await agent(SubAgentParams(prompt="a", close_session=False, run_in_background=False))
         return parent, result.extras["session_id"]
 
     parent, child_id = asyncio.run(spawn())

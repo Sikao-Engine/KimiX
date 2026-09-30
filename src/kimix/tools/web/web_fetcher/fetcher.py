@@ -57,7 +57,14 @@ async def _fetch_html(url: str, user_agent: str, viewport: dict, wait_until: str
             )
             page = await context.new_page()
             try:
-                await page.goto(url, wait_until=wait_until, timeout=60000)
+                response = await page.goto(url, wait_until=wait_until, timeout=60000)
+                # A 4xx/5xx status must not be silently treated as an empty
+                # successful page: raise so the caller can fall back to the
+                # HTTP fetch, which surfaces the status as an error.
+                if response is not None and response.status >= 400:
+                    raise RuntimeError(
+                        f"HTTP {response.status} when loading {url}"
+                    )
             except PWTimeoutError:
                 # If networkidle times out, the DOM is usually ready enough.
                 # But if the page never loaded at all, bail out so the caller
@@ -114,8 +121,10 @@ async def _fetch_html_http(
         for attempt in range(retries):
             try:
                 response = await client.get(url, headers=headers)
-                # Raise for 4xx/5xx so we can retry transient failures.
-                if response.status_code >= 500:
+                # Raise for 4xx/5xx so non-2xx responses are surfaced as
+                # errors (never as empty successful pages) and transient
+                # failures can be retried.
+                if response.status_code >= 400:
                     response.raise_for_status()
                 return response.text
             except httpx.HTTPStatusError as exc:

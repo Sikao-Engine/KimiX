@@ -122,6 +122,71 @@ class TestIncidentReplay:
             Params.model_validate({"todos": [], "on_conflict": "sideways"})
 
 
+class TestRenumberingConflict:
+    """A trailing counter on one side only is renumbering, not a new task.
+
+    The e2e incident: "Test read tool" existed and the model sent
+    "Test read tool 2". The old word-set comparison saw {test, read, tool, 2}
+    != {test, read, tool}, warned "looks like existing", and appended anyway —
+    warning and action disagreed and the on_conflict='error' default was
+    silently bypassed.
+    """
+
+    async def test_numbered_variant_refuses_by_default(self, runtime: Runtime) -> None:
+        tool = TodoList(runtime)
+        await tool(Params(todos=[Todo(title="Test read tool")]))
+        res = await tool(Params(todos=[Todo(title="Test read tool 2")]))
+        assert res.is_error, res.output
+        assert "is a near-duplicate of the existing" in res.output
+        assert 'send: {"title":"Test read tool"}' in res.output
+        assert res.message == (
+            'Near-duplicate title "Test read tool 2" '
+            '(existing: "Test read tool").'
+        )
+        # refused: no duplicate in the stored tree
+        assert _titles(tool) == ["Test read tool"]
+
+    async def test_numbered_variant_really_appends_on_append(self, runtime: Runtime) -> None:
+        tool = TodoList(runtime)
+        await tool(Params(todos=[Todo(title="Test read tool")]))
+        res = await tool(
+            Params(todos=[Todo(title="Test read tool 2")], on_conflict="append")
+        )
+        assert not res.is_error, res.output
+        assert _titles(tool) == ["Test read tool", "Test read tool 2"]
+        assert "on_conflict='append'" in res.output
+
+    async def test_numbered_variant_reuses_on_reuse(self, runtime: Runtime) -> None:
+        tool = TodoList(runtime)
+        await tool(Params(todos=[Todo(title="Test read tool")]))
+        res = await tool(
+            Params(
+                todos=[Todo(title="Test read tool 2", status="done")],
+                on_conflict="reuse",
+            )
+        )
+        assert not res.is_error, res.output
+        assert _titles(tool) == ["Test read tool"]
+        assert _statuses(tool) == {"Test read tool": "done"}
+
+    @pytest.mark.parametrize(
+        ("first", "second"),
+        [
+            ("Task 10", "Task 0"),  # numbers on BOTH sides identify the task
+            ("Step 1", "Step 2"),
+            ("Read the README", "Read the README twice"),  # non-numeric extra word
+        ],
+    )
+    async def test_still_not_a_conflict(
+        self, runtime: Runtime, first: str, second: str
+    ) -> None:
+        tool = TodoList(runtime)
+        await tool(Params(todos=[Todo(title=first)]))
+        res = await tool(Params(todos=[Todo(title=second)]))
+        assert not res.is_error, res.output
+        assert second in _titles(tool)
+
+
 class TestConflictBoundary:
     @pytest.mark.parametrize(
         ("first", "second"),

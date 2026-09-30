@@ -872,7 +872,17 @@ class Powershell(CallableTool2[PowershellParams]):
         )
 
     async def _execute_background(self, params: PowershellParams) -> ToolReturnValue:
-        """Execute a PowerShell command in background and return immediately with task_id."""
+        """Execute a PowerShell command in background and return immediately with task_id.
+
+        When ``wait_for_pattern`` is set the user explicitly asked to block:
+        poll the task's output until the pattern appears, the task settles, or
+        ``params.timeout`` expires, then return the output collected so far
+        (mirroring the ``run`` tool's background-wait behavior).  Without a
+        pattern the previous immediate return is preserved.
+        """
+        pattern = self._compile_pattern(params.wait_for_pattern)
+        if isinstance(pattern, ToolError):
+            return pattern
         cmd = params.command
         note = ""
         if cmd:
@@ -915,6 +925,22 @@ class Powershell(CallableTool2[PowershellParams]):
                 params,
                 rtk_rewritten=False,
                 transform_warning=note,
+            )
+
+        if params.wait_for_pattern is not None and process_task.stream is not None:
+            from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+            inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
+            output, matched, elapsed = await process_task.stream.wait_for_output(
+                timeout=params.timeout, pattern=pattern,
+                inactivity_timeout=inactivity_timeout,
+            )
+            alive = await process_task.thread_is_alive()
+            status = "running" if alive else "completed"
+            return await self._format_session_result(
+                task_id, process_task.stream, params, output, status,
+                wait_matched=matched, elapsed_seconds=elapsed,
+                message=f"Running in background. task_id: `{task_id}`." + note,
+                brief="Background task started",
             )
 
         return ToolOk(

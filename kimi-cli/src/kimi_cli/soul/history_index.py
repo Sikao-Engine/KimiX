@@ -512,7 +512,7 @@ class HistoryIndex:
         where = " OR ".join(clauses)
         cursor = conn.execute(
             f"""
-            SELECT turn_id, role, text, timestamp, is_compacted, 0.0 AS score
+            SELECT turn_id, role, text, timestamp, is_compacted
             FROM turns
             WHERE {where}
             ORDER BY timestamp DESC, turn_id DESC
@@ -520,7 +520,17 @@ class HistoryIndex:
             """,
             (*params, top_k),
         )
-        return [self._row_to_turn(row, with_score=True) for row in cursor]
+        # LIKE has no native ranking: score each row by query-token coverage so
+        # downstream recency boosting and the retrieve tool's relevance display
+        # get a meaningful (0, 1] number instead of an always-0.00 placeholder.
+        lowered = [t.lower() for t in tokens]
+        out: list[dict[str, Any]] = []
+        for row in cursor:
+            turn = self._row_to_turn(row)
+            text_l = turn["text"].lower()
+            matched = sum(1 for t in lowered if t in text_l)
+            out.append({**turn, "score": matched / len(lowered)})
+        return out
 
     def _search_legacy(self, query: str, top_k: int) -> list[dict[str, Any]]:
         if not self._turns_list:

@@ -90,8 +90,17 @@ class retrieve(CallableTool2[Params]):
             text = r["text"]
             score = r.get("score", 0.0)
             marker = " [compacted]" if r.get("is_compacted") else " [current]"
+            # Only annotate a relevance score when the backend produced one;
+            # an always-0.00 number is noise that makes the ranking look
+            # broken. bm25 scores can be ~1e-6 on small/young corpora (IDF≈0),
+            # so fall back to significant-digit formatting below 0.01.
+            if score > 0:
+                shown = f"{score:.2f}" if score >= 0.01 else f"{score:.2g}"
+                relevance = f" (relevance: {shown})"
+            else:
+                relevance = ""
             lines.append(
-                f"> **{role}**{marker} (relevance: {score:.2f})\n"
+                f"> **{role}**{marker}{relevance}\n"
                 f"> {text.replace(chr(10), chr(10) + '> ')}"
             )
 

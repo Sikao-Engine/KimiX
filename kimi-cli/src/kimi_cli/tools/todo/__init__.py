@@ -1942,8 +1942,13 @@ class TodoList(CallableTool2[Params]):
         """Return the sibling title that is the same task under a different spelling.
 
         Same words (any order, any punctuation, any leading numbering) = same
-        task. Anything else — including a typo — is left to the advisory warning
-        tier, so legitimate siblings are never refused. Returns the first match.
+        task. A pure *renumbering* also counts: if the only difference is a
+        numeric token present on just one side ("Test read tool" vs
+        "Test read tool 2"), the numbered one is the same task re-counted.
+        Numeric tokens on *both* sides with different values ("Task 10" vs
+        "Task 0") stay distinct — there the number identifies the task. Anything
+        else — including a typo — is left to the advisory warning tier, so
+        legitimate siblings are never refused. Returns the first match.
         """
         words = frozenset(normalize_title(title).split())
         if not words:
@@ -1951,8 +1956,22 @@ class TodoList(CallableTool2[Params]):
         for existing in container:
             if existing.title == title:
                 continue
-            if frozenset(normalize_title(existing.title).split()) == words:
+            existing_words = frozenset(normalize_title(existing.title).split())
+            if existing_words == words:
                 return existing.title
+            diff = words ^ existing_words
+            if diff and all(w.isdigit() for w in diff):
+                # Renumbering: the numeric token(s) appear on only one side.
+                # If both sides carry (different) numbers, the number is part
+                # of the task's identity ("Task 10" vs "Task 0" are siblings).
+                only_incoming = words - existing_words
+                only_in_existing = existing_words - words
+                if not (
+                    only_incoming
+                    and only_in_existing
+                    and all(w.isdigit() for w in only_in_existing)
+                ):
+                    return existing.title
         return None
 
     def _conflict_error(self, item: Todo, conflict: str, *, where: str) -> ToolReturnValue:

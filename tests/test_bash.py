@@ -3914,6 +3914,101 @@ class TestPowershellInactivityTimeout:
         assert 2.5 <= elapsed <= 4.0
 
 
+class TestPowershellBackgroundSendWaitForPatternMocked:
+    """mode='send' + wait_for_pattern must block until the pattern appears."""
+
+    @pytest.fixture
+    def pwsh_instance(self, mock_session: MagicMock) -> Powershell:
+        with patch(
+            "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+            return_value=True,
+        ), patch(
+            "kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
+        ):
+            return Powershell(session=mock_session)
+
+    @staticmethod
+    def _mock_process_task(
+        wait_result: tuple[str, bool, float] = ("ready output", True, 1.5),
+        alive: bool = True,
+    ) -> MagicMock:
+        process_task = MagicMock()
+        process_task.start = AsyncMock(return_value="pwsh-send-id")
+        process_task.thread_is_alive = AsyncMock(return_value=alive)
+        process_task.stream = MagicMock()
+        process_task.stream.wait_for_output = AsyncMock(return_value=wait_result)
+        process_task.stream.success = AsyncMock(return_value=True)
+        process_task.stream.exit_code = 0
+        process_task.stream.process_elapsed = None
+        return process_task
+
+    async def test_send_with_wait_for_pattern_blocks_and_returns_output(
+        self, pwsh_instance: Powershell
+    ) -> None:
+        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+            mock_pt.return_value = self._mock_process_task()
+            result = await pwsh_instance(
+                PowershellParams(
+                    cmd="Start-Sleep -Seconds 2; Write-Output ready_now",
+                    mode="send",
+                    wait_for_pattern="ready_now",
+                )
+            )
+
+        assert isinstance(result, ToolOk)
+        assert "pwsh-send-id" in result.output
+        assert "ready output" in result.output
+        assert "wait_matched: true" in result.output
+        mock_pt.return_value.stream.wait_for_output.assert_awaited_once()
+
+    async def test_send_without_wait_for_pattern_still_returns_immediately(
+        self, pwsh_instance: Powershell
+    ) -> None:
+        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+            mock_pt.return_value = self._mock_process_task()
+            result = await pwsh_instance(
+                PowershellParams(cmd="Write-Output hi", mode="send")
+            )
+
+        assert isinstance(result, ToolOk)
+        assert "Running in background. task_id: `pwsh-send-id`" in result.output
+        mock_pt.return_value.stream.wait_for_output.assert_not_called()
+
+
+@pytest.mark.skipif(
+    not PWSH_AVAILABLE,
+    reason="PowerShell tool is not available on this platform",
+)
+class TestPowershellBackgroundSendWaitForPatternIntegration:
+    @pytest.fixture(autouse=True)
+    def _force_pwsh_enabled(self) -> Any:
+        with patch(
+            "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+            return_value=True,
+        ):
+            yield
+
+    async def test_pwsh_send_wait_for_pattern_blocks_until_pattern(
+        self, mock_session: MagicMock
+    ) -> None:
+        pwsh = Powershell(session=mock_session)
+        start = time.monotonic()
+        result = await pwsh(
+            PowershellParams(
+                cmd="Start-Sleep -Seconds 2; Write-Output ready_now",
+                mode="send",
+                wait_for_pattern="ready_now",
+                timeout=30,
+            )
+        )
+        elapsed = time.monotonic() - start
+
+        assert isinstance(result, ToolOk)
+        assert "ready_now" in result.output
+        assert "wait_matched: true" in result.output
+        assert elapsed >= 1.5, f"returned too early after {elapsed:.2f}s"
+
+
 # ============================================================================
 # Complex bash commands — pipes, redirects, substitution, etc.
 # ============================================================================
@@ -5117,6 +5212,139 @@ class TestBashSessionContinuation:
         stream.pop_output.assert_awaited_once()
         stream.input.assert_awaited_once_with("echo hello\n")
         stream.wait_for_output.assert_awaited_once()
+
+
+# ============================================================================
+# Bash mode='send' + wait_for_pattern (background wait)
+# ============================================================================
+
+class TestBashBackgroundSendWaitForPattern:
+    """mode='send' with wait_for_pattern must block until the pattern appears."""
+
+    @pytest.fixture
+    def bash_instance(self, mock_session: MagicMock) -> Bash:
+        with patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
+            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        ):
+            return Bash(session=mock_session)
+
+    @staticmethod
+    def _mock_process_task(
+        wait_result: tuple[str, bool, float] = ("ready output", True, 1.5),
+        alive: bool = True,
+    ) -> MagicMock:
+        process_task = MagicMock()
+        process_task.start = AsyncMock(return_value="bash-send-id")
+        process_task.thread_is_alive = AsyncMock(return_value=alive)
+        process_task.stream = MagicMock()
+        process_task.stream.wait_for_output = AsyncMock(return_value=wait_result)
+        process_task.stream.success = AsyncMock(return_value=True)
+        process_task.stream.exit_code = 0
+        process_task.stream.process_elapsed = None
+        return process_task
+
+    async def test_send_with_wait_for_pattern_blocks_and_returns_output(
+        self, bash_instance: Bash
+    ) -> None:
+        with patch(
+            "kimix.tools.file.bash.bash_tool.ProcessTask"
+        ) as mock_pt:
+            mock_pt.return_value = self._mock_process_task()
+            result = await bash_instance(
+                BashParams(cmd="sleep 2; echo ready_now", mode="send", wait_for_pattern="ready_now")
+            )
+
+        assert isinstance(result, ToolOk)
+        assert "bash-send-id" in result.output
+        assert "ready output" in result.output
+        assert "wait_matched: true" in result.output
+        stream = mock_pt.return_value.stream
+        stream.wait_for_output.assert_awaited_once()
+        _, kwargs = stream.wait_for_output.call_args
+        assert kwargs["pattern"] is not None
+        assert kwargs["pattern"].search("ready_now")
+
+    async def test_send_with_wait_for_pattern_task_completed(
+        self, bash_instance: Bash
+    ) -> None:
+        with patch(
+            "kimix.tools.file.bash.bash_tool.ProcessTask"
+        ) as mock_pt:
+            mock_pt.return_value = self._mock_process_task(
+                wait_result=("all done", False, 2.0), alive=False
+            )
+            result = await bash_instance(
+                BashParams(cmd="echo hi", mode="send", wait_for_pattern="never_appears", timeout=5)
+            )
+
+        assert isinstance(result, ToolOk)
+        assert "all done" in result.output
+        assert "status: completed" in result.output
+
+    async def test_send_with_invalid_wait_for_pattern_does_not_start_task(
+        self, bash_instance: Bash
+    ) -> None:
+        with patch(
+            "kimix.tools.file.bash.bash_tool.ProcessTask"
+        ) as mock_pt:
+            result = await bash_instance(
+                BashParams(cmd="echo hi", mode="send", wait_for_pattern="[")
+            )
+
+        assert isinstance(result, ToolError)
+        assert "Invalid wait_for_pattern" in result.message
+        mock_pt.assert_not_called()
+
+    async def test_send_without_wait_for_pattern_still_returns_immediately(
+        self, bash_instance: Bash
+    ) -> None:
+        with patch(
+            "kimix.tools.file.bash.bash_tool.ProcessTask"
+        ) as mock_pt:
+            mock_pt.return_value = self._mock_process_task()
+            result = await bash_instance(BashParams(cmd="echo hi", mode="send"))
+
+        assert isinstance(result, ToolOk)
+        assert "Running in background. task_id: `bash-send-id`" in result.output
+        mock_pt.return_value.stream.wait_for_output.assert_not_called()
+
+
+@pytest.mark.skipif(
+    not BASH_AVAILABLE,
+    reason="Bash tool is not available on this platform",
+)
+class TestBashBackgroundSendWaitForPatternIntegration:
+    async def test_send_wait_for_pattern_blocks_until_pattern(self, mock_session: MagicMock) -> None:
+        bash = Bash(session=mock_session)
+        start = time.monotonic()
+        result = await bash(
+            BashParams(
+                cmd="sleep 2; echo ready_now",
+                mode="send",
+                wait_for_pattern="ready_now",
+                timeout=30,
+            )
+        )
+        elapsed = time.monotonic() - start
+
+        assert isinstance(result, ToolOk)
+        assert "ready_now" in result.output
+        assert "wait_matched: true" in result.output
+        # The call must have blocked until the pattern appeared (~2s), not
+        # returned immediately.
+        assert elapsed >= 1.5, f"returned too early after {elapsed:.2f}s"
+
+    async def test_send_without_wait_for_pattern_returns_immediately(
+        self, mock_session: MagicMock
+    ) -> None:
+        bash = Bash(session=mock_session)
+        start = time.monotonic()
+        result = await bash(BashParams(cmd="echo hi", mode="send", timeout=30))
+        elapsed = time.monotonic() - start
+
+        assert isinstance(result, ToolOk)
+        assert "Running in background" in result.output
+        assert elapsed < 5.0, f"send without pattern should return immediately ({elapsed:.2f}s)"
 
 
 # ============================================================================

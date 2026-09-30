@@ -168,6 +168,57 @@ class TestRetrieveById:
 
 
 # ---------------------------------------------------------------------------
+# Relevance scores (LIKE fallback must not show always-0.00)
+# ---------------------------------------------------------------------------
+
+
+class TestRetrieveRelevance:
+    @pytest.fixture
+    def fts_index(self, tmp_path):
+        """FTS-backed index; forcing the stale breadcrumb degrades it to LIKE."""
+        idx = HistoryIndex(db_path=tmp_path / "history.db")
+        idx.index_messages([
+            Message(role="user", content=[TextPart(text="We decided to use orjson for JSON serialization")]),
+            Message(role="assistant", content=[TextPart(text="The retrieve tool searches history with BM25")]),
+        ])
+        return idx
+
+    def test_like_fallback_scores_are_real(self, fts_index: HistoryIndex):
+        """The LIKE fallback scores rows by query-token coverage, not 0.0."""
+        fts_index._set_fts_stale()
+        results = fts_index.search_with_recency("orjson JSON", top_k=3, recency_weight=1.0)
+        assert results, "expected LIKE fallback matches"
+        for r in results:
+            assert r["score"] > 0, f"score should be positive, got {r['score']}"
+        # the orjson turn matches both tokens, so it outranks the BM25 turn
+        assert results[0]["text"].startswith("We decided to use orjson")
+
+    @pytest.mark.asyncio
+    async def test_output_never_shows_zero_relevance(self, fts_index: HistoryIndex):
+        """Even on the unscored LIKE fallback the tool shows no '0.00' noise."""
+        tool = retrieve()
+        tool.attach_history_index(fts_index)
+        fts_index._set_fts_stale()
+        result = await tool(Params(query="orjson JSON", k=3))
+        assert "relevance: 0.00" not in result.output, result.output
+        assert "relevance:" in result.output
+
+    @pytest.mark.asyncio
+    async def test_fts_scores_are_surfaced(self, fts_index: HistoryIndex):
+        """The healthy FTS path shows real bm25 scores, even tiny ones.
+
+        On a young/small corpus bm25 IDF is ~0, so raw scores can be ~1e-6;
+        they must not be rounded away to a misleading 0.00.
+        """
+        tool = retrieve()
+        tool.attach_history_index(fts_index)
+        result = await tool(Params(query="orjson JSON", k=3))
+        assert "relevance: 0.00" not in result.output, result.output
+        assert "relevance:" in result.output
+        assert "e-0" in result.output or "e-1" in result.output
+
+
+# ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
 

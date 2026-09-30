@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -28,6 +29,10 @@ from .store import AgentSessionEntry, AgentSessionStore, ConversationTurn
 
 # Module-level registry for cross-session lookup (AskParent tool → entry)
 _agent_entries: dict[str, AgentSessionEntry] = {}
+
+# Detached background subagent runs.  A started task is kept here so it is
+# not garbage collected before it settles; a done callback discards it.
+_background_tasks: set[asyncio.Task] = set()
 
 # Cross-agent messaging registry: agent id (session id) -> live SDK Session.
 # Populated when an ``Agent`` tool spawns/resumes a sub-agent; used by the
@@ -364,13 +369,17 @@ class SubAgentParams(BaseModel):
             + accepts_alias_text("session_id", "session", word=False)
         ),
     )
-    close_session: bool = Field(
-        default=True,
+    close_session: bool | None = Field(
+        default=None,
         description=(
-            "Close the subagent session after this prompt. Set to False to keep it open for "
-            "future follow-up. Closing deletes the scratch session directory "
-            "(`.kimix_cache/<session id>`), so a closed sub-agent session can no longer be "
-            "resumed with its history."
+            "Close the subagent session after this prompt. Unset (the default): "
+            "a foreground run (run_in_background=false) closes the session, "
+            "while a background run keeps it open so its durable id stays "
+            "listed by list_agents and resumable/messagable later. Set "
+            "true/false to override explicitly for either mode. Closing "
+            "deletes the scratch session directory (`.kimix_cache/<session "
+            "id>`), so a closed sub-agent session can no longer be resumed "
+            "with its history."
         ),
     )
     return_history: bool = Field(
@@ -410,6 +419,32 @@ class SubAgentParams(BaseModel):
             "sub-agent session (which is reused as-is)."
         ),
     )
+
+
+@dataclass
+class _PreparedRun:
+    """Everything ``_execute`` needs, resolved before a run starts.
+
+    ``params.close_session`` already holds the *effective* value (background
+    runs keep the session unless the caller explicitly said otherwise).
+    """
+
+    params: SubAgentParams
+    session: Any
+    session_id: str
+    is_reused: bool
+    prompt: str
+    background: bool
+
+
+def _consume_background_task_error(task: asyncio.Task) -> None:
+    """Retrieve a finished background task's exception (never raises)."""
+    if task.cancelled():
+        return
+    try:
+        task.exception()
+    except Exception:
+        pass
 
 
 def _get_store(session: Session) -> AgentSessionStore:
@@ -685,159 +720,308 @@ class Agent(CallableTool2):
                 message='Recursive sub-agent call detected',
                 brief='sub-agent recursively'
             )
-        async with self._semaphore:
+        try:
+            async with self._semaphore:
+                prepared = await self._prepare_run(params)
+        except Exception as exc:
+            return ToolError(
+                output="",
+                message=str(exc),
+                brief="Failed to create sub-agent session",
+            )
+        if prepared.background:
+            return await self._launch_background(prepared)
+        return await self._execute(prepared)
+
+    async def _prepare_run(self, params: SubAgentParams) -> _PreparedRun:
+        """Resolve the target session and build the effective prompt.
+
+        Everything that can fail synchronously — session creation, ``@file``
+        prompt resolution, context reads — happens here, before a background
+        run is launched, so errors surface in the caller instead of being
+        lost inside the detached task.
+        """
+        session, session_id, is_reused = await self._resolve_session(params)
+        store = _get_store(self._session)
+        entry = store.get(session_id)
+
+        # Resolve @file prompt references to the full task text first.
+        work_dir = _session_work_dir(self._session)
+        base_dir = Path(str(work_dir)) if work_dir is not None else Path(".")
+        task_text = _resolve_prompt(params.prompt, base_dir)
+
+        # Handle very long prompts by offloading to a shared temp file.
+        prompt_bytes = task_text.encode('utf-8')
+        if len(prompt_bytes) > 100 * 1024:
+            temp_path = _create_script_file(task_text, ext=".md")
+            task_prompt = f"Please read the task from `{_display_temp_path(temp_path)}` and execute it."
+        else:
+            task_prompt = task_text
+
+        # Build prompt with context files / context_data if provided
+        prompt = task_prompt
+        if params.context_files or params.context_data:
+            context_parts = ["<context>"]
+            if params.context_files:
+                for fp in params.context_files:
+                    try:
+                        file_path = base_dir / fp
+                        content = file_path.read_text(encoding="utf-8", errors="replace")
+                        context_parts.append(f"<file path='{fp}'>\n{content}\n</file>")
+                    except Exception as e:
+                        context_parts.append(f"<file path='{fp}' error='{e}'/>")
+            if params.context_data:
+                import orjson as _orjson
+                context_parts.append(f"<data>\n{_orjson.dumps(params.context_data, option=_orjson.OPT_INDENT_2).decode()}\n</data>")
+            context_parts.append("</context>")
+            context_block = "\n".join(context_parts)
+            prompt = f"{context_block}\n\n{prompt}"
+
+        # Inject response to pending question if provided
+        if is_reused and entry and entry.pending_question and params.response:
+            prompt = (
+                f"The parent agent responded to your question "
+                f"({entry.pending_question}):\n\n{params.response}\n\n"
+                f"Now, regarding your original task: {prompt}"
+            )
+            entry.pending_question = None
+            entry.state = "running"
+
+        # List any messages queued by ``AskAgent`` while this sub-agent
+        # was idle or its session was closed at the resumed prompt.
+        pending_messages = _drain_pending_messages(session_id)
+        if pending_messages:
+            prompt = f"{prompt}\n\n{_format_pending_messages(pending_messages)}"
+
+        # A session mid-run cannot take another prompt (the SDK raises
+        # ``SessionStateError`` which ``prompt_async`` swallows, turning the
+        # call into a silent no-op) — reject it up front with real guidance.
+        if isinstance(getattr(session, "_cancel_event", None), asyncio.Event):
+            raise RuntimeError(
+                f"Sub-agent '{session_id}' is currently running; wait for it "
+                "to finish or use send_message to give it more work instead."
+            )
+
+        background = bool(params.run_in_background)
+        # Effective close policy: background runs keep the session open by
+        # default so the durable id stays listed/resumable/messageable (the
+        # documented background contract); foreground runs close by default.
+        # An explicit close_session always wins.
+        if params.close_session is None:
+            effective_close = not background
+        else:
+            effective_close = params.close_session
+        effective_params = params.model_copy(update={"close_session": effective_close})
+        return _PreparedRun(
+            params=effective_params,
+            session=session,
+            session_id=session_id,
+            is_reused=is_reused,
+            prompt=prompt,
+            background=background,
+        )
+
+    async def _launch_background(self, prepared: _PreparedRun) -> ToolReturnValue:
+        """Start ``_execute`` as a detached task and return the durable id now."""
+        store = _get_store(self._session)
+        existing = store.get(prepared.session_id)
+        if existing is None:
+            await store.evict_lru_if_needed()
+        entry = AgentSessionEntry(
+            session=prepared.session,
+            session_id=prepared.session_id,
+            created_at=existing.created_at if existing else time.time(),
+            last_accessed=time.time(),
+            conversation_history=list(existing.conversation_history) if existing else [],
+            total_turns=existing.total_turns if existing else 0,
+            is_active=True,
+            pending_question=existing.pending_question if existing else None,
+            state="running",
+        )
+        store.put(entry)
+        _register_entry(prepared.session_id, entry)
+
+        task = asyncio.create_task(self._run_background(prepared))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+        task.add_done_callback(_consume_background_task_error)
+
+        result = ToolOk(
+            output=(
+                f"Session ID: {prepared.session_id}\n\n"
+                "Subagent started in the background. You will receive a "
+                "notice when it finishes; meanwhile you can use "
+                "send_message to give it more work or list_agents to check "
+                "its state."
+            ),
+            brief="Background subagent started",
+        )
+        extras: dict[str, Any] = {
+            "session_id": prepared.session_id,
+            "status": "running",
+            "turn_count": entry.total_turns,
+        }
+        if prepared.params.return_history:
+            extras["conversation_history"] = self._format_history(
+                entry.conversation_history, prepared.params.history_format
+            )
+        result.extras = extras
+        return result
+
+    async def _run_background(self, prepared: _PreparedRun) -> None:
+        """Detached task body for a background subagent run."""
+        try:
+            result = await self._execute(prepared)
+        except Exception as exc:
+            # ``_execute`` handles its own errors; this is a defensive net so
+            # a background failure still notifies the parent and never logs
+            # an unretrieved task exception.
+            result = ToolError(
+                output="",
+                message=str(exc),
+                brief="Background subagent failed",
+            )
+        await self._notify_parent_background_finished(prepared.session_id, result)
+
+    async def _notify_parent_background_finished(
+        self, session_id: str, result: ToolReturnValue
+    ) -> None:
+        """Best-effort steer telling the parent the background run settled.
+
+        Delivered as a steer into the parent's running loop; when the parent
+        is idle the steer is dropped (its queue is rebuilt at the next turn),
+        so this never double-delivers with ``send_message``.
+        """
+        parent_id = _cli_session_id(self._session)
+        if not parent_id:
+            return
+        parent = _get_agent_session(parent_id) or _sdk_session_by_id(parent_id)
+        if parent is None:
+            return
+        status = "failed" if result.is_error else "completed"
+        text = result.output or result.message or "(no output)"
+        if len(text) > 2000:
+            text = text[:2000] + "..."
+        notice = (
+            f"Background subagent '{session_id}' {status}. Final message:\n{text}"
+        )
+        try:
+            from kimi_cli.soul.steer import Steer
+
+            steer = Steer.from_session(parent)
+            if steer is not None:
+                await steer.push(notice)
+        except Exception:
+            pass
+
+    async def _execute(self, prepared: _PreparedRun) -> ToolReturnValue:
+        session = prepared.session
+        session_id = prepared.session_id
+        params = prepared.params
+        store = _get_store(self._session)
+
+        try:
+            collector = _AgentConversationCollector()
+            collector.finalize_user_turn(prepared.prompt)
+
+            def output_function(text: str, msg_type: MessageType) -> None:
+                if text:
+                    collector.consume(text, msg_type)
+
+            err_msg: str | None = None
             try:
-                session, session_id, is_reused = await self._resolve_session(params)
-                store = _get_store(self._session)
-                entry = store.get(session_id)
+                await utils.prompt_async(
+                    prompt_str=prepared.prompt,
+                    session=session,
+                    output_function=output_function,
+                    info_print=False,
+                    merge_wire_messages=True, format_output=True
+                )
+            except Exception as e:
+                err_msg = str(e)
+                collector.turns.append(ConversationTurn(
+                    role="error",
+                    content=err_msg,
+                    timestamp=time.time(),
+                    metadata={"error_type": type(e).__name__},
+                ))
 
-                # Resolve @file prompt references to the full task text first.
-                work_dir = _session_work_dir(self._session)
-                base_dir = Path(str(work_dir)) if work_dir is not None else Path(".")
-                task_text = _resolve_prompt(params.prompt, base_dir)
+            output_text = collector.finalize_assistant_turn()
+            if not output_text:
+                output_text = "(no text output)"
 
-                # Handle very long prompts by offloading to a shared temp file.
-                prompt_bytes = task_text.encode('utf-8')
-                if len(prompt_bytes) > 100 * 1024:
-                    temp_path = _create_script_file(task_text, ext=".md")
-                    task_prompt = f"Please read the task from `{_display_temp_path(temp_path)}` and execute it."
-                else:
-                    task_prompt = task_text
+            output_prefix = f"Session ID: {session_id}\n\n"
 
-                # Build prompt with context files / context_data if provided
-                prompt = task_prompt
-                if params.context_files or params.context_data:
-                    context_parts = ["<context>"]
-                    if params.context_files:
-                        for fp in params.context_files:
-                            try:
-                                file_path = base_dir / fp
-                                content = file_path.read_text(encoding="utf-8", errors="replace")
-                                context_parts.append(f"<file path='{fp}'>\n{content}\n</file>")
-                            except Exception as e:
-                                context_parts.append(f"<file path='{fp}' error='{e}'/>")
-                    if params.context_data:
-                        import orjson as _orjson
-                        context_parts.append(f"<data>\n{_orjson.dumps(params.context_data, option=_orjson.OPT_INDENT_2).decode()}\n</data>")
-                    context_parts.append("</context>")
-                    context_block = "\n".join(context_parts)
-                    prompt = f"{context_block}\n\n{prompt}"
-
-                # Inject response to pending question if provided
-                if is_reused and entry and entry.pending_question and params.response:
-                    prompt = (
-                        f"The parent agent responded to your question "
-                        f"({entry.pending_question}):\n\n{params.response}\n\n"
-                        f"Now, regarding your original task: {prompt}"
-                    )
-                    entry.pending_question = None
-                    entry.state = "running"
-
-                # List any messages queued by ``AskAgent`` while this sub-agent
-                # was idle or its session was closed at the resumed prompt.
-                pending_messages = _drain_pending_messages(session_id)
-                if pending_messages:
-                    prompt = f"{prompt}\n\n{_format_pending_messages(pending_messages)}"
-
-                collector = _AgentConversationCollector()
-                collector.finalize_user_turn(prompt)
-
-                def output_function(text: str, msg_type: MessageType) -> None:
-                    if text:
-                        collector.consume(text, msg_type)
-
-                err_msg: str | None = None
-                try:
-                    await utils.prompt_async(
-                        prompt_str=prompt,
-                        session=session,
-                        output_function=output_function,
-                        info_print=False,
-                        merge_wire_messages=True, format_output=True
-                    )
-                except Exception as e:
-                    err_msg = str(e)
-                    collector.turns.append(ConversationTurn(
-                        role="error",
-                        content=err_msg,
-                        timestamp=time.time(),
-                        metadata={"error_type": type(e).__name__},
-                    ))
-
-                output_text = collector.finalize_assistant_turn()
-                if not output_text:
-                    output_text = "(no text output)"
-
-                output_prefix = f"Session ID: {session_id}\n\n"
-
-                if err_msg:
-                    # The prompt is intentionally not echoed in the brief: it is
-                    # streamed live (formatted and colored) by the CLI printer
-                    # while the tool call is generated (see kimix.base), so
-                    # printing it here would show it twice.
-                    saved_suffix = _prompt_saved_message(prompt)  # full effective prompt actually sent
-                    message = f"{err_msg} {saved_suffix}".strip() if saved_suffix else err_msg
-                    result = ToolError(
-                        output=output_prefix + output_text,
-                        message=message,
-                        brief="sub-agent task failed",
-                    )
-                    extras = self._build_extras(
-                        params, session_id, collector.turns, "closed"
-                    )
-                    if saved_suffix:
-                        prompt_file = saved_suffix.split("[prompt saved to ", 1)[1].split("]", 1)[0]
-                        extras["prompt_file"] = prompt_file
-                    result.extras = extras
-                    await close_session_async(session)
-                    store.close(session_id)
-                    _unregister_entry(session_id)
-                    _unregister_agent_session(session_id)
-                    _forget_child_session(session_id)
-                    return result
-
-                # Check if sub-agent asked parent for clarification
-                current_entry = store.get(session_id)
-                if current_entry and current_entry.state == "awaiting_response":
-                    current_entry.conversation_history = collector.turns
-                    current_entry.total_turns = len(collector.turns)
-                    current_entry.last_accessed = time.time()
-                    _register_entry(session_id, current_entry)
-                    result = ToolOk(
-                        output=output_prefix + output_text,
-                        brief="Sub-agent is awaiting a response",
-                    )
-                    result.extras = self._build_extras(
-                        params,
-                        session_id,
-                        collector.turns,
-                        "awaiting_response",
-                        question=current_entry.pending_question,
-                    )
-                    return result
-
+            if err_msg:
+                # The prompt is intentionally not echoed in the brief: it is
+                # streamed live (formatted and colored) by the CLI printer
+                # while the tool call is generated (see kimix.base), so
+                # printing it here would show it twice.
+                saved_suffix = _prompt_saved_message(prepared.prompt)  # full effective prompt actually sent
+                message = f"{err_msg} {saved_suffix}".strip() if saved_suffix else err_msg
+                result = ToolError(
+                    output=output_prefix + output_text,
+                    message=message,
+                    brief="sub-agent task failed",
+                )
                 extras = self._build_extras(
+                    params, session_id, collector.turns, "closed"
+                )
+                if saved_suffix:
+                    prompt_file = saved_suffix.split("[prompt saved to ", 1)[1].split("]", 1)[0]
+                    extras["prompt_file"] = prompt_file
+                result.extras = extras
+                await close_session_async(session)
+                store.close(session_id)
+                _unregister_entry(session_id)
+                _unregister_agent_session(session_id)
+                _forget_child_session(session_id)
+                return result
+
+            # Check if sub-agent asked parent for clarification
+            current_entry = store.get(session_id)
+            if current_entry and current_entry.state == "awaiting_response":
+                current_entry.conversation_history = collector.turns
+                current_entry.total_turns = len(collector.turns)
+                current_entry.last_accessed = time.time()
+                _register_entry(session_id, current_entry)
+                result = ToolOk(
+                    output=output_prefix + output_text,
+                    brief="Sub-agent is awaiting a response",
+                )
+                result.extras = self._build_extras(
                     params,
                     session_id,
                     collector.turns,
-                    "closed" if params.close_session else "continued",
+                    "awaiting_response",
+                    question=current_entry.pending_question,
                 )
-
-                await self._update_store(params, session, session_id, is_reused, collector.turns)
-
-                result = ToolOk(
-                    output=output_prefix + output_text,
-                    brief="Sub-agent task completed",
-                )
-                result.extras = extras
                 return result
 
-            except Exception as exc:
-                return ToolError(
-                    output="",
-                    message=str(exc),
-                    brief="Failed to create sub-agent session",
-                )
+            extras = self._build_extras(
+                params,
+                session_id,
+                collector.turns,
+                "closed" if params.close_session else "continued",
+            )
+
+            await self._update_store(
+                params, session, session_id, prepared.is_reused, collector.turns
+            )
+
+            result = ToolOk(
+                output=output_prefix + output_text,
+                brief="Sub-agent task completed",
+            )
+            result.extras = extras
+            return result
+
+        except Exception as exc:
+            return ToolError(
+                output="",
+                message=str(exc),
+                brief="Failed to create sub-agent session",
+            )
 
     def _build_extras(
         self,
@@ -1076,7 +1260,9 @@ class Agent(CallableTool2):
                 total_turns=len(turns),
                 is_active=True,
                 pending_question=existing.pending_question if existing else None,
-                state=existing.state if existing else "completed",
+                # A finished run is "completed" ("awaiting_response" is set
+                # by the awaiting-response branch above, never here).
+                state="completed",
             )
             store.put(entry)
             _register_entry(session_id, entry)
@@ -1126,6 +1312,9 @@ class AgentRespond(CallableTool2):
             session_id=params.session_id,
             close_session=params.close_session,
             response=params.response,
+            # Answering a pending question is inherently synchronous: the
+            # parent needs the sub-agent's continuation as this call's result.
+            run_in_background=False,
         )
         return await agent(sub_params)
 

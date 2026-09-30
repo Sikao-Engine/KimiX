@@ -91,8 +91,17 @@ class AgentSessionStore:
 
     async def evict_lru_if_needed(self) -> None:
         while len(self.entries) >= self.MAX_SESSIONS:
+            # Prefer evicting finished sessions: a completed background
+            # subagent stays listed (list_agents) and addressable
+            # (send_message / subagent(session_id=...)) until LRU pressure
+            # picks it, so a freshly finished child is never dropped just
+            # because a newer run started.
+            completed = [
+                sid for sid, e in self.entries.items() if e.state == "completed"
+            ]
+            pool = completed if completed else list(self.entries.keys())
             lru_id = min(
-                self.entries.keys(),
+                pool,
                 key=lambda sid: self.entries[sid].last_accessed,
             )
             entry = self.entries.pop(lru_id)
