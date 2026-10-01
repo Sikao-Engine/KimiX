@@ -10,6 +10,21 @@ import pytest
 from kaos.path import KaosPath
 
 
+def pytest_addoption(parser: Any) -> None:
+    """Register the corpus selector used by tests/test_bash_e2e.py."""
+    parser.addoption(
+        "--case",
+        action="store",
+        default=None,
+        metavar="PATH",
+        help=(
+            "JSON corpus file (array of native-POSIX src -> Git Bash dest "
+            "cases) for tests/test_bash_e2e.py; defaults to "
+            "tests/bash/cases.json"
+        ),
+    )
+
+
 def pytest_configure(config: Any) -> None:
     """Register custom markers used across the test suite."""
     config.addinivalue_line(

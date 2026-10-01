@@ -725,7 +725,7 @@ _COMMAND_END_KEYWORDS = frozenset({"fi", "done", "esac"})
 _LIST_KEYWORDS = frozenset({"for", "select", "case"})
 
 _COMMAND_WRAPPERS = frozenset(
-    {"command", "coproc", "env", "exec", "nohup", "sudo", "time",
+    {"builtin", "command", "coproc", "env", "exec", "nohup", "sudo", "time",
      "timeout", "stdbuf", "nice", "xargs"}
 )
 
@@ -754,7 +754,7 @@ _WRAPPER_OPERAND_COUNTS = {"timeout": 1}
 # than being exec'd as a new process: the fallback function defined by the
 # prefix is directly callable, so the source word is kept (no standalone
 # runner rewrite is needed or possible).
-_SAME_SHELL_WRAPPERS = frozenset({"coproc", "time", "watch"})
+_SAME_SHELL_WRAPPERS = frozenset({"builtin", "coproc", "time", "watch"})
 
 # Shell executables that agents frequently put in front of a command the Bash
 # tool is already going to run (``bash cd /c/dev/x && ...``).  Git Bash can
@@ -1287,6 +1287,7 @@ class _BashFixScanner:
             self.shell_notes.extend(
                 n for n in inner.shell_notes if n not in self.shell_notes
             )
+            self.nul_fixes.extend(inner.nul_fixes)
             self.unsupported.extend(
                 n for n in inner.unsupported if n not in self.unsupported
             )
@@ -1315,7 +1316,7 @@ class _BashFixScanner:
 
     def _watch_command_operand(
         self, word_start: int, word_end: int, raw: str
-    ) -> None:
+    ) -> bool:
         """Fix the inline script of a quoted ``watch`` command operand.
 
         procps ``watch`` executes its command line through ``sh -c``, and the
@@ -1325,28 +1326,34 @@ class _BashFixScanner:
         and re-emitted with the inner fixes applied, so fallback names and
         Windows paths inside it work.  Unquoted operands need no special
         handling here — they flow through the normal command-word rules.
+        Returns ``True`` when the word was consumed as an inline script (any
+        quoted operand): the caller must not also treat it as a command word,
+        or a script that *is* a single fallback name (``watch 'uptime'``)
+        would be recorded twice.
         """
         if not (raw.startswith("'") or raw.startswith('"')):
-            return
+            return False
         script = self._literal_word_value(raw)
         if script is None:
-            return  # expansions inside the script: leave for bash
+            return True  # expansions inside the script: leave for bash
         try:
             inner = _BashFixScanner(script)
             inner._scan_range(0, len(script))
         except RecursionError:
-            return
+            return True
         fixed = _fix_heredoc_trailing_operators(inner._build_source())
         self.names.extend(n for n in inner.names if n not in self.names)
         self.path_notes.extend(inner.path_notes)
         self.shell_notes.extend(
             n for n in inner.shell_notes if n not in self.shell_notes
         )
+        self.nul_fixes.extend(inner.nul_fixes)
         self.unsupported.extend(
             n for n in inner.unsupported if n not in self.unsupported
         )
         if inner.edits:
             self.edits.append((word_start, word_end, _single_quote(fixed)))
+        return True
 
 
     def _scan_range(self, start: int, end: int) -> None:
@@ -1376,6 +1383,14 @@ class _BashFixScanner:
         herestring_flag = False
         pending_heredocs: list[_BashHereDoc] = []
         case_stack: list[str] = []
+        # Set right after a command-position ``for`` word so the immediately
+        # following ``(( ))`` unit is recognised as the arithmetic loop header
+        # (``for ((expr))``).  Bash 5 accepts a brace-group loop body without
+        # ``do`` right after the header
+        # (``for ((i=0;i<2;i++)) { tree; rev; }``); ``for_brace_body`` carries
+        # that expectation to the next ``{`` word.
+        for_arith_header = False
+        for_brace_body = False
         function_name_expected = False
         function_body_expected = False
         # Set when an assignment prefix (``VAR=x``) precedes the command word on
@@ -1404,6 +1419,8 @@ class _BashFixScanner:
                 herestring_flag = False
                 wrapper = None
                 assignment_prefix = False
+                for_arith_header = False
+                for_brace_body = False
                 continue
             if ch == "#" and self._comment_starts(i, start):
                 newline = s.find("\n", i + 1, end)
@@ -1491,17 +1508,26 @@ class _BashFixScanner:
                 function_body_expected = False
                 i = self._skip_conditional(i + 2, end)
                 command_expected = False
+                for_brace_body = False
                 continue
             if s.startswith("((", i) and ch == "(":
                 function_body_expected = False
                 i = self._skip_arithmetic(i + 2, end)
+                # ``for ((expr))`` arithmetic header: bash 5 accepts a do-less
+                # brace-group body right after the unit
+                # (``for ((i=0;i<2;i++)) { tree; rev; }``); the ``{`` word then
+                # opens the group in command position.  A bare simple command
+                # there is a syntax error, so words stay arguments.
                 command_expected = False
+                for_brace_body = for_arith_header
+                for_arith_header = False
                 continue
             if ch == "$" and s.startswith("$(", i) and not s.startswith("$((", i):
                 close = self._find_matching(i + 2, end, ")")
                 inner_end = close if close < end else end
                 self._scan_range(i + 2, inner_end)
                 i = close + 1 if close < end else end
+                for_brace_body = False
                 if case_stack and case_stack[-1] == "word":
                     # A substitution can be the case subject word itself
                     # (``case $(...) in ...``); it ends the header just like
@@ -1513,6 +1539,7 @@ class _BashFixScanner:
                 close = self._find_backtick_end(i + 1, end)
                 self._scan_range(i + 1, close)
                 i = close + 1 if close < end else end
+                for_brace_body = False
                 if case_stack and case_stack[-1] == "word":
                     case_stack[-1] = "await-in"
                 command_expected = False
@@ -1523,6 +1550,7 @@ class _BashFixScanner:
                 close = self._find_matching(i + 2, end, ")")
                 self._scan_range(i + 2, close if close < end else end)
                 i = close + 1 if close < end else end
+                for_brace_body = False
                 if case_stack and case_stack[-1] == "word":
                     case_stack[-1] = "await-in"
                 command_expected = False
@@ -1531,6 +1559,7 @@ class _BashFixScanner:
             op, op_end = self._read_control_operator(i, end)
             if op:
                 i = op_end
+                for_brace_body = False
                 if op == "(" and function_body_expected:
                     function_body_expected = False
                     command_expected = True
@@ -1564,7 +1593,11 @@ class _BashFixScanner:
                 continue
             raw = s[word_start:word_end]
             i = word_end
-
+            # Any word token is a full token boundary: a pending ``for`` word
+            # only pairs with an ``(( ))`` unit that follows it immediately.
+            brace_body_open = for_brace_body and raw == "{"
+            for_arith_header = False
+            for_brace_body = False
             if function_name_expected:
                 function_name_expected = False
                 function_body_expected = True
@@ -1599,6 +1632,9 @@ class _BashFixScanner:
                     command_expected = True
                 elif raw == "esac" and case_stack:
                     case_stack.pop()
+                elif brace_body_open:
+                    # do-less ``for ((expr)) { … }`` body opens here
+                    command_expected = True
                 else:
                     replacement = self._path_replacement(raw)
                     if replacement is not None:
@@ -1640,6 +1676,8 @@ class _BashFixScanner:
             if raw in _LIST_KEYWORDS:
                 if raw == "case":
                     case_stack.append("word")
+                elif raw == "for":
+                    for_arith_header = True
                 command_expected = False
                 continue
             if _ASSIGNMENT_RE.match(raw):
@@ -1707,8 +1745,13 @@ class _BashFixScanner:
                     # unquoted operand falls through to the plain command-word
                     # rules below (``watch`` is a same-shell wrapper, so the
                     # source word resolves against the prefix functions).
-                    self._watch_command_operand(word_start, word_end, raw)
+                    consumed = self._watch_command_operand(
+                        word_start, word_end, raw
+                    )
                     wrapper = None
+                    if consumed:
+                        command_expected = False
+                        continue
 
             # Fallback wrappers are checked first: ``sudo`` is both a plain
             # command wrapper (operand semantics, option tables) and a
@@ -2530,6 +2573,10 @@ class _BashFixScanner:
         while k < end and s[k] in " \t\r":
             k += 1
         if k >= end or s[k] in _OPERATOR_CHARS or s[k] == "#":
+            return
+        if s[k].isdigit() and self._redirection_after_fd(k, end):
+            # ``cd /d 2>/dev/null``: an fd-prefixed redirection is not a path
+            # argument; the flag is dropped only when a path follows it.
             return
         self.edits.append((j, flag_end, ""))
         self.path_notes.append("cd /d")

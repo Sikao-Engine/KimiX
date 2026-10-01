@@ -2448,6 +2448,46 @@ class TestBashFixCommandWordPaths:
         assert "forward slashes" in result.warning
 
 
+_CLIPBOARD_PROBE_OK: bool | None = None
+
+
+def _clipboard_probe_ok() -> bool:
+    """Return whether a Windows clipboard round-trip works in this session.
+
+    ``clip.exe`` (and PowerShell ``Set-Clipboard``) fail with
+    "ERROR: Access is denied." whenever the process runs outside an
+    interactive window station (service context, CI runners, headless
+    sessions).  The clipboard fallback round-trip tests below then exercise
+    nothing under our control -- the OS clipboard itself is unavailable --
+    so they must skip instead of hard-failing.  The probe mirrors exactly
+    what those tests need: a ``clip.exe`` write plus a PowerShell read that
+    observes the written token.
+    """
+    global _CLIPBOARD_PROBE_OK
+    if _CLIPBOARD_PROBE_OK is None:
+        bash = find_bash()
+        ok = False
+        if bash is not None:
+            probe = (
+                "printf __kimixclipprobe__ | clip.exe && "
+                "powershell.exe -NoProfile -NonInteractive -Command "
+                "'[string](Get-Clipboard)' | grep -q __kimixclipprobe__"
+            )
+            try:
+                run = subprocess.run(
+                    [bash, "-lc", probe],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    check=False,
+                )
+                ok = run.returncode == 0
+            except subprocess.TimeoutExpired:
+                ok = False
+        _CLIPBOARD_PROBE_OK = ok
+    return _CLIPBOARD_PROBE_OK
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="requires Windows Git Bash")
 class TestBashFixRealGitBash:
     @staticmethod
@@ -2520,6 +2560,8 @@ class TestBashFixRealGitBash:
         assert "unsupported option" in result.stderr
 
     def test_xclip_fallback_clipboard_roundtrip(self) -> None:
+        if not _clipboard_probe_ok():
+            pytest.skip("Windows clipboard not accessible in this session")
         result = self._run(
             "printf roundtrip | xclip -selection clipboard"
             " && xclip -selection clipboard -o"
@@ -2528,6 +2570,8 @@ class TestBashFixRealGitBash:
         assert result.stdout.rstrip("\r\n") == "roundtrip"
 
     def test_xsel_fallback_clipboard_roundtrip(self) -> None:
+        if not _clipboard_probe_ok():
+            pytest.skip("Windows clipboard not accessible in this session")
         result = self._run("printf seltest | xsel -b && xsel -bo")
         assert result.returncode == 0, result.stderr
         assert result.stdout.rstrip("\r\n") == "seltest"
@@ -2638,6 +2682,8 @@ class TestBashFixRealGitBash:
         assert "127.0.0.1" in result.stdout
 
     def test_wl_clipboard_fallback_roundtrip(self) -> None:
+        if not _clipboard_probe_ok():
+            pytest.skip("Windows clipboard not accessible in this session")
         result = self._run("printf wltest | wl-copy && wl-paste")
         assert result.returncode == 0, result.stderr
         assert result.stdout.rstrip("\r\n") == "wltest"
