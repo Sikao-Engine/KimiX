@@ -9,7 +9,7 @@
             "api_key": "sk-alpha"
         },
         {
-            "role": "other2",
+            "role": "sub_agent",
             "model": "model-beta",
             "max_context_size": 100000,
             "url": "https://api.example.com/v1",
