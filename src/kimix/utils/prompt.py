@@ -743,6 +743,17 @@ async def prompt_async(
                     await _clear_session_todos(session)
                 except Exception as exc:
                     base.print_error(f"Failed to clear todos: {exc}")
+                # Background subagents spawned through the ``subagent`` tool
+                # may still be running now that this session's prompt is
+                # finished.  Wait for all of them to settle before teardown:
+                # closing the parent session would otherwise cascade-close
+                # (and delete) their scratch session directories mid-run.
+                try:
+                    from kimix.tools.agent import wait_for_background_agents
+
+                    await wait_for_background_agents(session)
+                except Exception as exc:
+                    base.print_error(f"Failed to wait for background subagents: {exc}")
                 if close_session_after_prompt:
                     try:
                         await close_session_async(session)

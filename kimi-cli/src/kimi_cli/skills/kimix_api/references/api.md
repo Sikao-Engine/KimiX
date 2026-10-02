@@ -956,10 +956,9 @@ for c in result.comments:
 
 ## `kimix.tools` — Built-in Agent Tools
 
-All tools are `CallableTool2` subclasses. They are organized in subpackages under `kimix.tools` (the package `__init__.py` does not re-export them); import from the relevant submodule, e.g. `from kimix.tools.agent import Agent, AgentList, AgentClose, AskAgent`. Key ones:
+All tools are `CallableTool2` subclasses. They are organized in subpackages under `kimix.tools` (the package `__init__.py` does not re-export them); import from the relevant submodule, e.g. `from kimix.tools.agent import Agent, AgentList, AgentClose`. Key ones:
 
-- `subagent` — launch sub-agent (class `Agent`); params: `description`, `prompt`, `run_in_background=True`, `session_id`, `close_session=True`, `return_history=False`, `response` (from `kimix.tools.agent`)
-- `send_message` — send a message to a subagent (class `AskAgent`); params: `message`, `subagent_id` (optional for the main agent, ignored for sub-agents which always message their parent) (from `kimix.tools.agent`)
+- `subagent` — launch/resume sub-agent (class `Agent`); params: `description`, `prompt`, `run_in_background=True`, `session_id`, `close_session=True`, `return_history=False` (from `kimix.tools.agent`)
 - `list_agents` — list active sub-agent sessions (class `AgentList`); params: `scope` (from `kimix.tools.agent`)
 - `interrupt_agent` — close/interrupt a sub-agent session (class `AgentClose`); params: `agent_id` (from `kimix.tools.agent`)
 - `job_output` — get background job output (class `TaskOutput`); params: `job_id`, `wait=False`, `timeout` (seconds), `output_path`, `kill=False`

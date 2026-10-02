@@ -27,8 +27,7 @@ class AgentSessionEntry:
         conversation_history: list[ConversationTurn],
         total_turns: int,
         is_active: bool = True,
-        pending_question: str | None = None,
-        state: Literal["running", "awaiting_response", "completed"] = "running",
+        state: Literal["running", "completed"] = "running",
     ) -> None:
         self.session = session
         self.session_id = session_id
@@ -37,7 +36,6 @@ class AgentSessionEntry:
         self.conversation_history = conversation_history
         self.total_turns = total_turns
         self.is_active = is_active
-        self.pending_question = pending_question
         self.state = state
 
 
@@ -120,10 +118,10 @@ class AgentSessionStore:
     async def evict_lru_if_needed(self) -> None:
         while len(self.entries) >= self.MAX_SESSIONS:
             # Prefer evicting finished sessions: a completed background
-            # subagent stays listed (list_agents) and addressable
-            # (send_message / subagent(session_id=...)) until LRU pressure
-            # picks it, so a freshly finished child is never dropped just
-            # because a newer run started.
+            # subagent stays listed (list_agents) and resumable
+            # (subagent(session_id=...)) until LRU pressure picks it, so a
+            # freshly finished child is never dropped just because a newer
+            # run started.
             completed = [
                 sid for sid, e in self.entries.items() if e.state == "completed"
             ]

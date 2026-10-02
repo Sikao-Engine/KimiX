@@ -17,7 +17,6 @@
       "kimi_cli.tools.file:grep",
       "kimix.tools.web.fetch_url:fetch_url",
       "kimi_cli.tools.web:web_search",
-      "kimix.tools.agent:send_message",
       "kimix.tools.context:compact"
     ]
   }

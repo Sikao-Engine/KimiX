@@ -636,25 +636,19 @@ VALUE_ALIASES_STATUS: dict[str, str] = {
     "open": "pending",
 }
 
-# --- Agent store state (Literal["running", "awaiting_response", "completed"]) ---
-# source: src/kimix/tools/agent/store.py:31
+# --- Agent store state (Literal["running", "completed"]) ---
+# source: src/kimix/tools/agent/store.py
 VALUE_ALIASES_AGENT_STATE: dict[str, str] = {
-    # "running" synonyms
-    "active": "running",
-    "started": "running",
-    "in_progress": "running",
-    "in-progress": "running",
-    # "awaiting_response" synonyms
-    "waiting": "awaiting_response",
-    "waiting_response": "awaiting_response",
-    "awaiting": "awaiting_response",
-    "awaiting-reply": "awaiting_response",
-    "pending_response": "awaiting_response",
-    # "completed" synonyms
-    "done": "completed",
-    "finished": "completed",
-    "complete": "completed",
-    "closed": "completed",
+ # "running" synonyms
+ "active": "running",
+ "started": "running",
+ "in_progress": "running",
+ "in-progress": "running",
+ # "completed" synonyms
+ "done": "completed",
+ "finished": "completed",
+ "complete": "completed",
+ "closed": "completed",
 }
 
 # --- Chat role (Literal["user", "assistant", "system", "tool", "error"]) ---
@@ -1662,9 +1656,8 @@ TOOL_NAME_REDIRECTS: dict[str, str] = {
     "Grep": "grep",
     "ReadMediaFile": "read_image",
     "SearchWeb": "web_search",
-    "Agent": "subagent",
-    "AskAgent": "send_message",
-    "AgentList": "list_agents",
+        "Agent": "subagent",
+        "AgentList": "list_agents",
     "AgentClose": "interrupt_agent",
     "TaskOutput": "job_output",
     "TodoList": "todo_list",

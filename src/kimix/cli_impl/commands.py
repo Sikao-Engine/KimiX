@@ -850,7 +850,7 @@ Every builtin tool and the exact file where its implementation lives:
   `max_system_prompt_tokens`.
 - Worker tool manifest: `{worker_agent_json}` — the exact tool list for the worker agent
   (`agent.extend=default`): Bash, pwsh, Run, python, job_output, todo_list, retrieve,
-  read, read_image, edit, write, subagent, send_message, list_agents, interrupt_agent,
+  read, read_image, edit, write, subagent, list_agents, interrupt_agent,
   workflow, glob, grep, fetch_url, web_search, compact (from `kimix.tools.*`
   and `kimi_cli.tools.*`).
 - Soul runtime: `{soul_dir}`

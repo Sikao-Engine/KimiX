@@ -42,7 +42,9 @@ Env toggles (same contract as the shim):
 * ``KIMIX_NATIVE=1`` — require native; raise ImportError if unavailable.
 * ``KIMIX_NATIVE=auto`` (default) — native when importable, fallback otherwise.
 * ``KIMIX_NATIVE_<KERNEL>=0`` — disable one kernel (TEXT|INDEX|SEARCH|PARSE|
-  TOOLS|STREAM|CODEC|DIFF|GLOB) while the rest stay native.
+  TOOLS|STREAM|CODEC|DIFF|GLOB|GREP) while the rest stay native. The GREP
+  kernel is gated additionally on the optional ``runtime_py.grep`` submodule
+  being present (see ``kimix_native.grep.native_active``).
 * ``KIMIX_BASE=<dir>`` — kimix-base repo root for the dev-only fallback
   (priority 4); defaults to the ``kimix-base`` sibling of this repo root.
 """
@@ -73,6 +75,7 @@ _KERNELS = (
     "CODEC",
     "DIFF",
     "GLOB",
+    "GREP",
 )
 
 # The _KERNELS tuple above is informational; the actual per-kernel gate is

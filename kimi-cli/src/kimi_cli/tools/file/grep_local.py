@@ -47,6 +47,11 @@ from kimi_cli._rtk_common import _rtk_binary_name
 from kimi_cli.install import _RTK_DOWNLOAD_LOCK, _download_and_install_rtk
 from kimi_cli.share import get_share_dir
 from kimi_cli.soul.agent import Runtime
+from kimi_cli.tools.file.glob import (
+    _GitignoreRule,
+    _gitignore_match,
+    _parse_gitignore,
+)
 from kimi_cli.tools.file.grep_archive import (
     materialize_archive_members,
     parse_archive_path_candidates,
@@ -1129,6 +1134,509 @@ def _entries_are_rich(entries: list[str]) -> bool:
     return bool(parse_archive_path_candidates(path_part))
 
 
+# ---------------------------------------------------------------------------
+# Native GREP kernel (``kimix_native.grep`` over ``runtime_py.grep``)
+# ---------------------------------------------------------------------------
+#
+# The kernel walks and scans in C++ with the GIL released, with the pinned
+# engine semantics documented in ``bin/kimix_native/grep.py``:
+#
+#   * hidden entries (name starting with ``.``) are skipped at EVERY depth and
+#     hidden directories are never descended (an explicitly named root is the
+#     only exempt case);
+#   * ``.gitignore`` is never consulted;
+#   * ``include_glob`` is a case-SENSITIVE ``fnmatch_ascii`` over the file NAME
+#     only (no ``{a,b}`` alternation, no ``!`` negation, no path component);
+#   * a file is skipped when its stat size exceeds 4 MiB or its first 64 KiB
+#     contains a NUL;
+#   * matched LINES are counted (not occurrences), paths are reported as walk
+#     paths, and the pattern space is ``regex_lite`` (no look-around, back
+#     references, possessive quantifiers or named groups; ASCII-only folds).
+#
+# The ripgrep flow this branch replaces ran with ``--hidden`` plus full
+# ``.gitignore`` support, so the *selection* of files cannot simply be
+# delegated to the engine on a real tree.  ``_native_select_files`` therefore
+# reproduces the ripgrep selection in Python (hidden entries included, VCS
+# directories pruned, ``.gitignore`` honored with ripgrep's default
+# ``--require-git`` behavior, include/type filters applied with the same
+# helpers the backup path uses) and hands the resulting file list to the engine
+# as explicit roots: the scan itself — the expensive part — stays native.  When
+# the selection turns out to be exactly what a single engine directory walk
+# would produce, that walk is used instead and Python does no per-file work.
+
+_NATIVE_GREP = _native_get_module("grep")
+
+# Per-file cap of the engine (``grep_engine.h``: ``k_max_file_bytes``).  A
+# larger file is never searched natively, whatever the root spelling is, so the
+# Python-side selection drops it up front instead of shipping a doomed root.
+_ENGINE_MAX_FILE_BYTES = 4 * 1024 * 1024
+
+# regex_lite backtracking guard (KNOWN ENGINE BUG, staged runtime_py 1.3.0,
+# pyd md5 dbd43af60d81d4e865b16414d842b66f): the C++ matcher recurses one
+# native stack frame per greedy repetition, so an unbounded-quantifier pattern
+# ("\w+", ".*", "x+", "{m,}", huge "{m,n}") run against a SINGLE LINE longer
+# than ~24 KiB overflows the thread stack and kills the whole process
+# (Windows 0xC00000FD / SIGSEGV).  Empirical: a 16 KiB line is OK, a 32 KiB
+# line crashes.  Until the fixed engine ships, such patterns only go native
+# when no candidate file is large enough to hold a dangerous line (a file
+# above this cap may contain a too-long line); otherwise the search routes to
+# backup_grep through a synthetic "unsupported" result.
+_ENGINE_BACKTRACK_SAFE_FILE_BYTES = 16 * 1024
+
+# Synthetic ``blocked`` reason for a tree the engine cannot report faithfully.
+# KNOWN ENGINE BUG (same staged pyd): every walk path is round-tripped through
+# std::filesystem narrow/ACP conversions, which is NOT the identity for
+# non-ASCII names: a non-ASCII child name comes back garbled even when its
+# full path is passed verbatim as an explicit file root.  The ripgrep flow
+# reported clean Unicode paths, so any search touching a non-ASCII path is
+# blocked from the engine (synthetic "unsupported" -> backup_grep) until the
+# fixed engine ships.
+_NONASCII_BLOCK = "non-ASCII path"
+
+
+def _grep_kernel():
+    """The ``kimix_native.grep`` shim module when the GREP kernel is live.
+
+    Returns ``None`` — leaving the ripgrep flow in charge, byte-identical to
+    the pre-integration behavior — when ``KIMIX_NATIVE=0``,
+    ``KIMIX_NATIVE_GREP=0``, or the loaded extension has no ``grep`` submodule
+    (a stale ``runtime_py`` build).  ``native_active()`` is consulted on every
+    call so a per-kernel toggle is honored even when the loader's precomputed
+    tables were built while the kernel was still enabled.
+    """
+    if _NATIVE_GREP is None or not _native_use_native("GREP"):
+        return None
+    try:
+        return _NATIVE_GREP if _NATIVE_GREP.native_active() else None
+    except Exception:
+        return None
+
+
+def _git_repo_root(start: Path) -> Path | None:
+    """Nearest git repository root at or above *start*, or None.
+
+    Mirrors ripgrep's default ``--require-git`` behavior: ``.gitignore`` rules
+    are only consulted inside a git repository, so a search outside one scans
+    the same file set ripgrep would (no ignore filtering at all).
+    """
+    try:
+        current = start if start.is_dir() else start.parent
+        while True:
+            if (current / ".git").exists():
+                return current
+            parent = current.parent
+            if parent == current:
+                return None
+            current = parent
+    except OSError:
+        return None
+
+
+def _read_gitignore(directory: Path) -> list["_GitignoreRule"]:
+    """Parse ``directory/.gitignore`` (the Glob tool's rule parser, shared)."""
+    try:
+        content = (directory / ".gitignore").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    if not content.strip():
+        return []
+    return _parse_gitignore(content, directory)
+
+
+# ``rulesets`` is the ordered list of ``(relative-prefix, rules)`` pairs that
+# apply to the children of the directory being scanned: ``relative-prefix`` is
+# the path from the rule's source directory down to that directory ("" when the
+# ``.gitignore`` sits in the directory itself).  Root-first order with later
+# rules winning is git's precedence rule (and the flat variant ``glob`` uses).
+
+
+def _native_ignored(path: Path, name: str, rulesets: list, is_dir: bool) -> bool:
+    """True when gitignore rules exclude *name* inside the scanned directory."""
+    ignored = False
+    for prefix, rules in rulesets:
+        rel = f"{prefix}/{name}" if prefix else name
+        for rule in rules:
+            if _gitignore_match(path, rel, is_dir, rule):
+                ignored = not rule.negated
+    return ignored
+
+
+def _child_rulesets(rulesets: list, dirname: str) -> list:
+    """Descend one level: every rule source is now one component further away."""
+    return [
+        (f"{prefix}/{dirname}" if prefix else dirname, rules)
+        for prefix, rules in rulesets
+    ]
+
+
+def _ancestor_rulesets(repo: Path, search_path: Path) -> list:
+    """``.gitignore`` rules of *search_path*'s ancestors, up to the repo root.
+
+    Ordered repo-root-first so a deeper ``.gitignore`` overrides the outer one.
+    The search directory's own ``.gitignore`` is not included:
+    ``_native_select_files`` reads it when it reaches that directory.
+    """
+    chain: list[Path] = []
+    current = search_path
+    while True:
+        chain.append(current)
+        if current == repo or current.parent == current:
+            break
+        current = current.parent
+    rulesets: list = []
+    # chain is search-path-first, repo-root last; walk repo root -> search
+    # dir's parent (the repo-root .gitignore MUST apply to a sub-directory
+    # search -- reversed(chain[:-1]) would drop the repo root and instead
+    # re-read the search dir's own file, which walk() adds anyway).
+    for src in chain[:0:-1]:  # repo root -> the search dir's parent
+        rules = _read_gitignore(src)
+        if not rules:
+            continue
+        try:
+            rel = search_path.relative_to(src)
+        except ValueError:
+            continue
+        rulesets.append(("/".join(rel.parts), rules))
+    return rulesets
+
+
+@dataclass
+class _NativeSelection:
+    """What to hand the engine for one native search."""
+
+    roots: list[str]
+    engine_walk: bool  # True: one dir/file root; the engine selects the files
+    has_long: bool = False  # a candidate file could hold a >16 KiB line
+    blocked: str = ""  # non-empty: the engine must not run (see the job)
+
+
+def _native_want_file(
+    file_path: Path, params: Params, *, stat_entry: "os.DirEntry | None" = None
+) -> int | None:
+    """Include/type/size filtering for one candidate file (rg-equivalent).
+
+    Returns the file size in bytes when the file should be scanned, ``None``
+    when it must be dropped (include/type mismatch, not a regular file, stat
+    failure, or above the engine's 4 MiB cap).
+    """
+    if not _matches_glob(file_path, params.include):
+        return None
+    if not _matches_type(file_path, params.type):
+        return None
+    try:
+        if stat_entry is not None:
+            if not stat_entry.is_file(follow_symlinks=True):
+                return None
+            size = stat_entry.stat().st_size
+        else:
+            if not file_path.is_file():
+                return None
+            size = file_path.stat().st_size
+    except OSError:
+        return None
+    # The engine never reads a file above its 4 MiB cap (grep_engine.h):
+    # dropping it here is the same observable result as passing it and having
+    # the scan skip it, minus the payload of a doomed root.
+    if size > _ENGINE_MAX_FILE_BYTES:
+        return None
+    return size
+
+
+def _pattern_can_overflow(pattern: str) -> bool:
+    """True when *pattern* may make regex_lite recurse per matched byte.
+
+    Conservative lexical scan (a false positive only costs the backup path,
+    which is exactly the pre-integration behaviour): an unescaped ``+`` or
+    ``*`` outside a ``[...]`` class, or a brace repetition that is unbounded
+    (``{m,}``) or has a large upper bound (>= 4096), can consume a long run
+    of the subject and -- see ``_ENGINE_BACKTRACK_SAFE_FILE_BYTES`` -- blow
+    the native stack on a >~24 KiB line.  Lazy quantifiers (``+?``, ``*?``)
+    count too: the staged matcher recurses on the repetition, not its
+    greediness.
+    """
+    in_class = False
+    i, n = 0, len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "\\":
+            i += 2
+            continue
+        if in_class:
+            if c == "]":
+                in_class = False
+            i += 1
+            continue
+        if c == "[":
+            in_class = True
+            i += 1
+            continue
+        if c in "+*":
+            return True
+        if c == "{":
+            j = i + 1
+            lo = ""
+            while j < n and pattern[j].isdigit():
+                lo += pattern[j]
+                j += 1
+            if lo and j < n and pattern[j] == ",":
+                j += 1
+                hi = ""
+                while j < n and pattern[j].isdigit():
+                    hi += pattern[j]
+                    j += 1
+                if j < n and pattern[j] == "}":
+                    if not hi or int(hi) >= 4096:
+                        return True
+                    i = j + 1
+                    continue
+            elif lo and j < n and pattern[j] == "}":
+                if int(lo) >= 4096:
+                    return True
+                i = j + 1
+                continue
+        i += 1
+    return False
+
+
+def _native_select_files(search_path: Path, params: Params) -> _NativeSelection:
+    """Select the files the native engine should scan, with ripgrep semantics.
+
+    ``engine_walk`` is True only when a single engine walk over *search_path*
+    would select exactly the same files: no hidden entry was added (the engine
+    skips them), nothing was pruned by a ``.gitignore`` rule (the engine never
+    reads them), and no include/type filter is active (the engine only knows
+    its own case-sensitive ``fnmatch_ascii`` over the bare file name).
+    Otherwise the explicit file list is passed and the engine is called with an
+    empty ``include_glob``.
+    """
+    if not search_path.is_dir():
+        # A single explicit file root: the engine scans it as-is, and the
+        # include/type filters are applied here.
+        size = _native_want_file(search_path, params)
+        if size is None:
+            return _NativeSelection([], True)
+        return _NativeSelection(
+            [str(search_path)],
+            True,
+            has_long=size > _ENGINE_BACKTRACK_SAFE_FILE_BYTES,
+            blocked="" if str(search_path).isascii() else _NONASCII_BLOCK,
+        )
+
+    repo = _git_repo_root(search_path)
+    apply_ignore = repo is not None and not params.include_ignored
+    state = {
+        "engine_walk": params.include is None and params.type is None,
+        "has_long": False,
+        "blocked": "" if str(search_path).isascii() else _NONASCII_BLOCK,
+    }
+    files: list[str] = []
+
+    def walk(directory: Path, rulesets: list) -> None:
+        try:
+            with os.scandir(directory) as scanner:
+                entries = list(scanner)
+        except OSError:
+            return
+        if apply_ignore:
+            own = _read_gitignore(directory)
+            if own:
+                rulesets = [*rulesets, ("", own)]
+        for entry in entries:
+            name = entry.name
+            if not name.isascii():
+                # see the _NONASCII_BLOCK engine-bug note: a garbled child
+                # name would corrupt the reported path (and prefix stripping)
+                state["blocked"] = _NONASCII_BLOCK
+            if name.startswith(".") and name in _VCS_DIRS:
+                # ripgrep excludes the VCS directories with its
+                # ``--glob !.git`` flags and the engine skips hidden entries
+                # anyway: pruning here satisfies both.
+                continue
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            hidden = name.startswith(".")
+            path = Path(entry.path)
+            if is_dir and _should_skip_dir(name, params.include_ignored):
+                # Same directory pruning as the pure-Python path
+                # (_VCS_DIRS always, _IGNORED_DIRS unless
+                # include_ignored).  Inside a git repository the
+                # .gitignore rules already drop most of them; this
+                # keeps the two Python-visible paths in agreement and
+                # off node_modules-sized subtrees in any case.  The
+                # engine would descend, so its own walk is now out.
+                if not hidden:
+                    state["engine_walk"] = False
+                continue
+            if apply_ignore and _native_ignored(path, name, rulesets, is_dir):
+                # ripgrep would not search it; the engine would (it never
+                # reads .gitignore) — so its own walk is no longer equivalent.
+                state["engine_walk"] = False
+                continue
+            if is_dir:
+                if hidden:
+                    # Hidden dir: ripgrep searches it (--hidden), the engine
+                    # skips it.  Recurse and cover it from Python instead.
+                    state["engine_walk"] = False
+                walk(path, _child_rulesets(rulesets, name))
+                continue
+            size = _native_want_file(path, params, stat_entry=entry)
+            if size is None:
+                continue
+            if size > _ENGINE_BACKTRACK_SAFE_FILE_BYTES:
+                state["has_long"] = True
+            if hidden:
+                state["engine_walk"] = False
+            files.append(entry.path)
+
+    walk(search_path, _ancestor_rulesets(repo, search_path) if apply_ignore else [])
+    if state["engine_walk"] and not state["blocked"]:
+        return _NativeSelection(
+            [str(search_path)], True, has_long=state["has_long"]
+        )
+    return _NativeSelection(
+        files, False, has_long=state["has_long"], blocked=state["blocked"]
+    )
+
+
+def _sanitize_native_line(line: str) -> str:
+    """Map the engine's surrogate-escaped bytes onto U+FFFD, like the rg flow.
+
+    ``runtime_py.grep`` decodes walk paths and matched text as UTF-8 with the
+    ``surrogateescape`` error handler, so invalid bytes arrive as lone
+    surrogates.  The rest of the pipeline assumes encodable ``str`` (the byte
+    cap does ``line.encode("utf-8")``) and the ripgrep flow produced U+FFFD
+    replacements for the same bytes, so re-decode with ``replace``.
+    """
+    try:
+        line.encode("utf-8")
+    except UnicodeEncodeError:
+        return line.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+    return line
+
+
+def _normalize_walk_artifacts(line: str) -> str:
+    """Collapse ``\D.\`` / ``/./`` artifacts so reported paths are mode-
+    invariant (user directive 2026-10-02).
+
+    The engine joins fs::path-style (literal ``operator/``, no lexical
+    normalisation), so a ``.`` component (an explicit dot-named root under
+    work_dir spelling, e.g. ``<base>\.<sep>name``) would otherwise survive
+    into user-visible output as ``<base>\.\name`` while the ripgrep flow
+    (which received a resolved path) never showed it.  ``_native_call``
+    always passes absolute resolved roots, so this is a defensive no-op on
+    the normal path; it only fires when such an artifact is actually
+    present. Applied to the whole rendered line (path prefix only: two
+    literal separators around a single dot; matched text cannot contain
+    ``\\\\.\\\\`` / ``/. /``-plus-word without a line-number field, and the
+    substitution requires the separator pair, so content is left alone in
+    practice).
+    """
+    if "\\.\\" in line or "/./" in line:
+        return line.replace("\\.\\", "\\").replace("/./", "/")
+    return line
+
+
+def _native_stream_lines(res: dict, params: Params) -> list[str]:
+    """Engine ``lines`` -> the exact stdout stream shape the rg flow produced.
+
+    The engine renders ``path:LN:text`` for matches, ``path-LN-text`` for
+    context and ``--`` between disjoint runs — identical to ripgrep with
+    ``--line-number``.  With ``-n`` off ripgrep drops the number
+    (``path:text`` / ``path-text``); ``line_match`` says which rendered line is
+    a match, so the same shape is rebuilt here.
+    """
+    raw = res.get("lines") or []
+    out: list[str] = []
+    if params.output_mode != "content" or params.line_number:
+        for line in raw:
+            out.append(_normalize_walk_artifacts(_sanitize_native_line(line)))
+        return out
+    line_match = res.get("line_match") or []
+    for index, line in enumerate(raw):
+        text = _normalize_walk_artifacts(_sanitize_native_line(line))
+        if text == "--":
+            out.append(text)
+            continue
+        parsed = parse_content_line(text)
+        if parsed is None:
+            out.append(text)
+            continue
+        path, _line_no, body, _is_match = parsed
+        is_match = bool(line_match[index]) if index < len(line_match) else True
+        sep = ":" if is_match else "-"
+        out.append(f"{path}{sep}{body}")
+    return out
+
+
+def _native_before_context(params: Params) -> int:
+    if params.context is not None:
+        return params.context
+    return params.before_context or 0
+
+
+def _native_after_context(params: Params) -> int:
+    if params.context is not None:
+        return params.context
+    return params.after_context or 0
+
+
+def _native_unsupported(message: str) -> dict:
+    """Synthetic engine-shaped result that routes the call to backup_grep.
+
+    ``Grep._native_call`` treats any ``status != "ok"`` as "not servable
+    natively" and falls back; the vocabulary mirrors the engine's own
+    ``unsupported`` status (see ``tool_status`` in the binding contract).
+    """
+    return {
+        "ok": False,
+        "status": "unsupported",
+        "message": message,
+        "total_matches": 0,
+        "files": [],
+        "lines": [],
+        "line_match": [],
+    }
+
+
+def _native_grep_job(kernel, search_path: Path, params: Params) -> dict:
+    """Select the files, then run the engine.  Executed in a worker thread.
+
+    The engine call blocks (C++, GIL released) so it must stay off the event
+    loop; the selection walk is IO-bound for the same reason.
+    """
+    selection = _native_select_files(search_path, params)
+    if selection.blocked:
+        return _native_unsupported(
+            f"engine-bug guard: {selection.blocked} (routing to backup)"
+        )
+    if (
+        selection.has_long
+        and _pattern_can_overflow(params.pattern)
+    ):
+        return _native_unsupported(
+            "engine-bug guard: unbounded quantifier vs a file that could "
+            f"hold a >{_ENGINE_BACKTRACK_SAFE_FILE_BYTES} byte line "
+            "(routing to backup)"
+        )
+    return kernel.run(
+        params.pattern,
+        selection.roots,
+        "",  # work_dir: roots are absolute (the rg flow resolved them the
+        # same way), so the reported walk paths match the prefix that
+        # ``_strip_path_prefix`` removes.
+        "",  # include_glob: filtered in Python — the engine's fnmatch_ascii
+        # is case-sensitive and name-only, unlike rg/``fnmatch`` on Windows.
+        params.output_mode,
+        params.ignore_case,
+        _native_before_context(params),
+        _native_after_context(params),
+        0,  # head_limit: unlimited — the existing Python pipeline owns
+        # offset / head_limit / fold exactly as it did for ripgrep output.
+    )
+
+
 class Grep(CallableTool2[Params]):
     name: str = "grep"
     description: str = (
@@ -1161,6 +1669,20 @@ class Grep(CallableTool2[Params]):
         self._work_dir = runtime.builtin_args.KIMI_WORK_DIR
         self._additional_dirs = runtime.additional_dirs
         self._vfs = vfs
+
+        if _grep_kernel() is not None:
+            # Native GREP kernel: ripgrep AND rtk are never looked up,
+            # checked, downloaded or spawned, so no eager ensure task is
+            # created (``__call__`` routes to ``_native_call`` before any
+            # rg path resolution).  The four attributes stay in their
+            # "unavailable" state on purpose: the existing fallback code
+            # reads None as "use backup_grep", which besides native is
+            # the only other path.
+            self._rg_path: str | None = None
+            self._rg_path_task: asyncio.Task[str] | None = None
+            self._rtk_path: str | None = None
+            self._rtk_path_task: asyncio.Task[str] | None = None
+            return
 
         bin_name = _rg_binary_name()
         existing = _find_existing_rg(bin_name)
@@ -1209,6 +1731,18 @@ class Grep(CallableTool2[Params]):
         if has_dirty:
             return await self.backup_grep(params)
 
+        # Selector/archive/multi-entry searches route through the rich
+        # pipeline; a single plain entry keeps the legacy path.
+        entries = expand_path_entries(params.path) or ["."]
+
+        kernel = _grep_kernel()
+        if kernel is not None:
+            # Native GREP kernel: runs BEFORE any ripgrep path
+            # resolution and never reaches ``_run_rg_subprocess``.
+            # Everything it cannot reproduce routes to ``backup_grep``
+            # (never to rg while the kernel is active).
+            return await self._native_call(params, entries, kernel)
+
         rg_path = self._rg_path
         if rg_path is None:
             if self._rg_path_task is not None:
@@ -1229,9 +1763,6 @@ class Grep(CallableTool2[Params]):
         if params.deduplicate_output:
             rtk_path = await self._resolve_rtk_path()
 
-        # Selector/archive/multi-entry searches route through the rich
-        # pipeline; a single plain entry keeps the legacy byte-identical path.
-        entries = expand_path_entries(params.path) or ["."]
         if _entries_are_rich(entries):
             return await self._rich_call(params, entries, rtk_path, _retry=_retry)
         path_input = entries[0]
@@ -1364,6 +1895,159 @@ class Grep(CallableTool2[Params]):
             return ToolError(
                 message=f"Failed to grep. Error: {str(e)}",
                 brief=f"Failed to grep | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+            )
+
+    async def _native_call(
+        self, params: Params, entries: list[str], kernel
+    ) -> ToolReturnValue:
+        """Native GREP kernel path — ripgrep is never loaded or spawned here.
+
+        Every request the engine cannot reproduce (see the routing list below)
+        goes to :meth:`backup_grep`, the pure-Python path.  Output parity is
+        kept by feeding the engine's line stream through the same
+        :meth:`_postprocess` pipeline the ripgrep flow uses (mtime sort, prefix
+        strip, sensitive filter, recorder, summaries, dedup/fold, byte cap).
+        """
+        path_input = entries[0]
+        brief_cmd = _format_cmd(params, path_input=path_input)
+
+        # --- Routing: never rg, only native-or-backup -------------------
+        if _entries_are_rich(entries):
+            # Line-range selectors / archive members / several path entries:
+            # those need the per-entry resolve + materialize pipeline.
+            return await self.backup_grep(params)
+        if not params.pattern:
+            # An empty pattern matches every line; backup_grep rejects it with
+            # the tool's own "Pattern cannot be empty" error instead.
+            return await self.backup_grep(params)
+        if params.type is not None:
+            # The engine has no ripgrep --type table (only one include glob).
+            return await self.backup_grep(params)
+        if params.multiline or _pattern_has_regex_newline(params.pattern):
+            # The engine is line-oriented: a newline in a pattern can never
+            # match, so the multiline rewrite must stay in Python.
+            return await self.backup_grep(params)
+        if not params.pattern.isascii():
+            # regex_lite is an ASCII-regex-lite engine (byte-wise classes,
+            # ASCII-only case fold): non-ASCII patterns route to the Python
+            # engine, which is a strict superset.
+            return await self.backup_grep(params)
+        if params.context is not None and (
+            params.before_context or params.after_context
+        ):
+            # -C combined with -B/-A is resolved by ripgrep's own flag
+            # precedence; don't guess it here.
+            return await self.backup_grep(params)
+        if not kernel.pattern_supported(params.pattern, params.ignore_case):
+            try:
+                re.compile(params.pattern)
+            except re.error as exc:
+                # Genuinely broken regex: report it the way the ripgrep flow
+                # did (rg exited non-zero on a regex parse error).
+                return ToolError(
+                    message=f"Failed to grep. Error: Invalid regex pattern: {exc}",
+                    brief=f"Failed to grep | {brief_cmd}",
+                )
+            # Valid but exotic (look-around, back-reference, named group …):
+            # regex_lite cannot compile it, the Python engine can.
+            return await self.backup_grep(params)
+
+        try:
+            search_path = (
+                local_path_for_cwd(self._work_dir)
+                / Path(normalize_user_path(path_input)).expanduser()
+            ).resolve()
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Grep native path could not resolve {path}: {error}",
+                path=path_input,
+                error=exc,
+            )
+            return await self.backup_grep(params)
+
+        if _is_windows_reserved_name(str(search_path)):
+            return ToolError(
+                message=(
+                    f"`{path_input}` is a reserved device name on Windows "
+                    f"and cannot be searched."
+                ),
+                brief=f"Reserved device name | {brief_cmd}",
+            )
+
+        logical_search_path = KaosPath(str(search_path)).canonical()
+        original_is_absolute = kaos_path_from_user_input(path_input).is_absolute()
+        if (
+            not is_within_workspace(
+                logical_search_path, self._work_dir, self._additional_dirs
+            )
+            and not original_is_absolute
+        ):
+            display_path = path_input.replace("\\", "/")
+            return ToolError(
+                message=f"`{display_path}` is outside the workspace.",
+                brief=f"Path outside workspace | {brief_cmd}",
+            )
+
+        if not search_path.exists():
+            # The engine skips a missing root silently and would report a
+            # clean no-match; backup_grep owns the "does not exist" error.
+            return await self.backup_grep(params)
+
+        loop = asyncio.get_running_loop()
+        try:
+            res = await asyncio.wait_for(
+                loop.run_in_executor(None, _native_grep_job, kernel, search_path, params),
+                timeout=params.timeout,
+            )
+        except asyncio.CancelledError:
+            raise
+        except TimeoutError:
+            logger.warning(
+                "Native grep timed out after {timeout}s, using fallback",
+                timeout=params.timeout,
+            )
+            return await self.backup_grep(params)
+        except Exception as exc:
+            logger.warning(
+                "Native grep failed: pattern={pattern}, path={path}: {error}",
+                pattern=params.pattern,
+                path=path_input,
+                error=exc,
+            )
+            return await self.backup_grep(params)
+
+        if not isinstance(res, dict) or res.get("status") != "ok":
+            logger.warning(
+                "Native grep status {status}: {message}",
+                status=res.get("status") if isinstance(res, dict) else None,
+                message=res.get("message") if isinstance(res, dict) else None,
+            )
+            return await self.backup_grep(params)
+
+        output = "\n".join(_native_stream_lines(res, params))
+        ctx = _plain_ctx(search_path)
+        ctx.grouped = bool(params.grouped) if params.grouped is not None else False
+
+        try:
+            return await asyncio.wait_for(
+                self._postprocess(
+                    params=params,
+                    output=output,
+                    timed_out=False,
+                    buffer_truncated=False,
+                    rtk_path=None,
+                    message="",
+                    ctx=ctx,
+                ),
+                timeout=params.timeout,
+            )
+        except TimeoutError:
+            return ToolError(
+                message=(
+                    f"Grep post-processing timed out after {params.timeout}s. "
+                    "Try a more specific path or pattern."
+                ),
+                brief=f"Grep post-processing timed out | {brief_cmd}",
             )
 
     async def _run_rg_subprocess(
@@ -1891,7 +2575,7 @@ class Grep(CallableTool2[Params]):
                     brief=f"Empty pattern | {_format_cmd(params)}",
                 )
 
-            flags = 0
+            flags = re.MULTILINE
             if params.ignore_case:
                 flags |= re.IGNORECASE
             use_multiline = params.multiline or _pattern_has_regex_newline(params.pattern)
@@ -2424,6 +3108,14 @@ class Grep(CallableTool2[Params]):
         # content mode
         if line == "--":
             return None
+        # rg grammar first: a Windows ABSOLUTE path contains a drive colon,
+        # which the first-separator heuristic below mis-parses as "C" (the
+        # backup filters sensitive files BEFORE the prefix strip, so the
+        # line still carries the absolute path -- without this the .env
+        # content lines of a Windows search leaked through the filter).
+        parsed = parse_content_line(line)
+        if parsed is not None:
+            return parsed[0]
         for i, ch in enumerate(line):
             if ch in (":", "-"):
                 return line[:i]

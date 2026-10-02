@@ -18,6 +18,13 @@ strategy: every kernel must have a bit-identical Python fallback (mirrored in
 ``_compat`` modules) so ``use_native(kernel) is False`` yields identical
 behavior.
 
+The ``GREP`` kernel (``kimix_native.grep``) is special: its native engine is
+the optional ``runtime_py.grep`` submodule, so the gate additionally requires
+``getattr(_native, "grep", None)`` to exist — a stale ``runtime_py`` build
+without the submodule behaves like ``KIMIX_NATIVE_GREP=0`` and routes to the
+shim's pure-Python engine mirror. Use ``kimix_native.grep.native_active()``
+to query the effective gate (it re-reads the env toggles on every call).
+
 Version gate: the compiled module is only used when the version it reports
 (``runtime_py.version()``, e.g. ``kimix-runtime 1.0.0``) matches the repo-root
 ``KIMIX_NATIVE_VERSION`` marker (falls back to kimix-base's ``version.txt``

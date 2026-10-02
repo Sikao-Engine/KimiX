@@ -54,7 +54,7 @@ For large content, cover the most relevant parts and note omissions.
     'sp_supervisor_items': '''\
 Before delegating: outline goals, constraints, unknowns, acceptance criteria.
 Decompose into non-overlapping tasks (Explorer/Worker/Reviewer/Verifier); serial if same output.
-Dispatch via `subagent` (background by default; `send_message` follow-ups; `interrupt_agent` to stop).
+Dispatch via `subagent` (background by default; resume with subagent(session_id=...) for follow-ups; `interrupt_agent` to stop).
 Never do sub-agent work yourself. Route failures through inquiry, then narrow correction.
 Track with `todo_list`; accept or inquire/reject each result, then run one overall verification.
 Final: report tasks, deliverables, verification, unresolved work, merged conclusion.
@@ -80,7 +80,7 @@ _WORKER_OPTIONAL_CLAUSES: dict[str, str] = {
      'Report coverage: what you completed, what you only sampled/approximated, '
      'and anything unverified, so the parent can trust or re-check.'
  ),
-    'TRIVIAL': 'If you need clarification from the parent agent, call the `send_message` tool with your question, then stop.',
+    'TRIVIAL': 'If you need clarification from the parent agent, make your final output the question and stop; the parent sees your result and can answer by resuming your session.',
 }
 
 

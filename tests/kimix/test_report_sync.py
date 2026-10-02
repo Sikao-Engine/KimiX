@@ -110,16 +110,6 @@ REPORT_TOOLS: dict[str, dict[str, Any]] = {
             "run_in_background": "Whether to run in the background and return a durable subagent id immediately.",
         },
     },
-    "send_message": {
-        "class": "AskAgent",
-        "canonical": ["subagent_id", "message"],
-        "aliases": {"id": "subagent_id", "question": "message"},
-        "desc_lead": "Send a message to a background subagent by its subagent id",
-        "param_desc": {
-            "subagent_id": "The subagent id returned when the background subagent was started.",
-            "message": "The message to deliver to the subagent.",
-        },
-    },
     "list_agents": {
         "class": "AgentList",
         "canonical": ["scope"],
@@ -227,9 +217,8 @@ def _build_tools() -> dict[str, Any]:
     ):
         tools["web_search"] = SearchWeb(config=cfg, runtime=runtime)
 
-    from kimix.tools.agent import Agent, AskAgent, AgentList, AgentClose
+    from kimix.tools.agent import Agent, AgentList, AgentClose
     tools["subagent"] = Agent(session=session)
-    tools["send_message"] = AskAgent(session=session)
     tools["list_agents"] = AgentList(session=session)
     tools["interrupt_agent"] = AgentClose(session=session)
 
@@ -315,7 +304,7 @@ def test_legacy_tool_names_resolve_via_redirects() -> None:
         "ReadFile": "read", "WriteFile": "write", "EditFile": "edit",
         "Glob": "glob", "Grep": "grep", "ReadMediaFile": "read_image",
         "SearchWeb": "web_search", "Agent": "subagent",
-        "AskAgent": "send_message", "AgentList": "list_agents",
+        "AgentList": "list_agents",
         "AgentClose": "interrupt_agent", "TaskOutput": "job_output",
         "TodoList": "todo_list", "AgentSwarm": "workflow",
     }

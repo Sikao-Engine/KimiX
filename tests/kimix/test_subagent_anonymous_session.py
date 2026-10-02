@@ -62,11 +62,10 @@ def _clean_agent_registries():
     import kimix.tools.agent as agent_module
 
     def _reset() -> None:
-        agent_module._agent_entries.clear()
-        agent_module._agent_sessions.clear()
-        agent_module._children_by_parent.clear()
-        agent_module._child_parent.clear()
-        agent_module._pending_messages.clear()
+          agent_module._agent_entries.clear()
+          agent_module._agent_sessions.clear()
+          agent_module._children_by_parent.clear()
+          agent_module._child_parent.clear()
 
     _reset()
     yield
@@ -506,8 +505,7 @@ def test_throwaway_agent_instance_keeps_parent_children(
     isolated_share_dir: Path, monkeypatch, tmp_path: Path
 ) -> None:
     """A transient ``Agent`` instance must not reap the parent's sub-agents.
-
-    ``AgentRespond`` builds a throwaway ``Agent`` per call (and the whole
+    Throwaway ``Agent`` instances are built per call (and the whole
     toolset is rebuilt on ``/clear``), so a destroyed tool object says nothing
     about the parent session's lifetime.  Its ``__del__`` used to pop the
     session's sub-agent store and close every session in it, which silently
@@ -534,7 +532,7 @@ def test_throwaway_agent_instance_keeps_parent_children(
     child_dir = _cache_dir(work_dir, child_id)
     assert child_dir.exists()
 
-    helper = Agent(parent._cli.session)  # what AgentRespond constructs per call
+    helper = Agent(parent._cli.session)  # what a per-call helper constructs
     del helper
     gc.collect()
 

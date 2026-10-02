@@ -14,7 +14,6 @@
       "kimi_cli.tools.file:edit",
       "kimi_cli.tools.file:write",
       "kimix.tools.agent:subagent",
-      "kimix.tools.agent:send_message",
       "kimix.tools.agent:list_agents",
       "kimix.tools.agent:interrupt_agent",
       "kimix.tools.swarm:workflow",

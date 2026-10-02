@@ -27,17 +27,61 @@ from kimix.utils.system_prompt import SystemPromptType
 
 from .store import AgentSessionEntry, AgentSessionStore, ConversationTurn
 
-# Module-level registry for cross-session lookup (AskParent tool → entry)
+# Module-level registry mapping sub-agent session id -> its store entry.
 _agent_entries: dict[str, AgentSessionEntry] = {}
 
-# Detached background subagent runs.  A started task is kept here so it is
-# not garbage collected before it settles; a done callback discards it.
-_background_tasks: set[asyncio.Task] = set()
+# Detached background subagent runs are tracked per parent session (in the
+# parent session's ``custom_data`` under ``_BACKGROUND_TASKS_KEY``) so that
+# ``kimix.utils.prompt`` can wait for a session's own subagents — and only
+# those — when the session's prompt finishes.  A started task is kept in the
+# set so it is not garbage collected before it settles; a done callback
+# discards it.
+_BACKGROUND_TASKS_KEY = "agent_background_tasks"
 
-# Cross-agent messaging registry: agent id (session id) -> live SDK Session.
-# Populated when an ``Agent`` tool spawns/resumes a sub-agent; used by the
-# ``AskAgent`` tool to resolve the target and push a steer into its loop
-# (``Steer.from_session`` needs ``session._cli.soul``).
+
+def _background_tasks_for(session: Any) -> set[asyncio.Task]:
+    """Return (creating if needed) the detached-task set owned by *session*.
+
+    Accepts either a ``kimi_cli.session.Session`` or the SDK wrapper around
+    one (``kimi_agent_sdk.Session``); both expose the owning CLI session's
+    ``custom_data``.  Returns a detached throwaway set when no custom data
+    is available, so callers can uniformly iterate the result.
+    """
+    cli_session = session
+    custom_data = getattr(cli_session, "custom_data", None)
+    if not isinstance(custom_data, dict):
+        # SDK-wrapped session: the owning CLI session hangs off ``_cli``.
+        wrapped = getattr(getattr(session, "_cli", None), "session", None)
+        if wrapped is not None:
+            cli_session = wrapped
+            custom_data = getattr(cli_session, "custom_data", None)
+    if not isinstance(custom_data, dict):
+        return set()
+    tasks = custom_data.get(_BACKGROUND_TASKS_KEY)
+    if tasks is None:
+        tasks = set()
+        custom_data[_BACKGROUND_TASKS_KEY] = tasks
+    return tasks
+
+
+async def wait_for_background_agents(session: Any) -> None:
+    """Wait until every background subagent run owned by *session* settles.
+
+    ``kimix.utils.prompt.prompt_async`` calls this when the session's prompt
+    is finished but detached background subagents are still running, so they
+    complete (closing/updating their own sessions) before the parent session
+    is torn down — closing the parent would otherwise cascade-close them
+    mid-run.  Never raises.
+    """
+    pending = [t for t in _background_tasks_for(session) if not t.done()]
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+# Live sub-agent session registry: sub-agent session id -> live SDK Session.
+# Populated when the ``Agent`` tool spawns/resumes a sub-agent; used to
+# resolve sessions for completion notices (``Steer.from_session`` needs
+# ``session._cli.soul``) and for parent-close cascading.
 _agent_sessions: dict[str, SdkSession] = {}
 
 
@@ -47,8 +91,8 @@ def _register_agent_session(session_id: str, session: SdkSession | None) -> None
 
 
 # Parent session id -> ids of the sub-agent sessions it spawned that are still
-# alive.  The parent hands its sub-agents' ids to the model so it can talk to
-# them (``AskAgent``/``AgentRespond``), which means those sessions are
+# alive.  The parent hands its sub-agents' ids to the model so it can resume
+# them with ``subagent(session_id=...)``, which means those sessions are
 # *continuable* — but only for as long as the parent session lives.  When the
 # parent closes (CLI exit, web-server delete, destructor, process shutdown) the
 # children are anonymous scratch sessions whose directories must go away with
@@ -95,9 +139,6 @@ def _forget_child_session_record(child_id: str) -> None:
     _unregister_entry(child_id)
     _unregister_agent_session(child_id)
     _forget_child_session(child_id)
-    # Queued messages exist only to be listed at the child's next prompt; once
-    # the child (or its parent) is gone there is no next prompt.
-    _pending_messages.pop(child_id, None)
 
 
 def _release_child_session(child_id: str) -> SdkSession | None:
@@ -228,68 +269,6 @@ def _unregister_entry(session_id: str) -> None:
     _agent_entries.pop(session_id, None)
 
 
-# Pending messages for agents that are idle or closed: target session id ->
-# list of formatted messages. ``AskAgent`` queues a message here when the
-# target cannot be steered right now (soul not running) or its session is no
-# longer live (closed / unregistered). ``Agent`` drains the queue into the
-# target's prompt the next time the session is resumed with a new task, so
-# the message is *listed at the next prompt* instead of being lost.
-_pending_messages: dict[str, list[str]] = {}
-
-
-# Max queued messages kept per target to bound memory when a session is
-# never resumed again.
-_MAX_PENDING_MESSAGES_PER_TARGET = 50
-
-
-def _queue_pending_message(target_id: str, message: str) -> None:
-    """Append *message* to the pending-message queue for *target_id*."""
-    pending = _pending_messages.setdefault(target_id, [])
-    if len(pending) >= _MAX_PENDING_MESSAGES_PER_TARGET:
-        return
-    pending.append(message)
-
-
-def _drain_pending_messages(session_id: str) -> list[str]:
-    """Pop and return queued messages for *session_id* (empty when none)."""
-    return _pending_messages.pop(session_id, [])
-
-
-def _pending_message_count(session_id: str) -> int:
-    """Number of queued (not yet delivered) messages for *session_id*."""
-    return len(_pending_messages.get(session_id, []))
-
-
-def _format_pending_messages(messages: list[str]) -> str:
-    """Render queued messages as a block to list at the next prompt."""
-    if not messages:
-        return ""
-    lines = [
-        "<pending-messages>",
-        "You have the following queued message(s) from the parent agent "
-        "(sent while you were idle or not running):",
-    ]
-    lines.extend(f"{i}. {m}" for i, m in enumerate(messages, 1))
-    lines.append("</pending-messages>")
-    return "\n".join(lines)
-
-
-def _queued_message_output(target_id: str, reason: str) -> str:
-    """Tool output when a message is queued for a non-running target.
-
-    Queued messages are only delivered when the parent explicitly resumes the
-    target session with ``subagent(session_id=...)``; without that there is no
-    next prompt, so the output must say so instead of implying automatic
-    delivery.
-    """
-    return (
-        f"Agent '{target_id}' is not running ({reason}). Message queued; it "
-        f"will be listed in the target's next prompt only if you resume the "
-        f"session with subagent(session_id='{target_id}', ...). Otherwise it "
-        "stays queued (no delivery)."
-    )
-
-
 def _resolve_prompt(prompt: str, base_dir: Path | None) -> str:
     """Return the effective task text.
 
@@ -375,7 +354,7 @@ class SubAgentParams(BaseModel):
             "Close the subagent session after this prompt. Unset (the default): "
             "a foreground run (run_in_background=false) closes the session, "
             "while a background run keeps it open so its durable id stays "
-            "listed by list_agents and resumable/messagable later. Set "
+            "listed by list_agents and resumable later. Set "
             "true/false to override explicitly for either mode. Closing "
             "deletes the scratch session directory (`.kimix_cache/<session "
             "id>`), so a closed sub-agent session can no longer be resumed "
@@ -391,11 +370,6 @@ class SubAgentParams(BaseModel):
         description="'json': Raw conversation turns in JSON. "
         "'markdown': Formatted as Markdown with headings. "
         "'summary': Concise summary of what the sub-agent did.",
-    )
-    response: str | None = Field(
-        default=None,
-        description="[Deprecated] Response to the sub-agent's pending question. "
-        "Use the send_message tool instead."
     )
     context_files: list[str] | None = Field(
         default=None,
@@ -541,140 +515,6 @@ class _AgentConversationCollector:
         return "".join(output_parts)
 
 
-class AskAgentParams(BaseModel):
-    message: str = Field(
-        validation_alias=AliasChoices("message", "question"),
-        description=(
-            "The message to deliver to the subagent. "
-            "Delivered immediately if the target is running; otherwise queued "
-            "and listed at its next prompt — which happens only when the "
-            "session is resumed via subagent(session_id='<id>', ...)."
-        ),
-    )
-    subagent_id: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("subagent_id", "id"),
-        description=(
-            "The subagent id returned when the background subagent was started. "
-            "Optional: omit to message the most recently active sub-agent. "
-            "Ignored for sub-agents, which always message their parent."
-        ),
-    )
-
-
-class AskAgent(CallableTool2):
-    name: str = "send_message"
-    description: str = (
-        "Send a message to a background subagent by its subagent id, continuing "
-        "the same conversation. If the target is running, the message becomes "
-        "its next turn (waiting until the current turn finishes, so it cannot "
-        "redirect work already underway). If the target is idle or its session "
-        "is closed, the message is queued: it is delivered only when the session "
-        "is resumed with subagent(session_id='<id>', ...), so it is NOT "
-        "delivered automatically to a closed session. This call returns no "
-        "answer from the subagent — only confirmation that the message was "
-        "delivered or queued — so use it to give it more work. A failure means "
-        "the message was NOT delivered."
-    )
-    params: type[BaseModel] = AskAgentParams
-
-    def __init__(self, session: Session):
-        super().__init__()
-        self._session = session
-
-    async def __call__(self, params: AskAgentParams) -> ToolReturnValue:
-        caller_id = _cli_session_id(self._session)
-        target_id, target_session, reason = self._resolve_target(params)
-        if target_id and target_id == caller_id:
-            return ToolError(
-                output="",
-                message="Cannot message yourself.",
-                brief="Self message rejected",
-            )
-
-        message = params.message
-        if caller_id:
-            message = f"Message from agent '{caller_id}':\n{message}"
-
-        # No live session (closed / never registered): persist the message so it
-        # is listed in the target's next prompt instead of erroring out.
-        if target_session is None:
-            if target_id:
-                _queue_pending_message(target_id, message)
-                return ToolOk(
-                    output=_queued_message_output(target_id, "session closed or idle"),
-                    brief="Message queued",
-                )
-            return ToolError(
-                output="",
-                message=f"Cannot resolve target agent: {reason or 'target not found'}",
-                brief="Target agent not found",
-            )
-
-        from kimi_cli.soul.steer import Steer
-
-        steer = Steer.from_session(target_session)
-        if steer is None:
-            if target_id:
-                _queue_pending_message(target_id, message)
-                return ToolOk(
-                    output=_queued_message_output(target_id, "no steerable session"),
-                    brief="Message queued",
-                )
-            return ToolError(
-                output="",
-                message=f"Agent '{target_id or 'unknown'}' has no steerable session.",
-                brief="Target not steerable",
-            )
-
-        delivered = await steer.push(message)
-        if delivered:
-            return ToolOk(
-                output=f"Message delivered to agent '{target_id or 'unknown'}'.",
-                brief="Message sent",
-            )
-        # The soul exists but is not running (idle): the steer queue would be
-        # discarded as stale at the next turn init, so persist the message and
-        # list it in the next prompt instead.
-        if target_id:
-            _queue_pending_message(target_id, message)
-        return ToolOk(
-            output=_queued_message_output(target_id or "unknown", "not running"),
-            brief="Message queued",
-        )
-
-    def _resolve_target(
-        self, params: AskAgentParams
-    ) -> tuple[str | None, SdkSession | None, str]:
-        """Resolve ``(target_id, target_sdk_session, reason)`` for a message."""
-        custom_config = getattr(self._session, "custom_config", None) or {}
-        if custom_config.get("is_sub_agent"):
-            # Sub-agents always message their parent; ``id`` is ignored.
-            parent_id = str(custom_config.get("parent_session_id", "") or "")
-            if not parent_id:
-                return None, None, "sub-agent has no recorded parent_session_id"
-            session = _get_agent_session(parent_id) or _sdk_session_by_id(parent_id)
-            if session is None:
-                return parent_id, None, f"parent agent '{parent_id}' is not registered"
-            return parent_id, session, ""
-
-        # Main agent: target by id, or default to the most recently active
-        # sub-agent in this session's store.
-        if params.subagent_id:
-            target_id = str(params.subagent_id)
-            session = _get_agent_session(target_id) or _sdk_session_by_id(target_id)
-            if session is None:
-                return target_id, None, f"agent '{target_id}' is not registered"
-            return target_id, session, ""
-
-        store = _get_store(self._session)
-        active = [e for e in store.entries.values() if e.is_active]
-        if not active:
-            return None, None, "no active sub-agents to message"
-        target = max(active, key=lambda e: e.last_accessed)
-        return target.session_id, target.session, ""
-
-
 class Agent(CallableTool2):
     name: str = "subagent"
     description: str = (
@@ -685,12 +525,10 @@ class Agent(CallableTool2):
         "not its intermediate steps. Give it a complete, standalone prompt: it "
         "does not see this conversation. This tool runs in the background by "
         "default, immediately returns a durable subagent id, and keeps the "
-        "child conversation available for later turns. When that run settles, "
-        "the runtime sends the parent a notice containing its outcome and any "
-        "final assistant message; send_message starts a later turn in the same "
-        "child conversation. Set run_in_background: false only when your next "
+        "child conversation available for later turns: resume it with "
+        "subagent(session_id='<id>', ...) to give it more work or answer its "
+        "questions. Set run_in_background: false only when your next "
         "action depends on receiving the result. "
-        "Use send_message to answer a sub-agent's pending question. "
         "Sub-agents belong to the session that spawned them: closing or clearing "
         "that session closes them all and deletes their scratch session "
         "directories, so their ids are only usable while the parent session lives."
@@ -704,8 +542,8 @@ class Agent(CallableTool2):
 
     # NOTE: there is deliberately no ``__del__`` here.  The sub-agent sessions
     # belong to the *parent session*, not to this tool object: throwaway
-    # instances are created all the time (``AgentRespond`` builds one per call,
-    # and the whole toolset is rebuilt on ``/clear``) while the parent
+    # instances are created all the time (the whole toolset is rebuilt on
+    # ``/clear``) while the parent
     # conversation keeps running.  Reaping them from ``__del__`` therefore used
     # to wipe the parent's sub-agent store — and would delete its live sessions —
     # whenever such a helper was garbage collected.  Teardown happens where the
@@ -777,29 +615,13 @@ class Agent(CallableTool2):
             context_block = "\n".join(context_parts)
             prompt = f"{context_block}\n\n{prompt}"
 
-        # Inject response to pending question if provided
-        if is_reused and entry and entry.pending_question and params.response:
-            prompt = (
-                f"The parent agent responded to your question "
-                f"({entry.pending_question}):\n\n{params.response}\n\n"
-                f"Now, regarding your original task: {prompt}"
-            )
-            entry.pending_question = None
-            entry.state = "running"
-
-        # List any messages queued by ``AskAgent`` while this sub-agent
-        # was idle or its session was closed at the resumed prompt.
-        pending_messages = _drain_pending_messages(session_id)
-        if pending_messages:
-            prompt = f"{prompt}\n\n{_format_pending_messages(pending_messages)}"
-
         # A session mid-run cannot take another prompt (the SDK raises
         # ``SessionStateError`` which ``prompt_async`` swallows, turning the
         # call into a silent no-op) — reject it up front with real guidance.
         if isinstance(getattr(session, "_cancel_event", None), asyncio.Event):
             raise RuntimeError(
                 f"Sub-agent '{session_id}' is currently running; wait for it "
-                "to finish or use send_message to give it more work instead."
+                "to finish before resuming it with more work."
             )
 
         background = bool(params.run_in_background)
@@ -835,24 +657,23 @@ class Agent(CallableTool2):
             conversation_history=list(existing.conversation_history) if existing else [],
             total_turns=existing.total_turns if existing else 0,
             is_active=True,
-            pending_question=existing.pending_question if existing else None,
             state="running",
         )
         store.put(entry)
         _register_entry(prepared.session_id, entry)
 
         task = asyncio.create_task(self._run_background(prepared))
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+        owned_tasks = _background_tasks_for(self._session)
+        owned_tasks.add(task)
+        task.add_done_callback(owned_tasks.discard)
         task.add_done_callback(_consume_background_task_error)
 
         result = ToolOk(
             output=(
                 f"Session ID: {prepared.session_id}\n\n"
                 "Subagent started in the background. You will receive a "
-                "notice when it finishes; meanwhile you can use "
-                "send_message to give it more work or list_agents to check "
-                "its state."
+                "notice when it finishes; meanwhile you can use list_agents "
+                "to check its state."
             ),
             brief="Background subagent started",
         )
@@ -889,8 +710,7 @@ class Agent(CallableTool2):
         """Best-effort steer telling the parent the background run settled.
 
         Delivered as a steer into the parent's running loop; when the parent
-        is idle the steer is dropped (its queue is rebuilt at the next turn),
-        so this never double-delivers with ``send_message``.
+        is idle the steer is dropped (its queue is rebuilt at the next turn).
         """
         parent_id = _cli_session_id(self._session)
         if not parent_id:
@@ -1000,26 +820,6 @@ class Agent(CallableTool2):
                 _unregister_entry(session_id)
                 _unregister_agent_session(session_id)
                 _forget_child_session(session_id)
-                return result
-
-            # Check if sub-agent asked parent for clarification
-            current_entry = store.get(session_id)
-            if current_entry and current_entry.state == "awaiting_response":
-                current_entry.conversation_history = collector.turns
-                current_entry.total_turns = len(collector.turns)
-                current_entry.last_accessed = time.time()
-                _register_entry(session_id, current_entry)
-                result = ToolOk(
-                    output=output_prefix + output_text,
-                    brief="Sub-agent is awaiting a response",
-                )
-                result.extras = self._build_extras(
-                    params,
-                    session_id,
-                    collector.turns,
-                    "awaiting_response",
-                    question=current_entry.pending_question,
-                )
                 return result
 
             extras = self._build_extras(
@@ -1163,11 +963,6 @@ class Agent(CallableTool2):
         sub_custom_config = session.get_custom_config()
         if sub_custom_config is not None:
             sub_custom_config['is_sub_agent'] = True
-            # Record who spawned this sub-agent so its ``AskAgent`` tool can
-            # resolve the parent and push steers into the parent's loop.
-            parent_id = _cli_session_id(self._session)
-            if parent_id:
-                sub_custom_config['parent_session_id'] = parent_id
 
         if inherited:
             await self._reset_inherited_system_prompt(session)
@@ -1244,12 +1039,12 @@ class Agent(CallableTool2):
     def _register_agent_sessions(
         self, child_session: Any, child_session_id: str
     ) -> None:
-        """Register the parent and child SDK sessions for cross-agent messaging.
+        """Register the parent and child SDK sessions for agent bookkeeping.
 
-        ``AskAgent`` resolves its target through ``_agent_sessions``; the parent
-        is registered under its own id so any sub-agent can steer it back.  The
-        child is also recorded as belonging to the parent session so that
-        closing/destroying the parent tears the child down with it.
+        The parent is registered under its own id so background completion
+        notices can steer it; the child is recorded as belonging to the
+        parent session so that closing/destroying the parent tears the child
+        down with it.
         """
         parent_id = _cli_session_id(self._session)
         parent_sdk = _sdk_session_by_id(parent_id)
@@ -1293,64 +1088,11 @@ class Agent(CallableTool2):
                 conversation_history=turns,
                 total_turns=len(turns),
                 is_active=True,
-                pending_question=existing.pending_question if existing else None,
-                # A finished run is "completed" ("awaiting_response" is set
-                # by the awaiting-response branch above, never here).
+                # A finished run is "completed".
                 state="completed",
             )
             store.put(entry)
             _register_entry(session_id, entry)
-
-
-class AgentRespondParams(BaseModel):
-    session_id: str = Field(description="Sub-agent session ID that asked a question.")
-    response: str = Field(description="Answer to the sub-agent's pending question.")
-    close_session: bool = Field(
-        default=True,
-        description="Close the subagent session after this response? Set to False to keep it open for more follow-up."
-    )
-
-
-class AgentRespond(CallableTool2):
-    name: str = "AgentRespond"
-    description: str = (
-        "Answer a pending question from a sub-agent. "
-        "Use this when a sub-agent has asked the parent agent a question (status='awaiting_response'). "
-        "Provide your response and the sub-agent will continue with the answer."
-    )
-    params: type[BaseModel] = AgentRespondParams
-
-    def __init__(self, session: Session):
-        super().__init__()
-        self._session = session
-
-    async def __call__(self, params: AgentRespondParams) -> ToolReturnValue:
-        store = _get_store(self._session)
-        entry = store.get(params.session_id)
-        if entry is None:
-            return ToolError(
-                output="",
-                message=f"Session '{params.session_id}' not found.",
-                brief="Session not found",
-            )
-        if entry.state != "awaiting_response":
-            return ToolError(
-                output="",
-                message=f"Session '{params.session_id}' is not awaiting a response (state: {entry.state}).",
-                brief="Not awaiting response",
-            )
-        # Send the response to the sub-agent via the Agent tool
-        agent = Agent(self._session)
-        sub_params = SubAgentParams(
-            prompt="Continue with the parent's answer.",
-            session_id=params.session_id,
-            close_session=params.close_session,
-            response=params.response,
-            # Answering a pending question is inherently synchronous: the
-            # parent needs the sub-agent's continuation as this call's result.
-            run_in_background=False,
-        )
-        return await agent(sub_params)
 
 
 class AgentListParams(BaseModel):
@@ -1372,11 +1114,9 @@ class AgentList(CallableTool2):
         "you are told when one finishes. Each entry reports session_id, "
         "created_at, last_accessed, total_turns, state and is_active; sessions "
         "closed via interrupt_agent are removed from the list. A listed child "
-        "remains a send_message candidate: send_message starts a new turn on "
-        "the same conversation when it is running, or queues a message that is "
-        "delivered when the session is resumed with subagent(session_id=..., "
-        "...). Scope `descendants` is accepted for compatibility but currently "
-        "returns the same direct-children list."
+        "remains resumable: subagent(session_id=..., ...) starts a new turn on "
+        "the same conversation. Scope `descendants` is accepted for "
+        "compatibility but currently returns the same direct-children list."
     )
     params: type[BaseModel] = AgentListParams
 
@@ -1409,12 +1149,10 @@ class AgentClose(CallableTool2):
         "Request cancellation of a background agent's current turn by its agent "
         "id. The target may be your direct child or a deeper agent created "
         "under you. The current turn stops (agents it started keep running) and "
-        "the subagent session is closed and removed from the active list — "
-        "messages queued for it are preserved and will be listed if the same "
-        "session id is resumed with subagent(session_id=..., ...). This call "
-        "returns as soon as the stop request is accepted, so the target may "
-        "keep running briefly; interrupting an agent that already finished "
-        "still closes its session (no error)."
+        "the subagent session is closed and removed from the active list. "
+        "This call returns as soon as the stop request is accepted, so the "
+        "target may keep running briefly; interrupting an agent that already "
+        "finished still closes its session (no error)."
     )
     params: type[BaseModel] = AgentCloseParams
 

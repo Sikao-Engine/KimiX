@@ -12,7 +12,6 @@
       "kimix.tools.note:ReadPlan",
       "kimix.tools.note:EditPlan",
       "kimix.tools.agent:subagent",
-      "kimix.tools.agent:send_message",
       "kimix.tools.agent:list_agents",
       "kimix.tools.agent:interrupt_agent",
       "kimix.tools.swarm:workflow",
