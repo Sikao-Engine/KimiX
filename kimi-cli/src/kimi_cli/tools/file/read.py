@@ -482,22 +482,6 @@ class ReadFile(CallableTool2[Params]):
     async def _validate_path(self, path: KaosPath, raw_path: str) -> ToolError | None:
         """Validate that the path is safe to read."""
         resolved_path = path.canonical()
-        original_is_absolute = kaos_path_from_user_input(raw_path).is_absolute()
-
-        if (
-            not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
-            and not original_is_absolute
-        ):
-            # Outside files can only be read with absolute paths
-            return ToolError(
-                message=(
-                    f"`{raw_path}` is not an absolute path. "
-                    "You must provide an absolute path to read a file "
-                    "outside the working directory."
-                ),
-                brief="Invalid path",
-            )
-
         protected_paths = self._session.custom_config.get("config_json", {}).get(
             "protected_read_paths"
         )
@@ -519,20 +503,6 @@ class ReadFile(CallableTool2[Params]):
     ) -> ToolError | None:
         """Validate that the directory is safe to search for glob expansion."""
         resolved_path = dir_path.canonical()
-        original_is_absolute = kaos_path_from_user_input(base_str).is_absolute()
-
-        if (
-            not is_within_workspace(resolved_path, self._work_dir, self._additional_dirs)
-            and not original_is_absolute
-        ):
-            return ToolError(
-                message=(
-                    f"`{raw_path}` is not an absolute path. "
-                    "You must provide an absolute path to read outside the working directory."
-                ),
-                brief="Invalid path",
-            )
-
         protected_paths = self._session.custom_config.get("config_json", {}).get(
             "protected_read_paths"
         )
