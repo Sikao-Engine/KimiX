@@ -1517,13 +1517,13 @@ def _sanitize_native_line(line: str) -> str:
 
 
 def _normalize_walk_artifacts(line: str) -> str:
-    """Collapse ``\D.\`` / ``/./`` artifacts so reported paths are mode-
+    """Collapse ``\\D.\\`` / ``/./`` artifacts so reported paths are mode-
     invariant (user directive 2026-10-02).
 
     The engine joins fs::path-style (literal ``operator/``, no lexical
     normalisation), so a ``.`` component (an explicit dot-named root under
-    work_dir spelling, e.g. ``<base>\.<sep>name``) would otherwise survive
-    into user-visible output as ``<base>\.\name`` while the ripgrep flow
+    work_dir spelling, e.g. ``<base>\\.<sep>name``) would otherwise survive
+    into user-visible output as ``<base>\\.\\name`` while the ripgrep flow
     (which received a resolved path) never showed it.  ``_native_call``
     always passes absolute resolved roots, so this is a defensive no-op on
     the normal path; it only fires when such an artifact is actually
