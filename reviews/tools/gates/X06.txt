@@ -649,3 +649,46 @@ FAILED kimi-cli\tests\tools\test_read_file.py::TestReadFileGlob::test_read_glob_
 3 failed, 2008 passed, 19 skipped in 55.68s
 (pipeline exit 1)
 
+=== uv run pytest tests/unit/tools tests/kimix tests/native -q --ignore=tests/test_bash_e2e.py ===
+
+    def test_descriptions_unchanged() -> None:
+        """The four composed descriptions must match the expected snapshots.
+    
+        Snapshot reflects the post-Layer-2(b) wire text: the generic conventions
+        (fold, dedup, ``rtk``, ``cwd``/``workdir`` aliases) were deleted from the
+        descriptions — they now live once in the system.md conventions block —
+        and only tool-specific sentences remain.
+        """
+        tools = _build_tools()
+    
+        # Proactive self-kill hint appended by the shell tools at init time; the
+        # PID is the live process PID, so the snapshot interpolates it.
+        self_kill_hint_text = (
+            f" Safety: runs in the agent process (PID {os.getpid()}); never kill that PID, "
+            "its parents, or this process's image — the self-kill guard blocks it."
+        )
+    
+>       assert tools["bash"].description == (
+            "Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over "
+            "`find`/`ls`/`grep`/`rg` for file and content search. "
+            "For long sessions: interactive=True, then task_id=<id> to continue; "
+            "wait_for_pattern to block; job_output to monitor; send 'exit' to close. "
+            "On Windows, unquoted backslash paths auto-convert to forward slashes; "
+            "quoted backslashes are preserved. "
+            "Use /dev/null, not `> nul`, to discard output — `> nul` would create "
+            "an empty file named `nul` in Git Bash."
+            + self_kill_hint_text
+        )
+E       AssertionError: assert 'Execute a ba...rd blocks it.' == 'Execute a ba...rd blocks it.'
+E         
+E         - Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over `find`/`ls`/`grep`/`rg` for file and content search. For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. On Windows, unquoted backslash paths auto-convert to forward slashes; quoted backslashes are preserved. Use /dev/null, not `> nul`, to discard output — `> nul` would create an empty file named `nul` in Git Bash. Safety: runs in the agent process (PID 40288); never kill that PID, its parents, or this process'...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests\unit\tools\test_prompt_common.py:177: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/unit/tools/test_bash_gate.py::test_probe05_child_env_scrubbed - ...
+FAILED tests/unit/tools/test_prompt_common.py::test_descriptions_unchanged - ...
+2 failed, 1073 passed in 75.79s (0:01:15)
+(pipeline exit 1)
+
