@@ -38,7 +38,7 @@ from pathlib import Path
 # ============================================================
 # Global configuration -- change these to pin version
 # ============================================================
-GIT_VERSION: str = "2.55.0"
+GIT_VERSION: str = "2.56.0"
 """Git version to install when using the download-based strategies."""
 
 # URL pattern for GitHub releases.  The tag name uses a ``.windows.N``

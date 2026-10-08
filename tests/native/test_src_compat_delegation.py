@@ -21,7 +21,14 @@ if str(_BIN) not in sys.path:
 
 
 def _force_pure(monkeypatch, module) -> None:
-    monkeypatch.setattr(module, "_native_use_native", lambda kernel: False)
+    """Force a module's native fast path OFF.
+
+    Modules that no longer carry a native gate (e.g. ``grep_local`` after the
+    native GREP kernel removal — its helpers are pure Python by construction)
+    are left untouched.
+    """
+    if hasattr(module, "_native_use_native"):
+        monkeypatch.setattr(module, "_native_use_native", lambda kernel: False)
 
 
 def _assert_eq(monkeypatch, src_module, src_name, shim_mod, shim_name, args):

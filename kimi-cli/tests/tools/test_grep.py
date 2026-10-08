@@ -1897,6 +1897,42 @@ async def test_grep_rtk_active_by_default(grep_tool: Grep, temp_test_files, capt
 
 
 @pytest.mark.asyncio
+async def test_grep_rich_ranged_runs_plain_rg_and_brief_matches(
+    grep_tool: Grep, temp_test_files, captured_exec
+):
+    """Ranged (selector) searches run plain rg — no rtk folding — and the
+    brief describes the argv that actually ran, in both rich flavours."""
+    temp_dir, test_files = temp_test_files
+    grep_tool._rtk_path = _share_bin_rtk()
+    grep_tool._rtk_path_task = None
+    target = test_files[0]
+
+    # Ranged selector: rtk is dropped from the argv AND from the display.
+    ranged = await grep_tool(
+        Params(
+            pattern="hello",
+            path=f"{target.as_posix()}:1-3",
+            output_mode="content",
+        )
+    )
+    assert not ranged.is_error
+    assert captured_exec["args"][0] == "rg"
+    assert ranged.brief.startswith("rg ")
+
+    # Multi-entry rich search (no ranges): rtk still wraps rg.
+    multi = await grep_tool(
+        Params(
+            pattern="hello",
+            path=[str(target), str(test_files[1])],
+            output_mode="content",
+        )
+    )
+    assert not multi.is_error
+    assert captured_exec["args"][0] == _share_bin_rtk()
+    assert multi.brief.startswith("rtk ")
+
+
+@pytest.mark.asyncio
 async def test_grep_rtk_disabled_no_rtk_work(
     grep_tool: Grep, temp_test_files, captured_exec, monkeypatch
 ):
