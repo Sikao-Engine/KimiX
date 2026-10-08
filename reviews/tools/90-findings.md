@@ -62,3 +62,41 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 | FP-10 | F-06, F-07, F-08, F-25 | baseline suite green + native/shim sync |
 | FP-11 | F-13 | enable child-env scrubbing at the shell spawn sites |
 | FP-12 | F-22, F-23, F-24 | move blocking work off the event loop |
+
+## Additional findings surfaced during Phase 4
+
+| # | sev | axis | finding | evidence | disposition |
+|---|---|---|---|---|---|
+| **F-27** | low | params | `read_image.region_pct` is validated in `__call__`, not in the pydantic model, so the JSON schema advertised to the model accepts any string; malformed values are only rejected at call time | `kimi-cli/src/kimi_cli/tools/file/read_media.py` (`Params.region_pct: str /\| None`) | **partly fixed** by FP-08 (all malformed values now return a ToolError instead of being silently ignored); moving the check into a model validator is deferred |
+| **F-28** | high | correctness | malformed `region_pct` was **silently ignored**: only a 4-part string entered the parser, so `"nonsense"`, `"1,2,3"`, `"1,2,3,4,5"` fell through with `region = None` and the model received the WHOLE image while believing it had cropped | `read_media.py` (pre-FP-08) | **fixed** by FP-08 + probes |
+| **F-29** | low | limits | `region_pct` values outside 0–100 are not range-checked (the error text claims they are) | `read_media.py` | open; out-of-range values resolve to out-of-image crops that the downstream crop path rejects |
+| **F-30** | medium | harness | `tests/unit/tools/test_prompt_common.py::test_descriptions_unchanged` FAILS: the bash tool's model-facing description (built in `bash_tool.py:640-659`) does not match the test's expected snapshot. Pre-existing drift, but it was **never run** before FP-00 because the whole root suite could not collect | `tests/unit/tools/test_prompt_common.py:177` | open; newly surfaced, not introduced. Resolving it means either implementing the richer description (a model-visible change) or updating the snapshot |
+| **F-31** | low | secrets | `write` does not warn when the target path looks like it may hold secrets | `kimi-cli/src/kimi_cli/tools/file/write.py:214` (pre-FP-01 TODO) | **decision recorded**: deliberately not implemented in the write path (it would change tool-visible behaviour); the concern lives in `kimi_cli/utils/export.py::_looks_like_secret_filename` + the `soul/slash.py` export warning. TODO removed (FP-01) |
+| **F-32** | low | params | `WriteFile.Params` does not set `extra="forbid"`, so a misspelled parameter is silently dropped | `kimi-cli/src/kimi_cli/tools/file/write.py` | open; now pinned by a probe so a future change is visible |
+| **F-33** | medium | gate contract | the plan's verbatim G3 command uses `--cov=<path>` / `--cov=src/kimix/...`, which makes pytest-cov emit `CoverageWarning: module-not-imported` and measure **no row** for the target module. The dotted form (`--cov=kimix.tools.agent`) is the one that works | K01 §G3, K04 §G3 | **corrected** in `tools/review_gates.py` (dotted modules only); the plan text needs fixing |
+
+## Fix-package outcomes
+
+| package | state | evidence |
+|---|---|---|
+| FP-00 | **done** | root suite: collection ERROR -> 5402 passed / 1 failed / 3 skipped (the 1 failure is F-30, pre-existing and newly surfaced) |
+| FP-01 | **done** | TODO removed + explained; 30 new C09 probes |
+| FP-02 | **open** | G-DUP still red on `fetch_url` |
+| FP-03 | **decision recorded, not executed** | 9 orphans; the C16 demo tools are decided **delete**, the K15-K18 tools need a keep/delete call from the owner |
+| FP-05 | **done** | G-POLICY green (0 hits / 1 justified waiver) |
+| FP-06 | **done** | 24 `__pycache__` / 238 `.pyc` removed (gitignored, so no diff) |
+| FP-07 | **partial** | 3 probe suites authored (C06 22, C09 30, C10 28) + K01 20 + K04 72; 31 tools still have no suite |
+| FP-08 | **done** | 4 latent defects fixed with probes |
+| FP-09 | **open** | `ruff check` still red on 83 of 84 modules |
+| FP-10 | **open** | 38 native-grep parity failures + stale venv shim |
+| FP-11 | **done** | child-env scrubbing enabled at the shared choke point |
+| FP-12 | **open** | blocking IO in `FindStr` / swarm best-of-N / temp cleanup |
+
+## G7 cross-tool gate state at Phase 5
+
+| gate | result |
+|---|---|
+| G-DUP | **FAIL** - `fetch_url` (C12 vs K14); `subagent` waived with rationale |
+| G-ORPHAN | **FAIL** - 9 orphans (decisions recorded in `93-orphans-and-removal.md`) |
+| G-POLICY | **PASS** - 0 hits, 1 justified waiver |
+| G-COMPACT | **PASS** - `tests/test_integration_compaction.py` + `kimi-cli/tests/core/test_kimisoul_context_prune.py` = 12 passed |
