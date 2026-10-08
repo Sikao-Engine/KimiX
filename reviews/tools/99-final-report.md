@@ -266,7 +266,7 @@ The diffstat below was captured at the report commit; `tools-review/p5-final` is
 force-moved onto the commit that adds this section, so `git rev-parse
 tools-review/p5-final` is the authoritative final SHA (one commit newer).
 
-* report commit (the main body of this document) = `eb4f70cc9bb1c738f3099c04f63c6fd8e4718add`
+* report commit (the main body of this document) = `be56f12fa884052f63be01dac7f5c97f082977a6`
 * `git diff --stat tools-review/p0-base tools-review/p5-final`:
 
 ```
@@ -322,11 +322,11 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  kimi-cli/tests/utils/test_pyinstaller_utils.py     |     2 +-
  reviews/tools/00-inventory.md                      |    21 +-
  reviews/tools/00-metrics-final.json                | 10210 +++++++++++++++++++
- reviews/tools/90-findings.md                       |   144 +
+ reviews/tools/90-findings.md                       |   146 +
  reviews/tools/91-coverage-gaps.md                  |   101 +
  reviews/tools/92-simplicity-backlog.md             |    88 +
  reviews/tools/93-orphans-and-removal.md            |    58 +
- reviews/tools/99-final-report.md                   |   514 +
+ reviews/tools/99-final-report.md                   |   517 +
  .../tools/C00-toolset-plumbing-shared-helpers.md   |   228 +
  reviews/tools/C01-subagent-agenttool.md            |   211 +
  reviews/tools/C02-askuserquestion.md               |   186 +
@@ -345,9 +345,9 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  reviews/tools/C15-hashread-hashline-hashedit.md    |   240 +
  reviews/tools/C16-demo-tools-plus-compare-panic.md |    78 +
  reviews/tools/K00-shared-infra.md                  |   235 +
- reviews/tools/K01-subagent-agent.md                |   377 +
- reviews/tools/K02-list-agents-agentlist.md         |   215 +
- reviews/tools/K03-interrupt-agent-agentclose.md    |   215 +
+ reviews/tools/K01-subagent-agent.md                |   186 +
+ reviews/tools/K02-list-agents-agentlist.md         |   197 +
+ reviews/tools/K03-interrupt-agent-agentclose.md    |   197 +
  reviews/tools/K04-bash-bash.md                     |   486 +
  reviews/tools/K05-pwsh-powershell.md               |   232 +
  reviews/tools/K06-run.md                           |   224 +
@@ -357,7 +357,7 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  reviews/tools/K10-writeplan.md                     |   184 +
  reviews/tools/K11-readplan.md                      |   184 +
  reviews/tools/K12-editplan.md                      |   184 +
- reviews/tools/K13-workflow-agentswarm.md           |   214 +
+ reviews/tools/K13-workflow-agentswarm.md           |   197 +
  reviews/tools/K14-fetch-url-kimix.md               |   196 +
  reviews/tools/K15-parsertool.md                    |   182 +
  reviews/tools/K16-findstr.md                       |   192 +
@@ -403,12 +403,12 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  reviews/tools/gates/C15.txt                        |   399 +
  reviews/tools/gates/K00.json                       |    47 +
  reviews/tools/gates/K00.txt                        |   895 ++
- reviews/tools/gates/K01.json                       |    37 +
- reviews/tools/gates/K01.txt                        |   572 ++
- reviews/tools/gates/K02.json                       |    32 +
- reviews/tools/gates/K02.txt                        |   472 +
- reviews/tools/gates/K03.json                       |    32 +
- reviews/tools/gates/K03.txt                        |   474 +
+ reviews/tools/gates/K01.json                       |    34 +
+ reviews/tools/gates/K01.txt                        |   614 ++
+ reviews/tools/gates/K02.json                       |    29 +
+ reviews/tools/gates/K02.txt                        |   512 +
+ reviews/tools/gates/K03.json                       |    29 +
+ reviews/tools/gates/K03.txt                        |   512 +
  reviews/tools/gates/K04.json                       |    45 +
  reviews/tools/gates/K04.txt                        |   840 ++
  reviews/tools/gates/K05.json                       |    40 +
@@ -427,8 +427,8 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  reviews/tools/gates/K11.txt                        |   201 +
  reviews/tools/gates/K12.json                       |    29 +
  reviews/tools/gates/K12.txt                        |   203 +
- reviews/tools/gates/K13.json                       |    33 +
- reviews/tools/gates/K13.txt                        |   377 +
+ reviews/tools/gates/K13.json                       |    31 +
+ reviews/tools/gates/K13.txt                        |   332 +
  reviews/tools/gates/K14.json                       |    31 +
  reviews/tools/gates/K14.txt                        |   192 +
  reviews/tools/gates/K15.json                       |    29 +
@@ -444,7 +444,7 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  reviews/tools/gates/_harness.log                   |    36 +
  reviews/tools/gates/_harness2.log                  |    33 +
  src/kimix/agent_worker.json                        |     6 +-
- src/kimix/tools/agent/__init__.py                  |    22 +-
+ src/kimix/tools/agent/__init__.py                  |   186 +-
  src/kimix/tools/agent/store.py                     |    13 +-
  src/kimix/tools/background/__init__.py             |    30 +-
  src/kimix/tools/background/utils.py                |    23 +-
@@ -464,7 +464,7 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  src/kimix/tools/prompt_common.py                   |     2 +-
  src/kimix/tools/py/__init__.py                     |    26 +-
  src/kimix/tools/security.py                        |     4 +
- src/kimix/tools/swarm/__init__.py                  |    15 +-
+ src/kimix/tools/swarm/__init__.py                  |    64 +-
  src/kimix/tools/swarm/best_of_n.py                 |    22 +-
  src/kimix/tools/web/fetch_url.py                   |     6 +-
  src/kimix/tools/web/web_fetcher/fetcher.py         |    13 +-
@@ -484,12 +484,14 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  tools/library_policy_allowlist.txt                 |    14 +
  tools/review_gates.py                              |   274 +
  tools/tool_registry_allowlist.txt                  |     7 +
- 214 files changed, 52217 insertions(+), 1337 deletions(-)
+ 214 files changed, 52179 insertions(+), 1413 deletions(-)
 ```
 
 * `git log --oneline tools-review/p0-base..tools-review/p5-final`:
 
 ```
+be56f12f refactor(K01,K02,K03,K13): G1 now fully green for 12 of 33 tools
+cbf044d0 review(P5): append the resolved tag SHA and final diffstat
 eb4f70cc review(G1): K10/K11/K12/K16 now pass G1; refresh evidence and the final report
 d839697f refactor(K16): bring find_str.py under the G1 thresholds -> G1 pass
 152c001e refactor(K10,K11,K12): bring note/__init__.py under the G1 thresholds
