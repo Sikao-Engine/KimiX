@@ -632,7 +632,8 @@ class Bash(CallableTool2[BashParams]):
 
     name: str = "bash"
     description: str = (
-        "Execute a bash command."
+        "Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over "
+        "`find`/`ls`/`grep`/`rg` for file and content search. "
         + _interactive_scope_text(is_shell=True)
     )
     params: type[BashParams] = BashParams
@@ -648,9 +649,15 @@ class Bash(CallableTool2[BashParams]):
         self._bash = bash
 
         # Windows-specific experience (verified by TestPrepareBashCmd and
-        # TestBashBackslashPaths): unquoted backslash paths are auto-converted.
+        # TestBashBackslashPaths): unquoted backslash paths are auto-converted,
+        # and `> nul` is a Git Bash footgun that silently creates a file.
         if sys.platform == "win32":
-            self.description += ("ALWAYS use native POSIX syntax, even on Windows")
+            self.description += (
+                " On Windows, unquoted backslash paths auto-convert to forward slashes; "
+                "quoted backslashes are preserved. "
+                "Use /dev/null, not `> nul`, to discard output \u2014 `> nul` would create "
+                "an empty file named `nul` in Git Bash."
+            )
 
         # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
         raw_forbidden = self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
