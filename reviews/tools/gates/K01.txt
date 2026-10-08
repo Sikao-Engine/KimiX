@@ -2293,3 +2293,53 @@ index 00000000..3024cb6e
   "cov": "pass"
 }=== [H] harness log line for K01 ===
 K01: ruff=fail c901=pass metrics=fail cx_max=19 longest=88 pytest=pass cov=pass
+
+=== [G0-report] uv run tools/gate_validate.py reviews/tools/K01-subagent-agent.md ===
+VALID   reviews/tools/K01-subagent-agent.md  id=K01
+--- [G0-report] exit=0 ---
+=== [G0-probe-count] grep -c test functions ===
+20
+=== [G0-registration] grep Agent/subagent in the inventory registry ===
+37:registered  kimix.tools.agent:Agent                            name='subagent'  src/kimix/tools/agent/__init__.py
+38:registered  kimix.tools.agent:AgentClose                       name='interrupt_agent'  src/kimix/tools/agent/__init__.py
+39:registered  kimix.tools.agent:AgentList                        name='list_agents'  src/kimix/tools/agent/__init__.py
+
+=== [RE-VERIFY @ 7aa84025] ruff ===
+
+Found 4 errors.
+[*] 3 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+--- ruff exit=1 ---
+=== [RE-VERIFY] metrics-gated ===
+breaches: ['src/kimix/tools/agent/__init__.py::_notify_parent_background_finished complexity=19 > 12', 'src/kimix/tools/agent/__init__.py::_format_history complexity=14 > 12']
+longest: [('src/kimix/tools/agent/__init__.py', {'name': '_execute', 'loc': 88}, 19, 1179), ('src/kimix/tools/agent/store.py', {'name': 'evict_lru_if_needed', 'loc': 22}, 5, 139)]
+=== [RE-VERIFY] G3 dotted coverage ===
+Name                                Stmts   Miss Branch BrPart  Cover   Missing
+-------------------------------------------------------------------------------
+src\kimix\tools\agent\__init__.py     532     51    176     38    87%   55->58, 59, 77->exit, 89->exit, 109, 121, 130, 163->168, 166-167, 188, 203, 221, 253, 256, 265, 288->293, 305, 420-421, 478->480, 483, 484->494, 486->494, 513->507, 603->611, 609-610, 612-613, 650->652, 686, 696-700, 717, 724, 738->740, 741, 743, 756->exit, 758-759, 772->exit, 814->817, 843-844, 881-902, 964->967, 1008, 1034->exit, 1052, 1053->exit
+src\kimix\tools\agent\store.py         74      2     12      1    97%   107->106, 138-139
+-------------------------------------------------------------------------------
+TOTAL                                 606     53    188     39    88%
+Required test coverage of 85% reached. Total coverage: 87.66%
+114 passed in 6.51s
+=== [RE-VERIFY] probes ===
+....................                                                     [100%]
+20 passed in 1.34s
+=== [RE-VERIFY] HEAD + in-scope diff vs review SHA ===
+7aa84025422d1a61c34e7d8e11bca524f347a0e0
+(empty above == in-scope modules byte-identical, so the numbers hold at HEAD)
+
+=== [G0-report-final] uv run tools/gate_validate.py reviews/tools/K01-subagent-agent.md (after report edits) ===
+VALID   reviews/tools/K01-subagent-agent.md  id=K01
+--- [G0-report-final] exit=0 ---
+=== [G0-probe-count-final] ===
+20
+
+=== [G0-report-final2] uv run tools/gate_validate.py reviews/tools/K01-subagent-agent.md ===
+VALID   reviews/tools/K01-subagent-agent.md  id=K01
+--- [G0-report-final2] exit=0 ---
+=== [FINAL] git rev-parse HEAD ===
+9ce4db1282b697de4c00ab15cc1f6dff77567317
+=== [FINAL] this unit's artifacts ===
+ M reviews/tools/K01-subagent-agent.md
+ M reviews/tools/gates/K01.txt
+?? tests/kimix/test_agent_gate.py

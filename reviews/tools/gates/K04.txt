@@ -1,4 +1,1304 @@
 52192b7c3a1baa66c96e0015d2868f3b106fc043
+?? .c08tmp/
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/X01.txt
+
+=== PROVENANCE NOTE (subagent K04) ===
+Lines 1-2 above are `git rev-parse HEAD` and the `git status --porcelain` output as
+captured at the START of this review (11:44).  During the review the parent gate
+harness wrote its own K04 sweep log into this same file (mtime 12:04:29), which
+displaced the original status block and inserted its log above the review evidence.
+The harness log is preserved verbatim in the APPENDIX at the end of this file; the
+review's own raw evidence follows immediately.  Nothing was deleted.
+
+NOTE 2: HEAD advanced during the review (52192b7c -> 9ce4db12, four orchestrator
+commits: 72257564, 37850165, 7aa84025, 9ce4db12).  The only in-scope source change is
+FP-08's dequoting of the 'BackgroundStream' annotation in bash_tool.py:1375 (no LOC or
+behaviour change); see the 'HEAD movement during the review' section below.
+
+=== KNOWN BASELINE (reviews/tools/00-baseline.txt) ===
+ROOT suite: cannot be collected - tests/bash/cases.json missing (exit 2, 1 error).
+CLI suite:  43 failed / 5155 passed / 101 skipped, exit 1.
+
+########## K04 bash — raw gate evidence ##########
+
+=== G0 scope: in-scope source files (LOC) ===
+  1461 src/kimix/tools/file/bash/bash_tool.py
+   135 src/kimix/tools/file/bash/bash_fix.py
+   665 src/kimix/tools/file/bash/safety.py
+   106 src/kimix/tools/file/bash/output_enhance.py
+   159 src/kimix/tools/file/bash/shell_common.py
+    11 src/kimix/tools/file/bash/__init__.py
+  2537 total
+
+=== G0 scope: in-scope test files (LOC) ===
+  6643 tests/test_bash.py
+   489 tests/test_bash_e2e.py
+   184 tests/test_shell_common.py
+   437 tests/test_shell_safety.py
+   304 tests/test_output_enhance.py
+   364 tests/native/test_shell_security_equivalence.py
+  8421 total
+
+=== G0 registration: uv run tools/review_tool_registry.py (bash rows) ===
+44:registered  kimix.tools.file.bash.bash_tool:Bash               name='bash'  src/kimix/tools/file/bash/bash_tool.py
+45:registered  kimix.tools.file.bash.pwsh_tool:Powershell         name='pwsh'  src/kimix/tools/file/bash/pwsh_tool.py
+
+=== G1 metrics: uv run tools/review_metrics.py <in-scope src> --json ===
+{
+  "files": [
+    {
+      "path": "src/kimix/tools/file/bash/bash_tool.py",
+      "loc": 1461,
+      "module_loc": 1461,
+      "functions": [
+        {
+          "name": "_encode_startup_script",
+          "lineno": 102,
+          "loc": 14,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_payload_eval_command",
+          "lineno": 118,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_bash_argv_env",
+          "lineno": 125,
+          "loc": 13,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_bash_subprocess_env",
+          "lineno": 147,
+          "loc": 18,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_is_windows_apps_stub",
+          "lineno": 167,
+          "loc": 9,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_bash_runs",
+          "lineno": 187,
+          "loc": 20,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_where_git_executables",
+          "lineno": 209,
+          "loc": 14,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_git_bash_candidate_from_git_path",
+          "lineno": 225,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_git_exec_path",
+          "lineno": 231,
+          "loc": 19,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_git_install_root_from_exec_path",
+          "lineno": 252,
+          "loc": 10,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_git_bash_candidates_from_exec_path",
+          "lineno": 264,
+          "loc": 9,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_is_git_bash_install",
+          "lineno": 275,
+          "loc": 30,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 1
+        },
+        {
+          "name": "_with_msystem_neutralized",
+          "lineno": 315,
+          "loc": 16,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_find_git_bash_windows",
+          "lineno": 333,
+          "loc": 51,
+          "complexity": 13,
+          "branches": 12,
+          "max_nesting": 4
+        },
+        {
+          "name": "_git_bash_for_macos",
+          "lineno": 386,
+          "loc": 15,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_bash_candidates_macos",
+          "lineno": 403,
+          "loc": 7,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_bash_candidates_system",
+          "lineno": 412,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "find_bash",
+          "lineno": 418,
+          "loc": 33,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 3
+        },
+        {
+          "name": "_configured_shell",
+          "lineno": 453,
+          "loc": 23,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_should_enable_bash",
+          "lineno": 478,
+          "loc": 29,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "_should_enable_powershell",
+          "lineno": 509,
+          "loc": 26,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_process_unquoted",
+          "lineno": 557,
+          "loc": 19,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_prepare_bash_cmd",
+          "lineno": 580,
+          "loc": 21,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_usable",
+          "lineno": 350,
+          "loc": 2,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_normalize_mode",
+          "lineno": 629,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__init__",
+          "lineno": 646,
+          "loc": 45,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 2
+        },
+        {
+          "name": "_hardline_blocked",
+          "lineno": 692,
+          "loc": 21,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_self_kill_blocked",
+          "lineno": 714,
+          "loc": 25,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 740,
+          "loc": 325,
+          "complexity": 51,
+          "branches": 50,
+          "max_nesting": 4
+        },
+        {
+          "name": "_forbidden_error",
+          "lineno": 1066,
+          "loc": 16,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_prepare_command",
+          "lineno": 1083,
+          "loc": 21,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_continuation_may_be_incomplete",
+          "lineno": 1105,
+          "loc": 41,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_compile_pattern",
+          "lineno": 1147,
+          "loc": 11,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_stop_after_timeout",
+          "lineno": 1159,
+          "loc": 27,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_execute_background",
+          "lineno": 1187,
+          "loc": 65,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 1
+        },
+        {
+          "name": "_continue_session",
+          "lineno": 1253,
+          "loc": 75,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 2
+        },
+        {
+          "name": "_process_output",
+          "lineno": 1329,
+          "loc": 39,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 1
+        },
+        {
+          "name": "_format_session_result",
+          "lineno": 1369,
+          "loc": 51,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 2
+        },
+        {
+          "name": "_format_background_output",
+          "lineno": 1421,
+          "loc": 41,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "__call__",
+        "loc": 325
+      },
+      "module_complexity": 51
+    },
+    {
+      "path": "src/kimix/tools/file/bash/bash_fix.py",
+      "loc": 135,
+      "module_loc": 135,
+      "functions": [
+        {
+          "name": "fix_bash_command",
+          "lineno": 113,
+          "loc": 23,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "fix_bash_command",
+        "loc": 23
+      },
+      "module_complexity": 3
+    },
+    {
+      "path": "src/kimix/tools/file/bash/safety.py",
+      "loc": 665,
+      "module_loc": 665,
+      "functions": [
+        {
+          "name": "_compat_tools",
+          "lineno": 42,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "command_detection_variants",
+          "lineno": 59,
+          "loc": 14,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_segment_tokens",
+          "lineno": 75,
+          "loc": 7,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_looks_like_flag",
+          "lineno": 84,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "detect_hardline_command",
+          "lineno": 90,
+          "loc": 8,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "check_hardline_blocked",
+          "lineno": 100,
+          "loc": 10,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "foreground_background_guidance",
+          "lineno": 117,
+          "loc": 12,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 1
+        },
+        {
+          "name": "_posix_ppid",
+          "lineno": 152,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 2
+        },
+        {
+          "name": "_windows_parent_map",
+          "lineno": 165,
+          "loc": 44,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_agent_pids",
+          "lineno": 211,
+          "loc": 34,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 3
+        },
+        {
+          "name": "_split_image_name",
+          "lineno": 247,
+          "loc": 11,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_agent_image_names",
+          "lineno": 260,
+          "loc": 26,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "_agent_cmdline",
+          "lineno": 288,
+          "loc": 7,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_segment_text",
+          "lineno": 297,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_numeric_pid_targets",
+          "lineno": 302,
+          "loc": 18,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_loop_pid_sources",
+          "lineno": 341,
+          "loc": 24,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 6
+        },
+        {
+          "name": "_variable_pid_hit",
+          "lineno": 367,
+          "loc": 31,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_name_kill_hit",
+          "lineno": 400,
+          "loc": 21,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 3
+        },
+        {
+          "name": "_pattern_kill_hit",
+          "lineno": 423,
+          "loc": 21,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 3
+        },
+        {
+          "name": "_pkill_full_match",
+          "lineno": 446,
+          "loc": 9,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "detect_self_kill",
+          "lineno": 457,
+          "loc": 173,
+          "complexity": 52,
+          "branches": 51,
+          "max_nesting": 4
+        },
+        {
+          "name": "self_kill_hint",
+          "lineno": 642,
+          "loc": 24,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_pid_hit",
+          "lineno": 494,
+          "loc": 8,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "detect_self_kill",
+        "loc": 173
+      },
+      "module_complexity": 52
+    },
+    {
+      "path": "src/kimix/tools/file/bash/output_enhance.py",
+      "loc": 106,
+      "module_loc": 106,
+      "functions": [
+        {
+          "name": "_compat_tools",
+          "lineno": 40,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "interpret_exit_code",
+          "lineno": 54,
+          "loc": 17,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 1
+        },
+        {
+          "name": "is_expected_exit",
+          "lineno": 73,
+          "loc": 17,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "annotate_failure",
+          "lineno": 92,
+          "loc": 12,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "interpret_exit_code",
+        "loc": 17
+      },
+      "module_complexity": 8
+    },
+    {
+      "path": "src/kimix/tools/file/bash/shell_common.py",
+      "loc": 159,
+      "module_loc": 159,
+      "functions": [
+        {
+          "name": "_bash_tool",
+          "lineno": 33,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_pwsh_tool",
+          "lineno": 40,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "inspect_bash_command",
+          "lineno": 49,
+          "loc": 10,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "prepare_bash_command",
+          "lineno": 61,
+          "loc": 9,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "bash_argv",
+          "lineno": 72,
+          "loc": 17,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 0
+        },
+        {
+          "name": "bash_file_argv",
+          "lineno": 91,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "wrap_pwsh_command",
+          "lineno": 100,
+          "loc": 12,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "pwsh_executable",
+          "lineno": 114,
+          "loc": 6,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "pwsh_argv",
+          "lineno": 122,
+          "loc": 29,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "pwsh_file_argv",
+          "lineno": 153,
+          "loc": 7,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        }
+      ],
+      "longest_fn": {
+        "name": "pwsh_argv",
+        "loc": 29
+      },
+      "module_complexity": 5
+    }
+  ],
+  "totals": {
+    "files": 5,
+    "loc": 2526,
+    "functions": 77
+  },
+  "breaches": []
+}
+
+=== G1 lint: uv run ruff check <in-scope src> ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\file\bash\output_enhance.py:27:1
+   |
+25 |   """
+26 |
+27 | / from kimi_cli.native_loader import (
+28 | |     get_compat as _native_get_compat,
+29 | |     get_module as _native_get_module,
+30 | |     use_native as _native_use_native,
+31 | | )
+   | |_^
+32 |
+33 |   # Resolved once at import time (stable runtime: result never changes).
+   |
+help: Organize imports
+   |
+28 |     get_compat as _native_get_compat,
+29 + )
+30 + from kimi_cli.native_loader import (
+31 |     get_module as _native_get_module,
+32 + )
+33 + from kimi_cli.native_loader import (
+34 |     use_native as _native_use_native,
+   |
+
+E402 Module level import not at top of file
+   --> src\kimix\tools\file\bash\output_enhance.py:106:1
+    |
+106 | from kimix.tools.security import redact_sensitive_output as redact_sensitive_output  # noqa: F401
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: Move module level imports to top of file
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\file\bash\safety.py:24:1
+   |
+22 |   """
+23 |
+24 | / import os
+25 | | import sys
+26 | |
+27 | | import regex as re
+28 | |
+29 | | from kimi_cli.native_loader import (
+30 | |     get_compat as _native_get_compat,
+31 | |     get_module as _native_get_module,
+32 | |     use_native as _native_use_native,
+33 | | )
+   | |_^
+34 |
+35 |   # Resolved once at import time (stable runtime: result never changes).
+   |
+help: Organize imports
+   |
+27 | import regex as re
+   -
+28 | from kimi_cli.native_loader import (
+29 |     get_compat as _native_get_compat,
+30 + )
+31 + from kimi_cli.native_loader import (
+32 |     get_module as _native_get_module,
+33 + )
+34 + from kimi_cli.native_loader import (
+35 |     use_native as _native_use_native,
+   |
+
+E402 Module level import not at top of file
+   --> src\kimix\tools\file\bash\safety.py:114:1
+    |
+112 | # ``validate_workdir`` moved to :mod:`kimix.tools.security`; re-exported
+113 | # here for compatibility with existing shell-tool callers.
+114 | from kimix.tools.security import validate_workdir as validate_workdir  # noqa: F401
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: Move module level imports to top of file
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\file\bash\shell_common.py:19:1
+   |
+17 |   """
+18 |
+19 | / from __future__ import annotations
+20 | |
+21 | | import shutil
+22 | | from typing import Any
+23 | |
+24 | | from kimix.tools.file.bash import bash_fix
+25 | | from kimix.tools.file.bash import process_pwsh
+26 | | from kimix.tools.file.bash import pwsh_fix
+   | |__________________________________________^
+27 |
+28 |   # Flags shared by every one-shot PowerShell invocation (pwsh 7 and the
+   |
+help: Organize imports
+   |
+23 |
+   - from kimix.tools.file.bash import bash_fix
+   - from kimix.tools.file.bash import process_pwsh
+   - from kimix.tools.file.bash import pwsh_fix
+24 + from kimix.tools.file.bash import bash_fix, process_pwsh, pwsh_fix
+25 |
+   |
+
+Found 5 errors.
+[*] 3 fixable with the `--fix` option.
+RUFF_EXIT=1
+
+=== G1 complexity: uv run ruff check --select C901 --config lint.mccabe.max-complexity=12 <in-scope src> ===
+C901 `__call__` is too complex (36 > 12)
+   --> src\kimix\tools\file\bash\bash_tool.py:740:15
+    |
+738 |         )
+739 |
+740 |     async def __call__(self, params: BashParams) -> ToolReturnValue:
+    |               ^^^^^^^^
+741 |         """Execute the bash command via the system bash executable.
+    |
+
+C901 `detect_self_kill` is too complex (46 > 12)
+   --> src\kimix\tools\file\bash\safety.py:457:5
+    |
+457 | def detect_self_kill(
+    |     ^^^^^^^^^^^^^^^^
+458 |     command: str,
+459 |     *,
+    |
+
+Found 2 errors.
+RUFF_C901_EXIT=1
+
+=== G1 dead code: uv run --with vulture vulture <in-scope src> --min-confidence 90 --sort-by-size (3 consecutive runs) ===
+--- run 1 ---
+src\kimix\tools\file\bash\bash_tool.py:629: unused variable 'cls' (100% confidence, 1 line)
+VULTURE_EXIT=3
+--- run 2 ---
+src\kimix\tools\file\bash\bash_tool.py:629: unused variable 'cls' (100% confidence, 1 line)
+VULTURE_EXIT=3
+--- run 3 ---
+src\kimix\tools\file\bash\bash_tool.py:629: unused variable 'cls' (100% confidence, 1 line)
+VULTURE_EXIT=3
+NOTE: an earlier run of the same command also reported bash_tool.py:83 'unused import
+BackgroundStream' at exactly 90% confidence (the --min-confidence boundary; the name is
+used in a string annotation at bash_tool.py:1372 under TYPE_CHECKING).  Both hits are
+waived in the report's G1 table.
+
+########## G2 risk-audit raw evidence ##########
+=== G3 additional: uv run pytest tests/test_bash_e2e.py (default corpus tests/bash/cases.json) ===
+ls: cannot access 'tests/bash': No such file or directory
+
+The above exception was the direct cause of the following exception:
+tests\test_bash_e2e.py:300: in pytest_generate_tests
+    cases = load_cases(path)
+            ^^^^^^^^^^^^^^^^
+tests\test_bash_e2e.py:145: in load_cases
+    raise ValueError(f"cannot read corpus file {path}: {exc}") from exc
+E   ValueError: cannot read corpus file C:\dev\kimi-agent\tests\bash\cases.json: [Errno 2] No such file or directory: 'C:\\dev\\kimi-agent\\tests\\bash\\cases.json'
+=========================== short test summary info ===========================
+ERROR tests/test_bash_e2e.py - ValueError: cannot read corpus file C:\dev\kim...
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.42s
+E2E_PIPE_EXIT=2
+
+=== G1 vulture ===
+src\kimix\tools\file\bash\bash_tool.py:629: unused variable 'cls' (100% confidence, 1 line)
+VULTURE_EXIT=3
+
+=== G2(a-c) async / blocking IO / resources in the bash tool family ===
+src/kimix/tools/file/bash/bash_tool.py:197:        result = subprocess.run(
+src/kimix/tools/file/bash/bash_tool.py:212:        result = subprocess.run(
+src/kimix/tools/file/bash/bash_tool.py:234:        result = subprocess.run(
+src/kimix/tools/file/bash/bash_tool.py:1124:            checked = subprocess.run(
+src/kimix/tools/file/bash/safety.py:155:        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as fh:
+--- anyio vs asyncio ---
+src/kimix/tools/file/bash/bash_tool.py:4:import asyncio
+
+=== G2(d) subprocess sites in bash_tool.py ===
+148:    """Return the environment for a bash subprocess.
+197:        result = subprocess.run(
+204:    except (OSError, subprocess.TimeoutExpired):
+212:        result = subprocess.run(
+234:        result = subprocess.run(
+241:    except (OSError, subprocess.TimeoutExpired):
+1124:            checked = subprocess.run(
+1133:        except (OSError, subprocess.SubprocessError):
+
+=== G2(f,i) magic thresholds / limits ===
+99:_MAX_INLINE_BASH_ARGV = 6000
+134:    if len(script) <= _MAX_INLINE_BASH_ARGV:
+202:            timeout=15,
+239:            timeout=5,
+1130:                timeout=2,
+1358:        if len(output) > 65536:
+
+=== G2(j) module-level mutable state ===
+src/kimix/tools/file/bash/safety.py:43:    global _COMPAT_TOOLS
+src/kimix/tools/file/bash/safety.py:140:_AGENT_PIDS_CACHE: set[int] | None = None
+src/kimix/tools/file/bash/safety.py:141:_AGENT_IMAGE_NAMES_CACHE: set[str] | None = None
+src/kimix/tools/file/bash/safety.py:142:_AGENT_CMDLINE_CACHE: str | None = None
+src/kimix/tools/file/bash/safety.py:217:    global _AGENT_PIDS_CACHE
+src/kimix/tools/file/bash/safety.py:267:    global _AGENT_IMAGE_NAMES_CACHE
+src/kimix/tools/file/bash/safety.py:290:    global _AGENT_CMDLINE_CACHE
+src/kimix/tools/file/bash/output_enhance.py:41:    global _COMPAT_TOOLS
+
+=== G1 hot-path (function-local) imports in bash_tool.py ===
+83:    from kimix.tools.background.utils import BackgroundStream
+111:    import gzip
+113:    import pybase64
+463:        from kimix.base import _default_agent_file
+999:        from kimix.tools.background.utils import remove_task_id
+1092:        from kimix.tools.file.bash import shell_common
+1176:        from kimix.tools.background.utils import remove_task_id
+1255:        from kimix.tools.background.utils import get_all_tasks
+1313:        from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+
+=== G2(d) stdin encoding in ProcessTask/BackgroundStream ===
+1985:                    stdin=asyncio.subprocess.PIPE,
+2001:                    stdin=asyncio.subprocess.PIPE,
+2091:            async def write_stdin() -> None:
+2096:                        if process.stdin is None:
+2097:                            raise RuntimeError("Subprocess stdin is None")
+2103:                        process.stdin.write(data.encode('utf-8', errors='replace'))
+2104:                        await process.stdin.drain()
+2113:            stdin_task = asyncio.create_task(write_stdin())
+2137:            stdin_task.cancel()
+2148:                await stdin_task
+2225:        """Push data to the process's stdin.
+2228:            data: The string data to write to stdin.
+2244:        # Write data to stdin
+2246:            if proc.stdin is not None and proc.returncode is None:
+2252:            # Process may have terminated or stdin is closed
+2314:        """Push data to the process's stdin.
+2317:            data: The string data to write to stdin.
+566:    (with ``ignore_errors=True``) silently leave the folder behind.
+1694:        output = _truncate_lines(output, max_lines, preserve_errors=preserve_errors)
+2017:                decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+2054:                decoder = codecs.getincrementaldecoder('utf-8')(errors='replace')
+2103:                        process.stdin.write(data.encode('utf-8', errors='replace'))
+2156:                    text = remaining_stdout.decode('utf-8', errors='replace')
+2168:                        text = remaining_stderr.decode('utf-8', errors='replace')
+
+=== G2(j) module-level caches ===
+src/kimix/tools/file/bash/bash_tool.py:417:@functools.lru_cache(maxsize=1)
+
+=== G2(k) pydantic config / validators in BashParams ===
+class BashParams(BaseModel):
+    """Parameters for the Bash tool — execute a bash command."""
+
+    model_config = {"populate_by_name": True}
+
+    cmd: str = Field(
+        default="",
+        alias="command",  # LLM can use "command" instead of "cmd"
+        description=(
+            "Bash command or session input; may be a path to an existing `.sh` "
+            "script file (e.g. `scripts/deploy.sh`), executed via bash. "
+            + accepts_alias_text("cmd", "command", word=False)
+        ),
+    )
+    mode: Literal["execute", "send", "interactive"] = mode_field(
+        execute_desc="run now.",
+        send_desc="background, return task_id.",
+        interactive_desc="persistent REPL, return task_id.",
+    )
+    timeout: int = timeout_field()
+    task_id: str | None = task_id_field("cmd")
+    wait_for_pattern: str | None = wait_for_pattern_field()
+    max_lines: int | None = max_lines_field()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_mode(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Convert deprecated boolean flags and mode aliases to canonical names."""
+        return normalize_mode_validator(data)
+
+    _validate_cmd = shell_cmd_required_validator("cmd")
+
+
+=== G2(l) native dispatch in the bash family ===
+src/kimix/tools/file/bash/bash_fix.py:63:    get_compat as _native_get_compat,
+src/kimix/tools/file/bash/bash_fix.py:70:_shell = _native_get_compat("_shell_compat")
+src/kimix/tools/file/bash/bash_tool.py:18:    get_compat as _native_get_compat,
+src/kimix/tools/file/bash/bash_tool.py:21:    get_module as _native_get_module,
+src/kimix/tools/file/bash/bash_tool.py:24:    use_native as _native_use_native,
+src/kimix/tools/file/bash/bash_tool.py:80:_NATIVE_PARSE = _native_get_module("parse")
+src/kimix/tools/file/bash/bash_tool.py:540:_shell = _native_get_compat("_shell_compat")
+src/kimix/tools/file/bash/bash_tool.py:573:    if _native_use_native("PARSE") and _NATIVE_PARSE is not None:
+src/kimix/tools/file/bash/output_enhance.py:28:    get_compat as _native_get_compat,
+src/kimix/tools/file/bash/output_enhance.py:29:    get_module as _native_get_module,
+src/kimix/tools/file/bash/output_enhance.py:30:    use_native as _native_use_native,
+src/kimix/tools/file/bash/output_enhance.py:34:_NATIVE_TOOLS = _native_get_module("tools")
+src/kimix/tools/file/bash/output_enhance.py:43:        _COMPAT_TOOLS = _native_get_compat("tools")
+src/kimix/tools/file/bash/output_enhance.py:68:    if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and command.isascii():
+src/kimix/tools/file/bash/output_enhance.py:85:    if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and command.isascii():
+src/kimix/tools/file/bash/output_enhance.py:101:    if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and output.isascii():
+src/kimix/tools/file/bash/process_pwsh.py:24:from kimi_cli.native_loader import get_compat as _native_get_compat
+src/kimix/tools/file/bash/process_pwsh.py:29:_shell = _native_get_compat("_shell_compat")
+src/kimix/tools/file/bash/pwsh_fix.py:60:    get_compat as _native_get_compat,
+src/kimix/tools/file/bash/pwsh_fix.py:63:    get_module as _native_get_module,
+src/kimix/tools/file/bash/pwsh_fix.py:66:    use_native as _native_use_native,
+src/kimix/tools/file/bash/pwsh_fix.py:72:_shell = _native_get_compat("_shell_compat")
+src/kimix/tools/file/bash/pwsh_fix.py:96:_NATIVE_PARSE = _native_get_module("parse")
+src/kimix/tools/file/bash/pwsh_fix.py:108:    if _native_use_native("PARSE") and _NATIVE_PARSE is not None:
+src/kimix/tools/file/bash/safety.py:30:    get_compat as _native_get_compat,
+src/kimix/tools/file/bash/safety.py:31:    get_module as _native_get_module,
+src/kimix/tools/file/bash/safety.py:32:    use_native as _native_use_native,
+src/kimix/tools/file/bash/safety.py:36:_NATIVE_TOOLS = _native_get_module("tools")
+src/kimix/tools/file/bash/safety.py:45:        _COMPAT_TOOLS = _native_get_compat("tools")
+src/kimix/tools/file/bash/safety.py:107:    if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and command.isascii():
+src/kimix/tools/file/bash/safety.py:126:    if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and command.isascii():
+
+########## G3 coverage raw evidence ##########
+
+(1) VERBATIM gate command (plan §4.4 K04), re-run for the record:
+=== uv run --with pytest-cov pytest <G3 files> --cov=... --cov-fail-under=80 -q (VERBATIM gate command) ===
+....................C:\Users\maxwellgeng\AppData\Local\uv\cache\archive-v0\IS955OHfs_IdmwxGr0kG-\Lib\site-packages\coverage\inorout.py:558: CoverageWarning: Module src/kimix/tools/file/bash/bash_tool.py was never imported. (module-not-imported); see https://coverage.readthedocs.io/en/7.16.2/messages.html#warning-module-not-imported
+  self.warn(f"Module {pkg} was never imported.", slug="module-not-imported")
+                                                     [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                          Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------
+src\kimix\tools\agent\__init__.py               532     51    176     38    87%   55->58, 59, 77->exit, 89->exit, 109, 121, 130, 163->168, 166-167, 188, 203, 221, 253, 256, 265, 288->293, 305, 420-421, 478->480, 483, 484->494, 486->494, 513->507, 603->611, 609-610, 612-613, 650->652, 686, 696-700, 717, 724, 738->740, 741, 743, 756->exit, 758-759, 772->exit, 814->817, 843-844, 881-902, 964->967, 1008, 1034->exit, 1052, 1053->exit
+src\kimix\tools\agent\store.py                   74      2     12      1    97%   107->106, 138-139
+src\kimix\tools\file\bash\bash_fix.py            27      0      2      0   100%
+src\kimix\tools\file\bash\output_enhance.py      31      1     18      2    94%   89
+src\kimix\tools\file\bash\safety.py             328     31    200     22    89%   97, 154-162, 197, 222->224, 228-229, 230->243, 237-242, 271->273, 276, 280->282, 282->274, 362->358, 412, 414->413, 416, 436, 440-442, 451, 480, 482, 484, 486, 567, 607, 619->604, 620->619
+src\kimix\tools\file\bash\shell_common.py        50      0      6      0   100%
+-----------------------------------------------------------------------------------------
+TOTAL                                          1042     85    414     63    89%
+Required test coverage of 80% reached. Total coverage: 89.01%
+1603 passed, 1 skipped in 128.18s (0:02:08)
+PIPE_EXIT=0
+
+(2) VERBATIM gate command, first run of this review (same SHA, same sources):
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                          Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------
+src\kimix\tools\file\bash\bash_fix.py            27      0      2      0   100%
+src\kimix\tools\file\bash\output_enhance.py      31      1     18      2    94%   89
+src\kimix\tools\file\bash\safety.py             328     31    200     22    89%   97, 154-162, 197, 222->224, 228-229, 230->243, 237-242, 271->273, 276, 280->282, 282->274, 362->358, 412, 414->413, 416, 436, 440-442, 451, 480, 482, 484, 486, 567, 607, 619->604, 620->619
+src\kimix\tools\file\bash\shell_common.py        50      0      6      0   100%
+-----------------------------------------------------------------------------------------
+TOTAL                                           436     32    226     24    91%
+Required test coverage of 80% reached. Total coverage: 90.63%
+1603 passed, 1 skipped in 137.93s (0:02:17)
+EXIT=0
+
+NOTE: the verbatim target --cov=src/kimix/tools/file/bash/bash_tool.py is never imported
+by coverage (warning 'module-not-imported') so bash_tool.py is ABSENT from the table in
+both verbatim runs, and the TOTAL differs between them (436 vs 1042 stmts) because the
+unresolvable source spec makes coverage fall back to whatever else was imported.
+The corrected dotted target below is the numeric source of truth in the report.
+
+(3) CORRECTED target measuring bash_tool.py: --cov=kimix.tools.file.bash.bash_tool ...:
+=== CORRECTED COV: --cov=kimix.tools.file.bash.bash_tool ===
+........................................................................ [ 94%]
+........................................................................ [ 98%]
+....................                                                     [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                            Stmts   Miss Branch BrPart  Cover   Missing
+-------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\file\hash_line.py     645     84    254     29    85%   129-130, 149-160, 236, 280-281, 283-292, 293->exit, 325-328, 338->exit, 378-385, 402->391, 437, 446, 460-464, 502, 531, 535->509, 545, 586->581, 603->606, 620, 701, 717-722, 741-742, 750, 755, 775-776, 783-784, 850->853, 901, 917-922, 941-942, 958, 962-963, 974-975, 977, 989-990, 999-1000, 1029-1031, 1074-1075, 1136-1148
+src\kimix\tools\agent\__init__.py                 532     24    176     31    92%   77->exit, 89->exit, 121, 163->168, 166-167, 188, 203, 221, 253, 256, 265, 305, 420-421, 478->480, 483, 484->494, 486->494, 513->507, 603->611, 650->652, 686, 717, 724, 738->740, 741, 743, 756->exit, 758-759, 772->exit, 814->817, 843-844, 964->967, 1008, 1034->exit, 1052, 1053->exit
+src\kimix\tools\agent\store.py                     74      2     12      1    97%   107->106, 138-139
+src\kimix\tools\file\bash\bash_fix.py              27      0      2      0   100%
+src\kimix\tools\file\bash\bash_tool.py            590     82    260     41    82%   136-137, 218-219, 221, 241-242, 244, 247->245, 249, 366->359, 367->366, 375, 388-400, 405, 414, 432-450, 494, 575, 653, 667, 669->665, 770, 782->786, 792, 806, 809, 812, 823-824, 827->833, 875, 878, 884->891, 899-931, 941-951, 1042, 1117, 1133-1135, 1179->1181, 1201, 1207, 1210, 1213, 1219->1226, 1279, 1304->1306, 1394, 1451, 1453, 1456, 1459->1461
+src\kimix\tools\file\bash\output_enhance.py        31      1     18      2    94%   89
+src\kimix\tools\file\bash\safety.py               328     31    200     22    89%   97, 154-162, 197, 222->224, 228-229, 230->243, 237-242, 271->273, 276, 280->282, 282->274, 362->358, 412, 414->413, 416, 436, 440-442, 451, 480, 482, 484, 486, 567, 607, 619->604, 620->619
+src\kimix\tools\file\bash\shell_common.py          50      0      6      0   100%
+-------------------------------------------------------------------------------------------
+TOTAL                                            2277    224    928    126    87%
+Required test coverage of 80% reached. Total coverage: 87.39%
+1603 passed, 1 skipped in 103.53s (0:01:43)
+EXIT=0
+
+(4) G3 additional (tests/test_bash_e2e.py, default corpus): PRE-EXISTING BASELINE FAILURE
+tests/bash/cases.json does not exist in the repository (also recorded in
+reviews/tools/00-baseline.txt:27-33).  Raw run:
+    raise ValueError(f"cannot read corpus file {path}: {exc}") from exc
+E   ValueError: cannot read corpus file C:\dev\kimi-agent\tests\bash\cases.json: [Errno 2] No such file or directory: 'C:\\dev\\kimi-agent\\tests\\bash\\cases.json'
+=========================== short test summary info ===========================
+ERROR tests/test_bash_e2e.py - ValueError: cannot read corpus file C:\dev\kim...
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 0.29s
+E2E_PIPE_EXIT=2
+
+########## G4 probe suite ##########
+=== uv run pytest tests/unit/tools/test_bash_gate.py -q -rf (full run) ===
+[probe functions in the file]
+45
+........................................................................ [100%]
+72 passed in 45.89s
+G4_PIPE_EXIT=0
+
+=== the single red probe, verbatim reason ===
+.                                                                        [100%]
+1 passed in 1.53s
+
+########## G4 caveat: tree state for probe 5 ##########
+=== git status --porcelain (12:03, AFTER the probe run above) ===
+ M src/kimix/tools/common.py
+
+=== proof that the pinned SHA does NOT scrub the child env ===
+$ git rev-parse HEAD
+9ce4db1282b697de4c00ab15cc1f6dff77567317
+$ git show HEAD:src/kimix/tools/common.py | grep -n scrub_env
+1910:        scrub_env: bool = False,
+1924:        self.scrub_env = scrub_env
+1967:            if self.scrub_env:
+$ git show HEAD:src/kimix/tools/file/bash/bash_tool.py | grep -n 'ProcessTask(self._bash'
+825:            process_task = ProcessTask(self._bash, bash_args, None, startup_env, append_newline=True)
+882:        process_task = ProcessTask(self._bash, one_shot_argv, None, one_shot_env)
+1217:        process_task = ProcessTask(self._bash, background_argv, None, background_env)
+
+=== raw probe-5 run captured at the CLEAN tree (11:5x, before the concurrent edit) ===
+1 failed, 71 passed in 45.45s
+FAILED tests/unit/tools/test_bash_gate.py::test_probe05_child_env_scrubbed
+  assert 'K04_GATE_API_KEY' not in <env dump>  -> 'K04_GATE_API_KEY=k04-api-key-value-9f2c'
+  tests/unit/tools/test_bash_gate.py:421: AssertionError: K04_GATE_API_KEY leaked
+
+=== concurrent uncommitted edit that flips probe 5 green (NOT mine, not committed) ===
+ src/kimix/tools/common.py | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
++    from kimix.tools.security import scrub_child_env
++    result = scrub_child_env(dict(base))
+-        scrub_env: bool = False,
++        scrub_env: bool = True,
+
+=== re-run of the probe suite AFTER the concurrent edit (12:02) ===
+72 passed in 45.89s  (all probes green)
+
+########## HEAD movement during the review (G6 note) ##########
+line 1 of this file (review start):
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+git rev-parse HEAD at report time (12:0x):
+9ce4db1282b697de4c00ab15cc1f6dff77567317
+$ git log --oneline 52192b7c..HEAD
+9ce4db12 fix(FP-05): third-party library policy compliance
+7aa84025 review(P2+P3): 36 per-tool reports, coverage gaps, simplicity backlog
+37850165 fix(FP-08): resolve lint-blocking correctness defects in the tool trees
+72257564 chore(review): per-tool gate harness, report generator, P1 sweep evidence
+Only in-scope source change in that range (FP-08):
+ src/kimix/tools/file/bash/bash_tool.py | 2 +-
+ src/kimix/tools/file/bash/pwsh_tool.py | 3 ++-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+-> 'BackgroundStream' annotation dequoted (1 line in bash_tool.py:1375, 2 lines in pwsh_tool.py);
+   no LOC/behaviour change, so the G1/G3 numbers and all line citations remain valid.
+
+########## G5 regression ##########
+=== uv run pytest tests -q (ROOT) ===
+E   ValueError: cannot read corpus file C:\dev\kimi-agent\tests\bash\cases.json: [Errno 2] No such file or directory: 'C:\\dev\\kimi-agent\\tests\\bash\\cases.json'
+============================== warnings summary ===============================
+tests\test_check_fmt.py:6
+  C:\dev\kimi-agent\tests\test_check_fmt.py:6: DeprecationWarning: kimix.tools.check_fmt is deprecated; import from kimi_cli.tools.file.check_fmt instead. This shim will be removed in the next minor release.
+    from kimix.tools.check_fmt import check_json, check_json_str
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR tests/test_bash_e2e.py - ValueError: cannot read corpus file C:\dev\kim...
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 skipped, 1 warning, 1 error in 2.52s
+ROOT_SUITE_PIPE_EXIT=2
+
+=== baseline comparison of the CLI failure SET (no NEW failures) ===
+baseline reviews/tools/00-baseline.txt: 43 failed, 5155 passed, 101 skipped
+this review:                            43 failed, 5241 passed, 105 skipped
+failure-name diff (python set difference over FAILED/ERROR lines): NEW = [] , GONE = []
+
+=== uv run pytest kimi-cli/tests -q (tail) ===
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-HIT]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-HIT]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-HIT]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[0-0-250]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[1-1-0]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[2-0-2]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[0-3-1]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_roots_mix
+FAILED kimi-cli\tests\tools\test_read_file.py::test_read_with_relative_path_outside_work_dir
+FAILED kimi-cli\tests\tools\test_read_file.py::TestReadFileGlob::test_read_glob_outside_workspace_relative
+43 failed, 5241 passed, 105 skipped, 1 xfailed, 1 xpassed, 55 warnings in 142.22s (0:02:22)
+CLI_SUITE_PIPE_EXIT=1
+
+=== uv run tools/syntax_check.py <changed .py> ===
+[syntax_check] Syntax OK: C:\dev\kimi-agent\tests\unit\tools\test_bash_gate.py
+SYNTAX_EXIT=0
+
+=== uv run tools/git_diff.py tests/unit/tools/test_bash_gate.py (first 40 lines) ===
+### tests/unit/tools/test_bash_gate.py: UNTRACKED (new file)
+diff --git "a/tests\\unit\\tools\\test_bash_gate.py" "b/tests\\unit\\tools\\test_bash_gate.py"
+new file mode 100644
+index 00000000..fc92b825
+--- /dev/null
++++ "b/tests\\unit\\tools\\test_bash_gate.py"
+@@ -0,0 +1,1077 @@
++"""G4 adversarial probe suite for the `bash` tool gate (K04, plan §4.4).
++
++One test function per gate probe.  Every assertion names an *observable*
++outcome — a `ToolOk`/`ToolError` field, a folded string, a file's exact
++contents, a frozen process — never `is not None`.
++
++Two kinds of probe:
++
++* **deterministic** (mock `ProcessTask`): parameter/alias/boundary/error-path
++  coverage plus the rtk, `bash_fix`, `shell_common` and long-output rules;
++* **end-to-end** (require a real bash on the host): interactive session
++  continuation, `wait_for_pattern`, timeout kill, child environment, secret
++  redaction, exit codes and binary output.  These are skipped — with the
++  documented reason "no real bash executable on this host" — when
++  `find_bash()` returns `None`; on this review host Git Bash is present so
++  all of them execute.
++
++Probe 5 (`test_probe05_child_env_scrubbed`) encodes the gate spec verbatim:
++"`scrub_child_env` removes `*_KEY`/`*_TOKEN`/`*_SECRET` from the child env
++(assert by running `env` through the tool)".  The bash tool does not scrub
++(`ProcessTask.scrub_env` defaults to `False` — `src/kimix/tools/common.py:1910`)
++and none of the bash spawn sites passes it (`bash_tool.py:825`, `:882`,
++`:1217`), so the probe is **red by design** until the FP-11 fix lands.  It is
++deliberately *not* weakened to a `scrub_child_env()`-only unit assertion,
++because that would hide the end-to-end gap that X03-F1 / finding F-13
++already filed.  Live confirmation recorded in `reviews/tools/K04-bash-bash.md`
++§4 item (g) and `reviews/tools/gates/K04.txt`.
++
++Run::
++    uv run pytest tests/unit/tools/test_bash_gate.py -q
++"""
++
++from __future__ import annotations
+(pyproject.toml untouched -> uv sync not required)
+(empty above = pyproject.toml unchanged)
+
+########## APPENDIX: parent harness K04 sweep log (moved from the file head) ##########
+
 [elapsed 0.0s, rc=0]
 ?? .coverage
 ?? kimi-cli/tests/tools/test_edit_gate.py
@@ -948,3 +2248,4 @@ ERROR tests/test_bash_e2e.py - ValueError: cannot read corpus file C:\dev\kim...
 !!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
 1 error in 1.26s
 [elapsed 4.9s, rc=2]
+

@@ -3347,3 +3347,16 @@ index 00000000..5aaa87b6
 1198:async def test_probe17_allow_auto_generated_field(
 1231:async def test_probe18_justification_and_sandbox_permissions_fields(
 
+=== INCIDENT NOTE (this unit) ===
+tools/gen_tool_reports.py ran at ~11:56 and overwrote reviews/tools/C10-edit-editfile.md with its generic
+scaffold (235 lines, verdict 'minor', 'G3 coverage pass ... no coverage line recorded'). The authored C10 report
+was rewritten immediately afterwards from the same content; a byte-identical backup is at /tmp/c10_report_backup.md
+and the restored file validates: 'VALID reviews/tools/C10-edit-editfile.md id=C10' (47377 bytes).
+The scaffold verdict conflicts with this evidence file; if gen_tool_reports.py is re-run, the C10 report must be
+restored (or this unit re-run) afterwards. The scaffold also reports probes_present=28 and complexity_max=38, matching this review.
+
+=== FINAL G0 re-check after restore ===
+-rw-r--r-- 1 maxwellgeng 197121 47377 Oct  8 11:58 reviews/tools/C10-edit-editfile.md
+VALID   reviews/tools/C10-edit-editfile.md  id=C10
+[exit=0]
+
