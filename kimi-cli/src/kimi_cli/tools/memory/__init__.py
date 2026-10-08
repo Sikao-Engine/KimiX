@@ -1,4 +1,5 @@
-"""Retrieve past conversation history (archived/compacted turns included) from the session's `HistoryIndex`.
+"""Retrieve past conversation history (archived/compacted turns included) from the session's
+`HistoryIndex`.
 
 The context window is volatile working memory. This tool recalls earlier
 messages that may have been pruned or compacted, so the agent can recover
@@ -20,7 +21,10 @@ if TYPE_CHECKING:
 class Params(BaseModel):
     query: str = Field(
         default="",
-        description="Search past conversation history (BM25 with recency boost) for this natural-language query.",
+        description=(
+            "Search past conversation history (BM25 with recency boost) for this "
+            "natural-language query."
+        ),
     )
     id: str | None = Field(
         default=None,

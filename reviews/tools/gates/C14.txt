@@ -1,51 +1,17 @@
-d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+36045bd7bb588ce42697bde1ee76f223e8491ef7
 [elapsed 0.0s, rc=0]
- M reviews/tools/gates/C00.json
- M reviews/tools/gates/C00.txt
- M reviews/tools/gates/C01.json
- M reviews/tools/gates/C01.txt
- M reviews/tools/gates/C02.json
- M reviews/tools/gates/C02.txt
- M reviews/tools/gates/C03.json
- M reviews/tools/gates/C03.txt
+ M kimi-cli/src/kimi_cli/tools/context_prune.py
+ M kimi-cli/src/kimi_cli/tools/memory/__init__.py
  M reviews/tools/gates/C04.json
  M reviews/tools/gates/C04.txt
- M reviews/tools/gates/C05.json
- M reviews/tools/gates/C05.txt
- M reviews/tools/gates/C06.json
- M reviews/tools/gates/C06.txt
- M reviews/tools/gates/C07.json
- M reviews/tools/gates/C07.txt
- M reviews/tools/gates/C08.json
- M reviews/tools/gates/C08.txt
- M reviews/tools/gates/C09.json
- M reviews/tools/gates/C09.txt
- M reviews/tools/gates/C10.json
- M reviews/tools/gates/C10.txt
- M reviews/tools/gates/C11.json
- M reviews/tools/gates/C11.txt
- M reviews/tools/gates/C12.json
- M reviews/tools/gates/C12.txt
- M reviews/tools/gates/C13.json
- M reviews/tools/gates/C13.txt
-?? reviews/tools/gates/_harness2.log
+ M reviews/tools/gates/C14.json
+ M reviews/tools/gates/C14.txt
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check kimi-cli/src/kimi_cli/tools/context_prune.py ===
-E501 Line too long (101 > 100)
-   --> kimi-cli\src\kimi_cli\tools\context_prune.py:348:101
-    |
-346 |                 message=(
-347 |                     f"keep_recent_turns={params.keep_recent_turns} is too large: "
-348 |                     f"history has {n} messages and {stable_prefix} are protected as a stable prefix."
-    |                                                                                                     ^
-349 |                 ),
-350 |                 brief="Invalid keep_recent_turns",
-    |
-
-Found 1 error.
-[elapsed 0.5s, rc=1]
+All checks passed!
+[elapsed 0.1s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
 All checks passed!
@@ -56,8 +22,8 @@ All checks passed!
   "files": [
     {
       "path": "kimi-cli/src/kimi_cli/tools/context_prune.py",
-      "loc": 449,
-      "module_loc": 449,
+      "loc": 482,
+      "module_loc": 482,
       "functions": [
         {
           "name": "_current_turn_start_index",
@@ -66,6 +32,30 @@ All checks passed!
           "complexity": 4,
           "branches": 3,
           "max_nesting": 2
+        },
+        {
+          "name": "_subagent_permission_error",
+          "lineno": 431,
+          "loc": 18,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_persist_pruned_history",
+          "lineno": 451,
+          "loc": 18,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_emit_status_update",
+          "lineno": 471,
+          "loc": 12,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
         },
         {
           "name": "__init__",
@@ -78,14 +68,14 @@ All checks passed!
         {
           "name": "__call__",
           "lineno": 97,
-          "loc": 131,
-          "complexity": 16,
-          "branches": 15,
-          "max_nesting": 3
+          "loc": 102,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 1
         },
         {
           "name": "_run_compact",
-          "lineno": 233,
+          "lineno": 204,
           "loc": 19,
           "complexity": 2,
           "branches": 1,
@@ -93,7 +83,7 @@ All checks passed!
         },
         {
           "name": "_run_strip_reasoning",
-          "lineno": 253,
+          "lineno": 224,
           "loc": 69,
           "complexity": 9,
           "branches": 8,
@@ -101,15 +91,15 @@ All checks passed!
         },
         {
           "name": "_validate_params",
-          "lineno": 327,
-          "loc": 59,
+          "lineno": 298,
+          "loc": 60,
           "complexity": 8,
           "branches": 7,
           "max_nesting": 2
         },
         {
           "name": "_is_thinking_active",
-          "lineno": 391,
+          "lineno": 363,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -117,7 +107,7 @@ All checks passed!
         },
         {
           "name": "_build_summary",
-          "lineno": 396,
+          "lineno": 368,
           "loc": 54,
           "complexity": 10,
           "branches": 9,
@@ -126,27 +116,24 @@ All checks passed!
       ],
       "longest_fn": {
         "name": "__call__",
-        "loc": 131
+        "loc": 102
       },
-      "module_complexity": 16
+      "module_complexity": 10
     }
   ],
   "totals": {
     "files": 1,
-    "loc": 449,
-    "functions": 8
+    "loc": 482,
+    "functions": 11
   },
-  "breaches": [
-    "kimi-cli/src/kimi_cli/tools/context_prune.py::__call__ loc=131 > 120",
-    "kimi-cli/src/kimi_cli/tools/context_prune.py::__call__ complexity=16 > 12"
-  ]
+  "breaches": []
 }
-[elapsed 0.2s, rc=1]
+[elapsed 0.2s, rc=0]
 
 === uv run pytest kimi-cli/tests/tools/test_context_prune.py kimi-cli/tests/core/test_kimisoul_context_prune.py kimi-cli/tests/core/test_current_turn_start_index.py -q -rs ===
 .....................                                                    [100%]
-21 passed in 1.52s
-[elapsed 3.7s, rc=0]
+21 passed in 1.33s
+[elapsed 3.2s, rc=0]
 
 === uv run --with pytest-cov pytest kimi-cli/tests/tools/test_context_prune.py kimi-cli/tests/core/test_kimisoul_context_prune.py kimi-cli/tests/core/test_current_turn_start_index.py --cov=kimi_cli.tools.context_prune ===
 .....................                                                    [100%]
@@ -155,8 +142,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                                           Stmts   Miss Branch BrPart  Cover   Missing
 ------------------------------------------------------------------------------------------
-kimi-cli\src\kimi_cli\tools\context_prune.py     149      8     62      8    91%   198->205, 207, 299, 312, 345, 365, 431->433, 445-447
+kimi-cli\src\kimi_cli\tools\context_prune.py     161      9     64      8    92%   270, 283, 316, 337, 403->405, 417-419, 464, 476
 ------------------------------------------------------------------------------------------
-TOTAL                                            149      8     62      8    91%
-21 passed in 2.01s
-[elapsed 5.4s, rc=0]
+TOTAL                                            161      9     64      8    92%
+21 passed in 1.60s
+[elapsed 4.3s, rc=0]

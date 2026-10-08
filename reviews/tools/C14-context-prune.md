@@ -5,7 +5,7 @@
 | Gate | Result | Evidence |
 |---|---|---|
 | G0 scope | pass | files=1 tests=3 registration=`context_prune` (kimi-cli/src/kimi_cli/tools/context_prune.py:81) |
-| G1 simplicity | fail | ruff=fail C901=pass metrics=fail complexity_max=16 longest_fn_loc=131 |
+| G1 simplicity | pass | ruff=pass C901=pass metrics=pass complexity_max=10 longest_fn_loc=102 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=90 no coverage line recorded |
 | G4 behavior | fail | `kimi-cli/tests/tools/test_context_prune_gate.py` required=11 present=0 |
@@ -16,11 +16,11 @@
 
 | source | LOC |
 |---|---|
-| `kimi-cli/src/kimi_cli/tools/context_prune.py` | 449 |
+| `kimi-cli/src/kimi_cli/tools/context_prune.py` | 482 |
 
 Tests in scope: `kimi-cli/tests/tools/test_context_prune.py`, `kimi-cli/tests/core/test_kimisoul_context_prune.py`, `kimi-cli/tests/core/test_current_turn_start_index.py`
 
-Module LOC total: **449**
+Module LOC total: **482**
 
 ## 2. Behaviour map
 
@@ -32,42 +32,38 @@ Largest functions (by LOC):
 
 | function | LOC | complexity | branches | max nesting | file |
 |---|---|---|---|---|---|
-| `__call__` | 131 | 16 | 15 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
+| `__call__` | 102 | 9 | 8 | 1 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 | `_run_strip_reasoning` | 69 | 9 | 8 | 4 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
-| `_validate_params` | 59 | 8 | 7 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
+| `_validate_params` | 60 | 8 | 7 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 | `_build_summary` | 54 | 10 | 9 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 | `_run_compact` | 19 | 2 | 1 | 1 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
+| `_subagent_permission_error` | 18 | 4 | 3 | 1 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
+| `_persist_pruned_history` | 18 | 5 | 4 | 1 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
+| `_emit_status_update` | 12 | 2 | 1 | 1 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 | `_current_turn_start_index` | 11 | 4 | 3 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 | `_is_thinking_active` | 4 | 2 | 1 | 0 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 | `__init__` | 3 | 1 | 0 | 0 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 
 ## 3. S1 Simplicity (G1 detail)
 
-verdict: **fail**
+verdict: **pass**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `pass`
-* `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **449** → decision: **keep (below the 1200-LOC split threshold)**
-* longest function `__call__` = 131 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py`)
-* functions > 120 LOC: **1** · complexity > 12: **1**
-
-Threshold breaches recorded:
-
-| breach |
-|---|
-| `kimi-cli/src/kimi_cli/tools/context_prune.py::__call__ loc=131 > 120` |
-| `kimi-cli/src/kimi_cli/tools/context_prune.py::__call__ complexity=16 > 12` |
+* `review_metrics --max-fn-loc 120 --max-complexity 12` → `pass`
+* module LOC **482** → decision: **keep (below the 1200-LOC split threshold)**
+* longest function `__call__` = 102 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py`)
+* functions > 120 LOC: **0** · complexity > 12: **0**
 
 Top-5 by cyclomatic complexity:
 
 | function | complexity | LOC | file |
 |---|---|---|---|
-| `__call__` | 16 | 131 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 | `_build_summary` | 10 | 54 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
+| `__call__` | 9 | 102 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 | `_run_strip_reasoning` | 9 | 69 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
-| `_validate_params` | 8 | 59 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
-| `_current_turn_start_index` | 4 | 11 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
+| `_validate_params` | 8 | 60 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
+| `_persist_pruned_history` | 5 | 18 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/context_prune.py` |
 
 ## 4. S2 Potential issues (G2 detail)
 
@@ -109,7 +105,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+* `git rev-parse HEAD` at review time: `36045bd7bb588ce42697bde1ee76f223e8491ef7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -135,9 +131,9 @@ verdict: **major**
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
-      "complexity_max": 16,
-      "longest_fn_loc": 131,
+      "ruff": "pass",
+      "complexity_max": 10,
+      "longest_fn_loc": 102,
       "loc_regression": "none",
       "vulture_hits": 0,
       "vulture_waived": 0
@@ -145,7 +141,7 @@ verdict: **major**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 1,
-      "open_medium": 2,
+      "open_medium": 0,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -171,36 +167,6 @@ verdict: **major**
   },
   "findings": [
     {
-      "severity": "medium",
-      "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "kimi-cli/src/kimi_cli/tools/context_prune.py",
-      "evidence": "reviews/tools/gates/C14.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "kimi-cli/tests/tools/test_context_prune_gate.py::test_ruff_clean_in_scope"
-    },
-    {
-      "severity": "medium",
-      "axis": "simplicity",
-      "title": "1 functions exceed complexity 12",
-      "file": "kimi-cli/src/kimi_cli/tools/context_prune.py",
-      "evidence": "gates/C14.json complexity_max=16",
-      "impact": "hard G1 breach for the >15 offenders; branches are untestable",
-      "fix": "extract cohesive helpers until every function is <= 12",
-      "test_to_add": "kimi-cli/tests/tools/test_context_prune_gate.py::test_no_function_over_complexity_12"
-    },
-    {
-      "severity": "low",
-      "axis": "simplicity",
-      "title": "1 functions exceed 120 LOC",
-      "file": "kimi-cli/src/kimi_cli/tools/context_prune.py",
-      "evidence": "longest = __call__ (131 LOC)",
-      "impact": "long functions resist review and coverage",
-      "fix": "split along the natural sub-steps",
-      "test_to_add": "kimi-cli/tests/tools/test_context_prune_gate.py::test_no_function_over_120_loc"
-    },
-    {
       "severity": "high",
       "axis": "coverage",
       "title": "G4 probe suite missing/insufficient (0/11)",
@@ -214,16 +180,13 @@ verdict: **major**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 4,
+    "gaps": 1,
     "gap_list": [
-      "ruff check fails on the in-scope files",
-      "1 functions exceed complexity 12",
-      "1 functions exceed 120 LOC",
       "G4 probe suite missing/insufficient (0/11)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/C14.txt",
-  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
+  "git_sha": "36045bd7bb588ce42697bde1ee76f223e8491ef7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

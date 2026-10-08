@@ -13,7 +13,7 @@ from the conversation history.  It supports three modes:
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Literal, override
+from typing import TYPE_CHECKING, Any, Literal, override
 
 from pydantic import BaseModel, Field
 
@@ -111,17 +111,9 @@ class context_prune(CallableTool2[Params]):  # noqa: N801
 
         # Respect loop control: subagents are only allowed to prune when
         # explicitly enabled, matching the auto-pruner behavior in _step().
-        is_subagent = getattr(soul.runtime, "role", None) == "subagent"
-        if is_subagent:
-            loop_control = getattr(soul, "_loop_control", None)
-            if loop_control is not None and not loop_control.prune_subagents:
-                return ToolError(
-                    message=(
-                        "context_prune is not enabled for subagents. "
-                        "Enable loop_control.prune_subagents or run from the root session."
-                    ),
-                    brief="Subagent pruning disabled",
-                )
+        permission_error = _subagent_permission_error(soul)
+        if permission_error is not None:
+            return permission_error
 
         llm = soul.runtime.llm
         max_context_size = llm.max_context_size if llm is not None else 128_000
@@ -185,32 +177,11 @@ class context_prune(CallableTool2[Params]):  # noqa: N801
                 message="Dry run complete",
             )
 
-        # Persist the pruned history
-        await context.replace_history(pruned_messages)
-
-        # Index Tier-B elided originals so they remain retrievable
-        if result.elided:
-            elided_messages = [
-                Message(role=rec.role, content=[TextPart(text=rec.original_text)])
-                for rec in result.elided
-                if rec.original_text.strip()
-            ]
-            if elided_messages:
-                soul._history_index.index_messages(elided_messages)
-                soul._history_index.save()
-                for rec in result.elided:
-                    soul._recently_restored_refs.add(rec.ref)
-
+        # Persist the pruned history, then re-index the Tier-B elided originals
+        # so they remain retrievable.
+        await _persist_pruned_history(context, soul, pruned_messages, result)
         # Emit status update with new context usage (only if a wire is active)
-        status = soul.status
-        if get_wire_or_none() is not None:
-            wire_send(
-                StatusUpdate(
-                    context_usage=status.context_usage,
-                    context_tokens=status.context_tokens,
-                    max_context_tokens=status.max_context_tokens,
-                )
-            )
+        _emit_status_update(soul)
 
         logger.info(
             "context_prune applied: mode={mode}, freed={freed}, earliest={idx}, "
@@ -345,7 +316,8 @@ class context_prune(CallableTool2[Params]):  # noqa: N801
             return ToolError(
                 message=(
                     f"keep_recent_turns={params.keep_recent_turns} is too large: "
-                    f"history has {n} messages and {stable_prefix} are protected as a stable prefix."
+                    f"history has {n} messages and {stable_prefix} are protected "
+                    "as a stable prefix."
                 ),
                 brief="Invalid keep_recent_turns",
             )
@@ -447,3 +419,64 @@ class context_prune(CallableTool2[Params]):  # noqa: N801
                 lines.append(f"  - {note}")
 
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Helpers extracted from `context_prune.__call__` so that method stays under the
+# G1 cyclomatic-complexity threshold of 12 (finding F-19).  Each is a pure
+# function of its arguments and preserves the original control flow exactly.
+# ---------------------------------------------------------------------------
+
+
+def _subagent_permission_error(soul: Any) -> ToolError | None:
+    """Return the error when a subagent is not allowed to prune, else ``None``.
+
+    Mirrors the auto-pruner's ``_step()`` behaviour: subagents may only prune when
+    ``loop_control.prune_subagents`` is enabled.
+    """
+    if getattr(soul.runtime, "role", None) != "subagent":
+        return None
+    loop_control = getattr(soul, "_loop_control", None)
+    if loop_control is None or loop_control.prune_subagents:
+        return None
+    return ToolError(
+        message=(
+            "context_prune is not enabled for subagents. "
+            "Enable loop_control.prune_subagents or run from the root session."
+        ),
+        brief="Subagent pruning disabled",
+    )
+
+
+async def _persist_pruned_history(
+    context: Any, soul: Any, pruned_messages: list[Any], result: Any
+) -> None:
+    """Replace the live history, then re-index the Tier-B elided originals."""
+    await context.replace_history(pruned_messages)
+    if not result.elided:
+        return
+    elided_messages = [
+        Message(role=rec.role, content=[TextPart(text=rec.original_text)])
+        for rec in result.elided
+        if rec.original_text.strip()
+    ]
+    if not elided_messages:
+        return
+    soul._history_index.index_messages(elided_messages)
+    soul._history_index.save()
+    for rec in result.elided:
+        soul._recently_restored_refs.add(rec.ref)
+
+
+def _emit_status_update(soul: Any) -> None:
+    """Broadcast the new context usage when a wire is active."""
+    status = soul.status
+    if get_wire_or_none() is None:
+        return
+    wire_send(
+        StatusUpdate(
+            context_usage=status.context_usage,
+            context_tokens=status.context_tokens,
+            max_context_tokens=status.max_context_tokens,
+        )
+    )

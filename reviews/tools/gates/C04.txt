@@ -1,40 +1,17 @@
-d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+36045bd7bb588ce42697bde1ee76f223e8491ef7
 [elapsed 0.0s, rc=0]
- M reviews/tools/gates/C00.json
- M reviews/tools/gates/C00.txt
- M reviews/tools/gates/C01.json
- M reviews/tools/gates/C01.txt
- M reviews/tools/gates/C02.json
- M reviews/tools/gates/C02.txt
- M reviews/tools/gates/C03.json
- M reviews/tools/gates/C03.txt
-?? reviews/tools/gates/_harness2.log
+ M kimi-cli/src/kimi_cli/tools/context_prune.py
+ M kimi-cli/src/kimi_cli/tools/memory/__init__.py
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C14.json
+ M reviews/tools/gates/C14.txt
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check kimi-cli/src/kimi_cli/tools/memory/__init__.py ===
-E501 Line too long (108 > 100)
- --> kimi-cli\src\kimi_cli\tools\memory\__init__.py:1:101
-  |
-1 | """Retrieve past conversation history (archived/compacted turns included) from the session's `HistoryIndex`.
-  |                                                                                                     ^^^^^^^^
-2 |
-3 | The context window is volatile working memory. This tool recalls earlier
-  |
-
-E501 Line too long (114 > 100)
-  --> kimi-cli\src\kimi_cli\tools\memory\__init__.py:23:101
-   |
-21 |     query: str = Field(
-22 |         default="",
-23 |         description="Search past conversation history (BM25 with recency boost) for this natural-language query.",
-   |                                                                                                     ^^^^^^^^^^^^^^
-24 |     )
-25 |     id: str | None = Field(
-   |
-
-Found 2 errors.
-[elapsed 0.2s, rc=1]
+All checks passed!
+[elapsed 0.1s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
 All checks passed!
@@ -45,19 +22,11 @@ All checks passed!
   "files": [
     {
       "path": "kimi-cli/src/kimi_cli/tools/memory/__init__.py",
-      "loc": 132,
-      "module_loc": 132,
+      "loc": 136,
+      "module_loc": 136,
       "functions": [
         {
           "name": "__init__",
-          "lineno": 47,
-          "loc": 3,
-          "complexity": 1,
-          "branches": 0,
-          "max_nesting": 0
-        },
-        {
-          "name": "attach_history_index",
           "lineno": 51,
           "loc": 3,
           "complexity": 1,
@@ -65,8 +34,16 @@ All checks passed!
           "max_nesting": 0
         },
         {
+          "name": "attach_history_index",
+          "lineno": 55,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
           "name": "__call__",
-          "lineno": 56,
+          "lineno": 60,
           "loc": 56,
           "complexity": 9,
           "branches": 8,
@@ -74,7 +51,7 @@ All checks passed!
         },
         {
           "name": "_retrieve_by_id",
-          "lineno": 113,
+          "lineno": 117,
           "loc": 20,
           "complexity": 3,
           "branches": 2,
@@ -90,7 +67,7 @@ All checks passed!
   ],
   "totals": {
     "files": 1,
-    "loc": 132,
+    "loc": 136,
     "functions": 4
   },
   "breaches": []
@@ -99,8 +76,8 @@ All checks passed!
 
 === uv run pytest kimi-cli/tests/tools/test_memory_retrieve.py -q -rs ===
 .....................                                                    [100%]
-21 passed in 0.46s
-[elapsed 2.3s, rc=0]
+21 passed in 0.34s
+[elapsed 2.0s, rc=0]
 
 === uv run --with pytest-cov pytest kimi-cli/tests/tools/test_memory_retrieve.py --cov=kimi_cli.tools.memory ===
 .....................                                                    [100%]
@@ -109,8 +86,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                                             Stmts   Miss Branch BrPart  Cover   Missing
 --------------------------------------------------------------------------------------------
-kimi-cli\src\kimi_cli\tools\memory\__init__.py      49      1     14      1    97%   102
+kimi-cli\src\kimi_cli\tools\memory\__init__.py      49      1     14      1    97%   106
 --------------------------------------------------------------------------------------------
 TOTAL                                               49      1     14      1    97%
-21 passed in 0.44s
+21 passed in 0.41s
 [elapsed 3.0s, rc=0]

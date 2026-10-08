@@ -127,6 +127,8 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 
 | **F-47** | low | simplicity | `AgentSwarmParams._validate` (default branch) ended with `if uses_template and "{{item}}" not in self.prompt_template: raise ...`, which is unreachable: `uses_template` is only truthy when the placeholder IS present. It also duplicated the template/prefix XOR check verbatim in both branches | `src/kimix/tools/swarm/__init__.py` | **fixed (G1)**: the XOR check is now `_require_exactly_one_prompt_source()` and the dead raise is removed; `_validate` 19 -> 4, module max complexity 19 -> 12, so **K13 now passes G1** |
 
+| **F-48** | low | simplicity | `context_prune.__call__` was 131 LOC / complexity 16, mixing the subagent permission check, history persistence, Tier-B elision re-indexing and the wire status broadcast | `kimi-cli/src/kimi_cli/tools/context_prune.py` | **fixed (G1)**: extracted `_subagent_permission_error`, `_persist_pruned_history` and `_emit_status_update`; `__call__` 16 -> 9, module max complexity 16 -> 10, so **C14 now passes G1**. Also split its one `E501` f-string. C04 (`retrieve`) needed only 2 `E501` splits -> **G1 pass** |
+
 ## FP-09 outcome
 
 `uv run ruff check --statistics kimi-cli/src/kimi_cli/tools src/kimix/tools`:
