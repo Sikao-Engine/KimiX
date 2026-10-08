@@ -517,3 +517,17 @@ e8dc4e77 review(C10,K01,K04): author-written probe suites and reports
 37850165 fix(FP-08): resolve lint-blocking correctness defects in the tool trees
 72257564 chore(review): per-tool gate harness, report generator, P1 sweep evidence
 ```
+
+## 13. Post-merge polish (after `tools-review/p5-final`)
+
+`tools-review/p5-final` marks the **merged review revision** (`36045bd7`), which was
+fast-forwarded onto `master`.  The commits below come after it and only continue the
+plan's recorded next steps; they are not part of the tagged review revision.
+
+* `9c9c35b9 refactor(C04,C14): G1 now fully green for 15 of 33 tools` - `refactor(C04,C14)`, bringing G1 fully green to
+  **15 of 33 tools** (see §2/§5). Full gate block re-run for both; the compaction
+  invariants were re-checked because C14 owns G-COMPACT.
+* the commit before it - `revert(FP-03)`, restoring `src/kimix/agent_worker.json`
+  byte-for-byte and moving `FindStr`/`ParserTool` to the allowlist, on the owner's
+  "no new tool registrations" decision.  No agent manifest is modified by this
+  review.
