@@ -8,7 +8,7 @@
     "tests/native/test_behavior_equivalence.py"
   ],
   "cov_module": "kimix.tools.file.find_str",
-  "sha": "152c001e4c1de6007152e4e349b6af656cfb7f89\n[elapsed 0.1s, rc=0]",
+  "sha": "d839697fddfd4a3891cf5aa5ee1d606d9fea4f56\n[elapsed 0.0s, rc=0]",
   "ruff_rc": 0,
   "ruff": "pass",
   "c901_rc": 0,
@@ -22,6 +22,8 @@
   "functions_over_120_loc": 0,
   "functions_over_12_cx": 0,
   "metrics_breaches": [],
-  "pytest": "skipped-mechanical",
-  "cov": "not-run"
+  "pytest_rc": 0,
+  "pytest": "pass",
+  "cov_rc": 0,
+  "cov": "pass"
 }

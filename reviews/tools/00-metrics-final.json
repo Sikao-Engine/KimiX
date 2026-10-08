@@ -9166,36 +9166,76 @@
     },
     {
       "path": "src/kimix/tools/file/find_str.py",
-      "loc": 196,
-      "module_loc": 196,
+      "loc": 199,
+      "module_loc": 199,
       "functions": [
         {
+          "name": "_split_glob_pattern",
+          "lineno": 21,
+          "loc": 12,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_list_dir_files",
+          "lineno": 35,
+          "loc": 11,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_walk_dir_files",
+          "lineno": 48,
+          "loc": 8,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 3
+        },
+        {
+          "name": "_native_find_in_file",
+          "lineno": 58,
+          "loc": 19,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 1
+        },
+        {
+          "name": "_match_columns",
+          "lineno": 79,
+          "loc": 14,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_find_files",
+          "lineno": 95,
+          "loc": 14,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_find_in_file",
+          "lineno": 111,
+          "loc": 26,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
           "name": "__call__",
-          "lineno": 36,
-          "loc": 161,
+          "lineno": 157,
+          "loc": 43,
           "complexity": 7,
           "branches": 6,
           "max_nesting": 3
         },
         {
-          "name": "find_files",
-          "lineno": 40,
-          "loc": 66,
-          "complexity": 19,
-          "branches": 18,
-          "max_nesting": 6
-        },
-        {
-          "name": "find_in_file",
-          "lineno": 107,
-          "loc": 47,
-          "complexity": 13,
-          "branches": 12,
-          "max_nesting": 3
-        },
-        {
           "name": "_offload",
-          "lineno": 156,
+          "lineno": 159,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -9204,9 +9244,9 @@
       ],
       "longest_fn": {
         "name": "__call__",
-        "loc": 161
+        "loc": 43
       },
-      "module_complexity": 19
+      "module_complexity": 7
     },
     {
       "path": "src/kimix/tools/file/run.py",
@@ -9318,8 +9358,8 @@
     },
     {
       "path": "src/kimix/tools/note/__init__.py",
-      "loc": 517,
-      "module_loc": 517,
+      "loc": 551,
+      "module_loc": 551,
       "functions": [
         {
           "name": "_set_enable_plan",
@@ -9328,6 +9368,22 @@
           "complexity": 1,
           "branches": 0,
           "max_nesting": 0
+        },
+        {
+          "name": "_trim_candidates_to_byte_budget",
+          "lineno": 264,
+          "loc": 20,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_build_plan_read_message",
+          "lineno": 286,
+          "loc": 24,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
         },
         {
           "name": "__init__",
@@ -9380,14 +9436,14 @@
         {
           "name": "_read_tail",
           "lineno": 218,
-          "loc": 66,
-          "complexity": 15,
-          "branches": 14,
-          "max_nesting": 4
+          "loc": 44,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 3
         },
         {
           "name": "__init__",
-          "lineno": 316,
+          "lineno": 342,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -9395,7 +9451,7 @@
         },
         {
           "name": "_normalize_line_endings",
-          "lineno": 322,
+          "lineno": 348,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -9403,15 +9459,23 @@
         },
         {
           "name": "_find_similar",
-          "lineno": 326,
-          "loc": 28,
-          "complexity": 13,
-          "branches": 12,
-          "max_nesting": 3
+          "lineno": 352,
+          "loc": 26,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_best_fuzzy_match",
+          "lineno": 380,
+          "loc": 8,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
         },
         {
           "name": "_try_strip_match",
-          "lineno": 355,
+          "lineno": 389,
           "loc": 24,
           "complexity": 7,
           "branches": 6,
@@ -9419,7 +9483,7 @@
         },
         {
           "name": "_find_best_fuzzy_match",
-          "lineno": 380,
+          "lineno": 414,
           "loc": 36,
           "complexity": 7,
           "branches": 6,
@@ -9427,7 +9491,7 @@
         },
         {
           "name": "_apply_edit",
-          "lineno": 417,
+          "lineno": 451,
           "loc": 41,
           "complexity": 8,
           "branches": 7,
@@ -9435,7 +9499,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 459,
+          "lineno": 493,
           "loc": 56,
           "complexity": 9,
           "branches": 8,
@@ -9443,10 +9507,10 @@
         }
       ],
       "longest_fn": {
-        "name": "_read_tail",
-        "loc": 66
+        "name": "__call__",
+        "loc": 56
       },
-      "module_complexity": 15
+      "module_complexity": 12
     },
     {
       "path": "src/kimix/tools/parser/__init__.py",
@@ -10139,8 +10203,8 @@
   ],
   "totals": {
     "files": 83,
-    "loc": 36659,
-    "functions": 1148
+    "loc": 36696,
+    "functions": 1156
   },
   "breaches": []
 }

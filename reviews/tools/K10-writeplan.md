@@ -4,8 +4,8 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=1 tests=1 registration=`WritePlan` (src/kimix/tools/note/__init__.py:44), `ReadPlan` (src/kimix/tools/note/__init__.py:123), `EditPlan` (src/kimix/tools/note/__init__.py:311) |
-| G1 simplicity | fail | ruff=pass C901=fail metrics=fail complexity_max=15 longest_fn_loc=66 |
+| G0 scope | pass | files=1 tests=1 registration=`WritePlan` (src/kimix/tools/note/__init__.py:44), `ReadPlan` (src/kimix/tools/note/__init__.py:123), `EditPlan` (src/kimix/tools/note/__init__.py:337) |
+| G1 simplicity | pass | ruff=pass C901=pass metrics=pass complexity_max=12 longest_fn_loc=56 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=90 no coverage line recorded |
 | G4 behavior | pass | `tests/unit/tools/test_note_gate.py` required=5 present=23 |
@@ -16,11 +16,11 @@
 
 | source | LOC |
 |---|---|
-| `src/kimix/tools/note/__init__.py` | 517 |
+| `src/kimix/tools/note/__init__.py` | 551 |
 
 Tests in scope: `tests/test_note.py`
 
-Module LOC total: **517**
+Module LOC total: **551**
 
 ## 2. Behaviour map
 
@@ -28,52 +28,45 @@ Module LOC total: **517**
 |---|---|---|---|---|
 | `WritePlan` | `src/kimix/tools/note/__init__.py:44` | CallableTool2 | - | True |
 | `ReadPlan` | `src/kimix/tools/note/__init__.py:123` | CallableTool2 | - | True |
-| `EditPlan` | `src/kimix/tools/note/__init__.py:311` | CallableTool2 | - | True |
+| `EditPlan` | `src/kimix/tools/note/__init__.py:337` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
 | function | LOC | complexity | branches | max nesting | file |
 |---|---|---|---|---|---|
-| `_read_tail` | 66 | 15 | 14 | 4 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `__call__` | 56 | 9 | 8 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_read_forward` | 49 | 12 | 11 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
+| `_read_tail` | 44 | 7 | 6 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_apply_edit` | 41 | 8 | 7 | 2 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_find_best_fuzzy_match` | 36 | 7 | 6 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `__call__` | 33 | 8 | 7 | 2 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
-| `_find_similar` | 28 | 13 | 12 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
+| `_find_similar` | 26 | 4 | 3 | 1 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `__call__` | 25 | 5 | 4 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
+| `_build_plan_read_message` | 24 | 5 | 4 | 2 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_try_strip_match` | 24 | 7 | 6 | 5 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
+| `_trim_candidates_to_byte_budget` | 20 | 5 | 4 | 2 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_validate_line_offset` | 12 | 3 | 2 | 1 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
-| `__init__` | 5 | 2 | 1 | 1 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
-| `__init__` | 5 | 2 | 1 | 1 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 
 ## 3. S1 Simplicity (G1 detail)
 
-verdict: **fail**
+verdict: **pass**
 
 * `ruff check` → `pass`
-* `ruff check --select C901 --max-complexity=12` → `fail`
-* `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **517** → decision: **keep (below the 1200-LOC split threshold)**
-* longest function `_read_tail` = 66 LOC (`C:/dev/kimi-agent/src/kimix/tools/note/__init__.py`)
-* functions > 120 LOC: **0** · complexity > 12: **2**
-
-Threshold breaches recorded:
-
-| breach |
-|---|
-| `src/kimix/tools/note/__init__.py::_read_tail complexity=15 > 12` |
-| `src/kimix/tools/note/__init__.py::_find_similar complexity=13 > 12` |
+* `ruff check --select C901 --max-complexity=12` → `pass`
+* `review_metrics --max-fn-loc 120 --max-complexity 12` → `pass`
+* module LOC **551** → decision: **keep (below the 1200-LOC split threshold)**
+* longest function `__call__` = 56 LOC (`C:/dev/kimi-agent/src/kimix/tools/note/__init__.py`)
+* functions > 120 LOC: **0** · complexity > 12: **0**
 
 Top-5 by cyclomatic complexity:
 
 | function | complexity | LOC | file |
 |---|---|---|---|
-| `_read_tail` | 15 | 66 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
-| `_find_similar` | 13 | 28 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_read_forward` | 12 | 49 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `__call__` | 9 | 56 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_apply_edit` | 8 | 41 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
+| `__call__` | 8 | 33 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
+| `_read_tail` | 7 | 44 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 
 ## 4. S2 Potential issues (G2 detail)
 
@@ -115,7 +108,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+* `git rev-parse HEAD` at review time: `d839697fddfd4a3891cf5aa5ee1d606d9fea4f56
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -128,7 +121,7 @@ Top-5 by cyclomatic complexity:
 
 ## 10. Verdict + JSON
 
-verdict: **minor**
+verdict: **ok**
 
 ```json
 {
@@ -137,13 +130,13 @@ verdict: **minor**
   "files": [
     "src/kimix/tools/note/__init__.py"
   ],
-  "verdict": "minor",
+  "verdict": "ok",
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
       "ruff": "pass",
-      "complexity_max": 15,
-      "longest_fn_loc": 66,
+      "complexity_max": 12,
+      "longest_fn_loc": 56,
       "loc_regression": "none",
       "vulture_hits": 0,
       "vulture_waived": 0
@@ -151,7 +144,7 @@ verdict: **minor**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 0,
-      "open_medium": 1,
+      "open_medium": 0,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -175,30 +168,17 @@ verdict: **minor**
     },
     "G6_independent_rerun": "not-run"
   },
-  "findings": [
-    {
-      "severity": "medium",
-      "axis": "simplicity",
-      "title": "2 functions exceed complexity 12",
-      "file": "src/kimix/tools/note/__init__.py",
-      "evidence": "gates/K10.json complexity_max=15",
-      "impact": "hard G1 breach for the >15 offenders; branches are untestable",
-      "fix": "extract cohesive helpers until every function is <= 12",
-      "test_to_add": "tests/unit/tools/test_note_gate.py::test_no_function_over_complexity_12"
-    }
-  ],
+  "findings": [],
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 1,
-    "gap_list": [
-      "2 functions exceed complexity 12"
-    ]
+    "gaps": 0,
+    "gap_list": []
   },
   "gate_evidence": "reviews/tools/gates/K10.txt",
-  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d839697fddfd4a3891cf5aa5ee1d606d9fea4f56\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
-  "needs_fix_phase": true,
+  "needs_fix_phase": false,
   "duplication_notes": []
 }
 ```

@@ -4,8 +4,8 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=1 tests=1 registration=`FindStr` (src/kimix/tools/file/find_str.py:31) |
-| G1 simplicity | fail | ruff=pass C901=fail metrics=fail complexity_max=19 longest_fn_loc=161 |
+| G0 scope | pass | files=1 tests=1 registration=`FindStr` (src/kimix/tools/file/find_str.py:152) |
+| G1 simplicity | pass | ruff=pass C901=pass metrics=pass complexity_max=7 longest_fn_loc=43 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=85 no coverage line recorded |
 | G4 behavior | fail | `tests/unit/tools/test_find_str_gate.py` required=10 present=0 |
@@ -16,54 +16,52 @@
 
 | source | LOC |
 |---|---|
-| `src/kimix/tools/file/find_str.py` | 196 |
+| `src/kimix/tools/file/find_str.py` | 199 |
 
 Tests in scope: `tests/native/test_behavior_equivalence.py`
 
-Module LOC total: **196**
+Module LOC total: **199**
 
 ## 2. Behaviour map
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `FindStr` | `src/kimix/tools/file/find_str.py:31` | CallableTool2 | - | True |
+| `FindStr` | `src/kimix/tools/file/find_str.py:152` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
 | function | LOC | complexity | branches | max nesting | file |
 |---|---|---|---|---|---|
-| `__call__` | 161 | 7 | 6 | 3 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
-| `find_files` | 66 | 19 | 18 | 6 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
-| `find_in_file` | 47 | 13 | 12 | 3 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `__call__` | 43 | 7 | 6 | 3 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_find_in_file` | 26 | 7 | 6 | 2 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_native_find_in_file` | 19 | 7 | 6 | 1 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_match_columns` | 14 | 3 | 2 | 2 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_find_files` | 14 | 5 | 4 | 1 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_split_glob_pattern` | 12 | 6 | 5 | 2 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_list_dir_files` | 11 | 6 | 5 | 3 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_walk_dir_files` | 8 | 4 | 3 | 3 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
 | `_offload` | 4 | 1 | 0 | 0 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
 
 ## 3. S1 Simplicity (G1 detail)
 
-verdict: **fail**
+verdict: **pass**
 
 * `ruff check` → `pass`
-* `ruff check --select C901 --max-complexity=12` → `fail`
-* `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **196** → decision: **keep (below the 1200-LOC split threshold)**
-* longest function `__call__` = 161 LOC (`C:/dev/kimi-agent/src/kimix/tools/file/find_str.py`)
-* functions > 120 LOC: **1** · complexity > 12: **2**
-
-Threshold breaches recorded:
-
-| breach |
-|---|
-| `src/kimix/tools/file/find_str.py::__call__ loc=161 > 120` |
-| `src/kimix/tools/file/find_str.py::find_files complexity=19 > 12` |
-| `src/kimix/tools/file/find_str.py::find_in_file complexity=13 > 12` |
+* `ruff check --select C901 --max-complexity=12` → `pass`
+* `review_metrics --max-fn-loc 120 --max-complexity 12` → `pass`
+* module LOC **199** → decision: **keep (below the 1200-LOC split threshold)**
+* longest function `__call__` = 43 LOC (`C:/dev/kimi-agent/src/kimix/tools/file/find_str.py`)
+* functions > 120 LOC: **0** · complexity > 12: **0**
 
 Top-5 by cyclomatic complexity:
 
 | function | complexity | LOC | file |
 |---|---|---|---|
-| `find_files` | 19 | 66 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
-| `find_in_file` | 13 | 47 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
-| `__call__` | 7 | 161 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
-| `_offload` | 1 | 4 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `__call__` | 7 | 43 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_find_in_file` | 7 | 26 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_native_find_in_file` | 7 | 19 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_split_glob_pattern` | 6 | 12 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
+| `_list_dir_files` | 6 | 11 | `C:/dev/kimi-agent/src/kimix/tools/file/find_str.py` |
 
 ## 4. S2 Potential issues (G2 detail)
 
@@ -105,7 +103,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+* `git rev-parse HEAD` at review time: `d839697fddfd4a3891cf5aa5ee1d606d9fea4f56
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -132,8 +130,8 @@ verdict: **major**
     "G0_scope": "pass",
     "G1_simplicity": {
       "ruff": "pass",
-      "complexity_max": 19,
-      "longest_fn_loc": 161,
+      "complexity_max": 7,
+      "longest_fn_loc": 43,
       "loc_regression": "none",
       "vulture_hits": 0,
       "vulture_waived": 0
@@ -141,7 +139,7 @@ verdict: **major**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 1,
-      "open_medium": 1,
+      "open_medium": 0,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -167,26 +165,6 @@ verdict: **major**
   },
   "findings": [
     {
-      "severity": "medium",
-      "axis": "simplicity",
-      "title": "2 functions exceed complexity 12",
-      "file": "src/kimix/tools/file/find_str.py",
-      "evidence": "gates/K16.json complexity_max=19",
-      "impact": "hard G1 breach for the >15 offenders; branches are untestable",
-      "fix": "extract cohesive helpers until every function is <= 12",
-      "test_to_add": "tests/unit/tools/test_find_str_gate.py::test_no_function_over_complexity_12"
-    },
-    {
-      "severity": "low",
-      "axis": "simplicity",
-      "title": "1 functions exceed 120 LOC",
-      "file": "src/kimix/tools/file/find_str.py",
-      "evidence": "longest = __call__ (161 LOC)",
-      "impact": "long functions resist review and coverage",
-      "fix": "split along the natural sub-steps",
-      "test_to_add": "tests/unit/tools/test_find_str_gate.py::test_no_function_over_120_loc"
-    },
-    {
       "severity": "high",
       "axis": "coverage",
       "title": "G4 probe suite missing/insufficient (0/10)",
@@ -200,15 +178,13 @@ verdict: **major**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 3,
+    "gaps": 1,
     "gap_list": [
-      "2 functions exceed complexity 12",
-      "1 functions exceed 120 LOC",
       "G4 probe suite missing/insufficient (0/10)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/K16.txt",
-  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d839697fddfd4a3891cf5aa5ee1d606d9fea4f56\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

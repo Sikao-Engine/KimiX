@@ -122,6 +122,9 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 
 | **F-44** | medium | gate contract | `ruff --select C901` and `tools/review_metrics.py` disagree on nested functions: ruff counts a nested `def`'s branches toward the ENCLOSING function's complexity, `review_metrics` prunes them. `find_str.py` measured `cx_max=7` (metrics) while ruff reported `__call__ is too complex (17 > 12)`. Both are G1 sub-checks, so the stricten one wins | `src/kimix/tools/file/find_str.py` (K16 gate) | **fixed at the source**: the two closures were hoisted to module level (`_find_files`, `_find_in_file`), which is what ruff was really asking for. Recorded here because the plan's G1 runs *both* tools and their conventions must be understood together |
 
+| **F-45** | low | gate contract | `ruff --select C901` does NOT count boolean operators as decision points while `tools/review_metrics.py` does (each `or`/`and` beyond the first counts one). `swarm/__init__.py::_validate` therefore measures 19 in the metrics tool and passes C901 | `src/kimix/tools/swarm/__init__.py` (K13 gate) | **recorded**: both are G1 sub-checks, so the stricter reading (metrics) governs; aligning the two conventions is a follow-up |
+| **F-46** | medium | gate contract | `tools/review_gates.py` runs `pytest --cov ... --cov-report=term-missing` but does NOT pass `--cov-fail-under=<FLOOR>`, so `cov=pass` in `gates/<ID>.json` means "the coverage run succeeded", not "the floor was met". The per-tool `floor`/`actual` comparison lives in the reports' §2.2 block, not in the harness | `tools/review_gates.py` | **recorded**: passing a per-tool `--cov-fail-under` is a one-line follow-up; until then G3 must be read from the report, not from `cov=pass` |
+
 ## FP-09 outcome
 
 `uv run ruff check --statistics kimi-cli/src/kimi_cli/tools src/kimix/tools`:

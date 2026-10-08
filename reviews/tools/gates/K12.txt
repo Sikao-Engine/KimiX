@@ -1,10 +1,9 @@
-d05e53288b440aa9b44fcbf17c6aa9d91d3ae13c
+d839697fddfd4a3891cf5aa5ee1d606d9fea4f56
 [elapsed 0.0s, rc=0]
  M reviews/tools/gates/K10.json
  M reviews/tools/gates/K10.txt
  M reviews/tools/gates/K11.json
  M reviews/tools/gates/K11.txt
- M src/kimix/tools/note/__init__.py
 [elapsed 0.0s, rc=0]
 
 
@@ -184,3 +183,21 @@ All checks passed!
   "breaches": []
 }
 [elapsed 0.2s, rc=0]
+
+=== uv run pytest tests/test_note.py -q -rs ===
+..............................................                           [100%]
+46 passed in 0.88s
+[elapsed 1.8s, rc=0]
+
+=== uv run --with pytest-cov pytest tests/test_note.py --cov=kimix.tools.note ===
+..............................................                           [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                               Stmts   Miss Branch BrPart  Cover   Missing
+------------------------------------------------------------------------------
+src\kimix\tools\note\__init__.py     307     31    124     17    87%   26, 111, 115, 159->161, 202, 246, 276-283, 304, 306, 308, 373-377, 383, 405, 408-409, 437-442, 478, 523, 530
+------------------------------------------------------------------------------
+TOTAL                                307     31    124     17    87%
+46 passed in 0.90s
+[elapsed 4.2s, rc=0]

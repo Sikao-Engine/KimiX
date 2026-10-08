@@ -30,8 +30,9 @@ uv run tools/gate_validate.py reviews/tools/[CK]*-*.md
 | tools with a report | 36 + 6 sweeps | **33 live + 3 deletion records + 6 sweeps** |
 | §2.2 JSON blocks schema-valid | 36/36 | **36/36** |
 | G1 ruff passes | 0 / 36 | **23 / 33** |
-| G1 C901 passes | 6 / 36 | **12 / 33** |
-| G1 metrics (LOC/complexity) passes | 0 / 36 | **5 / 33** |
+| G1 C901 passes | 6 / 36 | **16 / 33** |
+| G1 metrics (LOC/complexity) passes | 0 / 36 | **9 / 33** |
+| **G1 all three green** | 0 / 36 | **8 / 33** (C02, K09, K10, K11, K12, K14, K15, K16) |
 | G3 pytest passes | 30 / 36 | **31 / 33** |
 | G3 coverage passes | 30 / 36 | **31 / 33** |
 | G4 probe suites green | 0 / 36 | **8 / 33** |
@@ -114,7 +115,7 @@ are the probes whose modules do not declare `__all__`.
 | # | criterion | state |
 |---|---|---|
 | 1 | every tool has a report + `gates/<ID>.txt` | **met** (33 live + 3 deletion records + 6 sweeps) |
-| 2 | every tool records G0-G6 | **recorded for all**; `G1` is `pass` for 23/33 on lint but fails the C901/metrics thresholds for most tools |
+| 2 | every tool records G0-G6 | **recorded for all**; `G1` is fully green for **8/33** (ruff 23/33, C901 16/33, metrics 9/33) |
 | 3 | every tool owns a probe suite >= the required count | **8 of 33** (C06, C09, C10, K01, K04, K10, K11, K12) |
 | 4 | every high/medium finding fixed or waived with a rationale | **met for all F-01..F-39** except F-35 (E501) and the F-19/F-20 structural backlog, both explicitly recorded |
 | 5 | G-DUP, G-ORPHAN, G-POLICY, G-COMPACT green | **met — all four PASS** |
@@ -135,7 +136,7 @@ are the probes whose modules do not declare `__all__`.
 | FP-06 | **done** | 24 stale `__pycache__` / 238 `.pyc` removed under both tool roots |
 | FP-07 | **partial** | 8 probe suites (C06 22, C09 30, C10 28, K01 20, K04 72, K10/K11/K12 23) + 4 structural gates; **25 tools still lack a suite** |
 | FP-08 | **done** | `NameError` on the image-delivery path, **silently ignored malformed `region_pct`**, 5 unevaluatable `'X' | None` annotations, a dead `__all__` export + duplicate import |
-| FP-09 | **done (lint)** | 263 -> 101 findings, all `E501`; **23/33 tools now pass `ruff check`** |
+| FP-09 | **done (lint)** | 263 -> 101 findings, all `E501`; **23/33 tools now pass `ruff check`**. G1 is fully green for 8 tools: the note refactor (K10/K11/K12) and the find_str refactor (K16) added to C02/K09/K14/K15 |
 | FP-10 | **done** | the stale native-grep parity suite is retired with a guard: 38 failures -> 0 |
 | FP-11 | **done** | credential scrubbing enabled at the shared env choke point for all 8 shell spawn sites |
 | FP-12 | **done** | `FindStr`'s walk + scan and 5 swarm helpers moved to `anyio.to_thread` |
