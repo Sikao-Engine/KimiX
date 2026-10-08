@@ -433,3 +433,182 @@ Overall change scope, `git diff --stat tools-review/p0-base HEAD`:
    the event loop.
 7. Resolve **F-30** (bash description snapshot drift) with the tool owner, since it
    changes the model-facing prompt.
+
+## 13. Resolved provenance (appended after the report commit)
+
+* tagged revision `tools-review/p5-final` = `902805d4a8a34c9ec109489c1e1ae4fcb92356f4`
+* `git log --oneline master ^review/tools-hardgate` = `(empty)`
+* `git diff --stat tools-review/p0-base tools-review/p5-final`:
+
+```
+.gitignore                                         |     4 +
+ kimi-cli/src/kimi_cli/tools/__init__.py            |     8 +-
+ .../src/kimi_cli/tools/file/conflict_detect.py     |     1 -
+ .../src/kimi_cli/tools/file/edit/modes/sloppy.py   |     2 +-
+ kimi-cli/src/kimi_cli/tools/file/read_media.py     |    65 +-
+ kimi-cli/src/kimi_cli/tools/file/write.py          |     9 +-
+ kimi-cli/tests/tools/test_edit_gate.py             |  1265 +++
+ kimi-cli/tests/tools/test_library_policy_gate.py   |   177 +
+ kimi-cli/tests/tools/test_read_media_gate.py       |   194 +
+ kimi-cli/tests/tools/test_tools_integrity_gate.py  |   179 +
+ kimi-cli/tests/tools/test_write_gate.py            |   238 +
+ reviews/tools/00-metrics-final.json                | 10210 +++++++++++++++++++
+ reviews/tools/90-findings.md                       |   102 +
+ reviews/tools/91-coverage-gaps.md                  |   101 +
+ reviews/tools/92-simplicity-backlog.md             |    88 +
+ reviews/tools/93-orphans-and-removal.md            |    63 +
+ reviews/tools/99-final-report.md                   |   435 +
+ .../tools/C00-toolset-plumbing-shared-helpers.md   |   228 +
+ reviews/tools/C01-subagent-agenttool.md            |   222 +
+ reviews/tools/C02-askuserquestion.md               |   197 +
+ reviews/tools/C03-todo-list-todolist.md            |   234 +
+ reviews/tools/C04-retrieve.md                      |   197 +
+ reviews/tools/C05-read-readfile.md                 |   271 +
+ reviews/tools/C06-read-image-readmediafile.md      |   231 +
+ reviews/tools/C07-glob-glob.md                     |   242 +
+ reviews/tools/C08-grep-grep.md                     |   254 +
+ reviews/tools/C09-write-writefile.md               |   262 +
+ reviews/tools/C10-edit-editfile.md                 |   421 +
+ reviews/tools/C11-web-search-searchweb.md          |   246 +
+ reviews/tools/C12-fetch-url-kimi-cli.md            |   252 +
+ reviews/tools/C13-web-extract-webextract.md        |   252 +
+ reviews/tools/C14-context-prune.md                 |   231 +
+ reviews/tools/C15-hashread-hashline-hashedit.md    |   241 +
+ reviews/tools/C16-demo-tools-plus-compare-panic.md |   208 +
+ reviews/tools/K00-shared-infra.md                  |   246 +
+ reviews/tools/K01-subagent-agent.md                |   377 +
+ reviews/tools/K02-list-agents-agentlist.md         |   226 +
+ reviews/tools/K03-interrupt-agent-agentclose.md    |   226 +
+ reviews/tools/K04-bash-bash.md                     |   477 +
+ reviews/tools/K05-pwsh-powershell.md               |   243 +
+ reviews/tools/K06-run.md                           |   235 +
+ reviews/tools/K07-python.md                        |   235 +
+ reviews/tools/K08-job-output-taskoutput.md         |   237 +
+ reviews/tools/K09-compact.md                       |   193 +
+ reviews/tools/K10-writeplan.md                     |   226 +
+ reviews/tools/K11-readplan.md                      |   226 +
+ reviews/tools/K12-editplan.md                      |   226 +
+ reviews/tools/K13-workflow-agentswarm.md           |   225 +
+ reviews/tools/K14-fetch-url-kimix.md               |   207 +
+ reviews/tools/K15-parsertool.md                    |   195 +
+ reviews/tools/K16-findstr.md                       |   225 +
+ reviews/tools/K17-mkdir.md                         |   207 +
+ reviews/tools/K18-rm.md                            |   207 +
+ reviews/tools/X01-library-policy.md                |   170 +
+ reviews/tools/X02-async-resources.md               |   135 +
+ reviews/tools/X03-security.md                      |   168 +
+ reviews/tools/X04-native-parity.md                 |   214 +
+ reviews/tools/X05-dead-code.md                     |   216 +
+ reviews/tools/X06-test-hygiene.md                  |   606 ++
+ reviews/tools/gates/C00.json                       |    38 +
+ reviews/tools/gates/C00.txt                        |   573 ++
+ reviews/tools/gates/C01.json                       |    33 +
+ reviews/tools/gates/C01.txt                        |   198 +
+ reviews/tools/gates/C02.json                       |    30 +
+ reviews/tools/gates/C02.txt                        |   139 +
+ reviews/tools/gates/C03.json                       |    48 +
+ reviews/tools/gates/C03.txt                        |  1138 +++
+ reviews/tools/gates/C04.json                       |    29 +
+ reviews/tools/gates/C04.txt                        |   160 +
+ reviews/tools/gates/C05.json                       |    68 +
+ reviews/tools/gates/C05.txt                        |  2073 ++++
+ reviews/tools/gates/C06.json                       |    38 +
+ reviews/tools/gates/C06.txt                        |   404 +
+ reviews/tools/gates/C07.json                       |    40 +
+ reviews/tools/gates/C07.txt                        |   460 +
+ reviews/tools/gates/C08.json                       |    53 +
+ reviews/tools/gates/C08.txt                        |  1111 ++
+ reviews/tools/gates/C09.json                       |    57 +
+ reviews/tools/gates/C09.txt                        |  2148 ++++
+ reviews/tools/gates/C10.json                       |    45 +
+ reviews/tools/gates/C10.txt                        |  3362 ++++++
+ reviews/tools/gates/C11.json                       |    42 +
+ reviews/tools/gates/C11.txt                        |  1046 ++
+ reviews/tools/gates/C12.json                       |    44 +
+ reviews/tools/gates/C12.txt                        |  1162 +++
+ reviews/tools/gates/C13.json                       |    46 +
+ reviews/tools/gates/C13.txt                        |  1161 +++
+ reviews/tools/gates/C14.json                       |    34 +
+ reviews/tools/gates/C14.txt                        |   248 +
+ reviews/tools/gates/C15.json                       |    39 +
+ reviews/tools/gates/C15.txt                        |   512 +
+ reviews/tools/gates/C16.json                       |    25 +
+ reviews/tools/gates/C16.txt                        |   133 +
+ reviews/tools/gates/K00.json                       |    47 +
+ reviews/tools/gates/K00.txt                        |  1247 +++
+ reviews/tools/gates/K01.json                       |    37 +
+ reviews/tools/gates/K01.txt                        |  2345 +++++
+ reviews/tools/gates/K02.json                       |    32 +
+ reviews/tools/gates/K02.txt                        |   503 +
+ reviews/tools/gates/K03.json                       |    32 +
+ reviews/tools/gates/K03.txt                        |   505 +
+ reviews/tools/gates/K04.json                       |    45 +
+ reviews/tools/gates/K04.txt                        |  2299 +++++
+ reviews/tools/gates/K05.json                       |    40 +
+ reviews/tools/gates/K05.txt                        |   589 ++
+ reviews/tools/gates/K06.json                       |    34 +
+ reviews/tools/gates/K06.txt                        |   437 +
+ reviews/tools/gates/K07.json                       |    34 +
+ reviews/tools/gates/K07.txt                        |   410 +
+ reviews/tools/gates/K08.json                       |    35 +
+ reviews/tools/gates/K08.txt                        |   755 ++
+ reviews/tools/gates/K09.json                       |    30 +
+ reviews/tools/gates/K09.txt                        |   186 +
+ reviews/tools/gates/K10.json                       |    32 +
+ reviews/tools/gates/K10.txt                        |   318 +
+ reviews/tools/gates/K11.json                       |    32 +
+ reviews/tools/gates/K11.txt                        |   320 +
+ reviews/tools/gates/K12.json                       |    32 +
+ reviews/tools/gates/K12.txt                        |   322 +
+ reviews/tools/gates/K13.json                       |    33 +
+ reviews/tools/gates/K13.txt                        |   463 +
+ reviews/tools/gates/K14.json                       |    31 +
+ reviews/tools/gates/K14.txt                        |   301 +
+ reviews/tools/gates/K15.json                       |    29 +
+ reviews/tools/gates/K15.txt                        |   226 +
+ reviews/tools/gates/K16.json                       |    33 +
+ reviews/tools/gates/K16.txt                        |   527 +
+ reviews/tools/gates/K17.json                       |    25 +
+ reviews/tools/gates/K17.txt                        |   203 +
+ reviews/tools/gates/K18.json                       |    25 +
+ reviews/tools/gates/K18.txt                        |   205 +
+ reviews/tools/gates/X01.txt                        |   500 +
+ reviews/tools/gates/X02.txt                        |   568 ++
+ reviews/tools/gates/X03.txt                        |  1231 +++
+ reviews/tools/gates/X04.txt                        |  1048 ++
+ reviews/tools/gates/X05.txt                        |   783 ++
+ reviews/tools/gates/X06.txt                        |  1528 +++
+ reviews/tools/gates/_harness.log                   |    36 +
+ src/kimix/tools/common.py                          |    16 +-
+ src/kimix/tools/file/bash/bash_tool.py             |     2 +-
+ src/kimix/tools/file/bash/pwsh_tool.py             |     3 +-
+ src/kimix/tools/file/run.py                        |     4 +-
+ src/kimix/tools/py/__init__.py                     |     2 +-
+ src/kimix/tools/swarm/best_of_n.py                 |     1 -
+ tests/kimix/test_agent_gate.py                     |   896 ++
+ tests/test_bash_e2e.py                             |    18 +-
+ tests/test_bash_e2e_gate.py                        |    95 +
+ tests/test_review_orchestrator.py                  |   317 +
+ tests/unit/tools/test_bash_gate.py                 |  1077 ++
+ tests/unit/tools/test_env_scrub_gate.py            |   103 +
+ tools/gen_tool_reports.py                          |   643 ++
+ tools/library_policy_allowlist.txt                 |    14 +
+ tools/review_gates.py                              |   277 +
+ 153 files changed, 62139 insertions(+), 37 deletions(-)
+```
+
+* `git log --oneline tools-review/p0-base..tools-review/p5-final`:
+
+```
+902805d4 review(P5): final verification report
+f172ca7e fix(FP-01): resolve the open `TODO: checks:` in write.py
+ebd09a96 review(K04): author-written bash gate report
+7dca6724 review(X06): test-hygiene sweep
+a42992ff fix(FP-11): scrub credential-looking vars from every shell child process
+9dd21cb7 fix(FP-00): make the root suite collectable without the optional bash corpus
+e8dc4e77 review(C10,K01,K04): author-written probe suites and reports
+9ce4db12 fix(FP-05): third-party library policy compliance
+7aa84025 review(P2+P3): 36 per-tool reports, coverage gaps, simplicity backlog
+37850165 fix(FP-08): resolve lint-blocking correctness defects in the tool trees
+72257564 chore(review): per-tool gate harness, report generator, P1 sweep evidence
+```
