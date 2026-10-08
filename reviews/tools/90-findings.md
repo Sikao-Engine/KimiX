@@ -129,6 +129,8 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 
 | **F-48** | low | simplicity | `context_prune.__call__` was 131 LOC / complexity 16, mixing the subagent permission check, history persistence, Tier-B elision re-indexing and the wire status broadcast | `kimi-cli/src/kimi_cli/tools/context_prune.py` | **fixed (G1)**: extracted `_subagent_permission_error`, `_persist_pruned_history` and `_emit_status_update`; `__call__` 16 -> 9, module max complexity 16 -> 10, so **C14 now passes G1**. Also split its one `E501` f-string. C04 (`retrieve`) needed only 2 `E501` splits -> **G1 pass** |
 
+| **F-49** | low | simplicity | `AgentTool._run_in_background` was 108 LOC / complexity 14, resolving the target instance inline (resume lookup, running-guard, effective-model validation) before the actual launch | `kimi-cli/src/kimi_cli/tools/agent/__init__.py` | **fixed (G1)**: extracted `_resolve_background_target()`; `_run_in_background` 14 -> 10, module max complexity 14 -> 10, so **C01 now passes G1**. `uuid` moved to a module-level `from uuid import uuid4` |
+
 ## FP-09 outcome
 
 `uv run ruff check --statistics kimi-cli/src/kimi_cli/tools src/kimix/tools`:

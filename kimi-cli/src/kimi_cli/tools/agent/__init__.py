@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
-from typing import override
+from typing import Any, override
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
@@ -157,6 +158,41 @@ class AgentTool(CallableTool2[Params]):
             logger.exception("Foreground agent run failed")
             return ToolError(message=f"Failed to run agent: {exc}", brief="Agent failed")
 
+    def _resolve_background_target(
+        self, params: Params
+    ) -> tuple[ToolReturnValue | None, str, str, Any]:
+        """Resolve ``(error, actual_type, agent_id, record)`` for a background run.
+
+        Extracted from ``_run_in_background`` so that method stays under the G1
+        complexity threshold (finding F-19); the control flow and ordering are
+        unchanged.
+        """
+        if not params.resume:
+            return None, params.subagent_type or "coder", f"a{uuid4().hex[:8]}", None
+        record = self._runtime.subagent_store.require_instance(params.resume)
+        if record.status in {"running_foreground", "running_background"}:
+            return (
+                ToolError(
+                    message=(
+                        f"Agent instance {record.agent_id} is still {record.status} and "
+                        "cannot be resumed concurrently."
+                    ),
+                    brief="Agent already running",
+                ),
+                "",
+                "",
+                None,
+            )
+        # Validate the effective model for resumed instances - the model stored in
+        # the launch spec may have been removed from config since the instance was
+        # created.  params.model is already validated in __call__, so only check the
+        # stored effective_model fallback here.
+        if not params.model and (
+            error := self._validate_model_alias(record.launch_spec.effective_model)
+        ):
+            return error, "", "", None
+        return None, record.subagent_type, record.agent_id, record
+
     async def _run_in_background(self, params: Params) -> ToolReturnValue:
         assert self._runtime.subagent_store is not None
         try:
@@ -167,33 +203,9 @@ class AgentTool(CallableTool2[Params]):
                     brief="No tool call context",
                 )
 
-            requested_type = params.subagent_type or "coder"
-            if params.resume:
-                record = self._runtime.subagent_store.require_instance(params.resume)
-                if record.status in {"running_foreground", "running_background"}:
-                    return ToolError(
-                        message=(
-                            f"Agent instance {record.agent_id} is still {record.status} and cannot "
-                            "be resumed concurrently."
-                        ),
-                        brief="Agent already running",
-                    )
-                actual_type = record.subagent_type
-                agent_id = record.agent_id
-                # Validate the effective model for resumed instances — the model
-                # stored in the launch spec may have been removed from config since
-                # the instance was created.  params.model is already validated in
-                # __call__, so only check the stored effective_model fallback here.
-                if not params.model and (
-                    error := self._validate_model_alias(record.launch_spec.effective_model)
-                ):
-                    return error
-            else:
-                actual_type = requested_type
-                import uuid
-
-                agent_id = f"a{uuid.uuid4().hex[:8]}"
-                record = None
+            error, actual_type, agent_id, record = self._resolve_background_target(params)
+            if error is not None:
+                return error
 
             created_instance = False
             if not params.resume:
