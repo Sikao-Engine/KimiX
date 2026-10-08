@@ -114,6 +114,10 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 
 | **F-39** | high | correctness | `ParserTool.__init__(self, session: Any = None)` - `Any` is never an injectable dependency, so the moment the class was registered (FP-03) every session died with `ValueError: Tool dependency not found: Any` (`tests/test_session_mcp_deferred.py`). The parameter was documented as "currently unused" and its `self._session` was never read | `src/kimix/tools/parser/__init__.py:114` (pre-fix) | **fixed**: the unused `__init__` override is removed (the base `CallableTool2.__init__` is used), and `tests/unit/tools/test_tool_registry_instantiation_gate.py` now pins - for all 26 registered tool classes - that the module imports, the class resolves, `get_type_hints(__init__)` succeeds, and no parameter is annotated `Any` |
 
+| **F-40** | low | limits | `WritePlan` opens the plan file in text mode, so on Windows the file gets CRLF newlines; the model then reads back CRLF | `src/kimix/tools/note/__init__.py` | **recorded**: `read_text()` normalises on read, so the visible content is unaffected; pinned by a probe that documents it |
+| **F-41** | low | limits | `EditPlan._normalize_line_endings` folds CRLF -> LF but leaves a lone CR alone (the plan's K12 probe 15 says "`//r//n` -> `//n`", which is what it does) | `src/kimix/tools/note/__init__.py` | **recorded as intended**: pinned by a probe |
+| **F-42** | low | error contract | `EditPlan`'s no-match `ToolError` says "The old string was not found in the plan file." without naming the target string, unlike the plan's K12 probe 16 which asks the missing target to be named | `src/kimix/tools/note/__init__.py` | **open**: pinned by a probe asserting today's wording so the gap is visible |
+
 ## FP-09 outcome
 
 `uv run ruff check --statistics kimi-cli/src/kimi_cli/tools src/kimix/tools`:
