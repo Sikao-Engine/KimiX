@@ -120,6 +120,8 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 
 | **F-43** | low | simplicity | `EditPlan._find_similar` ended with `if target_line_count == 1 and lines:` re-running the *identical* `process.extractOne(norm_target, lines, ...)` lookup that the function's first block already performed, so the branch could never return anything new — pure dead code that pushed the method to complexity 13 | `src/kimix/tools/note/__init__.py` | **fixed (G1)**: dead branch removed and the window search extracted to `_best_fuzzy_match`; `_find_similar` 13 -> 5, `_read_tail` 15 -> 7 (byte-budget trim + message assembly extracted). `note/__init__.py` max complexity 15 -> 12, so **K10/K11/K12 now pass G1** (ruff + C901 + metrics all green) |
 
+| **F-44** | medium | gate contract | `ruff --select C901` and `tools/review_metrics.py` disagree on nested functions: ruff counts a nested `def`'s branches toward the ENCLOSING function's complexity, `review_metrics` prunes them. `find_str.py` measured `cx_max=7` (metrics) while ruff reported `__call__ is too complex (17 > 12)`. Both are G1 sub-checks, so the stricten one wins | `src/kimix/tools/file/find_str.py` (K16 gate) | **fixed at the source**: the two closures were hoisted to module level (`_find_files`, `_find_in_file`), which is what ruff was really asking for. Recorded here because the plan's G1 runs *both* tools and their conventions must be understood together |
+
 ## FP-09 outcome
 
 `uv run ruff check --statistics kimi-cli/src/kimi_cli/tools src/kimix/tools`:
