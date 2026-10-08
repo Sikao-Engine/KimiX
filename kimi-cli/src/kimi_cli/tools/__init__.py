@@ -1,5 +1,3 @@
-import json
-
 import orjson
 from typing import Any, cast
 
@@ -96,7 +94,11 @@ def extract_key_argument(
 
     try:
         curr_args: JsonType = loads_relaxed(json_str)
-    except (orjson.JSONDecodeError, json.JSONDecodeError):
+    except ValueError:
+        # `loads_relaxed` raises `orjson.JSONDecodeError` on the fast path and
+        # `json.JSONDecodeError` (both are `ValueError` subclasses) from its
+        # json_repair fallback, so catching `ValueError` removes the need for a
+        # stdlib `json` import here (AGENTS.md third-party-first rule).
         return None
     if not curr_args:
         return None

@@ -144,7 +144,6 @@ def cleanup_worker_workspace(worker_path: Path, kind: str, main_work_dir: Path) 
 
 def _snapshot_files(root: Path) -> dict[str, bytes]:
     """Snapshot relative path -> content bytes for diff computation."""
-    import xxhash  # noqa: F401 — fast hashing available if needed later
 
     snapshot: dict[str, bytes] = {}
     for dirpath, dirnames, filenames in os.walk(root):

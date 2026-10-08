@@ -614,6 +614,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate the per-tool review reports.")
     parser.add_argument("--id", action="append", default=[])
     parser.add_argument("--all", action="store_true")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite a report that already exists (default: keep the existing one, "
+        "so an author-written review is never clobbered by the skeleton generator)",
+    )
     args = parser.parse_args(argv)
     ids = sorted(INVENTORY) if args.all else args.id
     if not ids:
@@ -625,6 +631,9 @@ def main(argv: list[str] | None = None) -> int:
             continue
         tool = INVENTORY[tid][0]
         out = ROOT / "reviews" / "tools" / f"{tid}-{slugify(tool)}.md"
+        if out.exists() and not args.force:
+            print(f"{tid}: SKIP (exists, {out.stat().st_size} bytes) — use --force to regenerate")
+            continue
         out.write_text(build_report(tid, registry), encoding="utf-8")
         print(f"{tid}: wrote {out.relative_to(ROOT)} ({out.stat().st_size} bytes)")
     return 0

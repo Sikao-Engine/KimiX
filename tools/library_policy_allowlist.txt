@@ -13,3 +13,17 @@
 # (kimi_cli/tools/__init__.py `import json`, edit/modes/sloppy.py `import re`,
 # kimix/tools/swarm/best_of_n.py `import difflib`) and are intentionally NOT
 # waived here.
+
+# FP-05 outcome:
+#   * kimi-cli/src/kimi_cli/tools/__init__.py  -- FIXED: the stdlib `json` import
+#     was removed; the except arm now catches `ValueError`, which is exactly the
+#     set `kosong.utils.jsonx.loads_relaxed` can raise.
+#   * .../tools/file/edit/modes/sloppy.py      -- FIXED: `import regex as re`.
+#   * the entry below                          -- WAIVED with rationale.
+
+# rapidfuzz (the mandated `difflib` replacement) exposes fuzzy *metrics* only
+# (fuzz/process) and has no `unified_diff` equivalent; the project declares no
+# other diff library. `_render_diff`/`apply_diff_to_workspace` need a real
+# unified diff, so the stdlib call is the only correct implementation. The dead
+# `import xxhash` in the same module was removed instead.
+src/kimix/tools/swarm/best_of_n.py::difflib    # no third-party unified_diff exists; rapidfuzz has no equivalent
