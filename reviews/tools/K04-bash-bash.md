@@ -6,10 +6,10 @@
 |---|---|---|
 | G0 scope | pass | `reviews/tools/gates/K04.txt` §G0 (6/6 source files + 6/6 test files cited below; registration `00-registry.txt:44`) |
 | G1 simplicity | **fail** | ruff 5 errors (`I001`×3, `E402`×2); `ruff --select C901` 2 errors (`__call__` 36, `detect_self_kill` 46); metrics `--max-fn-loc 120 --max-complexity 12` exit 1 (`loc=1461`, `longest_fn=325`, `cx_max=52`, `max_nest=6`); vulture 1 hit (waived 1) |
-| G2 risk | **fail** | 13/13 items answered, `open_high = 1` (child-env scrubbing, owned by X03-F1/FP-11), `open_medium = 3` |
+| G2 risk | **pass at HEAD** (review-SHA state: fail) | 13/13 items answered; the single `high` item (child-env scrubbing, X03-F1) was **fixed by FP-11 `a42992ff`** and verified green → `open_high = 0` at HEAD; `open_medium = 3` (blocking IO, kill latency, `output_truncated`), `waived_medium = 0` (2 low/info waivers) |
 | G3 coverage | pass (with finding) | verbatim gate exit 0; but the verbatim `--cov` target never measures `bash_tool.py` (module-not-imported) → corrected target: **bash_tool.py 82.0 %** (Stmts 590, Miss 82), TOTAL 87.39 %, floor 80, waived_lines 82 / budget 100 |
-| G4 behavior | **fail at the pinned SHA** | `tests/unit/tools/test_bash_gate.py`, 45 probe functions / 72 collected — 1 red (`test_probe05_child_env_scrubbed`); all 72 green *only* with the uncommitted FP-11 edit (see §6) |
-| G5 regression | pass | ROOT suite baseline-identical (collection error, `tests/bash/cases.json` missing); CLI suite 43 failed / 5241 passed, failure set byte-identical to `00-baseline.txt` (NEW = ∅); syntax_check clean; git_diff only the new probe file |
+| G4 behavior | **pass at HEAD** (fail at the pinned SHA) | `tests/unit/tools/test_bash_gate.py`, 45 probe functions / 72 collected — at the review SHA `test_probe05_child_env_scrubbed` was red (env leak, X03-F1); at HEAD (`a42992ff`, FP-11 committed) **72 passed** |
+| G5 regression | pass | ROOT suite: at the review SHA it could not collect (`tests/bash/cases.json` missing, baseline-identical); at HEAD (`9dd21cb7`, FP-00) it collects and the e2e corpus test self-skips with a reason → `5 passed, 1 skipped` for `tests/test_bash_e2e.py`. CLI suite 43 failed / 5241 passed, failure set byte-identical to `00-baseline.txt` (NEW = ∅); syntax_check clean; git_diff only the new probe file |
 | G6 independent rerun | pending (orchestrator) | numbers above are the ones to compare; see §8 for the HEAD movement that G6 must account for |
 
 ## 1. Scope
@@ -129,7 +129,7 @@ module LOC:
 | 4 | **(d) subprocess** | clean | `bash_tool.py:197`, `:212`, `:234`, `:1124`; `common.py:1979-2005` | all launches use argv lists (no `shell=True`), `capture_output=True`, explicit `timeout` on every probe; stdin is queued and written with `data.encode("utf-8", errors="replace")` (`common.py:2103`); `CREATE_NEW_PROCESS_GROUP` on Windows, `start_new_session=True` on POSIX; `taskkill /PID /T` on Windows / `killpg` on POSIX | - | - | - |
 | 5 | **(e) path safety** | low (documented) | `bash_tool.py:580-600` (`_prepare_bash_cmd`) | unquoted `\x` is rewritten to `/x` (e.g. `echo a\nb` → `a/nb`), diverging from POSIX bash where `\n` escapes to `nb`; quoted text, escapes before metacharacters, `$'…'`, and single-segment relative paths are preserved (probe 9/10) | Windows-only cosmetic divergence on non-path backslashes; documented in the docstring | none (keep), or restrict the rewrite to `\` followed by `[A-Za-z0-9_.]` after a path-ish token | yes (documented behaviour) |
 | 6 | **(f) injection** | low | `bash_tool.py:1147-1157`, `safety.py:423-443` | the tool *is* a shell (no `shell=True` misuse); `_compile_pattern` accepts an arbitrary model-supplied regex and `_pattern_kill_hit` runs `re.search(pattern, haystack)` over agent image names/cmdline; `wait_for_pattern` is searched against the whole output stream | a catastrophic user regex (ReDoS) can spin a CPU core; the haystacks are short, and the output search runs in the stream reader thread | bound compiled patterns (`regex` timeout) or document the risk | no (low) |
-| 7 | **(g) secrets** | **high** | `bash_tool.py:825`, `:882`, `:1217`; `common.py:1910` (pinned SHA) | `ProcessTask.scrub_env` defaults to `False` and no bash spawn site passes it; probe 5 runs `RTK_DISABLED=1 env` + `printenv K04_GATE_API_KEY` **through the tool** and the secret value appears in the child output | every `*_KEY`/`*_TOKEN`/`*_SECRET` in the agent environment reaches the child shell and every grandchild script; inconsistent with the Python tool, which scrubs by default (`py/__init__.py:354`) | already owned by **X03-F1 / 90-findings F-13 → FP-11**: scrub at the spawn sites (or centrally in `_env_with_rg_bin_path`) with the existing `env_passthrough` opt-out. An uncommitted concurrent edit to `common.py` does exactly this (see §6/§8) | no |
+| 7 | **(g) secrets** | **high — FIXED at HEAD (`a42992ff`)** | `bash_tool.py:825`, `:882`, `:1217`; `common.py:1910`→`:1918` (pinned SHA → HEAD) | at the pinned SHA `ProcessTask.scrub_env` defaults to `False` and no bash spawn site passes it; probe 5 ran `RTK_DISABLED=1 env` + `printenv K04_GATE_API_KEY` **through the tool** and the secret value was printed. FP-11 now scrubs centrally in `_env_with_rg_bin_path` (`scrub_child_env(dict(base))`) and defaults `scrub_env=True`; re-run at HEAD: **72/72 probes green** | at the review SHA every `*_KEY`/`*_TOKEN`/`*_SECRET` in the agent environment reached the child shell and every grandchild script; inconsistent with the Python tool, which scrubs by default (`py/__init__.py:354`) | DONE: FP-11 `a42992ff` (owned by X03-F1 / 90-findings F-13) | no |
 | 8 | **(h) network** | clean | – | no network/URL/SSRF surface in the six in-scope modules (`grep` shows no `socket`/`urllib`/`requests`/`http` use) | - | - | - |
 | 9 | **(i) limits** | medium | `bash_tool.py:1358-1367`, `common.py:835`, `:2103`, `:2017` | (i1) `>65536` chars → save+summarize and `output_truncated=True` (probe 04b asserts); (i2) the `OUTPUT_LIMIT=16384` export path replaces the text with a pointer but leaves `output_truncated=False` (probe 04 asserts the flip and the stale flag — reported as finding K04-F6); (i3) the `65536` literal is unnamed while `16384` has `OUTPUT_LIMIT`; (i4) UTF-8 boundaries are safe (`errors="replace"` incremental decoder; probes 13/21c); (i5) `max_lines` fold markers are asserted by probe 21b | a consumer trusting `output_truncated` concludes the full text is present when it is only a pointer to a temp file | set `output_truncated=True` on the export path in `_process_output`; name the 65536 constant | no |
 | 10 | **(j) state** | low | `safety.py:140-142`, `:211-244`, `:260-294`; `bash_tool.py:417` | three module-level caches (`_AGENT_PIDS_CACHE`, `_AGENT_IMAGE_NAMES_CACHE`, `_AGENT_CMDLINE_CACHE`) memoized "for process life", plus `find_bash` `lru_cache(maxsize=1)`; no locks, no invalidation hook | a re-parented/restarted agent launcher keeps a stale ancestor-PID set, so the self-kill guard can miss the new parent (or block a recycled PID); `find_bash` caches the environment-dependent discovery for the whole process | add an optional `refresh=True`/invalidation entry point, or re-walk when `os.getppid()` changes | no (low) |
@@ -214,7 +214,7 @@ pytest-cov runs sharing the same `.coverage` file in this working tree. Use the 
 | 03 timeout kills the process | `ToolError("Timeout")`, registry empty, tick file frozen (two equal samples) and `DONE` never written | pass |
 | 04 long-output promotion boundary | `OUTPUT_LIMIT == 16384`; below → verbatim text; above → `[Output too large, … .txt]` pointer + `output_truncated is False` (characterizing K04-F6) | pass |
 | 04b >65536 summarize | one summarize call, `[PROBE04 SUMMARY]`, `output_truncated: true`, original path non-None | pass |
-| **05 child env scrubbed** | `K04_GATE_API_KEY`/`_ACCESS_TOKEN`/`_CLIENT_SECRET` absent from `RTK_DISABLED=1 env` **and** `printenv <name>` must fail | **FAIL at the pinned SHA** (secret printed); green only with the uncommitted FP-11 edit |
+| **05 child env scrubbed** | `K04_GATE_API_KEY`/`_ACCESS_TOKEN`/`_CLIENT_SECRET` absent from `RTK_DISABLED=1 env` **and** `printenv <name>` must fail | **FAIL at the pinned SHA** (secret printed, X03-F1); **pass at HEAD** after FP-11 `a42992ff` (72 passed, 0 failed) |
 | 05b plain variables survive | `printenv K04_GATE_PLAIN_VAR` → `ToolOk` + value | pass |
 | 06 redaction of an echoed token | `ghp_…` absent, `[REDACTED]` present, non-secret marker untouched | pass |
 | 07 dangerous command briefs | hardline `brief` + self-kill `brief`, `ProcessTask` never constructed | pass |
@@ -247,17 +247,18 @@ params-field coverage: `cmd`/`command`, `mode`, `timeout`, `task_id`, `wait_for_
 alias coverage: `command`, `interactive=True`, `run`, `background` — all exercised.
 boundary coverage: `timeout` 1/900 (at) + 0/901 (out), `max_lines` 3 (at) + 2 (out), empty input, 16384/16385 and 65536/65537 output thresholds, 16385-char single line.
 side effects: the timeout probe uses `tmp_path` and asserts the exact frozen tick count; the JSON-schema probe asserts no filesystem state.
-**G4 result: fail** — one probe (`05`) is red at the pinned SHA; it is the true signal for X03-F1/FP-11
-(faking it by asserting `scrub_child_env()` in isolation would hide the end-to-end leak).
+**G4 result: pass at HEAD, fail at the pinned SHA.** The only red probe at the review SHA (`05`)
+encoded the true signal for X03-F1/FP-11 and is now green with the fix committed; faking it at the
+review SHA by asserting `scrub_child_env()` in isolation would have hidden the end-to-end leak.
 
 ## 7. G5/G6 Evidence
 
 | command | result |
 |---|---|
-| `uv run pytest tests -q` | exit 2, `1 error during collection` (`ValueError: cannot read corpus file … tests\bash\cases.json`) — **byte-identical to `reviews/tools/00-baseline.txt:27-33`** |
+| `uv run pytest tests -q` | at the review SHA: exit 2, `1 error during collection` (`ValueError: cannot read corpus file … tests\bash\cases.json`) — **byte-identical to `reviews/tools/00-baseline.txt:27-33`**. At HEAD after FP-00 (`9dd21cb7`) the suite collects and the e2e corpus test self-skips with a reason |
 | `uv run pytest kimi-cli/tests -q` | exit 1, `43 failed, 5241 passed, 105 skipped, 1 xfailed, 1 xpassed`; set-difference of the `FAILED` lines vs the baseline = **NEW ∅ / GONE ∅** (baseline 43 failed / 5155 passed / 101 skipped; the extra passes come from sibling units' new test files) |
 | `uv run pytest tests/test_bash.py tests/test_shell_common.py tests/test_shell_safety.py tests/test_output_enhance.py tests/native/test_shell_security_equivalence.py -q` | 1603 passed, 1 skipped (all skips are host-gated: `-rs` lists the platform skips only) |
-| `uv run pytest tests/test_bash_e2e.py -q` (G3 additional) | exit 2 — **pre-existing baseline failure**, the default corpus `tests/bash/cases.json` does not exist anywhere in the repo (verified with `find`); the plan's "run with the default corpus" gate cannot be green without that file |
+| `uv run pytest tests/test_bash_e2e.py -q` (G3 additional) | at the review SHA: exit 2 — **pre-existing baseline failure**, the default corpus `tests/bash/cases.json` does not exist anywhere in the repo (verified with `find`). At HEAD after FP-00: `5 passed, 1 skipped` — the corpus case still cannot run because the corpus is not tracked in git; the gate is therefore **blocked-by-data, not red** |
 | `uv run tools/syntax_check.py tests/unit/tools/test_bash_gate.py` | Syntax OK |
 | `uv run tools/git_diff.py tests/unit/tools/test_bash_gate.py` | UNTRACKED/new file, diff = exactly the probe suite (`@@ -0,0 +1,1077 @@`) |
 | `uv run ruff check tests/unit/tools/test_bash_gate.py` | All checks passed |
@@ -273,17 +274,26 @@ results, and `git_sha`; **note the HEAD movement below** and the uncommitted `co
 - `git status --porcelain` at review start — **not empty**: the tree already carried sibling units' artifacts
   (`?? .c08tmp/`, `?? reviews/tools/gates/C03.txt`, `C08.txt`, `C09.txt`, `C10.txt`, `?? reviews/tools/gates/X01.txt`)
   → `worktree_clean_at_start = false` (parallel wave; nothing of mine existed yet).
-- **HEAD moved during the review**: `52192b7c → 9ce4db12` via four orchestrator commits
-  (`72257564` gate harness, `37850165` fix(FP-08), `7aa84025` review(P2+P3) 36 reports, `9ce4db12` fix(FP-05)).
-  The **only** in-scope source change in that range is FP-08's dequoting of the
+- **HEAD moved during the review** (five commits, all orchestrator-authored):
+  `52192b7c` → `72257564` (gate harness) → `37850165` fix(FP-08) → `7aa84025` review(P2+P3) →
+  `9ce4db12` fix(FP-05) → `9dd21cb7` fix(FP-00) → `e8dc4e77` review(C10,K01,K04) (my probe suite +
+  report) → `a42992ff` fix(FP-11).
+  The **only** in-scope *source* change in that range is FP-08's dequoting of the
   `'BackgroundStream' | None` annotation (`bash_tool.py:1375`, plus two lines in the out-of-scope
-  `pwsh_tool.py`): no LOC, complexity or behaviour change, so every citation and every metric above remains
-  valid (the metric baseline `00-metrics-baseline.json` matches the current numbers exactly).
-- **Concurrent uncommitted edit (not mine)**: `src/kimix/tools/common.py` (mtime 12:01:46) adds
-  `scrub_child_env(dict(base))` in `_env_with_rg_bin_path` and flips `ProcessTask.scrub_env` to `True`.
-  This is the FP-11 fix. It flips probe 05 from red to green: at the pinned SHA (and at HEAD, which still
-  has `scrub_env: bool = False`) probe 05 is red; with the working-tree edit the whole suite is green
-  (`72 passed`). Both runs are in the evidence file. **G4 is therefore reported as `fail` at `git_sha`.**
+  `pwsh_tool.py`): no LOC, complexity or behaviour change, so every citation and every metric above
+  remains valid (the metric baseline `00-metrics-baseline.json` matches the current numbers exactly).
+  In-scope *test* change: FP-00 `tests/test_bash_e2e.py` now self-skips (with a reason) when the
+  optional corpus is absent instead of aborting collection.
+- **Fix packages that landed after the review SHA** (all verified by re-running the gates at HEAD):
+  - `a42992ff` **FP-11** ⇒ probe 05 green: `src/kimix/tools/common.py` now scrubs centrally in
+    `_env_with_rg_bin_path` and defaults `ProcessTask.scrub_env = True`; `uv run pytest
+    tests/unit/tools/test_bash_gate.py -q` = **72 passed**.
+  - `9dd21cb7` **FP-00** ⇒ the root suite collects; `tests/test_bash_e2e.py` = `5 passed, 1 skipped`
+    ("bash e2e corpus not available (pass --case <path> to run this suite)").
+  G2's `open_high` is therefore 0 **at HEAD** (1 at the review SHA) and G4 is **pass at HEAD**
+  (fail at the review SHA); both states are recorded in the evidence file.
+  The `src/` tree is clean at HEAD (`git status --porcelain` shows no `M src/...`), so the HEAD
+  numbers are reproducible.
 - **Evidence-file integrity**: the parent gate harness wrote its own K04 sweep log into
   `reviews/tools/gates/K04.txt` at 12:04:29 (its `_harness.log` records `K04: ruff=fail c901=fail
   metrics=fail cx_max=52 longest=325 pytest=fail cov=fail`). It displaced the review-start status block;
@@ -318,11 +328,13 @@ results, and `git_sha`; **note the HEAD movement below** and the uncommitted `co
 ## 10. Verdict + JSON
 
 **verdict: major.** Three hard G1 breaches (`loc 1461`, `__call__ 325`, `cx 52`), five ruff errors,
-one open high G2 item (child-env scrubbing at the pinned SHA — owned by X03-F1/FP-11) and one red G4
-probe for the same reason. Everything else is green: coverage 82.0 % for `bash_tool.py` (floor 80),
-1603 in-scope tests passing, both suites baseline-identical, no regression, no ORPHAN, no
-native-parity divergence. `needs_fix_phase = true` (split `__call__`, split `detect_self_kill`, delete
-the dead branch, sort imports, renaming the `65536` constant, and let FP-11 land the env scrub).
+and one open high G2 item at the review SHA (child-env scrubbing — X03-F1, **since fixed by FP-11
+`a42992ff` and verified green by probe 05**). Everything else is green: coverage 82.0 % for
+`bash_tool.py` (floor 80), 1603 in-scope tests passing, both suites baseline-identical (the root
+suite now even collects, thanks to FP-00), no regression, no ORPHAN, no native-parity divergence.
+`needs_fix_phase = true` (split `__call__`, split `detect_self_kill`, delete the dead branch, sort
+imports, name the `65536` constant, force the timeout kill, honour `output_truncated` on the export
+path, and unblock the async path).
 
 ```json
 {
@@ -341,22 +353,22 @@ the dead branch, sort imports, renaming the `65536` constant, and let FP-11 land
     "G0_scope": "pass",
     "G1_simplicity": {"ruff": "fail", "complexity_max": 52, "longest_fn_loc": 325,
                       "loc_regression": "none", "vulture_hits": 1, "vulture_waived": 1},
-    "G2_risk": {"items_answered": 13, "open_high": 1, "open_medium": 3, "waived_medium": 2},
+    "G2_risk": {"items_answered": 13, "open_high": 0, "open_medium": 3, "waived_medium": 0},
     "G3_coverage": {"module": "kimix.tools.file.bash.bash_tool", "floor": 80,
                     "actual": 82.0, "waived_lines": 82, "waiver_budget": 100},
     "G4_behavior": {"probe_file": "tests/unit/tools/test_bash_gate.py",
-                    "probes_required": 15, "probes_present": 45, "result": "fail"},
+                    "probes_required": 15, "probes_present": 45, "result": "pass"},
     "G5_regression": {"root_suite": "pass", "cli_suite": "pass",
                       "syntax_check": "pass", "git_diff": "pass"},
     "G6_independent_rerun": "pending"
   },
   "findings": [
     {"severity": "high", "axis": "risk",
-     "title": "bash children inherit the full agent env (no scrub_child_env) — probe 5 red",
+     "title": "bash children inherited the full agent env (X03-F1) — FIXED by FP-11 at HEAD",
      "file": "src/kimix/tools/file/bash/bash_tool.py:825",
-     "evidence": "ProcessTask.scrub_env defaults False (common.py:1910 at the pinned SHA, also at HEAD) and none of bash_tool.py:825/:882/:1217 passes it; probe test_probe05_child_env_scrubbed runs `RTK_DISABLED=1 env` and `printenv K04_GATE_API_KEY` through the tool and the value is printed",
-     "impact": "every *_KEY/*_TOKEN/*_SECRET in the agent environment is readable by the child shell and every grandchild script; inconsistent with the Python tool which scrubs by default",
-     "fix": "already owned by X03-F1 / 90-findings F-13 -> FP-11: scrub at the spawn sites or centrally in _env_with_rg_bin_path, with the existing env_passthrough opt-out",
+     "evidence": "at the review SHA ProcessTask.scrub_env defaulted to False (common.py:1910) and none of bash_tool.py:825/:882/:1217 passed it; probe test_probe05_child_env_scrubbed runs `RTK_DISABLED=1 env` and `printenv K04_GATE_API_KEY` through the tool and the value was printed. After commit a42992ff (FP-11) common.py:1798 calls scrub_child_env(dict(base)) and common.py:1918 defaults scrub_env=True; the probe suite is 72/72 green at HEAD",
+     "impact": "at the review SHA every *_KEY/*_TOKEN/*_SECRET in the agent environment was readable by the child shell and every grandchild script; inconsistent with the Python tool which scrubs by default",
+     "fix": "DONE: FP-11 a42992ff (owned by X03-F1 / 90-findings F-13) scrubs centrally in _env_with_rg_bin_path with the existing env_passthrough opt-out",
      "test_to_add": "tests/unit/tools/test_bash_gate.py::test_probe05_child_env_scrubbed"},
     {"severity": "high", "axis": "simplicity",
      "title": "bash_tool.py 1461 LOC (2.1x the planned 700) with a 325-LOC __call__",

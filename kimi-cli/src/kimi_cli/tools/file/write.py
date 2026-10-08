@@ -211,8 +211,13 @@ class WriteFile(CallableTool2[Params]):
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
         display_path = params.file_path.replace("\\", "/")
-        # TODO: checks:
-        # - check if the path may contain secrets
+        # The former `TODO: checks:` block here asked for a "path may contain secrets"
+        # warning.  That check is deliberately NOT implemented in the write path: refusing or
+        # annotating writes by filename heuristics would change tool-visible behaviour and
+        # belongs to the secret-redaction subsystem, which already provides
+        # `kimi_cli/utils/export.py::_looks_like_secret_filename` and the `soul/slash.py`
+        # export warning.  Tracked as finding F-31 in reviews/tools/90-findings.md; the TODO
+        # is removed so it cannot silently rot (FP-01).
         if not params.file_path:
             return ToolError(
                 message="File path cannot be empty.",
