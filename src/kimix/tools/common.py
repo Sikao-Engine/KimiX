@@ -1787,7 +1787,15 @@ def _env_with_rg_bin_path(env: dict[str, str] | None = None) -> dict[str, str]:
     from kimi_cli.share import get_share_dir
 
     rg_bin_dir = str(get_share_dir() / "bin")
-    result = os.environ.copy() if env is None else env.copy()
+    # Scrub credential-looking variables HERE, before any caller merges its own
+    # override: ProcessTask updates its (already scrubbed) base copy with this
+    # dict, so an unscrubbed snapshot would silently restore every secret.  All
+    # eight shell spawn sites (bash x3, pwsh x3, Run, python) derive their env
+    # from this function, so this single choke point makes the contract hold.
+    from kimix.tools.security import scrub_child_env
+
+    base = os.environ if env is None else env
+    result = scrub_child_env(dict(base))
 
     current_path = result.get("PATH", "")
     path_sep = ";" if os.name == "nt" else ":"
@@ -1907,7 +1915,7 @@ class ProcessTask:
         cwd: str | None = None,
         env: dict[str, str] | None = None,
         append_newline: bool = False,
-        scrub_env: bool = False,
+        scrub_env: bool = True,
         redact: bool = False,
     ) -> None:
         import shutil
