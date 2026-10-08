@@ -266,8 +266,7 @@ The diffstat below was captured at the report commit; `tools-review/p5-final` is
 force-moved onto the commit that adds this section, so `git rev-parse
 tools-review/p5-final` is the authoritative final SHA (one commit newer).
 
-* report commit (the main body of this document) = `0af495964ce1a0dfa05879be1dbf1d264bef4941`
-* `git log --oneline master ^review/tools-hardgate` = `(empty)`
+* report commit (the main body of this document) = `eb4f70cc9bb1c738f3099c04f63c6fd8e4718add`
 * `git diff --stat tools-review/p0-base tools-review/p5-final`:
 
 ```
@@ -313,7 +312,7 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  kimi-cli/src/kimi_cli/tools/web/extract.py         |     2 +-
  kimi-cli/src/kimi_cli/tools/web/fetch.py           |     4 +-
  kimi-cli/src/kimi_cli/tools/web/search.py          |     2 +-
- kimi-cli/tests/native/test_grep_engine_parity.py   |   564 --
+ kimi-cli/tests/native/test_grep_engine_parity.py   |   564 -
  .../native/test_grep_engine_parity_retired.py      |    88 +
  kimi-cli/tests/tools/test_edit_gate.py             |  1265 +++
  kimi-cli/tests/tools/test_library_policy_gate.py   |   177 +
@@ -322,12 +321,12 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  kimi-cli/tests/tools/test_write_gate.py            |   238 +
  kimi-cli/tests/utils/test_pyinstaller_utils.py     |     2 +-
  reviews/tools/00-inventory.md                      |    21 +-
- reviews/tools/00-metrics-final.json                | 10146 +++++++++++++++++++
- reviews/tools/90-findings.md                       |   137 +
+ reviews/tools/00-metrics-final.json                | 10210 +++++++++++++++++++
+ reviews/tools/90-findings.md                       |   144 +
  reviews/tools/91-coverage-gaps.md                  |   101 +
  reviews/tools/92-simplicity-backlog.md             |    88 +
  reviews/tools/93-orphans-and-removal.md            |    58 +
- reviews/tools/99-final-report.md                   |   260 +
+ reviews/tools/99-final-report.md                   |   514 +
  .../tools/C00-toolset-plumbing-shared-helpers.md   |   228 +
  reviews/tools/C01-subagent-agenttool.md            |   211 +
  reviews/tools/C02-askuserquestion.md               |   186 +
@@ -355,13 +354,13 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  reviews/tools/K07-python.md                        |   224 +
  reviews/tools/K08-job-output-taskoutput.md         |   226 +
  reviews/tools/K09-compact.md                       |   182 +
- reviews/tools/K10-writeplan.md                     |   204 +
- reviews/tools/K11-readplan.md                      |   204 +
- reviews/tools/K12-editplan.md                      |   204 +
+ reviews/tools/K10-writeplan.md                     |   184 +
+ reviews/tools/K11-readplan.md                      |   184 +
+ reviews/tools/K12-editplan.md                      |   184 +
  reviews/tools/K13-workflow-agentswarm.md           |   214 +
  reviews/tools/K14-fetch-url-kimix.md               |   196 +
  reviews/tools/K15-parsertool.md                    |   182 +
- reviews/tools/K16-findstr.md                       |   216 +
+ reviews/tools/K16-findstr.md                       |   192 +
  reviews/tools/K17-mkdir.md                         |    75 +
  reviews/tools/K18-rm.md                            |    75 +
  reviews/tools/X01-library-policy.md                |   170 +
@@ -422,20 +421,20 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  reviews/tools/gates/K08.txt                        |   509 +
  reviews/tools/gates/K09.json                       |    30 +
  reviews/tools/gates/K09.txt                        |   122 +
- reviews/tools/gates/K10.json                       |    32 +
- reviews/tools/gates/K10.txt                        |   242 +
- reviews/tools/gates/K11.json                       |    32 +
- reviews/tools/gates/K11.txt                        |   244 +
- reviews/tools/gates/K12.json                       |    32 +
- reviews/tools/gates/K12.txt                        |   246 +
+ reviews/tools/gates/K10.json                       |    29 +
+ reviews/tools/gates/K10.txt                        |   200 +
+ reviews/tools/gates/K11.json                       |    29 +
+ reviews/tools/gates/K11.txt                        |   201 +
+ reviews/tools/gates/K12.json                       |    29 +
+ reviews/tools/gates/K12.txt                        |   203 +
  reviews/tools/gates/K13.json                       |    33 +
  reviews/tools/gates/K13.txt                        |   377 +
  reviews/tools/gates/K14.json                       |    31 +
  reviews/tools/gates/K14.txt                        |   192 +
  reviews/tools/gates/K15.json                       |    29 +
  reviews/tools/gates/K15.txt                        |   134 +
- reviews/tools/gates/K16.json                       |    33 +
- reviews/tools/gates/K16.txt                        |   180 +
+ reviews/tools/gates/K16.json                       |    29 +
+ reviews/tools/gates/K16.txt                        |   135 +
  reviews/tools/gates/X01.txt                        |   500 +
  reviews/tools/gates/X02.txt                        |   568 ++
  reviews/tools/gates/X03.txt                        |  1231 +++
@@ -458,9 +457,9 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  src/kimix/tools/file/bash/pwsh_tool.py             |    47 +-
  src/kimix/tools/file/bash/safety.py                |     7 +-
  src/kimix/tools/file/bash/shell_common.py          |     4 +-
- src/kimix/tools/file/find_str.py                   |    63 +-
+ src/kimix/tools/file/find_str.py                   |   280 +-
  src/kimix/tools/file/run.py                        |    52 +-
- src/kimix/tools/note/__init__.py                   |    14 +-
+ src/kimix/tools/note/__init__.py                   |   156 +-
  src/kimix/tools/parser/__init__.py                 |    25 +-
  src/kimix/tools/prompt_common.py                   |     2 +-
  src/kimix/tools/py/__init__.py                     |    26 +-
@@ -485,12 +484,16 @@ tools-review/p5-final` is the authoritative final SHA (one commit newer).
  tools/library_policy_allowlist.txt                 |    14 +
  tools/review_gates.py                              |   274 +
  tools/tool_registry_allowlist.txt                  |     7 +
- 214 files changed, 51964 insertions(+), 1176 deletions(-)
+ 214 files changed, 52217 insertions(+), 1337 deletions(-)
 ```
 
 * `git log --oneline tools-review/p0-base..tools-review/p5-final`:
 
 ```
+eb4f70cc review(G1): K10/K11/K12/K16 now pass G1; refresh evidence and the final report
+d839697f refactor(K16): bring find_str.py under the G1 thresholds -> G1 pass
+152c001e refactor(K10,K11,K12): bring note/__init__.py under the G1 thresholds
+d05e5328 review(P5): append the resolved tag SHA and final diffstat
 0af49596 review(P5): refresh gate evidence, reports and the final verification report
 d684f5a8 review(K10,K11,K12): author the plan-tool G4 probe suites
 5ff4c987 fix(FP-12, F-39): move blocking IO off the event loop; fix the ParserTool ctor
