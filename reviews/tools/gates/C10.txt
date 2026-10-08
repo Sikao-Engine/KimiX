@@ -1,0 +1,2026 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+ M kimi-cli/src/kimi_cli/tools/file/read_media.py
+?? .coverage
+?? kimi-cli/tests/tools/test_edit_gate.py
+?? reviews/tools/90-findings.md
+?? reviews/tools/93-orphans-and-removal.md
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/X03-security.md
+?? reviews/tools/X04-native-parity.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C11.json
+?? reviews/tools/gates/C11.txt
+?? reviews/tools/gates/C12.json
+?? reviews/tools/gates/C12.txt
+?? reviews/tools/gates/C13.json
+?? reviews/tools/gates/C13.txt
+?? reviews/tools/gates/C14.json
+?? reviews/tools/gates/C14.txt
+?? reviews/tools/gates/C15.json
+?? reviews/tools/gates/C15.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K00.json
+?? reviews/tools/gates/K00.txt
+?? reviews/tools/gates/K01.json
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K02.json
+?? reviews/tools/gates/K02.txt
+?? reviews/tools/gates/K03.json
+?? reviews/tools/gates/K03.txt
+?? reviews/tools/gates/K04.json
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/K05.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/kimix/test_agent_gate.py
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+
+=== G0 scope: in-scope files read (see report §1 for the per-file citation) ===
+kimi-cli/src/kimi_cli/tools/file/edit/__init__.py  107
+kimi-cli/src/kimi_cli/tools/file/edit/base.py  218
+kimi-cli/src/kimi_cli/tools/file/edit/params.py  194
+kimi-cli/src/kimi_cli/tools/file/edit/modes/replace.py  525
+kimi-cli/src/kimi_cli/tools/file/edit/modes/sloppy.py  363
+kimi-cli/src/kimi_cli/tools/file/replace.py  12
+[exit=0]
+
+=== G1a: uv run ruff check <in-scope files> ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\__init__.py:3:1
+   |
+ 1 |   """Multi-mode edit tool dispatcher."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+ 6 | |
+ 7 | | from kimi_cli.session import Session
+ 8 | | from kimi_cli.soul.agent import Runtime
+ 9 | | from kimi_cli.soul.approval import Approval
+10 | | from kimi_cli.vfs import VFS
+11 | |
+12 | | from .base import BaseEditTool
+13 | | from .modes import MODE_REGISTRY
+14 | | from .modes.replace import ReplaceModeExecutor
+15 | | from .params import EditMode, EditParams, ReplaceEditItem, normalize_edit_mode
+   | |______________________________________________________________________________^
+help: Organize imports
+   |
+4  |
+   - from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+   -
+5  | from kimi_cli.session import Session
+6  | from kimi_cli.soul.agent import Runtime
+7  | from kimi_cli.soul.approval import Approval
+8  | from kimi_cli.vfs import VFS
+9  + from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+10 |
+   |
+
+E501 Line too long (103 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\__init__.py:25:101
+   |
+23 |     params: type[EditParams] = EditParams
+24 |
+25 |     def __init__(self, runtime: Runtime, approval: Approval, session: Session, vfs: VFS | None = None):
+   |                                                                                                     ^^^
+26 |         super().__init__()
+27 |         self._tool = BaseEditTool(runtime, approval, session, vfs)
+   |
+
+E501 Line too long (104 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\__init__.py:88:101
+   |
+86 |         edit: ReplaceEditItem,
+87 |     ) -> tuple[str, int, str | None]:
+88 |         return ReplaceModeExecutor()._apply_replace_all(content, norm_content, norm_old, norm_new, edit)
+   |                                                                                                     ^^^^
+89 |
+90 |     def _apply_fuzzy_fallback(
+   |
+
+E501 Line too long (107 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\__init__.py:98:101
+   |
+96 |         edit: ReplaceEditItem,
+97 |     ) -> tuple[str, int, str | None]:
+98 |         return ReplaceModeExecutor()._apply_fuzzy_fallback(content, norm_content, norm_old, norm_new, edit)
+   |                                                                                                     ^^^^^^^
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:3:1
+   |
+ 1 |   """Shared base class and flow for edit-mode executors."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import contextlib
+ 6 | | from pathlib import Path
+ 7 | | from stat import S_ISREG
+ 8 | | from typing import Any
+ 9 | |
+10 | | import json_repair
+11 | | from kaos.path import KaosPath
+12 | | from kosong.tooling import ToolError, ToolReturnValue
+13 | |
+14 | | from kimi_cli.session import Session
+15 | | from kimi_cli.soul.agent import Runtime
+16 | | from kimi_cli.soul.approval import Approval
+17 | | from kimi_cli.tools.display import DisplayBlock
+18 | | from kimi_cli.tools.file import FileActions
+19 | | from kimi_cli.tools.file.check_fmt import (
+20 | |     check_json_text,
+21 | |     check_toml_text,
+22 | |     check_xml_text,
+23 | |     check_yaml_text,
+24 | | )
+25 | | from kimi_cli.utils.diff import build_diff_blocks
+26 | | from kimi_cli.utils.logging import logger
+27 | | from kimi_cli.utils.path import (
+28 | |     is_within_directory,
+29 | |     is_within_workspace,
+30 | |     kaos_path_from_tool_input,
+31 | |     kaos_path_from_user_input,
+32 | | )
+33 | | from kimi_cli.vfs import VFS
+34 | |
+35 | | from ..utils import check_path_protected, resolve_vfs
+   | |_____________________________________________________^
+help: Organize imports
+   |
+10 | import json_repair
+11 +
+12 | from kaos.path import KaosPath
+   - from kosong.tooling import ToolError, ToolReturnValue
+   -
+13 | from kimi_cli.session import Session
+--------------------------------------------------------------------------------
+32 | from kimi_cli.vfs import VFS
+33 + from kosong.tooling import ToolError, ToolReturnValue
+34 |
+   |
+
+E501 Line too long (103 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:41:101
+   |
+39 |     """Shared flow for file edit tools: path validation, VFS, approval, format checks."""
+40 |
+41 |     def __init__(self, runtime: Runtime, approval: Approval, session: Session, vfs: VFS | None = None):
+   |                                                                                                     ^^^
+42 |         self._work_dir = runtime.builtin_args.KIMI_WORK_DIR
+43 |         self._additional_dirs = runtime.additional_dirs
+   |
+
+E501 Line too long (105 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:74:101
+   |
+72 |                 False,
+73 |             )
+74 |         protected_paths = self._session.custom_config.get("config_json", {}).get("protected_write_paths")
+   |                                                                                                     ^^^^^
+75 |         if protected_paths:
+76 |             if matched := check_path_protected(resolved_path, protected_paths, self._work_dir):
+   |
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+  --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:75:9
+   |
+73 |               )
+74 |           protected_paths = self._session.custom_config.get("config_json", {}).get("protected_write_paths")
+75 | /         if protected_paths:
+76 | |             if matched := check_path_protected(resolved_path, protected_paths, self._work_dir):
+   | |_______________________________________________________________________________________________^
+77 |                   return (
+78 |                       ToolError(
+   |
+help: Combine `if` statements using `and`
+
+E501 Line too long (105 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:172:101
+    |
+170 |         for i, line in enumerate(content.replace("\r\n", "\n").splitlines(), 1):
+171 |             stripped = line.strip()
+172 |             if stripped in markers or stripped.startswith("<<<<<<< ") or stripped.startswith(">>>>>>> "):
+    |                                                                                                     ^^^^^
+173 |                 found.append((i, line))
+174 |         if found:
+    |
+
+E501 Line too long (102 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:178:101
+    |
+176 |             return ToolError(
+177 |                 message=(
+178 |                     f"Conflict markers detected in `{display_path}`; refusing to edit.\n{lines_str}\n"
+    |                                                                                                     ^^
+179 |                     "Resolve the conflict first or pass allow_conflicts=true."
+180 |                 ),
+    |
+
+E501 Line too long (104 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:212:101
+    |
+210 |         with contextlib.suppress(Exception):
+211 |             _outside = not is_within_directory(
+212 |                 kaos_path_from_tool_input(params.file_path or display_path, self._work_dir).canonical(),
+    |                                                                                                     ^^^^
+213 |                 self._work_dir,
+214 |             )
+    |
+
+E501 Line too long (101 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:216:101
+    |
+214 |             )
+215 |         return ToolError(
+216 |             message=f"{self._out_prefix(_outside)}Failed to edit. Error: {exc} Path: {display_path}",
+    |                                                                                                     ^
+217 |             brief="Failed to edit file",
+218 |         )
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:3:1
+   |
+ 1 |   """Replace-mode executor for the multi-mode edit tool."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import asyncio
+ 6 | | import contextlib
+ 7 | | from stat import S_ISREG
+ 8 | | from typing import Any
+ 9 | |
+10 | | import pendulum
+11 | |
+12 | | from kosong.tooling import ToolError, ToolReturnValue
+13 | | from rapidfuzz import fuzz, process
+14 | |
+15 | | from kimi_cli.tools.display import DisplayBlock
+16 | | from kimi_cli.tools.file import FileActions
+17 | | from kimi_cli.tools.file.auto_generated import assert_editable_file_content
+18 | | from kimi_cli.tools.file.conflict_detect import (
+19 | |     get_conflict_history,
+20 | |     scan_conflict_lines,
+21 | | )
+22 | | from kimi_cli.tools.file.edit.params import EditParams, ReplaceEditItem
+23 | | from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
+24 | | from kimi_cli.tools.file.fs_cache import invalidate_fs_scan_after_write
+25 | | from kimi_cli.tools.file.snapshot_store import (
+26 | |     detect_line_ending,
+27 | |     get_file_snapshot_store,
+28 | |     record_content_snapshot,
+29 | | )
+30 | | from kimi_cli.utils.diff import build_diff_blocks
+31 | | from kimi_cli.utils.logging import logger
+32 | | from kimi_cli.utils.path import is_within_directory, kaos_path_from_tool_input
+33 | |
+34 | | from ..base import BaseEditTool
+35 | | from ..params import EditMode
+   | |_____________________________^
+36 |
+37 |   _BASE_DESCRIPTION = (
+   |
+help: Organize imports
+   |
+10 | import pendulum
+   -
+   - from kosong.tooling import ToolError, ToolReturnValue
+11 | from rapidfuzz import fuzz, process
+--------------------------------------------------------------------------------
+30 | from kimi_cli.utils.path import is_within_directory, kaos_path_from_tool_input
+31 + from kosong.tooling import ToolError, ToolReturnValue
+32 |
+   |
+
+E501 Line too long (103 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:325:101
+    |
+323 |                 if not S_ISREG(st.st_mode):
+324 |                     return ToolError(
+325 |                         message=f"{tool._out_prefix(_outside)}`{display_logical_path}` is not a file.",
+    |                                                                                                     ^^^
+326 |                         brief="Invalid path",
+327 |                     )
+    |
+
+E501 Line too long (125 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:395:101
+    |
+393 |                     )
+394 |                 else:
+395 |                     msg = f"{tool._out_prefix(_outside)}No replacements were made. The old string was not found in the file."
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+396 |                     if suggestion:
+397 |                         msg += f"\n\nDid you mean:\n  {suggestion}"
+    |
+
+E501 Line too long (103 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:405:101
+    |
+403 |             result_msg_parts = [
+404 |                 f"{tool._out_prefix(_outside)}File successfully edited. "
+405 |                 f"Applied {len(replace_edits)} edit(s) with {total_replacements} total replacement(s)."
+    |                                                                                                     ^^^
+406 |             ]
+407 |             if suggestion and "fuzzy-matched" in suggestion:
+    |
+
+E501 Line too long (120 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:521:101
+    |
+519 |                 )
+520 |             return ToolError(
+521 |                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to edit. Error: {e} Path: {display_path}",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+522 |                 brief="Failed to edit file",
+523 |             )
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:3:1
+   |
+ 1 |   """Sloppy-mode executor for the multi-mode edit tool."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import re
+ 6 | | from dataclasses import dataclass, field
+ 7 | |
+ 8 | | from kaos.path import KaosPath
+ 9 | | from kosong.tooling import ToolError, ToolReturnValue
+10 | | from rapidfuzz import fuzz
+11 | |
+12 | | from kimi_cli.tools.file import FileActions
+13 | | from kimi_cli.tools.file.edit.params import EditMode, EditParams
+14 | | from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
+15 | | from kimi_cli.utils.diff import build_diff_blocks
+16 | | from kimi_cli.utils.path import kaos_path_from_tool_input
+17 | |
+18 | | from ..base import BaseEditTool
+   | |_______________________________^
+help: Organize imports
+   |
+7  |
+   - from kaos.path import KaosPath
+   - from kosong.tooling import ToolError, ToolReturnValue
+8  | from rapidfuzz import fuzz
+9  |
+10 + from kaos.path import KaosPath
+11 | from kimi_cli.tools.file import FileActions
+--------------------------------------------------------------------------------
+15 | from kimi_cli.utils.path import kaos_path_from_tool_input
+16 + from kosong.tooling import ToolError, ToolReturnValue
+17 |
+   |
+
+E501 Line too long (111 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:150:101
+    |
+150 | def _find_fuzzy_block(content: str, block_lines: list[str], threshold: float = 0.75) -> tuple[int, int] | None:
+    |                                                                                                     ^^^^^^^^^^^
+151 |     """Locate *block_lines* in *content* using a line-window fuzzy match."""
+152 |     if not block_lines:
+    |
+
+E741 Ambiguous variable name: `l`
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:170:37
+    |
+168 |         return None
+169 |     # Convert line index to character range.
+170 |     start_char = sum(len(l) + 1 for l in content_lines[:best_idx])
+    |                                     ^
+171 |     end_char = start_char + sum(len(l) + 1 for l in content_lines[best_idx : best_idx + window_size]) - 1
+172 |     return start_char, end_char
+    |
+
+E741 Ambiguous variable name: `l`
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:171:48
+    |
+169 |     # Convert line index to character range.
+170 |     start_char = sum(len(l) + 1 for l in content_lines[:best_idx])
+171 |     end_char = start_char + sum(len(l) + 1 for l in content_lines[best_idx : best_idx + window_size]) - 1
+    |                                                ^
+172 |     return start_char, end_char
+    |
+
+E501 Line too long (105 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:171:101
+    |
+169 |     # Convert line index to character range.
+170 |     start_char = sum(len(l) + 1 for l in content_lines[:best_idx])
+171 |     end_char = start_char + sum(len(l) + 1 for l in content_lines[best_idx : best_idx + window_size]) - 1
+    |                                                                                                     ^^^^^
+172 |     return start_char, end_char
+    |
+
+F541 [*] f-string without any placeholders
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:187:26
+    |
+185 |         found = _find_fuzzy_block(content, match_lines)
+186 |     if found is None:
+187 |         raise ValueError(f"Could not locate MATCH block:\n" + "\n".join(match_lines))
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+188 |
+189 |     start, end = found
+    |
+help: Remove extraneous `f` prefix
+    |
+186 |     if found is None:
+    -         raise ValueError(f"Could not locate MATCH block:\n" + "\n".join(match_lines))
+187 +         raise ValueError("Could not locate MATCH block:\n" + "\n".join(match_lines))
+188 |
+    |
+
+E501 Line too long (101 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:249:101
+    |
+247 |     async def execute(self, tool: BaseEditTool, params: EditParams) -> ToolReturnValue:
+248 |         if not params.input:
+249 |             return ToolError(message="sloppy mode requires an input payload.", brief="Missing input")
+    |                                                                                                     ^
+250 |
+251 |         try:
+    |
+
+E501 Line too long (104 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:313:101
+    |
+312 |             diff_blocks = await build_diff_blocks(prep.display_path, prep.content, new_content)
+313 |             action = FileActions.EDIT if tool._is_within_workspace(prep.p) else FileActions.EDIT_OUTSIDE
+    |                                                                                                     ^^^^
+314 |             approval_result = await tool._approval.request(
+315 |                 "edit",
+    |
+
+E501 Line too long (113 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:330:101
+    |
+328 |                 for i, line in enumerate(prep.content.replace("\r\n", "\n").splitlines(), 1):
+329 |                     stripped = line.strip()
+330 |                     if stripped in markers or stripped.startswith("<<<<<<< ") or stripped.startswith(">>>>>>> "):
+    |                                                                                                     ^^^^^^^^^^^^^
+331 |                         return ToolError(
+332 |                             message=f"Conflict markers detected in `{prep.display_path}` at line {i}; refusing to edit.",
+    |
+
+E501 Line too long (121 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:332:101
+    |
+330 |                     if stripped in markers or stripped.startswith("<<<<<<< ") or stripped.startswith(">>>>>>> "):
+331 |                         return ToolError(
+332 |                             message=f"Conflict markers detected in `{prep.display_path}` at line {i}; refusing to edit.",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+333 |                             brief="Conflict markers detected",
+334 |                         )
+    |
+
+E501 Line too long (104 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:339:101
+    |
+337 |                 return ToolError(
+338 |                     message=(
+339 |                         f"`{prep.display_path}` changed externally or was written after the last read. "
+    |                                                                                                     ^^^^
+340 |                         "Re-read the file and re-issue the edit."
+341 |                     ),
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\params.py:3:1
+   |
+ 1 |   """Parameter models for the multi-mode edit tool."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | from typing import Any, Literal, Union
+ 6 | |
+ 7 | | from kosong.tooling import alias_note
+ 8 | | from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
+   | |_____________________________________________________________________________________^
+ 9 |
+10 |   EditMode = Literal["replace", "sloppy"]
+   |
+help: Organize imports
+   |
+6  |
+   - from kosong.tooling import alias_note
+7  | from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
+8  |
+9  + from kosong.tooling import alias_note
+10 +
+11 | EditMode = Literal["replace", "sloppy"]
+   |
+
+UP007 [*] Use `X | Y` for type annotations
+  --> kimi-cli\src\kimi_cli\tools\file\edit\params.py:59:11
+   |
+57 |     )
+58 |
+59 |     edit: Union[ReplaceEditItem, list[ReplaceEditItem], None] = Field(
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+60 |         default=None,
+61 |         alias="edits",
+   |
+help: Convert to `X | Y`
+   |
+58 |
+   -     edit: Union[ReplaceEditItem, list[ReplaceEditItem], None] = Field(
+59 +     edit: ReplaceEditItem | list[ReplaceEditItem] | None = Field(
+60 |         default=None,
+   |
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+   --> kimi-cli\src\kimi_cli\tools\file\edit\params.py:114:9
+    |
+112 |           if not isinstance(data, dict):
+113 |               return data
+114 | /         if "edit" not in data and "edits" not in data:
+115 | |             if data.get("old_string") is not None or data.get("new_string") is not None:
+    | |________________________________________________________________________________________^
+116 |                   data = {
+117 |                       **data,
+    |
+help: Combine `if` statements using `and`
+
+UP037 [*] Remove quotes from type annotation
+   --> kimi-cli\src\kimi_cli\tools\file\edit\params.py:149:32
+    |
+148 |     @model_validator(mode="after")
+149 |     def _resolve_mode(self) -> "EditParams":
+    |                                ^^^^^^^^^^^^
+150 |         """Resolve auto-detected mode and validate payload shape."""
+151 |         raw_mode = self.mode
+    |
+help: Remove quotes
+    |
+148 |     @model_validator(mode="after")
+    -     def _resolve_mode(self) -> "EditParams":
+149 +     def _resolve_mode(self) -> EditParams:
+150 |         """Resolve auto-detected mode and validate payload shape."""
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\replace.py:7:1
+   |
+ 5 |   """
+ 6 |
+ 7 | / from __future__ import annotations
+ 8 | |
+ 9 | | from kimi_cli.tools.file.edit import EditFile
+10 | | from kimi_cli.tools.file.edit.params import EditParams as Params, ReplaceEditItem as Edit
+   | |_________________________________________________________________________________________^
+11 |
+12 |   __all__ = ["Edit", "EditFile", "Params"]
+   |
+help: Organize imports
+   |
+9  | from kimi_cli.tools.file.edit import EditFile
+   - from kimi_cli.tools.file.edit.params import EditParams as Params, ReplaceEditItem as Edit
+10 + from kimi_cli.tools.file.edit.params import EditParams as Params
+11 + from kimi_cli.tools.file.edit.params import ReplaceEditItem as Edit
+12 |
+   |
+
+Found 33 errors.
+[*] 9 fixable with the `--fix` option.
+[exit=1]
+
+=== G1a2: uv run ruff check <in-scope files> + edit/modes/__init__.py (adjacent, not in scope) ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\__init__.py:3:1
+   |
+ 1 |   """Multi-mode edit tool dispatcher."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+ 6 | |
+ 7 | | from kimi_cli.session import Session
+ 8 | | from kimi_cli.soul.agent import Runtime
+ 9 | | from kimi_cli.soul.approval import Approval
+10 | | from kimi_cli.vfs import VFS
+11 | |
+12 | | from .base import BaseEditTool
+13 | | from .modes import MODE_REGISTRY
+14 | | from .modes.replace import ReplaceModeExecutor
+15 | | from .params import EditMode, EditParams, ReplaceEditItem, normalize_edit_mode
+   | |______________________________________________________________________________^
+help: Organize imports
+   |
+4  |
+   - from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+   -
+5  | from kimi_cli.session import Session
+6  | from kimi_cli.soul.agent import Runtime
+7  | from kimi_cli.soul.approval import Approval
+8  | from kimi_cli.vfs import VFS
+9  + from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+10 |
+   |
+
+E501 Line too long (103 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\__init__.py:25:101
+   |
+23 |     params: type[EditParams] = EditParams
+24 |
+25 |     def __init__(self, runtime: Runtime, approval: Approval, session: Session, vfs: VFS | None = None):
+   |                                                                                                     ^^^
+26 |         super().__init__()
+27 |         self._tool = BaseEditTool(runtime, approval, session, vfs)
+   |
+
+E501 Line too long (104 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\__init__.py:88:101
+   |
+86 |         edit: ReplaceEditItem,
+87 |     ) -> tuple[str, int, str | None]:
+88 |         return ReplaceModeExecutor()._apply_replace_all(content, norm_content, norm_old, norm_new, edit)
+   |                                                                                                     ^^^^
+89 |
+90 |     def _apply_fuzzy_fallback(
+   |
+
+E501 Line too long (107 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\__init__.py:98:101
+   |
+96 |         edit: ReplaceEditItem,
+97 |     ) -> tuple[str, int, str | None]:
+98 |         return ReplaceModeExecutor()._apply_fuzzy_fallback(content, norm_content, norm_old, norm_new, edit)
+   |                                                                                                     ^^^^^^^
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:3:1
+   |
+ 1 |   """Shared base class and flow for edit-mode executors."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import contextlib
+ 6 | | from pathlib import Path
+ 7 | | from stat import S_ISREG
+ 8 | | from typing import Any
+ 9 | |
+10 | | import json_repair
+11 | | from kaos.path import KaosPath
+12 | | from kosong.tooling import ToolError, ToolReturnValue
+13 | |
+14 | | from kimi_cli.session import Session
+15 | | from kimi_cli.soul.agent import Runtime
+16 | | from kimi_cli.soul.approval import Approval
+17 | | from kimi_cli.tools.display import DisplayBlock
+18 | | from kimi_cli.tools.file import FileActions
+19 | | from kimi_cli.tools.file.check_fmt import (
+20 | |     check_json_text,
+21 | |     check_toml_text,
+22 | |     check_xml_text,
+23 | |     check_yaml_text,
+24 | | )
+25 | | from kimi_cli.utils.diff import build_diff_blocks
+26 | | from kimi_cli.utils.logging import logger
+27 | | from kimi_cli.utils.path import (
+28 | |     is_within_directory,
+29 | |     is_within_workspace,
+30 | |     kaos_path_from_tool_input,
+31 | |     kaos_path_from_user_input,
+32 | | )
+33 | | from kimi_cli.vfs import VFS
+34 | |
+35 | | from ..utils import check_path_protected, resolve_vfs
+   | |_____________________________________________________^
+help: Organize imports
+   |
+10 | import json_repair
+11 +
+12 | from kaos.path import KaosPath
+   - from kosong.tooling import ToolError, ToolReturnValue
+   -
+13 | from kimi_cli.session import Session
+--------------------------------------------------------------------------------
+32 | from kimi_cli.vfs import VFS
+33 + from kosong.tooling import ToolError, ToolReturnValue
+34 |
+   |
+
+E501 Line too long (103 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:41:101
+   |
+39 |     """Shared flow for file edit tools: path validation, VFS, approval, format checks."""
+40 |
+41 |     def __init__(self, runtime: Runtime, approval: Approval, session: Session, vfs: VFS | None = None):
+   |                                                                                                     ^^^
+42 |         self._work_dir = runtime.builtin_args.KIMI_WORK_DIR
+43 |         self._additional_dirs = runtime.additional_dirs
+   |
+
+E501 Line too long (105 > 100)
+  --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:74:101
+   |
+72 |                 False,
+73 |             )
+74 |         protected_paths = self._session.custom_config.get("config_json", {}).get("protected_write_paths")
+   |                                                                                                     ^^^^^
+75 |         if protected_paths:
+76 |             if matched := check_path_protected(resolved_path, protected_paths, self._work_dir):
+   |
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+  --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:75:9
+   |
+73 |               )
+74 |           protected_paths = self._session.custom_config.get("config_json", {}).get("protected_write_paths")
+75 | /         if protected_paths:
+76 | |             if matched := check_path_protected(resolved_path, protected_paths, self._work_dir):
+   | |_______________________________________________________________________________________________^
+77 |                   return (
+78 |                       ToolError(
+   |
+help: Combine `if` statements using `and`
+
+E501 Line too long (105 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:172:101
+    |
+170 |         for i, line in enumerate(content.replace("\r\n", "\n").splitlines(), 1):
+171 |             stripped = line.strip()
+172 |             if stripped in markers or stripped.startswith("<<<<<<< ") or stripped.startswith(">>>>>>> "):
+    |                                                                                                     ^^^^^
+173 |                 found.append((i, line))
+174 |         if found:
+    |
+
+E501 Line too long (102 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:178:101
+    |
+176 |             return ToolError(
+177 |                 message=(
+178 |                     f"Conflict markers detected in `{display_path}`; refusing to edit.\n{lines_str}\n"
+    |                                                                                                     ^^
+179 |                     "Resolve the conflict first or pass allow_conflicts=true."
+180 |                 ),
+    |
+
+E501 Line too long (104 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:212:101
+    |
+210 |         with contextlib.suppress(Exception):
+211 |             _outside = not is_within_directory(
+212 |                 kaos_path_from_tool_input(params.file_path or display_path, self._work_dir).canonical(),
+    |                                                                                                     ^^^^
+213 |                 self._work_dir,
+214 |             )
+    |
+
+E501 Line too long (101 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\base.py:216:101
+    |
+214 |             )
+215 |         return ToolError(
+216 |             message=f"{self._out_prefix(_outside)}Failed to edit. Error: {exc} Path: {display_path}",
+    |                                                                                                     ^
+217 |             brief="Failed to edit file",
+218 |         )
+    |
+
+F401 `collections.abc.Callable` imported but unused
+  --> kimi-cli\src\kimi_cli\tools\file\edit\modes\__init__.py:11:33
+   |
+10 | if TYPE_CHECKING:
+11 |     from collections.abc import Callable
+   |                                 ^^^^^^^^
+12 |
+13 |     from kimi_cli.tools.file.edit.params import EditMode
+   |
+help: Remove unused import: `collections.abc.Callable`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:3:1
+   |
+ 1 |   """Replace-mode executor for the multi-mode edit tool."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import asyncio
+ 6 | | import contextlib
+ 7 | | from stat import S_ISREG
+ 8 | | from typing import Any
+ 9 | |
+10 | | import pendulum
+11 | |
+12 | | from kosong.tooling import ToolError, ToolReturnValue
+13 | | from rapidfuzz import fuzz, process
+14 | |
+15 | | from kimi_cli.tools.display import DisplayBlock
+16 | | from kimi_cli.tools.file import FileActions
+17 | | from kimi_cli.tools.file.auto_generated import assert_editable_file_content
+18 | | from kimi_cli.tools.file.conflict_detect import (
+19 | |     get_conflict_history,
+20 | |     scan_conflict_lines,
+21 | | )
+22 | | from kimi_cli.tools.file.edit.params import EditParams, ReplaceEditItem
+23 | | from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
+24 | | from kimi_cli.tools.file.fs_cache import invalidate_fs_scan_after_write
+25 | | from kimi_cli.tools.file.snapshot_store import (
+26 | |     detect_line_ending,
+27 | |     get_file_snapshot_store,
+28 | |     record_content_snapshot,
+29 | | )
+30 | | from kimi_cli.utils.diff import build_diff_blocks
+31 | | from kimi_cli.utils.logging import logger
+32 | | from kimi_cli.utils.path import is_within_directory, kaos_path_from_tool_input
+33 | |
+34 | | from ..base import BaseEditTool
+35 | | from ..params import EditMode
+   | |_____________________________^
+36 |
+37 |   _BASE_DESCRIPTION = (
+   |
+help: Organize imports
+   |
+10 | import pendulum
+   -
+   - from kosong.tooling import ToolError, ToolReturnValue
+11 | from rapidfuzz import fuzz, process
+--------------------------------------------------------------------------------
+30 | from kimi_cli.utils.path import is_within_directory, kaos_path_from_tool_input
+31 + from kosong.tooling import ToolError, ToolReturnValue
+32 |
+   |
+
+E501 Line too long (103 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:325:101
+    |
+323 |                 if not S_ISREG(st.st_mode):
+324 |                     return ToolError(
+325 |                         message=f"{tool._out_prefix(_outside)}`{display_logical_path}` is not a file.",
+    |                                                                                                     ^^^
+326 |                         brief="Invalid path",
+327 |                     )
+    |
+
+E501 Line too long (125 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:395:101
+    |
+393 |                     )
+394 |                 else:
+395 |                     msg = f"{tool._out_prefix(_outside)}No replacements were made. The old string was not found in the file."
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+396 |                     if suggestion:
+397 |                         msg += f"\n\nDid you mean:\n  {suggestion}"
+    |
+
+E501 Line too long (103 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:405:101
+    |
+403 |             result_msg_parts = [
+404 |                 f"{tool._out_prefix(_outside)}File successfully edited. "
+405 |                 f"Applied {len(replace_edits)} edit(s) with {total_replacements} total replacement(s)."
+    |                                                                                                     ^^^
+406 |             ]
+407 |             if suggestion and "fuzzy-matched" in suggestion:
+    |
+
+E501 Line too long (120 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:521:101
+    |
+519 |                 )
+520 |             return ToolError(
+521 |                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to edit. Error: {e} Path: {display_path}",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^
+522 |                 brief="Failed to edit file",
+523 |             )
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:3:1
+   |
+ 1 |   """Sloppy-mode executor for the multi-mode edit tool."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import re
+ 6 | | from dataclasses import dataclass, field
+ 7 | |
+ 8 | | from kaos.path import KaosPath
+ 9 | | from kosong.tooling import ToolError, ToolReturnValue
+10 | | from rapidfuzz import fuzz
+11 | |
+12 | | from kimi_cli.tools.file import FileActions
+13 | | from kimi_cli.tools.file.edit.params import EditMode, EditParams
+14 | | from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
+15 | | from kimi_cli.utils.diff import build_diff_blocks
+16 | | from kimi_cli.utils.path import kaos_path_from_tool_input
+17 | |
+18 | | from ..base import BaseEditTool
+   | |_______________________________^
+help: Organize imports
+   |
+7  |
+   - from kaos.path import KaosPath
+   - from kosong.tooling import ToolError, ToolReturnValue
+8  | from rapidfuzz import fuzz
+9  |
+10 + from kaos.path import KaosPath
+11 | from kimi_cli.tools.file import FileActions
+--------------------------------------------------------------------------------
+15 | from kimi_cli.utils.path import kaos_path_from_tool_input
+16 + from kosong.tooling import ToolError, ToolReturnValue
+17 |
+   |
+
+E501 Line too long (111 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:150:101
+    |
+150 | def _find_fuzzy_block(content: str, block_lines: list[str], threshold: float = 0.75) -> tuple[int, int] | None:
+    |                                                                                                     ^^^^^^^^^^^
+151 |     """Locate *block_lines* in *content* using a line-window fuzzy match."""
+152 |     if not block_lines:
+    |
+
+E741 Ambiguous variable name: `l`
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:170:37
+    |
+168 |         return None
+169 |     # Convert line index to character range.
+170 |     start_char = sum(len(l) + 1 for l in content_lines[:best_idx])
+    |                                     ^
+171 |     end_char = start_char + sum(len(l) + 1 for l in content_lines[best_idx : best_idx + window_size]) - 1
+172 |     return start_char, end_char
+    |
+
+E741 Ambiguous variable name: `l`
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:171:48
+    |
+169 |     # Convert line index to character range.
+170 |     start_char = sum(len(l) + 1 for l in content_lines[:best_idx])
+171 |     end_char = start_char + sum(len(l) + 1 for l in content_lines[best_idx : best_idx + window_size]) - 1
+    |                                                ^
+172 |     return start_char, end_char
+    |
+
+E501 Line too long (105 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:171:101
+    |
+169 |     # Convert line index to character range.
+170 |     start_char = sum(len(l) + 1 for l in content_lines[:best_idx])
+171 |     end_char = start_char + sum(len(l) + 1 for l in content_lines[best_idx : best_idx + window_size]) - 1
+    |                                                                                                     ^^^^^
+172 |     return start_char, end_char
+    |
+
+F541 [*] f-string without any placeholders
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:187:26
+    |
+185 |         found = _find_fuzzy_block(content, match_lines)
+186 |     if found is None:
+187 |         raise ValueError(f"Could not locate MATCH block:\n" + "\n".join(match_lines))
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+188 |
+189 |     start, end = found
+    |
+help: Remove extraneous `f` prefix
+    |
+186 |     if found is None:
+    -         raise ValueError(f"Could not locate MATCH block:\n" + "\n".join(match_lines))
+187 +         raise ValueError("Could not locate MATCH block:\n" + "\n".join(match_lines))
+188 |
+    |
+
+E501 Line too long (101 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:249:101
+    |
+247 |     async def execute(self, tool: BaseEditTool, params: EditParams) -> ToolReturnValue:
+248 |         if not params.input:
+249 |             return ToolError(message="sloppy mode requires an input payload.", brief="Missing input")
+    |                                                                                                     ^
+250 |
+251 |         try:
+    |
+
+E501 Line too long (104 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:313:101
+    |
+312 |             diff_blocks = await build_diff_blocks(prep.display_path, prep.content, new_content)
+313 |             action = FileActions.EDIT if tool._is_within_workspace(prep.p) else FileActions.EDIT_OUTSIDE
+    |                                                                                                     ^^^^
+314 |             approval_result = await tool._approval.request(
+315 |                 "edit",
+    |
+
+E501 Line too long (113 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:330:101
+    |
+328 |                 for i, line in enumerate(prep.content.replace("\r\n", "\n").splitlines(), 1):
+329 |                     stripped = line.strip()
+330 |                     if stripped in markers or stripped.startswith("<<<<<<< ") or stripped.startswith(">>>>>>> "):
+    |                                                                                                     ^^^^^^^^^^^^^
+331 |                         return ToolError(
+332 |                             message=f"Conflict markers detected in `{prep.display_path}` at line {i}; refusing to edit.",
+    |
+
+E501 Line too long (121 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:332:101
+    |
+330 |                     if stripped in markers or stripped.startswith("<<<<<<< ") or stripped.startswith(">>>>>>> "):
+331 |                         return ToolError(
+332 |                             message=f"Conflict markers detected in `{prep.display_path}` at line {i}; refusing to edit.",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^
+333 |                             brief="Conflict markers detected",
+334 |                         )
+    |
+
+E501 Line too long (104 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:339:101
+    |
+337 |                 return ToolError(
+338 |                     message=(
+339 |                         f"`{prep.display_path}` changed externally or was written after the last read. "
+    |                                                                                                     ^^^^
+340 |                         "Re-read the file and re-issue the edit."
+341 |                     ),
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\edit\params.py:3:1
+   |
+ 1 |   """Parameter models for the multi-mode edit tool."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | from typing import Any, Literal, Union
+ 6 | |
+ 7 | | from kosong.tooling import alias_note
+ 8 | | from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
+   | |_____________________________________________________________________________________^
+ 9 |
+10 |   EditMode = Literal["replace", "sloppy"]
+   |
+help: Organize imports
+   |
+6  |
+   - from kosong.tooling import alias_note
+7  | from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
+8  |
+9  + from kosong.tooling import alias_note
+10 +
+11 | EditMode = Literal["replace", "sloppy"]
+   |
+
+UP007 [*] Use `X | Y` for type annotations
+  --> kimi-cli\src\kimi_cli\tools\file\edit\params.py:59:11
+   |
+57 |     )
+58 |
+59 |     edit: Union[ReplaceEditItem, list[ReplaceEditItem], None] = Field(
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+60 |         default=None,
+61 |         alias="edits",
+   |
+help: Convert to `X | Y`
+   |
+58 |
+   -     edit: Union[ReplaceEditItem, list[ReplaceEditItem], None] = Field(
+59 +     edit: ReplaceEditItem | list[ReplaceEditItem] | None = Field(
+60 |         default=None,
+   |
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+   --> kimi-cli\src\kimi_cli\tools\file\edit\params.py:114:9
+    |
+112 |           if not isinstance(data, dict):
+113 |               return data
+114 | /         if "edit" not in data and "edits" not in data:
+115 | |             if data.get("old_string") is not None or data.get("new_string") is not None:
+    | |________________________________________________________________________________________^
+116 |                   data = {
+117 |                       **data,
+    |
+help: Combine `if` statements using `and`
+
+UP037 [*] Remove quotes from type annotation
+   --> kimi-cli\src\kimi_cli\tools\file\edit\params.py:149:32
+    |
+148 |     @model_validator(mode="after")
+149 |     def _resolve_mode(self) -> "EditParams":
+    |                                ^^^^^^^^^^^^
+150 |         """Resolve auto-detected mode and validate payload shape."""
+151 |         raw_mode = self.mode
+    |
+help: Remove quotes
+    |
+148 |     @model_validator(mode="after")
+    -     def _resolve_mode(self) -> "EditParams":
+149 +     def _resolve_mode(self) -> EditParams:
+150 |         """Resolve auto-detected mode and validate payload shape."""
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\replace.py:7:1
+   |
+ 5 |   """
+ 6 |
+ 7 | / from __future__ import annotations
+ 8 | |
+ 9 | | from kimi_cli.tools.file.edit import EditFile
+10 | | from kimi_cli.tools.file.edit.params import EditParams as Params, ReplaceEditItem as Edit
+   | |_________________________________________________________________________________________^
+11 |
+12 |   __all__ = ["Edit", "EditFile", "Params"]
+   |
+help: Organize imports
+   |
+9  | from kimi_cli.tools.file.edit import EditFile
+   - from kimi_cli.tools.file.edit.params import EditParams as Params, ReplaceEditItem as Edit
+10 + from kimi_cli.tools.file.edit.params import EditParams as Params
+11 + from kimi_cli.tools.file.edit.params import ReplaceEditItem as Edit
+12 |
+   |
+
+Found 34 errors.
+[*] 9 fixable with the `--fix` option.
+[exit=1]
+
+=== G1b: uv run ruff check --select C901 --config lint.mccabe.max-complexity=12 <in-scope files> ===
+C901 `execute` is too complex (33 > 12)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py:287:15
+    |
+285 |         return base, total, rec
+286 |
+287 |     async def execute(self, tool: BaseEditTool, params: EditParams) -> ToolReturnValue:
+    |               ^^^^^^^
+288 |         """Run the replace executor."""
+289 |         replace_edits: list[ReplaceEditItem] = []
+    |
+
+C901 `execute` is too complex (18 > 12)
+   --> kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py:247:15
+    |
+245 |     description: str = "Edit files using sparse fragment rewrites."
+246 |
+247 |     async def execute(self, tool: BaseEditTool, params: EditParams) -> ToolReturnValue:
+    |               ^^^^^^^
+248 |         if not params.input:
+249 |             return ToolError(message="sloppy mode requires an input payload.", brief="Missing input")
+    |
+
+Found 2 errors.
+[exit=1]
+
+=== G1c: uv run tools/review_metrics.py <in-scope files> --json ===
+{
+  "files": [
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/edit/__init__.py",
+      "loc": 107,
+      "module_loc": 107,
+      "functions": [
+        {
+          "name": "__init__",
+          "lineno": 25,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_work_dir",
+          "lineno": 30,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_approval",
+          "lineno": 34,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_session",
+          "lineno": 38,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_vfs",
+          "lineno": 42,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__call__",
+          "lineno": 45,
+          "loc": 12,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_apply_edit",
+          "lineno": 63,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_normalize_line_endings",
+          "lineno": 66,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_find_similar",
+          "lineno": 69,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_try_strip_match",
+          "lineno": 72,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_find_best_fuzzy_match",
+          "lineno": 75,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_apply_replace_all",
+          "lineno": 80,
+          "loc": 9,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_apply_fuzzy_fallback",
+          "lineno": 90,
+          "loc": 9,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        }
+      ],
+      "longest_fn": {
+        "name": "__call__",
+        "loc": 12
+      },
+      "module_complexity": 4
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/edit/base.py",
+      "loc": 218,
+      "module_loc": 218,
+      "functions": [
+        {
+          "name": "__init__",
+          "lineno": 41,
+          "loc": 6,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_out_prefix",
+          "lineno": 48,
+          "loc": 2,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_validate_path",
+          "lineno": 51,
+          "loc": 34,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_resolve_for_write",
+          "lineno": 86,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_is_within_workspace",
+          "lineno": 91,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_read_text",
+          "lineno": 94,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_write_text",
+          "lineno": 97,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_remove_file",
+          "lineno": 100,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_ensure_parent",
+          "lineno": 103,
+          "loc": 4,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_check_format",
+          "lineno": 108,
+          "loc": 14,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 4
+        },
+        {
+          "name": "_try_repair_json",
+          "lineno": 123,
+          "loc": 8,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_request_approval",
+          "lineno": 132,
+          "loc": 25,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_check_conflicts",
+          "lineno": 158,
+          "loc": 26,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "_check_staleness",
+          "lineno": 185,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_stat_is_regular_file",
+          "lineno": 197,
+          "loc": 7,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_wrap_exception",
+          "lineno": 205,
+          "loc": 14,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "_validate_path",
+        "loc": 34
+      },
+      "module_complexity": 7
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/edit/params.py",
+      "loc": 194,
+      "module_loc": 194,
+      "functions": [
+        {
+          "name": "normalize_edit_mode",
+          "lineno": 162,
+          "loc": 10,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "detect_mode",
+          "lineno": 174,
+          "loc": 21,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 3
+        },
+        {
+          "name": "_normalize_single_edit",
+          "lineno": 110,
+          "loc": 17,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_normalize_edit",
+          "lineno": 130,
+          "loc": 9,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_coerce_edit",
+          "lineno": 141,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_resolve_mode",
+          "lineno": 149,
+          "loc": 11,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "detect_mode",
+        "loc": 21
+      },
+      "module_complexity": 8
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/edit/modes/replace.py",
+      "loc": 525,
+      "module_loc": 525,
+      "functions": [
+        {
+          "name": "__init__",
+          "lineno": 51,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_normalize_line_endings",
+          "lineno": 54,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_find_similar",
+          "lineno": 58,
+          "loc": 28,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_try_strip_match",
+          "lineno": 87,
+          "loc": 22,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 5
+        },
+        {
+          "name": "_find_best_fuzzy_match",
+          "lineno": 110,
+          "loc": 34,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 3
+        },
+        {
+          "name": "_apply_replace_all",
+          "lineno": 145,
+          "loc": 26,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_apply_fuzzy_fallback",
+          "lineno": 172,
+          "loc": 28,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_apply_edit",
+          "lineno": 201,
+          "loc": 27,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 1
+        },
+        {
+          "name": "_try_snapshot_recovery",
+          "lineno": 229,
+          "loc": 57,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 2
+        },
+        {
+          "name": "execute",
+          "lineno": 287,
+          "loc": 239,
+          "complexity": 38,
+          "branches": 37,
+          "max_nesting": 4
+        },
+        {
+          "name": "_best",
+          "lineno": 66,
+          "loc": 5,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_work",
+          "lineno": 364,
+          "loc": 10,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "execute",
+        "loc": 239
+      },
+      "module_complexity": 38
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/edit/modes/sloppy.py",
+      "loc": 363,
+      "module_loc": 363,
+      "functions": [
+        {
+          "name": "_split_sections",
+          "lineno": 54,
+          "loc": 16,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_parse_op",
+          "lineno": 72,
+          "loc": 48,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 3
+        },
+        {
+          "name": "parse_sloppy_input",
+          "lineno": 122,
+          "loc": 15,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_find_exact_block",
+          "lineno": 139,
+          "loc": 9,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_find_fuzzy_block",
+          "lineno": 150,
+          "loc": 23,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_apply_block_op",
+          "lineno": 175,
+          "loc": 38,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 3
+        },
+        {
+          "name": "_apply_inline_op",
+          "lineno": 215,
+          "loc": 24,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "execute",
+          "lineno": 247,
+          "loc": 117,
+          "complexity": 23,
+          "branches": 22,
+          "max_nesting": 4
+        }
+      ],
+      "longest_fn": {
+        "name": "execute",
+        "loc": 117
+      },
+      "module_complexity": 23
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/replace.py",
+      "loc": 12,
+      "module_loc": 12,
+      "functions": [],
+      "longest_fn": null,
+      "module_complexity": 0
+    }
+  ],
+  "totals": {
+    "files": 6,
+    "loc": 1419,
+    "functions": 55
+  },
+  "breaches": []
+}
+[exit=0]
+
+=== G1d: uv run tools/review_metrics.py <in-scope files> --max-fn-loc 120 --max-complexity 12 ===
+
+BREACHES:
+  kimi-cli/src/kimi_cli/tools/file/edit/modes/replace.py::execute loc=239 > 120
+  kimi-cli/src/kimi_cli/tools/file/edit/modes/replace.py::execute complexity=38 > 12
+  kimi-cli/src/kimi_cli/tools/file/edit/modes/sloppy.py::execute complexity=23 > 12
+kimi-cli/src/kimi_cli/tools/file/edit/__init__.py: loc=107 fns=13 longest_fn=__call__ (12) max_complexity=4
+    __call__                                 loc=12    complexity=4    branches=3    nesting=1
+    _apply_replace_all                       loc=9     complexity=1    branches=0    nesting=0
+    _apply_fuzzy_fallback                    loc=9     complexity=1    branches=0    nesting=0
+    _find_best_fuzzy_match                   loc=4     complexity=1    branches=0    nesting=0
+    __init__                                 loc=3     complexity=1    branches=0    nesting=0
+    _work_dir                                loc=2     complexity=1    branches=0    nesting=0
+    _approval                                loc=2     complexity=1    branches=0    nesting=0
+    _session                                 loc=2     complexity=1    branches=0    nesting=0
+    _vfs                                     loc=2     complexity=1    branches=0    nesting=0
+    _apply_edit                              loc=2     complexity=1    branches=0    nesting=0
+    _normalize_line_endings                  loc=2     complexity=1    branches=0    nesting=0
+    _find_similar                            loc=2     complexity=1    branches=0    nesting=0
+    _try_strip_match                         loc=2     complexity=1    branches=0    nesting=0
+kimi-cli/src/kimi_cli/tools/file/edit/base.py: loc=218 fns=16 longest_fn=_validate_path (34) max_complexity=7
+    _validate_path                           loc=34    complexity=5    branches=4    nesting=2
+    _check_conflicts                         loc=26    complexity=7    branches=6    nesting=2
+    _request_approval                        loc=25    complexity=3    branches=2    nesting=1
+    _check_format                            loc=14    complexity=5    branches=4    nesting=4
+    _wrap_exception                          loc=14    complexity=2    branches=1    nesting=1
+    _check_staleness                         loc=11    complexity=2    branches=1    nesting=1
+    _try_repair_json                         loc=8     complexity=3    branches=2    nesting=2
+    _stat_is_regular_file                    loc=7     complexity=2    branches=1    nesting=1
+    __init__                                 loc=6     complexity=1    branches=0    nesting=0
+    _resolve_for_write                       loc=4     complexity=1    branches=0    nesting=0
+    _ensure_parent                           loc=4     complexity=3    branches=2    nesting=1
+    _out_prefix                              loc=2     complexity=2    branches=1    nesting=0
+    _is_within_workspace                     loc=2     complexity=1    branches=0    nesting=0
+    _read_text                               loc=2     complexity=1    branches=0    nesting=0
+    _write_text                              loc=2     complexity=1    branches=0    nesting=0
+    _remove_file                             loc=2     complexity=1    branches=0    nesting=0
+kimi-cli/src/kimi_cli/tools/file/edit/params.py: loc=194 fns=6 longest_fn=detect_mode (21) max_complexity=8
+    detect_mode                              loc=21    complexity=8    branches=7    nesting=3
+    _normalize_single_edit                   loc=17    complexity=6    branches=5    nesting=2
+    _resolve_mode                            loc=11    complexity=3    branches=2    nesting=2
+    normalize_edit_mode                      loc=10    complexity=2    branches=1    nesting=1
+    _normalize_edit                          loc=9     complexity=4    branches=3    nesting=1
+    _coerce_edit                             loc=6     complexity=3    branches=2    nesting=1
+kimi-cli/src/kimi_cli/tools/file/edit/modes/replace.py: loc=525 fns=12 longest_fn=execute (239) max_complexity=38
+    execute                                  loc=239   complexity=38   branches=37   nesting=4
+    _try_snapshot_recovery                   loc=57    complexity=12   branches=11   nesting=2
+    _find_best_fuzzy_match                   loc=34    complexity=7    branches=6    nesting=3
+    _find_similar                            loc=28    complexity=5    branches=4    nesting=1
+    _apply_fuzzy_fallback                    loc=28    complexity=5    branches=4    nesting=2
+    _apply_edit                              loc=27    complexity=6    branches=5    nesting=1
+    _apply_replace_all                       loc=26    complexity=6    branches=5    nesting=3
+    _try_strip_match                         loc=22    complexity=7    branches=6    nesting=5
+    _work                                    loc=10    complexity=3    branches=2    nesting=2
+    _best                                    loc=5     complexity=3    branches=2    nesting=1
+    _normalize_line_endings                  loc=3     complexity=1    branches=0    nesting=0
+    __init__                                 loc=2     complexity=1    branches=0    nesting=0
+kimi-cli/src/kimi_cli/tools/file/edit/modes/sloppy.py: loc=363 fns=8 longest_fn=execute (117) max_complexity=23
+    execute                                  loc=117   complexity=23   branches=22   nesting=4
+    _parse_op                                loc=48    complexity=11   branches=10   nesting=3
+    _apply_block_op                          loc=38    complexity=11   branches=10   nesting=3
+    _apply_inline_op                         loc=24    complexity=8    branches=7    nesting=2
+    _find_fuzzy_block                        loc=23    complexity=6    branches=5    nesting=2
+    _split_sections                          loc=16    complexity=6    branches=5    nesting=3
+    parse_sloppy_input                       loc=15    complexity=4    branches=3    nesting=2
+    _find_exact_block                        loc=9     complexity=3    branches=2    nesting=1
+kimi-cli/src/kimi_cli/tools/file/replace.py: loc=12 fns=0 longest_fn=- max_complexity=0
+[exit=1]
+
+=== G1e: uv run --with vulture vulture <in-scope files> --min-confidence 90 --sort-by-size ===
+[exit=0]
+
+=== G1f: uv run tools/git_diff.py <in-scope files> (LOC non-regression) ===
+### kimi-cli/src/kimi_cli/tools/file/edit/__init__.py: no uncommitted changes
+
+### kimi-cli/src/kimi_cli/tools/file/edit/base.py: no uncommitted changes
+
+### kimi-cli/src/kimi_cli/tools/file/edit/params.py: no uncommitted changes
+
+### kimi-cli/src/kimi_cli/tools/file/edit/modes/replace.py: no uncommitted changes
+
+### kimi-cli/src/kimi_cli/tools/file/edit/modes/sloppy.py: no uncommitted changes
+
+### kimi-cli/src/kimi_cli/tools/file/replace.py: no uncommitted changes
+[exit=0]
+
+=== G3a: uv run --with pytest-cov pytest <in-scope tests> --cov=kimi_cli.tools.file.edit --cov=kimi_cli.tools.file.edit.modes.replace --cov=kimi_cli.tools.file.edit.modes.sloppy --cov-branch --cov-report=term-missing -q  (verbatim, informative) ===
+........................................................................ [ 69%]
+................................                                         [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                                      Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\file\edit\__init__.py            51      8      4      2    82%   31, 35, 39, 43, 48, 52, 73, 88
+kimi-cli\src\kimi_cli\tools\file\edit\base.py               112     32     32      4    68%   76-77, 101, 104-106, 116, 118, 127-129, 142-156, 187-195, 199-203, 208-215
+kimi-cli\src\kimi_cli\tools\file\edit\modes\__init__.py       5      0      0      0   100%
+kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py      293     29    128     19    88%   91, 101, 104-105, 160, 164, 246-247, 261, 265, 271-272, 274, 282-285, 290->300, 296-299, 315->317, 351->359, 356, 389-390, 410, 433-435, 455-456, 494->496
+kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py       232     63    102     25    69%   63, 65->59, 67->69, 80, 117, 126, 133, 142, 146, 152-172, 180, 185, 187, 197-210, 218, 226, 229-232, 249, 253-254, 264, 270, 274-275, 304, 322, 325, 331, 337, 356
+kimi-cli\src\kimi_cli\tools\file\edit\params.py              84      4     34      7    91%   113, 146, 155, 165, 178->183, 180->178, 183->185
+-----------------------------------------------------------------------------------------------------
+TOTAL                                                       777    136    300     57    79%
+104 passed in 1.33s
+[exit=0]
+
+=== G3b: verbatim G3 command + --cov-fail-under=85  <-- the G3 gate exit code ===
+........................................................................ [ 69%]
+................................
+ERROR: Coverage failure: total of 66 is less than fail-under=85
+                                                                         [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                                      Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\file\edit\__init__.py            51      8      4      2    82%   31, 35, 39, 43, 48, 52, 73, 88
+kimi-cli\src\kimi_cli\tools\file\edit\base.py               112     32     32      4    68%   76-77, 101, 104-106, 116, 118, 127-129, 142-156, 187-195, 199-203, 208-215
+kimi-cli\src\kimi_cli\tools\file\edit\modes\__init__.py       5      0      0      0   100%
+kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py      293     29    128     19    88%   91, 101, 104-105, 160, 164, 246-247, 261, 265, 271-272, 274, 282-285, 290->300, 296-299, 315->317, 351->359, 356, 389-390, 410, 433-435, 455-456, 494->496
+kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py       232     63    102     25    69%   63, 65->59, 67->69, 80, 117, 126, 133, 142, 146, 152-172, 180, 185, 187, 197-210, 218, 226, 229-232, 249, 253-254, 264, 270, 274-275, 304, 322, 325, 331, 337, 356
+kimi-cli\src\kimi_cli\tools\file\edit\params.py              84      4     34      7    91%   113, 146, 155, 165, 178->183, 180->178, 183->185
+src\kimix\tools\file\run.py                                 390    166    178     76    40%   55-58, 66->67, 66->68, 68->69, 71, 74, 77-112, 115, 158, 161, 163->164, 165, 169, 172, 174, 176, 178, 187, 191->197, 192-195, 199, 206->216, 207, 210->206, 210->211, 212, 217->218, 219-232, 235->236, 235->237, 246, 249->252, 250, 253->257, 254, 257->267, 258, 264, 267->270, 268, 271->274, 272, 275, 282-283, 293, 296-298, 301->316, 302-304, 307->301, 307->308, 310-312, 316->317, 319-326, 328->329, 328->343, 331->343, 332->331, 332->333, 343->344, 343->347, 345, 349->350, 353-363, 373->378, 373->382, 380, 391->392, 391->401, 394->395, 394->401, 403-413, 416-421, 425, 428, 431->432, 442-455, 464-477, 484-487, 491->495, 492, 503-511, 515-520, 527, 529->568, 530->542, 531-536, 557, 560, 569->570, 569->571, 587->588, 587->589, 606-608, 615->616, 615->634, 618-619, 632, 636-637, 650, 653->654, 653->655, 664-666, 671->688, 673, 689-693, 696->697, 698-699, 717, 723->728, 724, 730-731, 739->740, 739->741, 742-747, 753, 776-779, 781, 797, 799
+-----------------------------------------------------------------------------------------------------
+TOTAL                                                      1167    302    478    133    66%
+FAIL Required test coverage of 85% not reached. Total coverage: 65.78%
+104 passed in 1.65s
+[exit=1]
+
+=== G3c: verbatim G3 command + kimi-cli/tests/tools/test_edit_gate.py + --cov-fail-under=85  (G4 probe file lifted the number) ===
+........................................................................ [ 57%]
+.....................................................                    [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                                      Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\file\edit\__init__.py            51      6      4      0    89%   31, 35, 39, 43, 73, 88
+kimi-cli\src\kimi_cli\tools\file\edit\base.py               112     32     32      4    68%   76-77, 101, 104-106, 116, 118, 127-129, 142-156, 187-195, 199-203, 208-215
+kimi-cli\src\kimi_cli\tools\file\edit\modes\__init__.py       5      0      0      0   100%
+kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py      293     28    128     18    88%   91, 101, 104-105, 164, 246-247, 261, 265, 271-272, 274, 282-285, 290->300, 296-299, 315->317, 351->359, 356, 389-390, 410, 433-435, 455-456, 494->496
+kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py       232      5    102      7    96%   142, 153, 157, 164->161, 205->207, 218, 356
+kimi-cli\src\kimi_cli\tools\file\edit\params.py              84      3     34      4    94%   113, 146, 155, 178->183
+-----------------------------------------------------------------------------------------------------
+TOTAL                                                       777     74    300     33    89%
+Required test coverage of 85% reached. Total coverage: 88.77%
+125 passed in 2.74s
+[exit=0]
+
+=== G3d: verbatim G3 command with -rs (skip/xfail audit) ===
+........................................................................ [ 69%]
+................................                                         [100%]
+104 passed in 1.02s
+[exit=0]
+
+=== G4: uv run pytest kimi-cli/tests/tools/test_edit_gate.py -q ===
+.....................                                                    [100%]
+21 passed in 0.63s
+[exit=0]
+
+=== G5a: uv run pytest tests -q (ROOT suite) ===
+C:\Users\maxwellgeng\AppData\Local\Programs\Python\Python314\Lib\pathlib\__init__.py:787: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\maxwellgeng\AppData\Local\Programs\Python\Python314\Lib\pathlib\__init__.py:771: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'C:\\dev\\kimi-agent\\tests\\bash\\cases.json'
+
+The above exception was the direct cause of the following exception:
+tests\test_bash_e2e.py:300: in pytest_generate_tests
+    cases = load_cases(path)
+            ^^^^^^^^^^^^^^^^
+tests\test_bash_e2e.py:145: in load_cases
+    raise ValueError(f"cannot read corpus file {path}: {exc}") from exc
+E   ValueError: cannot read corpus file C:\dev\kimi-agent\tests\bash\cases.json: [Errno 2] No such file or directory: 'C:\\dev\\kimi-agent\\tests\\bash\\cases.json'
+============================== warnings summary ===============================
+tests\test_check_fmt.py:6
+  C:\dev\kimi-agent\tests\test_check_fmt.py:6: DeprecationWarning: kimix.tools.check_fmt is deprecated; import from kimi_cli.tools.file.check_fmt instead. This shim will be removed in the next minor release.
+    from kimix.tools.check_fmt import check_json, check_json_str
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR tests/test_bash_e2e.py - ValueError: cannot read corpus file C:\dev\kim...
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 skipped, 1 warning, 1 error in 2.08s
+[exit=2]
+(note: root-suite output trimmed to the final 25 lines; the collection error is reproduced in full by re-running the command.)
+
+=== G5b: uv run pytest kimi-cli/tests -q (CLI suite) ===
+--- complete FAILED list ---
+FAILED kimi-cli\tests\core\test_session_logging.py::TestFileToolLogging::test_read_file_exception_logged
+FAILED kimi-cli\tests\core\test_toolset_todo_redirects.py::TestRegistration::test_base_agents_list_the_single_todo_tool[manifest0]
+FAILED kimi-cli\tests\core\test_toolset_todo_redirects.py::TestRegistration::test_base_agents_list_the_single_todo_tool[manifest1]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-HIT]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-HIT]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-HIT]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[0-0-250]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[1-1-0]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[2-0-2]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[0-3-1]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_roots_mix
+FAILED kimi-cli\tests\tools\test_read_file.py::test_read_with_relative_path_outside_work_dir
+FAILED kimi-cli\tests\tools\test_read_file.py::TestReadFileGlob::test_read_glob_outside_workspace_relative
+--- final summary lines ---
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[2-0-2]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[0-3-1]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_roots_mix
+FAILED kimi-cli\tests\tools\test_read_file.py::test_read_with_relative_path_outside_work_dir
+FAILED kimi-cli\tests\tools\test_read_file.py::TestReadFileGlob::test_read_glob_outside_workspace_relative
+43 failed, 5179 passed, 100 skipped, 1 xfailed, 1 xpassed, 55 warnings in 170.42s (0:02:50)
+[exit=1]
+(note: per-failure tracebacks of the 43 pre-existing failures are trimmed here; only the summary and the complete FAILED list are kept. Baseline: reviews/tools/00-baseline.txt = 43 failed, 5155 passed.)
+
+=== G5c: uv run tools/syntax_check.py <this unit's changed .py> ===
+[syntax_check] Syntax OK: C:\dev\kimi-agent\kimi-cli\tests\tools\test_edit_gate.py
+[exit=0]
+
+=== G3c-final: verbatim G3 command + kimi-cli/tests/tools/test_edit_gate.py (26 probes) + --cov-fail-under=85 ===
+........................................................................ [ 55%]
+..........................................................               [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                                      Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\file\edit\__init__.py            51      6      4      0    89%   31, 35, 39, 43, 73, 88
+kimi-cli\src\kimi_cli\tools\file\edit\base.py               112     27     32      1    75%   76->84, 101, 104-106, 128-129, 142-156, 187-195, 199-203, 208-215
+kimi-cli\src\kimi_cli\tools\file\edit\modes\__init__.py       5      0      0      0   100%
+kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py      293     25    128     16    89%   91, 101, 104-105, 164, 246-247, 261, 265, 271-272, 274, 282-285, 290->300, 296-299, 351->359, 356, 389-390, 410, 455-456, 494->496
+kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py       232      5    102      7    96%   142, 153, 157, 164->161, 205->207, 218, 356
+kimi-cli\src\kimi_cli\tools\file\edit\params.py              84      3     34      4    94%   113, 146, 155, 178->183
+-----------------------------------------------------------------------------------------------------
+TOTAL                                                       777     66    300     28    90%
+Required test coverage of 85% reached. Total coverage: 90.16%
+130 passed in 2.25s
+[exit=0]
+
+=== G4-final: uv run pytest kimi-cli/tests/tools/test_edit_gate.py -q (26 probes) ===
+..........................                                               [100%]
+26 passed in 0.76s
+[exit=0]
+
+=== G3 NOTE (read with the tables above) ===
+G3a/G3b: 'TOTAL 777 136 300 57 79%' / 'Total coverage: 79.29%' is the reproducible result (5 of 7 runs).
+Twice, and only in the --cov-fail-under run, coverage.py additionally measured ONE unrelated module
+(src\kimix\tools\common.py 1106 stmts -> 64.98%; src\kimix\tools\file\run.py 390 stmts -> 65.78%).
+Both variants are a FAIL against the floor of 85; the anomaly does not change the gate outcome and
+is a pytest-cov/source-resolution artifact, not a property of the edit package.
+
+tools/review_gates.py (the orchestrator harness) runs the SAME command WITHOUT --cov-fail-under,
+so its gates/C10.json reports cov_rc=0/cov=pass. That field is NOT a floor check: the plan's G3 line
+carries <FLOOR:85>, and the actual is 79.29% => G3 FAIL.
+
+=== G3c-final2: verbatim G3 command + test_edit_gate.py (28 probes, FINAL) + --cov-fail-under=85 ===
+........................................................................ [ 54%]
+............................................................             [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                                      Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\file\edit\__init__.py            51      6      4      0    89%   31, 35, 39, 43, 73, 88
+kimi-cli\src\kimi_cli\tools\file\edit\base.py               112     27     32      1    75%   76->84, 101, 104-106, 128-129, 142-156, 187-195, 199-203, 208-215
+kimi-cli\src\kimi_cli\tools\file\edit\modes\__init__.py       5      0      0      0   100%
+kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py      293     24    128     14    90%   91, 101, 104-105, 164, 246-247, 261, 265, 271-272, 274, 282-285, 290->300, 296-299, 389-390, 410, 455-456, 494->496
+kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py       232      5    102      7    96%   142, 153, 157, 164->161, 205->207, 218, 356
+kimi-cli\src\kimi_cli\tools\file\edit\params.py              84      3     34      4    94%   113, 146, 155, 178->183
+-----------------------------------------------------------------------------------------------------
+TOTAL                                                       777     65    300     26    90%
+Required test coverage of 85% reached. Total coverage: 90.44%
+132 passed in 2.21s
+[exit=0]
+
+=== G4-final2: uv run pytest kimi-cli/tests/tools/test_edit_gate.py -q (28 probes, FINAL) ===
+............................                                             [100%]
+28 passed in 0.90s
+[exit=0]
+

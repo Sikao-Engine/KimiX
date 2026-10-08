@@ -1,0 +1,198 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.1s, rc=0]
+?? .coverage
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tools/review_gates.py
+[elapsed 0.1s, rc=0]
+
+
+=== uv run ruff check kimi-cli/src/kimi_cli/tools/agent/__init__.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\agent\__init__.py:1:1
+   |
+ 1 | / import asyncio
+ 2 | | from pathlib import Path
+ 3 | | from typing import override
+ 4 | |
+ 5 | | from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+ 6 | | from pydantic import BaseModel, Field
+ 7 | |
+ 8 | | from kimi_cli.soul.agent import Runtime
+ 9 | | from kimi_cli.soul.toolset import get_current_tool_call_or_none
+10 | | from kimi_cli.subagents.models import AgentLaunchSpec, AgentTypeDefinition
+11 | | from kimi_cli.subagents.runner import ForegroundRunRequest, ForegroundSubagentRunner
+12 | | from kimi_cli.tools.utils import load_desc
+13 | | from kimi_cli.utils.logging import logger
+   | |_________________________________________^
+14 |
+15 |   NAME = "subagent"
+   |
+help: Organize imports
+   |
+4  |
+   - from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+5  | from pydantic import BaseModel, Field
+--------------------------------------------------------------------------------
+12 | from kimi_cli.utils.logging import logger
+13 + from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
+14 |
+   |
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+   --> kimi-cli\src\kimi_cli\tools\agent\__init__.py:187:17
+    |
+185 |                   # the instance was created.  params.model is already validated in
+186 |                   # __call__, so only check the stored effective_model fallback here.
+187 | /                 if not params.model:
+188 | |                     if error := self._validate_model_alias(record.launch_spec.effective_model):
+    | |_______________________________________________________________________________________________^
+189 |                           return error
+190 |               else:
+    |
+help: Combine `if` statements using `and`
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+[elapsed 0.4s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+All checks passed!
+[elapsed 0.2s, rc=0]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/agent/__init__.py",
+      "loc": 269,
+      "module_loc": 269,
+      "functions": [
+        {
+          "name": "effective_timeout",
+          "lineno": 48,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__init__",
+          "lineno": 57,
+          "loc": 10,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_builtin_type_lines",
+          "lineno": 69,
+          "loc": 16,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_normalize_summary",
+          "lineno": 87,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_tool_summary",
+          "lineno": 91,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_unique_tool_names",
+          "lineno": 99,
+          "loc": 7,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_validate_model_alias",
+          "lineno": 107,
+          "loc": 11,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 120,
+          "loc": 39,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 2
+        },
+        {
+          "name": "_run_in_background",
+          "lineno": 160,
+          "loc": 107,
+          "complexity": 14,
+          "branches": 13,
+          "max_nesting": 4
+        }
+      ],
+      "longest_fn": {
+        "name": "_run_in_background",
+        "loc": 107
+      },
+      "module_complexity": 14
+    }
+  ],
+  "totals": {
+    "files": 1,
+    "loc": 269,
+    "functions": 9
+  },
+  "breaches": [
+    "kimi-cli/src/kimi_cli/tools/agent/__init__.py::_run_in_background complexity=14 > 12"
+  ]
+}
+[elapsed 0.4s, rc=1]
+
+=== uv run pytest kimi-cli/tests/tools/test_agent_tool.py kimi-cli/tests/tools/test_tool_descriptions.py -q -rs ===
+...................................                                      [100%]
+35 passed in 6.13s
+[elapsed 10.2s, rc=0]
+
+=== uv run --with pytest-cov pytest kimi-cli/tests/tools/test_agent_tool.py kimi-cli/tests/tools/test_tool_descriptions.py --cov=kimi_cli.tools.agent ===
+...................................                                      [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                            Stmts   Miss Branch BrPart  Cover   Missing
+-------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\agent\__init__.py     133     14     38      5    85%   88, 94-96, 100-105, 117, 154-155, 165, 187->197
+src\kimix\tools\agent\__init__.py                 532     51    176     38    87%   55->58, 59, 77->exit, 89->exit, 109, 121, 130, 163->168, 166-167, 188, 203, 221, 253, 256, 265, 288->293, 305, 420-421, 478->480, 483, 484->494, 486->494, 513->507, 603->611, 609-610, 612-613, 650->652, 686, 696-700, 717, 724, 738->740, 741, 743, 756->exit, 758-759, 772->exit, 814->817, 843-844, 881-902, 964->967, 1008, 1034->exit, 1052, 1053->exit
+src\kimix\tools\agent\store.py                     74      2     12      1    97%   107->106, 138-139
+-------------------------------------------------------------------------------------------
+TOTAL                                             739     67    226     44    87%
+35 passed in 5.19s
+[elapsed 10.0s, rc=0]

@@ -1,0 +1,29 @@
+{
+  "id": "K15",
+  "tool": "ParserTool",
+  "files": [
+    "src/kimix/tools/parser/__init__.py"
+  ],
+  "tests": [
+    "tests/test_parsers.py"
+  ],
+  "cov_module": "kimix.tools.parser",
+  "sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "ruff_rc": 1,
+  "ruff": "fail",
+  "c901_rc": 0,
+  "c901": "pass",
+  "metrics_rc": 0,
+  "metrics": "pass",
+  "complexity_max": 12,
+  "longest_fn_loc": 113,
+  "longest_fn": "__call__",
+  "module_loc": 237,
+  "functions_over_120_loc": 0,
+  "functions_over_12_cx": 0,
+  "metrics_breaches": [],
+  "pytest_rc": 0,
+  "pytest": "pass",
+  "cov_rc": 0,
+  "cov": "pass"
+}

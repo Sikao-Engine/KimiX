@@ -1,0 +1,248 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+?? .coverage
+?? kimi-cli/tests/tools/test_edit_gate.py
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C11.json
+?? reviews/tools/gates/C11.txt
+?? reviews/tools/gates/C12.json
+?? reviews/tools/gates/C12.txt
+?? reviews/tools/gates/C13.json
+?? reviews/tools/gates/C13.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/kimix/test_agent_gate.py
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check kimi-cli/src/kimi_cli/tools/context_prune.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\context_prune.py:13:1
+   |
+11 |   """
+12 |
+13 | / from __future__ import annotations
+14 | |
+15 | | from collections.abc import Sequence
+16 | | from typing import TYPE_CHECKING, Literal, override
+17 | |
+18 | | from kosong.message import Message
+19 | | from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+20 | | from pydantic import BaseModel, Field
+21 | |
+22 | | from kimi_cli.soul.context_pruning import (
+23 | |     ContextPruner,
+24 | |     PruningResult,
+25 | |     _compute_protected_indices,
+26 | |     _protect_tool_pair_indices,
+27 | | )
+28 | | from kimi_cli.soul.message import is_system_reminder_message
+29 | | from kimi_cli.soul import get_wire_or_none, wire_send
+30 | | from kimi_cli.utils.logging import logger
+31 | | from kimi_cli.utils.tokens import count_message_tokens
+32 | | from kimi_cli.wire.types import StatusUpdate, TextPart, ThinkPart
+   | |_________________________________________________________________^
+33 |
+34 |   if TYPE_CHECKING:
+   |
+help: Organize imports
+   |
+17 |
+   - from kosong.message import Message
+   - from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+18 | from pydantic import BaseModel, Field
+19 |
+20 + from kimi_cli.soul import get_wire_or_none, wire_send
+21 | from kimi_cli.soul.context_pruning import (
+--------------------------------------------------------------------------------
+27 | from kimi_cli.soul.message import is_system_reminder_message
+   - from kimi_cli.soul import get_wire_or_none, wire_send
+28 | from kimi_cli.utils.logging import logger
+29 | from kimi_cli.utils.tokens import count_message_tokens
+30 | from kimi_cli.wire.types import StatusUpdate, TextPart, ThinkPart
+31 + from kosong.message import Message
+32 + from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+33 |
+   |
+
+UP037 [*] Remove quotes from type annotation
+  --> kimi-cli\src\kimi_cli\tools\context_prune.py:92:30
+   |
+90 |     params: type[Params] = Params
+91 |
+92 |     def __init__(self, soul: "KimiSoul") -> None:
+   |                              ^^^^^^^^^^
+93 |         super().__init__()
+94 |         self._soul = soul
+   |
+help: Remove quotes
+   |
+91 |
+   -     def __init__(self, soul: "KimiSoul") -> None:
+92 +     def __init__(self, soul: KimiSoul) -> None:
+93 |         super().__init__()
+   |
+
+E501 Line too long (101 > 100)
+   --> kimi-cli\src\kimi_cli\tools\context_prune.py:348:101
+    |
+346 |                 message=(
+347 |                     f"keep_recent_turns={params.keep_recent_turns} is too large: "
+348 |                     f"history has {n} messages and {stable_prefix} are protected as a stable prefix."
+    |                                                                                                     ^
+349 |                 ),
+350 |                 brief="Invalid keep_recent_turns",
+    |
+
+Found 3 errors.
+[*] 2 fixable with the `--fix` option.
+[elapsed 0.1s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+All checks passed!
+[elapsed 0.1s, rc=0]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/context_prune.py",
+      "loc": 449,
+      "module_loc": 449,
+      "functions": [
+        {
+          "name": "_current_turn_start_index",
+          "lineno": 38,
+          "loc": 11,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "__init__",
+          "lineno": 92,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__call__",
+          "lineno": 97,
+          "loc": 131,
+          "complexity": 16,
+          "branches": 15,
+          "max_nesting": 3
+        },
+        {
+          "name": "_run_compact",
+          "lineno": 233,
+          "loc": 19,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_run_strip_reasoning",
+          "lineno": 253,
+          "loc": 69,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 4
+        },
+        {
+          "name": "_validate_params",
+          "lineno": 327,
+          "loc": 59,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "_is_thinking_active",
+          "lineno": 391,
+          "loc": 4,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_build_summary",
+          "lineno": 396,
+          "loc": 54,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "__call__",
+        "loc": 131
+      },
+      "module_complexity": 16
+    }
+  ],
+  "totals": {
+    "files": 1,
+    "loc": 449,
+    "functions": 8
+  },
+  "breaches": [
+    "kimi-cli/src/kimi_cli/tools/context_prune.py::__call__ loc=131 > 120",
+    "kimi-cli/src/kimi_cli/tools/context_prune.py::__call__ complexity=16 > 12"
+  ]
+}
+[elapsed 0.2s, rc=1]
+
+=== uv run pytest kimi-cli/tests/tools/test_context_prune.py kimi-cli/tests/core/test_kimisoul_context_prune.py kimi-cli/tests/core/test_current_turn_start_index.py -q -rs ===
+.....................                                                    [100%]
+21 passed in 1.49s
+[elapsed 3.6s, rc=0]
+
+=== uv run --with pytest-cov pytest kimi-cli/tests/tools/test_context_prune.py kimi-cli/tests/core/test_kimisoul_context_prune.py kimi-cli/tests/core/test_current_turn_start_index.py --cov=kimi_cli.tools.context_prune ===
+.....................                                                    [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                           Stmts   Miss Branch BrPart  Cover   Missing
+------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\context_prune.py     149      8     62      8    91%   198->205, 207, 299, 312, 345, 365, 431->433, 445-447
+------------------------------------------------------------------------------------------
+TOTAL                                            149      8     62      8    91%
+21 passed in 2.18s
+[elapsed 5.1s, rc=0]

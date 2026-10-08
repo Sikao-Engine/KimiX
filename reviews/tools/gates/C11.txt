@@ -1,0 +1,1046 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+?? .coverage
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check kimi-cli/src/kimi_cli/tools/web/search.py kimi-cli/src/kimi_cli/tools/web/providers.py kimi-cli/src/kimi_cli/tools/web/content.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\web\search.py:1:1
+   |
+ 1 | / import inspect
+ 2 | | from typing import Any, override
+ 3 | |
+ 4 | | from kosong.tooling import CallableTool2, ToolReturnValue
+ 5 | | from pydantic import BaseModel, Field
+ 6 | |
+ 7 | | from kimi_cli.config import Config
+ 8 | | from kimi_cli.soul.agent import Runtime
+ 9 | | from kimi_cli.tools import SkipThisTool
+10 | | from kimi_cli.tools.utils import ToolResultBuilder
+11 | | from kimi_cli.utils.logging import logger as _logging_logger
+   | |____________________________________________________________^
+12 |
+13 |   # Module-level ``logger`` attribute kept so tests can patch
+   |
+help: Organize imports
+   |
+3  |
+   - from kosong.tooling import CallableTool2, ToolReturnValue
+4  | from pydantic import BaseModel, Field
+--------------------------------------------------------------------------------
+10 | from kimi_cli.utils.logging import logger as _logging_logger
+11 + from kosong.tooling import CallableTool2, ToolReturnValue
+12 |
+   |
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.
+[elapsed 0.4s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+All checks passed!
+[elapsed 0.1s, rc=0]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/web/search.py",
+      "loc": 125,
+      "module_loc": 125,
+      "functions": [
+        {
+          "name": "__getattr__",
+          "lineno": 18,
+          "loc": 7,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "__init__",
+          "lineno": 64,
+          "loc": 15,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 81,
+          "loc": 45,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "__call__",
+        "loc": 45
+      },
+      "module_complexity": 11
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/web/providers.py",
+      "loc": 2077,
+      "module_loc": 2077,
+      "functions": [
+        {
+          "name": "__getattr__",
+          "lineno": 66,
+          "loc": 7,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_resolve_new_client_session",
+          "lineno": 75,
+          "loc": 20,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_resolve_logger",
+          "lineno": 97,
+          "loc": 19,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_env",
+          "lineno": 118,
+          "loc": 7,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_http_json",
+          "lineno": 127,
+          "loc": 31,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 3
+        },
+        {
+          "name": "register_provider",
+          "lineno": 229,
+          "loc": 30,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "get_provider",
+          "lineno": 261,
+          "loc": 6,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "list_providers",
+          "lineno": 269,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 1
+        },
+        {
+          "name": "_reset_for_tests",
+          "lineno": 276,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 1
+        },
+        {
+          "name": "_resolve",
+          "lineno": 301,
+          "loc": 65,
+          "complexity": 13,
+          "branches": 12,
+          "max_nesting": 2
+        },
+        {
+          "name": "_explicit_config_name",
+          "lineno": 368,
+          "loc": 17,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "get_active_search_provider",
+          "lineno": 387,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "get_active_extract_provider",
+          "lineno": 393,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_firecrawl_config",
+          "lineno": 1317,
+          "loc": 12,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_extract_web_search_results",
+          "lineno": 1331,
+          "loc": 17,
+          "complexity": 13,
+          "branches": 12,
+          "max_nesting": 3
+        },
+        {
+          "name": "_extract_scrape_payload",
+          "lineno": 1350,
+          "loc": 8,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_resolve_parallel_search_mode",
+          "lineno": 1574,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "name",
+          "lineno": 175,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 179,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 184,
+          "loc": 7,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 192,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 196,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "search",
+          "lineno": 200,
+          "loc": 9,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "extract",
+          "lineno": 210,
+          "loc": 9,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_capable",
+          "lineno": 318,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_is_available_safe",
+          "lineno": 325,
+          "loc": 7,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "__init__",
+          "lineno": 407,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "name",
+          "lineno": 413,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 417,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 420,
+          "loc": 5,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 426,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 429,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_derived_service_url",
+          "lineno": 432,
+          "loc": 15,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "search",
+          "lineno": 448,
+          "loc": 165,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 2
+        },
+        {
+          "name": "name",
+          "lineno": 619,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 623,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 626,
+          "loc": 8,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "supports_search",
+          "lineno": 635,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 638,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "search",
+          "lineno": 641,
+          "loc": 45,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "name",
+          "lineno": 697,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 701,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 704,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 707,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 710,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "extract",
+          "lineno": 713,
+          "loc": 69,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 5
+        },
+        {
+          "name": "name",
+          "lineno": 802,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 806,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 809,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 813,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 816,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_tavily_request",
+          "lineno": 819,
+          "loc": 20,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "search",
+          "lineno": 840,
+          "loc": 48,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 1
+        },
+        {
+          "name": "extract",
+          "lineno": 889,
+          "loc": 94,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 1
+        },
+        {
+          "name": "name",
+          "lineno": 999,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 1003,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 1006,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 1010,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 1013,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_headers",
+          "lineno": 1017,
+          "loc": 12,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "search",
+          "lineno": 1030,
+          "loc": 47,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 1
+        },
+        {
+          "name": "extract",
+          "lineno": 1078,
+          "loc": 67,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 1
+        },
+        {
+          "name": "name",
+          "lineno": 1159,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 1164,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 1167,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 1171,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 1174,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "search",
+          "lineno": 1177,
+          "loc": 53,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 1
+        },
+        {
+          "name": "name",
+          "lineno": 1242,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 1246,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 1249,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 1253,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 1256,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "search",
+          "lineno": 1259,
+          "loc": 53,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "name",
+          "lineno": 1373,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 1377,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 1380,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 1384,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 1387,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_headers",
+          "lineno": 1391,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "search",
+          "lineno": 1397,
+          "loc": 47,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "extract",
+          "lineno": 1445,
+          "loc": 124,
+          "complexity": 14,
+          "branches": 13,
+          "max_nesting": 3
+        },
+        {
+          "name": "name",
+          "lineno": 1594,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 1598,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 1601,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 1605,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 1608,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_headers",
+          "lineno": 1612,
+          "loc": 12,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "search",
+          "lineno": 1625,
+          "loc": 49,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 1
+        },
+        {
+          "name": "extract",
+          "lineno": 1675,
+          "loc": 88,
+          "complexity": 19,
+          "branches": 18,
+          "max_nesting": 2
+        },
+        {
+          "name": "name",
+          "lineno": 1792,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "display_name",
+          "lineno": 1796,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "is_available",
+          "lineno": 1799,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_search",
+          "lineno": 1803,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "supports_extract",
+          "lineno": 1806,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "search",
+          "lineno": 1809,
+          "loc": 73,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 1
+        },
+        {
+          "name": "_build_prompt",
+          "lineno": 1886,
+          "loc": 13,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_extract_results",
+          "lineno": 1901,
+          "loc": 41,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 2
+        },
+        {
+          "name": "_collect_output_text",
+          "lineno": 1944,
+          "loc": 28,
+          "complexity": 14,
+          "branches": 13,
+          "max_nesting": 5
+        },
+        {
+          "name": "_try_parse_json_results",
+          "lineno": 1974,
+          "loc": 46,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 3
+        },
+        {
+          "name": "_results_from_annotations",
+          "lineno": 2022,
+          "loc": 45,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 3
+        },
+        {
+          "name": "_post_search",
+          "lineno": 505,
+          "loc": 56,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 3
+        }
+      ],
+      "longest_fn": {
+        "name": "search",
+        "loc": 165
+      },
+      "module_complexity": 19
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/web/content.py",
+      "loc": 186,
+      "module_loc": 186,
+      "functions": [
+        {
+          "name": "convert_base64_images_to_links",
+          "lineno": 38,
+          "loc": 28,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_cache_web_dir",
+          "lineno": 68,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "store_full_text",
+          "lineno": 75,
+          "loc": 30,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "truncate_with_footer",
+          "lineno": 107,
+          "loc": 57,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "get_extract_char_limit",
+          "lineno": 166,
+          "loc": 21,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_md_repl",
+          "lineno": 53,
+          "loc": 3,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 0
+        }
+      ],
+      "longest_fn": {
+        "name": "truncate_with_footer",
+        "loc": 57
+      },
+      "module_complexity": 6
+    }
+  ],
+  "totals": {
+    "files": 3,
+    "loc": 2388,
+    "functions": 111
+  },
+  "breaches": [
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::_resolve complexity=13 > 12",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::_extract_web_search_results complexity=13 > 12",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::search loc=165 > 120",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::extract loc=124 > 120",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::extract complexity=14 > 12",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::extract complexity=19 > 12",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::_collect_output_text complexity=14 > 12"
+  ]
+}
+[elapsed 0.2s, rc=1]
+
+=== uv run pytest kimi-cli/tests/tools/test_web_search_dispatch.py kimi-cli/tests/tools/test_web_providers.py kimi-cli/tests/tools/test_web_providers_extra.py -q -rs ===
+........................................................................ [ 69%]
+...............................                                          [100%]
+103 passed in 0.69s
+[elapsed 2.5s, rc=0]
+
+=== uv run --with pytest-cov pytest kimi-cli/tests/tools/test_web_search_dispatch.py kimi-cli/tests/tools/test_web_providers.py kimi-cli/tests/tools/test_web_providers_extra.py --cov=kimi_cli.tools.web.search ===
+........................................................................ [ 69%]
+...............................                                          [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                        Stmts   Miss Branch BrPart  Cover   Missing
+---------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\web\search.py      63      4     20      4    90%   88, 104, 116, 123
+---------------------------------------------------------------------------------------
+TOTAL                                          63      4     20      4    90%
+103 passed in 0.77s
+[elapsed 4.8s, rc=0]

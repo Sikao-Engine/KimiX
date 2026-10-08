@@ -1,0 +1,573 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.3s, rc=0]
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tools/review_gates.py
+[elapsed 0.1s, rc=0]
+
+
+=== uv run ruff check kimi-cli/src/kimi_cli/tools/__init__.py kimi-cli/src/kimi_cli/tools/utils.py kimi-cli/src/kimi_cli/tools/display.py kimi-cli/src/kimi_cli/tools/reason.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\__init__.py:1:1
+   |
+ 1 | / import json
+ 2 | |
+ 3 | | import orjson
+ 4 | | from typing import Any, cast
+ 5 | |
+ 6 | | import streamingjson  # type: ignore[reportMissingTypeStubs]
+ 7 | | from kaos.path import KaosPath
+ 8 | | from kosong.utils.typing import JsonType
+ 9 | |
+10 | | from kimi_cli.utils.string import shorten_middle
+   | |________________________________________________^
+11 |
+12 |   # Retired tool names of the two todo tools that were merged into `todo_list`,
+   |
+help: Organize imports
+   |
+1  | import json
+2  + from typing import Any, cast
+3  |
+4  | import orjson
+   - from typing import Any, cast
+   -
+5  | import streamingjson  # type: ignore[reportMissingTypeStubs]
+   - from kaos.path import KaosPath
+   - from kosong.utils.typing import JsonType
+6  |
+7  + from kaos.path import KaosPath
+8  | from kimi_cli.utils.string import shorten_middle
+9  + from kosong.utils.typing import JsonType
+10 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+ --> kimi-cli\src\kimi_cli\tools\display.py:1:1
+  |
+1 | / from kosong.tooling import DisplayBlock
+2 | | from pydantic import BaseModel
+3 | |
+4 | | from kimi_cli.session_state import TodoStatus
+  | |_____________________________________________^
+help: Organize imports
+  |
+  - from kosong.tooling import DisplayBlock
+1 | from pydantic import BaseModel
+2 |
+3 | from kimi_cli.session_state import TodoStatus
+4 + from kosong.tooling import DisplayBlock
+5 |
+  |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\reason.py:7:1
+   |
+ 5 |   """
+ 6 |
+ 7 | / from __future__ import annotations
+ 8 | |
+ 9 | | from pathlib import Path
+10 | | from typing import Any
+11 | |
+12 | | from kosong.tooling import CallableTool2
+13 | | from pydantic import BaseModel
+   | |______________________________^
+help: Organize imports
+   |
+11 |
+   - from kosong.tooling import CallableTool2
+12 | from pydantic import BaseModel
+13 |
+14 + from kosong.tooling import CallableTool2
+15 +
+16 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\utils.py:1:1
+   |
+ 1 | / import regex as re
+ 2 | | from pathlib import Path
+ 3 | | from typing import Any, Union, get_args, get_origin
+ 4 | |
+ 5 | | import json_repair
+ 6 | | import orjson
+ 7 | | from jinja2 import Environment, Undefined
+ 8 | | from kosong.tooling import BriefDisplayBlock, DisplayBlock, ToolError, ToolReturnValue
+ 9 | | from kosong.utils.typing import JsonType
+10 | | from pydantic import BaseModel
+   | |______________________________^
+help: Organize imports
+   |
+   - import regex as re
+1  | from pathlib import Path
+--------------------------------------------------------------------------------
+5  | import orjson
+6  + import regex as re
+7  | from jinja2 import Environment, Undefined
+8  + from pydantic import BaseModel
+9  +
+10 | from kosong.tooling import BriefDisplayBlock, DisplayBlock, ToolError, ToolReturnValue
+11 | from kosong.utils.typing import JsonType
+   - from pydantic import BaseModel
+12 |
+   |
+
+E501 Line too long (105 > 100)
+  --> kimi-cli\src\kimi_cli\tools\utils.py:47:101
+   |
+45 |     origin = get_origin(annotation)
+46 |     if origin is Union:
+47 |         return all(arg is type(None) or _is_plain_string_annotation(arg) for arg in get_args(annotation))
+   |                                                                                                     ^^^^^
+48 |     return False
+   |
+
+Found 5 errors.
+[*] 4 fixable with the `--fix` option.
+[elapsed 0.2s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+C901 `extract_key_argument` is too complex (25 > 12)
+  --> kimi-cli\src\kimi_cli\tools\__init__.py:86:5
+   |
+86 | def extract_key_argument(
+   |     ^^^^^^^^^^^^^^^^^^^^
+87 |     json_content: str | streamingjson.Lexer,
+88 |     tool_name: str,
+   |
+
+Found 1 error.
+[elapsed 0.2s, rc=1]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/__init__.py",
+      "loc": 166,
+      "module_loc": 166,
+      "functions": [
+        {
+          "name": "resolve_tool_class",
+          "lineno": 31,
+          "loc": 33,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 2
+        },
+        {
+          "name": "_first_web_extract_url",
+          "lineno": 66,
+          "loc": 18,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 3
+        },
+        {
+          "name": "extract_key_argument",
+          "lineno": 86,
+          "loc": 74,
+          "complexity": 34,
+          "branches": 33,
+          "max_nesting": 3
+        },
+        {
+          "name": "_normalize_path",
+          "lineno": 162,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "extract_key_argument",
+        "loc": 74
+      },
+      "module_complexity": 34
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/utils.py",
+      "loc": 298,
+      "module_loc": 298,
+      "functions": [
+        {
+          "name": "_looks_like_json",
+          "lineno": 13,
+          "loc": 4,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "repair_json_string",
+          "lineno": 19,
+          "loc": 20,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_is_plain_string_annotation",
+          "lineno": 41,
+          "loc": 8,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "repair_tool_arguments",
+          "lineno": 51,
+          "loc": 36,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 2
+        },
+        {
+          "name": "load_desc",
+          "lineno": 98,
+          "loc": 13,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "truncate_line",
+          "lineno": 113,
+          "loc": 14,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "__str__",
+          "lineno": 90,
+          "loc": 4,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "__init__",
+          "lineno": 139,
+          "loc": 16,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "is_full",
+          "lineno": 157,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "n_chars",
+          "lineno": 162,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "n_lines",
+          "lineno": 167,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "write",
+          "lineno": 171,
+          "loc": 38,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "tail",
+          "lineno": 210,
+          "loc": 19,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 3
+        },
+        {
+          "name": "display",
+          "lineno": 230,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "extras",
+          "lineno": 234,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "ok",
+          "lineno": 240,
+          "loc": 20,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "error",
+          "lineno": 261,
+          "loc": 19,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "__init__",
+          "lineno": 285,
+          "loc": 14,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        }
+      ],
+      "longest_fn": {
+        "name": "write",
+        "loc": 38
+      },
+      "module_complexity": 10
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/display.py",
+      "loc": 49,
+      "module_loc": 49,
+      "functions": [],
+      "longest_fn": null,
+      "module_complexity": 0
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/reason.py",
+      "loc": 103,
+      "module_loc": 103,
+      "functions": [
+        {
+          "name": "__init__",
+          "lineno": 23,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "add_tool_call_reason",
+          "lineno": 26,
+          "loc": 18,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "formatted_print",
+          "lineno": 45,
+          "loc": 20,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "changed_files",
+          "lineno": 67,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "to_markdown",
+          "lineno": 71,
+          "loc": 23,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "clear",
+          "lineno": 95,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__len__",
+          "lineno": 99,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__bool__",
+          "lineno": 102,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        }
+      ],
+      "longest_fn": {
+        "name": "to_markdown",
+        "loc": 23
+      },
+      "module_complexity": 6
+    }
+  ],
+  "totals": {
+    "files": 4,
+    "loc": 616,
+    "functions": 30
+  },
+  "breaches": [
+    "kimi-cli/src/kimi_cli/tools/__init__.py::extract_key_argument complexity=34 > 12"
+  ]
+}
+[elapsed 0.4s, rc=1]
+
+=== uv run pytest kimi-cli/tests/tools/test_extract_key_argument.py kimi-cli/tests/tools/test_utils.py kimi-cli/tests/tools/test_reason.py kimi-cli/tests/core\test_toolset.py kimi-cli/tests/core\test_toolset_todo_redirects.py -q -rs ===
+........................................................................ [ 31%]
+........................................................................ [ 63%]
+........................................................................ [ 95%]
+.......FF.                                                               [100%]
+================================== FAILURES ===================================
+___ TestRegistration.test_base_agents_list_the_single_todo_tool[manifest0] ____
+
+self = <tests.core.test_toolset_todo_redirects.TestRegistration object at 0x0000025EE0C67610>
+manifest = WindowsPath('src/kimi_cli/agents/default/agent.yaml')
+
+    @pytest.mark.parametrize(
+        "manifest",
+        [
+            Path("src/kimi_cli/agents/default/agent.yaml"),
+            Path("src/kimi_cli/agents/okabe/agent.yaml"),
+        ],
+    )
+    def test_base_agents_list_the_single_todo_tool(self, manifest: Path) -> None:
+>       assert manifest.exists(), manifest
+E       AssertionError: WindowsPath('src/kimi_cli/agents/default/agent.yaml')
+E       assert False
+E        +  where False = exists()
+E        +    where exists = WindowsPath('src/kimi_cli/agents/default/agent.yaml').exists
+
+kimi-cli\tests\core\test_toolset_todo_redirects.py:157: AssertionError
+___ TestRegistration.test_base_agents_list_the_single_todo_tool[manifest1] ____
+
+self = <tests.core.test_toolset_todo_redirects.TestRegistration object at 0x0000025EE0C67750>
+manifest = WindowsPath('src/kimi_cli/agents/okabe/agent.yaml')
+
+    @pytest.mark.parametrize(
+        "manifest",
+        [
+            Path("src/kimi_cli/agents/default/agent.yaml"),
+            Path("src/kimi_cli/agents/okabe/agent.yaml"),
+        ],
+    )
+    def test_base_agents_list_the_single_todo_tool(self, manifest: Path) -> None:
+>       assert manifest.exists(), manifest
+E       AssertionError: WindowsPath('src/kimi_cli/agents/okabe/agent.yaml')
+E       assert False
+E        +  where False = exists()
+E        +    where exists = WindowsPath('src/kimi_cli/agents/okabe/agent.yaml').exists
+
+kimi-cli\tests\core\test_toolset_todo_redirects.py:157: AssertionError
+2 failed, 224 passed in 3.15s
+[elapsed 7.4s, rc=1]
+
+=== uv run --with pytest-cov pytest kimi-cli/tests/tools/test_extract_key_argument.py kimi-cli/tests/tools/test_utils.py kimi-cli/tests/tools/test_reason.py kimi-cli/tests/core\test_toolset.py kimi-cli/tests/core\test_toolset_todo_redirects.py --cov=kimi_cli.tools ===
+........................................................................ [ 31%]
+........................................................................ [ 63%]
+........................................................................ [ 95%]
+.......FF.
+WARNING: Failed to generate report: Couldn't use data file 'C:\\dev\\kimi-agent\\.coverage': no such table: tracer
+
+                                                                         [100%]
+================================== FAILURES ===================================
+___ TestRegistration.test_base_agents_list_the_single_todo_tool[manifest0] ____
+
+self = <tests.core.test_toolset_todo_redirects.TestRegistration object at 0x000002B90B65FB10>
+manifest = WindowsPath('src/kimi_cli/agents/default/agent.yaml')
+
+    @pytest.mark.parametrize(
+        "manifest",
+        [
+            Path("src/kimi_cli/agents/default/agent.yaml"),
+            Path("src/kimi_cli/agents/okabe/agent.yaml"),
+        ],
+    )
+    def test_base_agents_list_the_single_todo_tool(self, manifest: Path) -> None:
+>       assert manifest.exists(), manifest
+E       AssertionError: WindowsPath('src/kimi_cli/agents/default/agent.yaml')
+E       assert False
+E        +  where False = exists()
+E        +    where exists = WindowsPath('src/kimi_cli/agents/default/agent.yaml').exists
+
+kimi-cli\tests\core\test_toolset_todo_redirects.py:157: AssertionError
+___ TestRegistration.test_base_agents_list_the_single_todo_tool[manifest1] ____
+
+self = <tests.core.test_toolset_todo_redirects.TestRegistration object at 0x000002B90B65FC50>
+manifest = WindowsPath('src/kimi_cli/agents/okabe/agent.yaml')
+
+    @pytest.mark.parametrize(
+        "manifest",
+        [
+            Path("src/kimi_cli/agents/default/agent.yaml"),
+            Path("src/kimi_cli/agents/okabe/agent.yaml"),
+        ],
+    )
+    def test_base_agents_list_the_single_todo_tool(self, manifest: Path) -> None:
+>       assert manifest.exists(), manifest
+E       AssertionError: WindowsPath('src/kimi_cli/agents/okabe/agent.yaml')
+E       assert False
+E        +  where False = exists()
+E        +    where exists = WindowsPath('src/kimi_cli/agents/okabe/agent.yaml').exists
+
+kimi-cli\tests\core\test_toolset_todo_redirects.py:157: AssertionError
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+=========================== short test summary info ===========================
+FAILED kimi-cli\tests\core\test_toolset_todo_redirects.py::TestRegistration::test_base_agents_list_the_single_todo_tool[manifest0]
+FAILED kimi-cli\tests\core\test_toolset_todo_redirects.py::TestRegistration::test_base_agents_list_the_single_todo_tool[manifest1]
+2 failed, 224 passed in 4.06s
+C:\Users\maxwellgeng\AppData\Local\uv\cache\archive-v0\IS955OHfs_IdmwxGr0kG-\Lib\site-packages\coverage\report_core.py:120: CoverageWarning: Couldn't parse 'C:\dev\kimi-agent\kimi-cli\src\kimi_cli\tools\web\providers.py': Couldn't use data file 'C:\\dev\\kimi-agent\\.coverage': no such table: arc (couldnt-parse); see https://coverage.readthedocs.io/en/7.16.2/messages.html#warning-couldnt-parse
+  coverage._warn(msg, slug="couldnt-parse")
+C:\Users\maxwellgeng\AppData\Local\uv\cache\archive-v0\IS955OHfs_IdmwxGr0kG-\Lib\site-packages\coverage\report_core.py:120: CoverageWarning: Couldn't parse 'C:\dev\kimi-agent\kimi-cli\src\kimi_cli\tools\web\search.py': Couldn't use data file 'C:\\dev\\kimi-agent\\.coverage': no such table: arc (couldnt-parse); see https://coverage.readthedocs.io/en/7.16.2/messages.html#warning-couldnt-parse
+  coverage._warn(msg, slug="couldnt-parse")
+C:\Users\maxwellgeng\AppData\Local\uv\cache\archive-v0\IS955OHfs_IdmwxGr0kG-\Lib\site-packages\coverage\report_core.py:120: CoverageWarning: Couldn't parse 'C:\dev\kimi-agent\kimi-cli\src\kimi_cli\tools\web\url_safety.py': Couldn't use data file 'C:\\dev\\kimi-agent\\.coverage': no such table: arc (couldnt-parse); see https://coverage.readthedocs.io/en/7.16.2/messages.html#warning-couldnt-parse
+  coverage._warn(msg, slug="couldnt-parse")
+C:\Users\maxwellgeng\AppData\Local\uv\cache\archive-v0\IS955OHfs_IdmwxGr0kG-\Lib\site-packages\pytest_cov\plugin.py:366: CovReportWarning: Failed to generate report: Couldn't use data file 'C:\\dev\\kimi-agent\\.coverage': no such table: tracer
+
+  warnings.warn(CovReportWarning(message), stacklevel=1)
+[elapsed 11.2s, rc=1]

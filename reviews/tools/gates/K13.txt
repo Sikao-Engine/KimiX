@@ -1,0 +1,463 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+ M kimi-cli/src/kimi_cli/tools/file/conflict_detect.py
+ M kimi-cli/src/kimi_cli/tools/file/read_media.py
+ M src/kimix/tools/common.py
+ M src/kimix/tools/file/bash/bash_tool.py
+ M src/kimix/tools/file/bash/pwsh_tool.py
+ M src/kimix/tools/file/run.py
+ M src/kimix/tools/py/__init__.py
+?? .coverage
+?? kimi-cli/tests/tools/test_edit_gate.py
+?? kimi-cli/tests/tools/test_read_media_gate.py
+?? kimi-cli/tests/tools/test_tools_integrity_gate.py
+?? reviews/tools/90-findings.md
+?? reviews/tools/93-orphans-and-removal.md
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/X03-security.md
+?? reviews/tools/X04-native-parity.md
+?? reviews/tools/X05-dead-code.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C11.json
+?? reviews/tools/gates/C11.txt
+?? reviews/tools/gates/C12.json
+?? reviews/tools/gates/C12.txt
+?? reviews/tools/gates/C13.json
+?? reviews/tools/gates/C13.txt
+?? reviews/tools/gates/C14.json
+?? reviews/tools/gates/C14.txt
+?? reviews/tools/gates/C15.json
+?? reviews/tools/gates/C15.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K00.json
+?? reviews/tools/gates/K00.txt
+?? reviews/tools/gates/K01.json
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K02.json
+?? reviews/tools/gates/K02.txt
+?? reviews/tools/gates/K03.json
+?? reviews/tools/gates/K03.txt
+?? reviews/tools/gates/K04.json
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/K05.json
+?? reviews/tools/gates/K05.txt
+?? reviews/tools/gates/K06.json
+?? reviews/tools/gates/K06.txt
+?? reviews/tools/gates/K07.json
+?? reviews/tools/gates/K07.txt
+?? reviews/tools/gates/K08.json
+?? reviews/tools/gates/K08.txt
+?? reviews/tools/gates/K09.json
+?? reviews/tools/gates/K09.txt
+?? reviews/tools/gates/K10.json
+?? reviews/tools/gates/K10.txt
+?? reviews/tools/gates/K11.json
+?? reviews/tools/gates/K11.txt
+?? reviews/tools/gates/K12.json
+?? reviews/tools/gates/K12.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/kimix/test_agent_gate.py
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check src/kimix/tools/swarm/__init__.py src/kimix/tools/swarm/best_of_n.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\swarm\__init__.py:2:1
+   |
+ 1 |   """AgentSwarm tool for dispatching parallel sub-agent tasks."""
+ 2 | / from __future__ import annotations
+ 3 | |
+ 4 | | import asyncio
+ 5 | | import html
+ 6 | | import os
+ 7 | | import time
+ 8 | | import uuid
+ 9 | | from dataclasses import dataclass
+10 | | from pathlib import Path
+11 | | from typing import Any, Literal
+12 | |
+13 | | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+14 | | from kimi_cli.session import Session
+15 | | from kimi_cli.tools import SkipThisTool
+16 | | from pydantic import BaseModel, Field, model_validator
+17 | |
+18 | | import kimix.base as base
+19 | | import kimix.utils as utils
+20 | | from kimix.ui.printing import MessageType
+21 | | from kimix.tools.agent import _AgentConversationCollector
+22 | | from kimix.utils.system_prompt import SystemPromptType
+   | |______________________________________________________^
+23 |
+24 |   _MAX_SUB_AGENTS = 128
+   |
+help: Organize imports
+   |
+12 |
+   - from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+13 | from kimi_cli.session import Session
+--------------------------------------------------------------------------------
+18 | import kimix.utils as utils
+19 + from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+20 + from kimix.tools.agent import _AgentConversationCollector
+21 | from kimix.ui.printing import MessageType
+   - from kimix.tools.agent import _AgentConversationCollector
+22 | from kimix.utils.system_prompt import SystemPromptType
+   |
+
+F401 `typing.Any` imported but unused
+  --> src\kimix\tools\swarm\__init__.py:11:20
+   |
+ 9 | from dataclasses import dataclass
+10 | from pathlib import Path
+11 | from typing import Any, Literal
+   |                    ^^^
+12 |
+13 | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+   |
+help: Remove unused import: `typing.Any`
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+[elapsed 0.1s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+All checks passed!
+[elapsed 0.1s, rc=0]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "src/kimix/tools/swarm/__init__.py",
+      "loc": 542,
+      "module_loc": 542,
+      "functions": [
+        {
+          "name": "_expand_template",
+          "lineno": 338,
+          "loc": 7,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_validate_uniqueness",
+          "lineno": 347,
+          "loc": 9,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_xml_escape",
+          "lineno": 358,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_render_results",
+          "lineno": 362,
+          "loc": 28,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "_run_swarm",
+          "lineno": 392,
+          "loc": 25,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_is_rate_limit_error",
+          "lineno": 419,
+          "loc": 15,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_run_subagent_task",
+          "lineno": 436,
+          "loc": 65,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 4
+        },
+        {
+          "name": "_resolve_subagent_session",
+          "lineno": 503,
+          "loc": 40,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "__init__",
+          "lineno": 49,
+          "loc": 15,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_validate",
+          "lineno": 113,
+          "loc": 35,
+          "complexity": 19,
+          "branches": 18,
+          "max_nesting": 2
+        },
+        {
+          "name": "__init__",
+          "lineno": 158,
+          "loc": 6,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "acquire",
+          "lineno": 165,
+          "loc": 15,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 2
+        },
+        {
+          "name": "__init__",
+          "lineno": 196,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 202,
+          "loc": 22,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_execute",
+          "lineno": 225,
+          "loc": 25,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_execute_parallel_sample",
+          "lineno": 251,
+          "loc": 85,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 1
+        },
+        {
+          "name": "_run_one",
+          "lineno": 410,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 1
+        },
+        {
+          "name": "_sample_runner",
+          "lineno": 267,
+          "loc": 25,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_selector",
+          "lineno": 293,
+          "loc": 13,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "output_function",
+          "lineno": 452,
+          "loc": 3,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "_execute_parallel_sample",
+        "loc": 85
+      },
+      "module_complexity": 19
+    },
+    {
+      "path": "src/kimix/tools/swarm/best_of_n.py",
+      "loc": 423,
+      "module_loc": 423,
+      "functions": [
+        {
+          "name": "_is_git_repo",
+          "lineno": 85,
+          "loc": 12,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "create_worker_workspace",
+          "lineno": 105,
+          "loc": 21,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "cleanup_worker_workspace",
+          "lineno": 128,
+          "loc": 15,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_snapshot_files",
+          "lineno": 145,
+          "loc": 18,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 3
+        },
+        {
+          "name": "collect_diff",
+          "lineno": 165,
+          "loc": 50,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 3
+        },
+        {
+          "name": "apply_diff_to_workspace",
+          "lineno": 217,
+          "loc": 34,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 4
+        },
+        {
+          "name": "run_parallel_sample",
+          "lineno": 258,
+          "loc": 40,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "format_candidates_for_review",
+          "lineno": 305,
+          "loc": 10,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "select_best_candidate",
+          "lineno": 317,
+          "loc": 46,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 4
+        },
+        {
+          "name": "best_of_n",
+          "lineno": 370,
+          "loc": 54,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "_one",
+          "lineno": 271,
+          "loc": 25,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "best_of_n",
+        "loc": 54
+      },
+      "module_complexity": 10
+    }
+  ],
+  "totals": {
+    "files": 2,
+    "loc": 965,
+    "functions": 31
+  },
+  "breaches": [
+    "src/kimix/tools/swarm/__init__.py::_validate complexity=19 > 12"
+  ]
+}
+[elapsed 0.3s, rc=1]
+
+=== uv run pytest tests/kimix/test_agent_swarm.py tests/test_best_of_n.py -q -rs ===
+.......................                                                  [100%]
+23 passed in 1.57s
+[elapsed 2.8s, rc=0]
+
+=== uv run --with pytest-cov pytest tests/kimix/test_agent_swarm.py tests/test_best_of_n.py --cov=kimix.tools.swarm ===
+.......................                                                  [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                 Stmts   Miss Branch BrPart  Cover   Missing
+--------------------------------------------------------------------------------
+src\kimix\tools\swarm\__init__.py      280     75     66     15    71%   115-126, 129, 132, 136, 138, 143, 172-175, 227, 253-335, 344, 397-400, 453->exit, 467, 484, 499-500, 519-523, 539->542
+src\kimix\tools\swarm\best_of_n.py     190     42     56     11    74%   95-96, 111-122, 132, 139->exit, 141-142, 160-161, 168-199, 225-249, 268, 275->277, 352, 361, 389, 409->417
+--------------------------------------------------------------------------------
+TOTAL                                  470    117    122     26    72%
+23 passed in 4.50s
+[elapsed 8.9s, rc=0]

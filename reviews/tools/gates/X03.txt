@@ -1,0 +1,1231 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+
+=== find kimix_native ===
+=== ls tests dirs ===
+__pycache__
+benchmark
+conftest.py
+integration
+kimix
+native
+output.md
+parser
+regression
+test_background_utils.py
+test_bash.py
+test_bash_e2e.py
+test_bench_runner.py
+test_best_of_n.py
+test_check_fmt.py
+test_cli_impl_mcp.py
+test_cli_line_editing.py
+test_cli_native_detection.py
+test_cli_reflection_command.py
+test_cli_sessions_command.py
+test_cli_store_load_command.py
+test_cli_swarm_command.py
+test_custom_config.py
+test_dag
+test_dist.py
+test_dummy_app.py
+test_filter_output.py
+test_grep_filter.py
+test_install_kimix_native.py
+test_install_yes_flag.py
+test_integration_compaction.py
+test_kimisoul_text_block_gate.py
+test_native_print.py
+test_note.py
+test_output_enhance.py
+test_parsers.py
+test_plan_retry_reminder.py
+test_powershell.py
+test_print_agent_json.py
+test_process_pwsh.py
+test_process_task.py
+test_prompt_backup_failover.py
+test_prompt_loop_detection.py
+test_prompt_retry.py
+test_prompt_steer.py
+test_prompt_str.py
+test_prompt_todo_reminder.py
+test_prompt_waits_background_agents.py
+test_publish_config.py
+test_pwsh_fix.py
+test_render_markdown.py
+test_result.txt
+test_retrieval_fixes.py
+test_review_gate_tools.py
+test_run.py
+test_sdk_export.py
+test_sdk_sessions_dir.py
+test_server_session_history.py
+test_session_close.py
+test_session_close_hooks.py
+test_session_close_interrupt.py
+test_session_error_log.py
+test_session_mcp_deferred.py
+test_session_restart_fail_fast.py
+test_session_restart_resume.py
+test_shell_common.py
+test_shell_safety.py
+test_stream_repeat_output.py
+test_sync_native.py
+test_system_prompt_budget.py
+test_temp_folder_cleanup.py
+test_token_filter.py
+test_tools_async.py
+test_windows_env.py
+unit
+---
+__init__.py
+__pycache__
+eval
+test_check_prompt_quality.py
+test_context_compact.py
+test_elapsed_report.py
+test_fetchurl.py
+test_git_diff.py
+test_glob_gitignore_hint.py
+test_prompt_common.py
+test_python.py
+test_read_archive.py
+test_read_markit.py
+test_read_pdf_pages.py
+test_read_profiles.py
+test_read_rich_dispatch.py
+test_read_sqlite.py
+test_read_window.py
+test_security.py
+test_taskoutput.py
+test_todolist.py
+---
+__init__.py
+__pycache__
+auth
+background
+chat_provider
+cli
+conftest.py
+core
+hooks
+kaos
+kosong
+mcp
+native
+notifications
+test_additional_dirs_state.py
+test_clipboard.py
+test_file_mtine.py
+test_git_context.py
+test_llm_loop_detection.py
+test_vfs_core.py
+test_vfs_integration.py
+tools
+utils
+web
+---
+__pycache__
+test_additional_dirs.py
+test_agent_tool.py
+test_ask_user.py
+test_auto_generated_guard.py
+test_auto_repair.py
+test_blackbox.py
+test_check_fmt.py
+test_conflict_detect.py
+test_context_prune.py
+test_edit_conflict.py
+test_edit_conflict_plan24.py
+test_edit_file.py
+test_edit_file_fuzzy.py
+test_edit_file_parse_repair.py
+test_edit_modes_detect.py
+test_edit_safety.py
+test_edit_sloppy.py
+test_extract_key_argument.py
+test_fetch_url.py
+test_file_snapshot_store.py
+test_fs_cache_invalidation.py
+test_glob.py
+test_grep.py
+test_grep_archive.py
+test_grep_output.py
+test_grep_recorder.py
+test_grep_rich.py
+test_grep_ripgrep_only.py
+test_grep_selectors.py
+test_hash_line.py
+test_mcp_tool_result.py
+test_memory_retrieve.py
+test_micro_compress.py
+test_output_utils.py
+test_parse_check.py
+test_plan25_integration.py
+test_read_conflict.py
+test_read_extract.py
+test_read_file.py
+test_read_media_file.py
+test_read_media_file_desc.py
+test_reason.py
+test_snapshot_store.py
+test_todo.py
+test_todo_edits.py
+test_todo_fixes.py
+test_todo_list_compat.py
+test_todo_list_conflict.py
+test_todo_list_contract.py
+test_todo_stack.py
+test_todo_title_diagnosis.py
+test_tool_descriptions.py
+test_url_safety.py
+test_utils.py
+test_web_extract.py
+test_web_providers.py
+test_web_providers_extra.py
+test_web_search_dispatch.py
+test_work_dir_resolution.py
+./.venv/Lib/site-packages/anthropic/_compat.py
+./.venv/Lib/site-packages/anthropic/_utils/_compat.py
+./.venv/Lib/site-packages/anthropic/_utils/__pycache__/_compat.cpython-314.pyc
+./.venv/Lib/site-packages/anthropic/__pycache__/_compat.cpython-314.pyc
+./.venv/Lib/site-packages/asttokens/astroid_compat.py
+./.venv/Lib/site-packages/asttokens/__pycache__/astroid_compat.cpython-314.pyc
+./.venv/Lib/site-packages/attr/_compat.py
+./.venv/Lib/site-packages/attr/_typing_compat.pyi
+./.venv/Lib/site-packages/attr/__pycache__/_compat.cpython-314.pyc
+./.venv/Lib/site-packages/babel/messages/_compat.py
+./.venv/Lib/site-packages/click/_compat.py
+./.venv/Lib/site-packages/click/__pycache__/_compat.cpython-314.pyc
+./.venv/Lib/site-packages/fastapi/_compat
+./.venv/Lib/site-packages/google/genai/tests/afc/test_find_afc_incompatible_tool_indexes.py
+./.venv/Lib/site-packages/google/genai/tests/afc/test_raise_error_for_afc_incompatible_config.py
+./.venv/Lib/site-packages/google/genai/tests/interactions/test_httpx_compat.py
+./.venv/Lib/site-packages/google/genai/_gaos/lib/compat_errors.py
+./.venv/Lib/site-packages/greenlet/greenlet_compiler_compat.hpp
+./.venv/Lib/site-packages/greenlet/greenlet_cpython_compat.hpp
+./.venv/Lib/site-packages/greenlet/greenlet_msvc_compat.hpp
+./.venv/Lib/site-packages/idna/compat.py
+./.venv/Lib/site-packages/jsonschema_path/_referencing_compat.py
+./.venv/Lib/site-packages/justext/_compat.py
+./.venv/Lib/site-packages/justext/__pycache__/_compat.cpython-314.pyc
+./.venv/Lib/site-packages/keyring/compat
+./.venv/Lib/site-packages/kimix_native
+./.venv/Lib/site-packages/kimix_native/_parse_compat.py
+./.venv/Lib/site-packages/kimix_native/_shell_compat.py
+./.venv/Lib/site-packages/markdown_it/_compat.py
+./.venv/Lib/site-packages/multidict/_compat.py
+./.venv/Lib/site-packages/multidict/__pycache__/_compat.cpython-314.pyc
+./.venv/Lib/site-packages/mypy/typeshed/stdlib/xml/dom/minicompat.pyi
+./.venv/Lib/site-packages/mypy/typeshed/stdlib/_compat_pickle.pyi
+./.venv/Lib/site-packages/mypyc/lib-rt/pythoncapi_compat.h
+./.venv/Lib/site-packages/nbformat/json_compat.py
+./.venv/Lib/site-packages/nbformat/__pycache__/json_compat.cpython-314.pyc
+./.venv/Lib/site-packages/numpy/f2py/tests/src/regression/complex_struct_compat.f90
+./.venv/Lib/site-packages/numpy/f2py/tests/src/regression/complex_struct_compat.pyf
+./.venv/Lib/site-packages/numpy/_core/include/numpy/npy_2_compat.h
+./.venv/Lib/site-packages/numpy/_core/include/numpy/npy_2_complexcompat.h
+./.venv/Lib/site-packages/numpy/_core/include/numpy/npy_3kcompat.h
+./.venv/Lib/site-packages/numpy-2.5.2.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat
+./.venv/Lib/site-packages/openai/_compat.py
+./.venv/Lib/site-packages/openai/_utils/_compat.py
+./.venv/Lib/site-packages/openai/_utils/__pycache__/_compat.cpython-314.pyc
+./.venv/Lib/site-packages/openai/__pycache__/_compat.cpython-314.pyc
+./.venv/Lib/site-packages/openapi_pydantic/compat.py
+./.venv/Lib/site-packages/openpyxl/compat
+./.venv/Lib/site-packages/pendulum/utils/_compat.py
+./.venv/Lib/site-packages/pendulum/utils/__pycache__/_compat.cpython-314.pyc
+=== native_loader ===
+./.venv/Lib/site-packages/kimix_native
+./bin/kimix_native
+./kimi-cli/src/kimi_cli/native_loader.py
+=== kimix_native pkg ===
+total 132
+drwxr-xr-x 1 maxwellgeng 197121   0 Sep 20 11:54 .
+drwxr-xr-x 1 maxwellgeng 197121   0 Sep 28 09:51 ..
+lrwxrwxrwx 1 maxwellgeng 197121 101 Sep 20 11:54 __init__.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/__init__.py
+lrwxrwxrwx 1 maxwellgeng 197121 100 Sep 20 11:54 _common.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/_common.py
+lrwxrwxrwx 1 maxwellgeng 197121 106 Sep 20 11:54 _parse_compat.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/_parse_compat.py
+lrwxrwxrwx 1 maxwellgeng 197121 106 Sep 20 11:54 _shell_compat.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/_shell_compat.py
+lrwxrwxrwx 1 maxwellgeng 197121  98 Sep 20 11:54 codec.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/codec.py
+lrwxrwxrwx 1 maxwellgeng 197121  97 Sep 20 11:54 diff.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/diff.py
+lrwxrwxrwx 1 maxwellgeng 197121  97 Sep 20 11:54 glob.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/glob.py
+lrwxrwxrwx 1 maxwellgeng 197121  98 Sep 20 11:54 index.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/index.py
+lrwxrwxrwx 1 maxwellgeng 197121  98 Sep 20 11:54 parse.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/parse.py
+lrwxrwxrwx 1 maxwellgeng 197121  99 Sep 20 11:54 search.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/search.py
+lrwxrwxrwx 1 maxwellgeng 197121  99 Sep 20 11:54 stream.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/stream.py
+lrwxrwxrwx 1 maxwellgeng 197121  97 Sep 20 11:54 text.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/text.py
+lrwxrwxrwx 1 maxwellgeng 197121  98 Sep 20 11:54 tools.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/tools.py
+=== bin/kimix_native ===
+total 540
+drwxr-xr-x 1 maxwellgeng 197121      0 Oct  8 10:25 .
+drwxr-xr-x 1 maxwellgeng 197121      0 Oct  8 10:46 ..
+-rw-r--r-- 1 maxwellgeng 197121   5261 Oct  8 10:25 __init__.py
+drwxr-xr-x 1 maxwellgeng 197121      0 Oct  8 10:26 __pycache__
+-rw-r--r-- 1 maxwellgeng 197121   1126 Sep 20 11:54 _common.py
+-rw-r--r-- 1 maxwellgeng 197121  95028 Aug  5 17:11 _parse_compat.py
+-rw-r--r-- 1 maxwellgeng 197121 192155 Oct  8 10:25 _shell_compat.py
+-rw-r--r-- 1 maxwellgeng 197121  12863 Sep 20 11:54 codec.py
+-rw-r--r-- 1 maxwellgeng 197121   7913 Aug 11 10:41 diff.py
+-rw-r--r-- 1 maxwellgeng 197121  10943 Aug  7 11:51 glob.py
+-rw-r--r-- 1 maxwellgeng 197121  16614 Oct  8 10:25 grep.py
+-rw-r--r-- 1 maxwellgeng 197121  28921 Sep 20 11:54 index.py
+-rw-r--r-- 1 maxwellgeng 197121  26268 Sep 20 11:54 parse.py
+-rw-r--r-- 1 maxwellgeng 197121  18442 Sep 20 11:54 search.py
+-rw-r--r-- 1 maxwellgeng 197121  12981 Aug 12 14:23 stream.py
+-rw-r--r-- 1 maxwellgeng 197121   8779 Aug  5 17:11 text.py
+-rw-r--r-- 1 maxwellgeng 197121  63261 Sep 20 11:54 tools.py
+=== repo kimix_native sources ===
+"""kimi_cli.native_loader — resolve and load the ``kimix_native`` shim.
+
+The native acceleration path (``runtime_py.pyd`` on Windows / ``runtime_py.so``
+on Linux & macOS, compiled in the kimix-base repo, plus the pure-Python
+``kimix_native`` shim that wraps it) is OPTIONAL. This module locates the shim
+using an ordered list of search paths, inserts the first usable directory on
+``sys.path`` and imports it once (cached). When the binaries are missing the
+loader degrades to the pure-Python fallback — no import-time side effects,
+never raises (except for the documented ``KIMIX_NATIVE=1`` contract).
+
+This module is the single home of the loader logic. It previously lived in
+``kimix.native_loader`` and was delegated to from here by loading that file
+STANDALONE by file path (because importing the ``kimix`` package executes
+``kimix/__init__.py`` which, via ``kimix.utils._globals -> kimi_agent_sdk ->
+kimi_cli.app -> kimi_cli.soul.agent``, re-enters ``kimi_cli`` mid-import).
+The logic now lives here directly and — since it only uses the standard
+library — never imports ``kimix``, so that cycle is gone by construction.
+``kimix`` consumers import this module directly.
+
+Search order (first usable directory wins):
+
+1. ``KIMIX_NATIVE_PATH`` env var — explicit override; when set, only that
+   directory is tried.
+2. **default**: ``<repo root>\\bin`` — the current project work-dir where
+   ``tools\\sync_native.py`` stages the compiled extension (``runtime_py.pyd``
+   on Windows / ``runtime_py.so`` on Linux & macOS; the ``kimix_native``
+   shim package is tracked by git and always present there).
+   "Repo root" is the kimix workspace root — the first ancestor of this file
+   that contains the ``bin/kimix_native`` shim (or the root
+   ``KIMIX_NATIVE_VERSION`` marker), falling back to ``os.getcwd()`` when the
+   repo layout is not detectable, e.g. an installed wheel.
+3. Already importable on ``sys.path`` (a ``runtime_py`` import that succeeds
+   elsewhere, e.g. a pip-installed ``kimix-native`` wheel).
+4. Dev-only last resort: ``<kimix-base>/bin/{release,releasedbg,debug}``
+   (plus the sibling ``python`` dir for the shim) — convenience for local
+   development, never required. ``<kimix-base>`` is the ``KIMIX_BASE`` env
+   var when set, otherwise the ``kimix-base`` sibling of this repo root.
+
+Env toggles (same contract as the shim):
+
+* ``KIMIX_NATIVE=0`` — never use native (pure Python everywhere).
+* ``KIMIX_NATIVE=1`` — require native; raise ImportError if unavailable.
+* ``KIMIX_NATIVE=auto`` (default) — native when importable, fallback otherwise.
+* ``KIMIX_NATIVE_<KERNEL>=0`` — disable one kernel (TEXT|INDEX|SEARCH|PARSE|
+  TOOLS|STREAM|CODEC|DIFF|GLOB|GREP) while the rest stay native. The GREP
+  kernel is gated additionally on the optional ``runtime_py.grep`` submodule
+  being present (see ``kimix_native.grep.native_active``).
+* ``KIMIX_BASE=<dir>`` — kimix-base repo root for the dev-only fallback
+  (priority 4); defaults to the ``kimix-base`` sibling of this repo root.
+"""
+
+from __future__ import annotations
+
+import importlib
+import os
+import sys
+
+__all__ = [
+    "NATIVE_AVAILABLE",
+    "NATIVE_PATH",
+    "use_native",
+    "version",
+    "get_module",
+    "get_compat",
+    "kernel_module",
+]
+
+_KERNELS = (
+    "TEXT",
+    "INDEX",
+    "SEARCH",
+    "PARSE",
+    "TOOLS",
+    "STREAM",
+    "CODEC",
+    "DIFF",
+    "GLOB",
+    "GREP",
+)
+
+# The _KERNELS tuple above is informational; the actual per-kernel gate is
+# delegated to the shim (kimix_native.use_native), so any kernel name the shim
+# recognizes works even if it is not listed here.
+
+# kimix-base bin modes tried in dev fallback order.
+_DEV_MODES = ("release", "releasedbg", "debug")
+
+_shim = None  # the imported kimix_native module (or None)
+NATIVE_AVAILABLE: bool = False
+NATIVE_PATH: str | None = None  # resolved directory (diagnostics)
+
+
+# ---------------------------------------------------------------------------
+# path resolution
+# ---------------------------------------------------------------------------
+
+
+def _repo_root() -> str:
+    """Kimix workspace root whose ``bin/`` holds the staged native extension.
+
+    The loader lives at ``<root>/kimi-cli/src/kimi_cli/native_loader.py``
+    inside the uv workspace, while the staged binaries (and the tracked
+    ``kimix_native`` shim) live at ``<root>/bin``.  The root is therefore the
+    first ancestor of this file that contains the ``bin/kimix_native`` shim
+    (or the root ``KIMIX_NATIVE_VERSION`` marker, which ``_fallback_version``
+    reads).  Falls back to ``os.getcwd()`` when the repo layout is not
+    detectable (e.g. an installed wheel).
+    """
+    here = os.path.dirname(os.path.abspath(__file__))  # .../kimi_cli
+    current = here
+    while True:
+        if os.path.isdir(os.path.join(current, "bin", "kimix_native")):
+            return current
+        if os.path.isfile(os.path.join(current, "KIMIX_NATIVE_VERSION")):
+            return current
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    return os.getcwd()  # repo layout not detectable (installed wheel etc.)
+
+
+def _dev_base() -> str:
+    """kimix-base repo root for the dev-only fallback (priority 4).
+
+    ``$KIMIX_BASE`` overrides the default, which is the ``kimix-base``
+    sibling of this repo root — no absolute path is baked in, so the loader
+    works on any platform/layout without editing code.
+    """
+    env = os.environ.get("KIMIX_BASE")
+    if env:
+        return env
+    return os.path.join(os.path.dirname(_repo_root()), "kimix-base")
+
+
+def _candidate_dirs() -> list[str]:
+    """Ordered candidate directories (env override short-circuits)."""
+    env = os.environ.get("KIMIX_NATIVE_PATH")
+    if env:
+        return [env]
+    dirs = [os.path.join(_repo_root(), "bin")]
+    base = os.path.join(_dev_base(), "bin")
+    for mode in _DEV_MODES:
+        dirs.append(os.path.join(base, mode))
+    return dirs
+
+
+def _shim_dirs_for(bin_dir: str) -> list[str]:
+    """Directories that may hold the ``kimix_native`` shim for *bin_dir*."""
+    staged = os.path.join(bin_dir, "kimix_native")
+    if os.path.isdir(staged):
+        return [bin_dir]
+    # kimix-base staging: shim lives in the sibling python/ dir.
+    sibling = os.path.join(os.path.dirname(bin_dir), "python")
+    if os.path.isdir(os.path.join(sibling, "kimix_native")):
+        return [bin_dir, sibling]
+    return [bin_dir]
+
+
+# ---------------------------------------------------------------------------
+# loading
+# ---------------------------------------------------------------------------
+
+
+def _try_import(require: bool) -> bool:
+    """Import the shim; returns True when native is actually usable.
+
+    Raises ImportError when *require* is True and the shim (or the native
+    extension it needs) is unavailable — the documented ``KIMIX_NATIVE=1``
+    contract.
+    """
+    global _shim
+    try:
+        import kimix_native as _shim  # noqa: F811
+    except ImportError:
+        _shim = None
+        if require:
+            raise
+        return False
+    # The shim may have imported fine while the compiled extension failed
+    # (auto fallback): native is usable only when the shim's own import
+    # succeeded.
+    return getattr(_shim, "_native", None) is not None
+
+
+def _setup() -> tuple[bool, str | None]:
+    """Resolve paths, insert on sys.path, import; returns (available, dir)."""
+    global NATIVE_AVAILABLE, NATIVE_PATH
+    mode = os.environ.get("KIMIX_NATIVE", "auto")
+    if mode == "0":
+        # Pure-Python mode: never import the compiled extension, but the shim
+        # package (whose ``_compat`` modules are the canonical pure-Python
+        # reference implementations that src/kimix re-exports) must remain
+        # importable, so the candidate dirs are inserted exactly like the
+        # auto path does below.  Nothing is imported and no native module is
+        # used; the shim simply falls back to its pure-Python ``_compat``.
+        for cand in _candidate_dirs():
+            if not cand or not os.path.isdir(cand):
+                continue
+            for d in _shim_dirs_for(cand):
+                if d not in sys.path:
+                    sys.path.insert(0, d)
+        NATIVE_AVAILABLE = False
+        NATIVE_PATH = None
+        return False, None
+    require = mode == "1"
+    inserted: list[str] = []
+    for cand in _candidate_dirs():
+        if not cand or not os.path.isdir(cand):
+            continue
+        shim_dirs = _shim_dirs_for(cand)
+        for d in shim_dirs:
+            if d not in sys.path:
+                sys.path.insert(0, d)
+                inserted.append(d)
+        if _try_import(require):
+            NATIVE_AVAILABLE = True
+            NATIVE_PATH = cand
+            return True, cand
+        # Not usable here; try the next candidate (insertions stay; harmless
+        # because the first successful import wins and is cached).
+    # Nothing in the candidate list worked — the package may already be
+    # importable via the ambient sys.path (pip-installed wheel).
+    if _try_import(require):
+        NATIVE_AVAILABLE = True
+        NATIVE_PATH = None
+        return True, None
+    NATIVE_AVAILABLE = False
+    NATIVE_PATH = None
+    return False, None
+
+
+_setup()
+
+
+# ---------------------------------------------------------------------------
+# public API
+# ---------------------------------------------------------------------------
+
+# Fast-path tables: the runtime environment is stable (env toggles are fixed
+# at process start and the shim import is cached), so every per-kernel gate
+# decision and per-module resolution is computed ONCE at import time and
+# stored in precomputed dicts. The hot path is then a single dict lookup —
+# no per-call ``.upper()`` allocation, no repeated NATIVE_AVAILABLE/_shim
+# checks, no sentinel branch. Names outside the tables (e.g. kernels the
+# shim knows but this loader does not) fall back to the dynamic path below
+# and are memoized the same way. Runtime toggling is done via fresh
+# subprocesses or by monkeypatching these functions in tests (the loader is
+# reloaded there when needed).
+_MISSING = object()
+_kernel_cache: dict[str, bool] = {}  # dynamic fallback (unknown kernels)
+_module_cache: dict[str, object] = {}  # dynamic fallback (unknown modules)
+_kernel_module_cache: dict[str, object] = {}
+
+
+def _build_kernel_table() -> dict[str, bool]:
+    """Precompute per-kernel gate results for every known kernel name.
+
+    Each known kernel is stored under its upper/lower/title spellings so
+    callers never pay for a per-call ``.upper()`` on the hot path. Results
+    come straight from the shim's ``use_native`` (env toggles included) and
+    never change while the process lives. When native is unavailable
+    (``KIMIX_NATIVE=0`` or missing extension) every known kernel is stored
+    as ``False`` so the tables stay complete in every mode.
+    """
+    table: dict[str, bool] = {}
+    for kernel in _KERNELS:
+        result = (
+            bool(_shim.use_native(kernel)) if NATIVE_AVAILABLE and _shim is not None else False
+        )
+        table[kernel] = result
+        table[kernel.lower()] = result
+        table[kernel.title()] = result
+    return table
+
+
+def _build_module_table() -> dict[str, object]:
+    """Precompute the resolved submodule for every known kernel module name.
+
+    All known submodules (``kimix_native.<kernel.lower()>``) are imported
+    once here; each is a small shim module over the already-loaded
+    ``runtime_py`` extension, so the one-time cost is negligible and the hot
+    path becomes a single dict lookup (module object or None). When native
+    is unavailable every known module is stored as ``None`` so the tables
+    stay complete in every mode.
+    """
+    table: dict[str, object] = {}
+    for kernel in _KERNELS:
+        name = kernel.lower()
+        mod: object = None
+        if NATIVE_AVAILABLE and _shim is not None:
+            try:
+                mod = importlib.import_module(f"kimix_native.{name}")
+            except ImportError:
+                mod = None
+        table[name] = mod
+    return table
+
+
+_KERNEL_TABLE = _build_kernel_table()
+_MODULE_TABLE = _build_module_table()
+
+
+def use_native(kernel: str) -> bool:
+    """Per-kernel gate: True when native is active for *kernel*.
+
+    Hot path: a single lookup into the precomputed kernel table (the runtime
+    environment is stable, so per-kernel decisions never change). Kernels
+    the shim recognizes but that are not in the table are resolved once via
+    the shim and memoized.
+    """
+    cached = _KERNEL_TABLE.get(kernel, _MISSING)
+    if cached is not _MISSING:
+        return cached
+    if not NATIVE_AVAILABLE or _shim is None:
+        _KERNEL_TABLE[kernel] = False
+        return False
+    key = kernel.upper()
+    cached = _kernel_cache.get(key, _MISSING)
+    if cached is not _MISSING:
+        return cached
+    result = bool(_shim.use_native(key))
+    _kernel_cache[key] = result
+    _KERNEL_TABLE[kernel] = result
+    return result
+
+
+def _fallback_version() -> str:
+    """Return the fallback version marker, synced from ``KIMIX_NATIVE_VERSION``."""
+    try:
+        version_file = os.path.join(_repo_root(), "KIMIX_NATIVE_VERSION")
+        with open(version_file, "r", encoding="utf-8") as fh:
+            version = fh.read().strip()
+        if version:
+            return f"kimix-native {version} (python fallback)"
+    except Exception:
+        pass
+    return "kimix-native 0.1.0 (python fallback)"
+
+
+_FALLBACK_VERSION = _fallback_version()
+
+
+def version() -> str:
+    """Native runtime version, or the fallback marker string."""
+    if _shim is not None:
+        try:
+            return str(_shim.version())
+        except Exception:
+            pass
+    return _FALLBACK_VERSION
+
+
+def get_module(name: str):
+    """Return the ``kimix_native.<name>`` submodule, or None when unavailable.
+
+    Hot path: a single lookup into the precomputed module table (all known
+    submodules resolved at import time). Unknown names are imported on
+    demand and memoized.
+    """
+    cached = _MODULE_TABLE.get(name, _MISSING)
+    if cached is not _MISSING:
+        return cached
+    if not NATIVE_AVAILABLE or _shim is None:
+        return None
+    if name in ("_native",) or name.startswith("_"):
+        return None
+    try:
+        mod = importlib.import_module(f"kimix_native.{name}")
+    except ImportError:
+        mod = None
+    _MODULE_TABLE[name] = mod
+    return mod
+
+
+def get_compat(name: str):
+    """Return the ``kimix_native.<name>`` pure-Python compat submodule, or None.
+
+    Unlike :func:`get_module` this works even when the compiled extension is
+    unavailable (``KIMIX_NATIVE=0`` / missing binaries): the shim's ``_compat``
+    modules are the canonical pure-Python reference implementations that
+    ``src/kimix`` re-exports, so they are imported whenever the shim package
+    itself is importable.  Returns None only when the shim cannot be imported
+    at all (e.g. an installed wheel without the bundled shim).
+    """
+    try:
+        return importlib.import_module(f"kimix_native.{name}")
+    except ImportError:
+        return None
+
+
+def kernel_module(kernel: str):
+    """Cached combined gate+module accessor for hot loops.
+
+    Returns the native submodule for *kernel* (the shim module name is the
+    lower-cased kernel: TEXT->text, TOOLS->tools, ...), or None when the
+    kernel's gate is off or native is unavailable. After the first call this
+    is a single dict lookup — prefer it over ``use_native`` + ``get_module``
+    in per-item hot functions.
+    """
+    if not NATIVE_AVAILABLE or _shim is None:
+        return None
+    key = kernel.upper()
+    cached = _kernel_module_cache.get(key, _MISSING)
+    if cached is not _MISSING:
+        return cached
+    mod = None
+    if use_native(key):
+        mod = get_module(key.lower())
+    _kernel_module_cache[key] = mod
+    return mod
+
+
+def __getattr__(name: str):
+    """Attribute-style submodule access: ``native_loader.text`` etc."""
+    if name.startswith("_"):
+        raise AttributeError(name)
+    module = get_module(name)
+    if module is None:
+        raise AttributeError(
+            f"kimi_cli.native_loader has no attribute {name!r} "
+            "(native submodule unavailable)"
+        )
+    return module
+./bin/kimix_native/_parse_compat.py
+./bin/kimix_native/_shell_compat.py
+=== ls bin/kimix_native ===
+total 540
+drwxr-xr-x 1 maxwellgeng 197121      0 Oct  8 10:25 .
+drwxr-xr-x 1 maxwellgeng 197121      0 Oct  8 10:46 ..
+-rw-r--r-- 1 maxwellgeng 197121   5261 Oct  8 10:25 __init__.py
+drwxr-xr-x 1 maxwellgeng 197121      0 Oct  8 10:26 __pycache__
+-rw-r--r-- 1 maxwellgeng 197121   1126 Sep 20 11:54 _common.py
+-rw-r--r-- 1 maxwellgeng 197121  95028 Aug  5 17:11 _parse_compat.py
+-rw-r--r-- 1 maxwellgeng 197121 192155 Oct  8 10:25 _shell_compat.py
+-rw-r--r-- 1 maxwellgeng 197121  12863 Sep 20 11:54 codec.py
+-rw-r--r-- 1 maxwellgeng 197121   7913 Aug 11 10:41 diff.py
+-rw-r--r-- 1 maxwellgeng 197121  10943 Aug  7 11:51 glob.py
+-rw-r--r-- 1 maxwellgeng 197121  16614 Oct  8 10:25 grep.py
+-rw-r--r-- 1 maxwellgeng 197121  28921 Sep 20 11:54 index.py
+-rw-r--r-- 1 maxwellgeng 197121  26268 Sep 20 11:54 parse.py
+-rw-r--r-- 1 maxwellgeng 197121  18442 Sep 20 11:54 search.py
+-rw-r--r-- 1 maxwellgeng 197121  12981 Aug 12 14:23 stream.py
+-rw-r--r-- 1 maxwellgeng 197121   8779 Aug  5 17:11 text.py
+-rw-r--r-- 1 maxwellgeng 197121  63261 Sep 20 11:54 tools.py
+=== grep scrub_child_env ===
+bin/kimix_native/tools.py:558:def _compat_redact_sensitive_output(output: str) -> str:
+bin/kimix_native/tools.py:585:def _compat_scrub_child_env(env: dict[str, str]) -> dict[str, str]:
+bin/kimix_native/tools.py:978:def scrub_child_env(env: dict[str, str]) -> dict[str, str]:
+=== grep scrub_child_env/redact_sensitive_output/validate_workdir usages ===
+src/kimix/tools/common.py:1953:        from kimix.tools.security import redact_sensitive_output, scrub_child_env
+src/kimix/tools/common.py:1968:                process_env = scrub_child_env(process_env)
+src/kimix/tools/common.py:2028:                                    text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2036:                                    text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2047:                            text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2065:                                    text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2074:                                    text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2086:                            text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2159:                        text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2171:                            text = redact_sensitive_output(text)
+src/kimix/tools/file/bash/bash_tool.py:61:    redact_sensitive_output,
+src/kimix/tools/file/bash/bash_tool.py:1336:            output = redact_sensitive_output(output)
+src/kimix/tools/file/bash/output_enhance.py:16:- :func:`redact_sensitive_output` — mask credentials (JWT, PEM keys, API
+src/kimix/tools/file/bash/output_enhance.py:50:    "redact_sensitive_output",
+src/kimix/tools/file/bash/output_enhance.py:106:from kimix.tools.security import redact_sensitive_output as redact_sensitive_output  # noqa: F401
+src/kimix/tools/file/bash/pwsh_tool.py:55:    redact_sensitive_output,
+src/kimix/tools/file/bash/pwsh_tool.py:1018:            output = redact_sensitive_output(output)
+src/kimix/tools/file/bash/safety.py:55:    "validate_workdir",
+src/kimix/tools/file/bash/safety.py:112:# ``validate_workdir`` moved to :mod:`kimix.tools.security`; re-exported
+src/kimix/tools/file/bash/safety.py:114:from kimix.tools.security import validate_workdir as validate_workdir  # noqa: F401
+src/kimix/tools/file/run.py:35:    redact_sensitive_output,
+src/kimix/tools/file/run.py:40:    validate_workdir,
+src/kimix/tools/file/run.py:252:        workdir_err = validate_workdir(params.cwd)
+src/kimix/tools/file/run.py:492:                    output = redact_sensitive_output(output)
+src/kimix/tools/file/run.py:724:            output = redact_sensitive_output(output)
+src/kimix/tools/py/__init__.py:169:        ``scrub_child_env(os.environ)`` so credential-looking variables are
+src/kimix/tools/py/__init__.py:179:        from kimix.tools.security import scrub_child_env
+src/kimix/tools/py/__init__.py:181:        base_env = scrub_child_env(dict(os.environ)) if scrub_env else dict(os.environ)
+src/kimix/tools/security.py:6:- :func:`scrub_child_env` — build a child-process environment that cannot
+src/kimix/tools/security.py:8:- :func:`redact_sensitive_output` — mask credentials (JWT, PEM keys, API
+src/kimix/tools/security.py:11:- :func:`validate_workdir` — reject control characters and shell
+src/kimix/tools/security.py:40:    "redact_sensitive_output",
+src/kimix/tools/security.py:41:    "scrub_child_env",
+src/kimix/tools/security.py:42:    "validate_workdir",
+src/kimix/tools/security.py:46:def scrub_child_env(env: dict[str, str]) -> dict[str, str]:
+src/kimix/tools/security.py:64:        return _NATIVE_TOOLS.scrub_child_env(env)
+src/kimix/tools/security.py:65:    return _compat_tools()._compat_scrub_child_env(env)
+src/kimix/tools/security.py:68:def redact_sensitive_output(output: str) -> str:
+src/kimix/tools/security.py:78:        return _NATIVE_TOOLS.redact_sensitive_output(output)
+src/kimix/tools/security.py:79:    return _compat_tools()._compat_redact_sensitive_output(output)
+src/kimix/tools/security.py:82:def validate_workdir(workdir: str | None) -> str | None:
+src/kimix/tools/security.py:90:    # algorithm lives once in the shim's _compat_validate_workdir.
+src/kimix/tools/security.py:91:    return _compat_tools()._compat_validate_workdir(workdir)
+tests/native/test_full_behavior_equivalence.py:427:        ("redact_sensitive_output", ("password=secret123",), {}),
+tests/native/test_full_behavior_equivalence.py:428:        ("redact_sensitive_output", ("token: abcdefghijklmnop",), {}),
+tests/native/test_full_behavior_equivalence.py:429:        ("redact_sensitive_output", ("",), {}),
+tests/native/test_full_behavior_equivalence.py:430:        ("redact_sensitive_output", ("key=12345 api_key=67890",), {}),
+tests/native/test_full_behavior_equivalence.py:431:        ("redact_sensitive_output", ("中文密钥 abc123",), {}),
+tests/native/test_full_behavior_equivalence.py:432:        ("scrub_child_env", ({"PATH": "/bin", "API_KEY": "sekret"},), {}),
+tests/native/test_full_behavior_equivalence.py:433:        ("scrub_child_env", ({"SAFE": "1", "TOKEN": "x", "AUTH": "y"},), {}),
+tests/native/test_full_behavior_equivalence.py:434:        ("scrub_child_env", ({},), {}),
+tests/native/test_full_behavior_equivalence.py:435:        ("scrub_child_env", ({"中文键": "v"},), {}),
+tests/native/test_full_behavior_equivalence.py:436:        ("validate_workdir", (None,), {}),
+tests/native/test_full_behavior_equivalence.py:437:        ("validate_workdir", ("C:\\Users\\me",), {}),
+tests/native/test_full_behavior_equivalence.py:438:        ("validate_workdir", ("/tmp",), {}),
+tests/native/test_full_behavior_equivalence.py:439:        ("validate_workdir", ("",), {}),
+tests/native/test_shell_security_equivalence.py:7:- kimix.tools.security: redact_sensitive_output, scrub_child_env
+tests/native/test_shell_security_equivalence.py:48:# redact_sensitive_output (kimix.tools.security)
+tests/native/test_shell_security_equivalence.py:92:def test_redact_sensitive_output_equivalence(text):
+tests/native/test_shell_security_equivalence.py:97:        native = mod.redact_sensitive_output(text)
+tests/native/test_shell_security_equivalence.py:102:        python = mod.redact_sensitive_output(text)
+tests/native/test_shell_security_equivalence.py:109:# scrub_child_env (kimix.tools.security)
+tests/native/test_shell_security_equivalence.py:140:def test_scrub_child_env_equivalence(env):
+tests/native/test_shell_security_equivalence.py:145:        native = mod.scrub_child_env(dict(env))
+tests/native/test_shell_security_equivalence.py:150:        python = mod.scrub_child_env(dict(env))
+tests/native/test_src_compat_delegation.py:71:        _assert_eq(monkeypatch, src, "scrub_child_env", sh, "_compat_scrub_child_env", (env,))
+tests/native/test_src_compat_delegation.py:76:        _assert_eq(monkeypatch, src, "redact_sensitive_output", sh, "_compat_redact_sensitive_output", (out,))
+tests/native/test_src_compat_delegation.py:79:        _assert_eq(monkeypatch, src, "validate_workdir", sh, "_compat_validate_workdir", (wd,))
+tests/test_output_enhance.py:9:    redact_sensitive_output,
+tests/test_output_enhance.py:225:# redact_sensitive_output
+tests/test_output_enhance.py:237:        out = redact_sensitive_output(_JWT)
+tests/test_output_enhance.py:247:        out = redact_sensitive_output(pem)
+tests/test_output_enhance.py:252:        out = redact_sensitive_output("token=ghp_1234567890123456789012")
+tests/test_output_enhance.py:257:        out = redact_sensitive_output("github_pat_1234567890_ABCDEFGHIJKLMNOPQRST")
+tests/test_output_enhance.py:262:        out = redact_sensitive_output("glpat-12345678901234567890")
+tests/test_output_enhance.py:267:        out = redact_sensitive_output("AKIAIOSFODNN7EXAMPLE")
+tests/test_output_enhance.py:272:        out = redact_sensitive_output("Authorization: Bearer abcdefgh1234")
+tests/test_output_enhance.py:277:        out = redact_sensitive_output("x-api-key: secret123")
+tests/test_output_enhance.py:281:        out = redact_sensitive_output("https://user:pass123@example.com/path")
+tests/test_output_enhance.py:287:        out = redact_sensitive_output("password=hunter2secret")
+tests/test_output_enhance.py:292:        out = redact_sensitive_output("password=x")
+tests/test_output_enhance.py:296:        out = redact_sensitive_output("token value: Bearer abcdefghijklmnopqrstuvwxyz012345")
+tests/test_output_enhance.py:301:        assert redact_sensitive_output(text) == text
+tests/test_output_enhance.py:304:        assert redact_sensitive_output("") == ""
+tests/test_shell_safety.py:14:    validate_workdir,
+tests/test_shell_safety.py:141:# validate_workdir
+tests/test_shell_safety.py:161:        assert validate_workdir(workdir) is None
+tests/test_shell_safety.py:187:        err = validate_workdir(workdir)
+tests/unit/tools/test_security.py:6:    redact_sensitive_output,
+tests/unit/tools/test_security.py:7:    scrub_child_env,
+tests/unit/tools/test_security.py:8:    validate_workdir,
+tests/unit/tools/test_security.py:13:# scrub_child_env
+tests/unit/tools/test_security.py:38:        result = scrub_child_env(env)
+tests/unit/tools/test_security.py:64:        result = scrub_child_env(env)
+tests/unit/tools/test_security.py:71:        result = scrub_child_env(env)
+tests/unit/tools/test_security.py:85:        result = scrub_child_env(env)
+tests/unit/tools/test_security.py:97:        scrub_child_env(env)
+tests/unit/tools/test_security.py:102:        result = scrub_child_env(env)
+tests/unit/tools/test_security.py:106:        assert scrub_child_env({}) == {}
+tests/unit/tools/test_security.py:109:        result = scrub_child_env({"AWS_ACCESS_KEY_ID": "x", "DB_PASSWORD": "y"})
+tests/unit/tools/test_security.py:115:# validate_workdir
+tests/unit/tools/test_security.py:135:        assert validate_workdir(workdir) is None
+tests/unit/tools/test_security.py:159:        err = validate_workdir(workdir)
+tests/unit/tools/test_security.py:166:# redact_sensitive_output (smoke — full matrix lives in test_output_enhance.py)
+tests/unit/tools/test_security.py:178:        out = redact_sensitive_output(_JWT)
+tests/unit/tools/test_security.py:184:        assert redact_sensitive_output(text) == text
+tests/unit/tools/test_security.py:187:        assert redact_sensitive_output("") == ""
+tests/unit/tools/test_security.py:190:        assert "AKIA" not in redact_sensitive_output("AKIAIOSFODNN7EXAMPLE")
+tests/unit/tools/test_security.py:199:        redact_sensitive_output as bash_redact,
+tests/unit/tools/test_security.py:202:    assert bash_redact is redact_sensitive_output
+tests/unit/tools/test_security.py:205:def test_safety_reexports_validate_workdir() -> None:
+tests/unit/tools/test_security.py:206:    from kimix.tools.file.bash.safety import validate_workdir as bash_validate
+tests/unit/tools/test_security.py:208:    assert bash_validate is validate_workdir
+=== grep usages in src/ and kimi-cli/src/ only ===
+src/kimix/tools/common.py:1953:        from kimix.tools.security import redact_sensitive_output, scrub_child_env
+src/kimix/tools/common.py:1968:                process_env = scrub_child_env(process_env)
+src/kimix/tools/common.py:2028:                                    text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2036:                                    text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2047:                            text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2065:                                    text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2074:                                    text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2086:                            text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2159:                        text = redact_sensitive_output(text)
+src/kimix/tools/common.py:2171:                            text = redact_sensitive_output(text)
+src/kimix/tools/file/bash/bash_tool.py:61:    redact_sensitive_output,
+src/kimix/tools/file/bash/bash_tool.py:1336:            output = redact_sensitive_output(output)
+src/kimix/tools/file/bash/output_enhance.py:16:- :func:`redact_sensitive_output` — mask credentials (JWT, PEM keys, API
+src/kimix/tools/file/bash/output_enhance.py:50:    "redact_sensitive_output",
+src/kimix/tools/file/bash/output_enhance.py:106:from kimix.tools.security import redact_sensitive_output as redact_sensitive_output  # noqa: F401
+src/kimix/tools/file/bash/pwsh_tool.py:55:    redact_sensitive_output,
+src/kimix/tools/file/bash/pwsh_tool.py:1018:            output = redact_sensitive_output(output)
+src/kimix/tools/file/bash/safety.py:55:    "validate_workdir",
+src/kimix/tools/file/bash/safety.py:112:# ``validate_workdir`` moved to :mod:`kimix.tools.security`; re-exported
+src/kimix/tools/file/bash/safety.py:114:from kimix.tools.security import validate_workdir as validate_workdir  # noqa: F401
+src/kimix/tools/file/run.py:35:    redact_sensitive_output,
+src/kimix/tools/file/run.py:40:    validate_workdir,
+src/kimix/tools/file/run.py:252:        workdir_err = validate_workdir(params.cwd)
+src/kimix/tools/file/run.py:492:                    output = redact_sensitive_output(output)
+src/kimix/tools/file/run.py:724:            output = redact_sensitive_output(output)
+src/kimix/tools/py/__init__.py:169:        ``scrub_child_env(os.environ)`` so credential-looking variables are
+src/kimix/tools/py/__init__.py:179:        from kimix.tools.security import scrub_child_env
+src/kimix/tools/py/__init__.py:181:        base_env = scrub_child_env(dict(os.environ)) if scrub_env else dict(os.environ)
+src/kimix/tools/security.py:6:- :func:`scrub_child_env` — build a child-process environment that cannot
+src/kimix/tools/security.py:8:- :func:`redact_sensitive_output` — mask credentials (JWT, PEM keys, API
+src/kimix/tools/security.py:11:- :func:`validate_workdir` — reject control characters and shell
+src/kimix/tools/security.py:40:    "redact_sensitive_output",
+src/kimix/tools/security.py:41:    "scrub_child_env",
+src/kimix/tools/security.py:42:    "validate_workdir",
+src/kimix/tools/security.py:46:def scrub_child_env(env: dict[str, str]) -> dict[str, str]:
+src/kimix/tools/security.py:64:        return _NATIVE_TOOLS.scrub_child_env(env)
+src/kimix/tools/security.py:65:    return _compat_tools()._compat_scrub_child_env(env)
+src/kimix/tools/security.py:68:def redact_sensitive_output(output: str) -> str:
+src/kimix/tools/security.py:78:        return _NATIVE_TOOLS.redact_sensitive_output(output)
+src/kimix/tools/security.py:79:    return _compat_tools()._compat_redact_sensitive_output(output)
+src/kimix/tools/security.py:82:def validate_workdir(workdir: str | None) -> str | None:
+src/kimix/tools/security.py:90:    # algorithm lives once in the shim's _compat_validate_workdir.
+src/kimix/tools/security.py:91:    return _compat_tools()._compat_validate_workdir(workdir)
+=== _bash_subprocess_env def+uses ===
+src/kimix/tools/common.py:1790:    result = os.environ.copy() if env is None else env.copy()
+src/kimix/tools/common.py:1966:            process_env = os.environ.copy()
+src/kimix/tools/common.py:1980:                process = await asyncio.create_subprocess_exec(
+src/kimix/tools/common.py:1996:                process = await asyncio.create_subprocess_exec(
+src/kimix/tools/file/bash/bash_tool.py:133:    env = _bash_subprocess_env()
+src/kimix/tools/file/bash/bash_tool.py:147:def _bash_subprocess_env() -> dict[str, str]:
+src/kimix/tools/file/bash/bash_tool.py:817:                startup_env = _bash_subprocess_env()
+src/kimix/tools/file/bash/bash_tool.py:823:                startup_env = _bash_subprocess_env()
+src/kimix/tools/file/bash/shell_common.py:4:into an ``(argv, env)`` pair ready for ``asyncio.create_subprocess_exec``:
+src/kimix/tools/file/bash/shell_common.py:8:  (Git Bash MSYSTEM) run via ``bash [-l] -c`` with ``_bash_subprocess_env``;
+src/kimix/tools/file/bash/shell_common.py:88:    return args, tool._bash_subprocess_env()
+src/kimix/tools/file/bash/shell_common.py:95:    return [bash_path, "-l", script_path], tool._bash_subprocess_env()
+=== _env_with_rg_bin_path def ===
+src/kimix/tools/common.py:1514:    # `bin` directory is first on PATH (see `_env_with_rg_bin_path`) so this
+src/kimix/tools/common.py:1774:def _env_with_rg_bin_path(env: dict[str, str] | None = None) -> dict[str, str]:
+src/kimix/tools/file/bash/bash_tool.py:37:    _env_with_rg_bin_path,
+src/kimix/tools/file/bash/bash_tool.py:150:    Starts from ``_env_with_rg_bin_path()`` (shared ``bin`` dir first on
+src/kimix/tools/file/bash/bash_tool.py:160:    env = _env_with_rg_bin_path()
+src/kimix/tools/file/bash/pwsh_tool.py:28:    _env_with_rg_bin_path,
+src/kimix/tools/file/bash/pwsh_tool.py:535:            process_task = ProcessTask(executable, ps_args, None, _env_with_rg_bin_path(), append_newline=True)
+src/kimix/tools/file/bash/pwsh_tool.py:599:            _env_with_rg_bin_path(),
+src/kimix/tools/file/bash/pwsh_tool.py:918:            _env_with_rg_bin_path(),
+src/kimix/tools/file/run.py:17:    _env_with_rg_bin_path,
+src/kimix/tools/file/run.py:424:                task = ProcessTask(executable, args_list, params.cwd, _env_with_rg_bin_path(env_dict))
+
+"""Bash tool that executes commands via the system bash executable."""
+
+
+import asyncio
+import contextlib
+import functools
+import ntpath
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
+
+import orjson
+import regex as re
+from kimi_cli.native_loader import (
+    get_compat as _native_get_compat,
+)
+from kimi_cli.native_loader import (
+    get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (
+    use_native as _native_use_native,
+)
+from kimi_cli.session import Session
+from kimi_cli.tools import SkipThisTool
+from kimi_cli.tools.display import ShellDisplayBlock
+from pydantic import BaseModel, Field, model_validator
+
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimix.tools.common import (
+    ProcessTask,
+    _append_elapsed,
+    _build_session_output_block,
+    _command_saved_message,
+    _env_with_rg_bin_path,
+    _extract_export_path,
+    _interactive_scope_text,
+    _maybe_export_output_async,
+    _maybe_export_rtk_original_async,
+    _maybe_rewrite_shell_command_with_rtk,
+    _original_saved_message,
+    _save_original_output_async,
+    _subprocess_elapsed,
+    _summarize_long_output_async,
+    _token_filter_output,
+)
+from kimix.tools.file.bash.bash_fix import (
+    bash_compatibility_prelude,
+    # Kept in the module namespace even though one-shot preparation now goes
+    # through ``shell_common.prepare_bash_command``: tests patch
+    # ``bash_tool.fix_bash_command`` to assert the fixer is never run for
+    # forbidden source commands.
+    fix_bash_command,  # noqa: F401
+)
+from kimix.tools.file.bash.output_enhance import (
+    annotate_failure,
+    interpret_exit_code,
+    is_expected_exit,
+    redact_sensitive_output,
+)
+from kimix.tools.file.bash.safety import (
+    check_hardline_blocked,
+    foreground_background_guidance,
+    self_kill_hint,
+)
+from kimix.tools.prompt_common import (
+    accepts_alias_text,
+    max_lines_field,
+    mode_field,
+    normalize_mode_validator,
+    shell_cmd_required_validator,
+    task_id_field,
+    timeout_field,
+    wait_for_pattern_field,
+)
+
+# Resolved once at import time (stable runtime: result never changes).
+_NATIVE_PARSE = _native_get_module("parse")
+
+if TYPE_CHECKING:
+    from kimix.tools.background.utils import BackgroundStream
+
+USE_SYSTEM_SHELL = True
+
+
+#: Environment variable that carries a base64+gzip script payload when the
+#: decoded script is too large for the Windows command line (see
+#: :func:`_bash_argv_env`).
+_PAYLOAD_ENV_VAR = "KIMIX_BASH_PAYLOAD"
+
+#: MSYS2 argument handling corrupts ``bash -c`` command strings whose total
+#: length approaches ~8 KB (empirically ~8.2 KB on Git for Windows: the
+#: parser fails with an unbalanced-quote error, no matter whether path
+#: conversion is disabled).  Prepared commands at or above this threshold
+#: are delivered through the environment instead, which has no practical
+#: length limit and is never path-converted.
+_MAX_INLINE_BASH_ARGV = 6000
+
+=== ProcessTask( constructions ===
+src/kimix/tools/file/bash/bash_tool.py:825:            process_task = ProcessTask(self._bash, bash_args, None, startup_env, append_newline=True)
+src/kimix/tools/file/bash/bash_tool.py-826-            task_id = await process_task.start(self._session, "bash")
+src/kimix/tools/file/bash/bash_tool.py-827-            if process_task.stream is not None:
+src/kimix/tools/file/bash/bash_tool.py-828-                process_task.stream.format_output = functools.partial(
+src/kimix/tools/file/bash/bash_tool.py-829-                    self._format_background_output,
+src/kimix/tools/file/bash/bash_tool.py-830-                    params,
+src/kimix/tools/file/bash/bash_tool.py-831-                    rtk_rewritten=rtk_rewritten,
+--
+src/kimix/tools/file/bash/bash_tool.py:882:        process_task = ProcessTask(self._bash, one_shot_argv, None, one_shot_env)
+src/kimix/tools/file/bash/bash_tool.py-883-        task_id = await process_task.start(self._session, "bash")
+src/kimix/tools/file/bash/bash_tool.py-884-        if process_task.stream is not None:
+src/kimix/tools/file/bash/bash_tool.py-885-            process_task.stream.format_output = functools.partial(
+src/kimix/tools/file/bash/bash_tool.py-886-                self._format_background_output,
+src/kimix/tools/file/bash/bash_tool.py-887-                params,
+src/kimix/tools/file/bash/bash_tool.py-888-                rtk_rewritten=rtk_rewritten,
+--
+src/kimix/tools/file/bash/bash_tool.py:1217:        process_task = ProcessTask(self._bash, background_argv, None, background_env)
+src/kimix/tools/file/bash/bash_tool.py-1218-        task_id = await process_task.start(self._session, "bash")
+src/kimix/tools/file/bash/bash_tool.py-1219-        if process_task.stream is not None:
+src/kimix/tools/file/bash/bash_tool.py-1220-            process_task.stream.format_output = functools.partial(
+src/kimix/tools/file/bash/bash_tool.py-1221-                self._format_background_output,
+src/kimix/tools/file/bash/bash_tool.py-1222-                params,
+src/kimix/tools/file/bash/bash_tool.py-1223-                rtk_rewritten=rtk_rewritten,
+--
+src/kimix/tools/file/bash/pwsh_tool.py:535:            process_task = ProcessTask(executable, ps_args, None, _env_with_rg_bin_path(), append_newline=True)
+src/kimix/tools/file/bash/pwsh_tool.py-536-            task_id = await process_task.start(self._session, "pwsh")
+src/kimix/tools/file/bash/pwsh_tool.py-537-            if process_task.stream is not None:
+src/kimix/tools/file/bash/pwsh_tool.py-538-                process_task.stream.format_output = functools.partial(
+src/kimix/tools/file/bash/pwsh_tool.py-539-                    self._format_background_output,
+src/kimix/tools/file/bash/pwsh_tool.py-540-                    cmd,
+src/kimix/tools/file/bash/pwsh_tool.py-541-                    params,
+--
+src/kimix/tools/file/bash/pwsh_tool.py:595:        process_task = ProcessTask(
+src/kimix/tools/file/bash/pwsh_tool.py-596-            executable,
+src/kimix/tools/file/bash/pwsh_tool.py-597-            [*shell_common.PWSH_ONESHOT_FLAGS, param_name, encoded_cmd],
+src/kimix/tools/file/bash/pwsh_tool.py-598-            None,
+src/kimix/tools/file/bash/pwsh_tool.py-599-            _env_with_rg_bin_path(),
+src/kimix/tools/file/bash/pwsh_tool.py-600-        )
+src/kimix/tools/file/bash/pwsh_tool.py-601-        task_id = await process_task.start(self._session, "pwsh")
+--
+src/kimix/tools/file/bash/pwsh_tool.py:914:        process_task = ProcessTask(
+src/kimix/tools/file/bash/pwsh_tool.py-915-            executable,
+src/kimix/tools/file/bash/pwsh_tool.py-916-            [*shell_common.PWSH_ONESHOT_FLAGS, param_name, encoded_cmd],
+src/kimix/tools/file/bash/pwsh_tool.py-917-            None,
+src/kimix/tools/file/bash/pwsh_tool.py-918-            _env_with_rg_bin_path(),
+src/kimix/tools/file/bash/pwsh_tool.py-919-        )
+src/kimix/tools/file/bash/pwsh_tool.py-920-        task_id = await process_task.start(self._session, "pwsh")
+--
+src/kimix/tools/file/run.py:424:                task = ProcessTask(executable, args_list, params.cwd, _env_with_rg_bin_path(env_dict))
+src/kimix/tools/file/run.py-425-                task_id = await task.start(self._session, "run", Path(executable).stem)
+src/kimix/tools/file/run.py-426-
+src/kimix/tools/file/run.py-427-                wait_matched: bool | None = None
+src/kimix/tools/file/run.py-428-                elapsed_seconds: float | None = None
+src/kimix/tools/file/run.py-429-
+src/kimix/tools/file/run.py-430-                if params.run_in_background:
+--
+src/kimix/tools/py/__init__.py:356:        process_task = ProcessTask(
+src/kimix/tools/py/__init__.py-357-            python_exe,
+src/kimix/tools/py/__init__.py-358-            args,
+src/kimix/tools/py/__init__.py-359-            cwd=None,
+src/kimix/tools/py/__init__.py-360-            env=self._build_env(python_exe, scrub_env=scrub_on),
+src/kimix/tools/py/__init__.py-361-            scrub_env=scrub_on,
+src/kimix/tools/py/__init__.py-362-            redact=redact_on,
+--
+src/kimix/tools/py/__init__.py:445:        process_task = ProcessTask(
+src/kimix/tools/py/__init__.py-446-            python_exe,
+src/kimix/tools/py/__init__.py-447-            args,
+src/kimix/tools/py/__init__.py-448-            cwd=None,
+src/kimix/tools/py/__init__.py-449-            env=self._build_env(python_exe, scrub_env=scrub_on),
+src/kimix/tools/py/__init__.py-450-            scrub_env=scrub_on,
+src/kimix/tools/py/__init__.py-451-            redact=redact_on,
+=== grep scrub_env ===
+src/kimix/tools/common.py:1910:        scrub_env: bool = False,
+src/kimix/tools/common.py:1924:        self.scrub_env = scrub_env
+src/kimix/tools/common.py:1967:            if self.scrub_env:
+src/kimix/tools/py/__init__.py:162:    def _build_env(python_exe: str, scrub_env: bool = False) -> dict[str, str] | None:
+src/kimix/tools/py/__init__.py:168:        When ``scrub_env`` is True the base snapshot starts from
+src/kimix/tools/py/__init__.py:181:        base_env = scrub_child_env(dict(os.environ)) if scrub_env else dict(os.environ)
+src/kimix/tools/py/__init__.py:354:        scrub_on = bool(cfg.get("scrub_env", True)) and not bool(cfg.get("env_passthrough", False))
+src/kimix/tools/py/__init__.py:360:            env=self._build_env(python_exe, scrub_env=scrub_on),
+src/kimix/tools/py/__init__.py:361:            scrub_env=scrub_on,
+src/kimix/tools/py/__init__.py:443:        scrub_on = bool(cfg.get("scrub_env", True)) and not bool(cfg.get("env_passthrough", False))
+src/kimix/tools/py/__init__.py:449:            env=self._build_env(python_exe, scrub_env=scrub_on),
+src/kimix/tools/py/__init__.py:450:            scrub_env=scrub_on,
+tests/test_process_task.py:403:# scrub_env / redact (WP1 security) + bounded output (WP4)
+tests/test_process_task.py:425:async def test_scrub_env_applied_before_merge(
+tests/test_process_task.py:428:    """With scrub_env=True the child must NOT see the parent's AWS key."""
+tests/test_process_task.py:430:    task = ProcessTask(sys.executable, ["-c", _ENV_PROBE], scrub_env=True)
+tests/test_process_task.py:444:    task = ProcessTask(sys.executable, ["-c", _ENV_PROBE], scrub_env=False)
+tests/test_process_task.py:452:async def test_scrub_env_merge_override_wins(
+tests/test_process_task.py:461:        scrub_env=True,
+tests/unit/tools/test_python.py:224:# WP2: ProcessTask wiring — scrub_env / redact kwargs (cwd removed)
+tests/unit/tools/test_python.py:258:    async def test_defaults_forward_scrub_env_and_redact(
+tests/unit/tools/test_python.py:264:        assert kwargs["scrub_env"] is True
+tests/unit/tools/test_python.py:272:            "config_json": {"python": {"scrub_env": False, "redact_secrets": False}}
+tests/unit/tools/test_python.py:277:        assert kwargs["scrub_env"] is False
+tests/unit/tools/test_python.py:290:        assert kwargs["scrub_env"] is False
+tests/unit/tools/test_python.py:301:        assert kwargs["scrub_env"] is True
+tests/unit/tools/test_python.py:531:        env = python._build_env(sys.executable, scrub_env=True)
+tests/unit/tools/test_python.py:547:        env = python._build_env(sys.executable, scrub_env=False)
+
+=== grep -i scrub in kimi-cli/src ===
+=== ls tests/unit/tools ===
+__init__.py
+__pycache__
+eval
+test_check_prompt_quality.py
+test_context_compact.py
+test_elapsed_report.py
+test_fetchurl.py
+test_git_diff.py
+test_glob_gitignore_hint.py
+test_prompt_common.py
+test_python.py
+test_read_archive.py
+test_read_markit.py
+test_read_pdf_pages.py
+test_read_profiles.py
+test_read_rich_dispatch.py
+test_read_sqlite.py
+test_read_window.py
+test_security.py
+test_taskoutput.py
+test_todolist.py
+=== ls tests/*.py ===
+tests/conftest.py
+tests/test_background_utils.py
+tests/test_bash.py
+tests/test_bash_e2e.py
+tests/test_bench_runner.py
+tests/test_best_of_n.py
+tests/test_check_fmt.py
+tests/test_cli_impl_mcp.py
+tests/test_cli_line_editing.py
+tests/test_cli_native_detection.py
+tests/test_cli_reflection_command.py
+tests/test_cli_sessions_command.py
+tests/test_cli_store_load_command.py
+tests/test_cli_swarm_command.py
+tests/test_custom_config.py
+tests/test_dist.py
+tests/test_dummy_app.py
+tests/test_filter_output.py
+tests/test_grep_filter.py
+tests/test_install_kimix_native.py
+tests/test_install_yes_flag.py
+tests/test_integration_compaction.py
+tests/test_kimisoul_text_block_gate.py
+tests/test_native_print.py
+tests/test_note.py
+tests/test_output_enhance.py
+tests/test_parsers.py
+tests/test_plan_retry_reminder.py
+tests/test_powershell.py
+tests/test_print_agent_json.py
+tests/test_process_pwsh.py
+tests/test_process_task.py
+tests/test_prompt_backup_failover.py
+tests/test_prompt_loop_detection.py
+tests/test_prompt_retry.py
+tests/test_prompt_steer.py
+tests/test_prompt_str.py
+tests/test_prompt_todo_reminder.py
+tests/test_prompt_waits_background_agents.py
+tests/test_publish_config.py
+tests/test_pwsh_fix.py
+tests/test_render_markdown.py
+tests/test_retrieval_fixes.py
+tests/test_review_gate_tools.py
+tests/test_run.py
+tests/test_sdk_export.py
+tests/test_sdk_sessions_dir.py
+tests/test_server_session_history.py
+tests/test_session_close.py
+tests/test_session_close_hooks.py
+tests/test_session_close_interrupt.py
+tests/test_session_error_log.py
+tests/test_session_mcp_deferred.py
+tests/test_session_restart_fail_fast.py
+tests/test_session_restart_resume.py
+tests/test_shell_common.py
+tests/test_shell_safety.py
+tests/test_stream_repeat_output.py
+tests/test_sync_native.py
+tests/test_system_prompt_budget.py
+tests/test_temp_folder_cleanup.py
+tests/test_token_filter.py
+tests/test_tools_async.py
+tests/test_windows_env.py
+=== ls tests/native ===
+__init__.py
+__pycache__
+conftest.py
+corpus.py
+test_behavior_equivalence.py
+test_compat_missing_dll.py
+test_compress_equivalence.py
+test_full_behavior_equivalence.py
+test_loader.py
+test_mode_matrix.py
+test_per_kernel_toggle.py
+test_shell_security_equivalence.py
+test_src_compat_delegation.py
+test_stream_printing_equivalence.py
+test_version_gate.py
+=== uv run pytest tests/unit/tools/test_security.py tests/test_shell_safety.py tests/test_shell_common.py -q ===
+........................................................................ [ 25%]
+........................................................................ [ 50%]
+........................................................................ [ 75%]
+........................................................................ [100%]
+288 passed in 0.82s
+=== uv run pytest kimi-cli/tests/tools/test_url_safety.py tests/native/test_shell_security_equivalence.py -q ===
+........................................................................ [ 45%]
+........................................................................ [ 90%]
+................                                                         [100%]
+160 passed in 0.40s

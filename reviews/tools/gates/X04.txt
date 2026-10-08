@@ -1,0 +1,1048 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+
+=== grep -rn 'kimix_native' --include=*.py . (excluding bin/kimix_native) ===
+=== grep -rn 'import runtime_py|runtime_py' --include=*.py . ===
+./.kimix_cache/grep_local_head.py:1138:# Native GREP kernel (``kimix_native.grep`` over ``runtime_py.grep``)
+./.kimix_cache/grep_local_head.py:1142:# engine semantics documented in ``bin/kimix_native/grep.py``:
+./.kimix_cache/grep_local_head.py:1198:    """The ``kimix_native.grep`` shim module when the GREP kernel is live.
+./.kimix_cache/grep_local_head.py:3036:            # Native line scan (kimix_native.tools.scan_lines_cb): offsets/
+./.kimix_cache/tmp_30108/gen_prompts.py:179:TASK: verify the pure-Python `bin/kimix_native/` shim and the `src/kimix`/`kimi-cli/src` fallbacks
+./.kimix_cache/tmp_30108/gen_prompts.py:183:1. Map every module under `bin/kimix_native/` (its `__init__.py`, `_compat.py`, `tools.py`,
+./.kimix_cache/tmp_30108/gen_prompts.py:195:5. List every re-export site (`from kimix_native import ...`, `import kimix_native`) with path:line.
+./dist.py:15:  plus the pure-Python ``kimix_native`` shim, staged into ``<bundle>/bin``;
+./dist.py:421:    """Stage ``<out>/bin`` with the kimix_native shim + c./.kimix_cache/grep_local_head.py:1138:# Native GREP kernel (``kimix_native.grep`` over ``runtime_py.grep``)
+./.kimix_cache/grep_local_head.py:1174:# regex_lite backtracking guard (KNOWN ENGINE BUG, staged runtime_py 1.3.0,
+./.kimix_cache/grep_local_head.py:1203:    (a stale ``runtime_py`` build).  ``native_active()`` is consulted on every
+./.kimix_cache/grep_local_head.py:1506:    ``runtime_py.grep`` decodes walk paths and matched text as UTF-8 with the
+./bin/kimix_native/codec.py:4:Native implementations live in ``runtime_py.codec`` (compiled kernels, GIL
+./bin/kimix_native/diff.py:3:Native implementations live in ``runtime_py.diff`` (compiled kernels, GIL
+./bin/kimix_native/glob.py:3:Native implementations live in ``runtime_py.glob`` (compiled kernels, GIL
+./bin/kimix_native/grep.py:3:Native implementation lives in ``runtime_py.grep`` (compiled grep_engine +
+./bin/kimix_native/grep.py:14:The compiled submodule is optional: a stale ``runtime_py`` build without the
+./bin/kimix_native/grep.py:70:KNOWN COMPILEompiled runtime."""
+./dist.py:446:    # The pure-Python shim is tracked in the repo at bin/kimix_native; ship a copy
+./dist.py:448:    shim_src = ROOT / "bin" / "kimix_native"
+./dist.py:449:    shim_dst = bin_dir / "kimix_native"
+./dist.py:611:        "import sys; sys.path.insert(0, %r); import kimix_native as k; "
+./install.py:360:def _kimix_native_version_path() -> Path:
+./install.py:369:def _sync_kimix_native_version(version: str) -> bool:
+./install.py:376:    path = _kimix_native_version_path()
+./install.py:641:    ``runtime_py.so`` on Linux & macOS) exists and that the ``kimix_native``
+./install.py:652:        "import kimix_native;"
+./install.py:653:        "assert kimix_native._native is not None, 'native extension failed to load';"
+./install.py:654:        "print(kimix_native.version())"
+./install.py:675:def _install_kimix_native(bin_dir: Path | None = None, force: bool = False) -> bool:
+./install.py:829:    _sync_kimix_native_version(KIMIX_BASE_VERSION)
+./install.py:832:    _install_kimix_native()
+./kimi-cli/src/kimi_cli/native_loader.py:1:"""kimi_cli.native_loader — resolve and load the ``kimix_native`` shim.
+./kimi-cli/src/kimi_cli/native_loader.py:5:``kimix_native`` shim that wraps it) is OPTIONAL. This module locates the shim
+./kimi-cli/src/kimi_cli/native_loader.py:26:   on Windows / ``runtime_py.so`` on Linux & macOS; the ``kimix_native``
+./kimi-cli/src/kimi_cli/native_loader.py:29:   that contains the ``bin/kimix_native`` shim (or the root
+./kimi-cli/src/kimi_cli/native_loader.py:47:  being present (see ``kimix_native.grep.native_active``).
+./kimi-cli/src/kimi_cli/native_loader.py:82:# delegated to the shim (kimix_native.use_native), so any kernel name the shim
+./kimi-cli/src/kimi_cli/native_loader.py:88:_shim = None  # the imported kimix_native module (or None)
+./kimi-cli/src/kimi_cli/native_loader.py:103:    ``kimix_native`` shim) live at ``<root>/bin``.  The root is therefore the
+./kimi-cli/src/kimi_cli/native_loader.py:104:    first ancestor of this file that contains the ``bin/kimix_native``D-ENGINE DEFECTS (staged runtime_py 1.3.0; the Python mirror is
+./bin/kimix_native/grep.py:106:    """The compiled ``runtime_py.grep`` submodule, or None when inactive.
+./bin/kimix_native/grep.py:111:    existing on the loaded extension: a stale ``runtime_py`` build without
+./bin/kimix_native/index.py:3:Native implementations live in ``runtime_py.index`` (compiled kernels, GIL
+./bin/kimix_native/index.py:623:    ``runtime_py.index.HistoryIndex``; ``_compat`` fallback).
+./bin/kimix_native/parse.py:3:Native implementations live in ``runtime_py.parse`` (compiled kernels, GIL
+./bin/kimix_native/search.py:3:Native implementations live in ``runtime_py.search`` (compiled kernels, GIL
+./bin/kimix_native/stream.py:3:Native implementations live in ``runtime_py.stream`` (compiled kernels, GIL
+./bin/kimix_native/text.py:3:Native implementations live in ``runtime_py.text`` (compiled kernels, GIL
+./bin/kimix_native/tools.py:3:Native implementations live in ``runtime_py.tools`` (compiled kernels, GIL
+./bin/kimix_native/tool shim
+./kimi-cli/src/kimi_cli/native_loader.py:112:        if os.path.isdir(os.path.join(current, "bin", "kimix_native")):
+./kimi-cli/src/kimi_cli/native_loader.py:149:    """Directories that may hold the ``kimix_native`` shim for *bin_dir*."""
+./kimi-cli/src/kimi_cli/native_loader.py:150:    staged = os.path.join(bin_dir, "kimix_native")
+./kimi-cli/src/kimi_cli/native_loader.py:155:    if os.path.isdir(os.path.join(sibling, "kimix_native")):
+./kimi-cli/src/kimi_cli/native_loader.py:174:        import kimix_native as _shim  # noqa: F811
+./kimi-cli/src/kimi_cli/native_loader.py:280:    All known submodules (``kimix_native.<kernel.lower()>``) are imported
+./kimi-cli/src/kimi_cli/native_loader.py:293:                mod = importlib.import_module(f"kimix_native.{name}")
+./kimi-cli/src/kimi_cli/native_loader.py:355:    """Return the ``kimix_native.<name>`` submodule, or None when unavailable.
+./kimi-cli/src/kimi_cli/native_loader.py:369:        mod = importlib.import_module(f"kimix_native.{name}")
+./kimi-cli/src/kimi_cli/native_loader.py:377:    """Return the ``kimix_native.<name>`` pure-Python compat submodule, or None.
+./kimi-cli/src/kimi_cli/native_loader.py:387:        return importlib.import_module(f"kimix_native.{name}")
+./kimi-cli/src/kimi_cli/safety_check.py:45:    # Native acceleration: kimix_native.text.clean_text (bit-identical).
+./kimi-cli/src/kimi_cli/safety_check.py:84:    # Native acceleration: kimix_native.text.sanitize_for_tokenizer.
+./kimi-cli/src/kimi_cli/tools/file/glob.py:117:    # Native fast path: kimix_native.glob.parse_gitignore (bit-identical).
+./kimi-cli/src/kimi_cli/tools/file/grep_local.py:5:The native (``kimix_native`` / ``runtime_py``) grep kernel is intentionally
+./kimi-cli/src/kimi_cli/tools/file/hash_line.py:79:    # NOTE: the per-line native kernel (kimix_native.tools.line_hash) is not
+./kimi-cli/src/kimi_cli/tools/file/hash_line.py:92:    Bulk native fast path: ``kimix_native.tools.compute_line_hashes`` hashes
+./kimi-cli/src/kimi_cli/tools/file/micro_compress.py:194:# strip_control_noise; the patterns live once in kimix_native.tools).
+./kimi-cli/src/kimi_cli/tools/file/micro_compress.py:208:# (renumber_lines now delegates to the shim; _LINENO_RE lives in kimix_native.tools.)
+./kimi-cli/src/kimi_cli/utils/diff.py:42:    # Native acceleration: kimix_native.diff.unified_diff is byte-identical
+./kimi-cli/src/kimi_cli/utils/diff.py:118:    # Native acceleration: kimix_native.diff.diff_hunks replicates the
+./kimi-cli/src/kimi_cli/utils/export.py:328:    # Native acceleration: kimix_native.tools.build_export_markdown. The
+./kimi-cli/src/kimi_cli/utils/file_filter.py:83:    # Native acceleration: kimix_native.glob.parse_ls_files_output mirrors this
+./kimi-cli/src/kimi_cli/utils/rich/diff_render.py:185:    # Native acceleration: kimix_native.diff.build_offset_map mirrors this
+./kimi-cli/src/kimi_cli/utils/tokens.py:31:    # Native acceleration: kimix_native.text.is_cjk_text (bit-identical).
+./kimi-cli/src/kimi_cli/utils/tokens.py:47:    # Native acceleration: kimix_native.text.estimate_chars_toks.py:1573:# Built-in tool kernels (runtime_py.builtin_tools.*)
+./bin/kimix_native/tools.py:1577:# lazily so the shim stays importable when an older runtime_py lacks them.
+./bin/kimix_native/__init__.py:1:"""kimix_native — Python shim for the compiled ``runtime_py`` extension module.
+./bin/kimix_native/__init__.py:3:The compiled extension (``runtime_py.pyd``) is lazily imported as ``_native``.
+./bin/kimix_native/__init__.py:22:the optional ``runtime_py.grep`` submodule, so the gate additionally requires
+./bin/kimix_native/__init__.py:23:``getattr(_native, "grep", None)`` to exist — a stale ``runtime_py`` build
+./bin/kimix_native/__init__.py:29:(``runtime_py.version()``, e.g. ``kimix-runtime 1.0.0``) matches the repo-root
+./bin/kimix_native/__init__.py:66:    """Extract the version token ``runtime_py.version()`` reports
+./bin/kimix_native/__init__.py:80:        import runtime_py as _native
+./bin/kimix_native/__init__.py:94:                why = f"cannot read runtime_py.version() (KIMIX_NATIVE_VERSION is {maens.
+./kimi-cli/src/kimi_cli/wire/file.py:164:    # Native acceleration: kimix_native.codec.JsonlRecorder is byte-identical
+./kimi-cli/src/kimi_cli/wire/server.py:78:    Native acceleration: ``kimix_native.codec.JsonRpcFrameWriter`` is
+./kimi-cli/tests/native/test_grep_engine_parity.py:3:The ``kimix_native.grep`` shim wraps the compiled ``runtime_py.grep`` engine
+./kimi-cli/tests/native/test_grep_engine_parity.py:60:# package dir (``<repo>/bin``) is on sys.path before importing kimix_native.
+./kimi-cli/tests/native/test_grep_engine_parity.py:62:import kimix_native.grep as G
+./kimi-cli/tests/native/test_grep_engine_parity.py:533:            os.path.dirname(os.path.abspath(sys.modules["kimix_native"].__file__))
+./kimi-cli/tests/native/test_loader.py:56:def test_kimix_native_path_still_short_circuits(monkeypatch):
+./kimi-cli/tests/tools/test_grep_ripgrep_only.py:3:The native (``kimix_native`` / ``runtime_py``) GREP kernel integration was
+./kimi-cli/tests/tools/test_grep_ripgrep_only.py:80:        if m.startswithrker!r})"
+./bin/kimix_native/__init__.py:96:                why = f"runtime_py reports {reported!r}, KIMIX_NATIVE_VERSION is {marker!r}"
+./dist.py:14:* the compiled kimix native runtime (``runtime_py.pyd`` / ``runtime_py.so``)
+./dist.py:92:        "native_mod": "runtime_py.pyd",
+./dist.py:104:        "native_mod": "runtime_py.so",
+./dist.py:217:    The compiled extension (``runtime_py.pyd`` / ``runtime_py.so``) plus any
+./install.py:332:# Release metadata for the kimix_base native runtime (runtime_py.pyd on
+./install.py:333:# Windows / runtime_py.so on Linux & macOS).
+./install.py:353:        return ("runtime_py.pyd",)
+./install.py:354:    return ("runtime_py.so",)
+./install.py:596:    The release archive may place the compiled extension (``runtime_py.pyd``
+./install.py:597:    on Windows / ``runtime_py.so`` on Linux & macOS) at the archive root or
+./install.py:640:    Checks that the compiled extension (``runtime_py.pyd`` on Windows /
+./install.py:641:    ``runtime_py.so`` on Linux & macOS) exists and that t("kimi_cli.native_loader") or m.startswith("kimix_native")
+./src/kimix/cli_impl/core.py:31:    Linux & macOS, wrapped by the ``kimix_native`` shim) is an OPTIONAL
+./src/kimix/parser/base.py:5:``bin/kimix_native/_parse_compat.py`` (the ``kimix_native`` shim); this module
+./src/kimix/parser/base.py:14:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/parser/base.py:19:        "kimix_native shim unavailable: the pure-Python comment parsers live "
+./src/kimix/parser/base.py:20:        "in bin/kimix_native/_parse_compat.py and must be importable. Install "
+./src/kimix/parser/base.py:37:    """Route a parser invocation to the native kernel (kimix_native.parse).
+./src/kimix/parser/c_parser.py:4:``bin/kimix_native/_parse_compat.py`` (the ``kimix_native`` shim); this module
+./src/kimix/parser/c_parser.py:14:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/parser/c_parser.py:19:        "kimix_native shim unavailable: the pure-Python comment he ``kimix_native``
+./install.py:683:    ``runtime_py.pyd`` / ``runtime_py.so``), verified by importing the
+./kimi-cli/src/kimi_cli/native_loader.py:3:The native acceleration path (``runtime_py.pyd`` on Windows / ``runtime_py.so``
+./kimi-cli/src/kimi_cli/native_loader.py:25:   ``tools\\sync_native.py`` stages the compiled extension (``runtime_py.pyd``
+./kimi-cli/src/kimi_cli/native_loader.py:26:   on Windows / ``runtime_py.so`` on Linux & macOS; the ``kimix_native``
+./kimi-cli/src/kimi_cli/native_loader.py:32:3. Already importable on ``sys.path`` (a ``runtime_py`` import that succeeds
+./kimi-cli/src/kimi_cli/native_loader.py:46:  kernel is gated additionally on the optional ``runtime_py.grep`` submodule
+./kimi-cli/src/kimi_cli/native_loader.py:282:    ``runtime_py`` extension, so the one-time cost is negligible and the hot
+./kimi-cli/src/kimi_cli/tools/file/grep_local.py:5:The native (``kimix_native`` / ``runtime_py``) grep kernel is intentionally
+./kimi-cli/tests/native/test_compat_missing_dll.py:16:# The stparsers live "
+./src/kimix/parser/c_parser.py:20:        "in bin/kimix_native/_parse_compat.py and must be importable. Install "
+./src/kimix/parser/c_parser.py:32:        # Native acceleration: kimix_native.parse.parse (c).
+./src/kimix/parser/html_parser.py:4:``bin/kimix_native/_parse_compat.py`` (the ``kimix_native`` shim); this module
+./src/kimix/parser/html_parser.py:14:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/parser/html_parser.py:19:        "kimix_native shim unavailable: the pure-Python comment parsers live "
+./src/kimix/parser/html_parser.py:20:        "in bin/kimix_native/_parse_compat.py and must be importable. Install "
+./src/kimix/parser/html_parser.py:32:        # Native acceleration: kimix_native.parse.parse (html).
+./src/kimix/parser/lisp_parser.py:4:``bin/kimix_native/_parse_compat.py`` (the ``kimix_native`` shim); this module
+./src/kimix/parser/lisp_parser.py:14:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kiaged artifact name is platform-dependent (runtime_py.pyd on Windows /
+./kimi-cli/tests/native/test_compat_missing_dll.py:17:# runtime_py.so on Linux & macOS).
+./kimi-cli/tests/native/test_compat_missing_dll.py:18:_NATIVE_FILE = "runtime_py.pyd" if sys.platform == "win32" else "runtime_py.so"
+./kimi-cli/tests/native/test_grep_engine_parity.py:3:The ``kimix_native.grep`` shim wraps the compiled ``runtime_py.grep`` engine
+./kimi-cli/tests/native/test_grep_engine_parity.py:6:authoritative contract (re-verified live against runtime_py 1.3.0 during this
+./kimi-cli/tests/native/test_grep_engine_parity.py:36:``runtime_py`` ships: (1) regex_lite backtracking stack overflow -- an
+./kimi-cli/tests/native/test_grep_engine_parity.py:72:    reason="compiled runtime_py.grep engine not active "
+./kimi-cli/tests/native/test_grep_engine_parity.py:515:        reason="runtime_py.grep stack overflow (0xC00000FD): regex_lite "
+./kimi-cli/tests/native/test_grep_engine_parity.py:536:            "import sys; sys.path.insert(0, sys.armix/parser/lisp_parser.py:19:        "kimix_native shim unavailable: the pure-Python comment parsers live "
+./src/kimix/parser/lisp_parser.py:20:        "in bin/kimix_native/_parse_compat.py and must be importable. Install "
+./src/kimix/parser/lisp_parser.py:32:        # Native acceleration: kimix_native.parse.parse (lisp).
+./src/kimix/parser/pascal_parser.py:4:``bin/kimix_native/_parse_compat.py`` (the ``kimix_native`` shim); this module
+./src/kimix/parser/pascal_parser.py:14:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/parser/pascal_parser.py:19:        "kimix_native shim unavailable: the pure-Python comment parsers live "
+./src/kimix/parser/pascal_parser.py:20:        "in bin/kimix_native/_parse_compat.py and must be importable. Install "
+./src/kimix/parser/pascal_parser.py:32:        # Native acceleration: kimix_native.parse.parse (pascal).
+./src/kimix/parser/py_parser.py:11:``bin/kimix_native/_parse_compat.py`` (the ``kimix_native`` shim); this module
+./src/kimgv[1]); import runtime_py; "
+./kimi-cli/tests/native/test_grep_engine_parity.py:537:            "runtime_py.grep.run(sys.argv[2], [sys.argv[3]], '')"
+ix/parser/py_parser.py:22:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/parser/py_parser.py:27:        "kimix_native shim unavailable: the pure-Python comment parsers live "
+./src/kimix/parser/py_parser.py:28:        "in bin/kimix_native/_parse_compat.py and must be importable. Install "
+./src/kimix/parser/py_parser.py:40:        # Native acceleration: kimix_native.parse.parse (python).
+./src/kimix/parser/shell_parser.py:13:``bin/kimix_native/_parse_compat.py`` (the ``kimix_native`` shim); this module
+./src/kimix/parser/shell_parser.py:23:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/parser/shell_parser.py:28:        "kimix_native shim unavailable: the pure-Python comment parsers live "
+./src/kimix/parser/shell_parser.py:29:        "in bin/kimix_native/_parse_compat.py and must be importable. Install "
+./src/kimix/parser/shell_parser.py:41:        # Native acceleration: kimix_native.parse.parse (shell).
+./src/kimix/parser/sql_parser.py:4:``bin/kimix_native/_parse_compat.py`` (the ``kimix_native`` shim); this module
+./src/kimix/parser/sql_parser.py:14:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/parser/sql_parser.py:19:        "kimix_native shim unavailable: the pure-Python comment parsers live "
+./src/kimix/parser/sql_parser.py:20:        "in bin/kimix_native/_parse_compat.py and must be importable. Install "
+./src/kimix/parser/sql_parser.py:32:        # Native acceleration: kimix_native.parse.parse (sql).
+./src/kimix/retrieval.py:63:        # Native acceleration: kimix_native.index.NgramTokenizer.normalize.
+./src/kimix/retrieval.py:96:        # Native acceleration: kimix_native.index.NgramTokenizer.detect_n.
+./src/kimix/retrieval.py:123:        # Native acceleration: kimix_native.index.NgramTokenizer.tokenize.
+./src/kimix/retrieval.py:883:        # Native acceleration: kimix_native.search.damerau_levenshtein.
+./src/kimix/retrieval.py:929:        # Native acceleration: kimix_native.search.freq_lower_bound.
+./src/kimix/retrieval.py:1214:    # Native acceleration: kimix_native.search.jaro_similarity.
+./src/kimix/retrieval.py:1223:    # Native acceleration: kimix_native.search.jaro_winkler (kernel fixes the
+./src/kimix/retrieval.py:1242:    # Native acceleration: kimix_native.search.sorensen_dice.
+./src/kimix/retrieval.py:1250:    # Native acceleration: kimix_native.search.ngram_overlap.
+./src/kimix/tools/common.py:497:    # Native acceleration: kimix_native.stream.filter_output (bit-identical
+./src/kimix/tools/common.py:1161:    # Native acceleration: kimix_native.stream.LineProcessor (dedup_mode
+./src/kimix/tools/file/bash/bash_fix.py:53:in ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim); this
+./src/kimix/tools/file/bash/bash_fix.py:67:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/tools/file/bash/bash_fix.py:73:        "kimix_native shim unavailable: the pure-Python bash scanner lives in "
+./src/kimix/tools/file/bash/bash_fix.py:74:        "bin/kimix_native/_shell_compat.py and must be importable. Install the "
+./src/kimix/tools/file/bash/bash_tool.py:538:# canonical pure-Python reference living in ``bin/kimix_native/_shell_compat.py``
+./src/kimix/tools/file/bash/bash_tool.py:539:# (the ``kimix_native`` shim) so the scanner logic exists in exactly one place.
+./src/kimix/tools/file/bash/bash_tool.py:543:        "kimix_native shim unavailable: the pure-Python bash scanner lives in "
+./src/kimix/tools/file/bash/bash_tool.py:544:        "bin/kimix_native/_shell_compat.py and must be importable. Install the "
+./src/kimix/tools/file/bash/bash_tool.py:571:    Native acceleration: kimix_native.parse._process_unquoted (byte-exact).
+./src/kimix/tools/file/bash/output_enhance.py:22:``kimix_native.tools`` shim (``_compat_*`` fallbacks).  This module keeps the
+./src/kimix/tools/file/bash/process_pwsh.py:17:lives in ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim);
+./src/kimix/tools/file/bash/process_pwsh.py:27:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/tools/file/bash/process_pwsh.py:32:        "kimix_native shim unavailable: the pure-Python PowerShell transformer "
+./src/kimix/tools/file/bash/process_pwsh.py:33:        "lives in bin/kimix_native/_shell_compat.py and must be importable. "
+./src/kimix/tools/file/bash/pwsh_fix.py:52:in ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim); this
+./src/kimix/tools/file/bash/pwsh_fix.py:70:# module) lives in the kimix_native shim so there is exactly one copy of the
+./src/kimix/tools/file/bash/pwsh_fix.py:75:        "kimix_native shim unavailable: the pure-Python PowerShell scanner "
+./src/kimix/tools/file/bash/pwsh_fix.py:76:        "lives in bin/kimix_native/_shell_compat.py and must be importable. "
+./src/kimix/tools/file/bash/pwsh_fix.py:107:    # Native acceleration: kimix_native.parse.fix_pwsh_command.
+./src/kimix/tools/file/find_str.py:115:            # Native acceleration: kimix_native.tools.find_in_file. Only safe
+./src/kimix/tools/security.py:15:``kimix_native.tools`` shim (``_compat_*`` fallbacks).  This module keeps the
+./src/kimix/ui/printing.py:186:    # Native acceleration: kimix_native.stream.strip_ansi uses the identical
+./src/kimix/ui/printing.py:242:    """Resolve ``runtime_py.print.native_print`` (no ``kimix_native.print`` shim yet).
+./src/kimix/ui/printing.py:245:    the same handle every ``kimix_native.<kernel>`` shim binds. Returns None
+./src/kimix/ui/printing.py:250:        import kimix_native as _kn
+./src/kimix/utils/prompt_str.py:44:    # Native acceleration: kimix_native.text.clean_text (bit-identical ANSI
+./tests/native/test_compress_equivalence.py:3:Compares the native C++ kernels (via kimix_native.tools.compress_*) against
+./tests/native/test_compress_equivalence.py:99:    from kimix_native import tools as native_tools
+./tests/native/test_compress_equivalence.py:125:    from kimix_native import tools as native_tools
+./tests/native/test_compress_equivalence.py:170:    from kimix_native import tools as native_tools
+./tests/native/test_compress_equivalence.py:212:    from kimix_native import tools as native_tools
+./tests/native/test_compress_equivalence.py:235:    from kimix_native import tools as native_tools
+./tests/native/test_full_behavior_equivalence.py:1:"""Comprehensive behavior-equivalence gate for kimix_native kernels.
+./tests/native/test_full_behavior_equivalence.py:3:Every public function in every kernel submodule of ``bin/kimix_native`` is run
+./tests/native/test_full_behavior_equivalence.py:72:    """Return the kimix_native.<name> module with native toggled to *state*."""
+./tests/native/test_full_behavior_equivalence.py:75:    mod = importlib.import_module(f"kimix_native.{name}")
+./tests/native/test_loader.py:54:def test_kimix_native_path_still_short_circuits(monkeypatch):
+./tests/native/test_src_compat_delegation.py:2:pure-Python fallback to the canonical ``kimix_native`` ``_compat_*`` copy.
+./tests/native/test_src_compat_delegation.py:5:lives ONCE, in ``bin/kimix_native``.  The src/kimi-cli wrappers keep their
+./tests/native/test_src_compat_delegation.py:62:    import kimix_native.tools as sh
+./tests/native/test_src_compat_delegation.py:84:    import kimix_native.tools as sh
+./tests/native/test_src_compat_delegation.py:99:    import kimix_native.tools as sh
+./tests/native/test_src_compat_delegation.py:116:    import kimix_native.stream as sh_stream
+./tests/native/test_src_compat_delegation.py:117:    import kimix_native.text as sh_text
+./tests/native/test_src_compat_delegation.py:118:    import kimix_native._shell_compat as sh_shell
+./tests/native/test_src_compat_delegation.py:142:    import kimix_native.text as sh
+./tests/native/test_src_compat_delegation.py:153:    import kimix_native.text as sh
+./tests/native/test_src_compat_delegation.py:162:    import kimix_native.search as sh
+./tests/native/test_src_compat_delegation.py:177:    import kimix_native.tools as sh_tools
+./tests/native/test_src_compat_delegation.py:178:    import kimix_native.codec as sh_codec
+./tests/native/test_src_compat_delegation.py:179:    import kimix_native.glob as sh_glob
+./tests/native/test_stream_printing_equivalence.py:4:kimix_native.stream.strip_ansi) vs off (the pure-Python ``_ANSI_ESCAPE``
+./tests/native/test_version_gate.py:1:"""Version-gate tests for the ``kimix_native`` shim.
+./tests/native/test_version_gate.py:40:    import kimix_native as kn
+./tests/native/test_version_gate.py:57:    root = Path(tempfile.mkdtemp(prefix="kimix_native_gate_"))
+./tests/native/test_version_gate.py:62:        _BIN / "kimix_native",
+./tests/native/test_version_gate.py:63:        stage_bin / "kimix_native",
+./tests/test_bash_e2e.py:4:(whose canonical scanner lives in ``bin/kimix_native/_shell_compat.py``).
+./tests/test_cli_native_detection.py:5:by the ``kimix_native`` shim):
+./tests/test_cli_native_detection.py:20:def _unset_kimix_native(monkeypatch: pytest.MonkeyPatch) -> None:
+./tests/test_dist.py:81:        names = ["runtime_py.pyd", "vcruntime140.dll", "README.txt", "kimix_native"]
+./tests/test_install_kimix_native.py:384:    shim = tmp_path / "kimix_native"
+./tests/test_install_kimix_native.py:426:    shutil.copytree(REPO_BIN, stage_bin)  # carries the tracked kimix_native shim
+./tests/test_install_kimix_native.py:435:def test_install_kimix_native_success_deletes_archive(tmp_path, monkeypatch):
+./tests/test_install_kimix_native.py:445:    ok = install_mod._install_kimix_native(bin_dir=stage_bin, force=True)
+./tests/test_install_kimix_native.py:452:def test_install_kimix_native_failure_keeps_archive(tmp_path, monkeypatch):
+./tests/test_install_kimix_native.py:458:    ok = install_mod._install_kimix_native(bin_dir=stage_bin, force=True)
+./tests/test_install_kimix_native.py:464:def test_install_kimix_native_already_installed_skips(tmp_path, monkeypatch):
+./tests/test_install_kimix_native.py:471:    ok = install_mod._install_kimix_native(bin_dir=stage_bin)
+./tests/test_install_kimix_native.py:476:def test_sync_kimix_native_version_writes_config(tmp_path, monkeypatch):
+./tests/test_install_kimix_native.py:477:    """_sync_kimix_native_version writes the version to the repo-root config file."""
+./tests/test_install_kimix_native.py:480:        install_mod, "_kimix_native_version_path", lambda: version_path
+./tests/test_install_kimix_native.py:482:    assert install_mod._sync_kimix_native_version("0.3.0") is True
+./tests/test_install_yes_flag.py:38:    monkeypatch.setattr(install_mod, "_sync_kimix_native_version", lambda version: True)
+./tests/test_install_yes_flag.py:39:    monkeypatch.setattr(install_mod, "_install_kimix_native", lambda **kw: True)
+./tests/test_native_print.py:9:print stream. The ``kimix_native`` shim package is reused from
+./tests/test_native_print.py:10:``<repo>/bin/kimix_native`` via ``PYTHONPATH`` — no files are copied or
+./tests/test_native_print.py:78:    # kimix resolves via the repo src dir; the kimix_native shim resolves via
+./tools/bench_native_gate.py:84:        mod = importlib.import_module(f"kimix_native.{name}")
+./tools/sync_native.py:8:pure-Python ``kimix_native`` shim package lives in ``bin\\kimix_native`` and is
+
+=== git show --stat fe10182b ===
+
+=== git log --oneline -15 ===
+52192b7c chore(review): gate tooling, inventory freeze, baseline
+fe10182b remove native module grep
+5fdda12d fix "quotes"
+73940857 Update grep_local.py
+41e1425b Update KIMIX_NATIVE_VERSION
+304a8b46 update version, for new read and grep
+bdb5ac20 Update bash_tool.py
+9a520a7e update native version
+cd8c19e9 remove send_message, wip native module grep
+63aa45f9 update bash parser
+e67ded83 fix tests.
+fb697697 Fix e2e-found tool issues: subagent interrupt race, job_output kill status, python send wait_for_pattern, context_prune summary, read char window
+fb2d3b85 Fix e2e-found tool issues: subagent background lifecycle, todo on_conflict, fetch_url status, bash wait_for_pattern, retrieve scores
+b324a1fa Fix e2e-found tool issues: config shorthand, banner false-positive, truncated flag, edit no-op count, write diff, python background
+aff17257 update native version, fix toolset
+commit fe10182b74ec38ad6df388c902d2be36c4b346f1
+Author: maxwellgeng <maxwellgeng@outlook.com>
+Date:   Thu Oct 8 11:17:27 2026 +0800
+
+    remove native module grep
+
+ kimi-cli/src/kimi_cli/_rtk_common.py           |   2 +-
+ kimi-cli/src/kimi_cli/tools/file/grep_local.py | 883 ++-----------------------
+ kimi-cli/tests/tools/test_grep.py              |  36 +
+ kimi-cli/tests/tools/test_grep_ripgrep_only.py | 226 +++++++
+ scripts/install_git.py                         |   2 +-
+ tests/native/test_src_compat_delegation.py     |   9 +-
+ 6 files changed, 330 insertions(+), 828 deletions(-)
+=== find _compat files ===
+=== wc -l bin/kimix_native/*.py ===
+   127 bin/kimix_native/__init__.py
+    37 bin/kimix_native/_common.py
+  2716 bin/kimix_native/_parse_compat.py
+  4577 bin/kimix_native/_shell_compat.py
+   388 bin/kimix_native/codec.py
+   229 bin/kimix_native/diff.py
+   330 bin/kimix_native/glob.py
+   407 bin/kimix_native/grep.py
+   751 bin/kimix_native/index.py
+   616 bin/kimix_native/parse.py
+   523 bin/kimix_native/search.py
+   369 bin/kimix_native/stream.py
+   243 bin/kimix_native/text.py
+  1632 bin/kimix_native/tools.py
+ 12945 total
+
+=== grep -n '^def \|^class \|^# ---\|^_[A-Z].* = ' bin/kimix_native/grep.py ===
+97:_MODES = ("files_with_matches", "count_matches", "content")
+98:_BINARY_SNIFF_BYTES = 64 * 1024
+99:_MAX_FILE_BYTES = 4 * 1024 * 1024
+102:_FOLD = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+105:def _native_grep():
+123:def native_active() -> bool:
+128:def _empty_result(status: str, message: str) -> dict:
+140:# ---------------------------------------------------------------------------
+142:# ---------------------------------------------------------------------------
+160:def _filename(p: str) -> str:
+166:# ---------------------------------------------------------------------------
+168:# ---------------------------------------------------------------------------
+171:def _iter_dir_dfs(root: str, include_glob: str):
+200:def _collect_files(root: str, work_dir: str, include_glob: str) -> list[str]:
+214:# ---------------------------------------------------------------------------
+216:# ---------------------------------------------------------------------------
+219:def _read_lines(path: str) -> list[str] | None:
+248:def _compile(pattern: str, ignore_case: bool):
+269:def _render_text(line: str) -> str:
+274:def _render_content(
+302:# ---------------------------------------------------------------------------
+304:# ---------------------------------------------------------------------------
+307:def run(
+395:def pattern_supported(pattern: str, ignore_case: bool = False) -> bool:
+./.venv/Lib/site-packages/anthropic/_compat.py
+./.venv/Lib/site-packages/anthropic/_utils/_compat.py
+./.venv/Lib/site-packages/asttokens/astroid_compat.py
+./.venv/Lib/site-packages/attr/_compat.py
+./.venv/Lib/site-packages/babel/messages/_compat.py
+./.venv/Lib/site-packages/click/_compat.py
+./.venv/Lib/site-packages/google/genai/tests/interactions/test_httpx_compat.py
+./.venv/Lib/site-packages/jsonschema_path/_referencing_compat.py
+./.venv/Lib/site-packages/justext/_compat.py
+./.venv/Lib/site-packages/kimix_native/_parse_compat.py
+./.venv/Lib/site-packages/kimix_native/_shell_compat.py
+./.venv/Lib/site-packages/markdown_it/_compat.py
+./.venv/Lib/site-packages/multidict/_compat.py
+./.venv/Lib/site-packages/nbformat/json_compat.py
+./.venv/Lib/site-packages/openai/_compat.py
+./.venv/Lib/site-packages/openai/_utils/_compat.py
+./.venv/Lib/site-packages/pendulum/utils/_compat.py
+./.venv/Lib/site-packages/tomlkit/_compat.py
+./.venv/Lib/site-packages/typer/_click/_compat.py
+./.venv/Lib/site-packages/uvicorn/_compat.py
+./bin/kimix_native/_parse_compat.py
+./bin/kimix_native/_shell_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/anthropic/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/anthropic/_utils/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/asttokens/astroid_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/attr/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/click/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/google/genai/_interactions/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/google/genai/_interactions/_utils/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/markdown_it/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/openai/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/openai/_utils/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/pdoc/_compat.py
+./kimi-cli/packages/kosong/.venv/Lib/site-packages/uvicorn/_compat.py
+./kimi-cli/tests/native/test_compat_missing_dll.py
+./kimi-cli/tests/tools/test_todo_list_compat.py
+./tests/native/test_compat_missing_dll.py
+./tests/native/test_src_compat_delegation.py
+./tests/regression/tools/test_backward_compat.py
+
+=== find nul/NUL files ===
+(end nul search)
+
+=== grep -rn '_compat' --include=*.py bin/ | head -40 ===
+bin/kimix_native/codec.py:5:released, bytes in/out). The pure-Python ``_compat`` mirrors below implement
+bin/kimix_native/codec.py:54:def _compat_serialize_envelope(type_name: str, payload: bytes) -> bytes:
+bin/kimix_native/codec.py:64:def _compat_deserialize_envelope(frame: bytes):
+bin/kimix_native/codec.py:78:def _compat_canonicalize_payload(data: bytes):
+bin/kimix_native/codec.py:198:def _compat_build_sse_frame(event_name: str, data_json: bytes, id: int) -> bytes:
+bin/kimix_native/codec.py:211:# Public API (native with _compat fallback)
+bin/kimix_native/codec.py:221:    return _compat_serialize_envelope(type_name, payload)
+bin/kimix_native/codec.py:228:    return _compat_deserialize_envelope(frame)
+bin/kimix_native/codec.py:235:    return _compat_canonicalize_payload(data)
+bin/kimix_native/codec.py:246:            self._compat = _CompatWireMergeBuffer()
+bin/kimix_native/codec.py:251:        return self._compat.append(kind, delta)
+bin/kimix_native/codec.py:256:        return self._compat.snapshot()
+bin/kimix_native/codec.py:262:            self._compat.reset()
+bin/kimix_native/codec.py:267:        return self._compat.empty()
+bin/kimix_native/codec.py:278:            self._compat = _CompatArgsBuffer()
+bin/kimix_native/codec.py:284:            self._compat.append(delta)
+bin/kimix_native/codec.py:289:        return self._compat.snapshot()
+bin/kimix_native/codec.py:294:        return self._compat.delta_since()
+bin/kimix_native/codec.py:300:            self._compat.reset()
+bin/kimix_native/codec.py:339:            self._compat = _CompatRecvBuffer()
+bin/kimix_native/codec.py:345:            self._compat.append(data)
+bin/kimix_native/codec.py:350:        return self._compat.size()
+bin/kimix_native/codec.py:355:        return self._compat.peek()
+bin/kimix_native/codec.py:363:        return self._compat.take_frame_length_prefixed(header_size, max_frame)
+bin/kimix_native/codec.py:369:        return self._compat.take_frame_delimiter(delim, max_frame)
+bin/kimix_native/codec.py:375:            self._compat.compact()
+bin/kimix_native/codec.py:381:            self._compat.clear()
+bin/kimix_native/codec.py:388:    return _compat_build_sse_frame(event_name, data_json, id)
+bin/kimix_native/diff.py:17:# _compat — exact mirrors of the Python reference implementations
+bin/kimix_native/diff.py:21:def _compat_unified_diff(
+bin/kimix_native/diff.py:65:def _compat_diff_hunks(
+bin/kimix_native/diff.py:114:def _compat_build_offset_map(raw: str, rendered: str, tab_size: int) -> list[int]:
+bin/kimix_native/diff.py:144:def _compat_inline_diff_ranges(
+bin/kimix_native/diff.py:172:# Public API (native with _compat fallback)
+bin/kimix_native/diff.py:187:    return _compat_unified_diff(old_text, new_text, path, include_file_header, lineterm)
+bin/kimix_native/diff.py:197:    return _compat_diff_hunks(old_text, new_text, context_lines)
+bin/kimix_native/diff.py:211:    return _compat_inline_diff_ranges(old_line, new_line, min_ratio)
+bin/kimix_native/diff.py:229:    return _compat_build_offset_map(raw, rendered, tab_size)
+bin/kimix_native/glob.py:4:released). The pure-Python ``_compat`` functions below mirror the reference
+bin/kimix_native/glob.py:13:and ``_compat`` implementations so they stay bit-identical on every platform.
+=== ls .venv/Lib/site-packages/kimix_native ===
+total 132
+drwxr-xr-x 1 maxwellgeng 197121   0 Sep 20 11:54 .
+drwxr-xr-x 1 maxwellgeng 197121   0 Sep 28 09:51 ..
+lrwxrwxrwx 1 maxwellgeng 197121 101 Sep 20 11:54 __init__.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/__init__.py
+lrwxrwxrwx 1 maxwellgeng 197121 100 Sep 20 11:54 _common.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/_common.py
+lrwxrwxrwx 1 maxwellgeng 197121 106 Sep 20 11:54 _parse_compat.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/_parse_compat.py
+lrwxrwxrwx 1 maxwellgeng 197121 106 Sep 20 11:54 _shell_compat.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/_shell_compat.py
+lrwxrwxrwx 1 maxwellgeng 197121  98 Sep 20 11:54 codec.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/codec.py
+lrwxrwxrwx 1 maxwellgeng 197121  97 Sep 20 11:54 diff.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/diff.py
+lrwxrwxrwx 1 maxwellgeng 197121  97 Sep 20 11:54 glob.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/glob.py
+lrwxrwxrwx 1 maxwellgeng 197121  98 Sep 20 11:54 index.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/index.py
+lrwxrwxrwx 1 maxwellgeng 197121  98 Sep 20 11:54 parse.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/parse.py
+lrwxrwxrwx 1 maxwellgeng 197121  99 Sep 20 11:54 search.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/search.py
+lrwxrwxrwx 1 maxwellgeng 197121  99 Sep 20 11:54 stream.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/stream.py
+lrwxrwxrwx 1 maxwellgeng 197121  97 Sep 20 11:54 text.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/text.py
+lrwxrwxrwx 1 maxwellgeng 197121  98 Sep 20 11:54 tools.py -> /c/Users/maxwellgeng/AppData/Local/uv/cache/archive-v0/4gTj5WQfXt9S_WUZ7PbSk/kimix_native/tools.py
+
+=== ls .venv/Lib/site-packages | grep -i 'kimix\|runtime\|pth' ===
+_editable_impl_kimix.pth
+_virtualenv.pth
+kimi_cli_x.pth
+kimix_native
+kimix-0.1.29.dist-info
+pywin32.pth
+
+=== cat *.pth for kimix ===
+--- .venv/Lib/site-packages/_editable_impl_kimix.pth
+C:\dev\kimi-agent\src
+C:\dev\kimi-agent\src--- .venv/Lib/site-packages/_virtualenv.pth
+import _virtualenv--- .venv/Lib/site-packages/kimi_cli_x.pth
+C:\dev\kimi-agent\kimi-cli\src--- .venv/Lib/site-packages/pywin32.pth
+# .pth file for the PyWin32 extensions
+win32
+win32\lib
+pythonwin
+# And some hackery to deal with environments where the post_install script
+# isn't run.
+import pywin32_bootstrap
+=== git show fe10182b (stat+name-status) ===
+commit fe10182b74ec38ad6df388c902d2be36c4b346f1
+Author: maxwellgeng <maxwellgeng@outlook.com>
+Date:   Thu Oct 8 11:17:27 2026 +0800
+
+    remove native module grep
+
+M	kimi-cli/src/kimi_cli/_rtk_common.py
+M	kimi-cli/src/kimi_cli/tools/file/grep_local.py
+M	kimi-cli/tests/tools/test_grep.py
+A	kimi-cli/tests/tools/test_grep_ripgrep_only.py
+M	scripts/install_git.py
+M	tests/native/test_src_compat_delegation.py
+
+=== diff -r bin/kimix_native vs .venv site-packages kimix_native ===
+Files bin/kimix_native/__init__.py and .venv/Lib/site-packages/kimix_native/__init__.py differ
+Files bin/kimix_native/_shell_compat.py and .venv/Lib/site-packages/kimix_native/_shell_compat.py differ
+Only in bin/kimix_native: grep.py
+=== diff -u site-packages/kimix_native/tools.py vs bin/kimix_native/tools.py (stat) ===
+
+=== sha256 of both shim dirs files ===
+__init__.py repo=1433b45d32c94cfd site=aff403dadb307975
+_common.py repo=c676a24909851c5c site=c676a24909851c5c
+_parse_compat.py repo=d7e7cc1e6784bc12 site=d7e7cc1e6784bc12
+_shell_compat.py repo=ffd42e3b374d41d7 site=e0006a383c954dd0
+codec.py repo=c4126ca8773b9bc8 site=c4126ca8773b9bc8
+diff.py repo=ae86484a4c4c0cc4 site=ae86484a4c4c0cc4
+glob.py repo=4b0daaa19c568170 site=4b0daaa19c568170
+index.py repo=aeefafe617ba4199 site=aeefafe617ba4199
+parse.py repo=d4776b0337186ccb site=d4776b0337186ccb
+search.py repo=47758bf1e345afe1 site=47758bf1e345afe1
+stream.py repo=8dbe2c9b0d03576a site=8dbe2c9b0d03576a
+text.py repo=b44c26a4ec561566 site=b44c26a4ec561566
+tools.py repo=bb8132cead6f13d4 site=bb8132cead6f13d4
+=== diff -u site __init__.py vs repo __init__.py ===
+--- .venv/Lib/site-packages/kimix_native/__init__.py	2026-09-20 11:54:56.477128900 +0800
++++ bin/kimix_native/__init__.py	2026-10-08 10:25:01.988114500 +0800
+@@ -18,6 +18,13 @@
+ ``_compat`` modules) so ``use_native(kernel) is False`` yields identical
+ behavior.
+ 
++The ``GREP`` kernel (``kimix_native.grep``) is special: its native engine is
++the optional ``runtime_py.grep`` submodule, so the gate additionally requires
++``getattr(_native, "grep", None)`` to exist — a stale ``runtime_py`` build
++without the submodule behaves like ``KIMIX_NATIVE_GREP=0`` and routes to the
++shim's pure-Python engine mirror. Use ``kimix_native.grep.native_active()``
++to query the effective gate (it re-reads the env toggles on every call).
++
+ Version gate: the compiled module is only used when the version it reports
+ (``runtime_py.version()``, e.g. ``kimix-runtime 1.0.0``) matches the repo-root
+ ``KIMIX_NATIVE_VERSION`` marker (falls back to kimix-base's ``version.txt``
+(end)
+
+=== diff -u site _shell_compat.py vs repo _shell_compat.py (first 120 lines) ===
+--- .venv/Lib/site-packages/kimix_native/_shell_compat.py	2026-09-20 11:54:56.477128900 +0800
++++ bin/kimix_native/_shell_compat.py	2026-10-08 10:25:01.989123900 +0800
+@@ -725,7 +725,7 @@
+ _LIST_KEYWORDS = frozenset({"for", "select", "case"})
+ 
+ _COMMAND_WRAPPERS = frozenset(
+-    {"command", "coproc", "env", "exec", "nohup", "sudo", "time",
++    {"builtin", "command", "coproc", "env", "exec", "nohup", "sudo", "time",
+      "timeout", "stdbuf", "nice", "xargs"}
+ )
+ 
+@@ -754,7 +754,7 @@
+ # than being exec'd as a new process: the fallback function defined by the
+ # prefix is directly callable, so the source word is kept (no standalone
+ # runner rewrite is needed or possible).
+-_SAME_SHELL_WRAPPERS = frozenset({"coproc", "time", "watch"})
++_SAME_SHELL_WRAPPERS = frozenset({"builtin", "coproc", "time", "watch"})
+ 
+ # Shell executables that agents frequently put in front of a command the Bash
+ # tool is already going to run (``bash cd /c/dev/x && ...``).  Git Bash can
+@@ -1287,6 +1287,7 @@
+             self.shell_notes.extend(
+                 n for n in inner.shell_notes if n not in self.shell_notes
+             )
++            self.nul_fixes.extend(inner.nul_fixes)
+             self.unsupported.extend(
+                 n for n in inner.unsupported if n not in self.unsupported
+             )
+@@ -1315,7 +1316,7 @@
+ 
+     def _watch_command_operand(
+         self, word_start: int, word_end: int, raw: str
+-    ) -> None:
++    ) -> bool:
+         """Fix the inline script of a quoted ``watch`` command operand.
+ 
+         procps ``watch`` executes its command line through ``sh -c``, and the
+@@ -1325,28 +1326,34 @@
+         and re-emitted with the inner fixes applied, so fallback names and
+         Windows paths inside it work.  Unquoted operands need no special
+         handling here — they flow through the normal command-word rules.
++        Returns ``True`` when the word was consumed as an inline script (any
++        quoted operand): the caller must not also treat it as a command word,
++        or a script that *is* a single fallback name (``watch 'uptime'``)
++        would be recorded twice.
+         """
+         if not (raw.startswith("'") or raw.startswith('"')):
+-            return
++            return False
+         script = self._literal_word_value(raw)
+         if script is None:
+-            return  # expansions inside the script: leave for bash
++            return True  # expansions inside the script: leave for bash
+         try:
+             inner = _BashFixScanner(script)
+             inner._scan_range(0, len(script))
+         except RecursionError:
+-            return
++            return True
+         fixed = _fix_heredoc_trailing_operators(inner._build_source())
+         self.names.extend(n for n in inner.names if n not in self.names)
+         self.path_notes.extend(inner.path_notes)
+         self.shell_notes.extend(
+             n for n in inner.shell_notes if n not in self.shell_notes
+         )
++        self.nul_fixes.extend(inner.nul_fixes)
+         self.unsupported.extend(
+             n for n in inner.unsupported if n not in self.unsupported
+         )
+         if inner.edits:
+             self.edits.append((word_start, word_end, _single_quote(fixed)))
++        return True
+ 
+ 
+     def _scan_range(self, start: int, end: int) -> None:
+@@ -1376,6 +1383,14 @@
+         herestring_flag = False
+         pending_heredocs: list[_BashHereDoc] = []
+         case_stack: list[str] = []
++        # Set right after a command-position ``for`` word so the immediately
++        # following ``(( ))`` unit is recognised as the arithmetic loop header
++        # (``for ((expr))``).  Bash 5 accepts a brace-group loop body without
++        # ``do`` right after the header
++        # (``for ((i=0;i<2;i++)) { tree; rev; }``); ``for_brace_body`` carries
++        # that expectation to the next ``{`` word.
++        for_arith_header = False
++        for_brace_body = False
+         function_name_expected = False
+         function_body_expected = False
+         # Set when an assignment prefix (``VAR=x``) precedes the command word on
+@@ -1404,6 +1419,8 @@
+                 herestring_flag = False
+                 wrapper = None
+                 assignment_prefix = False
++                for_arith_header = False
++                for_brace_body = False
+                 continue
+             if ch == "#" and self._comment_starts(i, start):
+                 newline = s.find("\n", i + 1, end)
+@@ -1491,17 +1508,26 @@
+                 function_body_expected = False
+                 i = self._skip_conditional(i + 2, end)
+                 command_expected = False
++                for_brace_body = False
+                 continue
+             if s.startswith("((", i) and ch == "(":
+                 function_body_expected = False
+                 i = self._skip_arithmetic(i + 2, end)
++                # ``for ((expr))`` arithmetic header: bash 5 accepts a do-less
++                # brace-group body right after the unit
++                # (``for ((i=0;i<2;i++)) { tree; rev; }``); the ``{`` word then
++                # opens the group in command position.  A bare simple command
++                # there is a syntax error, so words stay arguments.
+                 command_expected = False
++                for_brace_body = for_arith_header
++                for_arith_header = False
+                 continue
+             if ch == "$" and s.startswith("$(", i) and not s.startswith("$((", i):
+                 close = self._find_matching(i + 2, end, ")")
+                 inner_end = close if close < end else end
+(end)
+
+=== diff line counts ===
+56
+9
+self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000001BE426AEFD0>
+tree = 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-0s_2n4r_'
+
+    def test_roots_mix(self, tree):
+        roots = [
+            "a.py",  # relative file
+            "m_dir",  # relative dir
+            ".",  # un-normalised dot join
+            tree,  # absolute dir
+            os.path.join(tree, "nope"),  # missing
+            os.path.join(tree, ".hid_dir"),  # explicit hidden dir root
+            os.path.join(tree, "nul.dat"),  # binary file root
+            os.path.join(tree, "huge.bin"),  # over-cap file root
+        ]
+        for mode in _MODES:
+>           _run_both(tree, "hit", roots=roots, mode=mode)
+
+kimi-cli\tests\native\test_grep_engine_parity.py:448: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+tree = 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-0s_2n4r_'
+pat = 'hit'
+kw = {'roots': ['a.py', 'm_dir', '.', 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-0s_2n4r_', 'C:\\Users\\MAXWEL...nope', 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-0s_2n4r_\\.hid_dir', ...], 'mode': 'files_with_matches'}
+
+    def _run_both(tree, pat, **kw):
+        eng = _norm(_engine_call(tree, pat, **kw))
+        mir = _norm(_mirror_call(tree, pat, **kw))
+>       assert mir == eng, (pat, kw, eng, mir)
+E       AssertionError: ('hit', {'roots': ['a.py', 'm_dir', '.', 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-0s_2n4r_', 'C:\\Users...al_matches': 16, ...}, {'ok': True, 'status': 'ok', 'message': '16 match(es) in 13 file(s)', 'total_matches': 16, ...})
+E       assert {'ok': True, ...hes': 16, ...} == {'ok': True, ...hes': 16, ...}
+E         
+E         Omitting 5 identical items, use -vv to show
+E         Differing items:
+E         {'files': [('C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-0s_2n4r_\\a.py', 2), ('C:\\Users\\MAXWEL~1\\AppDat...4r_\\.\\nul_far.dat', 1), ('C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-0s_2n4r_\\.\\T.UPPER.TXT', 1), ...]} != {'files': [('C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-0s_2n4r_\\a.py', 2), ('C:\\Users\\MAXWEL~1\\AppDat...4r_\\.\\m_dir\\x.py', 1), ('C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-0s_2n4r_\\.\\nul_far.dat', 1), ...]}
+E         {'lines': ['C:\\Users\\MAXWEL~1\\...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+=========================== short test summary info ===========================
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-files_with_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-count_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[False-content-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-HIT]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-files_with_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-HIT]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-count_matches-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-HIT]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-hi.]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-h[oi]t]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-^hit]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix[True-content-]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[0-0-250]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[1-1-0]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[2-0-2]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit[0-3-1]
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_roots_mix
+38 failed, 329 passed, 1 xfailed, 1 xpassed in 7.90s
+EXIT=1
+=== uv run pytest tests/native -q --ignore=tests/test_bash_e2e.py ===
+........................................................................ [ 13%]
+........................................................................ [ 27%]
+........................................................................ [ 41%]
+........................................................................ [ 54%]
+........................................................................ [ 68%]
+........................................................................ [ 82%]
+........................................................................ [ 96%]
+....................                                                     [100%]
+524 passed in 8.93s
+EXIT=0
+=== git log --oneline -- bin/kimix_native/grep.py ===
+cd8c19e9 remove send_message, wip native module grep
+
+=== git log --oneline -- kimi-cli/tests/native/test_grep_engine_parity.py ===
+cd8c19e9 remove send_message, wip native module grep
+
+=== git status of bin/kimix_native/grep.py vs HEAD ===
+bin/kimix_native/grep.py
+TRACKED
+=== git show fe10182b -- kimi-cli/src/kimi_cli/tools/file/grep_local.py | head -150 ===
+commit fe10182b74ec38ad6df388c902d2be36c4b346f1
+Author: maxwellgeng <maxwellgeng@outlook.com>
+Date:   Thu Oct 8 11:17:27 2026 +0800
+
+    remove native module grep
+
+diff --git a/kimi-cli/src/kimi_cli/tools/file/grep_local.py b/kimi-cli/src/kimi_cli/tools/file/grep_local.py
+index 37a3394b..48cd6555 100644
+--- a/kimi-cli/src/kimi_cli/tools/file/grep_local.py
++++ b/kimi-cli/src/kimi_cli/tools/file/grep_local.py
+@@ -1,6 +1,12 @@
+ """
+ The local version of the Grep tool using ripgrep.
+ Be cautious that `KaosPath` is not used in this implementation.
++
++The native (``kimix_native`` / ``runtime_py``) grep kernel is intentionally
++NOT used here: this tool always spawns the ripgrep binary (optionally wrapped
++by rtk for output dedup).  The pure-Python ``backup_grep`` path is the only
++fallback, and it is reached only when ripgrep cannot be resolved (or when the
++session has a dirty VFS).
+ """
+ 
+ import asyncio
+@@ -18,11 +24,6 @@ from functools import lru_cache
+ from pathlib import Path
+ from typing import Any, Literal, override
+ 
+-from kimi_cli.native_loader import (
+-    get_compat as _native_get_compat,
+-    get_module as _native_get_module,
+-    use_native as _native_use_native,
+-)
+ from kaos.path import KaosPath
+ from kosong.tooling import (
+     FIELD_ALIASES_FILE,
+@@ -47,11 +48,6 @@ from kimi_cli._rtk_common import _rtk_binary_name
+ from kimi_cli.install import _RTK_DOWNLOAD_LOCK, _download_and_install_rtk
+ from kimi_cli.share import get_share_dir
+ from kimi_cli.soul.agent import Runtime
+-from kimi_cli.tools.file.glob import (
+-    _GitignoreRule,
+-    _gitignore_match,
+-    _parse_gitignore,
+-)
+ from kimi_cli.tools.file.grep_archive import (
+     materialize_archive_members,
+     parse_archive_path_candidates,
+@@ -91,9 +87,6 @@ from kimi_cli.utils.path import (
+ from kimi_cli.utils.sensitive import is_sensitive_file, sensitive_file_warning
+ from kimi_cli.vfs import VFS
+ 
+-# Resolved once at import time (stable runtime: result never changes).
+-_NATIVE_TOOLS = _native_get_module("tools")
+-
+ # Output mode map — only canonical values accepted
+ _OUTPUT_MODE_MAP: dict[str, Literal["files_with_matches", "count_matches", "content"]] = {
+     "files_with_matches": "files_with_matches",
+@@ -101,16 +94,9 @@ _OUTPUT_MODE_MAP: dict[str, Literal["files_with_matches", "count_matches", "cont
+     "content": "content",
+ }
+ 
+-
+-# Pure-Python reference implementation of the pattern newline helpers.
+-_COMPAT_TOOLS = None
+-
+-
+-def _compat_tools():
+-    global _COMPAT_TOOLS
+-    if _COMPAT_TOOLS is None:
+-        _COMPAT_TOOLS = _native_get_compat("tools")
+-    return _COMPAT_TOOLS
++# Matches a regex ``\n`` escape (odd number of backslashes before ``n``).
++# Even backslashes, e.g. ``\\n``, mean a literal backslash+n search.
++_REGEX_NEWLINE_ESCAPE_RE = re.compile(r"(?<!\\)(?:\\\\)*\\n")
+ 
+ 
+ def _pattern_has_regex_newline(pattern: str) -> bool:
+@@ -122,9 +108,7 @@ def _pattern_has_regex_newline(pattern: str) -> bool:
+     ``n``).  Even backslashes, e.g. ``\\n``, mean a literal backslash+n
+     search and should stay line-oriented.
+     """
+-    if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and pattern.isascii():
+-        return _NATIVE_TOOLS.pattern_has_regex_newline(pattern)
+-    return _compat_tools()._compat_pattern_has_regex_newline(pattern)
++    return "\n" in pattern or bool(_REGEX_NEWLINE_ESCAPE_RE.search(pattern))
+ 
+ 
+ def _multiline_pattern(pattern: str) -> str:
+@@ -136,9 +120,14 @@ def _multiline_pattern(pattern: str) -> str:
+     return) makes the same pattern match both LF and CRLF files.  Only
+     called when multiline mode is active.
+     """
+-    if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and pattern.isascii():
+-        return _NATIVE_TOOLS.multiline_pattern(pattern)
+-    return _compat_tools()._compat_multiline_pattern(pattern)
++    if "\n" not in pattern and not _REGEX_NEWLINE_ESCAPE_RE.search(pattern):
++        return pattern
++    # Normalize explicit CRLF in the pattern, then rewrite real newlines and
++    # regex ``\n`` escapes to ``\r?\n``.  Lambdas keep the replacement text
++    # literal (re.sub would otherwise interpret ``\r``/``\n`` escapes).
++    p = pattern.replace("\r\n", "\n")
++    p = _REGEX_NEWLINE_ESCAPE_RE.sub(lambda _m: r"\r?\n", p)
++    return p.replace("\n", r"\r?\n")
+ 
+ 
+ class Params(BaseModel):
+@@ -653,11 +642,6 @@ def _strip_path_prefix(lines: list[str], search_base: str) -> list[str]:
+     return result
+ 
+ 
+-def _normalize_output_lines(lines: list[str], output_mode: str) -> list[str]:
+-    """No-op passthrough (paths kept in native OS format)."""
+-    return lines
+-
+-
+ def _rtk_fold_note(
+     meta: dict[str, Any], *, original_path: str | None = None
+ ) -> str | None:
+@@ -871,16 +855,6 @@ def _glob_chars(s: str) -> bool:
+     return any(ch in s for ch in "*?[")
+ 
+ 
+-def _display_path_for(abs_path: Path, cwd: Path) -> str:
+-    """Workspace-relative forward-slash display path (name when at root)."""
+-    try:
+-        rel = abs_path.relative_to(cwd)
+-        rel_str = str(rel).replace("\\", "/")
+-        return rel_str if rel_str != "." else abs_path.name
+-    except ValueError:
+-        return abs_path.name
+-
+-
+ async def _resolve_selector_specs(
+     entries: list[str],
+     work_dir,
+@@ -998,10 +972,10 @@ def _build_ranges_map(
+ ) -> None:
+     """Populate ``ctx.ranges`` keyed to how paths appear in the output stream.
+ 
+-    ``absolute_keys=False`` keys on the post-strip display path (native
+-    pipeline); ``absolute_keys=True`` keys on the absolute path (backup
+-    pipeline, before prefix stripping). Archive scratch entries are keyed on
+-    their ``archive:member`` display form in both cases.
++    ``absolute_keys=False`` keys on the post-strip display path (the
++    ripgrep pipeline); ``absolute_keys=True`` keys on the absolute path
++    (backup pipeline, before prefix stripping). Archive scratch entries are
++    keyed on their ``archive:member`` display form in both cases.
+     """
+     for spec, path_arg in zip(specs, resolved, strict=True):
+         if not spec.ranges:
+
+=== git show fe10182b --stat -- tests/native/test_src_compat_delegation.py ===
+commit fe10182b74ec38ad6df388c902d2be36c4b346f1
+Author: maxwellgeng <maxwellgeng@outlook.com>
+Date:   Thu Oct 8 11:17:27 2026 +0800
+
+    remove native module grep
+
+diff --git a/tests/native/test_src_compat_delegation.py b/tests/native/test_src_compat_delegation.py
+index dcc13248..b97bc754 100644
+--- a/tests/native/test_src_compat_delegation.py
++++ b/tests/native/test_src_compat_delegation.py
+@@ -21,7 +21,14 @@ if str(_BIN) not in sys.path:
+ 
+ 
+ def _force_pure(monkeypatch, module) -> None:
+-    monkeypatch.setattr(module, "_native_use_native", lambda kernel: False)
++    """Force a module's native fast path OFF.
++
++    Modules that no longer carry a native gate (e.g. ``grep_local`` after the
++    native GREP kernel removal — its helpers are pure Python by construction)
++    are left untouched.
++    """
++    if hasattr(module, "_native_use_native"):
++        monkeypatch.setattr(module, "_native_use_native", lambda kernel: False)
+ 
+ 
+ def _assert_eq(monkeypatch, src_module, src_name, shim_mod, shim_name, args):
+=== diff -q tests/native kimi-cli/tests/native ===
+SAME  __init__.py
+DIFF  conftest.py
+DIFF  corpus.py
+DIFF  test_behavior_equivalence.py
+DIFF  test_compat_missing_dll.py
+ONLY-ROOT test_compress_equivalence.py
+ONLY-ROOT test_full_behavior_equivalence.py
+DIFF  test_loader.py
+DIFF  test_mode_matrix.py
+DIFF  test_per_kernel_toggle.py
+ONLY-ROOT test_shell_security_equivalence.py
+ONLY-ROOT test_src_compat_delegation.py
+ONLY-ROOT test_stream_printing_equivalence.py
+ONLY-ROOT test_version_gate.py
+ONLY-CLI test_additional_kernels_equivalence.py
+ONLY-CLI test_diff_glob_tools_equivalence.py
+ONLY-CLI test_grep_engine_parity.py
+=== grep -n 'grep_engine_parity' reviews/tools/00-baseline.txt | head -50 ===
+199:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896CCD950>
+209:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+229:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+232:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896C66780>
+242:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+262:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+265:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896C668B0>
+275:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+295:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+298:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896CB5130>
+308:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+328:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+331:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896E38450>
+341:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+361:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+364:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896E38650>
+374:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+394:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+397:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896E098B0>
+407:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+427:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+430:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896E1AC10>
+440:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+460:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+463:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896E1ADD0>
+473:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+493:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+496:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896DA50D0>
+506:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+526:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+529:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896E1DE90>
+539:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+559:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+562:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896DD1D10>
+572:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+592:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+595:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896DD1DB0>
+605:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+625:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+628:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896E247A0>
+638:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+658:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+661:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896E34D70>
+671:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+691:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+694:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896E34E50>
+704:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+724:kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+727:self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000002A896DF8890>
+737:kimi-cli\tests\native\test_grep_engine_parity.py:428: 
+
+=== grep -c FAILED reviews/tools/00-baseline.txt ===
+43
+=== uv run pytest 'kimi-cli/tests/native/test_grep_engine_parity.py::TestEngineMirrorParity::test_roots_mix' -q -vv --no-header -p no:cacheprovider 2>&1 | head -120 ===
+============================= test session starts =============================
+collecting ... collected 1 item
+
+kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_roots_mix FAILED [100%]
+
+================================== FAILURES ===================================
+____________________ TestEngineMirrorParity.test_roots_mix ____________________
+
+self = <tests.native.test_grep_engine_parity.TestEngineMirrorParity object at 0x000001577DE6B430>
+tree = 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk'
+
+    def test_roots_mix(self, tree):
+        roots = [
+            "a.py",  # relative file
+            "m_dir",  # relative dir
+            ".",  # un-normalised dot join
+            tree,  # absolute dir
+            os.path.join(tree, "nope"),  # missing
+            os.path.join(tree, ".hid_dir"),  # explicit hidden dir root
+            os.path.join(tree, "nul.dat"),  # binary file root
+            os.path.join(tree, "huge.bin"),  # over-cap file root
+        ]
+        for mode in _MODES:
+>           _run_both(tree, "hit", roots=roots, mode=mode)
+
+kimi-cli\tests\native\test_grep_engine_parity.py:448: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+tree = 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk'
+pat = 'hit'
+kw = {'roots': ['a.py', 'm_dir', '.', 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk', 'C:\\Users\\MAXWEL...nope', 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk\\.hid_dir', ...], 'mode': 'files_with_matches'}
+
+    def _run_both(tree, pat, **kw):
+        eng = _norm(_engine_call(tree, pat, **kw))
+        mir = _norm(_mirror_call(tree, pat, **kw))
+>       assert mir == eng, (pat, kw, eng, mir)
+E       AssertionError: ('hit', {'roots': ['a.py', 'm_dir', '.', 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk', 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk\
+E         ope', 'C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk\\.hid_dir', ...], 'mode': 'files_with_matches'}, {'ok': True, 'status': 'ok', 'message': '16 match(es) in 13 file(s)', 'total_matches': 16, ...}, {'ok': True, 'status': 'ok', 'message': '16 match(es) in 13 file(s)', 'total_matches': 16, ...})
+E       assert {'ok': True, ...hes': 16, ...} == {'ok': True, ...hes': 16, ...}
+E         
+E         Omitting 5 identical items, use -vv to show
+E         Differing items:
+E         {'files': [('C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk\\a.py', 2), ('C:\\Users\\MAXWEL~1\\AppDat...vmk\\.\\nul_far.dat', 1), ('C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk\\.\\T.UPPER.TXT', 1), ...]} != {'files': [('C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk\\a.py', 2), ('C:\\Users\\MAXWEL~1\\AppDat...vmk\\.\\m_dir\\x.py', 1), ('C:\\Users\\MAXWEL~1\\AppData\\Local\\Temp\\grep-parity-yvd1avmk\\.\\nul_far.dat', 1), ...]}
+E         {'lines': ['C:\\Users\\MAXWEL~1\\...
+E         
+E         ...Full output truncated (105 lines hidden), use '-vv' to show
+
+kimi-cli\tests\native\test_grep_engine_parity.py:160: AssertionError
+=========================== short test summary info ===========================
+FAILED kimi-cli\tests\native\test_grep_engine_parity.py::TestEngineMirrorParity::test_roots_mix
+============================== 1 failed in 0.39s ==============================
+EXIT=1

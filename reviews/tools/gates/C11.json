@@ -1,0 +1,42 @@
+{
+  "id": "C11",
+  "tool": "web_search (SearchWeb)",
+  "files": [
+    "kimi-cli/src/kimi_cli/tools/web/search.py",
+    "kimi-cli/src/kimi_cli/tools/web/search.md",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py",
+    "kimi-cli/src/kimi_cli/tools/web/content.py"
+  ],
+  "tests": [
+    "kimi-cli/tests/tools/test_web_search_dispatch.py",
+    "kimi-cli/tests/tools/test_web_providers.py",
+    "kimi-cli/tests/tools/test_web_providers_extra.py"
+  ],
+  "cov_module": "kimi_cli.tools.web.search",
+  "sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "ruff_rc": 1,
+  "ruff": "fail",
+  "c901_rc": 0,
+  "c901": "pass",
+  "metrics_rc": 1,
+  "metrics": "fail",
+  "complexity_max": 19,
+  "longest_fn_loc": 165,
+  "longest_fn": "search",
+  "module_loc": 2388,
+  "functions_over_120_loc": 2,
+  "functions_over_12_cx": 5,
+  "metrics_breaches": [
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::_resolve complexity=13 > 12",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::_extract_web_search_results complexity=13 > 12",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::search loc=165 > 120",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::extract loc=124 > 120",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::extract complexity=14 > 12",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::extract complexity=19 > 12",
+    "kimi-cli/src/kimi_cli/tools/web/providers.py::_collect_output_text complexity=14 > 12"
+  ],
+  "pytest_rc": 0,
+  "pytest": "pass",
+  "cov_rc": 0,
+  "cov": "pass"
+}

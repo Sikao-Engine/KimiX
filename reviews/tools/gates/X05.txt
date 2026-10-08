@@ -1,0 +1,783 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+
+=== uv run tools/review_tool_registry.py --sources kimi-cli/src/kimi_cli/tools src/kimix/tools ===
+
+ORPHANS:
+  kimi_cli.tools.file.hash_line:HashEdit  (kimi-cli/src/kimi_cli/tools/file/hash_line.py)
+  kimi_cli.tools.file.hash_line:HashRead  (kimi-cli/src/kimi_cli/tools/file/hash_line.py)
+  kimi_cli.tools.test:Compare  (kimi-cli/src/kimi_cli/tools/test.py)
+  kimi_cli.tools.test:Panic  (kimi-cli/src/kimi_cli/tools/test.py)
+  kimi_cli.tools.test:Plus  (kimi-cli/src/kimi_cli/tools/test.py)
+  kimix.tools.file:Mkdir  (src/kimix/tools/file/__init__.py)
+  kimix.tools.file:Rm  (src/kimix/tools/file/__init__.py)
+  kimix.tools.file.find_str:FindStr  (src/kimix/tools/file/find_str.py)
+  kimix.tools.parser:ParserTool  (src/kimix/tools/parser/__init__.py)
+G-ORPHAN: FAIL
+# discovered tool classes: 37
+# registered in a manifest: 27
+# allowlisted (rationale recorded): 1
+# ORPHANS: 9
+
+registered  kimi_cli.tools.agent:AgentTool                     name='subagent'  kimi-cli/src/kimi_cli/tools/agent/__init__.py
+registered  kimi_cli.tools.ask_user:AskUserQuestion            name='AskUserQuestion'  kimi-cli/src/kimi_cli/tools/ask_user/__init__.py
+allowlisted kimi_cli.tools.context_prune:context_prune         name='context_prune'  kimi-cli/src/kimi_cli/tools/context_prune.py
+registered  kimi_cli.tools.file.edit:EditFile                  name='edit'  kimi-cli/src/kimi_cli/tools/file/edit/__init__.py
+registered  kimi_cli.tools.file.glob:Glob                      name='glob'  kimi-cli/src/kimi_cli/tools/file/glob.py
+registered  kimi_cli.tools.file.grep_local:Grep                name='grep'  kimi-cli/src/kimi_cli/tools/file/grep_local.py
+ORPHAN      kimi_cli.tools.file.hash_line:HashEdit             name='HashEdit'  kimi-cli/src/kimi_cli/tools/file/hash_line.py
+ORPHAN      kimi_cli.tools.file.hash_line:HashRead             name='HashRead'  kimi-cli/src/kimi_cli/tools/file/hash_line.py
+registered  kimi_cli.tools.file.read:ReadFile                  name='read'  kimi-cli/src/kimi_cli/tools/file/read.py
+registered  kimi_cli.tools.file.read_media:ReadMediaFile       name='read_image'  kimi-cli/src/kimi_cli/tools/file/read_media.py
+registered  kimi_cli.tools.file.write:WriteFile                name='write'  kimi-cli/src/kimi_cli/tools/file/write.py
+registered  kimi_cli.tools.memory:retrieve                     name='retrieve'  kimi-cli/src/kimi_cli/tools/memory/__init__.py
+ORPHAN      kimi_cli.tools.test:Compare                        name='compare'  kimi-cli/src/kimi_cli/tools/test.py
+ORPHAN      kimi_cli.tools.test:Panic                          name='panic'  kimi-cli/src/kimi_cli/tools/test.py
+ORPHAN      kimi_cli.tools.test:Plus                           name='plus'  kimi-cli/src/kimi_cli/tools/test.py
+registered  kimi_cli.tools.todo:TodoList                       name='todo_list'  kimi-cli/src/kimi_cli/tools/todo/__init__.py
+registered  kimi_cli.tools.web.extract:WebExtract              name='web_extract'  kimi-cli/src/kimi_cli/tools/web/extract.py
+registered  kimi_cli.tools.web.fetch:fetch_url                 name='fetch_url'  kimi-cli/src/kimi_cli/tools/web/fetch.py
+registered  kimi_cli.tools.web.search:SearchWeb                name='web_search'  kimi-cli/src/kimi_cli/tools/web/search.py
+registered  kimix.tools.agent:Agent                            name='subagent'  src/kimix/tools/agent/__init__.py
+registered  kimix.tools.agent:AgentClose                       name='interrupt_agent'  src/kimix/tools/agent/__init__.py
+registered  kimix.tools.agent:AgentList                        name='list_agents'  src/kimix/tools/agent/__init__.py
+registered  kimix.tools.background:TaskOutput                  name='job_output'  src/kimix/tools/background/__init__.py
+registered  kimix.tools.context:compact                        name='compact'  src/kimix/tools/context/__init__.py
+ORPHAN      kimix.tools.file:Mkdir                             name='Mkdir'  src/kimix/tools/file/__init__.py
+ORPHAN      kimix.tools.file:Rm                                name='Rm'  src/kimix/tools/file/__init__.py
+registered  kimix.tools.file.bash.bash_tool:Bash               name='bash'  src/kimix/tools/file/bash/bash_tool.py
+registered  kimix.tools.file.bash.pwsh_tool:Powershell         name='pwsh'  src/kimix/tools/file/bash/pwsh_tool.py
+ORPHAN      kimix.tools.file.find_str:FindStr                  name='FindStr'  src/kimix/tools/file/find_str.py
+registered  kimix.tools.file.run:Run                           name='Run'  src/kimix/tools/file/run.py
+registered  kimix.tools.note:EditPlan                          name='EditPlan'  src/kimix/tools/note/__init__.py
+registered  kimix.tools.note:ReadPlan                          name='ReadPlan'  src/kimix/tools/note/__init__.py
+registered  kimix.tools.note:WritePlan                         name='WritePlan'  src/kimix/tools/note/__init__.py
+ORPHAN      kimix.tools.parser:ParserTool                      name='ParserTool'  src/kimix/tools/parser/__init__.py
+registered  kimix.tools.py:python                              name='python'  src/kimix/tools/py/__init__.py
+registered  kimix.tools.swarm:AgentSwarm                       name='workflow'  src/kimix/tools/swarm/__init__.py
+registered  kimix.tools.web.fetch_url:fetch_url                name='fetch_url'  src/kimix/tools/web/fetch_url.py
+=== exit=1 ===
+
+=== uv run tools/gate_dup.py ===
+
+G-DUP: FAIL (unwaived divergent duplicates)
+# tool classes discovered: 37
+# distinct tool names: 35
+# duplicated names: 2
+
+[FAIL] fetch_url (2 implementations)
+    fetch_url                    kimi-cli/src/kimi_cli/tools/web/fetch.py:101
+    fetch_url                    src/kimix/tools/web/fetch_url.py:23
+
+[WAIVED] subagent (2 implementations)
+    AgentTool                    kimi-cli/src/kimi_cli/tools/agent/__init__.py:53
+    Agent                        src/kimix/tools/agent/__init__.py:518
+    rationale: intentionally distinct C01 (fg default) vs K01 (bg default); contrast probes mandated
+=== exit=1 ===
+
+=== uv run python .kimix_cache/tmp_30108/mod_orphan.py   (module-orphan reachability: every .py under kimi-cli/src/kimi_cli/tools + src/kimix/tools; AST import index over kimi-cli/src, src, kimi-cli/tests, tests) ===
+file                                                     module                                     imported?  register?
+------------------------------------------------------------------------------------------------------------------------
+kimi-cli/src/kimi_cli/tools/__init__.py                  kimi_cli.tools                             YES        no       
+kimi-cli/src/kimi_cli/tools/context_prune.py             kimi_cli.tools.context_prune               YES        YES      
+kimi-cli/src/kimi_cli/tools/display.py                   kimi_cli.tools.display                     YES        no       
+kimi-cli/src/kimi_cli/tools/reason.py                    kimi_cli.tools.reason                      YES        no       
+kimi-cli/src/kimi_cli/tools/test.py                      kimi_cli.tools.test                        NO         no       
+kimi-cli/src/kimi_cli/tools/utils.py                     kimi_cli.tools.utils                       YES        no       
+kimi-cli/src/kimi_cli/tools/agent/__init__.py            kimi_cli.tools.agent                       YES        YES      
+kimi-cli/src/kimi_cli/tools/ask_user/__init__.py         kimi_cli.tools.ask_user                    YES        YES      
+kimi-cli/src/kimi_cli/tools/file/__init__.py             kimi_cli.tools.file                        YES        no       
+kimi-cli/src/kimi_cli/tools/file/auto_generated.py       kimi_cli.tools.file.auto_generated         YES        no       
+kimi-cli/src/kimi_cli/tools/file/auto_repair.py          kimi_cli.tools.file.auto_repair            YES        no       
+kimi-cli/src/kimi_cli/tools/file/blackbox.py             kimi_cli.tools.file.blackbox               YES        no       
+kimi-cli/src/kimi_cli/tools/file/check_fmt.py            kimi_cli.tools.file.check_fmt              YES        no       
+kimi-cli/src/kimi_cli/tools/file/conflict_detect.py      kimi_cli.tools.file.conflict_detect        YES        no       
+kimi-cli/src/kimi_cli/tools/file/edit_safety.py          kimi_cli.tools.file.edit_safety            YES        no       
+kimi-cli/src/kimi_cli/tools/file/fs_cache.py             kimi_cli.tools.file.fs_cache               YES        no       
+kimi-cli/src/kimi_cli/tools/file/glob.py                 kimi_cli.tools.file.glob                   YES        YES      
+kimi-cli/src/kimi_cli/tools/file/grep_archive.py         kimi_cli.tools.file.grep_archive           YES        no       
+kimi-cli/src/kimi_cli/tools/file/grep_local.py           kimi_cli.tools.file.grep_local             YES        YES      
+kimi-cli/src/kimi_cli/tools/file/grep_output.py          kimi_cli.tools.file.grep_output            YES        no       
+kimi-cli/src/kimi_cli/tools/file/grep_recorder.py        kimi_cli.tools.file.grep_recorder          YES        no       
+kimi-cli/src/kimi_cli/tools/file/grep_selectors.py       kimi_cli.tools.file.grep_selectors         YES        no       
+kimi-cli/src/kimi_cli/tools/file/hash_line.py            kimi_cli.tools.file.hash_line              YES        no       
+kimi-cli/src/kimi_cli/tools/file/micro_compress.py       kimi_cli.tools.file.micro_compress         YES        no       
+kimi-cli/src/kimi_cli/tools/file/output_utils.py         kimi_cli.tools.file.output_utils           YES        no       
+kimi-cli/src/kimi_cli/tools/file/parse_check.py          kimi_cli.tools.file.parse_check            YES        no       
+kimi-cli/src/kimi_cli/tools/file/read.py                 kimi_cli.tools.file.read                   YES        YES      
+kimi-cli/src/kimi_cli/tools/file/read_archive.py         kimi_cli.tools.file.read_archive           YES        no       
+kimi-cli/src/kimi_cli/tools/file/read_extract.py         kimi_cli.tools.file.read_extract           YES        no       
+kimi-cli/src/kimi_cli/tools/file/read_markit.py          kimi_cli.tools.file.read_markit            YES        no       
+kimi-cli/src/kimi_cli/tools/file/read_media.py           kimi_cli.tools.file.read_media             YES        YES      
+kimi-cli/src/kimi_cli/tools/file/read_media_shared.py    kimi_cli.tools.file.read_media_shared      YES        no       
+kimi-cli/src/kimi_cli/tools/file/read_pdf_pages.py       kimi_cli.tools.file.read_pdf_pages         YES        no       
+kimi-cli/src/kimi_cli/tools/file/read_profiles.py        kimi_cli.tools.file.read_profiles          YES        no       
+kimi-cli/src/kimi_cli/tools/file/read_sqlite.py          kimi_cli.tools.file.read_sqlite            YES        no       
+kimi-cli/src/kimi_cli/tools/file/replace.py              kimi_cli.tools.file.replace                YES        no       
+kimi-cli/src/kimi_cli/tools/file/snapshot_store.py       kimi_cli.tools.file.snapshot_store         YES        no       
+kimi-cli/src/kimi_cli/tools/file/utils.py                kimi_cli.tools.file.utils                  YES        no       
+kimi-cli/src/kimi_cli/tools/file/write.py                kimi_cli.tools.file.write                  YES        YES      
+kimi-cli/src/kimi_cli/tools/file/edit/__init__.py        kimi_cli.tools.file.edit                   YES        YES      
+kimi-cli/src/kimi_cli/tools/file/edit/base.py            kimi_cli.tools.file.edit.base              YES        no       
+kimi-cli/src/kimi_cli/tools/file/edit/params.py          kimi_cli.tools.file.edit.params            YES        no       
+kimi-cli/src/kimi_cli/tools/file/edit/modes/__init__.py  kimi_cli.tools.file.edit.modes             YES        no       
+kimi-cli/src/kimi_cli/tools/file/edit/modes/replace.py   kimi_cli.tools.file.edit.modes.replace     YES        no       
+kimi-cli/src/kimi_cli/tools/file/edit/modes/sloppy.py    kimi_cli.tools.file.edit.modes.sloppy      YES        no       
+kimi-cli/src/kimi_cli/tools/memory/__init__.py           kimi_cli.tools.memory                      YES        YES      
+kimi-cli/src/kimi_cli/tools/todo/__init__.py             kimi_cli.tools.todo                        YES        YES      
+kimi-cli/src/kimi_cli/tools/web/__init__.py              kimi_cli.tools.web                         YES        no       
+kimi-cli/src/kimi_cli/tools/web/content.py               kimi_cli.tools.web.content                 YES        no       
+kimi-cli/src/kimi_cli/tools/web/extract.py               kimi_cli.tools.web.extract                 YES        YES      
+kimi-cli/src/kimi_cli/tools/web/fetch.py                 kimi_cli.tools.web.fetch                   YES        YES      
+kimi-cli/src/kimi_cli/tools/web/providers.py             kimi_cli.tools.web.providers               YES        no       
+kimi-cli/src/kimi_cli/tools/web/search.py                kimi_cli.tools.web.search                  YES        YES      
+kimi-cli/src/kimi_cli/tools/web/url_safety.py            kimi_cli.tools.web.url_safety              YES        no       
+src/kimix/tools/check_fmt.py                             kimix.tools.check_fmt                      YES        no       
+src/kimix/tools/common.py                                kimix.tools.common                         YES        no       
+src/kimix/tools/prompt_common.py                         kimix.tools.prompt_common                  YES        no       
+src/kimix/tools/security.py                              kimix.tools.security                       YES        no       
+src/kimix/tools/agent/__init__.py                        kimix.tools.agent                          YES        YES      
+src/kimix/tools/agent/store.py                           kimix.tools.agent.store                    YES        no       
+src/kimix/tools/background/__init__.py                   kimix.tools.background                     YES        YES      
+src/kimix/tools/background/utils.py                      kimix.tools.background.utils               YES        no       
+src/kimix/tools/context/__init__.py                      kimix.tools.context                        YES        YES      
+src/kimix/tools/file/__init__.py                         kimix.tools.file                           YES        no       
+src/kimix/tools/file/find_str.py                         kimix.tools.file.find_str                  YES        no       
+src/kimix/tools/file/run.py                              kimix.tools.file.run                       YES        YES      
+src/kimix/tools/file/bash/__init__.py                    kimix.tools.file.bash                      YES        no       
+src/kimix/tools/file/bash/bash_fix.py                    kimix.tools.file.bash.bash_fix             YES        no       
+src/kimix/tools/file/bash/bash_tool.py                   kimix.tools.file.bash.bash_tool            YES        YES      
+src/kimix/tools/file/bash/output_enhance.py              kimix.tools.file.bash.output_enhance       YES        no       
+src/kimix/tools/file/bash/process_pwsh.py                kimix.tools.file.bash.process_pwsh         YES        no       
+src/kimix/tools/file/bash/pwsh_fix.py                    kimix.tools.file.bash.pwsh_fix             YES        no       
+src/kimix/tools/file/bash/pwsh_tool.py                   kimix.tools.file.bash.pwsh_tool            YES        YES      
+src/kimix/tools/file/bash/safety.py                      kimix.tools.file.bash.safety               YES        no       
+src/kimix/tools/file/bash/shell_common.py                kimix.tools.file.bash.shell_common         YES        no       
+src/kimix/tools/note/__init__.py                         kimix.tools.note                           YES        YES      
+src/kimix/tools/parser/__init__.py                       kimix.tools.parser                         YES        no       
+src/kimix/tools/py/__init__.py                           kimix.tools.py                             YES        YES      
+src/kimix/tools/swarm/__init__.py                        kimix.tools.swarm                          YES        YES      
+src/kimix/tools/swarm/best_of_n.py                       kimix.tools.swarm.best_of_n                YES        no       
+src/kimix/tools/web/__init__.py                          kimix.tools.web                            YES        no       
+src/kimix/tools/web/fetch_url.py                         kimix.tools.web.fetch_url                  YES        YES      
+src/kimix/tools/web/web_fetcher/__init__.py              kimix.tools.web.web_fetcher                YES        no       
+src/kimix/tools/web/web_fetcher/fetcher.py               kimix.tools.web.web_fetcher.fetcher        YES        no       
+
+== MODULES NOTHING IMPORTS AND NOTHING REGISTERS (1) ==
+  kimi_cli.tools.test  (kimi-cli/src/kimi_cli/tools/test.py)
+
+== import sites for the explicitly-named candidates ==
+  kimi_cli.tools.file.micro_compress       imported: kimi-cli/src/kimi_cli/soul/context_pruning.py:14, kimi-cli/src/kimi_cli/soul/toolset.py:1611, kimi-cli/src/kimi_cli/soul/toolset.py:349, kimi-cli/src/kimi_cli/tools/file/glob.py:20, kimi-cli/src/kimi_cli/tools/file/grep_local.py:69, kimi-cli/tests/tools/test_micro_compress.py:12
+  kimi_cli.tools.file.blackbox             imported: kimi-cli/src/kimi_cli/tools/file/edit_safety.py:12, kimi-cli/tests/tools/test_blackbox.py:9
+  kimi_cli.tools.file.parse_check          imported: kimi-cli/src/kimi_cli/tools/file/auto_repair.py:14, kimi-cli/src/kimi_cli/tools/file/edit_safety.py:17, kimi-cli/tests/tools/test_auto_repair.py:14, kimi-cli/tests/tools/test_parse_check.py:10
+  kimi_cli.tools.file.output_utils         imported: kimi-cli/src/kimi_cli/tools/file/glob.py:24, kimi-cli/src/kimi_cli/tools/file/grep_local.py:73, kimi-cli/tests/tools/test_output_utils.py:6, src/kimix/tools/common.py:1739
+  kimi_cli.tools.file.grep_recorder        imported: kimi-cli/src/kimi_cli/tools/file/grep_local.py:60, kimi-cli/tests/tools/test_grep_recorder.py:5, kimi-cli/tests/tools/test_grep_rich.py:19
+  kimi_cli.tools.file.grep_selectors       imported: kimi-cli/src/kimi_cli/tools/file/grep_archive.py:19, kimi-cli/src/kimi_cli/tools/file/grep_local.py:61, kimi-cli/tests/tools/test_grep_archive.py:17, kimi-cli/tests/tools/test_grep_selectors.py:8
+  kimi_cli.tools.reason                    imported: kimi-cli/tests/tools/test_reason.py:12, src/kimix/utils/system_prompt.py:10
+  kimi_cli.tools.display                   imported: kimi-cli/src/kimi_cli/tools/file/auto_repair.py:13, kimi-cli/src/kimi_cli/tools/file/edit/base.py:17, kimi-cli/src/kimi_cli/tools/file/edit/modes/replace.py:15, kimi-cli/src/kimi_cli/tools/file/write.py:13, kimi-cli/src/kimi_cli/tools/todo/__init__.py:38, kimi-cli/src/kimi_cli/utils/diff.py:12
+  kimix.tools.prompt_common                imported: src/kimix/tools/agent/__init__.py:21, src/kimix/tools/background/__init__.py:30, src/kimix/tools/file/bash/bash_tool.py:68, src/kimix/tools/file/bash/pwsh_tool.py:42, src/kimix/tools/file/run.py:42, src/kimix/tools/note/__init__.py:13
+  kimix.tools.check_fmt                    imported: tests/test_check_fmt.py:6
+  kimi_cli.tools.file.replace              imported: kimi-cli/tests/conftest.py:41, kimi-cli/tests/core/test_session_logging.py:284, kimi-cli/tests/tools/test_additional_dirs.py:20, kimi-cli/tests/tools/test_additional_dirs.py:21, kimi-cli/tests/tools/test_edit_file.py:14, kimi-cli/tests/tools/test_edit_file_fuzzy.py:5
+  kimix.tools.file.find_str                imported: tests/native/test_behavior_equivalence.py:109, tests/native/test_behavior_equivalence.py:110
+  kimix.tools.parser                       imported: tests/test_parsers.py:539, tests/test_parsers.py:556, tests/test_parsers.py:572, tests/test_parsers.py:591, tests/test_parsers.py:605, tests/test_parsers.py:616
+  kimix.tools.file                         imported: src/kimix/tools/file/bash/__init__.py:3, src/kimix/tools/file/bash/__init__.py:4, src/kimix/tools/file/bash/bash_tool.py:1092, src/kimix/tools/file/bash/bash_tool.py:49, src/kimix/tools/file/bash/bash_tool.py:57, src/kimix/tools/file/bash/bash_tool.py:63
+  kimi_cli.tools.test                      NO IMPORT SITE
+  kimi_cli.tools.file.hash_line            imported: kimi-cli/src/kimi_cli/tools/file/__init__.py:18, kimi-cli/src/kimi_cli/tools/file/snapshot_store.py:424, kimi-cli/tests/conftest.py:38, kimi-cli/tests/native/test_behavior_equivalence.py:337, kimi-cli/tests/native/test_diff_glob_tools_equivalence.py:201, kimi-cli/tests/native/test_diff_glob_tools_equivalence.py:220
+=== exit=0 ===
+=== grep -rn "kimix.tools.check_fmt" --include=*.py kimi-cli/src src kimi-cli/tests tests tools ===
+kimi-cli/src/kimi_cli/tools/file/check_fmt.py:94:# duplicated in ``kimix.tools.check_fmt``, which is now a shim).
+src/kimix/tools/check_fmt.py:21:    "kimix.tools.check_fmt is deprecated; import from "
+tests/test_check_fmt.py:1:"""Tests for kimix.tools.check_fmt JSON/XML validation functions."""
+tests/test_check_fmt.py:6:from kimix.tools.check_fmt import check_json, check_json_str
+=== exit=0 ===
+
+=== grep -rn "kimi_cli.tools.file.replace" --include=*.py kimi-cli/src src kimi-cli/tests tests tools ===
+kimi-cli/tests/conftest.py:41:from kimi_cli.tools.file.replace import EditFile
+kimi-cli/tests/core/test_session_logging.py:284:        from kimi_cli.tools.file.replace import Edit, Params
+kimi-cli/tests/tools/test_additional_dirs.py:20:from kimi_cli.tools.file.replace import Edit, EditFile
+kimi-cli/tests/tools/test_additional_dirs.py:21:from kimi_cli.tools.file.replace import Params as ReplaceParams
+kimi-cli/tests/tools/test_edit_file.py:14:from kimi_cli.tools.file.replace import Edit, EditFile, Params
+kimi-cli/tests/tools/test_edit_file_fuzzy.py:5:from kimi_cli.tools.file.replace import Edit, EditFile, Params
+kimi-cli/tests/tools/test_edit_file_parse_repair.py:11:from kimi_cli.tools.file.replace import Edit, EditFile, Params
+kimi-cli/tests/tools/test_edit_gate.py:38:from kimi_cli.tools.file.replace import Edit as ShimEdit
+kimi-cli/tests/tools/test_edit_gate.py:39:from kimi_cli.tools.file.replace import EditFile as ShimEditFile
+kimi-cli/tests/tools/test_edit_gate.py:40:from kimi_cli.tools.file.replace import Params as ShimParams
+kimi-cli/tests/tools/test_edit_gate.py:585:    import kimi_cli.tools.file.replace as shim
+kimi-cli/tests/tools/test_tool_descriptions.py:15:from kimi_cli.tools.file.replace import EditFile
+kimi-cli/tests/tools/test_work_dir_resolution.py:29:from kimi_cli.tools.file.replace import Edit, EditFile, Params as EditParams
+kimi-cli/tests/utils/test_pyinstaller_utils.py:76:            "kimi_cli.tools.file", "kimi_cli.tools.file.auto_generated", "kimi_cli.tools.file.auto_repair", "kimi_cli.tools.file.blackbox", "kimi_cli.tools.file.check_fmt", "kimi_cli.tools.file.conflict_detect", "kimi_cli.tools.file.edit", "kimi_cli.tools.file.edit.base", "kimi_cli.tools.file.edit.modes", "kimi_cli.tools.file.edit.modes.replace", "kimi_cli.tools.file.edit.modes.sloppy", "kimi_cli.tools.file.edit.params", "kimi_cli.tools.file.edit_safety", "kimi_cli.tools.file.fs_cache", "kimi_cli.tools.file.glob", "kimi_cli.tools.file.grep_archive", "kimi_cli.tools.file.grep_local", "kimi_cli.tools.file.grep_output", "kimi_cli.tools.file.grep_recorder", "kimi_cli.tools.file.grep_selectors", "kimi_cli.tools.file.hash_line", "kimi_cli.tools.file.micro_compress", "kimi_cli.tools.file.output_utils", "kimi_cli.tools.file.parse_check", "kimi_cli.tools.file.read", "kimi_cli.tools.file.read_archive", "kimi_cli.tools.file.read_extract", "kimi_cli.tools.file.read_markit", "kimi_cli.tools.file.read_media", "kimi_cli.tools.file.read_media_shared", "kimi_cli.tools.file.read_pdf_pages", "kimi_cli.tools.file.read_profiles", "kimi_cli.tools.file.read_sqlite", "kimi_cli.tools.file.replace", "kimi_cli.tools.file.snapshot_store", "kimi_cli.tools.file.utils",
+tests/conftest.py:199:    from kimi_cli.tools.file.replace import EditFile
+tests/kimix/test_report_sync.py:185:    from kimi_cli.tools.file.replace import EditFile
+tests/test_custom_config.py:12:from kimi_cli.tools.file.replace import EditFile, Params as EditFileParams
+=== exit=0 ===
+
+=== grep -rn "check_fmt" --include=*.py kimi-cli/src src kimi-cli/tests tests (shim identity: importers that are NOT the shim itself / its test) ===
+kimi-cli/src/kimi_cli/tools/file/check_fmt.py:94:# duplicated in ``kimix.tools.check_fmt``, which is now a shim).
+kimi-cli/src/kimi_cli/tools/file/edit/base.py:19:from kimi_cli.tools.file.check_fmt import (
+kimi-cli/src/kimi_cli/tools/file/parse_check.py:13:from kimi_cli.tools.file.check_fmt import (
+kimi-cli/src/kimi_cli/tools/file/write.py:16:from kimi_cli.tools.file.check_fmt import (
+src/kimix/tools/check_fmt.py:4::mod:`kimi_cli.tools.file.check_fmt`. This module re-exports them for
+src/kimix/tools/check_fmt.py:13:from kimi_cli.tools.file.check_fmt import (
+src/kimix/tools/check_fmt.py:21:    "kimix.tools.check_fmt is deprecated; import from "
+src/kimix/tools/check_fmt.py:22:    "kimi_cli.tools.file.check_fmt instead. This shim will be removed "
+kimi-cli/tests/tools/test_check_fmt.py:1:"""Tests for the check_fmt module."""
+kimi-cli/tests/tools/test_check_fmt.py:5:from kimi_cli.tools.file.check_fmt import check_json_text, check_xml_text
+kimi-cli/tests/utils/test_pyinstaller_utils.py:76:            "kimi_cli.tools.file", "kimi_cli.tools.file.auto_generated", "kimi_cli.tools.file.auto_repair", "kimi_cli.tools.file.blackbox", "kimi_cli.tools.file.check_fmt", "kimi_cli.tools.file.conflict_detect", "kimi_cli.tools.file.edit", "kimi_cli.tools.file.edit.base", "kimi_cli.tools.file.edit.modes", "kimi_cli.tools.file.edit.modes.replace", "kimi_cli.tools.file.edit.modes.sloppy", "kimi_cli.tools.file.edit.params", "kimi_cli.tools.file.edit_safety", "kimi_cli.tools.file.fs_cache", "kimi_cli.tools.file.glob", "kimi_cli.tools.file.grep_archive", "kimi_cli.tools.file.grep_local", "kimi_cli.tools.file.grep_output", "kimi_cli.tools.file.grep_recorder", "kimi_cli.tools.file.grep_selectors", "kimi_cli.tools.file.hash_line", "kimi_cli.tools.file.micro_compress", "kimi_cli.tools.file.output_utils", "kimi_cli.tools.file.parse_check", "kimi_cli.tools.file.read", "kimi_cli.tools.file.read_archive", "kimi_cli.tools.file.read_extract", "kimi_cli.tools.file.read_markit", "kimi_cli.tools.file.read_media", "kimi_cli.tools.file.read_media_shared", "kimi_cli.tools.file.read_pdf_pages", "kimi_cli.tools.file.read_profiles", "kimi_cli.tools.file.read_sqlite", "kimi_cli.tools.file.replace", "kimi_cli.tools.file.snapshot_store", "kimi_cli.tools.file.utils",
+tests/test_check_fmt.py:1:"""Tests for kimix.tools.check_fmt JSON/XML validation functions."""
+tests/test_check_fmt.py:6:from kimix.tools.check_fmt import check_json, check_json_str
+=== exit=0 ===
+
+=== grep -rn "from .replace import|from .file.replace import|file import replace" --include=*.py kimi-cli/src src kimi-cli/tests tests ===
+kimi-cli/src/kimi_cli/tools/file/edit/modes/__init__.py:7:from .replace import ReplaceModeExecutor
+=== exit=0 ===
+=== find kimi-cli/src src -name "__pycache__" -type d ===
+kimi-cli/src/kaos/__pycache__
+kimi-cli/src/kimix/tools/__pycache__
+kimi-cli/src/kimix/__pycache__
+kimi-cli/src/kimi_cli/acp/__pycache__
+kimi-cli/src/kimi_cli/approval_runtime/__pycache__
+kimi-cli/src/kimi_cli/auth/__pycache__
+kimi-cli/src/kimi_cli/background/__pycache__
+kimi-cli/src/kimi_cli/cli/__pycache__
+kimi-cli/src/kimi_cli/hooks/__pycache__
+kimi-cli/src/kimi_cli/mcp/__pycache__
+kimi-cli/src/kimi_cli/notifications/__pycache__
+kimi-cli/src/kimi_cli/plugin/__pycache__
+kimi-cli/src/kimi_cli/prompts/__pycache__
+kimi-cli/src/kimi_cli/skill/flow/__pycache__
+kimi-cli/src/kimi_cli/skill/__pycache__
+kimi-cli/src/kimi_cli/soul/dynamic_injections/__pycache__
+kimi-cli/src/kimi_cli/soul/__pycache__
+kimi-cli/src/kimi_cli/subagents/__pycache__
+kimi-cli/src/kimi_cli/tools/agent/__pycache__
+kimi-cli/src/kimi_cli/tools/ask_user/__pycache__
+kimi-cli/src/kimi_cli/tools/dmail/__pycache__
+kimi-cli/src/kimi_cli/tools/file/edit/modes/__pycache__
+kimi-cli/src/kimi_cli/tools/file/edit/__pycache__
+kimi-cli/src/kimi_cli/tools/file/__pycache__
+kimi-cli/src/kimi_cli/tools/memory/__pycache__
+kimi-cli/src/kimi_cli/tools/todo/__pycache__
+kimi-cli/src/kimi_cli/tools/web/__pycache__
+kimi-cli/src/kimi_cli/tools/__pycache__
+kimi-cli/src/kimi_cli/utils/rich/__pycache__
+kimi-cli/src/kimi_cli/utils/__pycache__
+kimi-cli/src/kimi_cli/vfs/__pycache__
+kimi-cli/src/kimi_cli/web/api/__pycache__
+kimi-cli/src/kimi_cli/web/runner/__pycache__
+kimi-cli/src/kimi_cli/web/store/__pycache__
+kimi-cli/src/kimi_cli/web/__pycache__
+kimi-cli/src/kimi_cli/wire/__pycache__
+kimi-cli/src/kimi_cli/__pycache__
+kimi-cli/src/kosong/chat_provider/echo/__pycache__
+kimi-cli/src/kosong/chat_provider/__pycache__
+kimi-cli/src/kosong/contrib/chat_provider/__pycache__
+kimi-cli/src/kosong/contrib/context/__pycache__
+kimi-cli/src/kosong/contrib/__pycache__
+kimi-cli/src/kosong/providers/__pycache__
+kimi-cli/src/kosong/tooling/__pycache__
+kimi-cli/src/kosong/utils/__pycache__
+kimi-cli/src/kosong/__pycache__
+src/kimix/cli_impl/__pycache__
+src/kimix/dag/__pycache__
+src/kimix/network/__pycache__
+src/kimix/parser/__pycache__
+src/kimix/searching/__pycache__
+src/kimix/server/__pycache__
+src/kimix/tools/agent/__pycache__
+src/kimix/tools/background/__pycache__
+src/kimix/tools/context/__pycache__
+src/kimix/tools/eval/runners/python/__pycache__
+src/kimix/tools/eval/__pycache__
+src/kimix/tools/file/bash/__pycache__
+src/kimix/tools/file/__pycache__
+src/kimix/tools/note/__pycache__
+src/kimix/tools/parser/__pycache__
+src/kimix/tools/py/__pycache__
+src/kimix/tools/swarm/__pycache__
+src/kimix/tools/web/web_fetcher/__pycache__
+src/kimix/tools/web/__pycache__
+src/kimix/tools/__pycache__
+src/kimix/ui/__pycache__
+src/kimix/utils/__pycache__
+src/kimix/__pycache__
+src/kimi_agent_sdk/__pycache__
+=== exit=0 ===
+
+=== uv run python .kimix_cache/tmp_30108/pyc_orphans.py   (FP-06: every .pyc under kimi-cli/src + src whose sibling source .py is gone) ===
+== __pycache__ dirs under kimi-cli/src + src (70) ==
+  kimi-cli/src/kaos/__pycache__
+  kimi-cli/src/kimi_cli/__pycache__
+  kimi-cli/src/kimi_cli/acp/__pycache__
+  kimi-cli/src/kimi_cli/approval_runtime/__pycache__
+  kimi-cli/src/kimi_cli/auth/__pycache__
+  kimi-cli/src/kimi_cli/background/__pycache__
+  kimi-cli/src/kimi_cli/cli/__pycache__
+  kimi-cli/src/kimi_cli/hooks/__pycache__
+  kimi-cli/src/kimi_cli/mcp/__pycache__
+  kimi-cli/src/kimi_cli/notifications/__pycache__
+  kimi-cli/src/kimi_cli/plugin/__pycache__
+  kimi-cli/src/kimi_cli/prompts/__pycache__
+  kimi-cli/src/kimi_cli/skill/__pycache__
+  kimi-cli/src/kimi_cli/skill/flow/__pycache__
+  kimi-cli/src/kimi_cli/soul/__pycache__
+  kimi-cli/src/kimi_cli/soul/dynamic_injections/__pycache__
+  kimi-cli/src/kimi_cli/subagents/__pycache__
+  kimi-cli/src/kimi_cli/tools/__pycache__
+  kimi-cli/src/kimi_cli/tools/agent/__pycache__
+  kimi-cli/src/kimi_cli/tools/ask_user/__pycache__
+  kimi-cli/src/kimi_cli/tools/dmail/__pycache__
+  kimi-cli/src/kimi_cli/tools/file/__pycache__
+  kimi-cli/src/kimi_cli/tools/file/edit/__pycache__
+  kimi-cli/src/kimi_cli/tools/file/edit/modes/__pycache__
+  kimi-cli/src/kimi_cli/tools/memory/__pycache__
+  kimi-cli/src/kimi_cli/tools/todo/__pycache__
+  kimi-cli/src/kimi_cli/tools/web/__pycache__
+  kimi-cli/src/kimi_cli/utils/__pycache__
+  kimi-cli/src/kimi_cli/utils/rich/__pycache__
+  kimi-cli/src/kimi_cli/vfs/__pycache__
+  kimi-cli/src/kimi_cli/web/__pycache__
+  kimi-cli/src/kimi_cli/web/api/__pycache__
+  kimi-cli/src/kimi_cli/web/runner/__pycache__
+  kimi-cli/src/kimi_cli/web/store/__pycache__
+  kimi-cli/src/kimi_cli/wire/__pycache__
+  kimi-cli/src/kimix/__pycache__
+  kimi-cli/src/kimix/tools/__pycache__
+  kimi-cli/src/kosong/__pycache__
+  kimi-cli/src/kosong/chat_provider/__pycache__
+  kimi-cli/src/kosong/chat_provider/echo/__pycache__
+  kimi-cli/src/kosong/contrib/__pycache__
+  kimi-cli/src/kosong/contrib/chat_provider/__pycache__
+  kimi-cli/src/kosong/contrib/context/__pycache__
+  kimi-cli/src/kosong/providers/__pycache__
+  kimi-cli/src/kosong/tooling/__pycache__
+  kimi-cli/src/kosong/utils/__pycache__
+  src/kimi_agent_sdk/__pycache__
+  src/kimix/__pycache__
+  src/kimix/cli_impl/__pycache__
+  src/kimix/dag/__pycache__
+  src/kimix/network/__pycache__
+  src/kimix/parser/__pycache__
+  src/kimix/searching/__pycache__
+  src/kimix/server/__pycache__
+  src/kimix/tools/__pycache__
+  src/kimix/tools/agent/__pycache__
+  src/kimix/tools/background/__pycache__
+  src/kimix/tools/context/__pycache__
+  src/kimix/tools/eval/__pycache__
+  src/kimix/tools/eval/runners/python/__pycache__
+  src/kimix/tools/file/__pycache__
+  src/kimix/tools/file/bash/__pycache__
+  src/kimix/tools/note/__pycache__
+  src/kimix/tools/parser/__pycache__
+  src/kimix/tools/py/__pycache__
+  src/kimix/tools/swarm/__pycache__
+  src/kimix/tools/web/__pycache__
+  src/kimix/tools/web/web_fetcher/__pycache__
+  src/kimix/ui/__pycache__
+  src/kimix/utils/__pycache__
+
+== .pyc files total: 552 ==
+
+== FP-06: .pyc with NO matching source .py (orphaned bytecode) ==
+  ORPHAN-PYC kimi-cli/src/kimi_cli/skill/flow/__pycache__/__init__.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/skill/flow/__init__.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/skill/flow/__pycache__/d2.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/skill/flow/d2.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/skill/flow/__pycache__/mermaid.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/skill/flow/mermaid.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/soul/dynamic_injections/__pycache__/afk_mode.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/soul/dynamic_injections/afk_mode.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/soul/dynamic_injections/__pycache__/done_reminder.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/soul/dynamic_injections/done_reminder.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/soul/dynamic_injections/__pycache__/plan_mode.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/soul/dynamic_injections/plan_mode.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/soul/dynamic_injections/__pycache__/resilience_reminder.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/soul/dynamic_injections/resilience_reminder.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/tools/__pycache__/context_retrieval.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/tools/context_retrieval.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/tools/__pycache__/step_mem.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/tools/step_mem.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/tools/dmail/__pycache__/__init__.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/tools/dmail/__init__.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/tools/file/__pycache__/plan_mode.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/tools/file/plan_mode.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/tools/file/edit/__pycache__/diff.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/tools/file/edit/diff.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/tools/file/edit/modes/__pycache__/hashline.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/tools/file/edit/modes/hashline.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/tools/file/edit/modes/__pycache__/patch.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/tools/file/edit/modes/patch.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/tools/todo/__pycache__/verify.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/tools/todo/verify.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/utils/__pycache__/invalid_args.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/utils/invalid_args.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/utils/__pycache__/output_limit.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/utils/output_limit.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/utils/__pycache__/server.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/utils/server.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/utils/__pycache__/slashcmd.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/utils/slashcmd.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/__pycache__/__init__.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/__init__.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/__pycache__/app.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/app.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/__pycache__/auth.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/auth.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/__pycache__/models.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/models.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/api/__pycache__/__init__.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/api/__init__.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/api/__pycache__/config.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/api/config.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/api/__pycache__/open_in.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/api/open_in.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/api/__pycache__/sessions.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/api/sessions.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/runner/__pycache__/__init__.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/runner/__init__.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/runner/__pycache__/messages.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/runner/messages.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/runner/__pycache__/process.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/runner/process.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/runner/__pycache__/worker.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/runner/worker.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/store/__pycache__/__init__.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/store/__init__.py)
+  ORPHAN-PYC kimi-cli/src/kimi_cli/web/store/__pycache__/sessions.cpython-314.pyc   (expected source: kimi-cli/src/kimi_cli/web/store/sessions.py)
+  ORPHAN-PYC src/kimix/__pycache__/agent_utils.cpython-314.pyc   (expected source: src/kimix/agent_utils.py)
+  ORPHAN-PYC src/kimix/__pycache__/kimi_utils.cpython-314.pyc   (expected source: src/kimix/kimi_utils.py)
+  ORPHAN-PYC src/kimix/__pycache__/native_loader.cpython-314.pyc   (expected source: src/kimix/native_loader.py)
+  ORPHAN-PYC src/kimix/__pycache__/summarize.cpython-314.pyc   (expected source: src/kimix/summarize.py)
+  ORPHAN-PYC src/kimix/cli_impl/__pycache__/__init__.cpython-314.pyc   (expected source: src/kimix/cli_impl/__init__.py)
+  ORPHAN-PYC src/kimix/cli_impl/__pycache__/__main__.cpython-314.pyc   (expected source: src/kimix/cli_impl/__main__.py)
+  ORPHAN-PYC src/kimix/cli_impl/__pycache__/goal.cpython-314.pyc   (expected source: src/kimix/cli_impl/goal.py)
+  ORPHAN-PYC src/kimix/cli_impl/__pycache__/server.cpython-314.pyc   (expected source: src/kimix/cli_impl/server.py)
+  ORPHAN-PYC src/kimix/cli_impl/__pycache__/server_cmds.cpython-314.pyc   (expected source: src/kimix/cli_impl/server_cmds.py)
+  ORPHAN-PYC src/kimix/dag/__pycache__/agent_swarm.cpython-314.pyc   (expected source: src/kimix/dag/agent_swarm.py)
+  ORPHAN-PYC src/kimix/searching/__pycache__/bm25.cpython-314.pyc   (expected source: src/kimix/searching/bm25.py)
+  ORPHAN-PYC src/kimix/searching/__pycache__/file_builder.cpython-314.pyc   (expected source: src/kimix/searching/file_builder.py)
+  ORPHAN-PYC src/kimix/tools/__pycache__/test.cpython-314.pyc   (expected source: src/kimix/tools/test.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/__init__.cpython-314.pyc   (expected source: src/kimix/tools/eval/__init__.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/backend.cpython-314.pyc   (expected source: src/kimix/tools/eval/backend.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/basekernel.cpython-314.pyc   (expected source: src/kimix/tools/eval/basekernel.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/idletimeout.cpython-314.pyc   (expected source: src/kimix/tools/eval/idletimeout.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/interpreter.cpython-314.pyc   (expected source: src/kimix/tools/eval/interpreter.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/jsbackend.cpython-314.pyc   (expected source: src/kimix/tools/eval/jsbackend.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/juliabackend.cpython-314.pyc   (expected source: src/kimix/tools/eval/juliabackend.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/output.cpython-314.pyc   (expected source: src/kimix/tools/eval/output.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/params.cpython-314.pyc   (expected source: src/kimix/tools/eval/params.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/pythonbackend.cpython-314.pyc   (expected source: src/kimix/tools/eval/pythonbackend.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/registry.cpython-314.pyc   (expected source: src/kimix/tools/eval/registry.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/rubybackend.cpython-314.pyc   (expected source: src/kimix/tools/eval/rubybackend.py)
+  ORPHAN-PYC src/kimix/tools/eval/__pycache__/sessionid.cpython-314.pyc   (expected source: src/kimix/tools/eval/sessionid.py)
+  ORPHAN-PYC src/kimix/tools/eval/runners/python/__pycache__/runner.cpython-314.pyc   (expected source: src/kimix/tools/eval/runners/python/runner.py)
+  ORPHAN-PYC src/kimix/tools/file/__pycache__/input.cpython-314.pyc   (expected source: src/kimix/tools/file/input.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/alias.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/alias.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/auto_background.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/auto_background.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/awk.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/awk.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/base64.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/base64.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/basename.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/basename.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/bc.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/bc.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/bunzip2.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/bunzip2.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/bzip2.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/bzip2.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/cal.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/cal.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/cat.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/cat.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/chgrp.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/chgrp.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/chmod.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/chmod.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/chown.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/chown.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/cksum.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/cksum.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/cmp.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/cmp.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/comm.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/comm.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/cp.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/cp.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/crontab.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/crontab.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/csplit.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/csplit.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/curl.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/curl.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/cut.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/cut.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/date.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/date.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/dc.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/dc.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/df.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/df.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/diff.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/diff.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/direnv.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/direnv.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/dirname.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/dirname.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/du.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/du.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/echo.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/echo.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/env.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/env.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/envsubst.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/envsubst.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/expand.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/expand.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/export.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/export.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/expr.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/expr.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/factor.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/factor.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/false.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/false.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/file.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/file.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/find.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/find.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/fmt.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/fmt.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/fold.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/fold.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/free.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/free.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/fuser.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/fuser.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/grep.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/grep.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/groups.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/groups.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/gunzip.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/gunzip.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/gzip.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/gzip.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/head.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/head.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/hexdump.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/hexdump.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/history.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/history.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/host.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/host.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/hostname.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/hostname.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/hwclock.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/hwclock.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/id.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/id.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/ifconfig.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/ifconfig.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/install.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/install.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/install_git.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/install_git.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/iostat.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/iostat.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/ip.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/ip.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/kill.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/kill.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/killall.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/killall.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/ln.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/ln.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/ls.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/ls.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/lsb_release.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/lsb_release.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/lsof.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/lsof.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/man.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/man.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/md5sum.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/md5sum.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/mkdir.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/mkdir.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/mkfifo.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/mkfifo.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/mktemp.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/mktemp.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/mv.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/mv.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/netstat.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/netstat.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/nl.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/nl.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/nslookup.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/nslookup.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/od.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/od.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/params.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/params.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/ping.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/ping.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/printenv.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/printenv.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/printf.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/printf.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/proccess_pwsh.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/proccess_pwsh.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/ps.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/ps.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/pwd.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/pwd.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/readlink.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/readlink.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/realpath.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/realpath.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/renice.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/renice.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/rev.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/rev.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/rm.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/rm.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/rmdir.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/rmdir.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/run_bash.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/run_bash.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/scriptreplay.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/scriptreplay.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/sed.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/sed.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/seq.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/seq.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/sha256sum.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/sha256sum.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/shuf.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/shuf.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/sleep.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/sleep.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/split.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/split.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/ss.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/ss.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/stat.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/stat.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/strings.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/strings.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/sw_vers.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/sw_vers.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/systeminfo.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/systeminfo.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/tac.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/tac.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/tail.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/tail.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/tar.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/tar.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/test.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/test.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/top.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/top.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/touch.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/touch.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/tr.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/tr.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/traceroute.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/traceroute.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/trap.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/trap.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/tree.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/tree.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/true.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/true.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/type.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/type.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/ulimit.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/ulimit.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/umask.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/umask.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/uname.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/uname.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/unexpand.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/unexpand.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/uniq.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/uniq.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/unxz.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/unxz.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/unzip.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/unzip.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/uptime.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/uptime.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/vmstat.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/vmstat.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/wc.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/wc.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/wget.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/wget.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/which.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/which.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/who.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/who.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/whoami.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/whoami.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/xxd.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/xxd.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/xz.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/xz.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/yes.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/yes.py)
+  ORPHAN-PYC src/kimix/tools/file/bash/__pycache__/zip.cpython-314.pyc   (expected source: src/kimix/tools/file/bash/zip.py)
+  ORPHAN-PYC src/kimix/utils/__pycache__/rag.cpython-314.pyc   (expected source: src/kimix/utils/rag.py)
+  ORPHAN-PYC src/kimix/utils/__pycache__/utils.cpython-314.pyc   (expected source: src/kimix/utils/utils.py)
+
+orphan count: 193
+=== exit=0 ===
+=== uv run --with vulture vulture kimi-cli/src/kimi_cli/tools src/kimix/tools --min-confidence 90 --sort-by-size ===
+kimi-cli\src\kimi_cli\tools\file\glob.py:242: unused variable 'root_dir' (100% confidence, 1 line)
+kimi-cli\src\kimi_cli\tools\file\micro_compress.py:345: unused variable 'all_lines' (100% confidence, 1 line)
+kimi-cli\src\kimi_cli\tools\file\read_media.py:118: unused variable 'original_dimensions' (100% confidence, 1 line)
+src\kimix\tools\file\bash\pwsh_tool.py:65: unused import '_CallableTool2' (90% confidence, 1 line)
+src\kimix\tools\swarm\__init__.py:267: unused variable 'worker_dir' (100% confidence, 1 line)
+=== exit=3 ===
+=== grep -rn "TODO\|FIXME\|XXX" kimi-cli/src/kimi_cli/tools src/kimix/tools ===
+kimi-cli/src/kimi_cli/tools/file/write.py:214:        # TODO: checks:
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:15:    FIELD_ALIASES_TODO_LIST,
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:41:_TODOLIST_DESCRIPTION = (
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:82:_MAX_TODOS = 4096
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:84:_MAX_ARCHIVED_TODOS = 500
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:101:_TODOLIST_SUCCESS_HINT = (
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:225:_TODO_LIST_KEYS: tuple[str, ...] = (
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:796:        has_list = any(key in args for key in _TODO_LIST_KEYS)
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:882:    description: str = _TODOLIST_DESCRIPTION
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:890:        **FIELD_ALIASES_TODO_LIST,
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:990:            if self._count_all(new_todos) > _MAX_TODOS:
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:992:                    f"Error: Todo list exceeds maximum limit of {_MAX_TODOS} items.",
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:993:                    f"Todo list exceeds maximum limit of {_MAX_TODOS} items.",
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:1200:            output += _hint_next(_TODOLIST_SUCCESS_HINT)
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:1319:            output += _hint_next(_TODOLIST_SUCCESS_HINT)
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:1454:                output="\n".join(empty_lines) + _hint_next(_TODOLIST_SUCCESS_HINT),
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:1490:        output_lines.append("Next: " + _TODOLIST_SUCCESS_HINT)
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:1689:        if self._count_all(items) > _MAX_TODOS:
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:1691:                f"Error: Todo list exceeds maximum limit of {_MAX_TODOS} items.",
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:1692:                f"Todo list exceeds maximum limit of {_MAX_TODOS} items.",
+kimi-cli/src/kimi_cli/tools/todo/__init__.py:2089:                archived = archived[-_MAX_ARCHIVED_TODOS:]
+Binary file kimi-cli/src/kimi_cli/tools/todo/__pycache__/__init__.cpython-314.pyc matches
+kimi-cli/src/kimi_cli/tools/__init__.py:16:RETIRED_TODO_TOOL_NAMES: tuple[str, ...] = tuple(
+kimi-cli/src/kimi_cli/tools/__init__.py:21:    "kimi_cli.tools.todo": {name: "TodoList" for name in RETIRED_TODO_TOOL_NAMES},
+Binary file kimi-cli/src/kimi_cli/tools/__pycache__/__init__.cpython-314.pyc matches
+=== exit=0 ===
+=== grep -rnE "\b(TODO|FIXME|XXX)\b" --include=*.py kimi-cli/src/kimi_cli/tools src/kimix/tools  (strict marker grep; excludes TODO_LIST/TODOLIST identifiers) ===
+kimi-cli/src/kimi_cli/tools/file/write.py:214:        # TODO: checks:
+=== exit=0 ===
+=== grep -rn "_class_name_" --include=*.py kimi-cli/src src kimi-cli/tests tests  (for each of the 9 orphan classes: definition / re-export / instantiation / test sites) ===
+--- HashRead ---
+kimi-cli/src/kimi_cli/tools/file/hash_line.py:657:# HashRead — read files with hash-anchored line references
+kimi-cli/src/kimi_cli/tools/file/hash_line.py:677:class HashRead(CallableTool2[HashReadParams]):
+kimi-cli/src/kimi_cli/tools/file/hash_line.py:678:    name: str = "HashRead"
+kimi-cli/src/kimi_cli/tools/file/hash_line.py:1155:HashLine = HashRead  # noqa: F811
+kimi-cli/src/kimi_cli/tools/file/snapshot_store.py:19:Producers (``read`` / ``HashRead`` / ``write`` / ``edit``) record what the
+kimi-cli/src/kimi_cli/tools/file/snapshot_store.py:511:    Recognizes ``NN\t`` / ``NN:`` (read), ``NN#HASH:`` (HashRead), an
+kimi-cli/src/kimi_cli/tools/file/snapshot_store.py:533:    Recognizes ``NN:`` (read), ``NN#HASH:`` (HashRead), an optional leading
+kimi-cli/src/kimi_cli/tools/file/__init__.py:18:from .hash_line import HashEdit, HashLine, HashRead  # noqa: E402
+kimi-cli/src/kimi_cli/tools/file/__init__.py:32:    "HashRead",
+kimi-cli/src/kosong/tooling/__init__.py:1871:    # "HashRead" is a canonical name — no redirect needed
+kimi-cli/src/kosong/tooling/__init__.py:1872:    "HashReadFile": "HashRead",
+kimi-cli/src/kosong/tooling/__init__.py:1873:    "ReadHash": "HashRead",
+kimi-cli/src/kosong/tooling/__init__.py:1874:    "FileHash": "HashRead",
+kimi-cli/tests/conftest.py:38:from kimi_cli.tools.file.hash_line import HashEdit, HashLine, HashRead
+kimi-cli/tests/conftest.py:361:    """Create a HashLine tool instance (backward-compat alias for HashRead)."""
+kimi-cli/tests/conftest.py:366:def hash_read_tool(runtime: Runtime, session: Session) -> HashRead:
+kimi-cli/tests/conftest.py:367:    """Create a HashRead tool instance."""
+kimi-cli/tests/conftest.py:368:    return HashRead(runtime, session)
+kimi-cli/tests/tools/test_hash_line.py:1:"""Tests for HashRead, HashEdit, and shared hash_line utilities."""
+kimi-cli/tests/tools/test_hash_line.py:18:    HashRead,
+kimi-cli/tests/tools/test_hash_line.py:125:async def test_read_simple_file(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:147:async def test_read_empty_file(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:157:async def test_read_with_offset(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:177:async def test_read_with_limit(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:196:async def test_read_offset_beyond_eof(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:206:async def test_read_unicode(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:225:async def test_read_trailing_newline(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:244:async def test_read_nonexistent_file(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:253:async def test_read_directory(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:945:async def test_windows_line_endings(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:1858:async def test_max_char_output_limit(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:1872:async def test_max_char_zero_empty_output(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:1882:async def test_char_offset_skip_start(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:1898:async def test_max_char_and_char_offset_combined(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:1925:async def test_max_bytes_truncation(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:1939:async def test_max_bytes_not_exceeded_small_file(hash_line_tool: HashRead, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:1953:# 25. New HashRead / HashEdit behavior tests (async)
+kimi-cli/tests/tools/test_hash_line.py:1957:async def test_read_empty_path(hash_line_tool: HashRead):
+kimi-cli/tests/tools/test_hash_line.py:1958:    """HashRead returns ToolError for empty path."""
+kimi-cli/tests/tools/test_hash_line.py:2018:    hash_line_tool: HashRead,
+kimi-cli/tests/tools/test_hash_line.py:2023:    """HashRead cleans the tracker so a subsequent HashEdit succeeds."""
+kimi-cli/tests/tools/test_hash_line.py:2050:    # Read the file with HashRead — this calls clean_file() and resets tracking
+kimi-cli/tests/tools/test_plan25_integration.py:21:    HashRead,
+kimi-cli/tests/tools/test_plan25_integration.py:197:    hash_read_tool: HashRead, hash_edit_tool: HashEdit, session: Session, temp_work_dir: KaosPath
+kimi-cli/tests/tools/test_plan25_integration.py:448:# M3 producers: read / HashRead record what the model saw (criterion 3)
+kimi-cli/tests/tools/test_plan25_integration.py:469:    hash_read_tool: HashRead, session: Session, temp_work_dir: KaosPath
+kimi-cli/tests/tools/test_plan25_integration.py:497:    hash_read_tool: HashRead, temp_work_dir: KaosPath
+kimi-cli/tests/tools/test_plan25_integration.py:552:    hash_read_tool: HashRead, hash_edit_tool: HashEdit, session: Session, temp_work_dir: KaosPath
+--- HashEdit ---
+kimi-cli/src/kimi_cli/soul/tool_taxonomy.py:15:        "HashEdit",
+kimi-cli/src/kimi_cli/tools/file/auto_generated.py:3:``write`` / ``edit`` / ``HashEdit`` refuse by default to modify files that
+kimi-cli/src/kimi_cli/tools/file/hash_line.py:856:# HashEdit — edit files using hash-anchored line references
+kimi-cli/src/kimi_cli/tools/file/hash_line.py:872:class HashEdit(CallableTool2[HashEditParams]):
+kimi-cli/src/kimi_cli/tools/file/hash_line.py:873:    name: str = "HashEdit"
+kimi-cli/src/kimi_cli/tools/file/hash_line.py:1138:                "HashEdit edit failed: {path}: {error}",
+kimi-cli/src/kimi_cli/tools/file/snapshot_store.py:20:model saw or wrote; consumers (``HashEdit`` stale-anchor recovery, ``write``
+kimi-cli/src/kimi_cli/tools/file/__init__.py:18:from .hash_line import HashEdit, HashLine, HashRead  # noqa: E402
+kimi-cli/src/kimi_cli/tools/file/__init__.py:33:    "HashEdit",
+kimi-cli/src/kosong/tooling/__init__.py:1875:    # "HashEdit" is a canonical name — no redirect needed
+kimi-cli/src/kosong/tooling/__init__.py:1876:    "HashEditFile": "HashEdit",
+kimi-cli/src/kosong/tooling/__init__.py:1877:    "EditHash": "HashEdit",
+kimi-cli/tests/conftest.py:38:from kimi_cli.tools.file.hash_line import HashEdit, HashLine, HashRead
+kimi-cli/tests/conftest.py:372:def hash_edit_tool(runtime: Runtime, session: Session) -> HashEdit:
+kimi-cli/tests/conftest.py:373:    """Create a HashEdit tool instance."""
+kimi-cli/tests/conftest.py:374:    return HashEdit(runtime, session)
+kimi-cli/tests/tools/test_hash_line.py:1:"""Tests for HashRead, HashEdit, and shared hash_line utilities."""
+kimi-cli/tests/tools/test_hash_line.py:14:    HashEdit,
+kimi-cli/tests/tools/test_hash_line.py:758:async def test_edit_file_success(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:784:async def test_edit_file_hash_mismatch(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:807:async def test_edit_file_overlapping(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:836:async def test_edit_file_no_changes(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:852:async def test_edit_file_empty_path(hash_edit_tool: HashEdit):
+kimi-cli/tests/tools/test_hash_line.py:859:async def test_edit_file_nonexistent(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:881:async def test_edit_file_not_a_file(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_hash_line.py:1953:# 25. New HashRead / HashEdit behavior tests (async)
+kimi-cli/tests/tools/test_hash_line.py:1965:    hash_edit_tool: HashEdit, temp_work_dir: KaosPath, session
+kimi-cli/tests/tools/test_hash_line.py:1969:    The FileMTime guard was removed: HashEdit no longer refuses to edit a
+kimi-cli/tests/tools/test_hash_line.py:2019:    hash_edit_tool: HashEdit,
+kimi-cli/tests/tools/test_hash_line.py:2023:    """HashRead cleans the tracker so a subsequent HashEdit succeeds."""
+kimi-cli/tests/tools/test_plan25_integration.py:4:- write/edit/HashEdit refuse auto-generated files; allow_auto_generated=True
+kimi-cli/tests/tools/test_plan25_integration.py:6:- write overwrite records a pre-write snapshot; HashEdit anchored on the
+kimi-cli/tests/tools/test_plan25_integration.py:19:    HashEdit,
+kimi-cli/tests/tools/test_plan25_integration.py:114:async def test_hashedit_refuses_generated_file(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_plan25_integration.py:124:async def test_hashedit_generated_override_runs(hash_edit_tool: HashEdit, temp_work_dir: KaosPath):
+kimi-cli/tests/tools/test_plan25_integration.py:192:# HashEdit stale-anchor recovery (M4)
+kimi-cli/tests/tools/test_plan25_integration.py:197:    hash_read_tool: HashRead, hash_edit_tool: HashEdit, session: Session, temp_work_dir: KaosPath
+kimi-cli/tests/tools/test_plan25_integration.py:222:    hash_edit_tool: HashEdit, session: Session, temp_work_dir: KaosPath
+kimi-cli/tests/tools/test_plan25_integration.py:506:# HashEdit post-edit hooks + drift note (criteria 2 & 4)
+kimi-cli/tests/tools/test_plan25_integration.py:511:    hash_edit_tool: HashEdit, session: Session, temp_work_dir: KaosPath
+kimi-cli/tests/tools/test_plan25_integration.py:529:    hash_edit_tool: HashEdit, session: Session, temp_work_dir: KaosPath
+kimi-cli/tests/tools/test_plan25_integration.py:552:    hash_read_tool: HashRead, hash_edit_tool: HashEdit, session: Session, temp_work_dir: KaosPath
+--- Plus ---
+kimi-cli/src/kimi_cli/tools/test.py:13:class Plus(CallableTool2[PlusParams]):
+--- Compare ---
+kimi-cli/src/kimi_cli/tools/test.py:28:class Compare(CallableTool2[CompareParams]):
+kimi-cli/src/kimi_cli/tools/test.py:30:    description: str = "Compare two numbers."
+tests/test_process_pwsh.py:4718:        result = pwsh_transform('(Compare-Object $a $b) ? "different" : "same"')[0]
+tests/test_process_pwsh.py:4720:        assert 'if ((Compare-Object $a $b))' in result
+tests/test_process_pwsh.py:5816:        result = pwsh_transform('Compare-Object $a $b && Write-Output compared')[0]
+tests/test_process_pwsh.py:5819:        assert 'Compare-Object' in result
+--- Panic ---
+kimi-cli/src/kimi_cli/tools/test.py:47:class Panic(CallableTool2[PanicParams]):
+--- Mkdir ---
+kimi-cli/src/kosong/tooling/__init__.py:1848:    # "Mkdir" is a canonical name — no redirect needed
+kimi-cli/src/kosong/tooling/__init__.py:1849:    "MakeDir": "Mkdir",
+kimi-cli/src/kosong/tooling/__init__.py:1850:    "CreateDir": "Mkdir",
+kimi-cli/src/kosong/tooling/__init__.py:1851:    "CreateDirectory": "Mkdir",
+src/kimix/tools/file/__init__.py:13:class Mkdir(CallableTool2):
+src/kimix/tools/file/__init__.py:14:    name: str = "Mkdir"
+--- Rm ---
+kimi-cli/src/kosong/tooling/__init__.py:1852:    # "Rm" is a canonical name — no redirect needed
+kimi-cli/src/kosong/tooling/__init__.py:1853:    "Remove": "Rm",
+kimi-cli/src/kosong/tooling/__init__.py:1854:    "Delete": "Rm",
+kimi-cli/src/kosong/tooling/__init__.py:1855:    "RemoveFile": "Rm",
+kimi-cli/src/kosong/tooling/__init__.py:1856:    "DeleteFile": "Rm",
+kimi-cli/src/kosong/tooling/__init__.py:1857:    "RmDir": "Rm",
+kimi-cli/src/kosong/tooling/__init__.py:1858:    "RemoveDir": "Rm",
+kimi-cli/src/kosong/tooling/__init__.py:1859:    "DeleteDir": "Rm",
+kimi-cli/src/kosong/tooling/__init__.py:1860:    "Unlink": "Rm",
+src/kimix/tools/file/bash/bash_tool.py:696:        before matching, so ``r\m -rf /``, ``rm "" -rf /`` and ``Rm -Rf /``
+src/kimix/tools/file/bash/pwsh_tool.py:358:        before matching, so ``r\m -rf /``, ``rm "" -rf /`` and ``Rm -Rf /``
+src/kimix/tools/file/run.py:228:        before matching, so ``r\m -rf /``, ``rm "" -rf /`` and ``Rm -Rf /``
+src/kimix/tools/file/__init__.py:38:class Rm(CallableTool2):
+src/kimix/tools/file/__init__.py:39:    name: str = "Rm"
+kimi-cli/tests/kosong/test_tool_name_fuzzy.py:317:    assert "Rm" not in TOOL_NAME_REDIRECTS  # canonical — no redirect needed
+tests/test_powershell.py:556:            result = await pwsh_instance(PowershellParams(cmd="Rm -Rf /"))
+tests/test_shell_safety.py:46:            "Rm -Rf /",
+tests/test_shell_safety.py:128:        variants = command_detection_variants("Rm -Rf /")
+--- FindStr ---
+kimi-cli/src/kosong/tooling/__init__.py:1864:    # "FindStr" is a canonical name — no redirect needed
+kimi-cli/src/kosong/tooling/__init__.py:1865:    "FindString": "FindStr",
+kimi-cli/src/kosong/tooling/__init__.py:1866:    "SearchString": "FindStr",
+src/kimix/tools/file/find_str.py:27:class FindStr(CallableTool2):
+src/kimix/tools/file/find_str.py:28:    name: str = "FindStr"
+tests/native/test_behavior_equivalence.py:104:    """Run the real FindStr tool end-to-end in both modes over a temp file."""
+tests/native/test_behavior_equivalence.py:110:    from kimix.tools.file.find_str import FindStr, FindStrParams
+tests/native/test_behavior_equivalence.py:119:                tool = FindStr()
+--- ParserTool ---
+kimi-cli/src/kosong/tooling/__init__.py:1861:    # "ParserTool" is a canonical name — no redirect needed
+kimi-cli/src/kosong/tooling/__init__.py:1862:    "Parse": "ParserTool",
+kimi-cli/src/kosong/tooling/__init__.py:1863:    "Parser": "ParserTool",
+src/kimix/tools/parser/__init__.py:70:    """Parameters for the ParserTool."""
+src/kimix/tools/parser/__init__.py:102:# ── ParserTool ─────────────────────────────────────────────────────────────────
+src/kimix/tools/parser/__init__.py:105:class ParserTool(CallableTool2[Params]):
+src/kimix/tools/parser/__init__.py:108:    name: str = "ParserTool"
+tests/test_parsers.py:534:    """Tests for the ParserTool wrapper."""
+tests/test_parsers.py:539:        from kimix.tools.parser import ParserTool, Params
+tests/test_parsers.py:541:        tool = ParserTool()
+tests/test_parsers.py:556:        from kimix.tools.parser import ParserTool, Params
+tests/test_parsers.py:558:        tool = ParserTool()
+tests/test_parsers.py:572:        from kimix.tools.parser import ParserTool, Params
+tests/test_parsers.py:574:        tool = ParserTool()
+tests/test_parsers.py:591:        from kimix.tools.parser import ParserTool, Params
+tests/test_parsers.py:593:        tool = ParserTool()
+tests/test_parsers.py:605:        from kimix.tools.parser import ParserTool, Params
+tests/test_parsers.py:607:        tool = ParserTool()
+tests/test_parsers.py:616:        from kimix.tools.parser import ParserTool, Params
+tests/test_parsers.py:618:        tool = ParserTool()
+=== exit=0 ===
+
+=== grep -rn "_orphan_name_" kimi-cli/src/kimi_cli/agents src/kimix/agent_*.json  (manifest references) ===
+=== exit=1 (1 = no manifest references) ===

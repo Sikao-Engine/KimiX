@@ -1,0 +1,139 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+?? .coverage
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check kimi-cli/src/kimi_cli/tools/ask_user/__init__.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\ask_user\__init__.py:1:1
+   |
+ 1 | / from __future__ import annotations
+ 2 | |
+ 3 | | import logging
+ 4 | | from collections.abc import Callable
+ 5 | | from pathlib import Path
+ 6 | | from typing import override
+ 7 | | from uuid import uuid4
+ 8 | |
+ 9 | | import orjson
+10 | | from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
+11 | | from pydantic import BaseModel, Field
+12 | |
+13 | | from kimi_cli.soul import get_wire_or_none, wire_send
+14 | | from kimi_cli.soul.toolset import get_current_tool_call_or_none
+15 | | from kimi_cli.tools.utils import load_desc
+16 | | from kimi_cli.wire.types import QuestionItem, QuestionNotSupported, QuestionOption, QuestionRequest
+   | |___________________________________________________________________________________________________^
+17 |
+18 |   logger = logging.getLogger(__name__)
+   |
+help: Organize imports
+   |
+9  | import orjson
+   - from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
+10 | from pydantic import BaseModel, Field
+--------------------------------------------------------------------------------
+15 | from kimi_cli.wire.types import QuestionItem, QuestionNotSupported, QuestionOption, QuestionRequest
+16 + from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
+17 |
+   |
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.
+[elapsed 0.1s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+All checks passed!
+[elapsed 0.1s, rc=0]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/ask_user/__init__.py",
+      "loc": 151,
+      "module_loc": 151,
+      "functions": [
+        {
+          "name": "__init__",
+          "lineno": 64,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "bind_afk",
+          "lineno": 68,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__call__",
+          "lineno": 73,
+          "loc": 79,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "__call__",
+        "loc": 79
+      },
+      "module_complexity": 8
+    }
+  ],
+  "totals": {
+    "files": 1,
+    "loc": 151,
+    "functions": 3
+  },
+  "breaches": []
+}
+[elapsed 0.2s, rc=0]
+
+=== uv run pytest kimi-cli/tests/tools/test_ask_user.py -q -rs ===
+.........                                                                [100%]
+9 passed in 0.21s
+[elapsed 2.3s, rc=0]
+
+=== uv run --with pytest-cov pytest kimi-cli/tests/tools/test_ask_user.py --cov=kimi_cli.tools.ask_user ===
+.........                                                                [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                               Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\ask_user\__init__.py      59      3      8      0    96%   130-132
+----------------------------------------------------------------------------------------------
+TOTAL                                                 59      3      8      0    96%
+9 passed in 0.21s
+[elapsed 3.9s, rc=0]

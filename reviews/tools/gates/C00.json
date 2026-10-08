@@ -1,0 +1,38 @@
+{
+  "id": "C00",
+  "tool": "toolset plumbing & shared helpers",
+  "files": [
+    "kimi-cli/src/kimi_cli/tools/__init__.py",
+    "kimi-cli/src/kimi_cli/tools/utils.py",
+    "kimi-cli/src/kimi_cli/tools/display.py",
+    "kimi-cli/src/kimi_cli/tools/reason.py"
+  ],
+  "tests": [
+    "kimi-cli/tests/tools/test_extract_key_argument.py",
+    "kimi-cli/tests/tools/test_utils.py",
+    "kimi-cli/tests/tools/test_reason.py",
+    "kimi-cli/tests/core\\test_toolset.py",
+    "kimi-cli/tests/core\\test_toolset_todo_redirects.py"
+  ],
+  "cov_module": "kimi_cli.tools",
+  "sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.3s, rc=0]",
+  "ruff_rc": 1,
+  "ruff": "fail",
+  "c901_rc": 1,
+  "c901": "fail",
+  "metrics_rc": 1,
+  "metrics": "fail",
+  "complexity_max": 34,
+  "longest_fn_loc": 74,
+  "longest_fn": "extract_key_argument",
+  "module_loc": 616,
+  "functions_over_120_loc": 0,
+  "functions_over_12_cx": 1,
+  "metrics_breaches": [
+    "kimi-cli/src/kimi_cli/tools/__init__.py::extract_key_argument complexity=34 > 12"
+  ],
+  "pytest_rc": 1,
+  "pytest": "fail",
+  "cov_rc": 1,
+  "cov": "fail"
+}

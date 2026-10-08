@@ -1,0 +1,32 @@
+{
+  "id": "K02",
+  "tool": "list_agents (AgentList)",
+  "files": [
+    "src/kimix/tools/agent/__init__.py"
+  ],
+  "tests": [
+    "tests/kimix/test_agent_conversation.py"
+  ],
+  "cov_module": "kimix.tools.agent",
+  "sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "ruff_rc": 1,
+  "ruff": "fail",
+  "c901_rc": 0,
+  "c901": "pass",
+  "metrics_rc": 1,
+  "metrics": "fail",
+  "complexity_max": 19,
+  "longest_fn_loc": 88,
+  "longest_fn": "_execute",
+  "module_loc": 1179,
+  "functions_over_120_loc": 0,
+  "functions_over_12_cx": 2,
+  "metrics_breaches": [
+    "src/kimix/tools/agent/__init__.py::_notify_parent_background_finished complexity=19 > 12",
+    "src/kimix/tools/agent/__init__.py::_format_history complexity=14 > 12"
+  ],
+  "pytest_rc": 0,
+  "pytest": "pass",
+  "cov_rc": 0,
+  "cov": "pass"
+}

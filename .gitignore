@@ -20,3 +20,7 @@ tests/test_result.txt
 tests/output.md
 # Parallel git worktrees for the tools review (transient, never committed)
 .worktrees/
+
+# Coverage artifacts from `uv run --with pytest-cov`
+.coverage
+.coverage.*

@@ -1,0 +1,320 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.1s, rc=0]
+ M kimi-cli/src/kimi_cli/tools/file/conflict_detect.py
+ M kimi-cli/src/kimi_cli/tools/file/read_media.py
+ M src/kimix/tools/common.py
+ M src/kimix/tools/file/bash/bash_tool.py
+ M src/kimix/tools/file/bash/pwsh_tool.py
+ M src/kimix/tools/file/run.py
+ M src/kimix/tools/py/__init__.py
+?? .coverage
+?? kimi-cli/tests/tools/test_edit_gate.py
+?? kimi-cli/tests/tools/test_read_media_gate.py
+?? kimi-cli/tests/tools/test_tools_integrity_gate.py
+?? reviews/tools/90-findings.md
+?? reviews/tools/93-orphans-and-removal.md
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/X03-security.md
+?? reviews/tools/X04-native-parity.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C11.json
+?? reviews/tools/gates/C11.txt
+?? reviews/tools/gates/C12.json
+?? reviews/tools/gates/C12.txt
+?? reviews/tools/gates/C13.json
+?? reviews/tools/gates/C13.txt
+?? reviews/tools/gates/C14.json
+?? reviews/tools/gates/C14.txt
+?? reviews/tools/gates/C15.json
+?? reviews/tools/gates/C15.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K00.json
+?? reviews/tools/gates/K00.txt
+?? reviews/tools/gates/K01.json
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K02.json
+?? reviews/tools/gates/K02.txt
+?? reviews/tools/gates/K03.json
+?? reviews/tools/gates/K03.txt
+?? reviews/tools/gates/K04.json
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/K05.json
+?? reviews/tools/gates/K05.txt
+?? reviews/tools/gates/K06.json
+?? reviews/tools/gates/K06.txt
+?? reviews/tools/gates/K07.json
+?? reviews/tools/gates/K07.txt
+?? reviews/tools/gates/K08.json
+?? reviews/tools/gates/K08.txt
+?? reviews/tools/gates/K09.json
+?? reviews/tools/gates/K09.txt
+?? reviews/tools/gates/K10.json
+?? reviews/tools/gates/K10.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/kimix/test_agent_gate.py
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check src/kimix/tools/note/__init__.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\note\__init__.py:3:1
+   |
+ 1 |   """Plan file tools: WritePlan, ReadPlan, EditPlan, EditTool."""
+ 2 |
+ 3 | / from pathlib import Path
+ 4 | | from typing import Any, Literal
+ 5 | |
+ 6 | | import anyio
+ 7 | | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+ 8 | | from kimi_cli.session import Session
+ 9 | | from pydantic import BaseModel, Field, model_validator
+10 | | from kimi_cli.tools import SkipThisTool
+11 | | from kimi_cli.tools.utils import truncate_line
+12 | | from rapidfuzz import fuzz, process
+13 | | from kimix.tools.prompt_common import accepts_alias_text
+   | |________________________________________________________^
+14 |
+15 |   MAX_LINES = 1000
+   |
+help: Organize imports
+   |
+6  | import anyio
+   - from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+7  | from kimi_cli.session import Session
+   - from pydantic import BaseModel, Field, model_validator
+8  | from kimi_cli.tools import SkipThisTool
+9  | from kimi_cli.tools.utils import truncate_line
+10 + from pydantic import BaseModel, Field, model_validator
+11 | from rapidfuzz import fuzz, process
+12 +
+13 + from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+14 | from kimix.tools.prompt_common import accepts_alias_text
+   |
+
+F401 `typing.Any` imported but unused
+ --> src\kimix\tools\note\__init__.py:4:20
+  |
+3 | from pathlib import Path
+4 | from typing import Any, Literal
+  |                    ^^^
+5 |
+6 | import anyio
+  |
+help: Remove unused import: `typing.Any`
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+[elapsed 0.2s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+C901 `_read_tail` is too complex (13 > 12)
+   --> src\kimix\tools\note\__init__.py:218:15
+    |
+216 |         )
+217 |
+218 |     async def _read_tail(self, path: Path, params: ReadPlanParams) -> ToolReturnValue:
+    |               ^^^^^^^^^^
+219 |         """Read file from a negative line_offset (tail mode)."""
+220 |         tail_count = abs(params.line_offset)
+    |
+
+Found 1 error.
+[elapsed 0.1s, rc=1]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "src/kimix/tools/note/__init__.py",
+      "loc": 517,
+      "module_loc": 517,
+      "functions": [
+        {
+          "name": "_set_enable_plan",
+          "lineno": 22,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__init__",
+          "lineno": 48,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 54,
+          "loc": 25,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 3
+        },
+        {
+          "name": "_validate_line_offset",
+          "lineno": 108,
+          "loc": 12,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "__init__",
+          "lineno": 127,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 133,
+          "loc": 34,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 3
+        },
+        {
+          "name": "_read_forward",
+          "lineno": 168,
+          "loc": 49,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 3
+        },
+        {
+          "name": "_read_tail",
+          "lineno": 218,
+          "loc": 66,
+          "complexity": 15,
+          "branches": 14,
+          "max_nesting": 4
+        },
+        {
+          "name": "__init__",
+          "lineno": 316,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_normalize_line_endings",
+          "lineno": 322,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_find_similar",
+          "lineno": 326,
+          "loc": 28,
+          "complexity": 13,
+          "branches": 12,
+          "max_nesting": 3
+        },
+        {
+          "name": "_try_strip_match",
+          "lineno": 355,
+          "loc": 24,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 5
+        },
+        {
+          "name": "_find_best_fuzzy_match",
+          "lineno": 380,
+          "loc": 36,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 3
+        },
+        {
+          "name": "_apply_edit",
+          "lineno": 417,
+          "loc": 41,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "__call__",
+          "lineno": 459,
+          "loc": 56,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 3
+        }
+      ],
+      "longest_fn": {
+        "name": "_read_tail",
+        "loc": 66
+      },
+      "module_complexity": 15
+    }
+  ],
+  "totals": {
+    "files": 1,
+    "loc": 517,
+    "functions": 15
+  },
+  "breaches": [
+    "src/kimix/tools/note/__init__.py::_read_tail complexity=15 > 12",
+    "src/kimix/tools/note/__init__.py::_find_similar complexity=13 > 12"
+  ]
+}
+[elapsed 0.2s, rc=1]
+
+=== uv run pytest tests/test_note.py -q -rs ===
+..............................................                           [100%]
+46 passed in 1.01s
+[elapsed 2.1s, rc=0]
+
+=== uv run --with pytest-cov pytest tests/test_note.py --cov=kimix.tools.note ===
+..............................................                           [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                               Stmts   Miss Branch BrPart  Cover   Missing
+------------------------------------------------------------------------------
+src\kimix\tools\note\__init__.py     311     38    132     19    84%   25, 110, 114, 158->161, 159->161, 202, 244-252, 262, 273, 275, 277, 339-346, 348->353, 351, 371, 374-375, 403-408, 444, 489, 496
+------------------------------------------------------------------------------
+TOTAL                                311     38    132     19    84%
+46 passed in 1.66s
+[elapsed 6.2s, rc=0]

@@ -1,0 +1,1111 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+?? .coverage
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check kimi-cli/src/kimi_cli/tools/file/grep_local.py kimi-cli/src/kimi_cli/tools/file/grep_archive.py kimi-cli/src/kimi_cli/tools/file/grep_output.py kimi-cli/src/kimi_cli/tools/file/grep_recorder.py kimi-cli/src/kimi_cli/tools/file/grep_selectors.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:12:1
+   |
+10 |   """
+11 |
+12 | / import asyncio
+13 | | import concurrent.futures
+14 | | import contextlib
+15 | | import fnmatch
+16 | | import heapq
+17 | | import os
+18 | | import platform
+19 | | import regex as re
+20 | | import shlex
+21 | | import tempfile
+22 | | from dataclasses import dataclass, field
+23 | | from functools import lru_cache
+24 | | from pathlib import Path
+25 | | from typing import Any, Literal, override
+26 | |
+27 | | from kaos.path import KaosPath
+28 | | from kosong.tooling import (
+29 | |     FIELD_ALIASES_FILE,
+30 | |     FIELD_ALIASES_GENERAL,
+31 | |     FIELD_ALIASES_WEB,
+32 | |     CallableTool2,
+33 | |     ToolError,
+34 | |     ToolReturnValue,
+35 | |     alias_note,
+36 | | )
+37 | | from pydantic import AliasChoices, BaseModel, Field, field_validator
+38 | |
+39 | | from kimi_cli._ripgrep_common import (
+40 | |     RG_VERSION,
+41 | |     _detect_rg_target,
+42 | |     _extract_rg_archive,
+43 | |     _rg_archive_name,
+44 | |     _rg_binary_name,
+45 | |     _rg_download_url,
+46 | | )
+47 | | from kimi_cli._rtk_common import _rtk_binary_name
+48 | | from kimi_cli.install import _RTK_DOWNLOAD_LOCK, _download_and_install_rtk
+49 | | from kimi_cli.share import get_share_dir
+50 | | from kimi_cli.soul.agent import Runtime
+51 | | from kimi_cli.tools.file.grep_archive import (
+52 | |     materialize_archive_members,
+53 | |     parse_archive_path_candidates,
+54 | | )
+55 | | from kimi_cli.tools.file.grep_output import (
+56 | |     format_grouped_output,
+57 | |     group_lines_by_file,
+58 | |     should_group,
+59 | | )
+60 | | from kimi_cli.tools.file.grep_recorder import record_grep_files
+61 | | from kimi_cli.tools.file.grep_selectors import (
+62 | |     GrepPathSpec,
+63 | |     LineRange,
+64 | |     expand_path_entries,
+65 | |     is_line_in_ranges,
+66 | |     selector_line_ranges,
+67 | |     split_path_and_sel,
+68 | | )
+69 | | from kimi_cli.tools.file.micro_compress import (
+70 | |     MicroCompressConfig,
+71 | |     compress_lines as _mc_compress_lines,
+72 | | )
+73 | | from kimi_cli.tools.file.output_utils import (
+74 | |     dedup_lines,
+75 | |     fold_lines,
+76 | |     parse_rtk_rg_output,
+77 | |     truncate_line,
+78 | | )
+79 | | from kimi_cli.tools.utils import ToolResultBuilder
+80 | | from kimi_cli.utils.logging import logger
+81 | | from kimi_cli.utils.path import (
+82 | |     is_within_workspace,
+83 | |     kaos_path_from_user_input,
+84 | |     local_path_for_cwd,
+85 | |     normalize_user_path,
+86 | | )
+87 | | from kimi_cli.utils.sensitive import is_sensitive_file, sensitive_file_warning
+88 | | from kimi_cli.vfs import VFS
+   | |____________________________^
+89 |
+90 |   # Output mode map — only canonical values accepted
+   |
+help: Organize imports
+   |
+18 | import platform
+   - import regex as re
+19 | import shlex
+--------------------------------------------------------------------------------
+25 |
+   - from kaos.path import KaosPath
+   - from kosong.tooling import (
+   -     FIELD_ALIASES_FILE,
+   -     FIELD_ALIASES_GENERAL,
+   -     FIELD_ALIASES_WEB,
+   -     CallableTool2,
+   -     ToolError,
+   -     ToolReturnValue,
+   -     alias_note,
+   - )
+26 + import regex as re
+27 | from pydantic import AliasChoices, BaseModel, Field, field_validator
+28 |
+29 + from kaos.path import KaosPath
+30 | from kimi_cli._ripgrep_common import (
+--------------------------------------------------------------------------------
+61 |     MicroCompressConfig,
+62 + )
+63 + from kimi_cli.tools.file.micro_compress import (
+64 |     compress_lines as _mc_compress_lines,
+--------------------------------------------------------------------------------
+81 | from kimi_cli.vfs import VFS
+82 + from kosong.tooling import (
+83 +     FIELD_ALIASES_FILE,
+84 +     FIELD_ALIASES_GENERAL,
+85 +     FIELD_ALIASES_WEB,
+86 +     CallableTool2,
+87 +     ToolError,
+88 +     ToolReturnValue,
+89 +     alias_note,
+90 + )
+91 |
+   |
+
+E501 Line too long (116 > 100)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1213:101
+     |
+1211 |                         f"and cannot be searched."
+1212 |                     ),
+1213 |                     brief=f"Reserved device name | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+     |                                                                                                     ^^^^^^^^^^^^^^^^
+1214 |                 )
+     |
+
+E501 Line too long (118 > 100)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1228:101
+     |
+1226 |                 return ToolError(
+1227 |                     message=f"`{display_path}` is outside the workspace.",
+1228 |                     brief=f"Path outside workspace | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+     |                                                                                                     ^^^^^^^^^^^^^^^^^^
+1229 |                 )
+     |
+
+E501 Line too long (114 > 100)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1260:101
+     |
+1258 |                             "Try a more specific path or pattern."
+1259 |                         ),
+1260 |                         brief=f"Grep timed out | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+     |                                                                                                     ^^^^^^^^^^^^^^
+1261 |                     )
+1262 |                 message = (
+     |
+
+E501 Line too long (110 > 100)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1277:101
+     |
+1275 |                 return ToolError(
+1276 |                     message=f"Failed to grep. Error: {stderr_str}",
+1277 |                     brief=f"Failed to grep | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+     |                                                                                                     ^^^^^^^^^^
+1278 |                 )
+     |
+
+E501 Line too long (106 > 100)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1324:101
+     |
+1322 |             return ToolError(
+1323 |                 message=f"Failed to grep. Error: {str(e)}",
+1324 |                 brief=f"Failed to grep | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+     |                                                                                                     ^^^^^^
+1325 |             )
+     |
+
+E501 Line too long (103 > 100)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1903:101
+     |
+1901 |                 original_is_absolute = kaos_path_from_user_input(entry_display).is_absolute()
+1902 |                 if (
+1903 |                     not is_within_workspace(logical_search_path, self._work_dir, self._additional_dirs)
+     |                                                                                                     ^^^
+1904 |                     and not original_is_absolute
+1905 |                 ):
+     |
+
+UP035 [*] Import from `collections.abc` instead: `Callable`
+  --> kimi-cli\src\kimi_cli\tools\file\grep_output.py:11:1
+   |
+ 9 | from __future__ import annotations
+10 |
+11 | from typing import Any, Callable
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+12 |
+13 | __all__ = [
+   |
+help: Import from `collections.abc`
+   |
+10 |
+   - from typing import Any, Callable
+11 + from typing import Any
+12 + from collections.abc import Callable
+13 |
+   |
+
+Found 8 errors.
+[*] 2 fixable with the `--fix` option.
+[elapsed 0.1s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+C901 `_build_rg_args` is too complex (20 > 12)
+   --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:414:5
+    |
+414 | def _build_rg_args(
+    |     ^^^^^^^^^^^^^^
+415 |     rg_cmd: str,
+416 |     params: Params,
+    |
+
+C901 `_resolve_selector_specs` is too complex (13 > 12)
+   --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:858:11
+    |
+858 | async def _resolve_selector_specs(
+    |           ^^^^^^^^^^^^^^^^^^^^^^^
+859 |     entries: list[str],
+860 |     work_dir,
+    |
+
+C901 `__call__` is too complex (18 > 12)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1160:15
+     |
+1159 |     @override
+1160 |     async def __call__(self, params: Params, *, _retry: bool = False) -> ToolReturnValue:
+     |               ^^^^^^^^
+1161 |         has_dirty = (
+1162 |             self._vfs is not None
+     |
+
+C901 `_rich_call` is too complex (15 > 12)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1377:15
+     |
+1375 |         )
+1376 |
+1377 |     async def _rich_call(
+     |               ^^^^^^^^^^
+1378 |         self,
+1379 |         params: Params,
+     |
+
+C901 `_postprocess` is too complex (40 > 12)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1529:15
+     |
+1527 |                     tmp_dir.cleanup()
+1528 |
+1529 |     async def _postprocess(
+     |               ^^^^^^^^^^^^
+1530 |         self,
+1531 |         *,
+     |
+
+C901 `_backup_grep_impl` is too complex (20 > 12)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1846:15
+     |
+1844 |             )
+1845 |
+1846 |     async def _backup_grep_impl(self, params: Params) -> ToolReturnValue:
+     |               ^^^^^^^^^^^^^^^^^
+1847 |         try:
+1848 |             if not params.pattern:
+     |
+
+C901 `_backup_grep_search` is too complex (36 > 12)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:2005:15
+     |
+2003 |             )
+2004 |
+2005 |     async def _backup_grep_search(
+     |               ^^^^^^^^^^^^^^^^^^^
+2006 |         self,
+2007 |         params: Params,
+     |
+
+C901 `_search_content_single` is too complex (17 > 12)
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:2268:9
+     |
+2266 |         return _matches_type(file_path, params.type)
+2267 |
+2268 |     def _search_content_single(
+     |         ^^^^^^^^^^^^^^^^^^^^^^
+2269 |         self,
+2270 |         file_path: Path,
+     |
+
+Found 8 errors.
+[elapsed 0.1s, rc=1]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/grep_local.py",
+      "loc": 2355,
+      "module_loc": 2355,
+      "functions": [
+        {
+          "name": "_pattern_has_regex_newline",
+          "lineno": 102,
+          "loc": 10,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_multiline_pattern",
+          "lineno": 114,
+          "loc": 17,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "parse_content_line",
+          "lineno": 279,
+          "loc": 16,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_env_with_shared_bin_path",
+          "lineno": 297,
+          "loc": 22,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 0
+        },
+        {
+          "name": "_find_existing_rtk",
+          "lineno": 321,
+          "loc": 13,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_ensure_rtk_path",
+          "lineno": 336,
+          "loc": 13,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_find_existing_rg",
+          "lineno": 351,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_download_and_install_rg",
+          "lineno": 364,
+          "loc": 33,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 7
+        },
+        {
+          "name": "_ensure_rg_path",
+          "lineno": 399,
+          "loc": 13,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_build_rg_args",
+          "lineno": 414,
+          "loc": 105,
+          "complexity": 26,
+          "branches": 25,
+          "max_nesting": 3
+        },
+        {
+          "name": "_format_cmd",
+          "lineno": 521,
+          "loc": 12,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_read_stream",
+          "lineno": 535,
+          "loc": 30,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 4
+        },
+        {
+          "name": "_kill_process",
+          "lineno": 567,
+          "loc": 8,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_is_eagain",
+          "lineno": 577,
+          "loc": 2,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_is_windows_reserved_name",
+          "lineno": 589,
+          "loc": 12,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_is_sensitive_cached",
+          "lineno": 607,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_join_with_byte_limit",
+          "lineno": 612,
+          "loc": 15,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_strip_path_prefix",
+          "lineno": 629,
+          "loc": 14,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_rtk_fold_note",
+          "lineno": 645,
+          "loc": 38,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 2
+        },
+        {
+          "name": "_is_binary",
+          "lineno": 737,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_should_skip_dir",
+          "lineno": 741,
+          "loc": 4,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_matches_type",
+          "lineno": 747,
+          "loc": 8,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_matches_glob",
+          "lineno": 757,
+          "loc": 4,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_safe_getmtime",
+          "lineno": 763,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_safe_getmtime_async",
+          "lineno": 770,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_compile_regex_cached",
+          "lineno": 778,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_read_file_text",
+          "lineno": 782,
+          "loc": 13,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_merge_intervals",
+          "lineno": 797,
+          "loc": 11,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_reattach_single_file_prefix",
+          "lineno": 825,
+          "loc": 18,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_plain_ctx",
+          "lineno": 845,
+          "loc": 7,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_glob_chars",
+          "lineno": 854,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_resolve_selector_specs",
+          "lineno": 858,
+          "loc": 97,
+          "complexity": 16,
+          "branches": 15,
+          "max_nesting": 4
+        },
+        {
+          "name": "_strip_key_for",
+          "lineno": 957,
+          "loc": 7,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_build_ranges_map",
+          "lineno": 966,
+          "loc": 23,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 3
+        },
+        {
+          "name": "_remap_display",
+          "lineno": 991,
+          "loc": 18,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 3
+        },
+        {
+          "name": "_normalize_slashes_content",
+          "lineno": 1011,
+          "loc": 17,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_range_filter_lines",
+          "lineno": 1030,
+          "loc": 25,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 2
+        },
+        {
+          "name": "_collect_record_files",
+          "lineno": 1057,
+          "loc": 13,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 3
+        },
+        {
+          "name": "_text_in_ranges",
+          "lineno": 1072,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_entries_are_rich",
+          "lineno": 1079,
+          "loc": 8,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_validate_output_mode",
+          "lineno": 184,
+          "loc": 9,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "__init__",
+          "lineno": 1115,
+          "loc": 22,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_resolve_rtk_path",
+          "lineno": 1138,
+          "loc": 20,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 1160,
+          "loc": 166,
+          "complexity": 27,
+          "branches": 26,
+          "max_nesting": 3
+        },
+        {
+          "name": "_run_rg_subprocess",
+          "lineno": 1327,
+          "loc": 49,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_rich_call",
+          "lineno": 1377,
+          "loc": 151,
+          "complexity": 30,
+          "branches": 29,
+          "max_nesting": 4
+        },
+        {
+          "name": "_postprocess",
+          "lineno": 1529,
+          "loc": 297,
+          "complexity": 77,
+          "branches": 76,
+          "max_nesting": 4
+        },
+        {
+          "name": "backup_grep",
+          "lineno": 1827,
+          "loc": 18,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_backup_grep_impl",
+          "lineno": 1846,
+          "loc": 158,
+          "complexity": 31,
+          "branches": 30,
+          "max_nesting": 5
+        },
+        {
+          "name": "_backup_grep_search",
+          "lineno": 2005,
+          "loc": 233,
+          "complexity": 51,
+          "branches": 50,
+          "max_nesting": 6
+        },
+        {
+          "name": "_collect_files",
+          "lineno": 2239,
+          "loc": 16,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 4
+        },
+        {
+          "name": "_is_valid_file",
+          "lineno": 2256,
+          "loc": 11,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_search_content_single",
+          "lineno": 2268,
+          "loc": 66,
+          "complexity": 22,
+          "branches": 21,
+          "max_nesting": 4
+        },
+        {
+          "name": "_extract_path",
+          "lineno": 2335,
+          "loc": 21,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "_process_one",
+          "lineno": 2025,
+          "loc": 24,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "_postprocess",
+        "loc": 297
+      },
+      "module_complexity": 77
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/grep_archive.py",
+      "loc": 155,
+      "module_loc": 155,
+      "functions": [
+        {
+          "name": "parse_archive_path_candidates",
+          "lineno": 39,
+          "loc": 23,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "read_archive_member_bytes",
+          "lineno": 64,
+          "loc": 12,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_safe_scratch_name",
+          "lineno": 78,
+          "loc": 5,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 0
+        },
+        {
+          "name": "materialize_archive_members",
+          "lineno": 85,
+          "loc": 71,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_materialize_sync",
+          "lineno": 108,
+          "loc": 45,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "materialize_archive_members",
+        "loc": 71
+      },
+      "module_complexity": 8
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/grep_output.py",
+      "loc": 115,
+      "module_loc": 115,
+      "functions": [
+        {
+          "name": "format_match_line",
+          "lineno": 22,
+          "loc": 8,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "group_lines_by_file",
+          "lineno": 32,
+          "loc": 29,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "format_grouped_output",
+          "lineno": 63,
+          "loc": 20,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 3
+        },
+        {
+          "name": "group_line_indices_by_blank",
+          "lineno": 85,
+          "loc": 18,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 3
+        },
+        {
+          "name": "should_group",
+          "lineno": 105,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "group_lines_by_file",
+        "loc": 29
+      },
+      "module_complexity": 6
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/grep_recorder.py",
+      "loc": 97,
+      "module_loc": 97,
+      "functions": [
+        {
+          "name": "_merged",
+          "lineno": 52,
+          "loc": 9,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "record_grep_files",
+          "lineno": 63,
+          "loc": 24,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 1
+        },
+        {
+          "name": "get_recorded_grep_files",
+          "lineno": 89,
+          "loc": 9,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "__init__",
+          "lineno": 33,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "record",
+          "lineno": 37,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "list",
+          "lineno": 45,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__len__",
+          "lineno": 48,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        }
+      ],
+      "longest_fn": {
+        "name": "record_grep_files",
+        "loc": 24
+      },
+      "module_complexity": 7
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/grep_selectors.py",
+      "loc": 320,
+      "module_loc": 320,
+      "functions": [
+        {
+          "name": "parse_line_range_chunk",
+          "lineno": 79,
+          "loc": 40,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 2
+        },
+        {
+          "name": "parse_line_ranges",
+          "lineno": 121,
+          "loc": 40,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 3
+        },
+        {
+          "name": "is_line_in_ranges",
+          "lineno": 163,
+          "loc": 10,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "selector_line_ranges",
+          "lineno": 175,
+          "loc": 19,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_literal_exists",
+          "lineno": 196,
+          "loc": 8,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_is_selector_shape",
+          "lineno": 206,
+          "loc": 10,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "split_path_and_sel",
+          "lineno": 218,
+          "loc": 46,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 2
+        },
+        {
+          "name": "_maybe_json_array",
+          "lineno": 266,
+          "loc": 13,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "expand_path_entries",
+          "lineno": 281,
+          "loc": 26,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 2
+        },
+        {
+          "name": "merge_ranges_into",
+          "lineno": 309,
+          "loc": 12,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "split_path_and_sel",
+        "loc": 46
+      },
+      "module_complexity": 12
+    }
+  ],
+  "totals": {
+    "files": 5,
+    "loc": 3042,
+    "functions": 82
+  },
+  "breaches": [
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_build_rg_args complexity=26 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_resolve_selector_specs complexity=16 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::__call__ loc=166 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::__call__ complexity=27 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_rich_call loc=151 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_rich_call complexity=30 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_postprocess loc=297 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_postprocess complexity=77 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_backup_grep_impl loc=158 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_backup_grep_impl complexity=31 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_backup_grep_search loc=233 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_backup_grep_search complexity=51 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_search_content_single complexity=22 > 12"
+  ]
+}
+[elapsed 0.2s, rc=1]
+
+=== uv run pytest kimi-cli/tests/tools\test_grep.py kimi-cli/tests/tools\test_grep_archive.py kimi-cli/tests/tools\test_grep_output.py kimi-cli/tests/tools\test_grep_recorder.py kimi-cli/tests/tools\test_grep_rich.py kimi-cli/tests/tools\test_grep_ripgrep_only.py kimi-cli/tests/tools\test_grep_selectors.py -q -rs ===
+........................................................................ [ 26%]
+..........sss........................................................... [ 53%]
+........................................................................ [ 79%]
+.......................................................                  [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\tools\test_grep.py:1622: [out of work-dir] warning not implemented in Grep
+SKIPPED [1] kimi-cli\tests\tools\test_grep.py:1643: [out of work-dir] warning not implemented in Grep
+SKIPPED [1] kimi-cli\tests\tools\test_grep.py:1658: [out of work-dir] warning not implemented in Grep
+268 passed, 3 skipped in 9.11s
+[elapsed 11.1s, rc=0]
+
+=== uv run --with pytest-cov pytest kimi-cli/tests/tools\test_grep.py kimi-cli/tests/tools\test_grep_archive.py kimi-cli/tests/tools\test_grep_output.py kimi-cli/tests/tools\test_grep_recorder.py kimi-cli/tests/tools\test_grep_rich.py kimi-cli/tests/tools\test_grep_ripgrep_only.py kimi-cli/tests/tools\test_grep_selectors.py --cov=kimi_cli.tools.file.grep_local ===
+........................................................................ [ 26%]
+..........sss........................................................... [ 53%]
+........................................................................ [ 79%]
+.......................................................                  [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                             Stmts   Miss Branch BrPart  Cover   Missing
+--------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\file\grep_local.py    1105    174    496     62    84%   188, 293, 337-348, 361, 365-396, 400-411, 557-563, 569-574, 592, 596, 599, 625, 674->678, 676-677, 678->680, 766-767, 785-786, 793-794, 833, 910, 942, 962, 1015, 1024, 1035, 1050, 1053, 1127-1128, 1135-1136, 1156-1157, 1167, 1176-1181, 1208, 1225-1226, 1248-1250, 1254-1262, 1273-1274, 1313-1322, 1360-1365, 1453-1456, 1462-1464, 1472-1477, 1481->1440, 1494-1497, 1516-1517, 1556, 1685->1683, 1689-1690, 1774->1788, 1821-1822, 1890-1891, 1914-1915, 1943-1945, 1959-1960, 1962-1964, 1993-2000, 2028, 2043, 2071->2068, 2109->2107, 2113-2114, 2131-2132, 2138, 2186-2190, 2199->2210, 2202-2207, 2216->2218, 2221-2222, 2227-2234, 2242->2254, 2261-2263, 2283, 2307, 2320, 2331
+--------------------------------------------------------------------------------------------
+TOTAL                                             1105    174    496     62    84%
+268 passed, 3 skipped in 8.09s
+[elapsed 11.8s, rc=0]

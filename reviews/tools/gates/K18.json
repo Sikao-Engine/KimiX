@@ -1,0 +1,25 @@
+{
+  "id": "K18",
+  "tool": "Rm",
+  "files": [
+    "src/kimix/tools/file/__init__.py"
+  ],
+  "tests": [],
+  "cov_module": "kimix.tools.file",
+  "sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "ruff_rc": 1,
+  "ruff": "fail",
+  "c901_rc": 0,
+  "c901": "pass",
+  "metrics_rc": 0,
+  "metrics": "pass",
+  "complexity_max": 2,
+  "longest_fn_loc": 19,
+  "longest_fn": "__call__",
+  "module_loc": 61,
+  "functions_over_120_loc": 0,
+  "functions_over_12_cx": 0,
+  "metrics_breaches": [],
+  "pytest": "not-run",
+  "cov": "not-run"
+}

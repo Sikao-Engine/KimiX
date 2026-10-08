@@ -1,0 +1,53 @@
+{
+  "id": "C08",
+  "tool": "grep (Grep)",
+  "files": [
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py",
+    "kimi-cli/src/kimi_cli/tools/file/grep_archive.py",
+    "kimi-cli/src/kimi_cli/tools/file/grep_output.py",
+    "kimi-cli/src/kimi_cli/tools/file/grep_recorder.py",
+    "kimi-cli/src/kimi_cli/tools/file/grep_selectors.py"
+  ],
+  "tests": [
+    "kimi-cli/tests/tools\\test_grep.py",
+    "kimi-cli/tests/tools\\test_grep_archive.py",
+    "kimi-cli/tests/tools\\test_grep_output.py",
+    "kimi-cli/tests/tools\\test_grep_recorder.py",
+    "kimi-cli/tests/tools\\test_grep_rich.py",
+    "kimi-cli/tests/tools\\test_grep_ripgrep_only.py",
+    "kimi-cli/tests/tools\\test_grep_selectors.py"
+  ],
+  "cov_module": "kimi_cli.tools.file.grep_local",
+  "sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "ruff_rc": 1,
+  "ruff": "fail",
+  "c901_rc": 1,
+  "c901": "fail",
+  "metrics_rc": 1,
+  "metrics": "fail",
+  "complexity_max": 77,
+  "longest_fn_loc": 297,
+  "longest_fn": "_postprocess",
+  "module_loc": 3042,
+  "functions_over_120_loc": 5,
+  "functions_over_12_cx": 8,
+  "metrics_breaches": [
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_build_rg_args complexity=26 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_resolve_selector_specs complexity=16 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::__call__ loc=166 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::__call__ complexity=27 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_rich_call loc=151 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_rich_call complexity=30 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_postprocess loc=297 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_postprocess complexity=77 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_backup_grep_impl loc=158 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_backup_grep_impl complexity=31 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_backup_grep_search loc=233 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_backup_grep_search complexity=51 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_search_content_single complexity=22 > 12"
+  ],
+  "pytest_rc": 0,
+  "pytest": "pass",
+  "cov_rc": 0,
+  "cov": "pass"
+}

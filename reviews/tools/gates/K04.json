@@ -1,0 +1,45 @@
+{
+  "id": "K04",
+  "tool": "bash (Bash)",
+  "files": [
+    "src/kimix/tools/file/bash/bash_tool.py",
+    "src/kimix/tools/file/bash/bash_fix.py",
+    "src/kimix/tools/file/bash/shell_common.py",
+    "src/kimix/tools/file/bash/safety.py",
+    "src/kimix/tools/file/bash/output_enhance.py",
+    "src/kimix/tools/file/bash/__init__.py"
+  ],
+  "tests": [
+    "tests/test_bash.py",
+    "tests/test_bash_e2e.py",
+    "tests/test_shell_common.py",
+    "tests/test_shell_safety.py",
+    "tests/test_output_enhance.py",
+    "tests/native/test_shell_security_equivalence.py"
+  ],
+  "cov_module": "kimix.tools.file.bash.bash_tool",
+  "sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "ruff_rc": 1,
+  "ruff": "fail",
+  "c901_rc": 1,
+  "c901": "fail",
+  "metrics_rc": 1,
+  "metrics": "fail",
+  "complexity_max": 52,
+  "longest_fn_loc": 325,
+  "longest_fn": "__call__",
+  "module_loc": 2537,
+  "functions_over_120_loc": 2,
+  "functions_over_12_cx": 3,
+  "metrics_breaches": [
+    "src/kimix/tools/file/bash/bash_tool.py::_find_git_bash_windows complexity=13 > 12",
+    "src/kimix/tools/file/bash/bash_tool.py::__call__ loc=325 > 120",
+    "src/kimix/tools/file/bash/bash_tool.py::__call__ complexity=51 > 12",
+    "src/kimix/tools/file/bash/safety.py::detect_self_kill loc=173 > 120",
+    "src/kimix/tools/file/bash/safety.py::detect_self_kill complexity=52 > 12"
+  ],
+  "pytest_rc": 2,
+  "pytest": "fail",
+  "cov_rc": 2,
+  "cov": "fail"
+}

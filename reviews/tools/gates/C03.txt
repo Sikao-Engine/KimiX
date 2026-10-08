@@ -1,0 +1,1138 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+?? .coverage
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.1s, rc=0]
+
+
+=== uv run ruff check kimi-cli/src/kimi_cli/tools/todo/__init__.py kimi-cli/src/kimi_cli/tools/display.py ===
+I001 [*] Import block is un-sorted or un-formatted
+ --> kimi-cli\src\kimi_cli\tools\display.py:1:1
+  |
+1 | / from kosong.tooling import DisplayBlock
+2 | | from pydantic import BaseModel
+3 | |
+4 | | from kimi_cli.session_state import TodoStatus
+  | |_____________________________________________^
+help: Organize imports
+  |
+  - from kosong.tooling import DisplayBlock
+1 | from pydantic import BaseModel
+2 |
+3 | from kimi_cli.session_state import TodoStatus
+4 + from kosong.tooling import DisplayBlock
+5 |
+  |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:3:1
+   |
+ 1 |   """Todo list tracking tool."""
+ 2 |
+ 3 | / from __future__ import annotations
+ 4 | |
+ 5 | | import copy
+ 6 | | import regex
+ 7 | | from collections.abc import Callable
+ 8 | | from dataclasses import dataclass
+ 9 | | from pathlib import Path
+10 | | from typing import Any, ClassVar, Literal, cast, override
+11 | |
+12 | | import orjson
+13 | | import rapidfuzz
+14 | | from kosong.tooling import (
+15 | |     FIELD_ALIASES_TODO_LIST,
+16 | |     _COMMON_FIELD_ALIASES,
+17 | |     CallableTool2,
+18 | |     ToolError,
+19 | |     ToolReturnValue,
+20 | |     alias_note,
+21 | | )
+22 | | from pydantic import (
+23 | |     AliasChoices,
+24 | |     BaseModel,
+25 | |     ConfigDict,
+26 | |     Field,
+27 | |     PrivateAttr,
+28 | |     ValidationError,
+29 | |     field_validator,
+30 | |     model_validator,
+31 | | )
+32 | | from pydantic.json_schema import GetJsonSchemaHandler, JsonSchemaValue
+33 | | from pydantic_core import CoreSchema
+34 | |
+35 | | from kimi_cli import logger
+36 | | from kimi_cli.session_state import TodoItemState, TodoStatus
+37 | | from kimi_cli.soul.agent import Runtime
+38 | | from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
+39 | | from kimi_cli.tools.utils import repair_json_string
+   | |___________________________________________________^
+40 |
+41 |   _TODOLIST_DESCRIPTION = (
+   |
+help: Organize imports
+   |
+5  | import copy
+   - import regex
+6  | from collections.abc import Callable
+--------------------------------------------------------------------------------
+12 | import rapidfuzz
+   - from kosong.tooling import (
+   -     FIELD_ALIASES_TODO_LIST,
+   -     _COMMON_FIELD_ALIASES,
+   -     CallableTool2,
+   -     ToolError,
+   -     ToolReturnValue,
+   -     alias_note,
+   - )
+13 + import regex
+14 | from pydantic import (
+--------------------------------------------------------------------------------
+31 | from kimi_cli.tools.utils import repair_json_string
+32 + from kosong.tooling import (
+33 +     _COMMON_FIELD_ALIASES,
+34 +     FIELD_ALIASES_TODO_LIST,
+35 +     CallableTool2,
+36 +     ToolError,
+37 +     ToolReturnValue,
+38 +     alias_note,
+39 + )
+40 |
+   |
+
+E501 Line too long (103 > 100)
+   --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:794:101
+    |
+792 |                 "forcereplace",
+793 |             ):
+794 |                 result = {**(result if result is not data else args), "mode": "replace", "force": True}
+    |                                                                                                     ^^^
+795 |
+796 |         has_list = any(key in args for key in _TODO_LIST_KEYS)
+    |
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:1007:13
+     |
+1005 |           replaces_list = False
+1006 |           if params.mode == "clear":
+1007 | /             if old_todos and not all(t.status == "done" for t in old_todos):
+1008 | |                 if not params.force:
+     | |____________________________________^
+1009 |                       unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
+1010 |                       return self._error(
+     |
+help: Combine `if` statements using `and`
+
+SIM102 Use a single `if` statement instead of nested `if` statements
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:1021:13
+     |
+1019 |               replaces_list = True
+1020 |           elif params.mode == "replace":
+1021 | /             if old_todos and not all(t.status == "done" for t in old_todos):
+1022 | |                 if not params.force:
+     | |____________________________________^
+1023 |                       unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
+1024 |                       return self._error(
+     |
+help: Combine `if` statements using `and`
+
+E501 Line too long (102 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:1326:101
+     |
+1324 |         if force and had_old_todos:
+1325 |             message_lines.append(
+1326 |                 "Warning: force=True bypassed the all-done guard and replaced the existing todo list."
+     |                                                                                                     ^^
+1327 |             )
+1328 |         if counts["in_progress"] > 1:
+     |
+
+E501 Line too long (101 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:1810:101
+     |
+1808 |             container_path = []
+1809 |
+1810 |         container = tree if not container_path else self._node_at_path(tree, container_path).children
+     |                                                                                                     ^
+1811 |         scope_label = item.parent or ("root" if not container_path else "")
+1812 |         new_container, summary = self._upsert_in_container(
+     |
+
+E501 Line too long (113 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:1827:101
+     |
+1825 |         parent_node = self._node_at_path(tree, container_path)
+1826 |         return (
+1827 |             self._replace_node(tree, container_path, parent_node.model_copy(update={"children": new_container})),
+     |                                                                                                     ^^^^^^^^^^^^^
+1828 |             summary,
+1829 |         )
+     |
+
+E501 Line too long (110 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:1898:101
+     |
+1896 |                 "status": item.status if "status" in item.model_fields_set else "pending",
+1897 |                 "children": [
+1898 |                     c.model_copy(update={"status": c.status if "status" in c.model_fields_set else "pending"})
+     |                                                                                                     ^^^^^^^^^^
+1899 |                     for c in item.children
+1900 |                 ],
+     |
+
+E501 Line too long (102 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2199:101
+     |
+2197 |             if parent_path is None:
+2198 |                 if not params.fuzzy:
+2199 |                     hint = 'Omit `todos` to read the tree, or set fuzzy=True to search by similarity.'
+     |                                                                                                     ^^
+2200 |                     return ToolError(
+2201 |                         message=f'Parent todo "{parent_title}" not found.',
+     |
+
+E501 Line too long (107 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2203:101
+     |
+2201 |                         message=f'Parent todo "{parent_title}" not found.',
+2202 |                         brief=hint,
+2203 |                         output=f'Error: No parent todo titled "{parent_title}" found.' + _hint_error(hint),
+     |                                                                                                     ^^^^^^^
+2204 |                     )
+2205 |                 nearest = self._find_nearest_titles(
+     |
+
+E501 Line too long (109 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2218:101
+     |
+2216 |                         message=f'No parent todo matching "{parent_title}" found.',
+2217 |                         brief=hint,
+2218 |                         output=f'Error: No parent todo matching "{parent_title}" found.' + _hint_error(hint),
+     |                                                                                                     ^^^^^^^^^
+2219 |                     )
+2220 |                 resolved_parent_title = hits[0].choice
+     |
+
+E501 Line too long (103 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2222:101
+     |
+2220 |                 resolved_parent_title = hits[0].choice
+2221 |                 parent_path = self._find_path(todos, resolved_parent_title)
+2222 |                 warnings.append(f'Fuzzy matched parent "{parent_title}" to "{resolved_parent_title}".')
+     |                                                                                                     ^^^
+2223 |                 assert parent_path is not None
+2224 |                 parent_node = self._node_at_path(todos, parent_path)
+     |
+
+E501 Line too long (118 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2243:101
+     |
+2241 |                 message=f'Cannot rename non-existent todo "{target_title}".',
+2242 |                 brief=hint,
+2243 |                 output=f'Error: "{target_title}" does not exist under "{resolved_parent_title}".' + _hint_error(hint),
+     |                                                                                                     ^^^^^^^^^^^^^^^^^^
+2244 |             )
+     |
+
+E501 Line too long (118 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2254:101
+     |
+2252 |                 message=f'Cannot complete non-existent todo "{target_title}".',
+2253 |                 brief=hint,
+2254 |                 output=f'Error: "{target_title}" does not exist under "{resolved_parent_title}".' + _hint_error(hint),
+     |                                                                                                     ^^^^^^^^^^^^^^^^^^
+2255 |             )
+     |
+
+E501 Line too long (105 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2301:101
+     |
+2299 |             and params.status in ("pending", "in_progress")
+2300 |         ):
+2301 |             hint = f'Send "{matched_title}" with status="done" instead of complete=True, or omit status.'
+     |                                                                                                     ^^^^^
+2302 |             return ToolError(
+2303 |                 message=f'complete=True cannot be combined with status="{params.status}".',
+     |
+
+E501 Line too long (103 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2341:101
+     |
+2339 |                 hint = f'Send "{new_title}" to update the existing item instead of renaming.'
+2340 |                 return ToolError(
+2341 |                     message=f'Cannot rename "{matched_title}" to "{new_title}": title already exists.',
+     |                                                                                                     ^^^
+2342 |                     brief=hint,
+2343 |                     output=(
+     |
+
+E501 Line too long (105 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2397:101
+     |
+2395 |         if len(parent_path) == 1:
+2396 |             parent = items[parent_path[0]]
+2397 |             new_items[parent_path[0]] = parent.model_copy(update={"children": [*parent.children, child]})
+     |                                                                                                     ^^^^^
+2398 |         else:
+2399 |             child_updates = TodoList._insert_child_at_path(
+     |
+
+E501 Line too long (101 > 100)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:2417:101
+     |
+2416 |     @staticmethod
+2417 |     def _find_path(items: list[Todo], title: str, path: list[int] | None = None) -> list[int] | None:
+     |                                                                                                     ^
+2418 |         """Return the index path to the first todo with the given title, or None."""
+2419 |         if path is None:
+     |
+
+Found 19 errors.
+[*] 2 fixable with the `--fix` option.
+[elapsed 0.3s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+C901 `_merge_upsert` is too complex (13 > 12)
+    --> kimi-cli\src\kimi_cli\tools\todo\__init__.py:1670:15
+     |
+1668 |         return item.model_copy(update=update) if update else item
+1669 |
+1670 |     async def _merge_upsert(self, params: Params) -> ToolReturnValue:
+     |               ^^^^^^^^^^^^^
+1671 |         """``mode='merge'``: upsert every item — patch in place, or create.
+     |
+
+Found 1 error.
+[elapsed 0.1s, rc=1]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/todo/__init__.py",
+      "loc": 2452,
+      "module_loc": 2452,
+      "functions": [
+        {
+          "name": "_truncate_prompt",
+          "lineno": 65,
+          "loc": 9,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_hint_next",
+          "lineno": 93,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_hint_error",
+          "lineno": 97,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_canonical_status",
+          "lineno": 142,
+          "loc": 13,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_terse_summary",
+          "lineno": 240,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "normalize_title",
+          "lineno": 245,
+          "loc": 8,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_looks_like_json_opener",
+          "lineno": 255,
+          "loc": 3,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_cap_title",
+          "lineno": 260,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_first_text_line",
+          "lineno": 265,
+          "loc": 9,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_received_keys",
+          "lineno": 276,
+          "loc": 8,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_sent_at",
+          "lineno": 286,
+          "loc": 17,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_problem_path",
+          "lineno": 305,
+          "loc": 11,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 3
+        },
+        {
+          "name": "_describe_item_problems",
+          "lineno": 318,
+          "loc": 48,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 3
+        },
+        {
+          "name": "_format_item_problems",
+          "lineno": 368,
+          "loc": 18,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_derived_title_warnings",
+          "lineno": 388,
+          "loc": 24,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_collapse_optional_array",
+          "lineno": 414,
+          "loc": 38,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 1
+        },
+        {
+          "name": "walk",
+          "lineno": 398,
+          "loc": 11,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "__get_pydantic_json_schema__",
+          "lineno": 538,
+          "loc": 6,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_truncate_children_schema",
+          "lineno": 546,
+          "loc": 34,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 2
+        },
+        {
+          "name": "_normalize_item_shape",
+          "lineno": 583,
+          "loc": 39,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 4
+        },
+        {
+          "name": "_validate_status",
+          "lineno": 625,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_validate_notes",
+          "lineno": 630,
+          "loc": 5,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_validate_title",
+          "lineno": 638,
+          "loc": 7,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "__get_pydantic_json_schema__",
+          "lineno": 650,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_validate_mode",
+          "lineno": 730,
+          "loc": 12,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_validate_on_conflict",
+          "lineno": 745,
+          "loc": 10,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_validate_scope",
+          "lineno": 758,
+          "loc": 4,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_translate_legacy_shape",
+          "lineno": 765,
+          "loc": 51,
+          "complexity": 15,
+          "branches": 14,
+          "max_nesting": 3
+        },
+        {
+          "name": "_validate_todos",
+          "lineno": 819,
+          "loc": 57,
+          "complexity": 15,
+          "branches": 14,
+          "max_nesting": 3
+        },
+        {
+          "name": "__init__",
+          "lineno": 893,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__call__",
+          "lineno": 898,
+          "loc": 8,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_enforce_single_in_progress",
+          "lineno": 910,
+          "loc": 18,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_auto_fix_in_progress",
+          "lineno": 930,
+          "loc": 33,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_write_todos",
+          "lineno": 964,
+          "loc": 82,
+          "complexity": 17,
+          "branches": 16,
+          "max_nesting": 4
+        },
+        {
+          "name": "_error",
+          "lineno": 1048,
+          "loc": 19,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_find_duplicate_titles",
+          "lineno": 1069,
+          "loc": 10,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_format_todos",
+          "lineno": 1081,
+          "loc": 27,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "_find_nearest_titles",
+          "lineno": 1121,
+          "loc": 49,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 1
+        },
+        {
+          "name": "_max_tree_depth",
+          "lineno": 1173,
+          "loc": 13,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_build_noop_response",
+          "lineno": 1187,
+          "loc": 20,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_detect_fuzzy_warnings",
+          "lineno": 1208,
+          "loc": 29,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_check_regressions",
+          "lineno": 1239,
+          "loc": 33,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_build_success_response",
+          "lineno": 1273,
+          "loc": 70,
+          "complexity": 15,
+          "branches": 14,
+          "max_nesting": 1
+        },
+        {
+          "name": "_status_counts",
+          "lineno": 1345,
+          "loc": 11,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_count_all",
+          "lineno": 1358,
+          "loc": 9,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_count_unfinished_descendants",
+          "lineno": 1369,
+          "loc": 13,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_mark_subtree_done",
+          "lineno": 1384,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_build_display_block",
+          "lineno": 1391,
+          "loc": 21,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_render_read_tree",
+          "lineno": 1415,
+          "loc": 28,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_read_todos",
+          "lineno": 1444,
+          "loc": 54,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 2
+        },
+        {
+          "name": "_save_todos",
+          "lineno": 1501,
+          "loc": 7,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_load_todos",
+          "lineno": 1509,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_load_archived_todos",
+          "lineno": 1515,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_max_layers",
+          "lineno": 1521,
+          "loc": 14,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_save_root_todos",
+          "lineno": 1536,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_load_root_todos",
+          "lineno": 1548,
+          "loc": 14,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_save_subagent_todos",
+          "lineno": 1563,
+          "loc": 14,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_load_subagent_todos",
+          "lineno": 1578,
+          "loc": 14,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_load_subagent_archived_todos",
+          "lineno": 1593,
+          "loc": 18,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_item_states",
+          "lineno": 1613,
+          "loc": 10,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_subagent_state_file",
+          "lineno": 1624,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_read_subagent_state",
+          "lineno": 1632,
+          "loc": 12,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_write_subagent_state",
+          "lineno": 1646,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_effective_item",
+          "lineno": 1654,
+          "loc": 15,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 1
+        },
+        {
+          "name": "_merge_upsert",
+          "lineno": 1670,
+          "loc": 86,
+          "complexity": 22,
+          "branches": 21,
+          "max_nesting": 2
+        },
+        {
+          "name": "_upsert_one",
+          "lineno": 1757,
+          "loc": 73,
+          "complexity": 14,
+          "branches": 13,
+          "max_nesting": 3
+        },
+        {
+          "name": "_upsert_in_container",
+          "lineno": 1831,
+          "loc": 74,
+          "complexity": 16,
+          "branches": 15,
+          "max_nesting": 5
+        },
+        {
+          "name": "_merge_node",
+          "lineno": 1906,
+          "loc": 23,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 3
+        },
+        {
+          "name": "_summary",
+          "lineno": 1931,
+          "loc": 14,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 2
+        },
+        {
+          "name": "_find_conflict",
+          "lineno": 1946,
+          "loc": 35,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 3
+        },
+        {
+          "name": "_conflict_error",
+          "lineno": 1982,
+          "loc": 19,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_resolve_scope_path",
+          "lineno": 2002,
+          "loc": 26,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_replace_node",
+          "lineno": 2029,
+          "loc": 15,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_finalize",
+          "lineno": 2045,
+          "loc": 68,
+          "complexity": 16,
+          "branches": 15,
+          "max_nesting": 3
+        },
+        {
+          "name": "_apply_one_update",
+          "lineno": 2114,
+          "loc": 29,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_update_global_in_memory",
+          "lineno": 2144,
+          "loc": 39,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_update_or_create_under_parent_in_memory",
+          "lineno": 2184,
+          "loc": 96,
+          "complexity": 13,
+          "branches": 12,
+          "max_nesting": 3
+        },
+        {
+          "name": "_apply_update_to_tree",
+          "lineno": 2281,
+          "loc": 102,
+          "complexity": 21,
+          "branches": 20,
+          "max_nesting": 2
+        },
+        {
+          "name": "_insert_child_at_path",
+          "lineno": 2385,
+          "loc": 21,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_collect_titles",
+          "lineno": 2408,
+          "loc": 7,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_find_path",
+          "lineno": 2417,
+          "loc": 11,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_node_at_path",
+          "lineno": 2430,
+          "loc": 6,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_update_at_path",
+          "lineno": 2438,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "walk",
+          "lineno": 918,
+          "loc": 5,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "walk",
+          "lineno": 944,
+          "loc": 5,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "walk",
+          "lineno": 1177,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "collect",
+          "lineno": 1251,
+          "loc": 4,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "clamp",
+          "lineno": 1260,
+          "loc": 10,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "walk",
+          "lineno": 1349,
+          "loc": 4,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "walk",
+          "lineno": 1373,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "walk",
+          "lineno": 1398,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "walk",
+          "lineno": 1431,
+          "loc": 9,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "_apply_update_to_tree",
+        "loc": 102
+      },
+      "module_complexity": 22
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/display.py",
+      "loc": 49,
+      "module_loc": 49,
+      "functions": [],
+      "longest_fn": null,
+      "module_complexity": 0
+    }
+  ],
+  "totals": {
+    "files": 2,
+    "loc": 2501,
+    "functions": 92
+  },
+  "breaches": [
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_translate_legacy_shape complexity=15 > 12",
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_validate_todos complexity=15 > 12",
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_write_todos complexity=17 > 12",
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_build_success_response complexity=15 > 12",
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_merge_upsert complexity=22 > 12",
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_upsert_one complexity=14 > 12",
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_upsert_in_container complexity=16 > 12",
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_finalize complexity=16 > 12",
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_update_or_create_under_parent_in_memory complexity=13 > 12",
+    "kimi-cli/src/kimi_cli/tools/todo/__init__.py::_apply_update_to_tree complexity=21 > 12"
+  ]
+}
+[elapsed 0.3s, rc=1]
+
+=== uv run pytest kimi-cli/tests/tools\test_todo.py kimi-cli/tests/tools\test_todo_edits.py kimi-cli/tests/tools\test_todo_fixes.py kimi-cli/tests/tools\test_todo_list_compat.py kimi-cli/tests/tools\test_todo_list_conflict.py kimi-cli/tests/tools\test_todo_list_contract.py kimi-cli/tests/tools\test_todo_stack.py kimi-cli/tests/tools\test_todo_title_diagnosis.py -q -rs ===
+........................................................................ [ 19%]
+........................................................................ [ 38%]
+........................................................................ [ 58%]
+........................................................................ [ 77%]
+........................................................................ [ 97%]
+..........                                                               [100%]
+370 passed in 4.84s
+[elapsed 6.9s, rc=0]
+
+=== uv run --with pytest-cov pytest kimi-cli/tests/tools\test_todo.py kimi-cli/tests/tools\test_todo_edits.py kimi-cli/tests/tools\test_todo_fixes.py kimi-cli/tests/tools\test_todo_list_compat.py kimi-cli/tests/tools\test_todo_list_conflict.py kimi-cli/tests/tools\test_todo_list_contract.py kimi-cli/tests/tools\test_todo_stack.py kimi-cli/tests/tools\test_todo_title_diagnosis.py --cov=kimi_cli.tools.todo ===
+........................................................................ [ 19%]
+........................................................................ [ 38%]
+........................................................................ [ 58%]
+........................................................................ [ 77%]
+........................................................................ [ 97%]
+..........                                                               [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                           Stmts   Miss Branch BrPart  Cover   Missing
+------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\todo\__init__.py    1129    104    484     60    89%   71-73, 145, 271->269, 273, 281-283, 301, 312, 344, 360, 364, 384, 427, 431, 435, 446, 448->450, 561, 564, 567->576, 571->573, 574->576, 577->579, 605->618, 732, 747, 760, 778, 804->806, 952, 984, 991, 1035, 1091->1097, 1216, 1311, 1468->1471, 1485, 1534, 1545-1546, 1559-1560, 1606-1607, 1641-1642, 1803, 1847, 1866->1882, 1870, 1919-1927, 1939-1940, 1942, 1960, 1963, 1988, 2016, 2026-2027, 2032, 2035->2043, 2156-2157, 2177-2179, 2192-2194, 2198-2224, 2239-2240, 2257-2279, 2314-2318, 2376, 2392-2405
+------------------------------------------------------------------------------------------
+TOTAL                                           1129    104    484     60    89%
+370 passed in 4.65s
+[elapsed 7.6s, rc=0]

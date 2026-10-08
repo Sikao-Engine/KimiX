@@ -1,0 +1,460 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+?? .coverage
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check kimi-cli/src/kimi_cli/tools/file/glob.py kimi-cli/src/kimi_cli/tools/file/output_utils.py kimi-cli/src/kimi_cli/tools/file/fs_cache.py ===
+SIM105 Use `contextlib.suppress(ValueError)` instead of `try`-`except`-`pass`
+  --> kimi-cli\src\kimi_cli\tools\file\fs_cache.py:47:5
+   |
+45 |   def unregister_invalidator(fn: Callable[[str], None]) -> None:
+46 |       """Remove a previously registered invalidator (test hook)."""
+47 | /     try:
+48 | |         _INVALIDATORS.remove(fn)
+49 | |     except ValueError:
+50 | |         pass
+   | |____________^
+help: Replace `try`-`except`-`pass` with `with contextlib.suppress(ValueError): ...`
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> kimi-cli\src\kimi_cli\tools\file\glob.py:3:1
+   |
+ 1 |   """Glob tool implementation."""
+ 2 |
+ 3 | / import asyncio
+ 4 | | import fnmatch
+ 5 | | import os
+ 6 | | import sys
+ 7 | | from dataclasses import dataclass, field
+ 8 | | from pathlib import Path
+ 9 | | from typing import override
+10 | |
+11 | | from kaos.path import KaosPath
+12 | | from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue, alias_note
+13 | | from pydantic import AliasChoices, BaseModel, Field
+14 | |
+15 | | from kimi_cli.native_loader import (
+16 | |     get_module as _native_get_module,
+17 | |     use_native as _native_use_native,
+18 | | )
+19 | | from kimi_cli.soul.agent import Runtime
+20 | | from kimi_cli.tools.file.micro_compress import (
+21 | |     MicroCompressConfig,
+22 | |     compress_lines as _mc_compress_lines,
+23 | | )
+24 | | from kimi_cli.tools.file.output_utils import fold_lines, truncate_line
+25 | | from kimi_cli.tools.utils import load_desc
+26 | | from kimi_cli.utils.logging import logger
+27 | | from kimi_cli.utils.path import kaos_path_from_tool_input
+28 | | from kimi_cli.vfs import VFS
+29 | |
+30 | | from .utils import resolve_vfs
+   | |______________________________^
+31 |
+32 |   # Resolved once at import time (stable runtime: result never changes).
+   |
+help: Organize imports
+   |
+10 |
+   - from kaos.path import KaosPath
+   - from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue, alias_note
+11 | from pydantic import AliasChoices, BaseModel, Field
+12 |
+13 + from kaos.path import KaosPath
+14 | from kimi_cli.native_loader import (
+15 |     get_module as _native_get_module,
+16 + )
+17 + from kimi_cli.native_loader import (
+18 |     use_native as _native_use_native,
+--------------------------------------------------------------------------------
+22 |     MicroCompressConfig,
+23 + )
+24 + from kimi_cli.tools.file.micro_compress import (
+25 |     compress_lines as _mc_compress_lines,
+--------------------------------------------------------------------------------
+31 | from kimi_cli.vfs import VFS
+32 + from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue, alias_note
+33 |
+   |
+
+E501 Line too long (116 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\glob.py:227:101
+    |
+225 |         # Generic ** fallback: replace ** with * and match
+226 |         simple_pattern = pattern.replace("**", "*")
+227 |         return fnmatch.fnmatch(rel_path, simple_pattern) or fnmatch.fnmatch(rel_path.split("/")[-1], simple_pattern)
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+228 |
+229 |     if rule.anchored:
+    |
+
+E501 Line too long (108 > 100)
+   --> kimi-cli\src\kimi_cli\tools\file\glob.py:528:101
+    |
+526 |             else:
+527 |                 dir_path = self._work_dir
+528 |             dir_path = await resolve_vfs(str(dir_path), self._vfs, for_write=False, work_dir=self._work_dir)
+    |                                                                                                     ^^^^^^^^
+529 |             if not await dir_path.exists():
+530 |                 display_dir = str(dir_path)
+    |
+
+Found 4 errors.
+[*] 1 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+[elapsed 0.1s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+C901 `_gitignore_match` is too complex (17 > 12)
+   --> kimi-cli\src\kimi_cli\tools\file\glob.py:169:5
+    |
+169 | def _gitignore_match(path: Path, rel_path: str, is_dir: bool, rule: _GitignoreRule) -> bool:
+    |     ^^^^^^^^^^^^^^^^
+170 |     """Check if a path matches a single gitignore rule.
+    |
+
+C901 `__call__` is too complex (30 > 12)
+   --> kimi-cli\src\kimi_cli\tools\file\glob.py:509:15
+    |
+508 |     @override
+509 |     async def __call__(self, params: Params) -> ToolReturnValue:
+    |               ^^^^^^^^
+510 |         try:
+511 |             pattern = params.pattern
+    |
+
+Found 2 errors.
+[elapsed 0.1s, rc=1]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/glob.py",
+      "loc": 707,
+      "module_loc": 707,
+      "functions": [
+        {
+          "name": "_is_unsafe_recursive_pattern",
+          "lineno": 46,
+          "loc": 22,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_description_for_os",
+          "lineno": 105,
+          "loc": 8,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_parse_gitignore",
+          "lineno": 115,
+          "loc": 52,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 2
+        },
+        {
+          "name": "_gitignore_match",
+          "lineno": 169,
+          "loc": 70,
+          "complexity": 24,
+          "branches": 23,
+          "max_nesting": 5
+        },
+        {
+          "name": "_is_ignored_by_gitignore",
+          "lineno": 241,
+          "loc": 46,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 3
+        },
+        {
+          "name": "_safe_getmtime",
+          "lineno": 289,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_top_dirs_summary",
+          "lineno": 296,
+          "loc": 22,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_find_gitignore_files",
+          "lineno": 320,
+          "loc": 10,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 3
+        },
+        {
+          "name": "_load_gitignore_rules",
+          "lineno": 332,
+          "loc": 15,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 3
+        },
+        {
+          "name": "_get_gitignore_rules",
+          "lineno": 349,
+          "loc": 38,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 3
+        },
+        {
+          "name": "invalidate_gitignore_cache",
+          "lineno": 389,
+          "loc": 29,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 4
+        },
+        {
+          "name": "__init__",
+          "lineno": 480,
+          "loc": 6,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__call__",
+          "lineno": 509,
+          "loc": 199,
+          "complexity": 37,
+          "branches": 36,
+          "max_nesting": 7
+        }
+      ],
+      "longest_fn": {
+        "name": "__call__",
+        "loc": 199
+      },
+      "module_complexity": 37
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/output_utils.py",
+      "loc": 239,
+      "module_loc": 239,
+      "functions": [
+        {
+          "name": "fold_lines",
+          "lineno": 54,
+          "loc": 38,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 1
+        },
+        {
+          "name": "dedup_lines",
+          "lineno": 94,
+          "loc": 38,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "truncate_line",
+          "lineno": 134,
+          "loc": 17,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_parse_tail_hint",
+          "lineno": 153,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "parse_rtk_rg_output",
+          "lineno": 161,
+          "loc": 79,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 3
+        }
+      ],
+      "longest_fn": {
+        "name": "parse_rtk_rg_output",
+        "loc": 79
+      },
+      "module_complexity": 7
+    },
+    {
+      "path": "kimi-cli/src/kimi_cli/tools/file/fs_cache.py",
+      "loc": 137,
+      "module_loc": 137,
+      "functions": [
+        {
+          "name": "register_invalidator",
+          "lineno": 33,
+          "loc": 10,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "unregister_invalidator",
+          "lineno": 45,
+          "loc": 6,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_canonical",
+          "lineno": 53,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_bust_gitignore_cache",
+          "lineno": 59,
+          "loc": 7,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_run_registered_invalidators",
+          "lineno": 68,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_session_snapshot_store",
+          "lineno": 76,
+          "loc": 4,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "invalidate_fs_scan_after_write",
+          "lineno": 82,
+          "loc": 14,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "invalidate_fs_scan_after_delete",
+          "lineno": 98,
+          "loc": 16,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "invalidate_fs_scan_after_rename",
+          "lineno": 116,
+          "loc": 22,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "invalidate_fs_scan_after_rename",
+        "loc": 22
+      },
+      "module_complexity": 5
+    }
+  ],
+  "totals": {
+    "files": 3,
+    "loc": 1083,
+    "functions": 27
+  },
+  "breaches": [
+    "kimi-cli/src/kimi_cli/tools/file/glob.py::_gitignore_match complexity=24 > 12",
+    "kimi-cli/src/kimi_cli/tools/file/glob.py::__call__ loc=199 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/glob.py::__call__ complexity=37 > 12"
+  ]
+}
+[elapsed 0.2s, rc=1]
+
+=== uv run pytest kimi-cli/tests/tools/test_glob.py kimi-cli/tests/tools/test_fs_cache_invalidation.py kimi-cli/tests/tools/test_additional_dirs.py kimi-cli/tests/tools/test_work_dir_resolution.py kimi-cli/tests/tools/test_output_utils.py -q -rs ===
+....................................s.s...s......................s.....s [ 60%]
+...ss..........................................                          [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\tools\test_glob.py:513: [out of work-dir] warning not implemented in Glob
+SKIPPED [1] kimi-cli\tests\tools\test_glob.py:533: [out of work-dir] warning not implemented in Glob
+SKIPPED [1] kimi-cli\tests\tools\test_glob.py:606: filesystem cannot create the long path/name this test needs (Windows MAX_PATH or 255-byte NAME_MAX component limit; enable LongPathsEnabled / shorten the temp name)
+SKIPPED [1] kimi-cli\tests\tools\test_additional_dirs.py:73: Windows path validation order differs
+SKIPPED [1] kimi-cli\tests\tools\test_additional_dirs.py:168: Windows path validation differs
+SKIPPED [1] kimi-cli\tests\tools\test_additional_dirs.py:250: Windows path validation order differs
+SKIPPED [1] kimi-cli\tests\tools\test_additional_dirs.py:263: Windows path validation differs
+112 passed, 7 skipped in 9.64s
+[elapsed 11.5s, rc=0]
+
+=== uv run --with pytest-cov pytest kimi-cli/tests/tools/test_glob.py kimi-cli/tests/tools/test_fs_cache_invalidation.py kimi-cli/tests/tools/test_additional_dirs.py kimi-cli/tests/tools/test_work_dir_resolution.py kimi-cli/tests/tools/test_output_utils.py --cov=kimi_cli.tools.file.glob ===
+....................................s.s...s......................s.....s [ 60%]
+...ss..........................................                          [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                          Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\file\glob.py        349    105    138     16    67%   134-166, 196-227, 231, 255-273, 281-282, 292-293, 309-310, 327-328, 343-344, 363-369, 370->377, 375, 400-401, 405-406, 414-415, 515, 556, 560->569, 566-567, 592-595, 602, 618-628, 636-637, 667, 685, 691
+src\kimix\tools\file\bash\bash_fix.py            27      0      2      0   100%
+src\kimix\tools\file\bash\output_enhance.py      31      1     18      2    94%   89
+src\kimix\tools\file\bash\safety.py             328     31    200     22    89%   97, 154-162, 197, 222->224, 228-229, 230->243, 237-242, 271->273, 276, 280->282, 282->274, 362->358, 412, 414->413, 416, 436, 440-442, 451, 480, 482, 484, 486, 567, 607, 619->604, 620->619
+src\kimix\tools\file\bash\shell_common.py        50      0      6      0   100%
+-----------------------------------------------------------------------------------------
+TOTAL                                           785    137    364     40    81%
+112 passed, 7 skipped in 7.93s
+[elapsed 11.5s, rc=0]

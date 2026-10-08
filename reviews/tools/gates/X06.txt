@@ -1,0 +1,651 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X06.txt
+
+=== uv run tools/syntax_check.py .kimix_cache/x06_no_assert.py ===
+[syntax_check] Syntax OK: C:\dev\kimi-agent\.kimix_cache\x06_no_assert.py
+
+=== uv run python .kimix_cache/x06_no_assert.py ===
+# files scanned: 190
+# test_* functions: 3692
+
+=== A. no-assert test functions (57) ===
+kimi-cli/tests/tools/test_blackbox.py::test_noop_recorder_never_raises
+kimi-cli/tests/tools/test_fs_cache_invalidation.py::test_delete_without_session_is_safe
+kimi-cli/tests/tools/test_fs_cache_invalidation.py::test_unregister_missing_is_noop
+kimi-cli/tests/tools/test_glob.py::test_files
+kimi-cli/tests/core/test_history_index.py::TestHistoryIndexPhaseC::test_rebuild_fts_with_legacy_mode_is_noop
+kimi-cli/tests/core/test_plugin.py::test_inject_config_noop_when_no_inject
+kimi-cli/tests/core/test_session.py::test_exception_cleanup_none_session
+kimi-cli/tests/core/test_shutdown_background_tasks.py::test_shutdown_swallows_manager_exception
+kimi-cli/tests/core/test_toolset.py::test_ask_agent_space_separated_autocorrects
+kimi-cli/tests/core/test_toolset.py::test_ask_agent_snake_case_autocorrects
+kimi-cli/tests/core/test_toolset.py::test_ask_agent_kebab_case_autocorrects
+kimi-cli/tests/core/test_toolset.py::test_nonexistent_tool_auto_corrects_snake_case_with_typo
+kimi-cli/tests/core/test_toolset.py::test_nonexistent_tool_auto_corrects_mixed_separators
+kimi-cli/tests/core/test_toolset.py::test_nonexistent_tool_auto_corrects_screaming_snake_case
+kimi-cli/tests/core/test_toolset.py::test_nonexistent_tool_auto_corrects_kebab_case
+kimi-cli/tests/core/test_toolset.py::test_nonexistent_tool_auto_corrects_snake_case
+kimi-cli/tests/native/test_behavior_equivalence.py::test_acp_lexer_buffer_accumulates_all_parts
+kimi-cli/tests/native/test_behavior_equivalence.py::test_acp_lexer_get_title_matches_reference
+kimi-cli/tests/native/test_behavior_equivalence.py::test_compute_line_hash_equivalence
+kimi-cli/tests/native/test_behavior_equivalence.py::test_is_ignored_by_gitignore_case_sensitivity_equivalence
+kimi-cli/tests/native/test_behavior_equivalence.py::test_parse_gitignore_equivalence
+kimi-cli/tests/native/test_behavior_equivalence.py::test_sanitize_for_tokenizer_equivalence
+kimi-cli/tests/native/test_behavior_equivalence.py::test_clean_text_equivalence
+kimi-cli/tests/native/test_behavior_equivalence.py::test_count_tokens_heuristic_equivalence
+kimi-cli/tests/native/test_behavior_equivalence.py::test_is_cjk_text_equivalence
+kimi-cli/tests/native/test_behavior_equivalence.py::test_estimate_chars_tokens_equivalence
+kimi-cli/tests/native/test_grep_engine_parity.py::TestEngineMirrorParity::test_ignore_case_crlf_file
+kimi-cli/tests/native/test_grep_engine_parity.py::TestEngineMirrorParity::test_include_glob
+kimi-cli/tests/native/test_grep_engine_parity.py::TestEngineMirrorParity::test_roots_mix
+kimi-cli/tests/native/test_grep_engine_parity.py::TestEngineMirrorParity::test_context_head_limit
+kimi-cli/tests/native/test_grep_engine_parity.py::TestEngineMirrorParity::test_matrix
+tests/unit/tools/test_taskoutput.py::TestTaskOutputDelCleanup::test_del_during_finalization_noop
+tests/unit/tools/test_taskoutput.py::TestTaskOutputDelCleanup::test_del_with_mock_session_no_event_loop
+tests/unit/tools/test_taskoutput.py::TestTaskOutputDelCleanup::test_del_without_session_does_nothing
+tests/kimix/test_agent_conversation.py::test_agent_inherit_context_reset_skips_when_soul_missing
+tests/kimix/test_agent_swarm.py::test_validate_uniqueness_ok
+tests/native/test_behavior_equivalence.py::test_damerau_levenshtein_equivalence
+tests/native/test_behavior_equivalence.py::test_ngram_tokenizer_equivalence
+tests/native/test_behavior_equivalence.py::test_process_unquoted_equivalence
+tests/native/test_behavior_equivalence.py::test_find_in_file_equivalence
+tests/native/test_behavior_equivalence.py::test_dedup_output_equivalence
+tests/native/test_behavior_equivalence.py::test_filter_output_equivalence
+tests/native/test_full_behavior_equivalence.py::test_exception_parity
+tests/native/test_shell_security_equivalence.py::test_bounded_append_equivalence
+tests/native/test_shell_security_equivalence.py::test_annotate_failure_equivalence
+tests/native/test_shell_security_equivalence.py::test_interpret_exit_code_equivalence
+tests/native/test_shell_security_equivalence.py::test_foreground_background_guidance_equivalence
+tests/native/test_shell_security_equivalence.py::test_check_hardline_blocked_equivalence
+tests/native/test_shell_security_equivalence.py::test_scrub_child_env_equivalence
+tests/native/test_shell_security_equivalence.py::test_redact_sensitive_output_equivalence
+tests/native/test_src_compat_delegation.py::test_retrieval_delegation
+tests/native/test_src_compat_delegation.py::test_kimi_safety_check_delegation
+tests/native/test_src_compat_delegation.py::test_kimi_tokens_delegation
+tests/native/test_src_compat_delegation.py::test_common_stream_delegation
+tests/native/test_src_compat_delegation.py::test_safety_delegation
+tests/native/test_src_compat_delegation.py::test_output_enhance_delegation
+tests/native/test_src_compat_delegation.py::test_security_delegation
+
+=== B. tautology assertions (249) ===
+kimi-cli/tests/tools/test_agent_tool.py::test_background_agent_marks_killed_when_run_cancelled  ['assert view is not None']
+kimi-cli/tests/tools/test_agent_tool.py::test_agent_tool_background_agent_waits_for_approval  ['assert source is not None', 'assert view is not None']
+kimi-cli/tests/tools/test_auto_generated_guard.py::test_marker_generated_by_sqlc  ['assert marker is not None']
+kimi-cli/tests/tools/test_auto_generated_guard.py::test_marker_sql_automatically_generated  ['assert marker is not None']
+kimi-cli/tests/tools/test_auto_generated_guard.py::test_marker_go_protoc  ['assert marker is not None']
+kimi-cli/tests/tools/test_auto_repair.py::test_repair_parse_regression_model_phase_with_fake_completer  ['assert repair is not None']
+kimi-cli/tests/tools/test_auto_repair.py::test_repair_parse_regression_deterministic_indentation_drift  ['assert repair is not None']
+kimi-cli/tests/tools/test_auto_repair.py::test_compute_repair_region_bounds  ['assert region is not None']
+kimi-cli/tests/tools/test_auto_repair.py::test_isolate_culprit_hunks_finds_single  ['assert culprits is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_xml_text_callback_raises  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_xml_text_whitespace_only  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_xml_text_empty_string  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_xml_text_invalid_no_root  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_xml_text_invalid_mismatched_tag  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_xml_text_invalid_unclosed_tag  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_json_text_callback_raises  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_json_text_whitespace_only  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_json_text_empty_string  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_json_text_invalid_unclosed_string  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_json_text_invalid_trailing_comma  ['assert result is not None']
+kimi-cli/tests/tools/test_check_fmt.py::test_check_json_text_invalid_syntax  ['assert result is not None']
+kimi-cli/tests/tools/test_conflict_detect.py::test_parse_uri_prefix_recovered  ['assert parsed is not None']
+kimi-cli/tests/tools/test_conflict_detect.py::test_parse_uri_wildcard  ['assert parsed is not None']
+kimi-cli/tests/tools/test_conflict_detect.py::test_parse_uri_scopes  ['assert parsed is not None']
+kimi-cli/tests/tools/test_conflict_detect.py::test_parse_uri_basic_id  ['assert parsed is not None']
+kimi-cli/tests/tools/test_edit_file_fuzzy.py::test_find_best_fuzzy_match_preserves_crlf  ['assert result is not None']
+kimi-cli/tests/tools/test_edit_file_fuzzy.py::test_find_best_fuzzy_match_multiline  ['assert result is not None']
+kimi-cli/tests/tools/test_edit_file_fuzzy.py::test_find_best_fuzzy_match_exact  ['assert result is not None']
+kimi-cli/tests/tools/test_edit_file_fuzzy.py::test_apply_fuzzy_fallback_legit_change_still_counts  ['assert suggestion is not None']
+kimi-cli/tests/tools/test_edit_file_fuzzy.py::test_apply_fuzzy_fallback_chain  ['assert suggestion is not None']
+kimi-cli/tests/tools/test_edit_file_fuzzy.py::test_apply_edit_fuzzy_multiline_minor_whitespace  ['assert suggestion is not None']
+kimi-cli/tests/tools/test_extract_key_argument.py::TestExtractKeyArgument::test_readfile_absolute_path_stripped  ['assert result is not None']
+kimi-cli/tests/tools/test_extract_key_argument.py::TestExtractKeyArgument::test_unknown_tool_returns_raw_content  ['assert result is not None']
+kimi-cli/tests/tools/test_extract_key_argument.py::TestExtractKeyArgument::test_long_content_truncated  ['assert result is not None']
+kimi-cli/tests/tools/test_extract_key_argument.py::TestExtractKeyArgument::test_readfile  ['assert result is not None']
+kimi-cli/tests/tools/test_extract_key_argument.py::TestExtractKeyArgument::test_fetchurl  ['assert result is not None']
+kimi-cli/tests/tools/test_file_snapshot_store.py::test_record_file_snapshot_reads_disk  ['assert tag is not None']
+kimi-cli/tests/tools/test_file_snapshot_store.py::test_record_content_snapshot  ['assert tag is not None']
+kimi-cli/tests/tools/test_file_snapshot_store.py::test_relocate_moves_history  ['assert head is not None']
+kimi-cli/tests/tools/test_file_snapshot_store.py::test_record_returns_tag_and_head  ['assert head is not None']
+kimi-cli/tests/tools/test_fs_cache_invalidation.py::test_rename_same_canonical_keeps_history  ['assert head is not None']
+kimi-cli/tests/tools/test_fs_cache_invalidation.py::test_rename_relocates_snapshot_history  ['assert head is not None']
+kimi-cli/tests/tools/test_grep.py::test_rtk_fold_note_with_original_path  ['assert note is not None']
+kimi-cli/tests/tools/test_grep.py::test_rtk_fold_note_without_original_path  ['assert note is not None']
+kimi-cli/tests/tools/test_plan25_integration.py::test_hashedit_records_post_edit_snapshot  ['assert head is not None']
+kimi-cli/tests/tools/test_plan25_integration.py::test_hashread_records_snapshot_with_seen_lines  ['assert head is not None']
+kimi-cli/tests/tools/test_plan25_integration.py::test_read_records_snapshot_with_seen_lines  ['assert head is not None']
+kimi-cli/tests/tools/test_plan25_integration.py::test_write_drift_note_after_external_change  ['assert head is not None']
+kimi-cli/tests/tools/test_plan25_integration.py::test_bulk_resolve_records_snapshot  ['assert head is not None']
+kimi-cli/tests/tools/test_plan25_integration.py::test_conflict_resolve_records_snapshot  ['assert head is not None']
+kimi-cli/tests/tools/test_plan25_integration.py::test_write_append_records_snapshot  ['assert head is not None']
+kimi-cli/tests/tools/test_plan25_integration.py::test_write_records_pre_and_post_snapshots  ['assert head is not None']
+kimi-cli/tests/tools/test_read_file.py::TestReadFileCharSlicing::test_pagination_window_identical_with_line_numbers  ['assert hint is not None']
+kimi-cli/tests/tools/test_read_media_file.py::test_large_image_falls_back_to_mipmap  ['assert dims is not None']
+kimi-cli/tests/tools/test_snapshot_store.py::test_store_records_tag  ['assert entry is not None', 'assert tag is not None']
+kimi-cli/tests/tools/test_todo_stack.py::TestFormatTodoInjectionStack::test_done_parent_still_reveals_pending_child  ['assert text is not None']
+kimi-cli/tests/tools/test_todo_stack.py::TestFormatTodoInjectionStack::test_flat_lists_byte_identical_with_and_without_stack  ['assert default_text is not None']
+kimi-cli/tests/tools/test_todo_stack.py::TestFormatTodoInjectionStack::test_stack_breadcrumb_and_indentation  ['assert text is not None']
+kimi-cli/tests/tools/test_web_extract.py::TestStoreFullText::test_returns_absolute_path  ['assert path_str is not None']
+kimi-cli/tests/tools/test_web_extract.py::TestStoreFullText::test_writes_file_under_cache_web  ['assert path_str is not None']
+kimi-cli/tests/tools/test_web_providers.py::TestKimiServiceProvider::test_search_success_default  ['assert svc is not None']
+kimi-cli/tests/tools/test_web_providers_extra.py::TestKimiServiceProvider404Fallback::test_non_404_error_does_not_retry  ['assert svc is not None']
+kimi-cli/tests/tools/test_web_providers_extra.py::TestKimiServiceProvider404Fallback::test_404_with_matching_derived_url_does_not_retry  ['assert svc is not None']
+kimi-cli/tests/tools/test_web_providers_extra.py::TestKimiServiceProvider404Fallback::test_404_without_provider_base_url_does_not_retry  ['assert svc is not None']
+kimi-cli/tests/tools/test_web_providers_extra.py::TestKimiServiceProvider404Fallback::test_404_retries_derived_url  ['assert svc is not None']
+kimi-cli/tests/core/test_approval_runtime.py::test_kimisoul_run_cancels_own_foreground_approvals_on_cancel  ['assert background is not None', 'assert foreground is not None', 'assert source is not None']
+kimi-cli/tests/core/test_approval_runtime.py::test_approval_runtime_timeout_cancels_all_shared_waiters  ['assert record is not None']
+kimi-cli/tests/core/test_approval_runtime.py::test_approval_runtime_wait_for_response_explicit_timeout  ['assert record is not None']
+kimi-cli/tests/core/test_approval_runtime.py::test_approval_runtime_wait_for_response_waits_indefinitely_by_default  ['assert record is not None']
+kimi-cli/tests/core/test_background_agent_kill.py::test_kill_background_agent_during_soul_run  ['assert final_view is not None']
+kimi-cli/tests/core/test_builtin_kimix_api_skill.py::test_kimix_api_discovered_as_builtin_and_rendered_like_skill_creator  ['assert kimix is not None']
+kimi-cli/tests/core/test_compaction_ledger.py::test_record_end_sets_error  ['assert final is not None']
+kimi-cli/tests/core/test_compaction_ledger.py::test_latest_returns_most_recent_record  ['assert latest is not None']
+kimi-cli/tests/core/test_compaction_ledger.py::test_record_start_end_round_trip  ['assert final is not None']
+kimi-cli/tests/core/test_context_db.py::TestContextDB::test_created_at_index_exists  ['assert row is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_non_kimi_not_affected_by_kimi_temperature_forcing  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_config_temperature_ignored  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_env_temperature_ignored  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_explicit_temperature_ignored  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_thinking_off_forces_temperature_to_zero_six  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_thinking_on_forces_temperature_to_one  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_thinking_keep_injected_on_explicit_thinking_true  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_thinking_keep_skipped_when_no_thinking_branch  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_thinking_keep_skipped_when_thinking_off  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_thinking_keep_arbitrary_value_passes_through  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_thinking_keep_all_injects_field  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_thinking_keep_empty_string_omits_field  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_thinking_keep_not_set_omits_field  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_supported_efforts_passes_max  ['assert anthropic_llm is not None', 'assert openai_llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_supported_efforts_clamps_xhigh  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_explicit_thinking_false_overrides_thinking_effort  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_thinking_effort_off_does_not_enable_thinking  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_thinking_effort_enables_thinking_when_thinking_unset  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_default_thinking_effort_is_max_openai_legacy  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_default_thinking_effort_is_max_anthropic  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_responses_thinking_false_no_reasoning_in_params  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_no_custom_headers_has_empty_headers  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_vertexai_custom_headers  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_google_genai_custom_headers  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_anthropic_custom_headers  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_responses_custom_headers  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_legacy_openai_settings  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_legacy_disabled_reasoning_key  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_legacy_custom_reasoning_key  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_legacy_default_reasoning_key  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_legacy_custom_headers  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_responses_maps_max_tokens_to_max_output_tokens  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_responses_without_session_id  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_xai_with_session_id  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_xai_model_parameters  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_responses_with_session_id  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_legacy_non_thinking_uses_max_tokens  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_legacy_thinking_uses_max_completion_tokens  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_legacy_without_session_id  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_openai_legacy_with_session_id  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_with_session_id  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_anthropic_without_session_id  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_anthropic_with_session_id  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_echo_provider  ['assert llm is not None']
+kimi-cli/tests/core/test_create_llm.py::test_create_llm_kimi_model_parameters  ['assert llm is not None']
+kimi-cli/tests/core/test_error_log.py::test_restart_section_reflects_soul_loop_control  ['assert path is not None']
+kimi-cli/tests/core/test_error_log.py::test_snapshot_survives_broken_soul  ['assert path is not None']
+kimi-cli/tests/core/test_error_log.py::test_snapshot_truncates_long_message_text  ['assert path is not None']
+kimi-cli/tests/core/test_error_log.py::test_snapshot_captures_cause_chain_and_secondary_errors  ['assert path is not None']
+kimi-cli/tests/core/test_error_log.py::test_snapshot_captures_status_error_fields  ['assert path is not None']
+kimi-cli/tests/core/test_error_log.py::test_snapshot_masks_all_secrets  ['assert path is not None']
+kimi-cli/tests/core/test_history_index.py::TestHistoryIndexFts::test_get_by_id_with_prune_prefix  ['assert turn is not None']
+kimi-cli/tests/core/test_kimisoul_context_prune.py::test_context_prune_tool_does_not_break_provider_conversion  ['assert tool is not None']
+kimi-cli/tests/core/test_kimisoul_context_prune.py::test_context_prune_tool_elided_content_retrievable  ['assert tool is not None']
+kimi-cli/tests/core/test_kimisoul_context_prune.py::test_context_prune_tool_reduces_tokens  ['assert tool is not None']
+kimi-cli/tests/core/test_kimisoul_slash_commands.py::test_clear_command_clears_context  ['assert command is not None']
+kimi-cli/tests/core/test_kimisoul_steer.py::test_step_passes_current_turn_index_to_pruner  ['assert outcome is not None']
+kimi-cli/tests/core/test_kimisoul_steer.py::test_step_merges_plain_steer_with_dynamic_injection_in_model_history  ['assert outcome is not None']
+kimi-cli/tests/core/test_llm_request_recorder.py::test_cancelled_before_call_records_nothing  ['assert task is not None']
+kimi-cli/tests/core/test_load_agent.py::test_shipped_agent_manifests_use_tool_name_strings  ['assert tool_cls is not None']
+kimi-cli/tests/core/test_load_agent.py::test_find_tool_class_by_name_resolves_tool_name_strings  ['assert resolved is not None', 'assert tool_cls is not None']
+kimi-cli/tests/core/test_load_agents_md.py::test_max_bytes_leaf_prioritised  ['assert content is not None']
+kimi-cli/tests/core/test_load_agents_md.py::test_empty_file_skipped  ['assert content is not None']
+kimi-cli/tests/core/test_load_agents_md.py::test_no_git_fallback  ['assert content is not None']
+kimi-cli/tests/core/test_load_agents_md.py::test_hierarchical_three_levels  ['assert content is not None']
+kimi-cli/tests/core/test_load_agents_md.py::test_kimi_dir_in_parent  ['assert content is not None']
+kimi-cli/tests/core/test_load_agents_md.py::test_kimi_dir_and_root_both_loaded  ['assert content is not None']
+kimi-cli/tests/core/test_load_agents_md.py::test_uppercase_over_lowercase  ['assert content is not None']
+kimi-cli/tests/core/test_load_agents_md.py::test_lowercase  ['assert content is not None']
+kimi-cli/tests/core/test_load_agents_md.py::test_found  ['assert content is not None']
+kimi-cli/tests/core/test_notifications.py::test_kimi_cli_run_propagates_external_cancel_event  ['assert record is not None', 'assert request is not None', 'assert source is not None']
+kimi-cli/tests/core/test_notifications.py::test_kimi_cli_run_cancels_abandoned_approval_stream  ['assert record is not None', 'assert request is not None', 'assert source is not None']
+kimi-cli/tests/core/test_notifications.py::test_kimi_cli_run_bridges_approval_resolution_back_to_runtime  ['assert record is not None']
+kimi-cli/tests/core/test_plugin.py::test_resolve_source_zip_url_downloads_and_extracts  ['assert tmp_dir is not None']
+kimi-cli/tests/core/test_plugin.py::test_resolve_source_git_with_subpath  ['assert tmp_dir is not None']
+kimi-cli/tests/core/test_prepare_soul.py::test_prepare_soul_stage_callback  ['assert soul is not None']
+kimi-cli/tests/core/test_run_soul_entry.py::test_outer_approval_source_is_preserved  ['assert record is not None']
+kimi-cli/tests/core/test_run_soul_entry.py::test_foreground_turn_cancels_pending_approvals_on_cleanup  ['assert record is not None', 'assert source is not None']
+kimi-cli/tests/core/test_session.py::test_copy_preserves_last_session_id  ['assert target is not None', 'assert wdm is not None']
+kimi-cli/tests/core/test_session.py::test_copy_success  ['assert target is not None']
+kimi-cli/tests/core/test_session.py::test_rename_updates_last_session_id  ['assert renamed is not None', 'assert wdm is not None']
+kimi-cli/tests/core/test_session.py::test_rename_success  ['assert renamed is not None']
+kimi-cli/tests/core/test_session.py::test_post_run_empty_session_does_not_clear_other_last_id  ['assert wdm is not None']
+kimi-cli/tests/core/test_session.py::test_post_run_nonempty_session_failure  ['assert wdm is not None']
+kimi-cli/tests/core/test_session.py::test_post_run_nonempty_session_success  ['assert wdm is not None']
+kimi-cli/tests/core/test_session.py::test_post_run_empty_session_failure  ['assert wdm is not None']
+kimi-cli/tests/core/test_session.py::test_post_run_empty_session_success  ['assert wdm is not None']
+kimi-cli/tests/core/test_session.py::test_custom_title_persists_across_find  ['assert found is not None']
+kimi-cli/tests/core/test_session.py::test_create_named_session  ['assert found is not None']
+kimi-cli/tests/core/test_session.py::test_find_uses_wire_title  ['assert found is not None']
+kimi-cli/tests/core/test_session_export.py::test_export_on_found_session  ['assert found is not None']
+kimi-cli/tests/core/test_session_fork.py::TestForkSession::test_fork_copies_referenced_videos  ['assert new_session is not None']
+kimi-cli/tests/core/test_session_fork.py::TestForkSession::test_fork_reads_title_from_state  ['assert new_session is not None']
+kimi-cli/tests/core/test_session_fork.py::TestForkSession::test_fork_sets_title  ['assert new_session is not None']
+kimi-cli/tests/core/test_session_fork.py::TestForkSession::test_fork_all_turns  ['assert new_session is not None']
+kimi-cli/tests/core/test_session_fork.py::TestForkSession::test_fork_at_turn  ['assert new_session is not None']
+kimi-cli/tests/core/test_session_logging.py::TestSubagentRunnerLogging::test_chat_provider_error_logged  ['assert result is not None']
+kimi-cli/tests/core/test_session_logging.py::TestSubagentRunnerLogging::test_api_status_error_logged  ['assert result is not None']
+kimi-cli/tests/core/test_session_logging.py::TestSubagentRunnerLogging::test_max_steps_reached_logged  ['assert result is not None']
+kimi-cli/tests/core/test_session_sessions_dir.py::test_rename_with_sessions_dir_override  ['assert default_found is not None', 'assert renamed is not None']
+kimi-cli/tests/core/test_session_sessions_dir.py::test_continue_with_sessions_dir_override  ['assert session is not None', 'assert work_dir_meta is not None']
+kimi-cli/tests/core/test_session_sessions_dir.py::test_find_with_sessions_dir_override  ['assert default_found is not None', 'assert found is not None']
+kimi-cli/tests/core/test_simple_compaction.py::test_compact_legacy_path_with_ledger_records_shadowed_tokens  ['assert rec is not None']
+kimi-cli/tests/core/test_simple_compaction.py::test_compact_abandoned_summary_finalizes_ledger_without_error  ['assert rec is not None']
+kimi-cli/tests/core/test_simple_compaction.py::test_compact_writes_ledger_record_on_success  ['assert rec is not None']
+kimi-cli/tests/core/test_simple_compaction.py::test_prepare_builds_summarization_input_when_aligned_args_passed  ['assert si is not None']
+kimi-cli/tests/core/test_simple_compaction.py::test_prepare_preserves_media_parts_in_recent_messages  ['assert video_msg is not None']
+kimi-cli/tests/core/test_steer.py::test_steer_from_session_with_underscore_soul_attr  ['assert steer is not None']
+kimi-cli/tests/core/test_steer.py::test_steer_from_session_with_public_soul_attr  ['assert steer is not None']
+kimi-cli/tests/core/test_steer.py::test_steer_from_session_with_cli_soul  ['assert steer is not None']
+kimi-cli/tests/core/test_subagent_resume_e2e.py::test_resume_accumulates_context  ['assert agent_id is not None']
+kimi-cli/tests/core/test_subagent_store.py::test_get_instance_allows_missing_last_task_id_for_legacy_meta  ['assert record is not None']
+kimi-cli/tests/core/test_todo_compact_injection.py::TestFormatTodoInjection::test_malformed_items_never_raise  ['assert text is not None']
+kimi-cli/tests/core/test_todo_compact_injection.py::TestFormatTodoInjection::test_unknown_status_skipped  ['assert text is not None']
+kimi-cli/tests/core/test_todo_compact_injection.py::TestFormatTodoInjection::test_total_char_cap_drops_tail_lines_with_marker  ['assert text is not None']
+kimi-cli/tests/core/test_todo_compact_injection.py::TestFormatTodoInjection::test_per_title_truncation_appends_marker  ['assert text is not None']
+kimi-cli/tests/core/test_todo_compact_injection.py::TestFormatTodoInjection::test_overflow_line_when_more_than_max_items  ['assert text is not None']
+kimi-cli/tests/core/test_todo_compact_injection.py::TestFormatTodoInjection::test_header_and_only_unfinished_items  ['assert text is not None']
+kimi-cli/tests/core/test_toolset.py::test_write_output_dump_cuts_huge_content  ['assert path is not None']
+kimi-cli/tests/core/test_toolset.py::test_write_output_dump_prunes_old_files  ['assert last is not None']
+kimi-cli/tests/core/test_verification_gate.py::test_edits_without_verification_block  ['assert msg is not None']
+kimi-cli/tests/core/test_verification_gate.py::test_unfinished_todos_block_turn  ['assert msg is not None']
+kimi-cli/tests/native/test_loader.py::test_get_module_returns_submodule_or_none  ['assert mod is not None']
+tests/unit/tools/test_bash_gate.py::test_probe14_very_long_single_line_is_folded  ['assert original_path is not None']
+tests/unit/tools/test_bash_gate.py::test_probe04b_over_65536_output_is_summarized_and_truncated  ['assert original_path is not None']
+tests/unit/tools/test_python.py::TestRunInBackground::test_run_in_background_real_process_returns_promptly_and_pollable  ['assert match is not None']
+tests/unit/tools/test_python.py::TestBackgroundFormatter::test_format_background_output_includes_original_saved  ['assert original_path is not None']
+tests/unit/tools/test_python.py::TestEnvScrubbing::test_build_env_no_scrub_keeps_secrets  ['assert env is not None']
+tests/unit/tools/test_python.py::TestEnvScrubbing::test_build_env_scrub_drops_secret_keeps_safe  ['assert env is not None']
+tests/unit/tools/test_python.py::TestBuildEnv::test_global_rtk_is_shadowed_by_shared_bin  ['assert env is not None']
+tests/unit/tools/test_python.py::TestBuildEnv::test_env_without_pyvenv_cfg  ['assert env is not None']
+tests/unit/tools/test_python.py::TestBuildEnv::test_env_prepends_shared_bin_then_venv_bin_and_sets_virtual_env  ['assert env is not None']
+tests/unit/tools/test_python.py::TestBuildEnv::test_env_when_parent_not_scripts_bin  ['assert env is not None']
+tests/unit/tools/test_python.py::TestBuildEnv::test_env_for_non_venv_prepends_shared_bin  ['assert env is not None']
+tests/unit/tools/test_security.py::TestValidateWorkdir::test_invalid  ['assert err is not None']
+tests/unit/tools/test_security.py::TestScrubChildEnv::test_never_returns_none  ['assert result is not None']
+tests/kimix/test_agent_conversation.py::test_agent_background_completes_and_stays_addressable  ['assert entry is not None']
+tests/kimix/test_agent_conversation.py::test_agent_background_returns_durable_id_immediately  ['assert entry is not None']
+tests/kimix/test_agent_conversation.py::test_agent_inherit_context_copies_real_session_dir  ['assert copied is not None']
+tests/kimix/test_long_param_extraction.py::TestIntegration::test_subagent_long_prompt_as_dict  ['assert saved is not None']
+tests/kimix/test_long_param_extraction.py::TestIntegration::test_subagent_prompt_as_dict  ['assert saved is not None']
+tests/kimix/test_long_param_extraction.py::TestIntegration::test_write_content_as_dict  ['assert saved is not None']
+tests/kimix/test_long_param_extraction.py::TestIntegration::test_python_code_as_list  ['assert saved is not None']
+tests/kimix/test_long_param_extraction.py::TestIntegration::test_bash_json_encoded_command  ['assert saved is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_cmd_param_for_run  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_cmd_param_for_pwsh  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_cmd_param_for_bash  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_text_param  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_new_param  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_old_param  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_file_param  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_source_code_param  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_non_string_list_items  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_ext_with_custom_extension  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_mixed_valid_and_malformed  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_multiple_params_saved  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_dict_param_saved  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_list_param_saved  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractAndSaveLongParam::test_json_encoded_string_saved  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_escaped_newlines_replaced  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_json_object_with_cmd_key  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_json_object_with_value_key  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_json_object_with_text_key  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_json_object_with_list_value  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_json_object_with_command_key  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_json_object_with_code_key  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_json_object_with_content_key  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_json_array_of_strings_joined  ['assert result is not None']
+tests/kimix/test_long_param_extraction.py::TestExtractContentFromMalformed::test_json_encoded_string_extracted  ['assert result is not None']
+tests/kimix/test_subagent_anonymous_session.py::test_parent_close_keeps_a_named_child_session_dir  ['assert child is not None']
+tests/kimix/test_subagent_anonymous_session.py::test_subagent_session_dir_kept_while_session_is_alive  ['assert entry is not None']
+tests/kimix/test_subagent_interrupt_race.py::test_fresh_resume_after_close_registers_normally  ['assert entry is not None']
+tests/native/test_loader.py::test_kernel_table_precomputed  ['assert table is not None']
+tests/native/test_loader.py::test_get_module_returns_submodule_or_none  ['assert mod is not None']
+
+=== C. only assertion is `assert x is not None` (0) ===
+
+=== D. no-assert funcs that raise/handle exceptions (manual check) (1) ===
+tests/native/test_full_behavior_equivalence.py::test_exception_parity
+
+=== E. skip constructs (32) ===
+kimi-cli/tests/tools/test_additional_dirs.py::test_glob_skill_scripts_dir_outside_workspace  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_additional_dirs.py::test_glob_outside_skills_and_workspace_rejected  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_additional_dirs.py::test_add_dir_dynamically_affects_tools  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_additional_dirs.py::test_glob_outside_all_dirs_rejected  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_glob.py::test_glob_outside_work_dir_nonexistent_has_warning  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_glob.py::test_glob_outside_work_dir_has_warning  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_grep.py::test_grep_outside_work_dir_no_matches_has_warning  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_grep.py::test_grep_outside_work_dir_nonexistent_has_warning  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_grep.py::test_grep_outside_work_dir_has_warning  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_grep_selectors.py::TestSplitPathAndSel::test_literal_file_preference  [pytest.skip(NO reason=)]
+kimi-cli/tests/tools/test_read_file.py::test_read_outside_relative_path_error_has_warning  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_read_file.py::test_read_outside_work_dir_directory_has_warning  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_read_file.py::test_read_outside_work_dir_nonexistent_has_warning  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_read_file.py::test_read_outside_work_dir_has_warning  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/tools/test_tools_integrity_gate.py::test_every_dunder_all_name_resolves  [pytest.skip(NO reason=)]
+kimi-cli/tests/core/test_agent_cutover.py::test_default_root_agent_only_exposes_agent_tool_for_subagents  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/core/test_create_llm.py::test_augment_provider_with_env_vars_kimi  [@pytest.mark.skip pytest.mark.skip]
+kimi-cli/tests/core/test_default_agent.py::test_default_agent  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/core/test_subagent_builder.py::test_builder_model_priority_prefers_override_then_type_default_then_inherit  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/core/test_subagent_builder.py::test_builder_builds_plan_without_shell_or_write_tools  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/core/test_subagent_builder.py::test_builder_builds_explore_read_only_with_shell  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/core/test_subagent_builder.py::test_builder_builds_coder_with_write_tools  [@pytest.mark.skipif pytest.mark.skipif]
+kimi-cli/tests/native/test_compat_missing_dll.py::test_consumers_work_after_restore  [pytest.skip(NO reason=)]
+kimi-cli/tests/native/test_grep_engine_parity.py::TestEngineMirrorParity::test_engine_nonascii_path_roundtrip  [pytest.mark.xfail]
+kimi-cli/tests/native/test_grep_engine_parity.py::TestEngineMirrorParity::test_engine_backtracking_stack_overflow_subprocess  [pytest.mark.xfail]
+kimi-cli/tests/native/test_loader.py::test_per_kernel_toggle_subprocess  [pytest.skip(NO reason=)]
+kimi-cli/tests/native/test_loader.py::test_default_path_is_workdir_bin  [pytest.skip(NO reason=)]
+kimi-cli/tests/native/test_per_kernel_toggle.py::test_kernel_toggle_flips_only_one  [pytest.skip(NO reason=)]
+tests/native/test_compress_equivalence.py::test_compress_native_is_faster  [pytest.skip(NO reason=)]
+tests/native/test_loader.py::test_per_kernel_toggle_subprocess  [pytest.skip(NO reason=)]
+tests/native/test_loader.py::test_default_path_is_workdir_bin  [pytest.skip(NO reason=)]
+tests/native/test_per_kernel_toggle.py::test_kernel_toggle_flips_only_one  [pytest.skip(NO reason=)]
+
+=== grep -rn "time.sleep\|datetime.now\|time.time()" kimi-cli/tests/tools kimi-cli/tests/core kimi-cli/tests/native tests/unit/tools tests/kimix tests/native tests/regression/tools ===
+kimi-cli/tests/tools/test_auto_generated_guard.py:316:    future = time.time() + 5
+kimi-cli/tests/tools/test_grep.py:704:        old_mtime = time.time() - 100
+kimi-cli/tests/tools/test_plan25_integration.py:395:    future = time.time() + 10
+kimi-cli/tests/tools/test_plan25_integration.py:422:    future = time.time() + 10
+kimi-cli/tests/tools/test_plan25_integration.py:562:    future = time.time() + 10
+kimi-cli/tests/core/test_history_index.py:123:        idx._turns[0]["timestamp"] = time.time() - 7200  # 2 hours ago
+kimi-cli/tests/core/test_history_index.py:141:        idx._turns[0]["timestamp"] = time.time() - 7200
+kimi-cli/tests/core/test_history_index.py:321:            "UPDATE turns SET timestamp = ? WHERE turn_id = 0", (time.time() - 7200,)
+kimi-cli/tests/core/test_notifications.py:133:            finished_at=time.time(),
+kimi-cli/tests/core/test_notifications.py:134:            updated_at=time.time(),
+kimi-cli/tests/core/test_notifications.py:621:        TaskRuntime(status="running", updated_at=time.time()),
+kimi-cli/tests/core/test_session.py:47:        timestamp=time.time(),
+kimi-cli/tests/core/test_session.py:103:    now = time.time()
+kimi-cli/tests/core/test_session_fork.py:68:    ts = time.time()
+kimi-cli/tests/core/test_session_fork.py:414:        ts = time.time()
+kimi-cli/tests/core/test_session_logging.py:90:        now = time.time()
+kimi-cli/tests/core/test_session_logging.py:107:        now = time.time()
+kimi-cli/tests/core/test_session_logging.py:132:        now = time.time()
+kimi-cli/tests/core/test_session_sessions_dir.py:110:        timestamp=time.time(),
+kimi-cli/tests/core/test_subagent_store.py:91:    time.sleep(0.01)
+tests/unit/tools/test_elapsed_report.py:154:        elapsed = await self._run("import time; time.sleep(1.2)")
+tests/unit/tools/test_python.py:737:                code="import time; time.sleep(2.0); print('bg-marker-123')",
+Binary file tests/unit/tools/__pycache__/test_elapsed_report.cpython-314-pytest-9.1.1.pyc matches
+Binary file tests/unit/tools/__pycache__/test_elapsed_report.cpython-314.pyc matches
+Binary file tests/unit/tools/__pycache__/test_python.cpython-314-pytest-9.1.1.pyc matches
+Binary file tests/unit/tools/__pycache__/test_todo_shell.cpython-314-pytest-9.1.1.pyc matches
+tests/kimix/test_agent_conversation.py:66:        created_at=time.time(),
+tests/kimix/test_agent_conversation.py:67:        last_accessed=time.time(),
+tests/kimix/test_agent_conversation.py:80:        created_at=time.time(),
+tests/kimix/test_agent_conversation.py:81:        last_accessed=time.time(),
+tests/kimix/test_agent_conversation.py:96:        created_at=time.time(),
+tests/kimix/test_agent_conversation.py:97:        last_accessed=time.time(),
+tests/kimix/test_agent_conversation.py:117:            created_at=time.time(),
+tests/kimix/test_agent_conversation.py:118:            last_accessed=time.time() + i,
+tests/kimix/test_agent_conversation.py:149:                created_at=time.time(),
+tests/kimix/test_agent_conversation.py:150:                last_accessed=time.time() + i,
+tests/kimix/test_agent_conversation.py:182:                created_at=time.time(),
+tests/kimix/test_agent_conversation.py:183:                last_accessed=time.time() + i,
+tests/kimix/test_agent_conversation.py:313:            created_at=time.time(),
+tests/kimix/test_agent_conversation.py:314:            last_accessed=time.time(),
+tests/kimix/test_agent_conversation.py:345:            created_at=time.time(),
+tests/kimix/test_agent_conversation.py:346:            last_accessed=time.time(),
+tests/kimix/test_agent_conversation.py:690:            created_at=time.time(),
+tests/kimix/test_agent_conversation.py:691:            last_accessed=time.time(),
+tests/kimix/test_agent_conversation.py:850:            created_at=time.time(),
+tests/kimix/test_agent_conversation.py:851:            last_accessed=time.time(),
+tests/kimix/test_agent_conversation.py:868:            created_at=time.time(),
+tests/kimix/test_agent_conversation.py:869:            last_accessed=time.time(),
+tests/kimix/test_agent_conversation.py:1368:            created_at=time.time(),
+tests/kimix/test_agent_conversation.py:1369:            last_accessed=time.time(),
+tests/kimix/test_agent_conversation.py:1393:    now = time.time()
+tests/kimix/test_agent_gate.py:82:    now = time.time()
+tests/kimix/test_subagent_anonymous_session.py:276:    time.sleep(0.4)  # let the releaser finish before the test tears down
+tests/kimix/test_subagent_interrupt_race.py:52:        created_at=time.time(),
+tests/kimix/test_subagent_interrupt_race.py:53:        last_accessed=time.time(),
+tests/kimix/test_subagent_interrupt_race.py:170:                    created_at=time.time(),
+tests/kimix/test_subagent_interrupt_race.py:171:                    last_accessed=time.time(),
+tests/kimix/test_subagent_interrupt_race.py:275:                    created_at=time.time(),
+tests/kimix/test_subagent_interrupt_race.py:276:                    last_accessed=time.time(),
+(exit 0)
+
+=== grep -rn "pytest.skip\|mark.skip\|skipif" kimi-cli/tests/tools kimi-cli/tests/core kimi-cli/tests/native tests/unit/tools tests/kimix tests/native tests/regression/tools ===
+kimi-cli/tests/tools/test_additional_dirs.py:73:@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation order differs")
+kimi-cli/tests/tools/test_additional_dirs.py:168:@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation differs")
+kimi-cli/tests/tools/test_additional_dirs.py:250:@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation order differs")
+kimi-cli/tests/tools/test_additional_dirs.py:263:@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation differs")
+kimi-cli/tests/tools/test_glob.py:513:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Glob")
+kimi-cli/tests/tools/test_glob.py:533:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Glob")
+kimi-cli/tests/tools/test_grep.py:1623:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Grep")
+kimi-cli/tests/tools/test_grep.py:1644:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Grep")
+kimi-cli/tests/tools/test_grep.py:1659:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Grep")
+kimi-cli/tests/tools/test_grep_selectors.py:194:            pytest.skip("filesystem does not allow ':' in filenames")
+kimi-cli/tests/tools/test_read_file.py:443:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+kimi-cli/tests/tools/test_read_file.py:461:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+kimi-cli/tests/tools/test_read_file.py:471:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+kimi-cli/tests/tools/test_read_file.py:484:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+kimi-cli/tests/tools/test_tools_integrity_gate.py:49:        pytest.skip(f"{module_name} does not declare __all__")
+Binary file kimi-cli/tests/tools/__pycache__/test_additional_dirs.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_additional_dirs.cpython-314-pytest-9.0.3.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_additional_dirs.cpython-314-pytest-9.1.0.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_additional_dirs.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_additional_dirs.cpython-314.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_glob.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_glob.cpython-314-pytest-9.0.3.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_glob.cpython-314-pytest-9.1.0.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_glob.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_glob.cpython-314.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_grep.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_grep.cpython-314-pytest-9.0.3.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_grep.cpython-314-pytest-9.1.0.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_grep.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_grep.cpython-314.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_read_file.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_read_file.cpython-314-pytest-9.0.3.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_read_file.cpython-314-pytest-9.1.0.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_read_file.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_read_file.cpython-314.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_shell_bash.cpython-314-pytest-9.0.3.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_shell_bash.cpython-314-pytest-9.1.0.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_shell_bash.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_tool_descriptions.cpython-314-pytest-9.0.3.pyc matches
+Binary file kimi-cli/tests/tools/__pycache__/test_tool_descriptions.cpython-314-pytest-9.1.0.pyc matches
+kimi-cli/tests/core/test_agent_cutover.py:11:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_create_llm.py:15:@pytest.mark.skip(reason="inline-snapshot incompatibility with pydantic SecretStr on this platform")
+kimi-cli/tests/core/test_default_agent.py:14:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_subagent_builder.py:13:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_subagent_builder.py:38:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_subagent_builder.py:63:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_subagent_builder.py:89:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+Binary file kimi-cli/tests/core/__pycache__/test_agent_cutover.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_agent_cutover.cpython-314-pytest-9.0.3.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_agent_cutover.cpython-314-pytest-9.1.0.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_agent_cutover.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_agent_cutover.cpython-314.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_default_agent.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_default_agent.cpython-314-pytest-9.0.3.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_default_agent.cpython-314-pytest-9.1.0.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_default_agent.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_default_agent.cpython-314.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_subagent_builder.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_subagent_builder.cpython-314-pytest-9.0.3.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_subagent_builder.cpython-314-pytest-9.1.0.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_subagent_builder.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/core/__pycache__/test_subagent_builder.cpython-314.pyc matches
+kimi-cli/tests/native/test_additional_kernels_equivalence.py:20:pytestmark = pytest.mark.skipif(
+kimi-cli/tests/native/test_behavior_equivalence.py:23:pytestmark = pytest.mark.skipif(
+kimi-cli/tests/native/test_compat_missing_dll.py:71:        pytest.skip("KIMIX_NATIVE=0 forces pure Python; nothing to restore-check")
+kimi-cli/tests/native/test_diff_glob_tools_equivalence.py:23:pytestmark = pytest.mark.skipif(
+kimi-cli/tests/native/test_grep_engine_parity.py:70:requires_engine = pytest.mark.skipif(
+kimi-cli/tests/native/test_grep_engine_parity.py:76:requires_loader_native = pytest.mark.skipif(
+kimi-cli/tests/native/test_loader.py:68:        pytest.skip("native runtime not staged")
+kimi-cli/tests/native/test_loader.py:197:        pytest.skip("native runtime not staged")
+kimi-cli/tests/native/test_per_kernel_toggle.py:56:        pytest.skip("native runtime not staged")
+Binary file kimi-cli/tests/native/__pycache__/test_additional_kernels_equivalence.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_additional_kernels_equivalence.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_additional_kernels_equivalence.cpython-314.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_behavior_equivalence.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_behavior_equivalence.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_behavior_equivalence.cpython-314.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_diff_glob_tools_equivalence.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_diff_glob_tools_equivalence.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_diff_glob_tools_equivalence.cpython-314.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_grep_engine_parity.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_grep_local_native.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_grep_pattern_equivalence.cpython-314-pytest-9.0.2.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_grep_pattern_equivalence.cpython-314-pytest-9.1.1.pyc matches
+Binary file kimi-cli/tests/native/__pycache__/test_grep_pattern_equivalence.cpython-314.pyc matches
+tests/unit/tools/test_bash_gate.py:68:needs_bash = pytest.mark.skipif(
+Binary file tests/unit/tools/__pycache__/test_bash_gate.cpython-314-pytest-9.1.1.pyc matches
+Binary file tests/unit/tools/__pycache__/test_bash_gate.cpython-314.pyc matches
+tests/native/test_behavior_equivalence.py:15:pytestmark = pytest.mark.skipif(
+tests/native/test_compress_equivalence.py:48:pytestmark = pytest.mark.skipif(
+tests/native/test_compress_equivalence.py:238:        pytest.skip("native TOOLS gate is off")
+tests/native/test_full_behavior_equivalence.py:33:pytestmark = pytest.mark.skipif(
+tests/native/test_loader.py:66:        pytest.skip("native runtime not staged")
+tests/native/test_loader.py:198:        pytest.skip("native runtime not staged")
+tests/native/test_per_kernel_toggle.py:54:        pytest.skip("native runtime not staged")
+tests/native/test_shell_security_equivalence.py:25:pytestmark = pytest.mark.skipif(
+tests/native/test_stream_printing_equivalence.py:16:pytestmark = pytest.mark.skipif(
+tests/native/test_version_gate.py:29:pytestmark = pytest.mark.skipif(
+Binary file tests/native/__pycache__/test_behavior_equivalence.cpython-314-pytest-9.0.2.pyc matches
+Binary file tests/native/__pycache__/test_behavior_equivalence.cpython-314-pytest-9.1.1.pyc matches
+Binary file tests/native/__pycache__/test_behavior_equivalence.cpython-314.pyc matches
+Binary file tests/native/__pycache__/test_compress_equivalence.cpython-314-pytest-9.0.2.pyc matches
+Binary file tests/native/__pycache__/test_compress_equivalence.cpython-314-pytest-9.1.1.pyc matches
+Binary file tests/native/__pycache__/test_full_behavior_equivalence.cpython-314-pytest-9.0.2.pyc matches
+Binary file tests/native/__pycache__/test_full_behavior_equivalence.cpython-314-pytest-9.1.1.pyc matches
+Binary file tests/native/__pycache__/test_full_behavior_equivalence.cpython-314.pyc matches
+Binary file tests/native/__pycache__/test_shell_security_equivalence.cpython-314-pytest-9.0.2.pyc matches
+Binary file tests/native/__pycache__/test_shell_security_equivalence.cpython-314-pytest-9.1.1.pyc matches
+Binary file tests/native/__pycache__/test_shell_security_equivalence.cpython-314.pyc matches
+Binary file tests/native/__pycache__/test_stream_printing_equivalence.cpython-314-pytest-9.0.2.pyc matches
+Binary file tests/native/__pycache__/test_stream_printing_equivalence.cpython-314-pytest-9.1.1.pyc matches
+Binary file tests/native/__pycache__/test_stream_printing_equivalence.cpython-314.pyc matches
+Binary file tests/native/__pycache__/test_version_gate.cpython-314-pytest-9.0.2.pyc matches
+Binary file tests/native/__pycache__/test_version_gate.cpython-314-pytest-9.1.1.pyc matches
+(exit 0)
+
+=== grep -rn --include=*.py "pytest.skip\|mark.skip\|skipif" kimi-cli/tests/tools kimi-cli/tests/core kimi-cli/tests/native tests/unit/tools tests/kimix tests/native tests/regression/tools ===
+kimi-cli/tests/tools/test_additional_dirs.py:73:@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation order differs")
+kimi-cli/tests/tools/test_additional_dirs.py:168:@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation differs")
+kimi-cli/tests/tools/test_additional_dirs.py:250:@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation order differs")
+kimi-cli/tests/tools/test_additional_dirs.py:263:@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation differs")
+kimi-cli/tests/tools/test_glob.py:513:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Glob")
+kimi-cli/tests/tools/test_glob.py:533:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Glob")
+kimi-cli/tests/tools/test_grep.py:1623:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Grep")
+kimi-cli/tests/tools/test_grep.py:1644:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Grep")
+kimi-cli/tests/tools/test_grep.py:1659:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Grep")
+kimi-cli/tests/tools/test_grep_selectors.py:194:            pytest.skip("filesystem does not allow ':' in filenames")
+kimi-cli/tests/tools/test_read_file.py:443:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+kimi-cli/tests/tools/test_read_file.py:461:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+kimi-cli/tests/tools/test_read_file.py:471:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+kimi-cli/tests/tools/test_read_file.py:484:@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+kimi-cli/tests/tools/test_tools_integrity_gate.py:49:        pytest.skip(f"{module_name} does not declare __all__")
+kimi-cli/tests/core/test_agent_cutover.py:11:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_create_llm.py:15:@pytest.mark.skip(reason="inline-snapshot incompatibility with pydantic SecretStr on this platform")
+kimi-cli/tests/core/test_default_agent.py:14:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_subagent_builder.py:13:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_subagent_builder.py:38:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_subagent_builder.py:63:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/core/test_subagent_builder.py:89:@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
+kimi-cli/tests/native/test_additional_kernels_equivalence.py:20:pytestmark = pytest.mark.skipif(
+kimi-cli/tests/native/test_behavior_equivalence.py:23:pytestmark = pytest.mark.skipif(
+kimi-cli/tests/native/test_compat_missing_dll.py:71:        pytest.skip("KIMIX_NATIVE=0 forces pure Python; nothing to restore-check")
+kimi-cli/tests/native/test_diff_glob_tools_equivalence.py:23:pytestmark = pytest.mark.skipif(
+kimi-cli/tests/native/test_grep_engine_parity.py:70:requires_engine = pytest.mark.skipif(
+kimi-cli/tests/native/test_grep_engine_parity.py:76:requires_loader_native = pytest.mark.skipif(
+kimi-cli/tests/native/test_loader.py:68:        pytest.skip("native runtime not staged")
+kimi-cli/tests/native/test_loader.py:197:        pytest.skip("native runtime not staged")
+kimi-cli/tests/native/test_per_kernel_toggle.py:56:        pytest.skip("native runtime not staged")
+tests/unit/tools/test_bash_gate.py:68:needs_bash = pytest.mark.skipif(
+tests/native/test_behavior_equivalence.py:15:pytestmark = pytest.mark.skipif(
+tests/native/test_compress_equivalence.py:48:pytestmark = pytest.mark.skipif(
+tests/native/test_compress_equivalence.py:238:        pytest.skip("native TOOLS gate is off")
+tests/native/test_full_behavior_equivalence.py:33:pytestmark = pytest.mark.skipif(
+tests/native/test_loader.py:66:        pytest.skip("native runtime not staged")
+tests/native/test_loader.py:198:        pytest.skip("native runtime not staged")
+tests/native/test_per_kernel_toggle.py:54:        pytest.skip("native runtime not staged")
+tests/native/test_shell_security_equivalence.py:25:pytestmark = pytest.mark.skipif(
+tests/native/test_stream_printing_equivalence.py:16:pytestmark = pytest.mark.skipif(
+tests/native/test_version_gate.py:29:pytestmark = pytest.mark.skipif(
+(exit 0)
+
+=== grep -rn --include=*.py "pytest.skip\|mark.skip\|skipif" tests/kimix tests/native tests/regression/tools tests/unit/tools ===
+tests/native/test_behavior_equivalence.py:15:pytestmark = pytest.mark.skipif(
+tests/native/test_compress_equivalence.py:48:pytestmark = pytest.mark.skipif(
+tests/native/test_compress_equivalence.py:238:        pytest.skip("native TOOLS gate is off")
+tests/native/test_full_behavior_equivalence.py:33:pytestmark = pytest.mark.skipif(
+tests/native/test_loader.py:66:        pytest.skip("native runtime not staged")
+tests/native/test_loader.py:198:        pytest.skip("native runtime not staged")
+tests/native/test_per_kernel_toggle.py:54:        pytest.skip("native runtime not staged")
+tests/native/test_shell_security_equivalence.py:25:pytestmark = pytest.mark.skipif(
+tests/native/test_stream_printing_equivalence.py:16:pytestmark = pytest.mark.skipif(
+tests/native/test_version_gate.py:29:pytestmark = pytest.mark.skipif(
+tests/unit/tools/test_bash_gate.py:68:needs_bash = pytest.mark.skipif(
+(exit 0)
+
+=== grep -rn --include=*.py "time.sleep" kimi-cli/tests/tools kimi-cli/tests/core kimi-cli/tests/native tests/unit/tools tests/kimix tests/native tests/regression/tools ===
+kimi-cli/tests/core/test_subagent_store.py:91:    time.sleep(0.01)
+tests/unit/tools/test_elapsed_report.py:154:        elapsed = await self._run("import time; time.sleep(1.2)")
+tests/unit/tools/test_python.py:737:                code="import time; time.sleep(2.0); print('bg-marker-123')",
+tests/kimix/test_subagent_anonymous_session.py:276:    time.sleep(0.4)  # let the releaser finish before the test tears down
+(exit 0)
+
+=== uv run pytest kimi-cli/tests/tools -q ===
+E        +    where <built-in method lower of str object at 0x000002AF51962BF0> = '`../outside_file.txt` does not exist.'.lower
+E        +      where '`../outside_file.txt` does not exist.' = ToolError(is_error=True, output='', message='`../outside_file.txt` does not exist.', display=[BriefDisplayBlock(type='brief', text='File not found')], extras=None).message
+
+C:\dev\kimi-agent\kimi-cli\tests\tools\test_read_file.py:243: AssertionError
+_________ TestReadFileGlob.test_read_glob_outside_workspace_relative __________
+
+self = <tests.tools.test_read_file.TestReadFileGlob object at 0x000002AF1C825150>
+read_file_tool = <kimi_cli.tools.file.read.ReadFile object at 0x000002AF533BC410>
+temp_work_dir = KaosPath('C:\\Users\\maxwellgeng\\AppData\\Local\\Temp\\tmpy__qxgob')
+
+    async def test_read_glob_outside_workspace_relative(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
+        """`../outside/*.md` is rejected."""
+        import tempfile
+    
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outside = Path(tmpdir) / "outside"
+            outside.mkdir()
+            (outside / "x.md").write_text("x")
+    
+            # Change into temp_work_dir so ../outside resolves to the outside dir.
+            original_cwd = Path.cwd()
+            os.chdir(str(temp_work_dir))
+            try:
+                result = await read_file_tool(Params(path="../outside/*.md", glob=True))
+            finally:
+                os.chdir(original_cwd)
+    
+        assert result.is_error
+>       assert "absolute path" in result.message.lower()
+E       AssertionError: assert 'absolute path' in 'directory for `../outside/*.md` does not exist.'
+E        +  where 'directory for `../outside/*.md` does not exist.' = <built-in method lower of str object at 0x000002AF5339F750>()
+E        +    where <built-in method lower of str object at 0x000002AF5339F750> = 'Directory for `../outside/*.md` does not exist.'.lower
+E        +      where 'Directory for `../outside/*.md` does not exist.' = ToolError(is_error=True, output='', message='Directory for `../outside/*.md` does not exist.', display=[BriefDisplayBlock(type='brief', text='Directory not found')], extras=None).message
+
+C:\dev\kimi-agent\kimi-cli\tests\tools\test_read_file.py:1379: AssertionError
+=========================== short test summary info ===========================
+FAILED kimi-cli\tests\tools\test_edit_gate.py::test_probe17_allow_auto_generated_field
+FAILED kimi-cli\tests\tools\test_read_file.py::test_read_with_relative_path_outside_work_dir
+FAILED kimi-cli\tests\tools\test_read_file.py::TestReadFileGlob::test_read_glob_outside_workspace_relative
+3 failed, 2008 passed, 19 skipped in 55.68s
+(pipeline exit 1)
+

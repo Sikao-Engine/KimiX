@@ -1,0 +1,410 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+ M kimi-cli/src/kimi_cli/tools/file/conflict_detect.py
+ M kimi-cli/src/kimi_cli/tools/file/read_media.py
+ M src/kimix/tools/file/bash/pwsh_tool.py
+ M src/kimix/tools/file/run.py
+?? .coverage
+?? kimi-cli/tests/tools/test_edit_gate.py
+?? reviews/tools/90-findings.md
+?? reviews/tools/93-orphans-and-removal.md
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/X03-security.md
+?? reviews/tools/X04-native-parity.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C11.json
+?? reviews/tools/gates/C11.txt
+?? reviews/tools/gates/C12.json
+?? reviews/tools/gates/C12.txt
+?? reviews/tools/gates/C13.json
+?? reviews/tools/gates/C13.txt
+?? reviews/tools/gates/C14.json
+?? reviews/tools/gates/C14.txt
+?? reviews/tools/gates/C15.json
+?? reviews/tools/gates/C15.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K00.json
+?? reviews/tools/gates/K00.txt
+?? reviews/tools/gates/K01.json
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K02.json
+?? reviews/tools/gates/K02.txt
+?? reviews/tools/gates/K03.json
+?? reviews/tools/gates/K03.txt
+?? reviews/tools/gates/K04.json
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/K05.json
+?? reviews/tools/gates/K05.txt
+?? reviews/tools/gates/K06.json
+?? reviews/tools/gates/K06.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/kimix/test_agent_gate.py
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check src/kimix/tools/py/__init__.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\py\__init__.py:3:1
+   |
+ 1 |   """Python tool that executes code or runs .py files via the system Python executable."""
+ 2 |
+ 3 | / import asyncio
+ 4 | | import functools
+ 5 | | import os
+ 6 | | import sys
+ 7 | | from pathlib import Path
+ 8 | | from typing import TYPE_CHECKING, Literal
+ 9 | |
+10 | | import anyio
+11 | | import regex as re
+12 | | from kimix.tools.common import (
+13 | |     _append_elapsed,
+14 | |     _build_session_output_block,
+15 | |     _create_script_file,
+16 | |     _display_temp_path,
+17 | |     _extract_export_path,
+18 | |     _interactive_scope_text,
+19 | |     _maybe_export_output_async,
+20 | |     _maybe_export_rtk_original_async,
+21 | |     _original_saved_message,
+22 | |     _save_original_output_async,
+23 | |     _subprocess_elapsed,
+24 | |     _summarize_long_output_async,
+25 | |     _token_filter_output,
+26 | |     ProcessTask,
+27 | | )
+28 | | from kimix.tools.prompt_common import (
+29 | |     accepts_alias_text,
+30 | |     max_lines_field,
+31 | |     mode_field,
+32 | |     normalize_mode_validator,
+33 | |     task_id_field,
+34 | |     timeout_field,
+35 | |     wait_for_pattern_field,
+36 | | )
+37 | | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+38 | | from pydantic import AliasChoices, BaseModel, Field, model_validator
+39 | | from kimi_cli.session import Session
+40 | | from kimi_cli.share import get_share_dir
+   | |________________________________________^
+41 |
+42 |   if TYPE_CHECKING:
+   |
+help: Organize imports
+   |
+11 | import regex as re
+12 + from kimi_cli.session import Session
+13 + from kimi_cli.share import get_share_dir
+14 + from pydantic import AliasChoices, BaseModel, Field, model_validator
+15 +
+16 + from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+17 | from kimix.tools.common import (
+18 +     ProcessTask,
+19 |     _append_elapsed,
+--------------------------------------------------------------------------------
+31 |     _token_filter_output,
+   -     ProcessTask,
+32 | )
+--------------------------------------------------------------------------------
+41 | )
+   - from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+   - from pydantic import AliasChoices, BaseModel, Field, model_validator
+   - from kimi_cli.session import Session
+   - from kimi_cli.share import get_share_dir
+42 |
+   |
+
+N801 Class name `python` should use CapWords convention
+  --> src\kimix\tools\py\__init__.py:94:7
+   |
+94 | class python(CallableTool2[Params]):
+   |       ^^^^^^
+95 |     name: str = "python"
+96 |     description: str = (
+   |
+
+F541 [*] f-string without any placeholders
+   --> src\kimix\tools\py\__init__.py:510:33
+    |
+508 |                         task_id, process_task.stream, params, output, "running",
+509 |                         wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
+510 |                         message=f"Python code matched pattern and is still running.",
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+511 |                         brief="Pattern matched",
+512 |                     )
+    |
+help: Remove extraneous `f` prefix
+    |
+509 |                         wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
+    -                         message=f"Python code matched pattern and is still running.",
+510 +                         message="Python code matched pattern and is still running.",
+511 |                         brief="Pattern matched",
+    |
+
+F541 [*] f-string without any placeholders
+   --> src\kimix\tools\py\__init__.py:526:25
+    |
+524 |             return ToolError(
+525 |                 output=output,
+526 |                 message=f"Python execution was cancelled.",
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+527 |                 brief="Execution cancelled",
+528 |             )
+    |
+help: Remove extraneous `f` prefix
+    |
+525 |                 output=output,
+    -                 message=f"Python execution was cancelled.",
+526 +                 message="Python execution was cancelled.",
+527 |                 brief="Execution cancelled",
+    |
+
+Found 4 errors.
+[*] 3 fixable with the `--fix` option.
+[elapsed 0.1s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+C901 `_execute_code` is too complex (17 > 12)
+   --> src\kimix\tools\py\__init__.py:405:15
+    |
+403 |         )
+404 |
+405 |     async def _execute_code(self, params: Params, background: bool = False) -> ToolReturnValue:
+    |               ^^^^^^^^^^^^^
+406 |         """Execute Python code (non-interactive, one-shot).
+    |
+
+Found 1 error.
+[elapsed 0.1s, rc=1]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "src/kimix/tools/py/__init__.py",
+      "loc": 816,
+      "module_loc": 816,
+      "functions": [
+        {
+          "name": "_normalize_mode",
+          "lineno": 81,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_validate_source",
+          "lineno": 86,
+          "loc": 6,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 1
+        },
+        {
+          "name": "__init__",
+          "lineno": 106,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_resolve_python",
+          "lineno": 112,
+          "loc": 16,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_resolve_python_uncached",
+          "lineno": 129,
+          "loc": 31,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 4
+        },
+        {
+          "name": "_build_env",
+          "lineno": 162,
+          "loc": 49,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 1
+        },
+        {
+          "name": "_module_not_found_hint",
+          "lineno": 213,
+          "loc": 10,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_python_config",
+          "lineno": 224,
+          "loc": 14,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_syntax_check_error",
+          "lineno": 239,
+          "loc": 48,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 3
+        },
+        {
+          "name": "_resolve_script_source",
+          "lineno": 290,
+          "loc": 25,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 316,
+          "loc": 13,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 3
+        },
+        {
+          "name": "_start_interactive",
+          "lineno": 330,
+          "loc": 74,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 1
+        },
+        {
+          "name": "_execute_code",
+          "lineno": 405,
+          "loc": 210,
+          "complexity": 28,
+          "branches": 27,
+          "max_nesting": 3
+        },
+        {
+          "name": "_compile_pattern",
+          "lineno": 616,
+          "loc": 12,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_continue_session",
+          "lineno": 629,
+          "loc": 58,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 2
+        },
+        {
+          "name": "_process_output",
+          "lineno": 688,
+          "loc": 45,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "_format_session_result",
+          "lineno": 734,
+          "loc": 44,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "_format_background_output",
+          "lineno": 779,
+          "loc": 38,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_prepend",
+          "lineno": 189,
+          "loc": 6,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "_execute_code",
+        "loc": 210
+      },
+      "module_complexity": 28
+    }
+  ],
+  "totals": {
+    "files": 1,
+    "loc": 816,
+    "functions": 19
+  },
+  "breaches": [
+    "src/kimix/tools/py/__init__.py::_execute_code loc=210 > 120",
+    "src/kimix/tools/py/__init__.py::_execute_code complexity=28 > 12"
+  ]
+}
+[elapsed 0.2s, rc=1]
+
+=== uv run pytest tests/unit/tools/test_python.py tests/test_tools_async.py tests/unit/tools/test_elapsed_report.py -q -rs ===
+........................................................................ [ 57%]
+......................................................                   [100%]
+126 passed in 47.94s
+[elapsed 55.2s, rc=0]
+
+=== uv run --with pytest-cov pytest tests/unit/tools/test_python.py tests/test_tools_async.py tests/unit/tools/test_elapsed_report.py --cov=kimix.tools.py ===
+........................................................................ [ 57%]
+......................................................                   [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                             Stmts   Miss Branch BrPart  Cover   Missing
+----------------------------------------------------------------------------
+src\kimix\tools\py\__init__.py     338     31    124     20    88%   88, 90, 138-139, 152->159, 156->152, 191, 232-233, 262-263, 278->280, 350, 366->375, 426, 454->463, 500-507, 518-524, 560, 644, 655, 661->663, 664, 756, 769->771, 805-811, 814->816
+----------------------------------------------------------------------------
+TOTAL                              338     31    124     20    88%
+126 passed in 49.39s
+[elapsed 63.4s, rc=0]

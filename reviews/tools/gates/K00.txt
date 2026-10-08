@@ -1,0 +1,1247 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+?? .coverage
+?? kimi-cli/tests/tools/test_edit_gate.py
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C11.json
+?? reviews/tools/gates/C11.txt
+?? reviews/tools/gates/C12.json
+?? reviews/tools/gates/C12.txt
+?? reviews/tools/gates/C13.json
+?? reviews/tools/gates/C13.txt
+?? reviews/tools/gates/C14.json
+?? reviews/tools/gates/C14.txt
+?? reviews/tools/gates/C15.json
+?? reviews/tools/gates/C15.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/kimix/test_agent_gate.py
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check src/kimix/tools/common.py src/kimix/tools/prompt_common.py src/kimix/tools/security.py src/kimix/tools/check_fmt.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\common.py:1:1
+   |
+ 1 | / import asyncio
+ 2 | | import atexit
+ 3 | | import codecs
+ 4 | | import functools
+ 5 | | import io
+ 6 | | import os
+ 7 | | import regex as re
+ 8 | | import shutil
+ 9 | | import signal
+10 | | import textwrap
+11 | | import time
+12 | | import uuid
+13 | | from enum import Enum
+14 | | from pathlib import Path
+15 | | from typing import Any
+16 | |
+17 | | import orjson
+18 | |
+19 | | from kimi_agent_sdk import ToolReturnValue
+20 | | from kimi_cli.native_loader import (
+21 | |     get_compat as _native_get_compat,
+22 | |     get_module as _native_get_module,
+23 | |     use_native as _native_use_native,
+24 | | )
+   | |_^
+25 |
+26 |   # ── Long param extraction ──────────────────────────────────────────────────
+   |
+help: Organize imports
+   |
+6  | import os
+   - import regex as re
+7  | import shutil
+--------------------------------------------------------------------------------
+16 | import orjson
+   -
+   - from kimi_agent_sdk import ToolReturnValue
+17 + import regex as re
+18 | from kimi_cli.native_loader import (
+19 |     get_compat as _native_get_compat,
+20 + )
+21 + from kimi_cli.native_loader import (
+22 |     get_module as _native_get_module,
+23 + )
+24 + from kimi_cli.native_loader import (
+25 |     use_native as _native_use_native,
+26 | )
+27 |
+28 + from kimi_agent_sdk import ToolReturnValue
+29 +
+30 | # ── Long param extraction ──────────────────────────────────────────────────
+   |
+
+E402 Module level import not at top of file
+   --> src\kimix\tools\common.py:346:1
+    |
+344 |     )
+345 |
+346 | import queue
+    | ^^^^^^^^^^^^
+347 | import subprocess
+348 | import threading
+    |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+   --> src\kimix\tools\common.py:347:1
+    |
+346 | import queue
+347 | import subprocess
+    | ^^^^^^^^^^^^^^^^^
+348 | import threading
+349 | from typing import TYPE_CHECKING
+    |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+   --> src\kimix\tools\common.py:348:1
+    |
+346 | import queue
+347 | import subprocess
+348 | import threading
+    | ^^^^^^^^^^^^^^^^
+349 | from typing import TYPE_CHECKING
+    |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+   --> src\kimix\tools\common.py:349:1
+    |
+347 | import subprocess
+348 | import threading
+349 | from typing import TYPE_CHECKING
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+350 |
+351 | # Common error keywords for detecting error lines in process output
+    |
+help: Move module level imports to top of file
+
+E402 Module level import not at top of file
+   --> src\kimix\tools\common.py:504:1
+    |
+504 | from kimi_cli.session import Session
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+505 |
+506 | if TYPE_CHECKING:
+    |
+help: Move module level imports to top of file
+
+I001 [*] Import block is un-sorted or un-formatted
+   --> src\kimix\tools\common.py:861:5
+    |
+859 |           sub-agent could not be used.
+860 |       """
+861 | /     import kimix.base as base
+862 | |     from kimix.ui.printing import MessageType
+863 | |     from kimix.utils import close_session_async, _create_session_async, prompt_async
+864 | |     from kimix.utils.system_prompt import SystemPromptType
+    | |__________________________________________________________^
+865 |
+866 |       custom_config = session.custom_config
+    |
+help: Organize imports
+    |
+862 |     from kimix.ui.printing import MessageType
+    -     from kimix.utils import close_session_async, _create_session_async, prompt_async
+863 +     from kimix.utils import _create_session_async, close_session_async, prompt_async
+864 |     from kimix.utils.system_prompt import SystemPromptType
+    |
+
+N806 Variable `_OUTPUT_FILE_THRESHOLD` in function should be lowercase
+   --> src\kimix\tools\common.py:889:9
+    |
+887 |             sub_custom_config["is_sub_agent"] = True
+888 |
+889 |         _OUTPUT_FILE_THRESHOLD = 100 * 1024
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+890 |         if len(output) > _OUTPUT_FILE_THRESHOLD:
+891 |             temp_path, _ = await _export_to_temp_file_async(
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+    --> src\kimix\tools\common.py:1670:9
+     |
+1668 |       # stages emit count-bearing markers so nothing is hidden silently.
+1669 |       if apply_dedup:
+1670 | /         from kimi_cli.tools.file.micro_compress import (
+1671 | |             MicroCompressConfig,
+1672 | |             compress as _mc_compress,
+1673 | |         )
+     | |_________^
+1674 |           if has_errors:
+1675 |               # Diagnostics are the most valuable signal for a failed build:
+     |
+help: Organize imports
+     |
+1671 |             MicroCompressConfig,
+1672 +         )
+1673 +         from kimi_cli.tools.file.micro_compress import (
+1674 |             compress as _mc_compress,
+     |
+
+I001 [*] Import block is un-sorted or un-formatted
+    --> src\kimix\tools\common.py:1951:9
+     |
+1949 |           # the background.utils module namespace at call time so tests can patch
+1950 |           # ``BACKGROUND_MAX_OUTPUT_CHARS``.
+1951 | /         from kimix.tools.background.utils import bounded_append, bounded_put
+1952 | |         import kimix.tools.background.utils as _bg_utils
+1953 | |         from kimix.tools.security import redact_sensitive_output, scrub_child_env
+     | |_________________________________________________________________________________^
+1954 |
+1955 |           def _write_output(text: str) -> None:
+     |
+help: Organize imports
+     |
+1950 |         # ``BACKGROUND_MAX_OUTPUT_CHARS``.
+1951 +         import kimix.tools.background.utils as _bg_utils
+1952 |         from kimix.tools.background.utils import bounded_append, bounded_put
+     -         import kimix.tools.background.utils as _bg_utils
+1953 |         from kimix.tools.security import redact_sensitive_output, scrub_child_env
+     |
+
+I001 [*] Import block is un-sorted or un-formatted
+    --> src\kimix\tools\common.py:2267:9
+     |
+2265 |             The generated task ID.
+2266 |         """
+2267 |         from kimix.tools.background.utils import BackgroundStream, generate_task_id, add_task
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2268 |         self._stream = BackgroundStream()
+2269 |         # Generate a task ID based on the executable name
+     |
+help: Organize imports
+     |
+2266 |         """
+     -         from kimix.tools.background.utils import BackgroundStream, generate_task_id, add_task
+2267 +         from kimix.tools.background.utils import BackgroundStream, add_task, generate_task_id
+2268 |         self._stream = BackgroundStream()
+     |
+
+F401 [*] `pydantic.AliasChoices` imported but unused
+  --> src\kimix\tools\prompt_common.py:17:22
+   |
+15 | from typing import Any
+16 |
+17 | from pydantic import AliasChoices, Field, model_validator
+   |                      ^^^^^^^^^^^^
+18 |
+19 | __all__ = [
+   |
+help: Remove unused import: `pydantic.AliasChoices`
+   |
+16 |
+   - from pydantic import AliasChoices, Field, model_validator
+17 + from pydantic import Field, model_validator
+18 |
+   |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\security.py:20:1
+   |
+18 |   """
+19 |
+20 | / from kimi_cli.native_loader import (
+21 | |     get_compat as _native_get_compat,
+22 | |     get_module as _native_get_module,
+23 | |     use_native as _native_use_native,
+24 | | )
+   | |_^
+25 |
+26 |   # Resolved once at import time (stable runtime: result never changes).
+   |
+help: Organize imports
+   |
+21 |     get_compat as _native_get_compat,
+22 + )
+23 + from kimi_cli.native_loader import (
+24 |     get_module as _native_get_module,
+25 + )
+26 + from kimi_cli.native_loader import (
+27 |     use_native as _native_use_native,
+   |
+
+Found 13 errors.
+[*] 7 fixable with the `--fix` option.
+[elapsed 0.1s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+C901 `_looks_like_malformed_json_param` is too complex (13 > 12)
+  --> src\kimix\tools\common.py:57:5
+   |
+57 | def _looks_like_malformed_json_param(value: str) -> bool:
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+58 |     """Return True when *value* looks like a malformed JSON string param.
+   |
+
+C901 `_extract_content_from_malformed` is too complex (15 > 12)
+   --> src\kimix\tools\common.py:107:5
+    |
+107 | def _extract_content_from_malformed(value: str) -> str | None:
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+108 |     """Try to extract the actual content from a malformed param value.
+    |
+
+C901 `_dedup_output` is too complex (16 > 12)
+    --> src\kimix\tools\common.py:1127:5
+     |
+1127 | def _dedup_output(
+     |     ^^^^^^^^^^^^^
+1128 |     output: str,
+1129 |     threshold: int = 3,
+     |
+
+C901 `_split_shell_segments` is too complex (17 > 12)
+    --> src\kimix\tools\common.py:1320:5
+     |
+1320 | def _split_shell_segments(command: str) -> list[tuple[str, str]]:
+     |     ^^^^^^^^^^^^^^^^^^^^^
+1321 |     """Split a shell command on ``;``, ``&&``, ``||``, and ``|``.
+     |
+
+C901 `_read_shell_word` is too complex (16 > 12)
+    --> src\kimix\tools\common.py:1402:5
+     |
+1402 | def _read_shell_word(
+     |     ^^^^^^^^^^^^^^^^
+1403 |     cmd: str, i: int
+1404 | ) -> tuple[str, int, int] | tuple[None, None, None]:
+     |
+
+C901 `_run_process_bg` is too complex (61 > 12)
+    --> src\kimix\tools\common.py:1933:15
+     |
+1931 |         self._input_queue: queue.Queue[str] = queue.Queue()
+1932 |
+1933 |     async def _run_process_bg(self, q: queue.Queue[str]) -> tuple[bool, int | None]:
+     |               ^^^^^^^^^^^^^^^
+1934 |         """Run the process and collect output into the queue.
+     |
+
+Found 6 errors.
+[elapsed 0.1s, rc=1]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "src/kimix/tools/common.py",
+      "loc": 2342,
+      "module_loc": 2342,
+      "functions": [
+        {
+          "name": "_looks_like_malformed_json_param",
+          "lineno": 57,
+          "loc": 48,
+          "complexity": 21,
+          "branches": 20,
+          "max_nesting": 4
+        },
+        {
+          "name": "_extract_content_from_malformed",
+          "lineno": 107,
+          "loc": 47,
+          "complexity": 20,
+          "branches": 19,
+          "max_nesting": 5
+        },
+        {
+          "name": "_extract_and_save_long_param",
+          "lineno": 156,
+          "loc": 61,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 5
+        },
+        {
+          "name": "_build_long_param_retry_msg",
+          "lineno": 219,
+          "loc": 32,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_compat_stream",
+          "lineno": 262,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_compat_shell",
+          "lineno": 269,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "make_tool_error",
+          "lineno": 307,
+          "loc": 38,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 1
+        },
+        {
+          "name": "_find_error_line_index",
+          "lineno": 371,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "_rtk_binary_path",
+          "lineno": 461,
+          "loc": 6,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 0
+        },
+        {
+          "name": "_rtk_available",
+          "lineno": 470,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_is_known_rtk_command",
+          "lineno": 474,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "filter_output",
+          "lineno": 481,
+          "loc": 21,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_pid_alive",
+          "lineno": 529,
+          "loc": 30,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_rmtree_retry",
+          "lineno": 561,
+          "loc": 18,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 3
+        },
+        {
+          "name": "_folder_has_fresh_file",
+          "lineno": 589,
+          "loc": 13,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 4
+        },
+        {
+          "name": "_cleanup_temp_folder",
+          "lineno": 604,
+          "loc": 6,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_cleanup_stale_temp_folders",
+          "lineno": 612,
+          "loc": 35,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 3
+        },
+        {
+          "name": "cleanup_temp_folder",
+          "lineno": 649,
+          "loc": 9,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_create_temp_file_name",
+          "lineno": 669,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_export_to_temp_file",
+          "lineno": 676,
+          "loc": 22,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_export_to_temp_file_async",
+          "lineno": 700,
+          "loc": 26,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_create_script_file",
+          "lineno": 728,
+          "loc": 20,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_display_temp_path",
+          "lineno": 750,
+          "loc": 16,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_original_saved_message",
+          "lineno": 768,
+          "loc": 9,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_command_saved_message",
+          "lineno": 779,
+          "loc": 20,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_maybe_export_output",
+          "lineno": 801,
+          "loc": 20,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_maybe_export_output_async",
+          "lineno": 823,
+          "loc": 20,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_summarize_long_output_async",
+          "lineno": 845,
+          "loc": 90,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 3
+        },
+        {
+          "name": "_extract_export_path",
+          "lineno": 937,
+          "loc": 14,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_coerce_seconds",
+          "lineno": 961,
+          "loc": 13,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_format_elapsed_seconds",
+          "lineno": 976,
+          "loc": 16,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_reportable_seconds",
+          "lineno": 994,
+          "loc": 15,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_elapsed_suffix",
+          "lineno": 1011,
+          "loc": 10,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_elapsed_tag",
+          "lineno": 1023,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_append_elapsed",
+          "lineno": 1036,
+          "loc": 22,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 1
+        },
+        {
+          "name": "_subprocess_elapsed",
+          "lineno": 1060,
+          "loc": 19,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_build_session_output_block",
+          "lineno": 1081,
+          "loc": 44,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 1
+        },
+        {
+          "name": "_dedup_output",
+          "lineno": 1127,
+          "loc": 104,
+          "complexity": 19,
+          "branches": 18,
+          "max_nesting": 4
+        },
+        {
+          "name": "_truncate_lines",
+          "lineno": 1233,
+          "loc": 65,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 3
+        },
+        {
+          "name": "_find_ansi_c_end",
+          "lineno": 1300,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_find_backtick_end",
+          "lineno": 1305,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_find_dq_end",
+          "lineno": 1310,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_find_matching_paren",
+          "lineno": 1315,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_split_shell_segments",
+          "lineno": 1320,
+          "loc": 80,
+          "complexity": 23,
+          "branches": 22,
+          "max_nesting": 10
+        },
+        {
+          "name": "_read_shell_word",
+          "lineno": 1402,
+          "loc": 66,
+          "complexity": 21,
+          "branches": 20,
+          "max_nesting": 7
+        },
+        {
+          "name": "_is_shell_assignment",
+          "lineno": 1477,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_rewrite_shell_segment",
+          "lineno": 1481,
+          "loc": 38,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 2
+        },
+        {
+          "name": "_maybe_rewrite_shell_command_with_rtk",
+          "lineno": 1521,
+          "loc": 70,
+          "complexity": 18,
+          "branches": 17,
+          "max_nesting": 2
+        },
+        {
+          "name": "_token_filter_output",
+          "lineno": 1593,
+          "loc": 112,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 2
+        },
+        {
+          "name": "_save_original_output_async",
+          "lineno": 1707,
+          "loc": 13,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_maybe_export_rtk_original_async",
+          "lineno": 1722,
+          "loc": 26,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_interactive_scope_text",
+          "lineno": 1750,
+          "loc": 22,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_env_with_rg_bin_path",
+          "lineno": 1774,
+          "loc": 24,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 0
+        },
+        {
+          "name": "kill_child_tree",
+          "lineno": 1800,
+          "loc": 53,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "_register_child_process",
+          "lineno": 1869,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 1
+        },
+        {
+          "name": "_unregister_child_process",
+          "lineno": 1875,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 1
+        },
+        {
+          "name": "_kill_registered_process_trees",
+          "lineno": 1881,
+          "loc": 14,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
+          "name": "__init__",
+          "lineno": 1903,
+          "loc": 29,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_run_process_bg",
+          "lineno": 1933,
+          "loc": 279,
+          "complexity": 35,
+          "branches": 34,
+          "max_nesting": 5
+        },
+        {
+          "name": "_stop_function",
+          "lineno": 2213,
+          "loc": 10,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_input_function",
+          "lineno": 2224,
+          "loc": 31,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 3
+        },
+        {
+          "name": "start",
+          "lineno": 2256,
+          "loc": 21,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "wait",
+          "lineno": 2278,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "wait_with_monitor",
+          "lineno": 2281,
+          "loc": 23,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "thread_is_alive",
+          "lineno": 2305,
+          "loc": 2,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "stop",
+          "lineno": 2308,
+          "loc": 4,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "input",
+          "lineno": 2313,
+          "loc": 12,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "task_id",
+          "lineno": 2327,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "stream",
+          "lineno": 2332,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "completed_event",
+          "lineno": 2337,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "output_function",
+          "lineno": 912,
+          "loc": 3,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_write_output",
+          "lineno": 1955,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "read_stdout",
+          "lineno": 2016,
+          "loc": 34,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 5
+        },
+        {
+          "name": "read_stderr",
+          "lineno": 2051,
+          "loc": 39,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 5
+        },
+        {
+          "name": "write_stdin",
+          "lineno": 2091,
+          "loc": 16,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 3
+        }
+      ],
+      "longest_fn": {
+        "name": "_run_process_bg",
+        "loc": 279
+      },
+      "module_complexity": 35
+    },
+    {
+      "path": "src/kimix/tools/prompt_common.py",
+      "loc": 134,
+      "module_loc": 134,
+      "functions": [
+        {
+          "name": "accepts_alias_text",
+          "lineno": 31,
+          "loc": 13,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "timeout_field",
+          "lineno": 48,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "max_lines_field",
+          "lineno": 53,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "wait_for_pattern_field",
+          "lineno": 58,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "task_id_field",
+          "lineno": 63,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "mode_field",
+          "lineno": 76,
+          "loc": 15,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "normalize_mode_validator",
+          "lineno": 95,
+          "loc": 15,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 4
+        },
+        {
+          "name": "shell_cmd_required_validator",
+          "lineno": 112,
+          "loc": 23,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_validate",
+          "lineno": 121,
+          "loc": 12,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "shell_cmd_required_validator",
+        "loc": 23
+      },
+      "module_complexity": 6
+    },
+    {
+      "path": "src/kimix/tools/security.py",
+      "loc": 91,
+      "module_loc": 91,
+      "functions": [
+        {
+          "name": "_compat_tools",
+          "lineno": 33,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "scrub_child_env",
+          "lineno": 46,
+          "loc": 20,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "redact_sensitive_output",
+          "lineno": 68,
+          "loc": 12,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "validate_workdir",
+          "lineno": 82,
+          "loc": 10,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        }
+      ],
+      "longest_fn": {
+        "name": "scrub_child_env",
+        "loc": 20
+      },
+      "module_complexity": 5
+    },
+    {
+      "path": "src/kimix/tools/check_fmt.py",
+      "loc": 33,
+      "module_loc": 33,
+      "functions": [],
+      "longest_fn": null,
+      "module_complexity": 0
+    }
+  ],
+  "totals": {
+    "files": 4,
+    "loc": 2600,
+    "functions": 88
+  },
+  "breaches": [
+    "src/kimix/tools/common.py::_looks_like_malformed_json_param complexity=21 > 12",
+    "src/kimix/tools/common.py::_extract_content_from_malformed complexity=20 > 12",
+    "src/kimix/tools/common.py::_dedup_output complexity=19 > 12",
+    "src/kimix/tools/common.py::_split_shell_segments complexity=23 > 12",
+    "src/kimix/tools/common.py::_read_shell_word complexity=21 > 12",
+    "src/kimix/tools/common.py::_maybe_rewrite_shell_command_with_rtk complexity=18 > 12",
+    "src/kimix/tools/common.py::_run_process_bg loc=279 > 120",
+    "src/kimix/tools/common.py::_run_process_bg complexity=35 > 12"
+  ]
+}
+[elapsed 0.2s, rc=1]
+
+=== uv run pytest tests/test_tools_async.py tests/unit/tools/test_prompt_common.py tests/unit/tools/test_security.py tests/test_check_fmt.py tests/test_token_filter.py tests/test_filter_output.py tests/test_temp_folder_cleanup.py -q -rs ===
+.........................................F.............................. [ 30%]
+........................................................................ [ 60%]
+........................................................................ [ 90%]
+......................                                                   [100%]
+================================== FAILURES ===================================
+_________________________ test_descriptions_unchanged _________________________
+
+    def test_descriptions_unchanged() -> None:
+        """The four composed descriptions must match the expected snapshots.
+    
+        Snapshot reflects the post-Layer-2(b) wire text: the generic conventions
+        (fold, dedup, ``rtk``, ``cwd``/``workdir`` aliases) were deleted from the
+        descriptions — they now live once in the system.md conventions block —
+        and only tool-specific sentences remain.
+        """
+        tools = _build_tools()
+    
+        # Proactive self-kill hint appended by the shell tools at init time; the
+        # PID is the live process PID, so the snapshot interpolates it.
+        self_kill_hint_text = (
+            f" Safety: runs in the agent process (PID {os.getpid()}); never kill that PID, "
+            "its parents, or this process's image — the self-kill guard blocks it."
+        )
+    
+>       assert tools["bash"].description == (
+            "Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over "
+            "`find`/`ls`/`grep`/`rg` for file and content search. "
+            "For long sessions: interactive=True, then task_id=<id> to continue; "
+            "wait_for_pattern to block; job_output to monitor; send 'exit' to close. "
+            "On Windows, unquoted backslash paths auto-convert to forward slashes; "
+            "quoted backslashes are preserved. "
+            "Use /dev/null, not `> nul`, to discard output — `> nul` would create "
+            "an empty file named `nul` in Git Bash."
+            + self_kill_hint_text
+        )
+E       AssertionError: assert 'Execute a ba...rd blocks it.' == 'Execute a ba...rd blocks it.'
+E         
+E         - Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over `find`/`ls`/`grep`/`rg` for file and content search. For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. On Windows, unquoted backslash paths auto-convert to forward slashes; quoted backslashes are preserved. Use /dev/null, not `> nul`, to discard output — `> nul` would create an empty file named `nul` in Git Bash. Safety: runs in the agent process (PID 43584); never kill that PID, its parents, or this process'...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests\unit\tools\test_prompt_common.py:177: AssertionError
+============================== warnings summary ===============================
+tests\test_check_fmt.py:6
+  C:\dev\kimi-agent\tests\test_check_fmt.py:6: DeprecationWarning: kimix.tools.check_fmt is deprecated; import from kimi_cli.tools.file.check_fmt instead. This shim will be removed in the next minor release.
+    from kimix.tools.check_fmt import check_json, check_json_str
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1 failed, 237 passed, 1 warning in 40.02s
+[elapsed 46.6s, rc=1]
+
+=== uv run --with pytest-cov pytest tests/test_tools_async.py tests/unit/tools/test_prompt_common.py tests/unit/tools/test_security.py tests/test_check_fmt.py tests/test_token_filter.py tests/test_filter_output.py tests/test_temp_folder_cleanup.py --cov=kimix.tools.common ===
+.........................................F.............................. [ 30%]
+........................................................................ [ 60%]
+........................................................................ [ 90%]
+......................                                                   [100%]
+================================== FAILURES ===================================
+_________________________ test_descriptions_unchanged _________________________
+
+    def test_descriptions_unchanged() -> None:
+        """The four composed descriptions must match the expected snapshots.
+    
+        Snapshot reflects the post-Layer-2(b) wire text: the generic conventions
+        (fold, dedup, ``rtk``, ``cwd``/``workdir`` aliases) were deleted from the
+        descriptions — they now live once in the system.md conventions block —
+        and only tool-specific sentences remain.
+        """
+        tools = _build_tools()
+    
+        # Proactive self-kill hint appended by the shell tools at init time; the
+        # PID is the live process PID, so the snapshot interpolates it.
+        self_kill_hint_text = (
+            f" Safety: runs in the agent process (PID {os.getpid()}); never kill that PID, "
+            "its parents, or this process's image — the self-kill guard blocks it."
+        )
+    
+>       assert tools["bash"].description == (
+            "Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over "
+            "`find`/`ls`/`grep`/`rg` for file and content search. "
+            "For long sessions: interactive=True, then task_id=<id> to continue; "
+            "wait_for_pattern to block; job_output to monitor; send 'exit' to close. "
+            "On Windows, unquoted backslash paths auto-convert to forward slashes; "
+            "quoted backslashes are preserved. "
+            "Use /dev/null, not `> nul`, to discard output — `> nul` would create "
+            "an empty file named `nul` in Git Bash."
+            + self_kill_hint_text
+        )
+E       AssertionError: assert 'Execute a ba...rd blocks it.' == 'Execute a ba...rd blocks it.'
+E         
+E         - Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over `find`/`ls`/`grep`/`rg` for file and content search. For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. On Windows, unquoted backslash paths auto-convert to forward slashes; quoted backslashes are preserved. Use /dev/null, not `> nul`, to discard output — `> nul` would create an empty file named `nul` in Git Bash. Safety: runs in the agent process (PID 18500); never kill that PID, its parents, or this process'...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+tests\unit\tools\test_prompt_common.py:177: AssertionError
+============================== warnings summary ===============================
+tests\test_check_fmt.py:6
+  C:\dev\kimi-agent\tests\test_check_fmt.py:6: DeprecationWarning: kimix.tools.check_fmt is deprecated; import from kimi_cli.tools.file.check_fmt instead. This shim will be removed in the next minor release.
+    from kimix.tools.check_fmt import check_json, check_json_str
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                        Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------
+src\kimix\tools\common.py    1106    461    450     64    55%   71-104, 112-153, 183-216, 236-243, 264-266, 327-334, 501, 552-558, 574-578, 597-600, 608-609, 637-638, 643-646, 671-673, 678-697, 707-713, 714->719, 791-795, 811-820, 836-841, 861-934, 940, 949, 984-991, 1008, 1020, 1033, 1051-1057, 1074-1078, 1112, 1172-1230, 1297, 1302, 1317, 1336-1338, 1344-1346, 1350-1356, 1358-1364, 1368-1370, 1393-1394, 1415, 1418->1467, 1423, 1425-1431, 1433-1439, 1441-1447, 1449-1455, 1457-1463, 1489, 1496-1497, 1507, 1547, 1787-1797, 1839-1840, 1842-1852, 1888-1894, 1917-1919, 1961, 1996, 2014, 2021, 2025->2019, 2034-2038, 2040-2041, 2045-2049, 2053, 2058, 2062->2056, 2064->2066, 2072-2077, 2079-2080, 2084-2089, 2097, 2105-2106, 2111->2113, 2135->2137, 2140-2141, 2142->2147, 2145-2146, 2149-2150, 2156-2163, 2164->2178, 2168-2176, 2192-2194, 2200->2202, 2202->2206, 2207-2211, 2218->exit, 2221-2222, 2237, 2248, 2251-2254, 2298->2301, 2302, 2310-2311, 2322-2324, 2329, 2339-2341
+-----------------------------------------------------------------------
+TOTAL                        1106    461    450     64    55%
+=========================== short test summary info ===========================
+FAILED tests/unit/tools/test_prompt_common.py::test_descriptions_unchanged - ...
+1 failed, 237 passed, 1 warning in 40.52s
+[elapsed 49.1s, rc=1]

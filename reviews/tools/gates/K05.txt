@@ -1,0 +1,589 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+?? kimi-cli/tests/tools/test_edit_gate.py
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/X03-security.md
+?? reviews/tools/X04-native-parity.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C11.json
+?? reviews/tools/gates/C11.txt
+?? reviews/tools/gates/C12.json
+?? reviews/tools/gates/C12.txt
+?? reviews/tools/gates/C13.json
+?? reviews/tools/gates/C13.txt
+?? reviews/tools/gates/C14.json
+?? reviews/tools/gates/C14.txt
+?? reviews/tools/gates/C15.json
+?? reviews/tools/gates/C15.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K00.json
+?? reviews/tools/gates/K00.txt
+?? reviews/tools/gates/K01.json
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K02.json
+?? reviews/tools/gates/K02.txt
+?? reviews/tools/gates/K03.json
+?? reviews/tools/gates/K03.txt
+?? reviews/tools/gates/K04.json
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/kimix/test_agent_gate.py
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check src/kimix/tools/file/bash/pwsh_tool.py src/kimix/tools/file/bash/pwsh_fix.py src/kimix/tools/file/bash/process_pwsh.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\file\bash\pwsh_tool.py:3:1
+   |
+ 1 |   """PowerShell tool that executes commands via the system PowerShell executable."""
+ 2 |
+ 3 | / import asyncio
+ 4 | | import pybase64 as base64
+ 5 | | import contextlib
+ 6 | | import functools
+ 7 | | import os
+ 8 | | from pathlib import Path
+ 9 | | import regex as re
+10 | | import shutil
+11 | | import subprocess
+12 | | import sys
+13 | | from typing import TYPE_CHECKING, Literal
+14 | |
+15 | | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+16 | | from pydantic import AliasChoices, BaseModel, Field, model_validator
+17 | | from kimi_cli.session import Session
+18 | | from kimi_cli.tools import SkipThisTool
+19 | | from kimi_cli.tools.utils import load_desc
+20 | | from kimi_cli.tools.display import ShellDisplayBlock
+21 | | from kimix.tools.file.bash import bash_tool as _bash_tool
+22 | | from kimix.tools.file.bash.process_pwsh import pwsh_transform
+23 | | from kimix.tools.file.bash.pwsh_fix import fix_pwsh_command
+24 | | from kimix.tools.common import (
+25 | |     _append_elapsed,
+26 | |     _build_session_output_block,
+27 | |     _command_saved_message,
+28 | |     _env_with_rg_bin_path,
+29 | |     _extract_export_path,
+30 | |     _interactive_scope_text,
+31 | |     _maybe_export_output_async,
+32 | |     _maybe_export_rtk_original_async,
+33 | |     _maybe_rewrite_shell_command_with_rtk,
+34 | |     _original_saved_message,
+35 | |     _save_original_output_async,
+36 | |     _subprocess_elapsed,
+37 | |     _summarize_long_output_async,
+38 | |     _token_filter_output,
+39 | |     ProcessTask,
+40 | | )
+41 | | from kimix.tools.prompt_common import (
+42 | |     accepts_alias_text,
+43 | |     max_lines_field,
+44 | |     mode_field,
+45 | |     normalize_mode_validator,
+46 | |     shell_cmd_required_validator,
+47 | |     task_id_field,
+48 | |     timeout_field,
+49 | |     wait_for_pattern_field,
+50 | | )
+51 | | from kimix.tools.file.bash.output_enhance import (
+52 | |     annotate_failure,
+53 | |     interpret_exit_code,
+54 | |     is_expected_exit,
+55 | |     redact_sensitive_output,
+56 | | )
+57 | | from kimix.tools.file.bash.safety import (
+58 | |     check_hardline_blocked,
+59 | |     foreground_background_guidance,
+60 | |     self_kill_hint,
+61 | | )
+   | |_^
+62 |
+63 |   if TYPE_CHECKING:
+   |
+help: Organize imports
+   |
+3  | import asyncio
+   - import pybase64 as base64
+4  | import contextlib
+5  | import functools
+6  | import os
+   - from pathlib import Path
+   - import regex as re
+7  | import shutil
+8  | import subprocess
+9  | import sys
+10 + from pathlib import Path
+11 | from typing import TYPE_CHECKING, Literal
+12 |
+   - from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+   - from pydantic import AliasChoices, BaseModel, Field, model_validator
+13 + import pybase64 as base64
+14 + import regex as re
+15 | from kimi_cli.session import Session
+16 | from kimi_cli.tools import SkipThisTool
+   - from kimi_cli.tools.utils import load_desc
+17 | from kimi_cli.tools.display import ShellDisplayBlock
+   - from kimix.tools.file.bash import bash_tool as _bash_tool
+   - from kimix.tools.file.bash.process_pwsh import pwsh_transform
+   - from kimix.tools.file.bash.pwsh_fix import fix_pwsh_command
+18 + from kimi_cli.tools.utils import load_desc
+19 + from pydantic import AliasChoices, BaseModel, Field, model_validator
+20 +
+21 + from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+22 | from kimix.tools.common import (
+23 +     ProcessTask,
+24 |     _append_elapsed,
+--------------------------------------------------------------------------------
+37 |     _token_filter_output,
+   -     ProcessTask,
+38 | )
+   - from kimix.tools.prompt_common import (
+   -     accepts_alias_text,
+   -     max_lines_field,
+   -     mode_field,
+   -     normalize_mode_validator,
+   -     shell_cmd_required_validator,
+   -     task_id_field,
+   -     timeout_field,
+   -     wait_for_pattern_field,
+   - )
+39 + from kimix.tools.file.bash import bash_tool as _bash_tool
+40 | from kimix.tools.file.bash.output_enhance import (
+--------------------------------------------------------------------------------
+45 | )
+46 + from kimix.tools.file.bash.process_pwsh import pwsh_transform
+47 + from kimix.tools.file.bash.pwsh_fix import fix_pwsh_command
+48 | from kimix.tools.file.bash.safety import (
+--------------------------------------------------------------------------------
+52 | )
+53 + from kimix.tools.prompt_common import (
+54 +     accepts_alias_text,
+55 +     max_lines_field,
+56 +     mode_field,
+57 +     normalize_mode_validator,
+58 +     shell_cmd_required_validator,
+59 +     task_id_field,
+60 +     timeout_field,
+61 +     wait_for_pattern_field,
+62 + )
+63 |
+   |
+
+F401 [*] `kimix.tools.prompt_common.timeout_field` imported but unused
+  --> src\kimix\tools\file\bash\pwsh_tool.py:48:5
+   |
+46 |     shell_cmd_required_validator,
+47 |     task_id_field,
+48 |     timeout_field,
+   |     ^^^^^^^^^^^^^
+49 |     wait_for_pattern_field,
+50 | )
+   |
+help: Remove unused import: `kimix.tools.prompt_common.timeout_field`
+   |
+47 |     task_id_field,
+   -     timeout_field,
+48 |     wait_for_pattern_field,
+   |
+
+F401 [*] `kimi_agent_sdk.CallableTool2` imported but unused
+  --> src\kimix\tools\file\bash\pwsh_tool.py:64:49
+   |
+63 | if TYPE_CHECKING:
+64 |     from kimi_agent_sdk import CallableTool2 as _CallableTool2
+   |                                                 ^^^^^^^^^^^^^^
+65 |
+66 | # Console initialization prepended to every PowerShell command. Sets UTF-8
+   |
+help: Remove unused import: `kimi_agent_sdk.CallableTool2`
+   |
+63 | if TYPE_CHECKING:
+   -     from kimi_agent_sdk import CallableTool2 as _CallableTool2
+64 +     pass
+65 |
+   |
+
+F541 [*] f-string without any placeholders
+   --> src\kimix\tools\file\bash\pwsh_tool.py:781:19
+    |
+779 |             output=block,
+780 |             message=_append_elapsed(msg, spent_seconds),
+781 |             brief=f"Command executed successfully",
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+782 |             display_block=ShellDisplayBlock(language="powershell"),
+783 |         )
+    |
+help: Remove extraneous `f` prefix
+    |
+780 |             message=_append_elapsed(msg, spent_seconds),
+    -             brief=f"Command executed successfully",
+781 +             brief="Command executed successfully",
+782 |             display_block=ShellDisplayBlock(language="powershell"),
+    |
+
+F821 Undefined name `BackgroundStream`
+    --> src\kimix\tools\file\bash\pwsh_tool.py:1054:18
+     |
+1052 |         self,
+1053 |         task_id: str,
+1054 |         stream: 'BackgroundStream' | None,
+     |                  ^^^^^^^^^^^^^^^^
+1055 |         params: PowershellParams,
+1056 |         output: str,
+     |
+
+Found 5 errors.
+[*] 4 fixable with the `--fix` option.
+[elapsed 0.1s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+C901 `__call__` is too complex (39 > 12)
+   --> src\kimix\tools\file\bash\pwsh_tool.py:414:15
+    |
+412 |             )
+413 |
+414 |     async def __call__(self, params: PowershellParams) -> ToolReturnValue:
+    |               ^^^^^^^^
+415 |         """Execute the PowerShell command via the system PowerShell executable.
+    |
+
+Found 1 error.
+[elapsed 0.1s, rc=1]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "src/kimix/tools/file/bash/pwsh_tool.py",
+      "loc": 1147,
+      "module_loc": 1147,
+      "functions": [
+        {
+          "name": "_print_warning",
+          "lineno": 76,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_pwsh_major_version",
+          "lineno": 82,
+          "loc": 12,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_is_windows_apps_stub",
+          "lineno": 96,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_where_candidates",
+          "lineno": 101,
+          "loc": 18,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_common_fixed_pwsh_paths",
+          "lineno": 121,
+          "loc": 16,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_is_versioned_pwsh7_install",
+          "lineno": 139,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "find_pwsh",
+          "lineno": 153,
+          "loc": 56,
+          "complexity": 16,
+          "branches": 15,
+          "max_nesting": 2
+        },
+        {
+          "name": "_normalize_mode",
+          "lineno": 283,
+          "loc": 10,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "__init__",
+          "lineno": 302,
+          "loc": 50,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "_hardline_blocked",
+          "lineno": 353,
+          "loc": 21,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_self_kill_blocked",
+          "lineno": 375,
+          "loc": 21,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_resolve_pwsh",
+          "lineno": 397,
+          "loc": 16,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 414,
+          "loc": 370,
+          "complexity": 57,
+          "branches": 56,
+          "max_nesting": 4
+        },
+        {
+          "name": "_validate_command_for_ps",
+          "lineno": 786,
+          "loc": 32,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_maybe_encode_command",
+          "lineno": 820,
+          "loc": 13,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_compile_pattern",
+          "lineno": 834,
+          "loc": 11,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_stop_after_timeout",
+          "lineno": 846,
+          "loc": 27,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_execute_background",
+          "lineno": 874,
+          "loc": 77,
+          "complexity": 13,
+          "branches": 12,
+          "max_nesting": 2
+        },
+        {
+          "name": "_continue_session",
+          "lineno": 952,
+          "loc": 58,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 2
+        },
+        {
+          "name": "_process_output",
+          "lineno": 1011,
+          "loc": 39,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 1
+        },
+        {
+          "name": "_format_session_result",
+          "lineno": 1051,
+          "loc": 51,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 2
+        },
+        {
+          "name": "_format_background_output",
+          "lineno": 1103,
+          "loc": 45,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "__call__",
+        "loc": 370
+      },
+      "module_complexity": 57
+    },
+    {
+      "path": "src/kimix/tools/file/bash/pwsh_fix.py",
+      "loc": 113,
+      "module_loc": 113,
+      "functions": [
+        {
+          "name": "fix_pwsh_command",
+          "lineno": 99,
+          "loc": 15,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "fix_pwsh_command",
+        "loc": 15
+      },
+      "module_complexity": 6
+    },
+    {
+      "path": "src/kimix/tools/file/bash/process_pwsh.py",
+      "loc": 94,
+      "module_loc": 94,
+      "functions": [],
+      "longest_fn": null,
+      "module_complexity": 0
+    }
+  ],
+  "totals": {
+    "files": 3,
+    "loc": 1354,
+    "functions": 23
+  },
+  "breaches": [
+    "src/kimix/tools/file/bash/pwsh_tool.py::find_pwsh complexity=16 > 12",
+    "src/kimix/tools/file/bash/pwsh_tool.py::__call__ loc=370 > 120",
+    "src/kimix/tools/file/bash/pwsh_tool.py::__call__ complexity=57 > 12",
+    "src/kimix/tools/file/bash/pwsh_tool.py::_execute_background complexity=13 > 12"
+  ]
+}
+[elapsed 0.2s, rc=1]
+
+=== uv run pytest tests/test_powershell.py tests/test_pwsh_fix.py tests/test_process_pwsh.py tests/test_windows_env.py -q -rs ===
+........................................................................ [  4%]
+........................................................................ [  8%]
+........................................................................ [ 12%]
+........................................................................ [ 16%]
+........................................................................ [ 20%]
+........................................................................ [ 24%]
+........................................................................ [ 28%]
+........................................................................ [ 32%]
+........................................................................ [ 36%]
+........................................................................ [ 40%]
+........................................................................ [ 44%]
+........................................................................ [ 49%]
+........................................................................ [ 53%]
+........................................................................ [ 57%]
+........................................................................ [ 61%]
+........................................................................ [ 65%]
+........................................................................ [ 69%]
+........................................................................ [ 73%]
+........................................................................ [ 77%]
+........................................................................ [ 81%]
+........................................................................ [ 85%]
+........................................................................ [ 89%]
+........................................................................ [ 93%]
+........................................................................ [ 98%]
+...................................                                      [100%]
+1763 passed in 32.81s
+[elapsed 34.1s, rc=0]
+
+=== uv run --with pytest-cov pytest tests/test_powershell.py tests/test_pwsh_fix.py tests/test_process_pwsh.py tests/test_windows_env.py --cov=kimix.tools.file.bash.pwsh_tool ===
+........................................................................ [  4%]
+........................................................................ [  8%]
+........................................................................ [ 12%]
+........................................................................ [ 16%]
+........................................................................ [ 20%]
+........................................................................ [ 24%]
+........................................................................ [ 28%]
+........................................................................ [ 32%]
+........................................................................ [ 36%]
+........................................................................ [ 40%]
+........................................................................ [ 44%]
+........................................................................ [ 49%]
+........................................................................ [ 53%]
+........................................................................ [ 57%]
+........................................................................ [ 61%]
+........................................................................ [ 65%]
+........................................................................ [ 69%]
+........................................................................ [ 73%]
+........................................................................ [ 77%]
+........................................................................ [ 81%]
+........................................................................ [ 85%]
+........................................................................ [ 89%]
+........................................................................ [ 93%]
+........................................................................ [ 98%]
+...................................                                      [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                                      Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------------------
+kimi-cli\src\kimi_cli\tools\file\edit\__init__.py            51      8      4      2    82%   31, 35, 39, 43, 48, 52, 73, 88
+kimi-cli\src\kimi_cli\tools\file\edit\base.py               112     32     32      4    68%   76-77, 101, 104-106, 116, 118, 127-129, 142-156, 187-195, 199-203, 208-215
+kimi-cli\src\kimi_cli\tools\file\edit\modes\__init__.py       5      0      0      0   100%
+kimi-cli\src\kimi_cli\tools\file\edit\modes\replace.py      293     29    128     19    88%   91, 101, 104-105, 160, 164, 246-247, 261, 265, 271-272, 274, 282-285, 290->300, 296-299, 315->317, 351->359, 356, 389-390, 410, 433-435, 455-456, 494->496
+kimi-cli\src\kimi_cli\tools\file\edit\modes\sloppy.py       232     63    102     25    69%   63, 65->59, 67->69, 80, 117, 126, 133, 142, 146, 152-172, 180, 185, 187, 197-210, 218, 226, 229-232, 249, 253-254, 264, 270, 274-275, 304, 322, 325, 331, 337, 356
+kimi-cli\src\kimi_cli\tools\file\edit\params.py              84      4     34      7    91%   113, 146, 155, 165, 178->183, 180->178, 183->185
+src\kimix\tools\file\bash\pwsh_tool.py                      458    219    196     84    37%   58, 77-122, 128->129, 133-140, 149-150, 154, 172->171, 173-209, 215, 280, 284, 287-289, 291, 293-297, 301, 308->311, 309, 311->312, 311->318, 320, 327->337, 328, 331->327, 331->332, 333, 338->339, 341-345, 354, 362->363, 362->364, 365->366, 365->367, 376, 387->388, 387->389, 390->391, 390->392, 398-400, 404-415, 426->429, 427, 430->434, 431, 434->437, 435, 438-441, 452, 456, 461-462, 464, 469->503, 470, 478->479, 484, 488->491, 489, 496, 501, 505-507, 510->518, 511->510, 511->512, 519, 522-523, 526->527, 526->530, 528, 530->531, 532->535, 533, 538->539, 538->546, 546->547, 546->565, 585-592, 603->604, 603->612, 613, 619-652, 662-711, 719, 724-727, 733, 754-773, 777->778, 777->779, 787, 804->810, 805, 811->812, 818, 821-831, 833, 836->837, 836->838, 847-875, 885, 889, 894->895, 894->900, 900->901, 900->903, 904, 907, 911, 922->923, 931-940, 953-955, 960->977, 962, 978-981, 987->988, 989-990, 1012, 1018->1027, 1019, 1029->1032, 1030, 1038->1039, 1038->1040, 1041-1046, 1050, 1072->1075, 1073, 1076, 1078->1079, 1078->1080, 1096, 1102, 1126-1148
+-----------------------------------------------------------------------------------------------------
+TOTAL                                                      1235    355    496    141    63%
+1763 passed in 30.17s
+[elapsed 34.6s, rc=0]

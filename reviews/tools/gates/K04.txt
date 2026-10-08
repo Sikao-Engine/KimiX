@@ -1,0 +1,950 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+?? .coverage
+?? kimi-cli/tests/tools/test_edit_gate.py
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/X03-security.md
+?? reviews/tools/X04-native-parity.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C11.json
+?? reviews/tools/gates/C11.txt
+?? reviews/tools/gates/C12.json
+?? reviews/tools/gates/C12.txt
+?? reviews/tools/gates/C13.json
+?? reviews/tools/gates/C13.txt
+?? reviews/tools/gates/C14.json
+?? reviews/tools/gates/C14.txt
+?? reviews/tools/gates/C15.json
+?? reviews/tools/gates/C15.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K00.json
+?? reviews/tools/gates/K00.txt
+?? reviews/tools/gates/K01.json
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K02.json
+?? reviews/tools/gates/K02.txt
+?? reviews/tools/gates/K03.json
+?? reviews/tools/gates/K03.txt
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/kimix/test_agent_gate.py
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.0s, rc=0]
+
+
+=== uv run ruff check src/kimix/tools/file/bash/bash_tool.py src/kimix/tools/file/bash/bash_fix.py src/kimix/tools/file/bash/shell_common.py src/kimix/tools/file/bash/safety.py src/kimix/tools/file/bash/output_enhance.py src/kimix/tools/file/bash/__init__.py ===
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\file\bash\output_enhance.py:27:1
+   |
+25 |   """
+26 |
+27 | / from kimi_cli.native_loader import (
+28 | |     get_compat as _native_get_compat,
+29 | |     get_module as _native_get_module,
+30 | |     use_native as _native_use_native,
+31 | | )
+   | |_^
+32 |
+33 |   # Resolved once at import time (stable runtime: result never changes).
+   |
+help: Organize imports
+   |
+28 |     get_compat as _native_get_compat,
+29 + )
+30 + from kimi_cli.native_loader import (
+31 |     get_module as _native_get_module,
+32 + )
+33 + from kimi_cli.native_loader import (
+34 |     use_native as _native_use_native,
+   |
+
+E402 Module level import not at top of file
+   --> src\kimix\tools\file\bash\output_enhance.py:106:1
+    |
+106 | from kimix.tools.security import redact_sensitive_output as redact_sensitive_output  # noqa: F401
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: Move module level imports to top of file
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\file\bash\safety.py:24:1
+   |
+22 |   """
+23 |
+24 | / import os
+25 | | import sys
+26 | |
+27 | | import regex as re
+28 | |
+29 | | from kimi_cli.native_loader import (
+30 | |     get_compat as _native_get_compat,
+31 | |     get_module as _native_get_module,
+32 | |     use_native as _native_use_native,
+33 | | )
+   | |_^
+34 |
+35 |   # Resolved once at import time (stable runtime: result never changes).
+   |
+help: Organize imports
+   |
+27 | import regex as re
+   -
+28 | from kimi_cli.native_loader import (
+29 |     get_compat as _native_get_compat,
+30 + )
+31 + from kimi_cli.native_loader import (
+32 |     get_module as _native_get_module,
+33 + )
+34 + from kimi_cli.native_loader import (
+35 |     use_native as _native_use_native,
+   |
+
+E402 Module level import not at top of file
+   --> src\kimix\tools\file\bash\safety.py:114:1
+    |
+112 | # ``validate_workdir`` moved to :mod:`kimix.tools.security`; re-exported
+113 | # here for compatibility with existing shell-tool callers.
+114 | from kimix.tools.security import validate_workdir as validate_workdir  # noqa: F401
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+help: Move module level imports to top of file
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> src\kimix\tools\file\bash\shell_common.py:19:1
+   |
+17 |   """
+18 |
+19 | / from __future__ import annotations
+20 | |
+21 | | import shutil
+22 | | from typing import Any
+23 | |
+24 | | from kimix.tools.file.bash import bash_fix
+25 | | from kimix.tools.file.bash import process_pwsh
+26 | | from kimix.tools.file.bash import pwsh_fix
+   | |__________________________________________^
+27 |
+28 |   # Flags shared by every one-shot PowerShell invocation (pwsh 7 and the
+   |
+help: Organize imports
+   |
+23 |
+   - from kimix.tools.file.bash import bash_fix
+   - from kimix.tools.file.bash import process_pwsh
+   - from kimix.tools.file.bash import pwsh_fix
+24 + from kimix.tools.file.bash import bash_fix, process_pwsh, pwsh_fix
+25 |
+   |
+
+Found 5 errors.
+[*] 3 fixable with the `--fix` option.
+[elapsed 0.2s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+C901 `__call__` is too complex (36 > 12)
+   --> src\kimix\tools\file\bash\bash_tool.py:740:15
+    |
+738 |         )
+739 |
+740 |     async def __call__(self, params: BashParams) -> ToolReturnValue:
+    |               ^^^^^^^^
+741 |         """Execute the bash command via the system bash executable.
+    |
+
+C901 `detect_self_kill` is too complex (46 > 12)
+   --> src\kimix\tools\file\bash\safety.py:457:5
+    |
+457 | def detect_self_kill(
+    |     ^^^^^^^^^^^^^^^^
+458 |     command: str,
+459 |     *,
+    |
+
+Found 2 errors.
+[elapsed 0.1s, rc=1]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "src/kimix/tools/file/bash/bash_tool.py",
+      "loc": 1461,
+      "module_loc": 1461,
+      "functions": [
+        {
+          "name": "_encode_startup_script",
+          "lineno": 102,
+          "loc": 14,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_payload_eval_command",
+          "lineno": 118,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_bash_argv_env",
+          "lineno": 125,
+          "loc": 13,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_bash_subprocess_env",
+          "lineno": 147,
+          "loc": 18,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_is_windows_apps_stub",
+          "lineno": 167,
+          "loc": 9,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_bash_runs",
+          "lineno": 187,
+          "loc": 20,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_where_git_executables",
+          "lineno": 209,
+          "loc": 14,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_git_bash_candidate_from_git_path",
+          "lineno": 225,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_git_exec_path",
+          "lineno": 231,
+          "loc": 19,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_git_install_root_from_exec_path",
+          "lineno": 252,
+          "loc": 10,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_git_bash_candidates_from_exec_path",
+          "lineno": 264,
+          "loc": 9,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_is_git_bash_install",
+          "lineno": 275,
+          "loc": 30,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 1
+        },
+        {
+          "name": "_with_msystem_neutralized",
+          "lineno": 315,
+          "loc": 16,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_find_git_bash_windows",
+          "lineno": 333,
+          "loc": 51,
+          "complexity": 13,
+          "branches": 12,
+          "max_nesting": 4
+        },
+        {
+          "name": "_git_bash_for_macos",
+          "lineno": 386,
+          "loc": 15,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_bash_candidates_macos",
+          "lineno": 403,
+          "loc": 7,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_bash_candidates_system",
+          "lineno": 412,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "find_bash",
+          "lineno": 418,
+          "loc": 33,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 3
+        },
+        {
+          "name": "_configured_shell",
+          "lineno": 453,
+          "loc": 23,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_should_enable_bash",
+          "lineno": 478,
+          "loc": 29,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "_should_enable_powershell",
+          "lineno": 509,
+          "loc": 26,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_process_unquoted",
+          "lineno": 557,
+          "loc": 19,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_prepare_bash_cmd",
+          "lineno": 580,
+          "loc": 21,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_usable",
+          "lineno": 350,
+          "loc": 2,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_normalize_mode",
+          "lineno": 629,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "__init__",
+          "lineno": 646,
+          "loc": 45,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 2
+        },
+        {
+          "name": "_hardline_blocked",
+          "lineno": 692,
+          "loc": 21,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_self_kill_blocked",
+          "lineno": 714,
+          "loc": 25,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "__call__",
+          "lineno": 740,
+          "loc": 325,
+          "complexity": 51,
+          "branches": 50,
+          "max_nesting": 4
+        },
+        {
+          "name": "_forbidden_error",
+          "lineno": 1066,
+          "loc": 16,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "_prepare_command",
+          "lineno": 1083,
+          "loc": 21,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_continuation_may_be_incomplete",
+          "lineno": 1105,
+          "loc": 41,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "_compile_pattern",
+          "lineno": 1147,
+          "loc": 11,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_stop_after_timeout",
+          "lineno": 1159,
+          "loc": 27,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_execute_background",
+          "lineno": 1187,
+          "loc": 65,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 1
+        },
+        {
+          "name": "_continue_session",
+          "lineno": 1253,
+          "loc": 75,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 2
+        },
+        {
+          "name": "_process_output",
+          "lineno": 1329,
+          "loc": 39,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 1
+        },
+        {
+          "name": "_format_session_result",
+          "lineno": 1369,
+          "loc": 51,
+          "complexity": 11,
+          "branches": 10,
+          "max_nesting": 2
+        },
+        {
+          "name": "_format_background_output",
+          "lineno": 1421,
+          "loc": 41,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "__call__",
+        "loc": 325
+      },
+      "module_complexity": 51
+    },
+    {
+      "path": "src/kimix/tools/file/bash/bash_fix.py",
+      "loc": 135,
+      "module_loc": 135,
+      "functions": [
+        {
+          "name": "fix_bash_command",
+          "lineno": 113,
+          "loc": 23,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "fix_bash_command",
+        "loc": 23
+      },
+      "module_complexity": 3
+    },
+    {
+      "path": "src/kimix/tools/file/bash/shell_common.py",
+      "loc": 159,
+      "module_loc": 159,
+      "functions": [
+        {
+          "name": "_bash_tool",
+          "lineno": 33,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_pwsh_tool",
+          "lineno": 40,
+          "loc": 5,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "inspect_bash_command",
+          "lineno": 49,
+          "loc": 10,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "prepare_bash_command",
+          "lineno": 61,
+          "loc": 9,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "bash_argv",
+          "lineno": 72,
+          "loc": 17,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 0
+        },
+        {
+          "name": "bash_file_argv",
+          "lineno": 91,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "wrap_pwsh_command",
+          "lineno": 100,
+          "loc": 12,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "pwsh_executable",
+          "lineno": 114,
+          "loc": 6,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "pwsh_argv",
+          "lineno": 122,
+          "loc": 29,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        },
+        {
+          "name": "pwsh_file_argv",
+          "lineno": 153,
+          "loc": 7,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        }
+      ],
+      "longest_fn": {
+        "name": "pwsh_argv",
+        "loc": 29
+      },
+      "module_complexity": 5
+    },
+    {
+      "path": "src/kimix/tools/file/bash/safety.py",
+      "loc": 665,
+      "module_loc": 665,
+      "functions": [
+        {
+          "name": "_compat_tools",
+          "lineno": 42,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "command_detection_variants",
+          "lineno": 59,
+          "loc": 14,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_segment_tokens",
+          "lineno": 75,
+          "loc": 7,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_looks_like_flag",
+          "lineno": 84,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "detect_hardline_command",
+          "lineno": 90,
+          "loc": 8,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "check_hardline_blocked",
+          "lineno": 100,
+          "loc": 10,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "foreground_background_guidance",
+          "lineno": 117,
+          "loc": 12,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 1
+        },
+        {
+          "name": "_posix_ppid",
+          "lineno": 152,
+          "loc": 11,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 2
+        },
+        {
+          "name": "_windows_parent_map",
+          "lineno": 165,
+          "loc": 44,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 2
+        },
+        {
+          "name": "_agent_pids",
+          "lineno": 211,
+          "loc": 34,
+          "complexity": 12,
+          "branches": 11,
+          "max_nesting": 3
+        },
+        {
+          "name": "_split_image_name",
+          "lineno": 247,
+          "loc": 11,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_agent_image_names",
+          "lineno": 260,
+          "loc": 26,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 2
+        },
+        {
+          "name": "_agent_cmdline",
+          "lineno": 288,
+          "loc": 7,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_segment_text",
+          "lineno": 297,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_numeric_pid_targets",
+          "lineno": 302,
+          "loc": 18,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_loop_pid_sources",
+          "lineno": 341,
+          "loc": 24,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 6
+        },
+        {
+          "name": "_variable_pid_hit",
+          "lineno": 367,
+          "loc": 31,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 3
+        },
+        {
+          "name": "_name_kill_hit",
+          "lineno": 400,
+          "loc": 21,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 3
+        },
+        {
+          "name": "_pattern_kill_hit",
+          "lineno": 423,
+          "loc": 21,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 3
+        },
+        {
+          "name": "_pkill_full_match",
+          "lineno": 446,
+          "loc": 9,
+          "complexity": 6,
+          "branches": 5,
+          "max_nesting": 2
+        },
+        {
+          "name": "detect_self_kill",
+          "lineno": 457,
+          "loc": 173,
+          "complexity": 52,
+          "branches": 51,
+          "max_nesting": 4
+        },
+        {
+          "name": "self_kill_hint",
+          "lineno": 642,
+          "loc": 24,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_pid_hit",
+          "lineno": 494,
+          "loc": 8,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "detect_self_kill",
+        "loc": 173
+      },
+      "module_complexity": 52
+    },
+    {
+      "path": "src/kimix/tools/file/bash/output_enhance.py",
+      "loc": 106,
+      "module_loc": 106,
+      "functions": [
+        {
+          "name": "_compat_tools",
+          "lineno": 40,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "interpret_exit_code",
+          "lineno": 54,
+          "loc": 17,
+          "complexity": 8,
+          "branches": 7,
+          "max_nesting": 1
+        },
+        {
+          "name": "is_expected_exit",
+          "lineno": 73,
+          "loc": 17,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 2
+        },
+        {
+          "name": "annotate_failure",
+          "lineno": 92,
+          "loc": 12,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 1
+        }
+      ],
+      "longest_fn": {
+        "name": "interpret_exit_code",
+        "loc": 17
+      },
+      "module_complexity": 8
+    },
+    {
+      "path": "src/kimix/tools/file/bash/__init__.py",
+      "loc": 11,
+      "module_loc": 11,
+      "functions": [],
+      "longest_fn": null,
+      "module_complexity": 0
+    }
+  ],
+  "totals": {
+    "files": 6,
+    "loc": 2537,
+    "functions": 77
+  },
+  "breaches": [
+    "src/kimix/tools/file/bash/bash_tool.py::_find_git_bash_windows complexity=13 > 12",
+    "src/kimix/tools/file/bash/bash_tool.py::__call__ loc=325 > 120",
+    "src/kimix/tools/file/bash/bash_tool.py::__call__ complexity=51 > 12",
+    "src/kimix/tools/file/bash/safety.py::detect_self_kill loc=173 > 120",
+    "src/kimix/tools/file/bash/safety.py::detect_self_kill complexity=52 > 12"
+  ]
+}
+[elapsed 0.3s, rc=1]
+
+=== uv run pytest tests/test_bash.py tests/test_bash_e2e.py tests/test_shell_common.py tests/test_shell_safety.py tests/test_output_enhance.py tests/native/test_shell_security_equivalence.py -q -rs ===
+
+=================================== ERRORS ====================================
+___________________ ERROR collecting tests/test_bash_e2e.py ___________________
+tests\test_bash_e2e.py:143: in load_cases
+    text = path.read_text(encoding="utf-8")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\maxwellgeng\AppData\Local\Programs\Python\Python314\Lib\pathlib\__init__.py:787: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\maxwellgeng\AppData\Local\Programs\Python\Python314\Lib\pathlib\__init__.py:771: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'C:\\dev\\kimi-agent\\tests\\bash\\cases.json'
+
+The above exception was the direct cause of the following exception:
+tests\test_bash_e2e.py:300: in pytest_generate_tests
+    cases = load_cases(path)
+            ^^^^^^^^^^^^^^^^
+tests\test_bash_e2e.py:145: in load_cases
+    raise ValueError(f"cannot read corpus file {path}: {exc}") from exc
+E   ValueError: cannot read corpus file C:\dev\kimi-agent\tests\bash\cases.json: [Errno 2] No such file or directory: 'C:\\dev\\kimi-agent\\tests\\bash\\cases.json'
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 1.67s
+[elapsed 3.0s, rc=2]
+
+=== uv run --with pytest-cov pytest tests/test_bash.py tests/test_bash_e2e.py tests/test_shell_common.py tests/test_shell_safety.py tests/test_output_enhance.py tests/native/test_shell_security_equivalence.py --cov=kimix.tools.file.bash.bash_tool ===
+
+=================================== ERRORS ====================================
+___________________ ERROR collecting tests/test_bash_e2e.py ___________________
+tests\test_bash_e2e.py:143: in load_cases
+    text = path.read_text(encoding="utf-8")
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\maxwellgeng\AppData\Local\Programs\Python\Python314\Lib\pathlib\__init__.py:787: in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+C:\Users\maxwellgeng\AppData\Local\Programs\Python\Python314\Lib\pathlib\__init__.py:771: in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   FileNotFoundError: [Errno 2] No such file or directory: 'C:\\dev\\kimi-agent\\tests\\bash\\cases.json'
+
+The above exception was the direct cause of the following exception:
+tests\test_bash_e2e.py:300: in pytest_generate_tests
+    cases = load_cases(path)
+            ^^^^^^^^^^^^^^^^
+tests\test_bash_e2e.py:145: in load_cases
+    raise ValueError(f"cannot read corpus file {path}: {exc}") from exc
+E   ValueError: cannot read corpus file C:\dev\kimi-agent\tests\bash\cases.json: [Errno 2] No such file or directory: 'C:\\dev\\kimi-agent\\tests\\bash\\cases.json'
+=========================== short test summary info ===========================
+ERROR tests/test_bash_e2e.py - ValueError: cannot read corpus file C:\dev\kim...
+!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 1.26s
+[elapsed 4.9s, rc=2]

@@ -1,0 +1,186 @@
+52192b7c3a1baa66c96e0015d2868f3b106fc043
+[elapsed 0.0s, rc=0]
+ M kimi-cli/src/kimi_cli/tools/file/conflict_detect.py
+ M kimi-cli/src/kimi_cli/tools/file/read_media.py
+ M src/kimix/tools/common.py
+ M src/kimix/tools/file/bash/bash_tool.py
+ M src/kimix/tools/file/bash/pwsh_tool.py
+ M src/kimix/tools/file/run.py
+ M src/kimix/tools/py/__init__.py
+?? .coverage
+?? kimi-cli/tests/tools/test_edit_gate.py
+?? kimi-cli/tests/tools/test_read_media_gate.py
+?? kimi-cli/tests/tools/test_tools_integrity_gate.py
+?? reviews/tools/90-findings.md
+?? reviews/tools/93-orphans-and-removal.md
+?? reviews/tools/X01-library-policy.md
+?? reviews/tools/X02-async-resources.md
+?? reviews/tools/X03-security.md
+?? reviews/tools/X04-native-parity.md
+?? reviews/tools/gates/C00.json
+?? reviews/tools/gates/C00.txt
+?? reviews/tools/gates/C01.json
+?? reviews/tools/gates/C01.txt
+?? reviews/tools/gates/C02.json
+?? reviews/tools/gates/C02.txt
+?? reviews/tools/gates/C03.json
+?? reviews/tools/gates/C03.txt
+?? reviews/tools/gates/C04.json
+?? reviews/tools/gates/C04.txt
+?? reviews/tools/gates/C05.json
+?? reviews/tools/gates/C05.txt
+?? reviews/tools/gates/C06.json
+?? reviews/tools/gates/C06.txt
+?? reviews/tools/gates/C07.json
+?? reviews/tools/gates/C07.txt
+?? reviews/tools/gates/C08.json
+?? reviews/tools/gates/C08.txt
+?? reviews/tools/gates/C09.json
+?? reviews/tools/gates/C09.txt
+?? reviews/tools/gates/C10.json
+?? reviews/tools/gates/C10.txt
+?? reviews/tools/gates/C11.json
+?? reviews/tools/gates/C11.txt
+?? reviews/tools/gates/C12.json
+?? reviews/tools/gates/C12.txt
+?? reviews/tools/gates/C13.json
+?? reviews/tools/gates/C13.txt
+?? reviews/tools/gates/C14.json
+?? reviews/tools/gates/C14.txt
+?? reviews/tools/gates/C15.json
+?? reviews/tools/gates/C15.txt
+?? reviews/tools/gates/C16.json
+?? reviews/tools/gates/C16.txt
+?? reviews/tools/gates/K00.json
+?? reviews/tools/gates/K00.txt
+?? reviews/tools/gates/K01.json
+?? reviews/tools/gates/K01.txt
+?? reviews/tools/gates/K02.json
+?? reviews/tools/gates/K02.txt
+?? reviews/tools/gates/K03.json
+?? reviews/tools/gates/K03.txt
+?? reviews/tools/gates/K04.json
+?? reviews/tools/gates/K04.txt
+?? reviews/tools/gates/K05.json
+?? reviews/tools/gates/K05.txt
+?? reviews/tools/gates/K06.json
+?? reviews/tools/gates/K06.txt
+?? reviews/tools/gates/K07.json
+?? reviews/tools/gates/K07.txt
+?? reviews/tools/gates/K08.json
+?? reviews/tools/gates/K08.txt
+?? reviews/tools/gates/X01.txt
+?? reviews/tools/gates/X02.txt
+?? reviews/tools/gates/X03.txt
+?? reviews/tools/gates/X04.txt
+?? reviews/tools/gates/X05.txt
+?? reviews/tools/gates/X06.txt
+?? reviews/tools/gates/_harness.log
+?? tests/kimix/test_agent_gate.py
+?? tests/test_review_orchestrator.py
+?? tools/gen_tool_reports.py
+?? tools/review_gates.py
+[elapsed 0.1s, rc=0]
+
+
+=== uv run ruff check src/kimix/tools/context/__init__.py ===
+I001 [*] Import block is un-sorted or un-formatted
+ --> src\kimix\tools\context\__init__.py:2:1
+  |
+1 |   """Tools for introspecting and compacting conversation context."""
+2 | / from __future__ import annotations
+3 | |
+4 | | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+5 | | from kimi_cli.soul import get_current_soul_or_none
+6 | | from kimi_cli.soul.compaction import CompactMode
+7 | | from kimi_cli.soul.dynamic_injections.compact_reminder import MIN_CONTEXT_USAGE
+8 | | from kimi_cli.soul.kimisoul import KimiSoul
+9 | | from pydantic import BaseModel, Field, model_validator
+  | |______________________________________________________^
+help: Organize imports
+   |
+3  |
+   - from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+4  | from kimi_cli.soul import get_current_soul_or_none
+--------------------------------------------------------------------------------
+9  |
+10 + from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+11 +
+12 |
+   |
+
+N801 Class name `compact` should use CapWords convention
+  --> src\kimix\tools\context\__init__.py:52:7
+   |
+52 | class compact(CallableTool2):
+   |       ^^^^^^^
+53 |     name = "compact"
+54 |     description = (
+   |
+
+Found 2 errors.
+[*] 1 fixable with the `--fix` option.
+[elapsed 0.3s, rc=1]
+
+=== uv run ruff check --select C901 --max-complexity=12 ===
+All checks passed!
+[elapsed 0.1s, rc=0]
+
+=== uv run tools/review_metrics.py --json --max-fn-loc 120 ===
+{
+  "files": [
+    {
+      "path": "src/kimix/tools/context/__init__.py",
+      "loc": 130,
+      "module_loc": 130,
+      "functions": [
+        {
+          "name": "_resolve_mode",
+          "lineno": 37,
+          "loc": 13,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 4
+        },
+        {
+          "name": "__call__",
+          "lineno": 65,
+          "loc": 66,
+          "complexity": 10,
+          "branches": 9,
+          "max_nesting": 2
+        }
+      ],
+      "longest_fn": {
+        "name": "__call__",
+        "loc": 66
+      },
+      "module_complexity": 10
+    }
+  ],
+  "totals": {
+    "files": 1,
+    "loc": 130,
+    "functions": 2
+  },
+  "breaches": []
+}
+[elapsed 0.2s, rc=0]
+
+=== uv run pytest tests/unit/tools/test_context_compact.py tests/test_integration_compaction.py -q -rs ===
+.............                                                            [100%]
+13 passed in 1.20s
+[elapsed 2.1s, rc=0]
+
+=== uv run --with pytest-cov pytest tests/unit/tools/test_context_compact.py tests/test_integration_compaction.py --cov=kimix.tools.context ===
+.............                                                            [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                  Stmts   Miss Branch BrPart  Cover   Missing
+---------------------------------------------------------------------------------
+src\kimix\tools\context\__init__.py      47     12     16      4    65%   40-48, 68, 90, 115->124, 117-118
+---------------------------------------------------------------------------------
+TOTAL                                    47     12     16      4    65%
+13 passed in 1.22s
+[elapsed 5.2s, rc=0]
