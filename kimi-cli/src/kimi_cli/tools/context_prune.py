@@ -15,10 +15,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal, override
 
-from kosong.message import Message
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 
+from kimi_cli.soul import get_wire_or_none, wire_send
 from kimi_cli.soul.context_pruning import (
     ContextPruner,
     PruningResult,
@@ -26,10 +25,11 @@ from kimi_cli.soul.context_pruning import (
     _protect_tool_pair_indices,
 )
 from kimi_cli.soul.message import is_system_reminder_message
-from kimi_cli.soul import get_wire_or_none, wire_send
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.tokens import count_message_tokens
 from kimi_cli.wire.types import StatusUpdate, TextPart, ThinkPart
+from kosong.message import Message
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 if TYPE_CHECKING:
     from kimi_cli.soul.kimisoul import KimiSoul
@@ -78,7 +78,7 @@ class Params(BaseModel):
     )
 
 
-class context_prune(CallableTool2[Params]):
+class context_prune(CallableTool2[Params]):  # noqa: N801
     name: str = "context_prune"
     description: str = (
         "Prune old session content (reasoning, tool results, stale messages) to save tokens. "
@@ -89,7 +89,7 @@ class context_prune(CallableTool2[Params]):
     )
     params: type[Params] = Params
 
-    def __init__(self, soul: "KimiSoul") -> None:
+    def __init__(self, soul: KimiSoul) -> None:
         super().__init__()
         self._soul = soul
 

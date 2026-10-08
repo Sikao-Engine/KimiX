@@ -7,12 +7,12 @@ sidecar initialization when needed.
 from __future__ import annotations
 
 import asyncio
-import regex as re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import apsw
+import regex as re
 
 __all__ = [
     "is_sqlite_path",
@@ -187,7 +187,7 @@ def _estimate_row_count(conn: apsw.Connection, table: str) -> tuple[str, int]:
         if count > ROW_COUNT_PROBE_CAP:
             return ("atLeast", ROW_COUNT_PROBE_CAP + 1)
         return ("exact", count)
-    except apsw.Error as exc:
+    except apsw.Error:
         return ("exact", 0)
 
 
@@ -262,7 +262,7 @@ def render_table(columns: list[str], rows: list[list[Any]]) -> str:
     widths = _column_widths(columns, rows)
     lines: list[str] = []
     sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
-    header = "|" + "|".join(f" {c[:w].ljust(w)} " for c, w in zip(columns, widths)) + "|"
+    header = "|" + "|".join(f" {c[:w].ljust(w)} " for c, w in zip(columns, widths, strict=False)) + "|"
     lines.extend([sep, header, sep])
     for row in rows:
         cells: list[str] = []
@@ -283,7 +283,7 @@ def _render_vertical_blocks(columns: list[str], rows: list[list[Any]]) -> str:
     lines: list[str] = []
     for row_idx, row in enumerate(rows, 1):
         lines.append(f"--- row {row_idx} ---")
-        for col, value in zip(columns, row):
+        for col, value in zip(columns, row, strict=False):
             lines.append(f"{col}: {_render_value(value)}")
         lines.append("")
     return "\n".join(lines).rstrip("\n")
@@ -440,7 +440,7 @@ def execute_sqlite_read(
                 bindings = ()
             try:
                 total = conn.execute(count_sql).fetchone()[0]
-            except apsw.Error as exc:
+            except apsw.Error:
                 total = None
 
             sql = f"SELECT * FROM {table}"

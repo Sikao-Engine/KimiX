@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kosong.tooling import ToolError, ToolOk, ToolReturnValue
-
 from kimi_cli.utils.image_compress import (
     compress_image_for_model,
     mipmap_downsample,
@@ -18,6 +16,7 @@ from kimi_cli.utils.image_compress import (
 )
 from kimi_cli.utils.media_tags import wrap_media_part
 from kimi_cli.wire.types import ImageURLPart, TextPart
+from kosong.tooling import ToolError, ToolOk, ToolReturnValue
 
 from .read_media_shared import (
     ImageDelivery,

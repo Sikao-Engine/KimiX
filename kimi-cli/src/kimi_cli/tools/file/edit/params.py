@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, Union
+from typing import Any, Literal
+
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 from kosong.tooling import alias_note
-from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 EditMode = Literal["replace", "sloppy"]
 
@@ -56,7 +57,7 @@ class EditParams(BaseModel):
         description="Path to edit. " + alias_note("file_path", "path", word=False),
     )
 
-    edit: Union[ReplaceEditItem, list[ReplaceEditItem], None] = Field(
+    edit: ReplaceEditItem | list[ReplaceEditItem] | None = Field(
         default=None,
         alias="edits",
         description="One or more literal replace edits. "
@@ -111,8 +112,11 @@ class EditParams(BaseModel):
         """Build the `edit` list from top-level old_string/new_string shorthand."""
         if not isinstance(data, dict):
             return data
-        if "edit" not in data and "edits" not in data:
-            if data.get("old_string") is not None or data.get("new_string") is not None:
+        if (
+            "edit" not in data
+            and "edits" not in data
+            and (data.get("old_string") is not None or data.get("new_string") is not None)
+        ):
                 data = {
                     **data,
                     "edit": [
@@ -146,7 +150,7 @@ class EditParams(BaseModel):
         raise ValueError(f"Invalid edit item: {item!r}")
 
     @model_validator(mode="after")
-    def _resolve_mode(self) -> "EditParams":
+    def _resolve_mode(self) -> EditParams:
         """Resolve auto-detected mode and validate payload shape."""
         raw_mode = self.mode
         if raw_mode != "auto":

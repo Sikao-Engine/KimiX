@@ -19,7 +19,11 @@ fallback to the shim, so there is exactly one copy of each algorithm.
 
 from kimi_cli.native_loader import (
     get_compat as _native_get_compat,
+)
+from kimi_cli.native_loader import (
     get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
 

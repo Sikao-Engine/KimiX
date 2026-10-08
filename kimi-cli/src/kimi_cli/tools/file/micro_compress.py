@@ -43,9 +43,14 @@ from rapidfuzz import fuzz
 
 from kimi_cli.native_loader import (
     get_compat as _native_get_compat,
+)
+from kimi_cli.native_loader import (
     get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
+
 # Resolved once at import time (stable runtime: result never changes).
 _NATIVE_TOOLS = _native_get_module("tools")
 # Pure-Python reference implementation (canonical copy lives in the shim);
@@ -741,7 +746,7 @@ def _near_dup_marker(run_lines: list[str]) -> str:
     nums_last = re.findall(r"\d+", last)
     field_desc = ""
     if len(nums_first) == len(nums_last) and nums_first:
-        for idx, (a, b) in enumerate(zip(nums_first, nums_last)):
+        for idx, (a, b) in enumerate(zip(nums_first, nums_last, strict=False)):
             if a != b:
                 field_desc = f", field{idx} {a}→{b}"
                 break
@@ -965,8 +970,5 @@ def compress_lines(
     original = "\n".join(lines)
     compressed = compress(original, kind=kind, config=config, path=path)
     saved = len(original) - len(compressed)
-    if compressed:
-        new_lines = compressed.split("\n")
-    else:
-        new_lines = []
+    new_lines = compressed.split("\n") if compressed else []
     return new_lines, max(saved, 0)

@@ -26,7 +26,11 @@ fallback to the shim.
 
 from kimi_cli.native_loader import (
     get_compat as _native_get_compat,
+)
+from kimi_cli.native_loader import (
     get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
 
@@ -103,4 +107,6 @@ def annotate_failure(output: str, command: str, exit_code: int | None) -> str | 
     return _compat_tools()._compat_annotate_failure(output, command, exit_code)
 
 
-from kimix.tools.security import redact_sensitive_output as redact_sensitive_output  # noqa: F401
+from kimix.tools.security import (  # noqa: E402 -- deliberately a late import
+    redact_sensitive_output as redact_sensitive_output,  # noqa: F401, E402
+)

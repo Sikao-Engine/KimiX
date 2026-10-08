@@ -7,7 +7,20 @@ from contextlib import suppress
 from pathlib import Path
 from typing import override
 
+from pydantic import AliasChoices, BaseModel, Field, model_validator
+from rapidfuzz import fuzz
+
 from kaos.path import KaosPath
+from kimi_cli.session import Session
+from kimi_cli.soul.agent import Runtime
+from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, detect_file_type
+from kimi_cli.tools.utils import load_desc, truncate_line
+from kimi_cli.utils.logging import logger
+from kimi_cli.utils.path import (
+    kaos_path_from_tool_input,
+)
+from kimi_cli.utils.sensitive import is_sensitive_file
+from kimi_cli.vfs import VFS
 from kosong.tooling import (
     _COMMON_FIELD_ALIASES,
     CallableTool2,
@@ -16,21 +29,6 @@ from kosong.tooling import (
     ToolReturnValue,
     alias_note,
 )
-from pydantic import AliasChoices, BaseModel, Field, model_validator
-from rapidfuzz import fuzz
-
-from kimi_cli.session import Session
-from kimi_cli.soul.agent import Runtime
-from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, detect_file_type
-from kimi_cli.tools.utils import load_desc, truncate_line
-from kimi_cli.utils.logging import logger
-from kimi_cli.utils.path import (
-    is_within_workspace,
-    kaos_path_from_tool_input,
-    kaos_path_from_user_input,
-)
-from kimi_cli.utils.sensitive import is_sensitive_file
-from kimi_cli.vfs import VFS
 
 from .conflict_detect import (
     ConflictError,
@@ -42,7 +40,6 @@ from .conflict_detect import (
     scan_conflict_lines,
     scan_file_for_conflicts,
 )
-from .snapshot_store import record_file_snapshot
 from .glob import (
     _get_gitignore_rules,
     _is_ignored_by_gitignore,
@@ -75,6 +72,7 @@ from .read_profiles import (
     render_sample_profile,
 )
 from .read_sqlite import is_sqlite_path, read_sqlite, sniff_sqlite
+from .snapshot_store import record_file_snapshot
 from .utils import resolve_vfs
 
 MAX_LINES = 5000
@@ -1057,7 +1055,7 @@ class ReadFile(CallableTool2[Params]):
         """Dedicated pipeline for conflict:// URIs and :conflicts selectors."""
         results: list[ToolReturnValue] = []
         display_paths: list[str] = []
-        for i, raw_path in enumerate(raw_paths):
+        for _i, raw_path in enumerate(raw_paths):
             display_paths.append(raw_path.replace("\\", "/"))
             results.append(
                 await self._read_conflict_entry(
@@ -1075,7 +1073,7 @@ class ReadFile(CallableTool2[Params]):
                 brief="Failed to read conflicts",
             )
         parts: list[str] = []
-        for idx, (display_path, result) in enumerate(zip(display_paths, results)):
+        for idx, (display_path, result) in enumerate(zip(display_paths, results, strict=False)):
             parts.append(f"======== {display_path} ========")
             parts.append(result.message if result.is_error else result.output)
             if idx < len(results) - 1:

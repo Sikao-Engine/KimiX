@@ -289,10 +289,7 @@ def _is_git_bash_install(bash_path: str) -> bool:
     # expect either ...\usr\bin\bash.exe or ...\bin\bash.exe
     if len(parts) < 3 or parts[-1] != "bash.exe" or parts[-2] != "bin":
         return False
-    if parts[-3] == "usr":
-        root = "\\".join(parts[:-3])
-    else:
-        root = "\\".join(parts[:-2])
+    root = "\\".join(parts[:-3]) if parts[-3] == "usr" else "\\".join(parts[:-2])
     # Probe the marker with an *absolute* path: ``ntpath.join(drive, root, ...)``
     # would produce a drive-relative path ("C:foo") that Windows resolves
     # against the process's current directory on drive C:.  When that per-drive
@@ -389,10 +386,7 @@ def _git_bash_for_macos() -> str | None:
     if not git_path:
         return None
     git_exe = Path(git_path).resolve()
-    if git_exe.parent.name.lower() == "bin":
-        git_root = git_exe.parent.parent
-    else:
-        git_root = git_exe.parent
+    git_root = git_exe.parent.parent if git_exe.parent.name.lower() == "bin" else git_exe.parent
     for subpath in ("bin/bash", "usr/bin/bash"):
         candidate = git_root / subpath
         if candidate.is_file() and os.access(candidate, os.X_OK):

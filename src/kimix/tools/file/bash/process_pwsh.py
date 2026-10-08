@@ -84,10 +84,7 @@ _find_multiline_regions = _shell._find_multiline_regions
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) > 1:
-        text = " ".join(sys.argv[1:])
-    else:
-        text = sys.stdin.read()
+    text = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else sys.stdin.read()
     result, warnings = pwsh_transform(text)
     for w in warnings:
         print(f"[WARNING] {w}", file=sys.stderr)

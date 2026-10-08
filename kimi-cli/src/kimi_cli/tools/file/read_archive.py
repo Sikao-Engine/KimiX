@@ -12,7 +12,6 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-
 __all__ = [
     "ARCHIVE_EXTENSIONS",
     "is_archive_path",
@@ -92,9 +91,7 @@ def sniff_archive(header: bytes) -> bool:
         return True  # xz
     if len(header) >= 262 and header[257:265] == b"ustar\x00":
         return True  # tar
-    if header[:4] == b"\x28\xb5\x2f\xfd":
-        return True  # zstd
-    return False
+    return header[:4] == b"\x28\xb5\x2f\xfd"  # zstd
 
 
 def normalize_member_path(member: str) -> str | None:
@@ -161,7 +158,7 @@ class ArchiveReader:
         self._kind: str = ""
         self._guard = _SizeGuard(MAX_ARCHIVE_MEMBER_BYTES, MAX_ARCHIVE_TOTAL_BYTES)
 
-    def __enter__(self) -> "ArchiveReader":
+    def __enter__(self) -> ArchiveReader:
         ext = _longest_archive_extension(str(self.path))
         if ext in {".zip", ".jar", ".war", ".ear", ".apk", ".whl", ".xpi", ".vsix", ".nupkg", ".cbz"}:
             self._reader = zipfile.ZipFile(self.path, "r")
@@ -240,9 +237,7 @@ class ArchiveReader:
                 first = rel.split("/", 1)[0]
                 is_dir = member.isdir() or rel.endswith("/")
                 rest = rel[len(first) + 1 :]
-                if not is_dir and rest:
-                    entries[first] = ArchiveEntry(name=first, is_dir=True, size=None)
-                elif is_dir:
+                if not is_dir and rest or is_dir:
                     entries[first] = ArchiveEntry(name=first, is_dir=True, size=None)
                 else:
                     size = member.size if not member.issym() and not member.islnk() else None

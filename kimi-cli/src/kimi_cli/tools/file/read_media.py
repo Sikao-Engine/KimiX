@@ -35,10 +35,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, override
 
-from kaos.path import KaosPath
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
+from kaos.path import KaosPath
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, FileType, detect_file_type
@@ -67,10 +66,15 @@ from kimi_cli.utils.path import (
     kaos_path_from_user_input,
 )
 from kimi_cli.wire.types import ImageURLPart, TextPart, VideoURLPart
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 from .read_media_shared import (
     ImageDelivery as _ImageDelivery,
+)
+from .read_media_shared import (
     build_media_note,
+)
+from .read_media_shared import (
     to_data_url as _to_data_url,
 )
 
@@ -136,7 +140,7 @@ def _try_mipmap_fallback(
                 url=_to_data_url(result.mime_type, result.data)
             )
         )
-        wrapped = wrap_media_part(part, tag="image", attrs={"path": media_path})
+        wrap_media_part(part, tag="image", attrs={"path": media_path})
         delivery = _ImageDelivery(
             kind="downsampled",
             width=result.width,
@@ -217,13 +221,13 @@ class Params(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_region(self) -> "Params":
+    def _validate_region(self) -> Params:
         if self.region is not None and self.region_pct is not None:
             raise ValueError("Specify either `region` or `region_pct`, not both.")
         return self
 
     @model_validator(mode="after")
-    def _validate_video_params(self) -> "Params":
+    def _validate_video_params(self) -> Params:
         if self.full_resolution and self.info_only:
             raise ValueError("Cannot set both full_resolution=True and info_only=True.")
         return self
@@ -291,8 +295,9 @@ class ReadMediaFile(CallableTool2[Params]):
         # Info-only mode: return metadata without loading into context
         if params.info_only:
             if kind == "image":
-                from PIL import Image as PILImage
                 import io
+
+                from PIL import Image as PILImage
                 pil = PILImage.open(io.BytesIO(data))
                 dims = f"{pil.width}x{pil.height}"
             else:
@@ -580,8 +585,9 @@ class ReadMediaFile(CallableTool2[Params]):
             ):
                 if params.auto_convert:
                     # Auto-convert unsupported format to PNG
-                    from PIL import Image as PILImage
                     import io
+
+                    from PIL import Image as PILImage
                     try:
                         full_data = await p.read_bytes()
                         pil_image = PILImage.open(io.BytesIO(full_data))

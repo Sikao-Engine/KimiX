@@ -8,17 +8,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import override
 
-from kaos.path import KaosPath
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue, alias_note
 from pydantic import AliasChoices, BaseModel, Field
 
+from kaos.path import KaosPath
 from kimi_cli.native_loader import (
     get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.file.micro_compress import (
     MicroCompressConfig,
+)
+from kimi_cli.tools.file.micro_compress import (
     compress_lines as _mc_compress_lines,
 )
 from kimi_cli.tools.file.output_utils import fold_lines, truncate_line
@@ -26,6 +29,7 @@ from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import kaos_path_from_tool_input
 from kimi_cli.vfs import VFS
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue, alias_note
 
 from .utils import resolve_vfs
 

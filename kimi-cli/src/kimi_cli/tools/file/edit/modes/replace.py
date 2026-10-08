@@ -8,8 +8,6 @@ from stat import S_ISREG
 from typing import Any
 
 import pendulum
-
-from kosong.tooling import ToolError, ToolReturnValue
 from rapidfuzz import fuzz, process
 
 from kimi_cli.tools.display import DisplayBlock
@@ -30,6 +28,7 @@ from kimi_cli.tools.file.snapshot_store import (
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_directory, kaos_path_from_tool_input
+from kosong.tooling import ToolError, ToolReturnValue
 
 from ..base import BaseEditTool
 from ..params import EditMode

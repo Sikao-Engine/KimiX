@@ -1,15 +1,16 @@
 """Plan file tools: WritePlan, ReadPlan, EditPlan, EditTool."""
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import anyio
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimi_cli.session import Session
-from pydantic import BaseModel, Field, model_validator
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import truncate_line
+from pydantic import BaseModel, Field, model_validator
 from rapidfuzz import fuzz, process
+
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimix.tools.prompt_common import accepts_alias_text
 
 MAX_LINES = 1000
@@ -155,9 +156,8 @@ class ReadPlan(CallableTool2):
             else:
                 result = await self._read_forward(path, params)
 
-            if isinstance(result, ToolOk):
-                if isinstance(result.output, str):
-                    result.output = result.output[params.char_offset:params.max_char]
+            if isinstance(result, ToolOk) and isinstance(result.output, str):
+                result.output = result.output[params.char_offset:params.max_char]
             return result
         except Exception as exc:
             return ToolError(
@@ -394,7 +394,7 @@ class EditPlan(CallableTool2):
         norm_lines = norm_content.splitlines()
 
         if target_line_count == 1:
-            for orig_line, norm_line in zip(original_lines, norm_lines):
+            for orig_line, norm_line in zip(original_lines, norm_lines, strict=False):
                 score = fuzz.ratio(norm_target, norm_line)
                 if score > best_score:
                     best_score = score

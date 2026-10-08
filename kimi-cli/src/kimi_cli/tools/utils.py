@@ -1,13 +1,14 @@
-import regex as re
 from pathlib import Path
 from typing import Any, Union, get_args, get_origin
 
 import json_repair
 import orjson
+import regex as re
 from jinja2 import Environment, Undefined
+from pydantic import BaseModel
+
 from kosong.tooling import BriefDisplayBlock, DisplayBlock, ToolError, ToolReturnValue
 from kosong.utils.typing import JsonType
-from pydantic import BaseModel
 
 
 def _looks_like_json(value: str) -> bool:

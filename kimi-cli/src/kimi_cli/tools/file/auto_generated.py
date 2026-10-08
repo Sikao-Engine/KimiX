@@ -27,9 +27,9 @@ from collections import OrderedDict
 from pathlib import Path
 
 import regex
-from kosong.tooling import ToolError
 
 from kimi_cli.session import Session
+from kosong.tooling import ToolError
 
 CHECK_BYTE_COUNT = 1024
 HEADER_LINE_LIMIT = 40
@@ -165,9 +165,7 @@ def extract_leading_header_comment_text(
 
         if in_block is not None:
             collected.append(stripped)
-            if in_block == "slash" and "*/" in stripped:
-                in_block = None
-            elif in_block == "html" and "-->" in stripped:
+            if in_block == "slash" and "*/" in stripped or in_block == "html" and "-->" in stripped:
                 in_block = None
             started = True
             continue
@@ -254,7 +252,7 @@ def should_block_auto_generated(session: Session | None) -> bool:
 
 # ── detection cache (port of the LRU(10) keyed by (mtime, size)) ─────────────
 
-_MARKER_CACHE: "OrderedDict[str, tuple[int, int, str | None]]" = OrderedDict()
+_MARKER_CACHE: OrderedDict[str, tuple[int, int, str | None]] = OrderedDict()
 _MARKER_CACHE_MAX = 10
 
 

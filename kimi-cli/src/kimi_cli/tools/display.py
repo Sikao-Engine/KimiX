@@ -1,7 +1,7 @@
-from kosong.tooling import DisplayBlock
 from pydantic import BaseModel
 
 from kimi_cli.session_state import TodoStatus
+from kosong.tooling import DisplayBlock
 
 
 class DiffDisplayBlock(DisplayBlock):

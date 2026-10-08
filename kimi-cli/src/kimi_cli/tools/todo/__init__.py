@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import regex
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,14 +10,7 @@ from typing import Any, ClassVar, Literal, cast, override
 
 import orjson
 import rapidfuzz
-from kosong.tooling import (
-    FIELD_ALIASES_TODO_LIST,
-    _COMMON_FIELD_ALIASES,
-    CallableTool2,
-    ToolError,
-    ToolReturnValue,
-    alias_note,
-)
+import regex
 from pydantic import (
     AliasChoices,
     BaseModel,
@@ -37,6 +29,14 @@ from kimi_cli.session_state import TodoItemState, TodoStatus
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools.display import TodoDisplayBlock, TodoDisplayItem
 from kimi_cli.tools.utils import repair_json_string
+from kosong.tooling import (
+    _COMMON_FIELD_ALIASES,
+    FIELD_ALIASES_TODO_LIST,
+    CallableTool2,
+    ToolError,
+    ToolReturnValue,
+    alias_note,
+)
 
 _TODOLIST_DESCRIPTION = (
     "Read or write the todo plan — one tool, one item shape, every operation.\n\n"
@@ -1004,29 +1004,35 @@ class TodoList(CallableTool2[Params]):
         warnings: list[str] = _derived_title_warnings(new_todos)
         replaces_list = False
         if params.mode == "clear":
-            if old_todos and not all(t.status == "done" for t in old_todos):
-                if not params.force:
-                    unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
-                    return self._error(
-                        "Error: Cannot clear todos while old todos are not all done. "
-                        "Next step: mark them done first, "
-                        "or call with mode='clear' and force=True to discard them intentionally.\n"
-                        f"Unfinished:\n{unfinished}",
-                        "Cannot clear todos while old todos are not all done.",
-                        display=[self._build_display_block(old_todos)],
-                    )
+            if (
+                old_todos
+                and not all(t.status == "done" for t in old_todos)
+                and not params.force
+            ):
+                unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
+                return self._error(
+                    "Error: Cannot clear todos while old todos are not all done. "
+                    "Next step: mark them done first, "
+                    "or call with mode='clear' and force=True to discard them intentionally.\n"
+                    f"Unfinished:\n{unfinished}",
+                    "Cannot clear todos while old todos are not all done.",
+                    display=[self._build_display_block(old_todos)],
+                )
             final_todos = []
             replaces_list = True
         elif params.mode == "replace":
-            if old_todos and not all(t.status == "done" for t in old_todos):
-                if not params.force:
-                    unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
-                    return self._error(
-                        "Error: Cannot replace todos while old todos are not all done. "
-                        "Use force=True if you really want to discard unfinished work.\n"
-                        f"Unfinished:\n{unfinished}",
-                        "Cannot replace todos while old todos are not all done.",
-                    )
+            if (
+                old_todos
+                and not all(t.status == "done" for t in old_todos)
+                and not params.force
+            ):
+                unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
+                return self._error(
+                    "Error: Cannot replace todos while old todos are not all done. "
+                    "Use force=True if you really want to discard unfinished work.\n"
+                    f"Unfinished:\n{unfinished}",
+                    "Cannot replace todos while old todos are not all done.",
+                )
             final_todos = list(new_todos)
             replaces_list = True
         else:

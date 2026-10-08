@@ -3,22 +3,25 @@ import collections
 import dataclasses
 import inspect
 import io
-import regex as re
+import queue
 import threading
 import time
-import queue
 from typing import Any, Awaitable, Callable, cast
+
+import regex as re
 
 BackgroundOutputFormatter = Callable[
     [str, bool, int | None, float | None, bool | None],
     Awaitable[tuple[str, str, str | None, str | None, bool]],
 ]
 
-from kimi_cli.native_loader import (
+from kimi_cli.native_loader import (  # noqa: E402 -- deliberately a late import
     get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (  # noqa: E402 -- deliberately a late import
     use_native as _native_use_native,
 )
-from kimi_cli.session import Session
+from kimi_cli.session import Session  # noqa: E402 -- deliberately a late import
 
 # Resolved once at import time (stable runtime: result never changes).
 _NATIVE_TOOLS = _native_get_module("tools")
@@ -232,7 +235,12 @@ class BackgroundStream:
                         v._success = bool(result[0])
                         v._exit_code = result[1]
                     else:
-                        v._success = False if result == False else True
+                        # `result == False` (not `not result`) is deliberate: a
+                        # function that returns None must count as SUCCESS, while a
+                        # literal False (or 0) counts as failure.  Rewriting this as
+                        # `not result` silently flips None to failure (regression
+                        # caught by tests/unit/tools/test_elapsed_report.py).
+                        v._success = False if result == False else True  # noqa: E712
                 except Exception:
                     v._success = False
                 finally:
@@ -473,10 +481,7 @@ class BackgroundStream:
 
 
 def generate_task_id(session: Session, kind: str, name: str | None = None) -> str:
-    if name:
-        base_id = f"{kind}_{name}"
-    else:
-        base_id = kind
+    base_id = f"{kind}_{name}" if name else kind
     data = _get_or_add_task_data(session)
     if base_id not in data.task_names:
         data.task_names[base_id] = 0

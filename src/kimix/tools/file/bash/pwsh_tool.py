@@ -1,28 +1,27 @@
 """PowerShell tool that executes commands via the system PowerShell executable."""
 
 import asyncio
-import pybase64 as base64
 import contextlib
 import functools
 import os
-from pathlib import Path
-import regex as re
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import AliasChoices, BaseModel, Field, model_validator
+import pybase64 as base64
+import regex as re
 from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.utils import load_desc
 from kimi_cli.tools.display import ShellDisplayBlock
-from kimix.tools.file.bash import bash_tool as _bash_tool
-from kimix.tools.file.bash.process_pwsh import pwsh_transform
-from kimix.tools.file.bash.pwsh_fix import fix_pwsh_command
+from kimi_cli.tools.utils import load_desc
+from pydantic import AliasChoices, BaseModel, Field, model_validator
+
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimix.tools.background.utils import BackgroundStream
 from kimix.tools.common import (
+    ProcessTask,
     _append_elapsed,
     _build_session_output_block,
     _command_saved_message,
@@ -37,7 +36,20 @@ from kimix.tools.common import (
     _subprocess_elapsed,
     _summarize_long_output_async,
     _token_filter_output,
-    ProcessTask,
+)
+from kimix.tools.file.bash import bash_tool as _bash_tool
+from kimix.tools.file.bash.output_enhance import (
+    annotate_failure,
+    interpret_exit_code,
+    is_expected_exit,
+    redact_sensitive_output,
+)
+from kimix.tools.file.bash.process_pwsh import pwsh_transform
+from kimix.tools.file.bash.pwsh_fix import fix_pwsh_command
+from kimix.tools.file.bash.safety import (
+    check_hardline_blocked,
+    foreground_background_guidance,
+    self_kill_hint,
 )
 from kimix.tools.prompt_common import (
     accepts_alias_text,
@@ -46,23 +58,11 @@ from kimix.tools.prompt_common import (
     normalize_mode_validator,
     shell_cmd_required_validator,
     task_id_field,
-    timeout_field,
     wait_for_pattern_field,
-)
-from kimix.tools.file.bash.output_enhance import (
-    annotate_failure,
-    interpret_exit_code,
-    is_expected_exit,
-    redact_sensitive_output,
-)
-from kimix.tools.file.bash.safety import (
-    check_hardline_blocked,
-    foreground_background_guidance,
-    self_kill_hint,
 )
 
 if TYPE_CHECKING:
-    from kimi_agent_sdk import CallableTool2 as _CallableTool2
+    pass
 
 # Console initialization prepended to every PowerShell command. Sets UTF-8
 # output encoding and treats Ctrl+C as regular input so that console control
@@ -779,7 +779,7 @@ class Powershell(CallableTool2[PowershellParams]):
         return ToolOk(
             output=block,
             message=_append_elapsed(msg, spent_seconds),
-            brief=f"Command executed successfully",
+            brief="Command executed successfully",
             display_block=ShellDisplayBlock(language="powershell"),
         )
 

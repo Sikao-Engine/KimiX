@@ -21,6 +21,7 @@ no-ops in the plan).
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -44,10 +45,8 @@ def register_invalidator(fn: Callable[[str], None]) -> None:
 
 def unregister_invalidator(fn: Callable[[str], None]) -> None:
     """Remove a previously registered invalidator (test hook)."""
-    try:
+    with contextlib.suppress(ValueError):
         _INVALIDATORS.remove(fn)
-    except ValueError:
-        pass
 
 
 def _canonical(path: str) -> str:

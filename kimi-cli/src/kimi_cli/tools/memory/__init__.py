@@ -9,8 +9,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, override
 
-from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
+
+from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
 
 if TYPE_CHECKING:
     from kimi_cli.soul.history_index import HistoryIndex
@@ -33,7 +34,7 @@ class Params(BaseModel):
     )
 
 
-class retrieve(CallableTool2[Params]):
+class retrieve(CallableTool2[Params]):  # noqa: N801
     name: str = "retrieve"
     description: str = (
         "Retrieve past conversation history, including compacted/archived turns. "

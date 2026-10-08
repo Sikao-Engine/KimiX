@@ -1,12 +1,22 @@
 """Background task management tools."""
-import sys
 import asyncio
+import sys
+from typing import Literal
 
 import regex as re
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import AliasChoices, BaseModel, Field, model_validator
-from typing import Literal
 from kimi_cli.session import Session
+from kimi_cli.tools.display import BackgroundTaskDisplayBlock
+from pydantic import AliasChoices, BaseModel, Field, model_validator
+
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimix.tools.common import (
+    _append_elapsed,
+    _elapsed_tag,
+    _maybe_export_output_async,
+    _maybe_export_rtk_original_async,
+    _original_saved_message,
+)
+from kimix.tools.prompt_common import accepts_alias_text, wait_for_pattern_field
 
 from .utils import (
     MAX_FINISHED_TASKS,
@@ -20,15 +30,6 @@ from .utils import (
     record_finished_task,
     remove_task_id,
 )
-from kimix.tools.common import (
-    _append_elapsed,
-    _elapsed_tag,
-    _maybe_export_output_async,
-    _maybe_export_rtk_original_async,
-    _original_saved_message,
-)
-from kimix.tools.prompt_common import accepts_alias_text, wait_for_pattern_field
-from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 
 
 class TaskOutputParams(BaseModel):
@@ -301,6 +302,7 @@ class TaskOutput(CallableTool2):
 
         if params.output_path:
             from pathlib import Path
+
             import anyio
             path = Path(params.output_path)
             async with await anyio.open_file(path, 'w', encoding='utf-8') as f:
@@ -423,6 +425,7 @@ class TaskOutput(CallableTool2):
             if not success:
                 if params.output_path:
                     from pathlib import Path
+
                     import anyio
                     path = Path(params.output_path)
                     async with await anyio.open_file(path, 'w', encoding='utf-8') as f:
@@ -449,6 +452,7 @@ class TaskOutput(CallableTool2):
 
         if params.output_path:
             from pathlib import Path
+
             import anyio
             path = Path(params.output_path)
             async with await anyio.open_file(path, 'w', encoding='utf-8') as f:

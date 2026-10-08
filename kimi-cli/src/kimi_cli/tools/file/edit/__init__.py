@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
-
 from kimi_cli.session import Session
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.vfs import VFS
+from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 
 from .base import BaseEditTool
 from .modes import MODE_REGISTRY

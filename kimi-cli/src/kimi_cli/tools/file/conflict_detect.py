@@ -12,8 +12,9 @@ helper), so read/write/edit can all share it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Sequence
+from typing import TYPE_CHECKING, Literal
 
 import regex as re
 
@@ -302,7 +303,7 @@ def scan_file_for_conflicts(
     except OSError as exc:  # pragma: no cover - caller guards
         raise ConflictError(
                 f"Cannot scan {absolute_path}: {exc}"
-            )
+            ) from exc
     truncated = len(data) > max_bytes
     if truncated:
         data = data[:max_bytes]
@@ -365,7 +366,7 @@ class ConflictHistory:
         entry_id = self._by_key.get(key)
         if entry_id is not None and entry_id in self._entries:
             # Overwrite the recorded region (ids survive re-reads).
-            old = self._entries[entry_id]
+            self._entries[entry_id]
             entry = ConflictEntry(
                 start_line=block.start_line,
                 separator_line=block.separator_line,
@@ -477,9 +478,9 @@ def parse_conflict_uri(raw: str) -> ParsedConflictUri | None:
         entry_id = int(id_part)
     except ValueError:
         raise ConflictError(
-                f"Invalid conflict id '{id_part}' in '{raw}'. "
-                "Expected conflict://<N> or conflict://<N>/<ours|theirs|base>."
-            )
+            f"Invalid conflict id '{id_part}' in '{raw}'. "
+            "Expected conflict://<N> or conflict://<N>/<ours|theirs|base>."
+        ) from None
     if entry_id <= 0:
         raise ConflictError(
                 f"Invalid conflict id '{id_part}' — ids start at 1."

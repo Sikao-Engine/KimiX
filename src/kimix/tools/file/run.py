@@ -1,32 +1,39 @@
 """run tool for executing a process from a path."""
-import anyio
 import asyncio
+import contextlib
+import functools
 import os
+import shlex
+import shutil
+import sys
 from pathlib import Path
 from typing import Literal
+
+import anyio
 import regex as re
-import shlex
-import sys
-from kimi_cli.tools import SkipThisTool
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import AliasChoices, BaseModel, Field, model_validator
 from kimi_cli.session import Session
+from kimi_cli.tools import SkipThisTool
+from kimi_cli.tools.display import ShellDisplayBlock
+from pydantic import AliasChoices, BaseModel, Field, model_validator
+
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimix.tools.background.utils import BackgroundStream
 from kimix.tools.common import (
+    ProcessTask,
     _build_session_output_block,
     _create_script_file,
     _env_with_rg_bin_path,
+    _export_to_temp_file_async,
     _extract_export_path,
     _interactive_scope_text,
     _is_known_rtk_command,
     _maybe_export_output_async,
     _maybe_export_rtk_original_async,
-    _export_to_temp_file_async,
     _original_saved_message,
-    _save_original_output_async,
     _rtk_binary_path,
+    _save_original_output_async,
     _summarize_long_output_async,
     _token_filter_output,
-    ProcessTask,
 )
 from kimix.tools.file.bash.output_enhance import (
     annotate_failure,
@@ -46,11 +53,7 @@ from kimix.tools.prompt_common import (
     timeout_field,
     wait_for_pattern_field,
 )
-from kimi_cli.tools.display import ShellDisplayBlock
-from kimix.tools.background.utils import BackgroundStream
-from kimi_cli.share import get_share_dir
-import functools
-import shutil
+
 _HUGE_CMD_THRESHOLD = 10000
 """Character count above which command display is culled to only the path."""
 
@@ -93,10 +96,7 @@ def find_bash() -> str | None:
         git_path = shutil.which("git")
         if git_path:
             git_exe = Path(git_path).resolve()
-            if git_exe.parent.name.lower() == "bin":
-                git_root = git_exe.parent
-            else:
-                git_root = git_exe.parent
+            git_root = git_exe.parent if git_exe.parent.name.lower() == "bin" else git_exe.parent
             for subpath in ("bin/bash", "usr/bin/bash"):
                 bash_candidate = git_root / subpath
                 if bash_candidate.exists():
@@ -379,12 +379,6 @@ class Run(CallableTool2[RunParams]):
                 executable = str(rtk_path)
                 rtk_rewritten = True
 
-            display_executable = "rtk" if rtk_rewritten else executable
-            display_args = [
-                arg[:100] + '...' if len(arg) > 100 else arg for arg in args_list]
-            cmd_str = shlex.join([display_executable] + display_args)
-            display_cmd = display_executable if len(
-                cmd_str) > _HUGE_CMD_THRESHOLD else cmd_str
 
             # Handle extremely long python -c scripts via a script file in the
             # shared temp folder (Windows CreateProcessW ~32767 limit).
@@ -455,7 +449,7 @@ class Run(CallableTool2[RunParams]):
                         return await self._format_session_result(
                             task_id, task.stream, params, output, "running",
                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-                            message=(f"[rtk] Matched pattern, still running" if rtk_rewritten else "Matched pattern, still running"),
+                            message=("[rtk] Matched pattern, still running" if rtk_rewritten else "Matched pattern, still running"),
                             brief="Pattern matched",
                             rtk_rewritten=rtk_rewritten,
                         )
@@ -552,7 +546,6 @@ class Run(CallableTool2[RunParams]):
                         output_truncated=output_truncated,
                         original_path=original_path,
                     )
-                    elapsed = task.stream.process_elapsed if task.stream else None
                     msg = "[rtk] failed" if rtk_rewritten else "failed"
                     if hint:
                         msg += f" Hint: {hint}"
@@ -581,7 +574,6 @@ class Run(CallableTool2[RunParams]):
                     output_truncated=output_truncated,
                     original_path=original_path,
                 )
-                elapsed = task.stream.process_elapsed if task.stream else None
                 msg = (meaning or "expected non-zero exit") if not success else ("[rtk] success" if rtk_rewritten else "success")
                 suffix = _original_saved_message(original_path)
                 if suffix:
@@ -592,7 +584,7 @@ class Run(CallableTool2[RunParams]):
                     brief="Command executed successfully",
                     display_block=ShellDisplayBlock(language="shell"),
                 )
-        except Exception as e:
+        except Exception:
             return ToolError(
                 output='',
                 message='Internal error, quit current session now.',
@@ -600,10 +592,8 @@ class Run(CallableTool2[RunParams]):
             )
         finally:
             if script_path is not None:
-                try:
+                with contextlib.suppress(Exception):
                     os.remove(script_path)
-                except Exception:
-                    pass
 
     async def _run_via_shell(self, params: RunParams) -> ToolReturnValue:
         """Execute the command via the system shell (bash/pwsh).

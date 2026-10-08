@@ -2,9 +2,9 @@
 import asyncio
 from pathlib import Path
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from pydantic import BaseModel, Field
 
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimix.tools.common import _maybe_export_output
 from kimix.tools.web.web_fetcher import fetch_to_markdown
 
@@ -20,7 +20,7 @@ class Params(BaseModel):
     )
 
 
-class fetch_url(CallableTool2[Params]):
+class fetch_url(CallableTool2[Params]):  # noqa: N801
     """Fetch a web page and return its content as Markdown."""
     name: str = "fetch_url"
     description: str = "Fetch a web page as Markdown."
@@ -62,6 +62,8 @@ class fetch_url(CallableTool2[Params]):
         # still saves the raw fetched content.
         from kimi_cli.tools.file.micro_compress import (
             MicroCompressConfig,
+        )
+        from kimi_cli.tools.file.micro_compress import (
             compress as _mc_compress,
         )
 

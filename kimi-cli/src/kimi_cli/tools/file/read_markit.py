@@ -91,8 +91,8 @@ def _convert_docx_to_markdown(path: str) -> str:
     """Extract a .docx as markdown with heading and table markers."""
     try:
         from docx import Document
-        from docx.text.paragraph import Paragraph
         from docx.table import Table
+        from docx.text.paragraph import Paragraph
     except ImportError as exc:
         raise ExtractionError(f"python-docx is required for .docx extraction: {exc}") from exc
     try:
@@ -224,7 +224,7 @@ def markdown_to_text(md: str) -> str:
     # headings) never rewrite code content. Restored at the end.
     inline_code: list[str] = []
 
-    def _capture_inline_code(m: "re.Match[str]") -> str:
+    def _capture_inline_code(m: re.Match[str]) -> str:
         inline_code.append(m.group(1))
         return f"\x00CODE{len(inline_code) - 1}\x00"
 

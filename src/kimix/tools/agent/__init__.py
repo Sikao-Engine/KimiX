@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 import uuid
 from dataclasses import dataclass
@@ -161,10 +162,8 @@ async def _destroy_child_sessions_async(parent_id: str) -> list[str]:
     for child_id in _take_child_sessions(parent_id):
         session = _release_child_session(child_id)
         if session is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await close_session_async(session)
-            except Exception:
-                pass
         destroyed.append(child_id)
     return destroyed
 
@@ -415,10 +414,8 @@ def _consume_background_task_error(task: asyncio.Task) -> None:
     """Retrieve a finished background task's exception (never raises)."""
     if task.cancelled():
         return
-    try:
+    with contextlib.suppress(Exception):
         task.exception()
-    except Exception:
-        pass
 
 
 def _get_store(session: Session) -> AgentSessionStore:
@@ -509,9 +506,8 @@ class _AgentConversationCollector:
                 turn.role == "assistant"
                 and turn.metadata is not None
                 and turn.metadata.get("type") == "text"
-            ):
-                if isinstance(turn.content, str):
-                    output_parts.append(turn.content)
+            ) and isinstance(turn.content, str):
+                output_parts.append(turn.content)
         return "".join(output_parts)
 
 
@@ -580,8 +576,7 @@ class Agent(CallableTool2):
         lost inside the detached task.
         """
         session, session_id, is_reused = await self._resolve_session(params)
-        store = _get_store(self._session)
-        entry = store.get(session_id)
+        _get_store(self._session)
 
         # Resolve @file prompt references to the full task text first.
         work_dir = _session_work_dir(self._session)
@@ -629,10 +624,7 @@ class Agent(CallableTool2):
         # default so the durable id stays listed/resumable/messageable (the
         # documented background contract); foreground runs close by default.
         # An explicit close_session always wins.
-        if params.close_session is None:
-            effective_close = not background
-        else:
-            effective_close = params.close_session
+        effective_close = not background if params.close_session is None else params.close_session
         effective_params = params.model_copy(update={"close_session": effective_close})
         return _PreparedRun(
             params=effective_params,

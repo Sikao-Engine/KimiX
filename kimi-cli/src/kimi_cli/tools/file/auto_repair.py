@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Awaitable, Callable
 
 from rapidfuzz.distance import Levenshtein
 
@@ -205,8 +205,8 @@ def realign_to_source(src_lines: list[str], candidate: str) -> str:
     """Re-indent candidate by trimmed-line alignment against source lines."""
     out = candidate.split("\n")
     opcodes = Levenshtein.opcodes(
-        [l.strip() for l in src_lines],
-        [l.strip() for l in out],
+            [line.strip() for line in src_lines],
+            [line.strip() for line in out],
     )
     merged: list[str] = []
     si = 0
@@ -293,7 +293,7 @@ async def repair_parse_regression(
         return None
 
     previous_attempt: str | None = None
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for _attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             prompt = _build_prompt(region, previous_attempt)
             candidate = strip_code_fence(await asyncio.wait_for(complete(prompt), timeout=REPAIR_TIMEOUT_SECONDS))

@@ -23,11 +23,13 @@ pre-overwrite safety snapshot) resolve stale anchors back to recorded text.
 
 from __future__ import annotations
 
+import contextlib
 import time
 from collections import OrderedDict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 import xxhash
 
@@ -444,10 +446,8 @@ def _record_both_stores(
         tag = get_file_snapshot_store(session).record(absolute_path, text, seen_lines)
     except Exception:
         tag = None
-    try:
+    with contextlib.suppress(Exception):
         get_edit_snapshot_store(session).record(absolute_path, text, seen_lines)
-    except Exception:
-        pass
     return tag
 
 

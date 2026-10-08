@@ -8,9 +8,8 @@ from stat import S_ISREG
 from typing import Any
 
 import json_repair
-from kaos.path import KaosPath
-from kosong.tooling import ToolError, ToolReturnValue
 
+from kaos.path import KaosPath
 from kimi_cli.session import Session
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
@@ -31,6 +30,7 @@ from kimi_cli.utils.path import (
     kaos_path_from_user_input,
 )
 from kimi_cli.vfs import VFS
+from kosong.tooling import ToolError, ToolReturnValue
 
 from ..utils import check_path_protected, resolve_vfs
 
@@ -72,8 +72,9 @@ class BaseEditTool:
                 False,
             )
         protected_paths = self._session.custom_config.get("config_json", {}).get("protected_write_paths")
-        if protected_paths:
-            if matched := check_path_protected(resolved_path, protected_paths, self._work_dir):
+        if protected_paths and (
+            matched := check_path_protected(resolved_path, protected_paths, self._work_dir)
+        ):
                 return (
                     ToolError(
                         message=f"Editing `{path}` is blocked by protected path rule: `{matched}`.",

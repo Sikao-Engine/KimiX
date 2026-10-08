@@ -14,7 +14,7 @@ conventions block travels with every request.  See ``plan.md`` Part 1.
 
 from typing import Any
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import Field, model_validator
 
 __all__ = [
     "accepts_alias_text",

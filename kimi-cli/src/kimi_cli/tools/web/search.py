@@ -1,7 +1,6 @@
 import inspect
 from typing import Any, override
 
-from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
@@ -9,6 +8,7 @@ from kimi_cli.soul.agent import Runtime
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.utils import ToolResultBuilder
 from kimi_cli.utils.logging import logger as _logging_logger
+from kosong.tooling import CallableTool2, ToolReturnValue
 
 # Module-level ``logger`` attribute kept so tests can patch
 # ``kimi_cli.tools.web.search.logger``.

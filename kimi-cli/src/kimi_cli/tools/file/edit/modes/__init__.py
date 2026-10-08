@@ -8,7 +8,6 @@ from .replace import ReplaceModeExecutor
 from .sloppy import SloppyModeExecutor
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
 
     from kimi_cli.tools.file.edit.params import EditMode
 

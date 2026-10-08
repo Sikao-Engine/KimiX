@@ -16,7 +16,6 @@ import fnmatch
 import heapq
 import os
 import platform
-import regex as re
 import shlex
 import tempfile
 from dataclasses import dataclass, field
@@ -24,18 +23,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, override
 
-from kaos.path import KaosPath
-from kosong.tooling import (
-    FIELD_ALIASES_FILE,
-    FIELD_ALIASES_GENERAL,
-    FIELD_ALIASES_WEB,
-    CallableTool2,
-    ToolError,
-    ToolReturnValue,
-    alias_note,
-)
+import regex as re
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
+from kaos.path import KaosPath
 from kimi_cli._ripgrep_common import (
     RG_VERSION,
     _detect_rg_target,
@@ -68,6 +59,8 @@ from kimi_cli.tools.file.grep_selectors import (
 )
 from kimi_cli.tools.file.micro_compress import (
     MicroCompressConfig,
+)
+from kimi_cli.tools.file.micro_compress import (
     compress_lines as _mc_compress_lines,
 )
 from kimi_cli.tools.file.output_utils import (
@@ -86,6 +79,15 @@ from kimi_cli.utils.path import (
 )
 from kimi_cli.utils.sensitive import is_sensitive_file, sensitive_file_warning
 from kimi_cli.vfs import VFS
+from kosong.tooling import (
+    FIELD_ALIASES_FILE,
+    FIELD_ALIASES_GENERAL,
+    FIELD_ALIASES_WEB,
+    CallableTool2,
+    ToolError,
+    ToolReturnValue,
+    alias_note,
+)
 
 # Output mode map — only canonical values accepted
 _OUTPUT_MODE_MAP: dict[str, Literal["files_with_matches", "count_matches", "content"]] = {

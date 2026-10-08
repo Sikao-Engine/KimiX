@@ -1,10 +1,13 @@
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
 from kimi_cli.native_loader import (
     get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
+from pydantic import BaseModel, Field
+
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimix.tools.common import _maybe_export_output
 
 # Resolved once at import time (stable runtime: result never changes).
@@ -30,32 +33,30 @@ class FindStr(CallableTool2):
     params: type[FindStrParams] = FindStrParams
 
     async def __call__(self, params: FindStrParams) -> ToolReturnValue:
-        import os
         import fnmatch
+        import os
 
         def find_files(target_path: str) -> list[str]:
             """Find files matching the path pattern."""
             # If path is a file, return it directly
             if os.path.isfile(target_path):
                 return [target_path]
-            
+
             # Check if path contains glob patterns
             has_glob = '*' in target_path or '?' in target_path
-            
+
             if has_glob:
                 # Split into base directory and pattern
                 # Handle patterns like "dir/*.ext" or "dir/**.ext"
-                dir_part = target_path
-                pattern = "*"
-                
+
                 # Find the last path separator that is not part of a glob
                 # We need to find where the directory ends and the file pattern begins
                 parts = target_path.replace('\\', '/').split('/')
-                
+
                 # Rebuild to find the split point
                 base_dir = ""
                 pattern_part = ""
-                
+
                 for i, part in enumerate(parts):
                     if '*' in part or '?' in part:
                         # This part contains glob, everything before is directory
@@ -66,16 +67,16 @@ class FindStr(CallableTool2):
                     # No glob found in parts (shouldn't happen due to has_glob check)
                     base_dir = os.path.dirname(target_path)
                     pattern_part = os.path.basename(target_path)
-                
+
                 if not base_dir:
                     base_dir = "."
-                
+
                 # Check for recursive pattern (**)
                 if '**' in pattern_part:
                     # Recursive search
                     ext_pattern = pattern_part.replace('**', '*')
                     files = []
-                    for root, dirnames, filenames in os.walk(base_dir):
+                    for root, _dirnames, filenames in os.walk(base_dir):
                         for filename in filenames:
                             if fnmatch.fnmatch(filename, ext_pattern):
                                 files.append(os.path.join(root, filename))
@@ -129,16 +130,10 @@ class FindStr(CallableTool2):
                         content, search_content, case_sensitive, file_path
                     )
 
-            if not case_sensitive:
-                search_lower = search_content.lower()
-            else:
-                search_lower = search_content
+            search_lower = search_content.lower() if not case_sensitive else search_content
 
             for line_num, line in enumerate(lines, start=1):
-                if not case_sensitive:
-                    line_to_search = line.lower()
-                else:
-                    line_to_search = line
+                line_to_search = line.lower() if not case_sensitive else line
 
                 # Find all occurrences in this line
                 start = 0
@@ -158,33 +153,33 @@ class FindStr(CallableTool2):
 
         try:
             files = find_files(params.path)
-            
+
             if not files:
                 return ToolOk(output=_maybe_export_output(f"No files found matching path: {params.path}"))
-            
+
             all_matches = []
             for file_path in files:
                 matches = find_in_file(file_path, params.content, params.case_sensitive)
                 all_matches.extend(matches)
-            
+
             if not all_matches:
                 return ToolOk(output=_maybe_export_output(f"No matches found for '{params.content}' in {params.path}"))
-            
+
             # Format results
             result_lines = [
                 f"Found {len(all_matches)} match(es) for '{params.content}':",
                 ""
             ]
-            
+
             current_file = None
             for match in all_matches:
                 if match['file'] != current_file:
                     current_file = match['file']
                     result_lines.append(f"File: {current_file}")
                 result_lines.append(f"  Line {match['line']}, Col {match['column']}: {match['content']}")
-            
+
             return ToolOk(output=_maybe_export_output("\n".join(result_lines)))
-            
+
         except Exception as exc:
             return ToolError(
                 output="",

@@ -37,7 +37,7 @@ class _CpuNode:
     call_frame: dict[str, Any]
     self_micros: int = 0
     total_micros: int = 0
-    children: list["_CpuNode"] = field(default_factory=list)
+    children: list[_CpuNode] = field(default_factory=list)
 
     def label(self) -> str:
         cf = self.call_frame
@@ -162,7 +162,7 @@ def _prune_hot_tree(node: _CpuNode, threshold: int, depth: int = 0, max_depth: i
     if node.total_micros < threshold and depth > 0:
         return []
     indent = "  " * depth
-    pct = (node.total_micros / max(1, node.total_micros)) * 100 if depth == 0 else 0.0
+    (node.total_micros / max(1, node.total_micros)) * 100 if depth == 0 else 0.0
     line = f"{indent}{node.label()}"
     lines = [line]
     for child in sorted(node.children, key=lambda c: c.total_micros, reverse=True):
@@ -391,7 +391,7 @@ def render_sample_profile(text: str) -> str | None:
 
     threads = parsed["threads"]
     self_counts: dict[str, int] = {}
-    for thread, stacks in threads.items():
+    for _thread, stacks in threads.items():
         for stack in stacks:
             if not stack:
                 continue

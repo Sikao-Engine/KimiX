@@ -1,8 +1,9 @@
 import asyncio
-import regex as re
+import contextlib
 import ssl
 
 import httpx
+import regex as re
 from markdownify import markdownify as md
 
 _DESKTOP_UA = (
@@ -72,15 +73,13 @@ async def _fetch_html(url: str, user_agent: str, viewport: dict, wait_until: str
                 if page.url == "about:blank" and not url.lower().startswith("about:"):
                     raise RuntimeError(
                         f"Browser navigation timed out without loading {url}"
-                    )
+                    ) from None
                 pass
             await page.wait_for_timeout(2000)
             html = await page.content()
         finally:
-            try:
+            with contextlib.suppress(Exception):
                 await browser.close()
-            except Exception:
-                pass
     return html
 
 
@@ -220,10 +219,8 @@ async def fetch_to_markdown(url: str, wait_until: str = "networkidle") -> str:
         try:
             html_mobile = await _fetch_html(url, _MOBILE_UA, {"width": 390, "height": 844}, wait_until)
         except Exception:
-            try:
+            with contextlib.suppress(Exception):
                 html_mobile = await fetch_html_http_with_fallback(url, _MOBILE_UA)
-            except Exception:
-                pass
         if html_mobile:
             markdown_mobile = _html_to_markdown(html_mobile)
             mobile_text_len = len(markdown_mobile.replace(" ", "").replace("\n", ""))

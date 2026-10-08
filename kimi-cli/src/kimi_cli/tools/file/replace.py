@@ -7,6 +7,7 @@ re-exports the names that existing code and tests import from here.
 from __future__ import annotations
 
 from kimi_cli.tools.file.edit import EditFile
-from kimi_cli.tools.file.edit.params import EditParams as Params, ReplaceEditItem as Edit
+from kimi_cli.tools.file.edit.params import EditParams as Params
+from kimi_cli.tools.file.edit.params import ReplaceEditItem as Edit
 
 __all__ = ["Edit", "EditFile", "Params"]

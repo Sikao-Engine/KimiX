@@ -100,3 +100,30 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 | G-ORPHAN | **PASS** - 32 discovered / 29 registered / 3 allowlisted / **0 orphans** |
 | G-POLICY | **PASS** - 0 hits, 1 justified waiver |
 | G-COMPACT | **PASS** - `tests/test_integration_compaction.py` + `kimi-cli/tests/core/test_kimisoul_context_prune.py` = 12 passed |
+
+## Phase-4 (second pass) findings
+
+| # | sev | axis | finding | evidence | disposition |
+|---|---|---|---|---|---|
+| **F-34** | medium | correctness | `BackgroundStream.start`'s inner `func` set `v._success = False if result == False else True`. The `== False` is deliberate (a helper returning `None` must count as SUCCESS), but it is an E712 trigger: the mechanical fix `not result` silently flips `None` to failure and broke `tests/unit/tools/test_elapsed_report.py` + `tests/unit/tools/test_taskmanager.py` (9 tests). Restored verbatim with `# noqa: E712` and an explanatory comment | `src/kimix/tools/background/utils.py:238` | **fixed**; the tests are the guard |
+| **F-35** | medium | simplicity | 101 `E501` line-too-long violations remain in `kimi-cli/src/kimi_cli/tools` (the kimi-cli ruff config does not ignore E501, unlike the root config). ~117 of the 165 flagged lines across both trees contain string literals / long f-strings, so a mechanical wrap risks changing model-facing text | `uv run ruff check --statistics kimi-cli/src/kimi_cli/tools` | **open, specified**: either wrap deliberately (6 sites are pure code) or have the owner raise `line-length`/add a per-file ignore. Recorded rather than mass-edited because the plan's §11 non-goals forbid reformatting-only changes |
+| **F-36** | low | simplicity | 5 tool classes use a lowercase class name (`context_prune`, `retrieve`, `fetch_url` x2, `compact`, `python`) where the rest of the codebase uses `CapWords` + a lowercase alias (`TodoList` / `todo_list`). Renaming would break manifests, so each carries a local `# noqa: N801` | `kimi_cli/tools/context_prune.py:81`, `memory/__init__.py:37`, `web/fetch.py:101`, `kimix/tools/context/__init__.py:53`, `py/__init__.py:96`, `web/fetch_url.py:23` | **recorded**: aligning them with the `TodoList`/`todo_list` convention is a suggested follow-up |
+| **F-37** | low | simplicity | 8 module-level imports deliberately follow code (`common.py`, `background/utils.py`, the shell re-export shims). Each now carries `# noqa: E402 -- deliberately a late import` instead of being moved (moving them changes import-time behaviour) | see the `noqa` sites | **fixed (documented)** |
+
+## FP-09 outcome
+
+`uv run ruff check --statistics kimi-cli/src/kimi_cli/tools src/kimix/tools`:
+**263 findings -> 101**, and all 101 are `E501` line-too-long (F-35). Every other
+rule category is now clean:
+
+```
+before:  E501 101  I001 65  F401 11  F841 11  UP* 12  SIM* 12  B* 9  E4xx 14  N* 4  ...
+after:   E501 101
+```
+
+Automated in this pass: 113 safe fixes (import order, pyupgrade, f-strings,
+`SIM114`, unused-import removal) plus 44 unsafe-but-reviewed fixes
+(`contextlib.suppress`, ternary collapse, `zip(strict=)`, `B007`); the remainder
+was hand-fixed with per-site reasons for the 5 `N801` classes and the 8 `E402`
+late imports. The `E712` autofix was REVERTED (F-34) after it was caught by the
+test suite.

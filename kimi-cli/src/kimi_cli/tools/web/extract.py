@@ -15,7 +15,6 @@ import inspect
 from typing import Any, cast, override
 
 import orjson
-from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
@@ -33,6 +32,7 @@ from kimi_cli.tools.web.url_safety import (
     url_contains_secret,
 )
 from kimi_cli.utils.logging import logger
+from kosong.tooling import CallableTool2, ToolReturnValue
 
 
 class Params(BaseModel):

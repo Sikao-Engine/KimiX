@@ -4,13 +4,14 @@ import contextlib
 from typing import Annotated, Literal, override
 
 import xxhash
-from rapidfuzz.distance import Levenshtein
-from kaos.path import KaosPath
-from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field, model_validator
+from rapidfuzz.distance import Levenshtein
 
+from kaos.path import KaosPath
 from kimi_cli.native_loader import (
     get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
 from kimi_cli.session import Session
@@ -26,6 +27,7 @@ from kimi_cli.utils.path import (
 )
 from kimi_cli.utils.sensitive import is_sensitive_file
 from kimi_cli.vfs import VFS
+from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
 
 from .auto_generated import assert_editable_file_content
 from .fs_cache import invalidate_fs_scan_after_write
@@ -96,8 +98,9 @@ def _cumulative_hashes(file_lines: list[str]) -> list[str]:
     trailing empty line — earlier hashes never depend on later lines and the
     pure-Python loop below is bit-identical otherwise.
     """
-    if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None:
-        if not file_lines or file_lines[-1] != "":
+    if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and (
+        not file_lines or file_lines[-1] != ""
+    ):
             return _NATIVE_TOOLS.compute_line_hashes("\n".join(file_lines))
     hashes: list[str] = []
     prev_hash: str | None = None
@@ -994,10 +997,8 @@ class HashEdit(CallableTool2[HashEditParams]):
             )
         with contextlib.suppress(Exception):
             invalidate_fs_scan_after_write(str(p))
-        try:
+        with contextlib.suppress(Exception):
             self._session.file_mtime.mark_dirty(str(p))
-        except Exception:
-            pass
         import pendulum
 
         rec = pendulum.from_timestamp(head.recorded_at).to_iso8601_string()

@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import asyncio
-import time
+import contextlib
 from typing import Any, Callable, Literal
 
 from pydantic import BaseModel
-from kimi_agent_sdk import Session
 
+from kimi_agent_sdk import Session
 from kimix.utils import close_session_async
 
 
@@ -65,10 +64,8 @@ class AgentSessionStore:
     def _notify_closed(self, session_id: str) -> None:
         if self._on_close is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self._on_close(session_id)
-        except Exception:
-            pass
 
     def get(self, session_id: str) -> AgentSessionEntry | None:
         return self.entries.get(session_id)
@@ -133,7 +130,5 @@ class AgentSessionStore:
             entry = self.entries.pop(lru_id)
             entry.is_active = False
             self._notify_closed(lru_id)
-            try:
+            with contextlib.suppress(Exception):
                 await close_session_async(entry.session)
-            except Exception:
-                pass

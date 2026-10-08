@@ -1,6 +1,7 @@
 """Python tool that executes code or runs .py files via the system Python executable."""
 
 import asyncio
+import contextlib
 import functools
 import os
 import sys
@@ -9,7 +10,13 @@ from typing import TYPE_CHECKING, Literal
 
 import anyio
 import regex as re
+from kimi_cli.session import Session
+from kimi_cli.share import get_share_dir
+from pydantic import AliasChoices, BaseModel, Field, model_validator
+
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimix.tools.common import (
+    ProcessTask,
     _append_elapsed,
     _build_session_output_block,
     _create_script_file,
@@ -23,7 +30,6 @@ from kimix.tools.common import (
     _subprocess_elapsed,
     _summarize_long_output_async,
     _token_filter_output,
-    ProcessTask,
 )
 from kimix.tools.prompt_common import (
     accepts_alias_text,
@@ -34,10 +40,6 @@ from kimix.tools.prompt_common import (
     timeout_field,
     wait_for_pattern_field,
 )
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import AliasChoices, BaseModel, Field, model_validator
-from kimi_cli.session import Session
-from kimi_cli.share import get_share_dir
 
 if TYPE_CHECKING:
     from kimix.tools.background.utils import BackgroundStream
@@ -91,7 +93,7 @@ class Params(BaseModel):
         return self
 
 
-class python(CallableTool2[Params]):
+class python(CallableTool2[Params]):  # noqa: N801
     name: str = "python"
     description: str = (
         "Execute Python code or a .py file (auto-detected via `code`). "
@@ -133,10 +135,8 @@ class python(CallableTool2[Params]):
             return override
         # 2. project .venv next to the session dir / cwd, walking up
         bases: list[Path] = []
-        try:
+        with contextlib.suppress(TypeError):
             bases.append(Path(self._session.dir))
-        except TypeError:
-            pass
         bases.append(Path.cwd())
         for base in bases:
             for parent in (base, *base.parents):
@@ -339,7 +339,7 @@ class python(CallableTool2[Params]):
         if syntax_error is not None:
             return syntax_error
 
-        if script_path is not None:
+        if script_path is not None:  # noqa: SIM108 -- the else branch carries an explanatory comment
             args = ["-i", script_path]
         else:
             # Pure interactive REPL (no initial code)
@@ -507,7 +507,7 @@ class python(CallableTool2[Params]):
                     return await self._format_session_result(
                         task_id, process_task.stream, params, output, "running",
                         wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-                        message=f"Python code matched pattern and is still running.",
+                        message="Python code matched pattern and is still running.",
                         brief="Pattern matched",
                     )
             else:
@@ -523,7 +523,7 @@ class python(CallableTool2[Params]):
             output = await _maybe_export_output_async(output)
             return ToolError(
                 output=output,
-                message=f"Python execution was cancelled.",
+                message="Python execution was cancelled.",
                 brief="Execution cancelled",
             )
 

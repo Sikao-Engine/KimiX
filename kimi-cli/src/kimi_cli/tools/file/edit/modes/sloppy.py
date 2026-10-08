@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import regex as re
 from dataclasses import dataclass, field
 
-from kaos.path import KaosPath
-from kosong.tooling import ToolError, ToolReturnValue
+import regex as re
 from rapidfuzz import fuzz
 
+from kaos.path import KaosPath
 from kimi_cli.tools.file import FileActions
 from kimi_cli.tools.file.edit.params import EditMode, EditParams
 from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
 from kimi_cli.utils.diff import build_diff_blocks
 from kimi_cli.utils.path import kaos_path_from_tool_input
+from kosong.tooling import ToolError, ToolReturnValue
 
 from ..base import BaseEditTool
 
@@ -167,8 +167,11 @@ def _find_fuzzy_block(content: str, block_lines: list[str], threshold: float = 0
     if best_score < threshold:
         return None
     # Convert line index to character range.
-    start_char = sum(len(l) + 1 for l in content_lines[:best_idx])
-    end_char = start_char + sum(len(l) + 1 for l in content_lines[best_idx : best_idx + window_size]) - 1
+    start_char = sum(len(line) + 1 for line in content_lines[:best_idx])
+    end_char = start_char + sum(
+        len(line) + 1
+        for line in content_lines[best_idx : best_idx + window_size]
+    ) - 1
     return start_char, end_char
 
 
@@ -184,7 +187,7 @@ def _apply_block_op(content: str, op: SloppyOp) -> str:
     if found is None:
         found = _find_fuzzy_block(content, match_lines)
     if found is None:
-        raise ValueError(f"Could not locate MATCH block:\n" + "\n".join(match_lines))
+        raise ValueError("Could not locate MATCH block:\n" + "\n".join(match_lines))
 
     start, end = found
 

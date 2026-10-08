@@ -21,9 +21,7 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
-from kimix.tools.file.bash import bash_fix
-from kimix.tools.file.bash import process_pwsh
-from kimix.tools.file.bash import pwsh_fix
+from kimix.tools.file.bash import bash_fix, process_pwsh, pwsh_fix
 
 # Flags shared by every one-shot PowerShell invocation (pwsh 7 and the
 # Windows PowerShell 5.1 fallback alike).

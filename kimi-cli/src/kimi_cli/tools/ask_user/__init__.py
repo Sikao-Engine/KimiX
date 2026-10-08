@@ -7,13 +7,13 @@ from typing import override
 from uuid import uuid4
 
 import orjson
-from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.soul import get_wire_or_none, wire_send
 from kimi_cli.soul.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.wire.types import QuestionItem, QuestionNotSupported, QuestionOption, QuestionRequest
+from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
 
 logger = logging.getLogger(__name__)
 

@@ -1,12 +1,13 @@
 """Tools for introspecting and compacting conversation context."""
 from __future__ import annotations
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimi_cli.soul import get_current_soul_or_none
 from kimi_cli.soul.compaction import CompactMode
 from kimi_cli.soul.dynamic_injections.compact_reminder import MIN_CONTEXT_USAGE
 from kimi_cli.soul.kimisoul import KimiSoul
 from pydantic import BaseModel, Field, model_validator
+
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 
 class CompactParams(BaseModel):
@@ -49,7 +50,7 @@ class CompactParams(BaseModel):
         return self
 
 
-class compact(CallableTool2):
+class compact(CallableTool2):  # noqa: N801
     name = "compact"
     description = (
         "Compact / summarize the conversation context to reduce token usage. "

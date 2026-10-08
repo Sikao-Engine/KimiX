@@ -1,11 +1,10 @@
-import orjson
 from typing import Any, cast
 
 import streamingjson  # type: ignore[reportMissingTypeStubs]
-from kaos.path import KaosPath
-from kosong.utils.typing import JsonType
 
+from kaos.path import KaosPath
 from kimi_cli.utils.string import shorten_middle
+from kosong.utils.typing import JsonType
 
 # Retired tool names of the two todo tools that were merged into `todo_list`,
 # built from parts so the removed names never appear in this source. Manifests

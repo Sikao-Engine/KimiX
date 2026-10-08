@@ -4,7 +4,6 @@ import codecs
 import functools
 import io
 import os
-import regex as re
 import shutil
 import signal
 import textwrap
@@ -15,13 +14,18 @@ from pathlib import Path
 from typing import Any
 
 import orjson
-
-from kimi_agent_sdk import ToolReturnValue
+import regex as re
 from kimi_cli.native_loader import (
     get_compat as _native_get_compat,
+)
+from kimi_cli.native_loader import (
     get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
+
+from kimi_agent_sdk import ToolReturnValue
 
 # ── Long param extraction ──────────────────────────────────────────────────
 # Mapping of tool names to their "long content" parameter names.
@@ -99,9 +103,7 @@ def _looks_like_malformed_json_param(value: str) -> bool:
         except Exception:
             pass
     # Case 3: Contains escaped newlines (\n instead of actual newlines)
-    if '\\n' in stripped and '\n' not in stripped and len(stripped) > _LONG_PARAM_MIN_LENGTH:
-        return True
-    return False
+    return bool('\\n' in stripped and '\n' not in stripped and len(stripped) > _LONG_PARAM_MIN_LENGTH)
 
 
 def _extract_content_from_malformed(value: str) -> str | None:
@@ -343,10 +345,10 @@ def make_tool_error(
         },
     )
 
-import queue
-import subprocess
-import threading
-from typing import TYPE_CHECKING
+import queue  # noqa: E402 -- deliberately a late import
+import subprocess  # noqa: E402 -- deliberately a late import
+import threading  # noqa: E402 -- deliberately a late import
+from typing import TYPE_CHECKING  # noqa: E402 -- deliberately a late import
 
 # Common error keywords for detecting error lines in process output
 _ERROR_KEYWORDS = [
@@ -501,7 +503,9 @@ def filter_output(text: str) -> str:
     return _compat_stream()._compat_filter_output(text)
 
 
-from kimi_cli.session import Session
+import contextlib  # noqa: E402
+
+from kimi_cli.session import Session  # noqa: E402
 
 if TYPE_CHECKING:
     from kimix.tools.background.utils import BackgroundStream
@@ -603,10 +607,8 @@ def _folder_has_fresh_file(path: Path, max_age: float = _STALE_TEMP_FOLDER_MAX_A
 
 def _cleanup_temp_folder() -> None:
     """Delete this process's own temp folder (best-effort, never raises)."""
-    try:
+    with contextlib.suppress(Exception):
         _rmtree_retry(_temp_folder_abs)
-    except Exception:
-        pass
 
 
 def _cleanup_stale_temp_folders() -> None:
@@ -638,10 +640,8 @@ def _cleanup_stale_temp_folders() -> None:
                 continue
             if _pid_alive(pid) and _folder_has_fresh_file(entry):
                 continue
-            try:
+            with contextlib.suppress(Exception):
                 _rmtree_retry(entry)
-            except Exception:
-                pass
     except Exception:
         pass
 
@@ -860,7 +860,7 @@ async def _summarize_long_output_async(session: Session, command: str, output: s
     """
     import kimix.base as base
     from kimix.ui.printing import MessageType
-    from kimix.utils import close_session_async, _create_session_async, prompt_async
+    from kimix.utils import _create_session_async, close_session_async, prompt_async
     from kimix.utils.system_prompt import SystemPromptType
 
     custom_config = session.custom_config
@@ -886,7 +886,7 @@ async def _summarize_long_output_async(session: Session, command: str, output: s
         if sub_custom_config is not None:
             sub_custom_config["is_sub_agent"] = True
 
-        _OUTPUT_FILE_THRESHOLD = 100 * 1024
+        _OUTPUT_FILE_THRESHOLD = 100 * 1024  # noqa: N806
         if len(output) > _OUTPUT_FILE_THRESHOLD:
             temp_path, _ = await _export_to_temp_file_async(
                 key=None, content=output, ext=".txt"
@@ -928,10 +928,8 @@ async def _summarize_long_output_async(session: Session, command: str, output: s
         return f"[Summarization failed: {exc}]\n\n{output}"
     finally:
         if sub_session is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await close_session_async(sub_session)
-            except Exception:
-                pass
 
 
 def _extract_export_path(output: str) -> str | None:
@@ -1669,9 +1667,11 @@ async def _token_filter_output(
     if apply_dedup:
         from kimi_cli.tools.file.micro_compress import (
             MicroCompressConfig,
+        )
+        from kimi_cli.tools.file.micro_compress import (
             compress as _mc_compress,
         )
-        if has_errors:
+        if has_errors:  # noqa: SIM108 -- the branch carries an explanatory comment
             # Diagnostics are the most valuable signal for a failed build:
             # run only the lossless stages so error text is preserved verbatim
             # (identical-line dedup below still collapses true redundancy).
@@ -1831,7 +1831,7 @@ def kill_child_tree(pid: int, *, force: bool = False) -> None:
         args = ["taskkill", "/PID", str(pid), "/T"]
         if force:
             args.append("/F")
-        try:
+        try:  # noqa: SIM105 -- the guarded call carries an explanatory comment
             subprocess.run(
                 args,
                 stdout=subprocess.DEVNULL,
@@ -1896,10 +1896,8 @@ def _kill_registered_process_trees() -> None:
     with _process_registry_lock:
         pids = list(_process_registry)
     for pid in pids:
-        try:
+        with contextlib.suppress(Exception):
             kill_child_tree(pid, force=True)
-        except Exception:
-            pass
 
 
 atexit.register(_kill_registered_process_trees)
@@ -1956,8 +1954,8 @@ class ProcessTask:
         # even when only the process machinery is needed.  The cap is read from
         # the background.utils module namespace at call time so tests can patch
         # ``BACKGROUND_MAX_OUTPUT_CHARS``.
-        from kimix.tools.background.utils import bounded_append, bounded_put
         import kimix.tools.background.utils as _bg_utils
+        from kimix.tools.background.utils import bounded_append, bounded_put
         from kimix.tools.security import redact_sensitive_output, scrub_child_env
 
         def _write_output(text: str) -> None:
@@ -2143,19 +2141,13 @@ class ProcessTask:
             if stderr_task is not None:
                 stderr_task.cancel()
             stdin_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await stdout_task
-            except asyncio.CancelledError:
-                pass
             if stderr_task is not None:
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await stderr_task
-                except asyncio.CancelledError:
-                    pass
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await stdin_task
-            except asyncio.CancelledError:
-                pass
 
             # Read any remaining data from stdout and stderr
             try:
@@ -2224,10 +2216,8 @@ class ProcessTask:
         # Also try to terminate the whole process tree directly if it's running.
         proc = self._process_ref
         if proc is not None and proc.returncode is None:
-            try:
+            with contextlib.suppress(Exception):
                 kill_child_tree(proc.pid)
-            except Exception:
-                pass
 
     async def _input_function(self, data: str) -> bool:
         """Push data to the process's stdin.
@@ -2272,7 +2262,7 @@ class ProcessTask:
         Returns:
             The generated task ID.
         """
-        from kimix.tools.background.utils import BackgroundStream, generate_task_id, add_task
+        from kimix.tools.background.utils import BackgroundStream, add_task, generate_task_id
         self._stream = BackgroundStream()
         # Generate a task ID based on the executable name
         self._task_id = generate_task_id(session, kind, name)

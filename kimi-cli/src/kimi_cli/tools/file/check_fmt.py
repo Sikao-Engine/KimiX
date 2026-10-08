@@ -106,7 +106,7 @@ def check_json(file_path: str, json_callback: Callable[[Any], None] | None = Non
     """
     try:
         js = None
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             js = orjson.loads(f.read())
         if json_callback:
             json_callback(js)

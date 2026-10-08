@@ -4,21 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from pydantic import BaseModel, Field
-from kimix.parser import (
-    PythonParser,
-    CParser,
-    ShellParser,
-    HtmlParser,
-    PascalParser,
-    LispParser,
-    SqlParser,
-    BaseParser,
-)
-
 import orjson
+from pydantic import BaseModel, Field
 
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimix.parser import (
+    BaseParser,
+    CParser,
+    HtmlParser,
+    LispParser,
+    PascalParser,
+    PythonParser,
+    ShellParser,
+    SqlParser,
+)
 
 # ── Language → Parser mapping ──────────────────────────────────────────────────
 

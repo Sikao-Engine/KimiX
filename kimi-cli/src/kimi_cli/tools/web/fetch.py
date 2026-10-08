@@ -1,7 +1,6 @@
 from typing import Literal, override
 
 import trafilatura
-from kosong.tooling import CallableTool2, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.config import Config
@@ -10,6 +9,7 @@ from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.toolset import get_current_tool_call_or_none
 from kimi_cli.tools.utils import ToolResultBuilder
 from kimi_cli.utils.logging import logger
+from kosong.tooling import CallableTool2, ToolReturnValue
 
 
 class Params(BaseModel):
@@ -98,7 +98,7 @@ def _derived_service_url(runtime: Runtime, suffix: str) -> str | None:
     return f"{str(base_url).rstrip('/')}/{suffix}"
 
 
-class fetch_url(CallableTool2[Params]):
+class fetch_url(CallableTool2[Params]):  # noqa: N801
     name: str = "fetch_url"
     description: str = "Fetch a URL and extract main text."
     params: type[Params] = Params

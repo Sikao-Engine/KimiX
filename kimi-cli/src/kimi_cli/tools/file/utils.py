@@ -6,7 +6,6 @@ from pathlib import Path, PurePath
 from typing import Literal
 
 from kaos.path import KaosPath
-
 from kimi_cli.utils.path import kaos_path_from_tool_input
 from kimi_cli.vfs import VFS
 

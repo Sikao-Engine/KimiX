@@ -2,23 +2,22 @@ import contextlib
 from typing import Literal, override
 
 import json_repair
-from kaos.path import KaosPath
-from kosong.tooling import CallableTool2, DisplayBlock, ToolError, ToolReturnValue, alias_note
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
+from kaos.path import KaosPath
 from kimi_cli import logger
 from kimi_cli.session import Session
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.tools.display import DiffDisplayBlock
 from kimi_cli.tools.file import FileActions
-from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
 from kimi_cli.tools.file.check_fmt import (
     check_json_text,
     check_toml_text,
     check_xml_text,
     check_yaml_text,
 )
+from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
 from kimi_cli.utils.diff import build_diff_blocks, format_unified_diff
 from kimi_cli.utils.path import (
     is_within_directory,
@@ -27,6 +26,7 @@ from kimi_cli.utils.path import (
     kaos_path_from_user_input,
 )
 from kimi_cli.vfs import VFS
+from kosong.tooling import CallableTool2, DisplayBlock, ToolError, ToolReturnValue, alias_note
 
 from .auto_generated import assert_editable_file
 from .conflict_detect import (
@@ -306,18 +306,17 @@ class WriteFile(CallableTool2[Params]):
 
             # Try to repair broken JSON before building diff (if auto_fix_json is enabled)
             _repair_diff: str | None = None
-            if is_json and fmt_error:
-                if params.auto_fix_json:
-                    try:
-                        repaired_text = json_repair.repair_json(new_text, return_objects=False)
-                        if repaired_text and repaired_text != new_text:
-                            _repair_diff = format_unified_diff(
-                                new_text, repaired_text, file_path_str
-                            )
-                            new_text = repaired_text
-                            fmt_error = None
-                    except Exception:
-                        pass
+            if is_json and fmt_error and params.auto_fix_json:
+                try:
+                    repaired_text = json_repair.repair_json(new_text, return_objects=False)
+                    if repaired_text and repaired_text != new_text:
+                        _repair_diff = format_unified_diff(
+                            new_text, repaired_text, file_path_str
+                        )
+                        new_text = repaired_text
+                        fmt_error = None
+                except Exception:
+                    pass
                 # else: auto_fix_json=False — leave fmt_error as-is, error reported below
 
             # Build diff blocks

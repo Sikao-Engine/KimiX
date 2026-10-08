@@ -2,7 +2,6 @@ import asyncio
 from pathlib import Path
 from typing import override
 
-from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 from pydantic import BaseModel, Field
 
 from kimi_cli.soul.agent import Runtime
@@ -11,6 +10,7 @@ from kimi_cli.subagents.models import AgentLaunchSpec, AgentTypeDefinition
 from kimi_cli.subagents.runner import ForegroundRunRequest, ForegroundSubagentRunner
 from kimi_cli.tools.utils import load_desc
 from kimi_cli.utils.logging import logger
+from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 
 NAME = "subagent"
 
@@ -184,9 +184,10 @@ class AgentTool(CallableTool2[Params]):
                 # stored in the launch spec may have been removed from config since
                 # the instance was created.  params.model is already validated in
                 # __call__, so only check the stored effective_model fallback here.
-                if not params.model:
-                    if error := self._validate_model_alias(record.launch_spec.effective_model):
-                        return error
+                if not params.model and (
+                    error := self._validate_model_alias(record.launch_spec.effective_model)
+                ):
+                    return error
             else:
                 actual_type = requested_type
                 import uuid

@@ -25,10 +25,13 @@ import os
 import sys
 
 import regex as re
-
 from kimi_cli.native_loader import (
     get_compat as _native_get_compat,
+)
+from kimi_cli.native_loader import (
     get_module as _native_get_module,
+)
+from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
 
@@ -111,7 +114,7 @@ def check_hardline_blocked(command: str) -> tuple[bool, str | None]:
 
 # ``validate_workdir`` moved to :mod:`kimix.tools.security`; re-exported
 # here for compatibility with existing shell-tool callers.
-from kimix.tools.security import validate_workdir as validate_workdir  # noqa: F401
+from kimix.tools.security import validate_workdir as validate_workdir  # noqa: F401, E402
 
 
 def foreground_background_guidance(command: str) -> str | None:

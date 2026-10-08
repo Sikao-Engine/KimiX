@@ -2,23 +2,24 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import html
 import os
 import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
 from pydantic import BaseModel, Field, model_validator
 
 import kimix.base as base
 import kimix.utils as utils
-from kimix.ui.printing import MessageType
+from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
 from kimix.tools.agent import _AgentConversationCollector
+from kimix.ui.printing import MessageType
 from kimix.utils.system_prompt import SystemPromptType
 
 _MAX_SUB_AGENTS = 128
@@ -285,10 +286,8 @@ class AgentSwarm(CallableTool2):
                 report = collector.finalize_assistant_turn() or "(no text output)"
                 return report, 0, 0
             finally:
-                try:
+                with contextlib.suppress(Exception):
                     await utils.close_session_async(session)
-                except Exception:
-                    pass
 
         async def _selector(prompt: str, review_text: str) -> int:
             """Model self-evaluation: one review sub-agent picks a candidate index."""
@@ -494,10 +493,8 @@ async def _run_subagent_task(
         )
     finally:
         if session is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await utils.close_session_async(session)
-            except Exception:
-                pass
 
 
 async def _resolve_subagent_session(
