@@ -63,7 +63,6 @@ COV_MODULE: dict[str, str] = {
     "C13": "kimi_cli.tools.web.extract",
     "C14": "kimi_cli.tools.context_prune",
     "C15": "kimi_cli.tools.file.hash_line",
-    "C16": "kimi_cli.tools.test",
     "K00": "kimix.tools.common",
     "K01": "kimix.tools.agent",
     "K02": "kimix.tools.agent",
@@ -81,8 +80,6 @@ COV_MODULE: dict[str, str] = {
     "K14": "kimix.tools.web.fetch_url",
     "K15": "kimix.tools.parser",
     "K16": "kimix.tools.file.find_str",
-    "K17": "kimix.tools.file",
-    "K18": "kimix.tools.file",
 }
 
 # Tools that share a probe file / suite with a sibling (report says so).

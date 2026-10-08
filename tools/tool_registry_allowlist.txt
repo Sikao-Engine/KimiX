@@ -11,3 +11,10 @@
 # Registered programmatically, not via a manifest:
 #   kimi-cli/src/kimi_cli/soul/kimisoul.py:490  agent.toolset.add(context_prune(self))
 kimi_cli.tools.context_prune:context_prune  # wired by kimisoul.py:490, no manifest entry exists
+
+# Exported by the file-tool family and canonical in the tool taxonomy, but not
+# enabled in any default manifest (they are the hash-anchored read/edit pair that
+# some hosts opt into).  Reachable via `kimi_cli.tools.file.__all__` and listed in
+# `kimi_cli/soul/tool_taxonomy.py`, so they are deliberate built-ins, not leftovers.
+kimi_cli.tools.file.hash_line:HashRead  # family export + taxonomy canonical; opt-in, not in a default manifest
+kimi_cli.tools.file.hash_line:HashEdit  # family export + taxonomy canonical; opt-in, not in a default manifest

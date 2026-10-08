@@ -152,11 +152,6 @@ INVENTORY: dict[str, tuple[str, list[str], list[str]]] = {
         ["kimi-cli/tests/tools/test_hash_line.py", "kimi-cli/tests/tools/test_plan25_integration.py",
          "kimi-cli/tests/native/test_diff_glob_tools_equivalence.py"],
     ),
-    "C16": (
-        "demo tools plus / compare / panic",
-        ["kimi-cli/src/kimi_cli/tools/test.py"],
-        [],
-    ),
     "K00": (
         "shared infra",
         ["src/kimix/tools/common.py", "src/kimix/tools/prompt_common.py",
@@ -210,8 +205,6 @@ INVENTORY: dict[str, tuple[str, list[str], list[str]]] = {
     "K15": ("ParserTool", ["src/kimix/tools/parser/__init__.py"], ["tests/test_parsers.py"]),
     "K16": ("FindStr", ["src/kimix/tools/file/find_str.py"],
             ["tests/native/test_behavior_equivalence.py"]),
-    "K17": ("Mkdir", ["src/kimix/tools/file/__init__.py"], []),
-    "K18": ("Rm", ["src/kimix/tools/file/__init__.py"], []),
 }
 
 

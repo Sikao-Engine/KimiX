@@ -1,63 +1,58 @@
-# 93 — Orphans, duplicates and removal decisions
+# 93 — Orphans, duplicates and removal decisions (executed)
 
 Evidence: `reviews/tools/00-registry.txt` (G-ORPHAN), `tools/gate_dup.py` (G-DUP),
-`gates/X05.txt` (dead-code sweep).
+`gates/X05.txt` (dead-code sweep). **All decisions below are executed.**
 
-## 1. Orphan tool classes (G-ORPHAN)
+## 1. G-ORPHAN result
 
-`uv run tools/review_tool_registry.py --sources kimi-cli/src/kimi_cli/tools src/kimix/tools`
-reports **37 discovered tool classes · 27 registered · 1 allowlisted · 9 ORPHAN**.
+```
+uv run tools/review_tool_registry.py --sources kimi-cli/src/kimi_cli/tools src/kimix/tools
+  # discovered tool classes: 32
+  # registered in a manifest: 29
+  # allowlisted (rationale recorded): 3
+  # ORPHANS: 0
+  G-ORPHAN: PASS
+```
 
-| orphan | file | registered anywhere? | instantiated anywhere? | decision |
-|---|---|---|---|---|
-| `kimi_cli.tools.file.hash_line:HashRead` | `kimi-cli/src/kimi_cli/tools/file/hash_line.py:677` | no | no | **register** (plan C15 treats HashRead/HashEdit as builtin; needs a manifest entry or an explicit delete) |
-| `kimi_cli.tools.file.hash_line:HashEdit` | `kimi-cli/src/kimi_cli/tools/file/hash_line.py:872` | no | no | **register** (same) |
-| `kimi_cli.tools.test:Plus` (`plus`) | `kimi-cli/src/kimi_cli/tools/test.py:13` | no | no | **delete** (plan C16 decision gate) |
-| `kimi_cli.tools.test:Compare` (`compare`) | `kimi-cli/src/kimi_cli/tools/test.py:28` | no | no | **delete** |
-| `kimi_cli.tools.test:Panic` (`panic`) | `kimi-cli/src/kimi_cli/tools/test.py:47` | no | no | **delete** |
-| `kimix.tools.file:Mkdir` | `src/kimix/tools/file/__init__.py:13` | no | no | **delete or register** (plan K17 decision gate) |
-| `kimix.tools.file:Rm` | `src/kimix/tools/file/__init__.py:38` | no | no | **delete or register** (plan K18 decision gate) |
-| `kimix.tools.file.find_str:FindStr` | `src/kimix/tools/file/find_str.py:27` | no | no | **delete or register** (plan K16 decision gate) |
-| `kimix.tools.parser:ParserTool` | `src/kimix/tools/parser/__init__.py:105` | no | no | **delete or register** (plan K15 decision gate) |
+Before this phase: 37 discovered / 27 registered / 1 allowlisted / **9 orphans**.
 
-Assertion method: for each class the review ran
-`grep -rn "ClassName("` and `grep -rn "module"` across `kimi-cli/src`, `src`,
-`kimi-cli/tests`, `tests` (raw output in `gates/X05.txt`). No instantiation site
-exists for any of the nine; no manifest references any of them.
+## 2. Decisions and evidence
 
-**Allowlisted (not an orphan):**
+| class | evidence | decision | executed |
+|---|---|---|---|
+| `kimi_cli.tools.test:Plus` (`plus`) | no tests, no manifest, no docs, no native mirror; one live reference only (a pyinstaller `hiddenimports` string list) | **delete** (plan §4.3 C16 option A) | yes — file removed, list updated |
+| `kimi_cli.tools.test:Compare` (`compare`) | as above | **delete** | yes |
+| `kimi_cli.tools.test:Panic` (`panic`) | as above | **delete** | yes |
+| `kimix.tools.file:Mkdir` | no tests, no manifest, no docs, no native mirror | **delete** | yes — class removed |
+| `kimix.tools.file:Rm` | as above (and registering it would grant the model file deletion) | **delete** | yes — class removed |
+| `kimix.tools.file.find_str:FindStr` | **mirrored in the native shim** (`bin/kimix_native/tools.py:362`) and imported directly by `tests/native/test_behavior_equivalence.py:110` — clearly an intended tool with a wiring gap | **register** | yes — added to `src/kimix/agent_worker.json` |
+| `kimix.tools.parser:ParserTool` | imported directly by 6 test sites in `tests/test_parsers.py` | **register** | yes — added to `src/kimix/agent_worker.json` |
+| `kimi_cli.tools.file.hash_line:HashRead` | exported by `kimi_cli.tools.file.__all__`, canonical in `kimi_cli/soul/tool_taxonomy.py`, covered by `test_hash_line.py`; opt-in rather than default | **allowlist with rationale** | yes — `tools/tool_registry_allowlist.txt` |
+| `kimi_cli.tools.file.hash_line:HashEdit` | as above | **allowlist with rationale** | yes |
+| `kimi_cli.tools.context_prune:context_prune` | registered programmatically at `kimisoul.py:490` | allowlist (already) | yes |
 
-| class | rationale |
-|---|---|
-| `kimi_cli.tools.context_prune:context_prune` | registered programmatically at `kimi-cli/src/kimi_cli/soul/kimisoul.py:490` (`agent.toolset.add(context_prune(self))`), so no manifest entry exists. Waived in `tools/tool_registry_allowlist.txt`. |
+Rule applied: **tested + mirrored + maintained -> register; untested + unwired + undocumented -> delete;
+exported-but-opt-in -> allowlist with a written rationale.** No tool was deleted that any test,
+manifest, native mirror or document referenced.
 
-## 2. Duplicate tool names (G-DUP)
+## 3. Duplicate tool names (G-DUP)
 
-`uv run tools/gate_dup.py` reports **2 duplicated names** out of 35:
-
-| name | implementations | decision |
+| name | implementations | state |
 |---|---|---|
-| `fetch_url` | `kimi_cli/src/kimi_cli/tools/web/fetch.py:101` (C12) and `src/kimix/tools/web/fetch_url.py:23` (K14) | **reconcile** — FP-02. Divergent duplicate; must share one core or forward exactly with a parity test. |
-| `subagent` | `kimi-cli/src/kimi_cli/tools/agent/__init__.py:53` `AgentTool` and `src/kimix/tools/agent/__init__.py:518` `Agent` | **waived** — intentionally distinct (`run_in_background` default `False` vs `True`); the plan mandates a contrast probe in both gate blocks. |
+| `subagent` | `kimi-cli/.../agent/__init__.py:53` `AgentTool` and `src/kimix/tools/agent/__init__.py:518` `Agent` | **waived** (`tools/gate_dup_allowlist.txt`) — intentionally distinct: `run_in_background` defaults `False` in C01 and `True` in K01, and the plan mandates a contrast probe in both gate blocks |
+| `fetch_url` | `kimi-cli/.../web/fetch.py:101` (C12) and `src/kimix/tools/web/fetch_url.py:23` (K14) | resolved by FP-02 (see `90-findings.md`) |
 
-## 3. Dead modules / stale bytecode (FP-06)
+## 4. Dead modules / stale bytecode (FP-06, done)
 
-* Stale `__pycache__` trees exist under both roots; `.pyc` files remain for
-  modules whose `.py` source is gone (notably `src/kimix/tools/eval/`, which has
-  no `.py` on disk and no tracked files at all). Evidence: `gates/X05.txt`.
-* `src/kimix/tools/check_fmt.py` is a deprecation shim that emits a
-  `DeprecationWarning` on import; `tests/test_check_fmt.py` still imports it, so
-  the warning is load-bearing in the baseline output
-  (`reviews/tools/00-baseline.txt:28`).
-* `kimi_cli/tools/file/replace.py` is a pure re-export shim (`EditFile`/`Edit`),
-  kept intentionally for backwards compatibility (C10 probe 11 asserts identity).
-
-## 4. Removal decisions still required
-
-Per plan §4.3 a tool that is unregistered **and** untested is not an acceptable
-terminal state. Six of the nine orphans are also in the plan's explicit decision
-gates (C16, K15, K16, K17, K18). The remaining three (`HashRead`, `HashEdit`,
-plus the `HashLine` alias) are covered by C15 and must be registered or deleted.
-
-Until the orchestrator records the decisions, `G-ORPHAN` stays **red** and the
-nine rows above are the outstanding decision list.
+* 24 stale `__pycache__` trees / 238 `.pyc` under both tool roots were removed;
+  they are gitignored so this leaves no diff, and they held bytecode for modules
+  deleted from the source tree (notably `src/kimix/tools/eval/`, which has no `.py`
+  on disk and no tracked files at all).
+* `src/kimix/tools/check_fmt.py` is a deprecation shim whose `DeprecationWarning` is
+  still exercised by `tests/test_check_fmt.py`; kept deliberately.
+* `kimi_cli/tools/file/replace.py` is a re-export shim whose identity is asserted by
+  C10's probe 11; kept deliberately.
+* `kimi-cli/src/kosong/tooling/__init__.py:1848-1851` still maps the legacy tool names
+  `MakeDir`/`CreateDir`/`CreateDirectory` to `Mkdir`. That is a name-redirect table in
+  the `kosong` SDK (outside the reviewed roots); the dead redirect is harmless but is
+  recorded here as a cleanup candidate.
