@@ -18,3 +18,5 @@ bin/*
 # Test-generated artifacts
 tests/test_result.txt
 tests/output.md
+# Parallel git worktrees for the tools review (transient, never committed)
+.worktrees/

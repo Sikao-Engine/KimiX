@@ -1,0 +1,15 @@
+# G-POLICY allowlist — `tools/gate_library_policy.py`
+#
+# Any stdlib-for-third-party import (AGENTS.md "Performance rule") is a policy
+# violation unless waived here with a written rationale.
+#
+# Syntax:  <path>[::<module>]  # rationale
+#   <path>            waiver for every policy hit in that file (or directory)
+#   <path>::<module>  waiver for one stdlib module in that file
+#
+# Every entry must carry a rationale.  Prefer fixing the import.
+#
+# Phase-0 baseline: the three seeded hits are REAL violations owned by FP-05
+# (kimi_cli/tools/__init__.py `import json`, edit/modes/sloppy.py `import re`,
+# kimix/tools/swarm/best_of_n.py `import difflib`) and are intentionally NOT
+# waived here.

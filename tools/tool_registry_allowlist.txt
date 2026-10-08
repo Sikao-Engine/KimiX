@@ -1,0 +1,13 @@
+# G-ORPHAN allowlist — `tools/review_tool_registry.py`
+#
+# A tool class under `kimi-cli/src/kimi_cli/tools` or `src/kimix/tools` that is
+# NOT referenced by an agent manifest is an ORPHAN unless it appears here with a
+# written rationale.  Syntax:  module:Class  # rationale (one per line).
+#
+# A programmatic registration (e.g. `agent.toolset.add(...)` in the soul) is a
+# legitimate reason to allowlist; a tool that is neither registered nor tested
+# is not (plan §4.3) and must be registered or deleted in Phase 4.
+
+# Registered programmatically, not via a manifest:
+#   kimi-cli/src/kimi_cli/soul/kimisoul.py:490  agent.toolset.add(context_prune(self))
+kimi_cli.tools.context_prune:context_prune  # wired by kimisoul.py:490, no manifest entry exists

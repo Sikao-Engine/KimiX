@@ -1,0 +1,17 @@
+# G-DUP allowlist — `tools/gate_dup.py`
+#
+# A model-facing tool name with more than one implementation is a divergent
+# duplicate unless waived here.  Waive only when the implementations are
+# intentionally distinct (with contrast probes) or one is a thin delegator
+# proven by a parity test.  Syntax:  name  # rationale
+
+# kimi_cli `AgentTool` (name "subagent") and kimix `Agent` (name "subagent") are
+# deliberately distinct tools: run_in_background defaults to False in C01 and
+# True in K01, and the plan mandates a contrast probe in both gate blocks
+# (§4.4 C01 probe 5, K01 probe 3).  They are not delegators, so no parity test
+# can collapse them — the divergence is the contract.
+subagent  # intentionally distinct C01 (fg default) vs K01 (bg default); contrast probes mandated
+
+# NOTE: `fetch_url` is NOT waived.  C12 (kimi_cli) and K14 (kimix) are duplicate
+# implementations that FP-02 must reconcile (shared core or exact forwarding);
+# until then G-DUP must fail on `fetch_url`.
