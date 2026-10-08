@@ -111,16 +111,6 @@ class ParserTool(CallableTool2[Params]):
     )
     params: type[Params] = Params
 
-    def __init__(self, session: Any = None) -> None:
-        """Initialise the parser tool.
-
-        Args:
-            session: Optional session object (currently unused but kept for
-                     compatibility with the CallableTool2 interface).
-        """
-        super().__init__()
-        self._session = session
-
     async def __call__(self, params: Params) -> ToolReturnValue:
         """Execute the parser tool."""
         # ── 1. Validate inputs ────────────────────────────────────────────────

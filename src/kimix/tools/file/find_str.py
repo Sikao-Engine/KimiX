@@ -1,4 +1,5 @@
 
+import anyio
 from kimi_cli.native_loader import (
     get_module as _native_get_module,
 )
@@ -152,14 +153,21 @@ class FindStr(CallableTool2):
             return results
 
         try:
-            files = find_files(params.path)
+            async def _offload(fn, *args):
+                # os.walk/os.listdir/open are blocking: keep them off the event
+                # loop so concurrent tools keep streaming (FP-12).
+                return await anyio.to_thread.run_sync(fn, *args)
+
+            files = await _offload(find_files, params.path)
 
             if not files:
                 return ToolOk(output=_maybe_export_output(f"No files found matching path: {params.path}"))
 
             all_matches = []
             for file_path in files:
-                matches = find_in_file(file_path, params.content, params.case_sensitive)
+                matches = await _offload(
+                    find_in_file, file_path, params.content, params.case_sensitive
+                )
                 all_matches.extend(matches)
 
             if not all_matches:

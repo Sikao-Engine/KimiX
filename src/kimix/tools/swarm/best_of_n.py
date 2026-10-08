@@ -29,6 +29,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import anyio
+
 # ---------------------------------------------------------------------------
 # Types
 # ---------------------------------------------------------------------------
@@ -269,21 +271,30 @@ async def run_parallel_sample(
 
     async def _one(index: int) -> SampleCandidate:
         async with semaphore:
-            worker_path, kind = create_worker_workspace(work_dir, index)
+            # `create_worker_workspace` / `_snapshot_files` / `collect_diff` do
+            # copytree, os.walk, git subprocesses and file reads: blocking work
+            # that must not run on the event loop (FP-12).
+            worker_path, kind = await anyio.to_thread.run_sync(
+                create_worker_workspace, work_dir, index
+            )
             before: dict[str, bytes] | None = None
             if kind == "copy":
-                before = _snapshot_files(worker_path)
+                before = await anyio.to_thread.run_sync(_snapshot_files, worker_path)
             candidate = SampleCandidate(index=index, work_dir=worker_path)
             try:
                 report, steps, tokens = await runner(task_prompt, worker_path)
                 candidate.self_report = report
                 candidate.steps = steps
                 candidate.output_tokens = tokens
-                candidate.diff = collect_diff(worker_path, kind, before)
+                candidate.diff = await anyio.to_thread.run_sync(
+                    collect_diff, worker_path, kind, before
+                )
                 candidate.success = True
             except asyncio.CancelledError:
                 candidate.error = "cancelled"
-                cleanup_worker_workspace(worker_path, kind, work_dir)
+                await anyio.to_thread.run_sync(
+                    cleanup_worker_workspace, worker_path, kind, work_dir
+                )
                 raise
             except Exception as exc:  # noqa: BLE001 — isolation per worker
                 candidate.error = f"{type(exc).__name__}: {exc}"
@@ -401,7 +412,7 @@ async def best_of_n(
     winner = next(c for c in candidates if c.index == winner_index)
 
     kind = "worktree" if winner.diff.startswith("[workspace:worktree]") else "copy"
-    apply_diff_to_workspace(winner, work_dir, kind)
+    await anyio.to_thread.run_sync(apply_diff_to_workspace, winner, work_dir, kind)
 
     verified = False
     verify_detail = ""
