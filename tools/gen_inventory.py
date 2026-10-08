@@ -38,11 +38,6 @@ INVENTORY: dict[str, tuple[str, list[str], list[str]]] = {
         ["kimi-cli/src/kimi_cli/tools/todo/__init__.py", "kimi-cli/src/kimi_cli/tools/display.py"],
         ["kimi-cli/tests/tools/test_todo*.py"],
     ),
-    "C04": (
-        "retrieve",
-        ["kimi-cli/src/kimi_cli/tools/memory/__init__.py"],
-        ["kimi-cli/tests/tools/test_memory_retrieve.py"],
-    ),
     "C05": (
         "read (ReadFile)",
         ["kimi-cli/src/kimi_cli/tools/file/read.py", "kimi-cli/src/kimi_cli/tools/file/read.md",
@@ -138,13 +133,6 @@ INVENTORY: dict[str, tuple[str, list[str], list[str]]] = {
          "kimi-cli/src/kimi_cli/tools/web/url_safety.py",
          "kimi-cli/src/kimi_cli/tools/web/providers.py"],
         ["kimi-cli/tests/tools/test_web_extract.py", "kimi-cli/tests/tools/test_url_safety.py"],
-    ),
-    "C14": (
-        "context_prune",
-        ["kimi-cli/src/kimi_cli/tools/context_prune.py"],
-        ["kimi-cli/tests/tools/test_context_prune.py",
-         "kimi-cli/tests/core/test_kimisoul_context_prune.py",
-         "kimi-cli/tests/core/test_current_turn_start_index.py"],
     ),
     "C15": (
         "HashRead / HashLine / HashEdit",

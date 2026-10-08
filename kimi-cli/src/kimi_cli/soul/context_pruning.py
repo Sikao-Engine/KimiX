@@ -539,9 +539,9 @@ def _apply_tier_c(
     when an *annotated* stage actually fired (Stages 4/6/7/8 — markers such as
     ``[prefix: …]``, ``[N banner lines dropped]``, ``[×k near-dup …]``);
     lossless-only changes (Stages 1-3/5) are applied silently.  The original
-    text is archived on the record so ``retrieve``/``HistoryIndex`` retrieval
-    stays lossless.
-
+      The original
+      text is archived on the record so later ``HistoryIndex`` retrieval
+      stays lossless.
     Returns ``(work_history, records, freed_tokens, changed_indices, next_ref)``.
     The caller's *history* is never mutated (changed messages are copies).
     """
@@ -998,7 +998,7 @@ class ContextPruner:
                 stub_text = (
                     f"<system>[context-elided: {kind} — content elided. "
                     f"~{savings} tokens freed. "
-                    f"Retrieve full content with retrieve id={ref}]</system>"
+                    f"Elided content archived in the history index (ref id={ref}).]</system>"
                 )
 
                 elided_records.append(
@@ -1176,9 +1176,9 @@ class ContextPruner:
     ) -> PruningResult:
         """Run a policy-driven prune pass suitable for manual invocation.
 
-        This method configures a fresh :class:`ContextPruner` instance from the
-        high-level parameters and runs ``prune()``.  It bypasses hysteresis so
-        that a manual ``context_prune`` tool call always acts when content is
+        This method configures a fresh :class:`ContextPruner` instance from
+        the high-level parameters and runs ``prune()``.  It bypasses hysteresis so
+        that a manual prune invocation always acts when content is
         available to drop/elide.
 
         Args:

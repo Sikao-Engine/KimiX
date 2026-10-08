@@ -406,8 +406,6 @@ class KimiSoul:
         # Phase 3: History index for semantic retrieval over past turns
         # Lazy import to avoid circular dependency with kimix.retrieval
         from kimi_cli.soul.history_index import HistoryIndex
-        from kimi_cli.tools.context_prune import context_prune
-
         history_db_path = agent.runtime.session.dir / "history.db"
         legacy_json_path = (
             agent.runtime.session.dir / "history_index" / f"{agent.runtime.session.id}.json"
@@ -476,18 +474,6 @@ class KimiSoul:
                 max_preserved_messages=self._loop_control.max_preserved_messages,
                 decision_section_enabled=self._loop_control.compaction_decision_section_enabled,
             )
-
-        # Register context-management tools if the toolset supports it
-        if isinstance(agent.toolset, KimiToolset):
-            # Attach the history index to the retrieve tool so it can search
-            # past conversation turns.
-            from kimi_cli.tools.memory import retrieve
-            retrieve_tool = agent.toolset.find("retrieve")
-            if not isinstance(retrieve_tool, retrieve):
-                retrieve_tool = retrieve()
-                agent.toolset.add(retrieve_tool)
-            retrieve_tool.attach_history_index(self._history_index)
-            agent.toolset.add(context_prune(self))
 
         self._llm_request_recorder = LLMRequestRecorder()
         self._recorder_restored = False

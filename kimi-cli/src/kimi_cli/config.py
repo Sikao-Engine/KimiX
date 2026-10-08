@@ -404,9 +404,9 @@ Default is 3."""
     Default is 'self_eval'."""
 
     context_meter_enabled: bool = Field(default=False)
-    """When true, inject a reminder to recall past history with the `Retrieve`
-    tool when usage materially changes, so the agent can self-regulate
-    (recall past decisions, paths, or errors) before the harness compacts.
+    """When true, inject a context-usage status reminder when usage
+    materially changes, so the agent can self-regulate (checkpoint past
+    decisions, paths, or errors) before the harness compacts.
     Default is false."""
     context_meter_min_delta: float = Field(default=0.15, ge=0.0, le=0.5)
     """Minimum usage-ratio change since the last context-meter injection

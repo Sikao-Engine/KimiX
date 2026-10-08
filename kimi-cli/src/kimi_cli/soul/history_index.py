@@ -3,8 +3,7 @@
 The primary backend is a per-session SQLite ``history.db`` opened through
 ``apsw`` (synchronous, bundles a recent SQLite with FTS5 + trigram support).
 The public API is unchanged from the old in-memory BM25 implementation so
-``kimisoul.py``, the ``retrieve`` tool, ``context_prune``, and tests keep
-working:
+``kimisoul.py`` and tests keep working:
 
 - ``index_messages`` batches turns into ``history.turns``; FTS triggers keep
   the unicode61 + trigram virtual tables in sync.
@@ -520,9 +519,9 @@ class HistoryIndex:
             """,
             (*params, top_k),
         )
-        # LIKE has no native ranking: score each row by query-token coverage so
-        # downstream recency boosting and the retrieve tool's relevance display
-        # get a meaningful (0, 1] number instead of an always-0.00 placeholder.
+          # LIKE has no native ranking: score each row by query-token coverage so
+          # downstream recency boosting and relevance display
+          # get a meaningful (0, 1] number instead of an always-0.00 placeholder.
         lowered = [t.lower() for t in tokens]
         out: list[dict[str, Any]] = []
         for row in cursor:

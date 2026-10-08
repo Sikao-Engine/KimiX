@@ -5,8 +5,9 @@ Research shows agents manage memory better when context pressure is
 checkpoint, recall history, or start a fresh session — instead of the
 harness compacting at a bad time.
 
-This provider injects a reminder to use the ``Retrieve`` tool when usage
-has materially changed. It deliberately stays quiet in the high-usage
+This provider injects a context-usage status reminder when usage has
+materially changed, nudging the model to checkpoint important facts before
+the harness compacts. It deliberately stays quiet in the high-usage
 region, which is owned by :class:`CompactReminderProvider`
 (actionable advice), so the two never double-inject.
 """
@@ -27,7 +28,7 @@ _CONTEXT_METER_TYPE = "context_meter"
 
 
 class ContextMeterProvider(DynamicInjectionProvider):
-    """Injects a reminder to use the ``Retrieve`` tool when context usage materially changes."""
+    """Injects a context-usage status reminder when usage materially changes."""
 
     def __init__(
         self,
@@ -118,11 +119,11 @@ class ContextMeterProvider(DynamicInjectionProvider):
         self._last_injected_usage = usage
 
         content = (
-            "Context is volatile — when unsure about history, recall past decisions, "
-            "file paths, or errors with the `Retrieve` tool. "
-            "There is no need to call it frequently — this reminder only fires when "
-            "context usage materially changes, so retrieve only when there is "
-            "something genuinely important."
+            "Context is volatile — important decisions, file paths, or errors may be "
+            "compacted away. Consider checkpointing them (e.g. via todos or notes) "
+            "before they are lost. "
+            "There is no need to act on this reminder frequently — it only fires when "
+            "context usage materially changes."
         )
         return [DynamicInjection(type=_CONTEXT_METER_TYPE, content=content)]
 

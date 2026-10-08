@@ -1189,7 +1189,7 @@ Elides content (keeps `role`/`tool_call_id`, replaces body with a compact stub):
 
 ```
 <system>[context-elided: {kind} — {short_summary}. ~{tokens} tokens freed.
-Retrieve full content with Retrieve id={ref})]</system>
+Elided content archived in the history index (ref id={ref}).]</system>
 ```
 
 ### Cache-Conservative Policy
@@ -1232,10 +1232,9 @@ Defaults enforce: `prune_target_ratio < prune_trigger_ratio < compaction_trigger
 
 ### Retrieval of Elided Content
 
-Tier B elided content stays reachable via `retrieve`:
+Tier B elided content is archived and resurfaces automatically:
 - Tool results are now indexed in `HistoryIndex` (previously only user/assistant turns)
 - `HistoryIndex.get_by_id(ref)` resolves the stub's reference deterministically
-- `retrieve` accepts an optional `id` parameter for direct retrieval
 - Auto-retrieval (`_maybe_auto_retrieve_history`) resurfaces relevant elided turns automatically
 
 ### Slash Command
