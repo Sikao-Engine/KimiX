@@ -1,46 +1,19 @@
-d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+cbf044d06c44178a7b1b310fe336c773b864a91f
 [elapsed 0.0s, rc=0]
- M reviews/tools/gates/C00.json
- M reviews/tools/gates/C00.txt
- M reviews/tools/gates/C01.json
- M reviews/tools/gates/C01.txt
- M reviews/tools/gates/C02.json
- M reviews/tools/gates/C02.txt
- M reviews/tools/gates/C03.json
- M reviews/tools/gates/C03.txt
- M reviews/tools/gates/C04.json
- M reviews/tools/gates/C04.txt
- M reviews/tools/gates/C05.json
- M reviews/tools/gates/C05.txt
- M reviews/tools/gates/C06.json
- M reviews/tools/gates/C06.txt
- M reviews/tools/gates/C07.json
- M reviews/tools/gates/C07.txt
- M reviews/tools/gates/C08.json
- M reviews/tools/gates/C08.txt
- M reviews/tools/gates/C09.json
- M reviews/tools/gates/C09.txt
- M reviews/tools/gates/C10.json
- M reviews/tools/gates/C10.txt
- M reviews/tools/gates/C11.json
- M reviews/tools/gates/C11.txt
- M reviews/tools/gates/C12.json
- M reviews/tools/gates/C12.txt
- M reviews/tools/gates/C13.json
- M reviews/tools/gates/C13.txt
- M reviews/tools/gates/C14.json
- M reviews/tools/gates/C14.txt
- M reviews/tools/gates/C15.json
- M reviews/tools/gates/C15.txt
- M reviews/tools/gates/K00.json
- M reviews/tools/gates/K00.txt
-?? reviews/tools/gates/_harness2.log
+ M reviews/tools/gates/K01.json
+ M reviews/tools/gates/K01.txt
+ M reviews/tools/gates/K02.json
+ M reviews/tools/gates/K02.txt
+ M reviews/tools/gates/K03.json
+ M reviews/tools/gates/K03.txt
+ M src/kimix/tools/agent/__init__.py
+ M src/kimix/tools/swarm/__init__.py
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check src/kimix/tools/agent/__init__.py src/kimix/tools/agent/store.py ===
 All checks passed!
-[elapsed 0.7s, rc=0]
+[elapsed 0.2s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
 All checks passed!
@@ -51,8 +24,8 @@ All checks passed!
   "files": [
     {
       "path": "src/kimix/tools/agent/__init__.py",
-      "loc": 1171,
-      "module_loc": 1171,
+      "loc": 1221,
+      "module_loc": 1221,
       "functions": [
         {
           "name": "_background_tasks_for",
@@ -239,6 +212,70 @@ All checks passed!
           "max_nesting": 1
         },
         {
+          "name": "_history_as_json",
+          "lineno": 1141,
+          "loc": 3,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
+          "name": "_history_as_markdown",
+          "lineno": 1146,
+          "loc": 11,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_history_as_summary",
+          "lineno": 1159,
+          "loc": 15,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 0
+        },
+        {
+          "name": "_is_text_turn",
+          "lineno": 1176,
+          "loc": 5,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 1
+        },
+        {
+          "name": "_truncate_text",
+          "lineno": 1183,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_was_closed_mid_turn",
+          "lineno": 1190,
+          "loc": 9,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_interrupted_notice",
+          "lineno": 1201,
+          "loc": 9,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_push_steer_notice",
+          "lineno": 1212,
+          "loc": 10,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 2
+        },
+        {
           "name": "__init__",
           "lineno": 433,
           "loc": 6,
@@ -321,14 +358,14 @@ All checks passed!
         {
           "name": "_notify_parent_background_finished",
           "lineno": 699,
-          "loc": 53,
-          "complexity": 19,
-          "branches": 18,
-          "max_nesting": 2
+          "loc": 26,
+          "complexity": 9,
+          "branches": 8,
+          "max_nesting": 1
         },
         {
           "name": "_execute",
-          "lineno": 753,
+          "lineno": 726,
           "loc": 88,
           "complexity": 8,
           "branches": 7,
@@ -336,7 +373,7 @@ All checks passed!
         },
         {
           "name": "_build_extras",
-          "lineno": 842,
+          "lineno": 815,
           "loc": 26,
           "complexity": 2,
           "branches": 1,
@@ -344,15 +381,15 @@ All checks passed!
         },
         {
           "name": "_format_history",
-          "lineno": 869,
-          "loc": 26,
-          "complexity": 14,
-          "branches": 13,
-          "max_nesting": 3
+          "lineno": 842,
+          "loc": 9,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
         },
         {
           "name": "_resolve_session",
-          "lineno": 896,
+          "lineno": 852,
           "loc": 73,
           "complexity": 9,
           "branches": 8,
@@ -360,7 +397,7 @@ All checks passed!
         },
         {
           "name": "_inherit_parent_context",
-          "lineno": 970,
+          "lineno": 926,
           "loc": 34,
           "complexity": 3,
           "branches": 2,
@@ -368,7 +405,7 @@ All checks passed!
         },
         {
           "name": "_reset_inherited_system_prompt",
-          "lineno": 1005,
+          "lineno": 961,
           "loc": 25,
           "complexity": 5,
           "branches": 4,
@@ -376,7 +413,7 @@ All checks passed!
         },
         {
           "name": "_register_agent_sessions",
-          "lineno": 1031,
+          "lineno": 987,
           "loc": 17,
           "complexity": 4,
           "branches": 3,
@@ -384,7 +421,7 @@ All checks passed!
         },
         {
           "name": "_update_store",
-          "lineno": 1049,
+          "lineno": 1005,
           "loc": 39,
           "complexity": 5,
           "branches": 4,
@@ -392,7 +429,7 @@ All checks passed!
         },
         {
           "name": "__init__",
-          "lineno": 1115,
+          "lineno": 1071,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -400,7 +437,7 @@ All checks passed!
         },
         {
           "name": "__call__",
-          "lineno": 1119,
+          "lineno": 1075,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -408,7 +445,7 @@ All checks passed!
         },
         {
           "name": "__init__",
-          "lineno": 1151,
+          "lineno": 1107,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -416,15 +453,23 @@ All checks passed!
         },
         {
           "name": "__call__",
-          "lineno": 1155,
+          "lineno": 1111,
           "loc": 17,
           "complexity": 2,
           "branches": 1,
           "max_nesting": 1
         },
         {
+          "name": "_count",
+          "lineno": 1162,
+          "loc": 4,
+          "complexity": 3,
+          "branches": 2,
+          "max_nesting": 0
+        },
+        {
           "name": "output_function",
-          "lineno": 763,
+          "lineno": 736,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -435,7 +480,7 @@ All checks passed!
         "name": "_execute",
         "loc": 88
       },
-      "module_complexity": 19
+      "module_complexity": 11
     },
     {
       "path": "src/kimix/tools/agent/store.py",
@@ -540,21 +585,18 @@ All checks passed!
   ],
   "totals": {
     "files": 2,
-    "loc": 1305,
-    "functions": 58
+    "loc": 1355,
+    "functions": 67
   },
-  "breaches": [
-    "src/kimix/tools/agent/__init__.py::_notify_parent_background_finished complexity=19 > 12",
-    "src/kimix/tools/agent/__init__.py::_format_history complexity=14 > 12"
-  ]
+  "breaches": []
 }
-[elapsed 0.2s, rc=1]
+[elapsed 0.2s, rc=0]
 
 === uv run pytest tests/kimix/test_agent_conversation.py tests/kimix/test_subagent_anonymous_session.py tests/kimix/test_subagent_interrupt_race.py tests/test_prompt_waits_background_agents.py tests/kimix/test_report_sync.py -q -rs ===
 ........................................................................ [ 63%]
 ..........................................                               [100%]
-114 passed in 3.05s
-[elapsed 4.3s, rc=0]
+114 passed in 2.76s
+[elapsed 3.7s, rc=0]
 
 === uv run --with pytest-cov pytest tests/kimix/test_agent_conversation.py tests/kimix/test_subagent_anonymous_session.py tests/kimix/test_subagent_interrupt_race.py tests/test_prompt_waits_background_agents.py tests/kimix/test_report_sync.py --cov=kimix.tools.agent ===
 ........................................................................ [ 63%]
@@ -564,9 +606,9 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                                Stmts   Miss Branch BrPart  Cover   Missing
 -------------------------------------------------------------------------------
-src\kimix\tools\agent\__init__.py     525     47    172     37    87%   56->59, 60, 78->exit, 90->exit, 110, 122, 131, 164->167, 187, 202, 220, 252, 255, 264, 287->292, 304, 475->477, 480, 481->491, 483->491, 598->606, 604-605, 607-608, 642->644, 678, 688-692, 709, 716, 730->732, 733, 735, 748->exit, 750-751, 764->exit, 806->809, 835-836, 873-894, 956->959, 1000, 1026->exit, 1044, 1045->exit
+src\kimix\tools\agent\__init__.py     545     52    176     38    86%   56->59, 60, 78->exit, 90->exit, 110, 122, 131, 164->167, 187, 202, 220, 252, 255, 264, 287->292, 304, 475->477, 480, 481->491, 483->491, 598->606, 604-605, 607-608, 642->644, 678, 688-692, 709, 737->exit, 779->782, 808-809, 846-850, 912->915, 956, 982->exit, 1000, 1001->exit, 1148-1156, 1162-1169, 1178-1180, 1187, 1195, 1197, 1204->1206, 1207, 1218->exit, 1220-1221
 src\kimix\tools\agent\store.py         69      0     12      1    99%   104->103
 -------------------------------------------------------------------------------
-TOTAL                                 594     47    184     38    88%
-114 passed in 4.60s
-[elapsed 8.5s, rc=0]
+TOTAL                                 614     52    188     39    88%
+114 passed in 3.10s
+[elapsed 6.4s, rc=0]

@@ -711,44 +711,17 @@ class Agent(CallableTool2):
         if parent is None:
             return
         status = "failed" if result.is_error else "completed"
-        text = result.output or result.message or "(no output)"
-        if len(text) > 2000:
-            text = text[:2000] + "..."
+        text = _truncate_text(result.output or result.message or "(no output)", 2000)
         extras = getattr(result, "extras", None) or {}
         store = _get_store(self._session)
-        externally_closed = (
-            not result.is_error
-            and extras.get("status") == "continued"
-            and store.get(session_id) is None
-            and store.was_closed(session_id)
-        )
-        if externally_closed:
-            # The run was interrupted (its session was closed mid-turn), so
-            # the output is partial — never present it as a clean completion
-            # with a bogus "(no text output)" final message.
-            partial = text
-            if partial.startswith("Session ID:") and "\n\n" in partial:
-                partial = partial.split("\n\n", 1)[1]
-            if partial == "(no text output)":
-                partial = "(interrupted before producing any text output)"
-            if len(partial) > 1500:
-                partial = partial[:1500] + "..."
-            notice = (
-                f"Background subagent '{session_id}' was interrupted. "
-                f"Partial output:\n{partial}"
-            )
+        if _was_closed_mid_turn(result, extras, store, session_id):
+            # The run was interrupted (its session was closed mid-turn), so the
+            # output is partial — never present it as a clean completion with a
+            # bogus "(no text output)" final message.
+            notice = _interrupted_notice(session_id, text)
         else:
-            notice = (
-                f"Background subagent '{session_id}' {status}. Final message:\n{text}"
-            )
-        try:
-            from kimi_cli.soul.steer import Steer
-
-            steer = Steer.from_session(parent)
-            if steer is not None:
-                await steer.push(notice)
-        except Exception:
-            pass
+            notice = f"Background subagent '{session_id}' {status}. Final message:\n{text}"
+        await _push_steer_notice(parent, notice)
 
     async def _execute(self, prepared: _PreparedRun) -> ToolReturnValue:
         session = prepared.session
@@ -869,28 +842,11 @@ class Agent(CallableTool2):
     def _format_history(self, turns: list[ConversationTurn], format: str) -> list[dict[str, Any]] | str:
         """Format conversation turns according to history_format."""
         if format == "json":
-            return [turn.model_dump() for turn in turns]
-        elif format == "markdown":
-            lines: list[str] = []
-            for i, turn in enumerate(turns):
-                role_icon = {"user": "👤", "assistant": "🤖", "tool": "🔧", "error": "❌", "system": "⚙️"}
-                icon = role_icon.get(turn.role, "?")
-                label = turn.metadata.get("type", turn.role) if turn.metadata else turn.role
-                lines.append(f"### Turn {i+1}: {icon} {label}")
-                content = turn.content if isinstance(turn.content, str) else str(turn.content)
-                lines.append(content)
-                lines.append("")
-            return "\n".join(lines)
-        elif format == "summary":
-            tool_calls = sum(1 for t in turns if t.metadata and t.metadata.get("type") == "tool_call")
-            tool_results = sum(1 for t in turns if t.metadata and t.metadata.get("type") == "tool_result")
-            text_turns = [t for t in turns if t.role == "assistant" and t.metadata and t.metadata.get("type") == "text"]
-            total_chars = sum(len(str(t.content)) for t in text_turns)
-            return (
-                f"Sub-agent made {tool_calls} tool call(s) with {tool_results} "
-                f"result(s), and produced {len(text_turns)} text response(s) "
-                f"({total_chars} total characters)."
-            )
+            return _history_as_json(turns)
+        if format == "markdown":
+            return _history_as_markdown(turns)
+        if format == "summary":
+            return _history_as_summary(turns)
         return []
 
     async def _resolve_session(self, params: SubAgentParams) -> tuple[Any, str, bool]:
@@ -1169,3 +1125,97 @@ class AgentClose(CallableTool2):
             output=f"Session {params.agent_id} closed.",
             brief="Session closed",
         )
+
+
+# ---------------------------------------------------------------------------
+# History formatting / background-notice helpers.
+#
+# Split out of `Agent._format_history` and `Agent._notify_parent_background_finished`
+# so both methods stay under the G1 cyclomatic-complexity threshold of 12
+# (finding F-19).  Pure functions of their arguments; no state is read.
+# ---------------------------------------------------------------------------
+
+_ROLE_ICONS = {"user": "👤", "assistant": "🤖", "tool": "🔧", "error": "❌", "system": "⚙️"}
+
+
+def _history_as_json(turns: list[ConversationTurn]) -> list[dict[str, Any]]:
+    """Return the raw turn models."""
+    return [turn.model_dump() for turn in turns]
+
+
+def _history_as_markdown(turns: list[ConversationTurn]) -> str:
+    """Render the turns as a markdown transcript."""
+    lines: list[str] = []
+    for i, turn in enumerate(turns):
+        icon = _ROLE_ICONS.get(turn.role, "?")
+        label = turn.metadata.get("type", turn.role) if turn.metadata else turn.role
+        lines.append(f"### Turn {i + 1}: {icon} {label}")
+        content = turn.content if isinstance(turn.content, str) else str(turn.content)
+        lines.append(content)
+        lines.append("")
+    return "\n".join(lines)
+
+
+def _history_as_summary(turns: list[ConversationTurn]) -> str:
+    """Return the one-line tool-call / text-response summary."""
+
+    def _count(kind: str) -> int:
+        return sum(
+            1 for t in turns if t.metadata and t.metadata.get("type") == kind
+        )
+
+    text_turns = [t for t in turns if _is_text_turn(t)]
+    total_chars = sum(len(str(t.content)) for t in text_turns)
+    return (
+        f"Sub-agent made {_count('tool_call')} tool call(s) with "
+        f"{_count('tool_result')} result(s), and produced {len(text_turns)} text "
+        f"response(s) ({total_chars} total characters)."
+    )
+
+
+def _is_text_turn(turn: ConversationTurn) -> bool:
+    """True for an assistant turn carrying text content."""
+    if turn.role != "assistant" or not turn.metadata:
+        return False
+    return turn.metadata.get("type") == "text"
+
+
+def _truncate_text(text: str, limit: int) -> str:
+    """Return *text*, truncated with an ellipsis when longer than *limit*."""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
+
+def _was_closed_mid_turn(
+    result: ToolReturnValue, extras: dict, store: Any, session_id: str
+) -> bool:
+    """True when the run was interrupted because its session was closed mid-turn."""
+    if result.is_error:
+        return False
+    if extras.get("status") != "continued":
+        return False
+    return store.get(session_id) is None and store.was_closed(session_id)
+
+
+def _interrupted_notice(session_id: str, text: str) -> str:
+    """Build the 'was interrupted' steer text, dropping the session preamble."""
+    partial = text
+    if partial.startswith("Session ID:") and "\n\n" in partial:
+        partial = partial.split("\n\n", 1)[1]
+    if partial == "(no text output)":
+        partial = "(interrupted before producing any text output)"
+    partial = _truncate_text(partial, 1500)
+    return f"Background subagent '{session_id}' was interrupted. Partial output:\n{partial}"
+
+
+async def _push_steer_notice(parent: Any, notice: str) -> None:
+    """Best-effort steer delivery; a dropped steer is not an error."""
+    from kimi_cli.soul.steer import Steer
+
+    try:
+        steer = Steer.from_session(parent)
+        if steer is not None:
+            await steer.push(notice)
+    except Exception:
+        pass

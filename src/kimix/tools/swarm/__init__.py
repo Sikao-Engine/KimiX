@@ -115,15 +115,14 @@ class AgentSwarmParams(BaseModel):
         if self.mode == "parallel_sample":
             if self.sample_n is not None and self.sample_n < 1:
                 raise ValueError("sample_n must be >= 1.")
-            uses_template = self.prompt_template is not None
-            uses_prefix = self.prompt_prefix is not None
-            if uses_template and uses_prefix:
-                raise ValueError("Use either prompt_template or prompt_prefix+suffix, not both.")
-            if not uses_template and not uses_prefix:
-                raise ValueError(
+            _require_exactly_one_prompt_source(
+                self.prompt_template is not None,
+                self.prompt_prefix is not None,
+                mode_hint=(
                     "parallel_sample mode requires the task prompt via prompt_template "
                     "or prompt_prefix (+prompt_suffix)."
-                )
+                ),
+            )
             return self
         resume_count = len(self.resume_agent_ids) if self.resume_agent_ids else 0
         if len(self.items) < 2 and resume_count == 0:
@@ -131,20 +130,18 @@ class AgentSwarmParams(BaseModel):
         total = len(self.items) + resume_count
         if total > _MAX_SUB_AGENTS:
             raise ValueError(f"Max {_MAX_SUB_AGENTS} sub-agents per swarm.")
-        uses_template = self.prompt_template and "{{item}}" in self.prompt_template
-        uses_prefix = self.prompt_prefix is not None
-        if uses_template and uses_prefix:
-            raise ValueError("Use either prompt_template or prompt_prefix+suffix, not both.")
-        if not uses_template and not uses_prefix:
-            raise ValueError(
+        has_template = bool(self.prompt_template and "{{item}}" in self.prompt_template)
+        _require_exactly_one_prompt_source(
+            has_template,
+            self.prompt_prefix is not None,
+            mode_hint=(
                 "prompt_template must contain '{{item}}', or set prompt_prefix. "
                 "For example: prompt_template='Fix errors in {{item}}.'"
-            )
-        if uses_template and "{{item}}" not in self.prompt_template:
-            raise ValueError(
-                "prompt_template must contain '{{item}}'. "
-                "For example: 'Fix all lint errors in {{item}}.'"
-            )
+            ),
+        )
+        # (The former trailing `if has_template and "{{item}}" not in
+        # self.prompt_template:` raise was unreachable: `has_template` is only
+        # truthy when the placeholder IS present. Removed as dead code, F-47.)
         return self
 
 
@@ -537,3 +534,17 @@ async def _resolve_subagent_session(
         sub_custom_config["is_sub_agent"] = True
 
     return session, session_id, task_prompt
+
+
+def _require_exactly_one_prompt_source(
+    has_template: bool, has_prefix: bool, *, mode_hint: str
+) -> None:
+    """Enforce the ``prompt_template`` XOR ``prompt_prefix`` contract.
+
+    Extracted from ``AgentSwarmParams._validate`` (which used it twice) so the
+    validator stays under the G1 complexity threshold (finding F-19).
+    """
+    if has_template and has_prefix:
+        raise ValueError("Use either prompt_template or prompt_prefix+suffix, not both.")
+    if not has_template and not has_prefix:
+        raise ValueError(mode_hint)

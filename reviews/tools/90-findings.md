@@ -125,6 +125,8 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 | **F-45** | low | gate contract | `ruff --select C901` does NOT count boolean operators as decision points while `tools/review_metrics.py` does (each `or`/`and` beyond the first counts one). `swarm/__init__.py::_validate` therefore measures 19 in the metrics tool and passes C901 | `src/kimix/tools/swarm/__init__.py` (K13 gate) | **recorded**: both are G1 sub-checks, so the stricter reading (metrics) governs; aligning the two conventions is a follow-up |
 | **F-46** | medium | gate contract | `tools/review_gates.py` runs `pytest --cov ... --cov-report=term-missing` but does NOT pass `--cov-fail-under=<FLOOR>`, so `cov=pass` in `gates/<ID>.json` means "the coverage run succeeded", not "the floor was met". The per-tool `floor`/`actual` comparison lives in the reports' §2.2 block, not in the harness | `tools/review_gates.py` | **recorded**: passing a per-tool `--cov-fail-under` is a one-line follow-up; until then G3 must be read from the report, not from `cov=pass` |
 
+| **F-47** | low | simplicity | `AgentSwarmParams._validate` (default branch) ended with `if uses_template and "{{item}}" not in self.prompt_template: raise ...`, which is unreachable: `uses_template` is only truthy when the placeholder IS present. It also duplicated the template/prefix XOR check verbatim in both branches | `src/kimix/tools/swarm/__init__.py` | **fixed (G1)**: the XOR check is now `_require_exactly_one_prompt_source()` and the dead raise is removed; `_validate` 19 -> 4, module max complexity 19 -> 12, so **K13 now passes G1** |
+
 ## FP-09 outcome
 
 `uv run ruff check --statistics kimi-cli/src/kimi_cli/tools src/kimix/tools`:
