@@ -2249,3 +2249,51 @@ ERROR tests/test_bash_e2e.py - ValueError: cannot read corpus file C:\dev\kim...
 1 error in 1.26s
 [elapsed 4.9s, rc=2]
 
+
+=== G1 metrics with thresholds: uv run tools/review_metrics.py <in-scope src> --max-fn-loc 120 --max-complexity 12 ===
+    check_hardline_blocked                   loc=10    complexity=4    branches=3    nesting=1
+    _pkill_full_match                        loc=9     complexity=6    branches=5    nesting=2
+    detect_hardline_command                  loc=8     complexity=1    branches=0    nesting=0
+    _pid_hit                                 loc=8     complexity=3    branches=2    nesting=2
+    _segment_tokens                          loc=7     complexity=1    branches=0    nesting=0
+    _agent_cmdline                           loc=7     complexity=3    branches=2    nesting=1
+    _compat_tools                            loc=5     complexity=2    branches=1    nesting=1
+    _looks_like_flag                         loc=4     complexity=1    branches=0    nesting=0
+    _segment_text                            loc=3     complexity=1    branches=0    nesting=0
+src/kimix/tools/file/bash/output_enhance.py: loc=106 fns=4 longest_fn=interpret_exit_code (17) max_complexity=8
+    interpret_exit_code                      loc=17    complexity=8    branches=7    nesting=1
+    is_expected_exit                         loc=17    complexity=7    branches=6    nesting=2
+    annotate_failure                         loc=12    complexity=5    branches=4    nesting=1
+    _compat_tools                            loc=5     complexity=2    branches=1    nesting=1
+src/kimix/tools/file/bash/shell_common.py: loc=159 fns=10 longest_fn=pwsh_argv (29) max_complexity=5
+    pwsh_argv                                loc=29    complexity=5    branches=4    nesting=1
+    bash_argv                                loc=17    complexity=3    branches=2    nesting=0
+    wrap_pwsh_command                        loc=12    complexity=1    branches=0    nesting=0
+    inspect_bash_command                     loc=10    complexity=1    branches=0    nesting=0
+    prepare_bash_command                     loc=9     complexity=1    branches=0    nesting=0
+    pwsh_file_argv                           loc=7     complexity=1    branches=0    nesting=0
+    pwsh_executable                          loc=6     complexity=4    branches=3    nesting=1
+    _bash_tool                               loc=5     complexity=1    branches=0    nesting=0
+    _pwsh_tool                               loc=5     complexity=1    branches=0    nesting=0
+    bash_file_argv                           loc=5     complexity=2    branches=1    nesting=0
+METRICS_THRESHOLD_EXIT=1
+
+=== G1 per-file maxima (from the --json run above) ===
+bash_tool.py  loc=1461 module_cx=51 max_cx=51(__call__) longest_fn=325(__call__) max_nest=4 functions=39
+bash_fix.py   loc=135  module_cx=3  max_cx=3(fix_bash_command) longest_fn=23 max_nest=1
+safety.py     loc=665  module_cx=52 max_cx=52(detect_self_kill) longest_fn=173(detect_self_kill) max_nest=6(_loop_pid_sources)
+output_enhance.py loc=106 module_cx=8 max_cx=8(interpret_exit_code) longest_fn=17 max_nest=2
+shell_common.py   loc=159 module_cx=5 max_cx=5(pwsh_argv) longest_fn=29 max_nest=1
+totals: files=5 loc=2526 functions=77
+
+########## G0 validation ##########
+=== uv run tools/gate_validate.py reviews/tools/K04-bash-bash.md ===
+VALID   reviews/tools/K04-bash-bash.md  id=K04
+VALIDATE_EXIT=0
+=== ls reviews/tools/K04-*.md ===
+-rw-r--r-- 1 maxwellgeng 197121 51659 2026-10-08 12:06:41.504664000 +0800 reviews/tools/K04-bash-bash.md
+=== final git status --porcelain (this unit's artifacts) ===
+ M reviews/tools/K04-bash-bash.md
+ M reviews/tools/gates/K04.txt
+=== final git rev-parse HEAD ===
+a42992ffbcfcda75a5f117171ed0a496e2dd6035
