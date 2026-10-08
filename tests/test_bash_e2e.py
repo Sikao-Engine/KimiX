@@ -293,11 +293,21 @@ def _case_id(case: BashCase) -> str:
 
 
 def pytest_generate_tests(metafunc: Any) -> None:
-    """Parametrize ``bash_case`` from the corpus selected by ``--case``."""
+    """Parametrize ``bash_case`` from the corpus selected by ``--case``.
+
+    The corpus is an OPTIONAL fixture (it is not tracked by git and is absent in a
+    plain checkout).  A *missing default* corpus therefore collects as the
+    synthetic empty-corpus case, which skips, instead of aborting collection for
+    the entire root suite (finding F-05: `uv run pytest tests` used to exit 2 with
+    `ValueError: cannot read corpus file .../tests/bash/cases.json`).  An explicit
+    ``--case <path>`` that does not exist is still a hard error, because the user
+    asked for that exact file.
+    """
     if "bash_case" not in metafunc.fixturenames:
         return
+    explicit = metafunc.config.getoption("case", default=None)
     path = _case_path(metafunc.config)
-    cases = load_cases(path)
+    cases = load_cases(path) if (path.exists() or explicit) else []
     if not cases:
         cases = [BashCase(name="empty-corpus", src="", dest="", index=-1)]
         metafunc.parametrize(
@@ -313,7 +323,9 @@ def test_bash_case(bash_case: BashCase) -> None:
     """The parser must transform ``src`` (native POSIX) into ``dest`` (Git Bash)."""
     if bash_case.index < 0:  # synthetic empty-corpus placeholder
         if pytest is not None:
-            pytest.skip("corpus file is empty")
+            pytest.skip(
+                "bash e2e corpus not available (pass --case <path> to run this suite)"
+            )
         return
     report = check_case(bash_case)
     assert report is None, report
