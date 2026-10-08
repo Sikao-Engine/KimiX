@@ -118,6 +118,8 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 | **F-41** | low | limits | `EditPlan._normalize_line_endings` folds CRLF -> LF but leaves a lone CR alone (the plan's K12 probe 15 says "`//r//n` -> `//n`", which is what it does) | `src/kimix/tools/note/__init__.py` | **recorded as intended**: pinned by a probe |
 | **F-42** | low | error contract | `EditPlan`'s no-match `ToolError` says "The old string was not found in the plan file." without naming the target string, unlike the plan's K12 probe 16 which asks the missing target to be named | `src/kimix/tools/note/__init__.py` | **open**: pinned by a probe asserting today's wording so the gap is visible |
 
+| **F-43** | low | simplicity | `EditPlan._find_similar` ended with `if target_line_count == 1 and lines:` re-running the *identical* `process.extractOne(norm_target, lines, ...)` lookup that the function's first block already performed, so the branch could never return anything new — pure dead code that pushed the method to complexity 13 | `src/kimix/tools/note/__init__.py` | **fixed (G1)**: dead branch removed and the window search extracted to `_best_fuzzy_match`; `_find_similar` 13 -> 5, `_read_tail` 15 -> 7 (byte-budget trim + message assembly extracted). `note/__init__.py` max complexity 15 -> 12, so **K10/K11/K12 now pass G1** (ruff + C901 + metrics all green) |
+
 ## FP-09 outcome
 
 `uv run ruff check --statistics kimi-cli/src/kimi_cli/tools src/kimix/tools`:

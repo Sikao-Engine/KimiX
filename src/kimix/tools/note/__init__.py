@@ -237,23 +237,7 @@ class ReadPlan(CallableTool2):
 
         candidates = tail_buf[:line_limit]
         max_lines_reached = len(tail_buf) > MAX_LINES and len(candidates) == MAX_LINES
-
-        if candidates:
-            total_candidate_bytes = sum(entry[3] for entry in candidates)
-            if total_candidate_bytes > MAX_BYTES:
-                max_bytes_reached = True
-                kept = 0
-                n_bytes = 0
-                for entry in reversed(candidates):
-                    n_bytes += entry[3]
-                    if n_bytes > MAX_BYTES:
-                        break
-                    kept += 1
-                candidates = candidates[len(candidates) - kept:]
-            else:
-                max_bytes_reached = False
-        else:
-            max_bytes_reached = False
+        candidates, max_bytes_reached = _trim_candidates_to_byte_budget(candidates, MAX_BYTES)
 
         lines_with_no: list[str] = []
         truncated_line_numbers: list[int] = []
@@ -263,24 +247,66 @@ class ReadPlan(CallableTool2):
             lines_with_no.append(f"{line_no:6d}\t{truncated}")
 
         start_line = candidates[0][0] if candidates else total_lines + 1
-        message_parts: list[str] = []
-        if len(lines_with_no) > 0:
-            message_parts.append(f"{len(lines_with_no)} lines read from plan starting from line {start_line}.")
-        else:
-            message_parts.append("No lines read from plan.")
-        message_parts.append(f"Total lines in file: {total_lines}.")
-        if max_lines_reached:
-            message_parts.append(f"Max {MAX_LINES} lines reached.")
-        elif max_bytes_reached:
-            message_parts.append(f"Max {MAX_BYTES} bytes reached.")
-        if truncated_line_numbers:
-            message_parts.append(f"Lines {truncated_line_numbers} were truncated.")
-
         return ToolOk(
             output="".join(lines_with_no),
-            message=" ".join(message_parts),
+            message=_build_plan_read_message(
+                lines_with_no,
+                start_line,
+                total_lines,
+                max_lines_reached=max_lines_reached,
+                max_bytes_reached=max_bytes_reached,
+                truncated_line_numbers=truncated_line_numbers,
+            ),
             brief="Read plan",
         )
+
+
+def _trim_candidates_to_byte_budget(
+    candidates: list[tuple[int, str, bool, int]], max_bytes: int
+) -> tuple[list[tuple[int, str, bool, int]], bool]:
+    """Keep the newest candidates whose combined UTF-8 size fits *max_bytes*.
+
+    Returns ``(kept_candidates, byte_budget_was_hit)``.  Extracted from
+    ``_read_tail`` so that method stays under the G1 complexity threshold.
+    """
+    if not candidates:
+        return candidates, False
+    if sum(entry[3] for entry in candidates) <= max_bytes:
+        return candidates, False
+    kept = 0
+    n_bytes = 0
+    for entry in reversed(candidates):
+        n_bytes += entry[3]
+        if n_bytes > max_bytes:
+            break
+        kept += 1
+    return candidates[len(candidates) - kept :], True
+
+
+def _build_plan_read_message(
+    lines_with_no: list[str],
+    start_line: int,
+    total_lines: int,
+    *,
+    max_lines_reached: bool,
+    max_bytes_reached: bool,
+    truncated_line_numbers: list[int],
+) -> str:
+    """Assemble the human-facing summary for a plan read (extracted for G1)."""
+    if lines_with_no:
+        parts = [
+            f"{len(lines_with_no)} lines read from plan starting from line {start_line}."
+        ]
+    else:
+        parts = ["No lines read from plan."]
+    parts.append(f"Total lines in file: {total_lines}.")
+    if max_lines_reached:
+        parts.append(f"Max {MAX_LINES} lines reached.")
+    elif max_bytes_reached:
+        parts.append(f"Max {MAX_BYTES} bytes reached.")
+    if truncated_line_numbers:
+        parts.append(f"Lines {truncated_line_numbers} were truncated.")
+    return " ".join(parts)
 
 
 # --- EditPlan ---
@@ -324,32 +350,40 @@ class EditPlan(CallableTool2):
         return text.replace("\r\n", "\n")
 
     def _find_similar(self, target: str, content: str, cutoff: float = 75.0) -> str | None:
-        """Find the most similar line or chunk in content to target."""
+        """Find the most similar line or chunk in content to target.
+
+        The single-line case is a plain best-match over the file's lines.  When
+        the target spans several lines, the same comparison is repeated over every
+        sliding window of that width.
+
+        (The former trailing `if target_line_count == 1 and lines:` block was a
+        byte-for-byte repeat of the first lookup, so it could never return anything
+        new - removed as dead code, finding F-43.)
+        """
         norm_target = self._normalize_line_endings(target)
-        norm_content = self._normalize_line_endings(content)
-        lines = norm_content.splitlines()
+        lines = self._normalize_line_endings(content).splitlines()
 
-        result = process.extractOne(norm_target, lines, scorer=fuzz.ratio)
-        if result and result[1] >= cutoff:
-            return result[0]
+        match = self._best_fuzzy_match(norm_target, lines, cutoff)
+        if match is not None:
+            return match
 
-        target_lines = norm_target.splitlines()
-        target_line_count = len(target_lines)
-        if target_line_count > 1 and len(lines) >= target_line_count:
-            windows = []
-            for i in range(len(lines) - target_line_count + 1):
-                window = "\n".join(lines[i: i + target_line_count])
-                windows.append(window)
-            if windows:
-                result = process.extractOne(norm_target, windows, scorer=fuzz.ratio)
-                if result and result[1] >= cutoff:
-                    return result[0]
+        target_line_count = len(norm_target.splitlines())
+        if target_line_count <= 1 or len(lines) < target_line_count:
+            return None
+        windows = [
+            "\n".join(lines[i : i + target_line_count])
+            for i in range(len(lines) - target_line_count + 1)
+        ]
+        return self._best_fuzzy_match(norm_target, windows, cutoff)
 
-        if target_line_count == 1 and lines:
-            result = process.extractOne(norm_target, lines, scorer=fuzz.ratio)
-            if result and result[1] >= cutoff:
-                return result[0]
-
+    @staticmethod
+    def _best_fuzzy_match(target: str, candidates: list[str], cutoff: float) -> str | None:
+        """Return the best `rapidfuzz` candidate scoring at or above *cutoff*."""
+        if not candidates:
+            return None
+        best = process.extractOne(target, candidates, scorer=fuzz.ratio)
+        if best and best[1] >= cutoff:
+            return best[0]
         return None
 
     def _try_strip_match(

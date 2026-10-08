@@ -1,62 +1,10 @@
-d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+d05e53288b440aa9b44fcbf17c6aa9d91d3ae13c
 [elapsed 0.0s, rc=0]
- M reviews/tools/gates/C00.json
- M reviews/tools/gates/C00.txt
- M reviews/tools/gates/C01.json
- M reviews/tools/gates/C01.txt
- M reviews/tools/gates/C02.json
- M reviews/tools/gates/C02.txt
- M reviews/tools/gates/C03.json
- M reviews/tools/gates/C03.txt
- M reviews/tools/gates/C04.json
- M reviews/tools/gates/C04.txt
- M reviews/tools/gates/C05.json
- M reviews/tools/gates/C05.txt
- M reviews/tools/gates/C06.json
- M reviews/tools/gates/C06.txt
- M reviews/tools/gates/C07.json
- M reviews/tools/gates/C07.txt
- M reviews/tools/gates/C08.json
- M reviews/tools/gates/C08.txt
- M reviews/tools/gates/C09.json
- M reviews/tools/gates/C09.txt
- M reviews/tools/gates/C10.json
- M reviews/tools/gates/C10.txt
- M reviews/tools/gates/C11.json
- M reviews/tools/gates/C11.txt
- M reviews/tools/gates/C12.json
- M reviews/tools/gates/C12.txt
- M reviews/tools/gates/C13.json
- M reviews/tools/gates/C13.txt
- M reviews/tools/gates/C14.json
- M reviews/tools/gates/C14.txt
- M reviews/tools/gates/C15.json
- M reviews/tools/gates/C15.txt
- M reviews/tools/gates/K00.json
- M reviews/tools/gates/K00.txt
- M reviews/tools/gates/K01.json
- M reviews/tools/gates/K01.txt
- M reviews/tools/gates/K02.json
- M reviews/tools/gates/K02.txt
- M reviews/tools/gates/K03.json
- M reviews/tools/gates/K03.txt
- M reviews/tools/gates/K04.json
- M reviews/tools/gates/K04.txt
- M reviews/tools/gates/K05.json
- M reviews/tools/gates/K05.txt
- M reviews/tools/gates/K06.json
- M reviews/tools/gates/K06.txt
- M reviews/tools/gates/K07.json
- M reviews/tools/gates/K07.txt
- M reviews/tools/gates/K08.json
- M reviews/tools/gates/K08.txt
- M reviews/tools/gates/K09.json
- M reviews/tools/gates/K09.txt
  M reviews/tools/gates/K10.json
  M reviews/tools/gates/K10.txt
  M reviews/tools/gates/K11.json
  M reviews/tools/gates/K11.txt
-?? reviews/tools/gates/_harness2.log
+ M src/kimix/tools/note/__init__.py
 [elapsed 0.0s, rc=0]
 
 
@@ -65,27 +13,16 @@ All checks passed!
 [elapsed 0.1s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
-C901 `_read_tail` is too complex (13 > 12)
-   --> src\kimix\tools\note\__init__.py:218:15
-    |
-216 |         )
-217 |
-218 |     async def _read_tail(self, path: Path, params: ReadPlanParams) -> ToolReturnValue:
-    |               ^^^^^^^^^^
-219 |         """Read file from a negative line_offset (tail mode)."""
-220 |         tail_count = abs(params.line_offset)
-    |
-
-Found 1 error.
-[elapsed 0.1s, rc=1]
+All checks passed!
+[elapsed 0.1s, rc=0]
 
 === uv run tools/review_metrics.py --json --max-fn-loc 120 ===
 {
   "files": [
     {
       "path": "src/kimix/tools/note/__init__.py",
-      "loc": 517,
-      "module_loc": 517,
+      "loc": 551,
+      "module_loc": 551,
       "functions": [
         {
           "name": "_set_enable_plan",
@@ -94,6 +31,22 @@ Found 1 error.
           "complexity": 1,
           "branches": 0,
           "max_nesting": 0
+        },
+        {
+          "name": "_trim_candidates_to_byte_budget",
+          "lineno": 264,
+          "loc": 20,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
+        },
+        {
+          "name": "_build_plan_read_message",
+          "lineno": 286,
+          "loc": 24,
+          "complexity": 5,
+          "branches": 4,
+          "max_nesting": 2
         },
         {
           "name": "__init__",
@@ -146,14 +99,14 @@ Found 1 error.
         {
           "name": "_read_tail",
           "lineno": 218,
-          "loc": 66,
-          "complexity": 15,
-          "branches": 14,
-          "max_nesting": 4
+          "loc": 44,
+          "complexity": 7,
+          "branches": 6,
+          "max_nesting": 3
         },
         {
           "name": "__init__",
-          "lineno": 316,
+          "lineno": 342,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -161,7 +114,7 @@ Found 1 error.
         },
         {
           "name": "_normalize_line_endings",
-          "lineno": 322,
+          "lineno": 348,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -169,15 +122,23 @@ Found 1 error.
         },
         {
           "name": "_find_similar",
-          "lineno": 326,
-          "loc": 28,
-          "complexity": 13,
-          "branches": 12,
-          "max_nesting": 3
+          "lineno": 352,
+          "loc": 26,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
+        },
+        {
+          "name": "_best_fuzzy_match",
+          "lineno": 380,
+          "loc": 8,
+          "complexity": 4,
+          "branches": 3,
+          "max_nesting": 1
         },
         {
           "name": "_try_strip_match",
-          "lineno": 355,
+          "lineno": 389,
           "loc": 24,
           "complexity": 7,
           "branches": 6,
@@ -185,7 +146,7 @@ Found 1 error.
         },
         {
           "name": "_find_best_fuzzy_match",
-          "lineno": 380,
+          "lineno": 414,
           "loc": 36,
           "complexity": 7,
           "branches": 6,
@@ -193,7 +154,7 @@ Found 1 error.
         },
         {
           "name": "_apply_edit",
-          "lineno": 417,
+          "lineno": 451,
           "loc": 41,
           "complexity": 8,
           "branches": 7,
@@ -201,7 +162,7 @@ Found 1 error.
         },
         {
           "name": "__call__",
-          "lineno": 459,
+          "lineno": 493,
           "loc": 56,
           "complexity": 9,
           "branches": 8,
@@ -209,38 +170,17 @@ Found 1 error.
         }
       ],
       "longest_fn": {
-        "name": "_read_tail",
-        "loc": 66
+        "name": "__call__",
+        "loc": 56
       },
-      "module_complexity": 15
+      "module_complexity": 12
     }
   ],
   "totals": {
     "files": 1,
-    "loc": 517,
-    "functions": 15
+    "loc": 551,
+    "functions": 18
   },
-  "breaches": [
-    "src/kimix/tools/note/__init__.py::_read_tail complexity=15 > 12",
-    "src/kimix/tools/note/__init__.py::_find_similar complexity=13 > 12"
-  ]
+  "breaches": []
 }
-[elapsed 0.1s, rc=1]
-
-=== uv run pytest tests/test_note.py -q -rs ===
-..............................................                           [100%]
-46 passed in 0.86s
-[elapsed 1.7s, rc=0]
-
-=== uv run --with pytest-cov pytest tests/test_note.py --cov=kimix.tools.note ===
-..............................................                           [100%]
-=============================== tests coverage ================================
-_______________ coverage: platform win32, python 3.14.3-final-0 _______________
-
-Name                               Stmts   Miss Branch BrPart  Cover   Missing
-------------------------------------------------------------------------------
-src\kimix\tools\note\__init__.py     310     38    130     18    84%   26, 111, 115, 159->161, 202, 244-252, 262, 273, 275, 277, 339-346, 348->353, 351, 371, 374-375, 403-408, 444, 489, 496
-------------------------------------------------------------------------------
-TOTAL                                310     38    130     18    84%
-46 passed in 0.95s
-[elapsed 4.2s, rc=0]
+[elapsed 0.2s, rc=0]
