@@ -21,6 +21,7 @@ from kimi_cli.tools.display import ShellDisplayBlock
 from kimix.tools.file.bash import bash_tool as _bash_tool
 from kimix.tools.file.bash.process_pwsh import pwsh_transform
 from kimix.tools.file.bash.pwsh_fix import fix_pwsh_command
+from kimix.tools.background.utils import BackgroundStream
 from kimix.tools.common import (
     _append_elapsed,
     _build_session_output_block,
@@ -1051,7 +1052,7 @@ class Powershell(CallableTool2[PowershellParams]):
     async def _format_session_result(
         self,
         task_id: str,
-        stream: 'BackgroundStream' | None,
+        stream: BackgroundStream | None,
         params: PowershellParams,
         output: str,
         status: str,

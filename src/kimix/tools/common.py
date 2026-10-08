@@ -1926,7 +1926,7 @@ class ProcessTask:
         self._append_newline = append_newline
         self._stop_event = threading.Event()
         self._process_ref: asyncio.subprocess.Process | None = None
-        self._stream: 'BackgroundStream' | None = None
+        self._stream: BackgroundStream | None = None
         self._task_id: str | None = None
         self._input_queue: queue.Queue[str] = queue.Queue()
 
@@ -2329,7 +2329,7 @@ class ProcessTask:
         return self._task_id
 
     @property
-    def stream(self) -> 'BackgroundStream' | None:
+    def stream(self) -> BackgroundStream | None:
         """The underlying BackgroundStream if the process has been started."""
         return self._stream
 

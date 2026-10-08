@@ -90,6 +90,25 @@ def _build_image_decode_limit_error(final_bytes: int) -> str:
     )
 
 
+def _build_image_delivery_limit_error(
+    final_bytes: int, byte_budget: int, max_edge: int
+) -> str:
+    """Explain why an image is still undeliverable after the mipmap fallback.
+
+    Reached when the normal compressor *and* the mip-map fallback both leave the
+    payload over the delivery byte budget or over the maximum edge length, so no
+    model-visible media part can be created.
+    """
+    return (
+        f"Image is still too large to deliver after downsampling "
+        f"({final_bytes} bytes over the {byte_budget}-byte budget, "
+        f"or over the {max_edge}px maximum edge). "
+        "The original image was not sent to the model. Do not retry the same file unchanged. "
+        "Use region to read a smaller crop, lower quality, or set max_dimension to create a "
+        "smaller copy first, then call read_image on the resulting file."
+    )
+
+
 def _try_mipmap_fallback(
     data: bytes,
     mime_type: str,
@@ -298,24 +317,36 @@ class ReadMediaFile(CallableTool2[Params]):
 
             # Resolve region_pct to pixel coordinates if provided
             region = params.region
-            if params.region_pct is not None and dimensions is not None:
+            if params.region_pct is not None:
+                if dimensions is None:
+                    return ToolError(
+                        message=f"Cannot resolve region_pct '{params.region_pct}': the image "
+                        "dimensions could not be determined. Use region with pixel "
+                        "coordinates instead.",
+                        brief="Invalid region_pct",
+                    )
                 parts = params.region_pct.split(",")
-                if len(parts) == 4:
-                    try:
-                        pct_x, pct_y, pct_w, pct_h = map(float, parts)
-                        orig_w, orig_h = dimensions
-                        region = Region(
-                            x=int(orig_w * pct_x / 100.0),
-                            y=int(orig_h * pct_y / 100.0),
-                            width=max(1, int(orig_w * pct_w / 100.0)),
-                            height=max(1, int(orig_h * pct_h / 100.0)),
-                        )
-                    except (ValueError, ZeroDivisionError):
-                        return ToolError(
-                            message=f"Invalid region_pct '{params.region_pct}'. "
-                            "Format: 'x,y,width,height' with each value 0-100.",
-                            brief="Invalid region_pct",
-                        )
+                if len(parts) != 4:
+                    return ToolError(
+                        message=f"Invalid region_pct '{params.region_pct}'. "
+                        "Format: 'x,y,width,height' with each value 0-100.",
+                        brief="Invalid region_pct",
+                    )
+                try:
+                    pct_x, pct_y, pct_w, pct_h = map(float, parts)
+                    orig_w, orig_h = dimensions
+                    region = Region(
+                        x=int(orig_w * pct_x / 100.0),
+                        y=int(orig_h * pct_y / 100.0),
+                        width=max(1, int(orig_w * pct_w / 100.0)),
+                        height=max(1, int(orig_h * pct_h / 100.0)),
+                    )
+                except (ValueError, ZeroDivisionError):
+                    return ToolError(
+                        message=f"Invalid region_pct '{params.region_pct}'. "
+                        "Format: 'x,y,width,height' with each value 0-100.",
+                        brief="Invalid region_pct",
+                    )
 
             # Resolve max_edge: use params.max_dimension if set, else model default
             if params.max_dimension is not None:

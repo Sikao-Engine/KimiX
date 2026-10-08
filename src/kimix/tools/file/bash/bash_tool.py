@@ -1369,7 +1369,7 @@ class Bash(CallableTool2[BashParams]):
     async def _format_session_result(
         self,
         task_id: str,
-        stream: 'BackgroundStream' | None,
+        stream: BackgroundStream | None,
         params: BashParams,
         output: str,
         status: str,

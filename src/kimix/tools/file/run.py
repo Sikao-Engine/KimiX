@@ -47,9 +47,9 @@ from kimix.tools.prompt_common import (
     wait_for_pattern_field,
 )
 from kimi_cli.tools.display import ShellDisplayBlock
+from kimix.tools.background.utils import BackgroundStream
 from kimi_cli.share import get_share_dir
 import functools
-import shlex
 import shutil
 _HUGE_CMD_THRESHOLD = 10000
 """Character count above which command display is culled to only the path."""
@@ -755,7 +755,7 @@ class Run(CallableTool2[RunParams]):
     async def _format_session_result(
         self,
         task_id: str,
-        stream: 'BackgroundStream' | None,
+        stream: BackgroundStream | None,
         params: RunParams,
         output: str,
         status: str,

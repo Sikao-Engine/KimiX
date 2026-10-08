@@ -734,7 +734,7 @@ class python(CallableTool2[Params]):
     async def _format_session_result(
         self,
         task_id: str,
-        stream: 'BackgroundStream' | None,
+        stream: BackgroundStream | None,
         params: Params,
         output: str,
         status: str,

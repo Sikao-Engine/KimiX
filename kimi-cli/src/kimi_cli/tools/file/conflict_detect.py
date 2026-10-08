@@ -27,7 +27,6 @@ __all__ = [
     "THEIRS_PREFIX",
     "SCAN_FILE_DEFAULT_MAX_BYTES",
     "PREVIEW_SIDE_LINES",
-    "EchoTrimLimit",
     "ConflictBlock",
     "ConflictEntry",
     "ConflictError",
