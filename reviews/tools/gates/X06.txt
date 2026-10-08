@@ -692,3 +692,837 @@ FAILED tests/unit/tools/test_prompt_common.py::test_descriptions_unchanged - ...
 2 failed, 1073 passed in 75.79s (0:01:15)
 (pipeline exit 1)
 
+=== uv run pytest kimi-cli/tests/tools/test_additional_dirs.py -q -rs ===
+..s.....s...ss.                                                          [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\tools\test_additional_dirs.py:73: Windows path validation order differs
+SKIPPED [1] kimi-cli\tests\tools\test_additional_dirs.py:168: Windows path validation differs
+SKIPPED [1] kimi-cli\tests\tools\test_additional_dirs.py:250: Windows path validation order differs
+SKIPPED [1] kimi-cli\tests\tools\test_additional_dirs.py:263: Windows path validation differs
+11 passed, 4 skipped in 0.38s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/tools/test_glob.py -q -rs ===
+....................................s.s...s..                            [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\tools\test_glob.py:513: [out of work-dir] warning not implemented in Glob
+SKIPPED [1] kimi-cli\tests\tools\test_glob.py:533: [out of work-dir] warning not implemented in Glob
+SKIPPED [1] kimi-cli\tests\tools\test_glob.py:606: filesystem cannot create the long path/name this test needs (Windows MAX_PATH or 255-byte NAME_MAX component limit; enable LongPathsEnabled / shorten the temp name)
+42 passed, 3 skipped in 9.85s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/tools/test_grep.py -q -rs ===
+........................................................................ [ 65%]
+..........sss.........................                                   [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\tools\test_grep.py:1622: [out of work-dir] warning not implemented in Grep
+SKIPPED [1] kimi-cli\tests\tools\test_grep.py:1643: [out of work-dir] warning not implemented in Grep
+SKIPPED [1] kimi-cli\tests\tools\test_grep.py:1658: [out of work-dir] warning not implemented in Grep
+107 passed, 3 skipped in 7.25s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/tools/test_grep_selectors.py -q -rs ===
+.......................................................                  [100%]
+55 passed in 0.27s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/tools/test_tools_integrity_gate.py -q -rs ===
+.ssss.s....................                                              [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\tools\test_tools_integrity_gate.py:49: kimi_cli.tools.file.read_media does not declare __all__
+SKIPPED [1] kimi-cli\tests\tools\test_tools_integrity_gate.py:49: kimi_cli.tools.file.read does not declare __all__
+SKIPPED [1] kimi-cli\tests\tools\test_tools_integrity_gate.py:49: kimi_cli.tools.file.glob does not declare __all__
+SKIPPED [1] kimi-cli\tests\tools\test_tools_integrity_gate.py:49: kimi_cli.tools.file.grep_local does not declare __all__
+SKIPPED [1] kimi-cli\tests\tools\test_tools_integrity_gate.py:49: kimi_cli.tools.file.write does not declare __all__
+22 passed, 5 skipped in 0.38s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/tools/test_read_file.py -q -rs ===
+        assert result.is_error
+>       assert "absolute path" in result.message.lower()
+E       AssertionError: assert 'absolute path' in 'directory for `../outside/*.md` does not exist.'
+E        +  where 'directory for `../outside/*.md` does not exist.' = <built-in method lower of str object at 0x0000024913B0E790>()
+E        +    where <built-in method lower of str object at 0x0000024913B0E790> = 'Directory for `../outside/*.md` does not exist.'.lower
+E        +      where 'Directory for `../outside/*.md` does not exist.' = ToolError(is_error=True, output='', message='Directory for `../outside/*.md` does not exist.', display=[BriefDisplayBlock(type='brief', text='Directory not found')], extras=None).message
+
+C:\dev\kimi-agent\kimi-cli\tests\tools\test_read_file.py:1379: AssertionError
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\tools\test_read_file.py:443: [out of work-dir] warning not implemented in ReadFile
+SKIPPED [1] kimi-cli\tests\tools\test_read_file.py:461: [out of work-dir] warning not implemented in ReadFile
+SKIPPED [1] kimi-cli\tests\tools\test_read_file.py:471: [out of work-dir] warning not implemented in ReadFile
+SKIPPED [1] kimi-cli\tests\tools\test_read_file.py:484: [out of work-dir] warning not implemented in ReadFile
+2 failed, 99 passed, 4 skipped in 4.72s
+(pipeline exit 1)
+
+=== uv run pytest kimi-cli/tests/core/test_create_llm.py -q -rs ===
+s................................................                        [100%]
+============================== warnings summary ===============================
+tests/core/test_create_llm.py::test_create_llm_google_genai_custom_headers
+  C:\dev\kimi-agent\.venv\Lib\site-packages\google\genai\types.py:42: DeprecationWarning: '_UnionGenericAlias' is deprecated and slated for removal in Python 3.17
+    VersionedUnionType = Union[builtin_types.UnionType, _UnionGenericAlias]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\core\test_create_llm.py:15: inline-snapshot incompatibility with pydantic SecretStr on this platform
+48 passed, 1 skipped, 1 warning in 5.81s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/core/test_default_agent.py -q -rs ===
+s                                                                        [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\core\test_default_agent.py:14: Skipping test on Windows
+1 skipped in 0.46s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/core/test_subagent_builder.py -q -rs ===
+ssss                                                                     [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\core\test_subagent_builder.py:13: Skipping test on Windows
+SKIPPED [1] kimi-cli\tests\core\test_subagent_builder.py:38: Skipping test on Windows
+SKIPPED [1] kimi-cli\tests\core\test_subagent_builder.py:63: Skipping test on Windows
+SKIPPED [1] kimi-cli\tests\core\test_subagent_builder.py:89: Skipping test on Windows
+4 skipped in 0.49s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/core/test_agent_cutover.py -q -rs ===
+s                                                                        [100%]
+=========================== short test summary info ===========================
+SKIPPED [1] kimi-cli\tests\core\test_agent_cutover.py:11: Skipping test on Windows
+1 skipped in 0.52s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/native/test_loader.py -q -rs ===
+.................                                                        [100%]
+17 passed in 1.24s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/native/test_per_kernel_toggle.py -q -rs ===
+.........                                                                [100%]
+9 passed in 4.55s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/native/test_compat_missing_dll.py -q -rs ===
+...                                                                      [100%]
+3 passed in 0.73s
+(pipeline exit 0)
+
+=== uv run pytest tests/native/test_loader.py -q -rs ===
+.................                                                        [100%]
+17 passed in 2.58s
+(pipeline exit 0)
+
+=== uv run pytest tests/native/test_per_kernel_toggle.py -q -rs ===
+.........                                                                [100%]
+9 passed in 4.48s
+(pipeline exit 0)
+
+=== uv run pytest tests/native/test_compress_equivalence.py -q -rs ===
+........................................................................ [ 38%]
+........................................................................ [ 76%]
+............................................                             [100%]
+188 passed in 1.46s
+(pipeline exit 0)
+
+=== uv run pytest tests/unit/tools/test_bash_gate.py -q -rs ===
+E             
+E             'K04_GATE_API_KEY' is contained here:
+E               ity/bin
+E                 K04_GATE_API_KEY=k04-api-key-value-9f2c
+E             ?   ++++++++++++++++
+E                 ORIGINAL_XDG_CURRENT_DESKTOP=undefined
+E                 WINDIR=C:\windows...
+E             
+E             ...Full output truncated (12 lines hidden), use '-vv' to show
+
+tests\unit\tools\test_bash_gate.py:421: AssertionError
+1 failed, 71 passed in 46.27s
+(pipeline exit 1)
+
+=== uv run pytest tests/native/test_behavior_equivalence.py -q -rs ===
+........................................................................ [ 63%]
+..........................................                               [100%]
+114 passed in 1.02s
+(pipeline exit 0)
+
+=== uv run tools/syntax_check.py .kimix_cache/x06_skips.py .kimix_cache/x06_tier2.py .kimix_cache/x06_final.py .kimix_cache/x06_noassert_detail.py ===
+[syntax_check] Syntax OK: C:\dev\kimi-agent\.kimix_cache\x06_skips.py
+[syntax_check] Syntax OK: C:\dev\kimi-agent\.kimix_cache\x06_tier2.py
+[syntax_check] Syntax OK: C:\dev\kimi-agent\.kimix_cache\x06_final.py
+[syntax_check] Syntax OK: C:\dev\kimi-agent\.kimix_cache\x06_noassert_detail.py
+
+=== uv run python .kimix_cache/x06_skips.py ===
+# skip constructs found: 64
+kimi-cli/tests/tools/test_additional_dirs.py:74 def test_glob_outside_all_dirs_rejected @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_additional_dirs.py:169 def test_add_dir_dynamically_affects_tools @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_additional_dirs.py:251 def test_glob_outside_skills_and_workspace_rejected @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_additional_dirs.py:264 def test_glob_skill_scripts_dir_outside_workspace @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_additional_dirs.py:73 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_additional_dirs.py:168 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_additional_dirs.py:250 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_additional_dirs.py:263 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_glob.py:514 def test_glob_outside_work_dir_has_warning @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_glob.py:534 def test_glob_outside_work_dir_nonexistent_has_warning @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_glob.py:513 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_glob.py:533 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_grep.py:1624 def test_grep_outside_work_dir_has_warning @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_grep.py:1645 def test_grep_outside_work_dir_nonexistent_has_warning @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_grep.py:1660 def test_grep_outside_work_dir_no_matches_has_warning @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_grep.py:1623 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_grep.py:1644 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_grep.py:1659 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_grep_selectors.py:194 test_literal_file_preference pytest.skip reason=positional
+kimi-cli/tests/tools/test_read_file.py:444 def test_read_outside_work_dir_has_warning @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_read_file.py:462 def test_read_outside_work_dir_nonexistent_has_warning @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_read_file.py:472 def test_read_outside_work_dir_directory_has_warning @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_read_file.py:485 def test_read_outside_relative_path_error_has_warning @pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_read_file.py:443 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_read_file.py:461 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_read_file.py:471 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_read_file.py:484 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/tools/test_tools_integrity_gate.py:49 test_every_dunder_all_name_resolves pytest.skip reason=f-string
+kimi-cli/tests/core/test_agent_cutover.py:12 def test_default_root_agent_only_exposes_agent_tool_for_subagents @pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_agent_cutover.py:11 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_create_llm.py:16 def test_augment_provider_with_env_vars_kimi @pytest.mark.skip reason=reason=
+kimi-cli/tests/core/test_create_llm.py:15 <module> pytest.mark.skip reason=reason=
+kimi-cli/tests/core/test_default_agent.py:15 def test_default_agent @pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_default_agent.py:14 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_subagent_builder.py:14 def test_builder_builds_coder_with_write_tools @pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_subagent_builder.py:39 def test_builder_builds_explore_read_only_with_shell @pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_subagent_builder.py:64 def test_builder_builds_plan_without_shell_or_write_tools @pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_subagent_builder.py:90 def test_builder_model_priority_prefers_override_then_type_default_then_inherit @pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_subagent_builder.py:13 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_subagent_builder.py:38 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_subagent_builder.py:63 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/core/test_subagent_builder.py:89 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/native/test_additional_kernels_equivalence.py:20 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/native/test_behavior_equivalence.py:23 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/native/test_compat_missing_dll.py:71 test_consumers_work_after_restore pytest.skip reason=positional
+kimi-cli/tests/native/test_diff_glob_tools_equivalence.py:23 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/native/test_grep_engine_parity.py:70 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/native/test_grep_engine_parity.py:76 <module> pytest.mark.skipif reason=reason=
+kimi-cli/tests/native/test_grep_engine_parity.py:514 <module> pytest.mark.xfail reason=reason=
+kimi-cli/tests/native/test_grep_engine_parity.py:546 <module> pytest.mark.xfail reason=reason=
+kimi-cli/tests/native/test_loader.py:68 test_default_path_is_workdir_bin pytest.skip reason=positional
+kimi-cli/tests/native/test_loader.py:197 test_per_kernel_toggle_subprocess pytest.skip reason=positional
+kimi-cli/tests/native/test_per_kernel_toggle.py:56 test_kernel_toggle_flips_only_one pytest.skip reason=positional
+tests/unit/tools/test_bash_gate.py:68 <module> pytest.mark.skipif reason=reason=
+tests/native/test_behavior_equivalence.py:15 <module> pytest.mark.skipif reason=reason=
+tests/native/test_compress_equivalence.py:48 <module> pytest.mark.skipif reason=reason=
+tests/native/test_compress_equivalence.py:238 test_compress_native_is_faster pytest.skip reason=positional
+tests/native/test_full_behavior_equivalence.py:33 <module> pytest.mark.skipif reason=reason=
+tests/native/test_loader.py:66 test_default_path_is_workdir_bin pytest.skip reason=positional
+tests/native/test_loader.py:198 test_per_kernel_toggle_subprocess pytest.skip reason=positional
+tests/native/test_per_kernel_toggle.py:54 test_kernel_toggle_flips_only_one pytest.skip reason=positional
+tests/native/test_shell_security_equivalence.py:25 <module> pytest.mark.skipif reason=reason=
+tests/native/test_stream_printing_equivalence.py:16 <module> pytest.mark.skipif reason=reason=
+tests/native/test_version_gate.py:29 <module> pytest.mark.skipif reason=reason=
+
+=== UNREASONED skips: 0 ===
+
+=== uv run python .kimix_cache/x06_noassert_detail.py ===
+# no-assert test functions: 57
+kimi-cli/tests/tools/test_blackbox.py:51::test_noop_recorder_never_raises  lines=4 flags=--A
+    calls: NoOpBlackboxRecorder, AppliedEditSnapshot, record
+kimi-cli/tests/tools/test_fs_cache_invalidation.py:173::test_delete_without_session_is_safe  lines=2 flags=---
+    calls: invalidate_fs_scan_after_delete, str
+kimi-cli/tests/tools/test_fs_cache_invalidation.py:141::test_unregister_missing_is_noop  lines=2 flags=---
+    calls: unregister_invalidator
+kimi-cli/tests/tools/test_glob.py:16::test_files  lines=20 flags=--A
+    calls: mkdir, write_text
+kimi-cli/tests/core/test_history_index.py:386::TestHistoryIndexPhaseC::test_rebuild_fts_with_legacy_mode_is_noop  lines=4 flags=---
+    calls: HistoryIndex, rebuild_fts, close
+kimi-cli/tests/core/test_plugin.py:208::test_inject_config_noop_when_no_inject  lines=12 flags=---
+    calls: _write_plugin, parse_plugin_json, inject_config
+kimi-cli/tests/core/test_session.py:614::test_exception_cleanup_none_session  lines=6 flags=--A
+    calls: is_empty, delete
+kimi-cli/tests/core/test_shutdown_background_tasks.py:225::test_shutdown_swallows_manager_exception  lines=18 flags=--A
+    calls: _make_cli, OSError, _fake_view, patch, shutdown_background_tasks
+kimi-cli/tests/core/test_toolset.py:421::test_ask_agent_space_separated_autocorrects  lines=3 flags=--A
+    calls: _assert_ask_agent_variant_autocorrects
+kimi-cli/tests/core/test_toolset.py:416::test_ask_agent_snake_case_autocorrects  lines=3 flags=--A
+    calls: _assert_ask_agent_variant_autocorrects
+kimi-cli/tests/core/test_toolset.py:411::test_ask_agent_kebab_case_autocorrects  lines=3 flags=--A
+    calls: _assert_ask_agent_variant_autocorrects
+kimi-cli/tests/core/test_toolset.py:353::test_nonexistent_tool_auto_corrects_snake_case_with_typo  lines=3 flags=--A
+    calls: _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/core/test_toolset.py:348::test_nonexistent_tool_auto_corrects_mixed_separators  lines=3 flags=--A
+    calls: _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/core/test_toolset.py:343::test_nonexistent_tool_auto_corrects_screaming_snake_case  lines=3 flags=--A
+    calls: _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/core/test_toolset.py:338::test_nonexistent_tool_auto_corrects_kebab_case  lines=3 flags=--A
+    calls: _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/core/test_toolset.py:333::test_nonexistent_tool_auto_corrects_snake_case  lines=3 flags=--A
+    calls: _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/native/test_behavior_equivalence.py:488::test_acp_lexer_buffer_accumulates_all_parts  lines=9 flags=---
+    calls: parametrize, _tool_call_state, _assert_equivalent, append_args_part, join
+kimi-cli/tests/native/test_behavior_equivalence.py:476::test_acp_lexer_get_title_matches_reference  lines=9 flags=---
+    calls: parametrize, _tool_call_state, _reference_title, _assert_equivalent, KaosPath, append_args_part, get_title
+kimi-cli/tests/native/test_behavior_equivalence.py:336::test_compute_line_hash_equivalence  lines=14 flags=-T-
+    calls: parametrize, _native_on, _assert_equivalent, compute_line_hash, restore
+kimi-cli/tests/native/test_behavior_equivalence.py:238::test_is_ignored_by_gitignore_case_sensitivity_equivalence  lines=25 flags=-T-
+    calls: _make_path, evaluate, _assert_equivalent, _native_on, _parse_gitignore, _is_ignored_by_gitignore, restore
+kimi-cli/tests/native/test_behavior_equivalence.py:172::test_parse_gitignore_equivalence  lines=15 flags=-T-
+    calls: parametrize, _native_on, _assert_equivalent, _rules_to_tuples, restore, _parse_gitignore
+kimi-cli/tests/native/test_behavior_equivalence.py:125::test_sanitize_for_tokenizer_equivalence  lines=18 flags=-T-
+    calls: parametrize, _native_on, _assert_equivalent, sanitize_for_tokenizer, restore
+kimi-cli/tests/native/test_behavior_equivalence.py:105::test_clean_text_equivalence  lines=15 flags=-T-
+    calls: parametrize, _native_on, _assert_equivalent, clean_text, restore
+kimi-cli/tests/native/test_behavior_equivalence.py:88::test_count_tokens_heuristic_equivalence  lines=14 flags=-T-
+    calls: parametrize, _native_on, _assert_equivalent, count_tokens, restore
+kimi-cli/tests/native/test_behavior_equivalence.py:71::test_is_cjk_text_equivalence  lines=14 flags=-T-
+    calls: parametrize, _native_on, _assert_equivalent, _is_cjk_text, restore
+kimi-cli/tests/native/test_behavior_equivalence.py:54::test_estimate_chars_tokens_equivalence  lines=14 flags=-T-
+    calls: parametrize, _native_on, _assert_equivalent, _estimate_chars_tokens, restore
+kimi-cli/tests/native/test_grep_engine_parity.py:454::TestEngineMirrorParity::test_ignore_case_crlf_file  lines=2 flags=---
+    calls: _run_both, join
+kimi-cli/tests/native/test_grep_engine_parity.py:451::TestEngineMirrorParity::test_include_glob  lines=2 flags=---
+    calls: parametrize, _run_both
+kimi-cli/tests/native/test_grep_engine_parity.py:436::TestEngineMirrorParity::test_roots_mix  lines=13 flags=---
+    calls: join, _run_both
+kimi-cli/tests/native/test_grep_engine_parity.py:431::TestEngineMirrorParity::test_context_head_limit  lines=4 flags=---
+    calls: parametrize, _run_both
+kimi-cli/tests/native/test_grep_engine_parity.py:427::TestEngineMirrorParity::test_matrix  lines=2 flags=---
+    calls: parametrize, _run_both
+tests/unit/tools/test_taskoutput.py:140::TestTaskOutputDelCleanup::test_del_during_finalization_noop  lines=12 flags=-T-
+    calls: __new__, MagicMock, __del__
+tests/unit/tools/test_taskoutput.py:134::TestTaskOutputDelCleanup::test_del_with_mock_session_no_event_loop  lines=5 flags=---
+    calls: __new__, MagicMock, __del__
+tests/unit/tools/test_taskoutput.py:129::TestTaskOutputDelCleanup::test_del_without_session_does_nothing  lines=4 flags=---
+    calls: __new__, __del__
+tests/kimix/test_agent_conversation.py:765::test_agent_inherit_context_reset_skips_when_soul_missing  lines=8 flags=--A
+    calls: Agent, MagicMock, _reset_inherited_system_prompt
+tests/kimix/test_agent_swarm.py:56::test_validate_uniqueness_ok  lines=2 flags=---
+    calls: _validate_uniqueness
+tests/native/test_behavior_equivalence.py:399::test_damerau_levenshtein_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, _damerau_levenshtein, restore
+tests/native/test_behavior_equivalence.py:357::test_ngram_tokenizer_equivalence  lines=22 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, NgramTokenizer, restore, normalize, tokenize, _detect_n
+tests/native/test_behavior_equivalence.py:286::test_process_unquoted_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, _process_unquoted, restore
+tests/native/test_behavior_equivalence.py:103::test_find_in_file_equivalence  lines=25 flags=-TA
+    calls: parametrize, TemporaryDirectory, write_text, _assert_equivalent, Path, _force_gate, run, FindStr, restore, tool, hasattr, str, FindStrParams
+tests/native/test_behavior_equivalence.py:81::test_dedup_output_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, _dedup_output, restore
+tests/native/test_behavior_equivalence.py:45::test_filter_output_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, filter_output, restore
+tests/native/test_full_behavior_equivalence.py:925::test_exception_parity  lines=19 flags=R--
+    calls: parametrize, sorted, _run_case, get, AssertionError
+tests/native/test_shell_security_equivalence.py:349::test_bounded_append_equivalence  lines=16 flags=-T-
+    calls: parametrize, run, _assert_equivalent, StringIO, write, _force_gate, bounded_append, restore, getvalue
+tests/native/test_shell_security_equivalence.py:314::test_annotate_failure_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, annotate_failure, restore
+tests/native/test_shell_security_equivalence.py:282::test_interpret_exit_code_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, interpret_exit_code, restore
+tests/native/test_shell_security_equivalence.py:237::test_foreground_background_guidance_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, foreground_background_guidance, restore
+tests/native/test_shell_security_equivalence.py:196::test_check_hardline_blocked_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, check_hardline_blocked, restore
+tests/native/test_shell_security_equivalence.py:140::test_scrub_child_env_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, scrub_child_env, restore, list, dict, items
+tests/native/test_shell_security_equivalence.py:92::test_redact_sensitive_output_equivalence  lines=14 flags=-T-
+    calls: parametrize, _force_gate, _assert_equivalent, redact_sensitive_output, restore
+tests/native/test_src_compat_delegation.py:160::test_retrieval_delegation  lines=10 flags=---
+    calls: _assert_eq
+tests/native/test_src_compat_delegation.py:151::test_kimi_safety_check_delegation  lines=7 flags=---
+    calls: _assert_eq
+tests/native/test_src_compat_delegation.py:140::test_kimi_tokens_delegation  lines=9 flags=---
+    calls: _assert_eq
+tests/native/test_src_compat_delegation.py:112::test_common_stream_delegation  lines=22 flags=---
+    calls: _assert_eq, range, len
+tests/native/test_src_compat_delegation.py:97::test_safety_delegation  lines=13 flags=---
+    calls: _assert_eq
+tests/native/test_src_compat_delegation.py:82::test_output_enhance_delegation  lines=13 flags=---
+    calls: _assert_eq
+tests/native/test_src_compat_delegation.py:60::test_security_delegation  lines=20 flags=---
+    calls: _assert_eq
+
+=== uv run python .kimix_cache/x06_tier2.py ===
+# tier-1 no-assert functions: 57
+# tier-1 but verification delegated to an assert-named helper: 39
+    DELEGATED kimi-cli/tests/core/test_toolset.py:421::test_ask_agent_space_separated_autocorrects  helper=_assert_ask_agent_variant_autocorrects
+    DELEGATED kimi-cli/tests/core/test_toolset.py:416::test_ask_agent_snake_case_autocorrects  helper=_assert_ask_agent_variant_autocorrects
+    DELEGATED kimi-cli/tests/core/test_toolset.py:411::test_ask_agent_kebab_case_autocorrects  helper=_assert_ask_agent_variant_autocorrects
+    DELEGATED kimi-cli/tests/core/test_toolset.py:353::test_nonexistent_tool_auto_corrects_snake_case_with_typo  helper=_assert_misformatted_autocorrects_to_long
+    DELEGATED kimi-cli/tests/core/test_toolset.py:348::test_nonexistent_tool_auto_corrects_mixed_separators  helper=_assert_misformatted_autocorrects_to_long
+    DELEGATED kimi-cli/tests/core/test_toolset.py:343::test_nonexistent_tool_auto_corrects_screaming_snake_case  helper=_assert_misformatted_autocorrects_to_long
+    DELEGATED kimi-cli/tests/core/test_toolset.py:338::test_nonexistent_tool_auto_corrects_kebab_case  helper=_assert_misformatted_autocorrects_to_long
+    DELEGATED kimi-cli/tests/core/test_toolset.py:333::test_nonexistent_tool_auto_corrects_snake_case  helper=_assert_misformatted_autocorrects_to_long
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:488::test_acp_lexer_buffer_accumulates_all_parts  helper=_assert_equivalent
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:476::test_acp_lexer_get_title_matches_reference  helper=_assert_equivalent
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:336::test_compute_line_hash_equivalence  helper=_assert_equivalent
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:238::test_is_ignored_by_gitignore_case_sensitivity_equivalence  helper=_assert_equivalent
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:172::test_parse_gitignore_equivalence  helper=_assert_equivalent
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:125::test_sanitize_for_tokenizer_equivalence  helper=_assert_equivalent
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:105::test_clean_text_equivalence  helper=_assert_equivalent
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:88::test_count_tokens_heuristic_equivalence  helper=_assert_equivalent
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:71::test_is_cjk_text_equivalence  helper=_assert_equivalent
+    DELEGATED kimi-cli/tests/native/test_behavior_equivalence.py:54::test_estimate_chars_tokens_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_behavior_equivalence.py:399::test_damerau_levenshtein_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_behavior_equivalence.py:357::test_ngram_tokenizer_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_behavior_equivalence.py:286::test_process_unquoted_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_behavior_equivalence.py:103::test_find_in_file_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_behavior_equivalence.py:81::test_dedup_output_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_behavior_equivalence.py:45::test_filter_output_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_full_behavior_equivalence.py:925::test_exception_parity  helper=AssertionError
+    DELEGATED tests/native/test_shell_security_equivalence.py:349::test_bounded_append_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_shell_security_equivalence.py:314::test_annotate_failure_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_shell_security_equivalence.py:282::test_interpret_exit_code_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_shell_security_equivalence.py:237::test_foreground_background_guidance_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_shell_security_equivalence.py:196::test_check_hardline_blocked_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_shell_security_equivalence.py:140::test_scrub_child_env_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_shell_security_equivalence.py:92::test_redact_sensitive_output_equivalence  helper=_assert_equivalent
+    DELEGATED tests/native/test_src_compat_delegation.py:160::test_retrieval_delegation  helper=_assert_eq
+    DELEGATED tests/native/test_src_compat_delegation.py:151::test_kimi_safety_check_delegation  helper=_assert_eq
+    DELEGATED tests/native/test_src_compat_delegation.py:140::test_kimi_tokens_delegation  helper=_assert_eq
+    DELEGATED tests/native/test_src_compat_delegation.py:112::test_common_stream_delegation  helper=_assert_eq
+    DELEGATED tests/native/test_src_compat_delegation.py:97::test_safety_delegation  helper=_assert_eq
+    DELEGATED tests/native/test_src_compat_delegation.py:82::test_output_enhance_delegation  helper=_assert_eq
+    DELEGATED tests/native/test_src_compat_delegation.py:60::test_security_delegation  helper=_assert_eq
+
+=== TIER 2: no assert, no assert-helper, no raises/fail/snapshot (18) ===
+kimi-cli/tests/tools/test_blackbox.py:51::test_noop_recorder_never_raises
+    calls: AppliedEditSnapshot, NoOpBlackboxRecorder, record
+    | async def test_noop_recorder_never_raises() -> None:
+    |     recorder = NoOpBlackboxRecorder()
+    |     snapshot = AppliedEditSnapshot(path="foo.py", prev="x = 1\n", next="x =\n")
+    |     await recorder.record(snapshot, variant="replace", arg={})
+
+kimi-cli/tests/tools/test_fs_cache_invalidation.py:173::test_delete_without_session_is_safe
+    calls: invalidate_fs_scan_after_delete, str
+    | def test_delete_without_session_is_safe(tmp_path):
+    |     invalidate_fs_scan_after_delete(str(tmp_path / "x.txt"), session=None)
+
+kimi-cli/tests/tools/test_fs_cache_invalidation.py:141::test_unregister_missing_is_noop
+    calls: unregister_invalidator
+    | def test_unregister_missing_is_noop():
+    |     unregister_invalidator(lambda p: None)  # no exception
+
+kimi-cli/tests/tools/test_glob.py:16::test_files
+    calls: mkdir, write_text
+    | async def test_files(temp_work_dir: KaosPath):
+    |     """Create test files for glob testing."""
+    |     # Create a directory structure
+    |     await (temp_work_dir / "src" / "main").mkdir(parents=True)
+    |     await (temp_work_dir / "src" / "test").mkdir(parents=True)
+    |     await (temp_work_dir / "docs").mkdir()
+    | 
+    |     # Create test files
+    |     await (temp_work_dir / "README.md").write_text("# README")
+    |     await (temp_work_dir / "setup.py").write_text("setup")
+    |     await (temp_work_dir / "src" / "main.py").write_text("main")
+    |     await (temp_work_dir / "src" / "utils.py").write_text("utils")
+    |     await (temp_work_dir / "src" / "main" / "app.py").write_text("app")
+    |     await (temp_work_dir / "src" / "main" / "config.py").write_text("config")
+    |     await (temp_work_dir / "src" / "test" / "test_app.py").write_text("test app")
+    |     await (temp_work_dir / "src" / "test" / "test_config.py").write_text("test config")
+    |     await (temp_work_dir / "docs" / "guide.md").write_text("guide")
+    |     await (temp_work_dir / "docs" / "api.md").write_text("api")
+    | 
+    |     return temp_work_dir
+
+kimi-cli/tests/core/test_history_index.py:386::TestHistoryIndexPhaseC::test_rebuild_fts_with_legacy_mode_is_noop
+    calls: HistoryIndex, close, rebuild_fts
+    |     def test_rebuild_fts_with_legacy_mode_is_noop(self, tmp_path: Path):
+    |         idx = HistoryIndex(persist_path=tmp_path / "history.json")
+    |         idx.rebuild_fts()  # must not raise
+    |         idx.close()
+
+kimi-cli/tests/core/test_plugin.py:208::test_inject_config_noop_when_no_inject
+    calls: _write_plugin, inject_config, parse_plugin_json
+    | def test_inject_config_noop_when_no_inject(tmp_path: Path):
+    |     """inject_config should be a no-op when spec has no inject mappings."""
+    |     plugin_dir = _write_plugin(
+    |         tmp_path,
+    |         {
+    |             "name": "p",
+    |             "version": "1.0.0",
+    |         },
+    |     )
+    |     spec = parse_plugin_json(plugin_dir / "plugin.json")
+    |     # Should not raise, even with empty values
+    |     inject_config(plugin_dir, spec, {})
+
+kimi-cli/tests/core/test_session.py:614::test_exception_cleanup_none_session
+    calls: delete, is_empty
+    | async def test_exception_cleanup_none_session():
+    |     """On unexpected exception with no session created, should not crash."""
+    |     _latest_created_session: Session | None = None
+    |     # This must not raise
+    |     if _latest_created_session is not None and _latest_created_session.is_empty():
+    |         await _latest_created_session.delete()
+
+kimi-cli/tests/core/test_shutdown_background_tasks.py:225::test_shutdown_swallows_manager_exception
+    calls: OSError, _fake_view, _make_cli, patch, shutdown_background_tasks
+    | async def test_shutdown_swallows_manager_exception(capsys) -> None:
+    |     """CLI shutdown is not allowed to propagate exceptions to the top-level
+    |     exit path.  If ``list_tasks`` or ``reconcile`` raises (disk IO error,
+    |     permission denied, corrupted store), ``shutdown_background_tasks`` must
+    |     log a warning and return cleanly so the user sees the normal exit code
+    |     instead of a traceback."""
+    |     views = [_fake_view("b-001", "x")]
+    |     cli, manager, _ = _make_cli(keep_alive=False, views=views)
+    | 
+    |     # Simulate a disk IO error from the store layer.
+    |     manager.list_tasks.side_effect = OSError("disk read error")
+    | 
+    |     async def fake_sleep(duration):
+    |         pass
+    | 
+    |     # Must NOT raise.
+    |     with patch("kimi_cli.app.asyncio.sleep", side_effect=fake_sleep):
+    |         await cli.shutdown_background_tasks()
+
+kimi-cli/tests/native/test_grep_engine_parity.py:454::TestEngineMirrorParity::test_ignore_case_crlf_file
+    calls: _run_both, join
+    |     def test_ignore_case_crlf_file(self, tree):
+    |         _run_both(tree, "hit", roots=[os.path.join(tree, "b.py")], mode="content", ignore_case=True)
+
+kimi-cli/tests/native/test_grep_engine_parity.py:451::TestEngineMirrorParity::test_include_glob
+    calls: _run_both, parametrize
+    |     def test_include_glob(self, tree, glob):
+    |         _run_both(tree, "hit", include_glob=glob)
+
+kimi-cli/tests/native/test_grep_engine_parity.py:436::TestEngineMirrorParity::test_roots_mix
+    calls: _run_both, join
+    |     def test_roots_mix(self, tree):
+    |         roots = [
+    |             "a.py",  # relative file
+    |             "m_dir",  # relative dir
+    |             ".",  # un-normalised dot join
+    |             tree,  # absolute dir
+    |             os.path.join(tree, "nope"),  # missing
+    |             os.path.join(tree, ".hid_dir"),  # explicit hidden dir root
+    |             os.path.join(tree, "nul.dat"),  # binary file root
+    |             os.path.join(tree, "huge.bin"),  # over-cap file root
+    |         ]
+    |         for mode in _MODES:
+    |             _run_both(tree, "hit", roots=roots, mode=mode)
+
+kimi-cli/tests/native/test_grep_engine_parity.py:431::TestEngineMirrorParity::test_context_head_limit
+    calls: _run_both, parametrize
+    |     def test_context_head_limit(self, tree, cb, ca, hl):
+    |         _run_both(tree, "hit", mode="content", ctx_before=cb, ctx_after=ca, head_limit=hl)
+    |         _run_both(tree, "h[12]", mode="content", ctx_before=cb, ctx_after=ca, head_limit=hl)
+    |         _run_both(tree, "hit", mode="files_with_matches", head_limit=hl)
+
+kimi-cli/tests/native/test_grep_engine_parity.py:427::TestEngineMirrorParity::test_matrix
+    calls: _run_both, parametrize
+    |     def test_matrix(self, tree, pattern, mode, ignore_case):
+    |         _run_both(tree, pattern, mode=mode, ignore_case=ignore_case)
+
+tests/unit/tools/test_taskoutput.py:140::TestTaskOutputDelCleanup::test_del_during_finalization_noop
+    calls: MagicMock, __del__, __new__
+    |     def test_del_during_finalization_noop(self) -> None:
+    |         """__del__ when sys.is_finalizing() should return early."""
+    |         import sys
+    |         # Simulate interpreter-finalizing state
+    |         orig = sys.is_finalizing
+    |         try:
+    |             sys.is_finalizing = lambda: True  # type: ignore[method-assign]
+    |             obj = TaskOutput.__new__(TaskOutput)
+    |             obj._session = MagicMock()
+    |             obj.__del__()  # Should return without accessing session
+    |         finally:
+    |             sys.is_finalizing = orig
+
+tests/unit/tools/test_taskoutput.py:134::TestTaskOutputDelCleanup::test_del_with_mock_session_no_event_loop
+    calls: MagicMock, __del__, __new__
+    |     def test_del_with_mock_session_no_event_loop(self) -> None:
+    |         """__del__ with a session but no running loop should not crash."""
+    |         obj = TaskOutput.__new__(TaskOutput)
+    |         obj._session = MagicMock()
+    |         obj.__del__()  # Should not raise
+
+tests/unit/tools/test_taskoutput.py:129::TestTaskOutputDelCleanup::test_del_without_session_does_nothing
+    calls: __del__, __new__
+    |     def test_del_without_session_does_nothing(self) -> None:
+    |         """__del__ with no _session should not crash."""
+    |         obj = TaskOutput.__new__(TaskOutput)
+    |         obj.__del__()  # Should not raise
+
+tests/kimix/test_agent_conversation.py:765::test_agent_inherit_context_reset_skips_when_soul_missing
+    calls: Agent, MagicMock, _reset_inherited_system_prompt
+    | async def test_agent_inherit_context_reset_skips_when_soul_missing(
+    |     mock_session: MagicMock,
+    | ) -> None:
+    |     """System prompt reset is best-effort: skips without soul internals."""
+    |     agent = Agent(mock_session)
+    |     sub_session = MagicMock()
+    |     sub_session._cli = None
+    |     await agent._reset_inherited_system_prompt(sub_session)
+
+tests/kimix/test_agent_swarm.py:56::test_validate_uniqueness_ok
+    calls: _validate_uniqueness
+    | def test_validate_uniqueness_ok():
+    |     _validate_uniqueness(["p1", "p2"])
+
+
+=== uv run python .kimix_cache/x06_final.py ===
+# no-direct-assert test_* functions: 57
+
+=== FIXTURES named test_* (not tests) (1) ===
+kimi-cli/tests/tools/test_glob.py:16::test_files  decorators=['pytest.fixture']
+
+=== DELEGATED to an asserting helper (44) ===
+kimi-cli/tests/core/test_toolset.py:421::test_ask_agent_space_separated_autocorrects  via _assert_ask_agent_variant_autocorrects
+kimi-cli/tests/core/test_toolset.py:416::test_ask_agent_snake_case_autocorrects  via _assert_ask_agent_variant_autocorrects
+kimi-cli/tests/core/test_toolset.py:411::test_ask_agent_kebab_case_autocorrects  via _assert_ask_agent_variant_autocorrects
+kimi-cli/tests/core/test_toolset.py:353::test_nonexistent_tool_auto_corrects_snake_case_with_typo  via _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/core/test_toolset.py:348::test_nonexistent_tool_auto_corrects_mixed_separators  via _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/core/test_toolset.py:343::test_nonexistent_tool_auto_corrects_screaming_snake_case  via _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/core/test_toolset.py:338::test_nonexistent_tool_auto_corrects_kebab_case  via _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/core/test_toolset.py:333::test_nonexistent_tool_auto_corrects_snake_case  via _assert_misformatted_autocorrects_to_long
+kimi-cli/tests/native/test_behavior_equivalence.py:488::test_acp_lexer_buffer_accumulates_all_parts  via _assert_equivalent
+kimi-cli/tests/native/test_behavior_equivalence.py:476::test_acp_lexer_get_title_matches_reference  via _assert_equivalent
+kimi-cli/tests/native/test_behavior_equivalence.py:336::test_compute_line_hash_equivalence  via _assert_equivalent
+kimi-cli/tests/native/test_behavior_equivalence.py:238::test_is_ignored_by_gitignore_case_sensitivity_equivalence  via _assert_equivalent
+kimi-cli/tests/native/test_behavior_equivalence.py:172::test_parse_gitignore_equivalence  via _assert_equivalent
+kimi-cli/tests/native/test_behavior_equivalence.py:125::test_sanitize_for_tokenizer_equivalence  via _assert_equivalent
+kimi-cli/tests/native/test_behavior_equivalence.py:105::test_clean_text_equivalence  via _assert_equivalent
+kimi-cli/tests/native/test_behavior_equivalence.py:88::test_count_tokens_heuristic_equivalence  via _assert_equivalent
+kimi-cli/tests/native/test_behavior_equivalence.py:71::test_is_cjk_text_equivalence  via _assert_equivalent
+kimi-cli/tests/native/test_behavior_equivalence.py:54::test_estimate_chars_tokens_equivalence  via _assert_equivalent
+kimi-cli/tests/native/test_grep_engine_parity.py:454::TestEngineMirrorParity::test_ignore_case_crlf_file  via _run_both
+kimi-cli/tests/native/test_grep_engine_parity.py:451::TestEngineMirrorParity::test_include_glob  via _run_both
+kimi-cli/tests/native/test_grep_engine_parity.py:436::TestEngineMirrorParity::test_roots_mix  via _run_both
+kimi-cli/tests/native/test_grep_engine_parity.py:431::TestEngineMirrorParity::test_context_head_limit  via _run_both
+kimi-cli/tests/native/test_grep_engine_parity.py:427::TestEngineMirrorParity::test_matrix  via _run_both
+tests/native/test_behavior_equivalence.py:399::test_damerau_levenshtein_equivalence  via _assert_equivalent
+tests/native/test_behavior_equivalence.py:357::test_ngram_tokenizer_equivalence  via _assert_equivalent
+tests/native/test_behavior_equivalence.py:286::test_process_unquoted_equivalence  via _assert_equivalent
+tests/native/test_behavior_equivalence.py:103::test_find_in_file_equivalence  via _assert_equivalent
+tests/native/test_behavior_equivalence.py:81::test_dedup_output_equivalence  via _assert_equivalent
+tests/native/test_behavior_equivalence.py:45::test_filter_output_equivalence  via _assert_equivalent
+tests/native/test_full_behavior_equivalence.py:925::test_exception_parity  via AssertionError
+tests/native/test_shell_security_equivalence.py:349::test_bounded_append_equivalence  via _assert_equivalent
+tests/native/test_shell_security_equivalence.py:314::test_annotate_failure_equivalence  via _assert_equivalent
+tests/native/test_shell_security_equivalence.py:282::test_interpret_exit_code_equivalence  via _assert_equivalent
+tests/native/test_shell_security_equivalence.py:237::test_foreground_background_guidance_equivalence  via _assert_equivalent
+tests/native/test_shell_security_equivalence.py:196::test_check_hardline_blocked_equivalence  via _assert_equivalent
+tests/native/test_shell_security_equivalence.py:140::test_scrub_child_env_equivalence  via _assert_equivalent
+tests/native/test_shell_security_equivalence.py:92::test_redact_sensitive_output_equivalence  via _assert_equivalent
+tests/native/test_src_compat_delegation.py:160::test_retrieval_delegation  via _assert_eq
+tests/native/test_src_compat_delegation.py:151::test_kimi_safety_check_delegation  via _assert_eq
+tests/native/test_src_compat_delegation.py:140::test_kimi_tokens_delegation  via _assert_eq
+tests/native/test_src_compat_delegation.py:112::test_common_stream_delegation  via _assert_eq
+tests/native/test_src_compat_delegation.py:97::test_safety_delegation  via _assert_eq
+tests/native/test_src_compat_delegation.py:82::test_output_enhance_delegation  via _assert_eq
+tests/native/test_src_compat_delegation.py:60::test_security_delegation  via _assert_eq
+
+=== SMOKE: no verification at all (12) ===
+kimi-cli/tests/tools/test_blackbox.py:51::test_noop_recorder_never_raises
+    async def test_noop_recorder_never_raises() -> None: ; recorder = NoOpBlackboxRecorder() ; snapshot = AppliedEditSnapshot(path="foo.py", prev="x = 1\n", next="x =\n") ; await recorder.record(snapshot, variant="replace", arg={})
+kimi-cli/tests/tools/test_fs_cache_invalidation.py:173::test_delete_without_session_is_safe
+    def test_delete_without_session_is_safe(tmp_path): ; invalidate_fs_scan_after_delete(str(tmp_path / "x.txt"), session=None)
+kimi-cli/tests/tools/test_fs_cache_invalidation.py:141::test_unregister_missing_is_noop
+    def test_unregister_missing_is_noop(): ; unregister_invalidator(lambda p: None)  # no exception
+kimi-cli/tests/core/test_history_index.py:386::TestHistoryIndexPhaseC::test_rebuild_fts_with_legacy_mode_is_noop
+    def test_rebuild_fts_with_legacy_mode_is_noop(self, tmp_path: Path): ; idx = HistoryIndex(persist_path=tmp_path / "history.json") ; idx.rebuild_fts()  # must not raise ; idx.close()
+kimi-cli/tests/core/test_plugin.py:208::test_inject_config_noop_when_no_inject
+    def test_inject_config_noop_when_no_inject(tmp_path: Path): ; """inject_config should be a no-op when spec has no inject mappings.""" ; plugin_dir = _write_plugin( ; tmp_path, ; { ; "name": "p", ; "version": "1.0.0", ; }, ; ) ; spec = parse_plugin_json(plugin_dir / "plugin.json") ; # Should not raise, even with empty values ; inject_config(plugin_dir, spec, {})
+kimi-cli/tests/core/test_session.py:614::test_exception_cleanup_none_session
+    async def test_exception_cleanup_none_session(): ; """On unexpected exception with no session created, should not crash.""" ; _latest_created_session: Session | None = None ; # This must not raise ; if _latest_created_session is not None and _latest_created_session.is_empty(): ; await _latest_created_session.delete()
+kimi-cli/tests/core/test_shutdown_background_tasks.py:225::test_shutdown_swallows_manager_exception
+    async def test_shutdown_swallows_manager_exception(capsys) -> None: ; """CLI shutdown is not allowed to propagate exceptions to the top-level ; exit path.  If ``list_tasks`` or ``reconcile`` raises (disk IO error, ; permission denied, corrupted store), ``shutdown_background_tasks`` must ; log a warning and return cleanly so the user sees the normal exit code ; instead of a traceback.""" ; views = [_fake_view("b-001", "x")] ; cli, manager, _ = _make_cli(keep_alive=False, views=views) ;  ; # Simulate a disk IO error from the store layer. ; manager.list_tasks.side_effect = OSError("disk read error") ;  ; async def fake_sleep(duration): ; pass ;  ; # Must NOT raise. ; with patch("kimi_cli.app.asyncio.sleep", side_effect=fake_sleep): ; await cli.shutdown_background_tasks()
+tests/unit/tools/test_taskoutput.py:140::TestTaskOutputDelCleanup::test_del_during_finalization_noop
+    def test_del_during_finalization_noop(self) -> None: ; """__del__ when sys.is_finalizing() should return early.""" ; import sys ; # Simulate interpreter-finalizing state ; orig = sys.is_finalizing ; try: ; sys.is_finalizing = lambda: True  # type: ignore[method-assign] ; obj = TaskOutput.__new__(TaskOutput) ; obj._session = MagicMock() ; obj.__del__()  # Should return without accessing session ; finally: ; sys.is_finalizing = orig
+tests/unit/tools/test_taskoutput.py:134::TestTaskOutputDelCleanup::test_del_with_mock_session_no_event_loop
+    def test_del_with_mock_session_no_event_loop(self) -> None: ; """__del__ with a session but no running loop should not crash.""" ; obj = TaskOutput.__new__(TaskOutput) ; obj._session = MagicMock() ; obj.__del__()  # Should not raise
+tests/unit/tools/test_taskoutput.py:129::TestTaskOutputDelCleanup::test_del_without_session_does_nothing
+    def test_del_without_session_does_nothing(self) -> None: ; """__del__ with no _session should not crash.""" ; obj = TaskOutput.__new__(TaskOutput) ; obj.__del__()  # Should not raise
+tests/kimix/test_agent_conversation.py:765::test_agent_inherit_context_reset_skips_when_soul_missing
+    async def test_agent_inherit_context_reset_skips_when_soul_missing( ; mock_session: MagicMock, ; ) -> None: ; """System prompt reset is best-effort: skips without soul internals.""" ; agent = Agent(mock_session) ; sub_session = MagicMock() ; sub_session._cli = None ; await agent._reset_inherited_system_prompt(sub_session)
+tests/kimix/test_agent_swarm.py:56::test_validate_uniqueness_ok
+    def test_validate_uniqueness_ok(): ; _validate_uniqueness(["p1", "p2"])
+
+=== grep -rn --include=conftest.py "pytest.skip\|mark.skip\|skipif" kimi-cli/tests/tools kimi-cli/tests/core kimi-cli/tests/native tests/unit/tools tests/kimix tests/native tests/regression/tools ===
+(exit 1)
+
+=== grep -rn --include=conftest.py -A6 "require_long_paths" kimi-cli/tests/tools kimi-cli/tests/core kimi-cli/tests/native tests/unit/tools tests/kimix tests/native tests/regression/tools ===
+(exit 1)
+
+=== grep -rn --include=*.py "def require_long_paths" kimi-cli/tests tests ===
+kimi-cli/tests/conftest.py:166:def require_long_paths(long_paths_supported: bool) -> None:
+(exit 0)
+
+=== grep -rn --include=*.py -A8 "def require_long_paths" kimi-cli/tests/conftest.py tests/conftest.py ===
+kimi-cli/tests/conftest.py:166:def require_long_paths(long_paths_supported: bool) -> None:
+kimi-cli/tests/conftest.py-167-    """Skip the test unless paths longer than MAX_PATH can be created."""
+kimi-cli/tests/conftest.py-168-    if not long_paths_supported:
+kimi-cli/tests/conftest.py-169-        pytest.skip(
+kimi-cli/tests/conftest.py-170-            "filesystem cannot create the long path/name this test needs "
+kimi-cli/tests/conftest.py-171-            "(Windows MAX_PATH or 255-byte NAME_MAX component limit; "
+kimi-cli/tests/conftest.py-172-            "enable LongPathsEnabled / shorten the temp name)"
+kimi-cli/tests/conftest.py-173-        )
+kimi-cli/tests/conftest.py-174-
+(exit 0)
+
+=== uv run pytest kimi-cli/tests/tools/test_edit_gate.py -q -k test_probe17_allow_auto_generated_field ===
+.                                                                        [100%]
+1 passed, 27 deselected in 0.27s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/tools -q --tb=line ===
+........................................................................ [ 70%]
+........................................................................ [ 74%]
+........................................................................ [ 77%]
+........................................................................ [ 81%]
+........................................................................ [ 84%]
+.................................ssss.s................................. [ 88%]
+........................................................................ [ 91%]
+........................................................................ [ 95%]
+........................................................................ [ 98%]
+.........................                                                [100%]
+================================== FAILURES ===================================
+E   AssertionError: assert 'absolute path' in '`../outside_file.txt` does not exist.'
+     +  where '`../outside_file.txt` does not exist.' = <built-in method lower of str object at 0x000001DB5C503500>()
+     +    where <built-in method lower of str object at 0x000001DB5C503500> = '`../outside_file.txt` does not exist.'.lower
+     +      where '`../outside_file.txt` does not exist.' = ToolError(is_error=True, output='', message='`../outside_file.txt` does not exist.', display=[BriefDisplayBlock(type='brief', text='File not found')], extras=None).message
+C:\dev\kimi-agent\kimi-cli\tests\tools\test_read_file.py:243: AssertionError: assert 'absolute path' in '`../outside_file.txt` does not exist.'
+E   AssertionError: assert 'absolute path' in 'directory for `../outside/*.md` does not exist.'
+     +  where 'directory for `../outside/*.md` does not exist.' = <built-in method lower of str object at 0x000001DB5CB00210>()
+     +    where <built-in method lower of str object at 0x000001DB5CB00210> = 'Directory for `../outside/*.md` does not exist.'.lower
+     +      where 'Directory for `../outside/*.md` does not exist.' = ToolError(is_error=True, output='', message='Directory for `../outside/*.md` does not exist.', display=[BriefDisplayBlock(type='brief', text='Directory not found')], extras=None).message
+C:\dev\kimi-agent\kimi-cli\tests\tools\test_read_file.py:1379: AssertionError: assert 'absolute path' in 'directory for `../outside/*.md` does not exist.'
+=========================== short test summary info ===========================
+FAILED kimi-cli\tests\tools\test_read_file.py::test_read_with_relative_path_outside_work_dir
+FAILED kimi-cli\tests\tools\test_read_file.py::TestReadFileGlob::test_read_glob_outside_workspace_relative
+2 failed, 2020 passed, 19 skipped in 38.00s
+(pipeline exit 1)
+
+=== uv run pytest kimi-cli/tests/tools/test_edit_gate.py -q ===
+............................                                             [100%]
+28 passed in 0.73s
+(pipeline exit 0)
+
+=== uv run pytest kimi-cli/tests/tools --collect-only -q (run A, tail -3) ===
+tests/tools/test_write_file.py::test_json_auto_repair_disabled_no_diff
+
+2041 tests collected in 1.10s
+
+=== uv run pytest kimi-cli/tests/tools --collect-only -q (run B, tail -3) ===
+tests/tools/test_write_file.py::test_json_auto_repair_disabled_no_diff
+
+2041 tests collected in 1.06s
+
+=== uv run pytest kimi-cli/tests/tools --collect-only -q (run C, tail -3) ===
+tests/tools/test_write_file.py::test_json_auto_repair_disabled_no_diff
+
+2041 tests collected in 1.07s
+
+=== uv run pytest kimi-cli/tests/tools -q --tb=line (run D) ===
+FAILED kimi-cli\tests\tools\test_read_file.py::test_read_with_relative_path_outside_work_dir
+FAILED kimi-cli\tests\tools\test_read_file.py::TestReadFileGlob::test_read_glob_outside_workspace_relative
+2 failed, 2020 passed, 19 skipped in 36.86s
+
+=== uv run pytest kimi-cli/tests/tools -q --tb=line (run E) ===
+FAILED kimi-cli\tests\tools\test_read_file.py::test_read_with_relative_path_outside_work_dir
+FAILED kimi-cli\tests\tools\test_read_file.py::TestReadFileGlob::test_read_glob_outside_workspace_relative
+2 failed, 2020 passed, 19 skipped in 38.44s
+
+=== unset K04_GATE_API_KEY && uv run pytest tests/unit/tools/test_bash_gate.py -q -k test_probe05_child_env_scrubbed ===
+.                                                                        [100%]
+1 passed, 71 deselected in 1.44s
+(exit 0)
+
+=== uv run pytest tests/unit/tools/test_prompt_common.py -q -k test_descriptions_unchanged -vv --tb=long ===
+E       AssertionError: assert 'Execute a ba...rd blocks it.' == 'Execute a ba...rd blocks it.'
+E         
+E         - Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over `find`/`ls`/`grep`/`rg` for file and content search. For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. On Windows, unquoted backslash paths auto-convert to forward slashes; quoted backslashes are preserved. Use /dev/null, not `> nul`, to discard output — `> nul` would create an empty file named `nul` in Git Bash. Safety: runs in the agent process (PID 45016); never kill that PID, its parents, or this process'...
+E         
+E         ...Full output truncated (2 lines hidden), use '-vv' to show
+
+=== uv run python .kimix_cache/x06_prompt_diff.py ===
+# asserts in test_descriptions_unchanged: 4
+  expected for tools['bash'].description: str len=476
+  expected for tools['pwsh'].description: str len=224
+  expected for tools['python'].description: str len=438
+  expected for tools['Run'].description: str len=154
+# built tools: ['Run', 'bash', 'pwsh', 'python']
+DIFF bash
+    --- expected(snapshot)
+    +++ actual(built)
+    @@ -1 +1 @@
+    -Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over `find`/`ls`/`grep`/`rg` for file and content search. For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. On Windows, unquoted backslash paths auto-convert to forward slashes; quoted backslashes are preserved. Use /dev/null, not `> nul`, to
+    +Execute a bash command.For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close.ALWAYS use native POSIX syntax, even on Windows Safety: runs in the agent process (PID 44124); never kill that PID, its parents, or this process's image — the self-kill guard blocks it.
+    first char diff at 22: expected=' ' actual='.'
+    ctx expected: ...'Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over `find`/`ls'
+    ctx actual  : ...'Execute a bash command.For long sessions: interactive=True, then task_id=<id> to c'
+DIFF pwsh
+    --- expected(snapshot)
+    +++ actual(built)
+    @@ -1 +1 @@
+    -<PWSH_MD> For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. Windows paths must use backslashes (`\`) instead of forward slashes (`/`).
+    +<PWSH_MD> For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. Windows paths must use backslashes (`\`) instead of forward slashes (`/`). Safety: runs in the agent process (PID 44124); never kill that PID, its parents, or this process's image — the self-kill guard blocks it.
+    first char diff at 224: expected=None actual=' '
+    ctx expected: ...'must use backslashes (`\\`) instead of forward slashes (`/`).'
+    ctx actual  : ...'must use backslashes (`\\`) instead of forward slashes (`/`). Safety: runs in the agent process (PID 44124); never kill t'
+OK   python
+OK   Run
+(exit 0)
+
+=== PYTHONPATH=src;kimi-cli/src uv run python .kimix_cache/x06_prompt_diff.py ===
+# asserts in test_descriptions_unchanged: 4
+  expected for tools['bash'].description: str len=476
+  expected for tools['pwsh'].description: str len=224
+  expected for tools['python'].description: str len=438
+  expected for tools['Run'].description: str len=154
+# built tools: ['Run', 'bash', 'pwsh', 'python']
+DIFF bash
+    --- expected(snapshot)
+    +++ actual(built)
+    @@ -1 +1 @@
+    -Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over `find`/`ls`/`grep`/`rg` for file and content search. For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. On Windows, unquoted backslash paths auto-convert to forward slashes; quoted backslashes are preserved. Use /dev/null, not `> nul`, to
+    +Execute a bash command.For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close.ALWAYS use native POSIX syntax, even on Windows Safety: runs in the agent process (PID 24712); never kill that PID, its parents, or this process's image — the self-kill guard blocks it.
+    first char diff at 22: expected=' ' actual='.'
+    ctx expected: ...'Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over `find`/`ls'
+    ctx actual  : ...'Execute a bash command.For long sessions: interactive=True, then task_id=<id> to c'
+DIFF pwsh
+    --- expected(snapshot)
+    +++ actual(built)
+    @@ -1 +1 @@
+    -<PWSH_MD> For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. Windows paths must use backslashes (`\`) instead of forward slashes (`/`).
+    +<PWSH_MD> For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. Windows paths must use backslashes (`\`) instead of forward slashes (`/`). Safety: runs in the agent process (PID 24712); never kill that PID, its parents, or this process's image — the self-kill guard blocks it.
+    first char diff at 224: expected=None actual=' '
+    ctx expected: ...'must use backslashes (`\\`) instead of forward slashes (`/`).'
+    ctx actual  : ...'must use backslashes (`\\`) instead of forward slashes (`/`). Safety: runs in the agent process (PID 24712); never kill t'
+OK   python
+OK   Run
+(exit 0)
+
+=== uv run pytest kimi-cli/tests/tools/test_glob.py --collect-only -q | grep -c test_files ===
+0
+(0 = fixture named test_files is NOT collected as a test)
+
+=== grep -c "assert True\|isinstance(.*, object)" in tautology section B ===
+0
+
+=== ls .kimix_cache/x06* ===
+.kimix_cache/x06_actual.txt
+.kimix_cache/x06_final.py
+.kimix_cache/x06_no_assert.py
+.kimix_cache/x06_noassert_detail.py
+.kimix_cache/x06_prompt_diff.py
+.kimix_cache/x06_prompt_fail.txt
+.kimix_cache/x06_prompt_fail2.txt
+.kimix_cache/x06_skips.py
+.kimix_cache/x06_tier2.py
+
+.kimix_cache/x06_probe:
+__pycache__
+test_dump_desc.py
+
+=== uv run pytest .kimix_cache/x06_probe/test_dump_desc.py -q (probe: dump composed descriptions inside pytest env) ===
+.                                                                        [100%]
+1 passed in 0.71s
+
+=== cat .kimix_cache/x06_actual.txt ===
+### Run
+Run an executable or bash command. For long runs: run_in_background=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor.
+### bash
+Execute a bash command.For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close.ALWAYS use native POSIX syntax, even on Windows Safety: runs in the agent process (PID 46640); never kill that PID, its parents, or this process's image — the self-kill guard blocks it.
+### pwsh
+<PWSH_MD> For long sessions: interactive=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor; send 'exit' to close. Windows paths must use backslashes (`\`) instead of forward slashes (`/`). Safety: runs in the agent process (PID 46640); never kill that PID, its parents, or this process's image — the self-kill guard blocks it.
+### python
+Execute Python code or a .py file (auto-detected via `code`). Scripts run with a resolved interpreter (project .venv, else backend). Install packages with '<python> -m pip install <pkg>' or 'uv pip install <pkg>' in the project dir — not bare 'pip install'. The child env is scrubbed of secret-looking vars by default. For long runs: run_in_background=True, then task_id=<id> to continue; wait_for_pattern to block; job_output to monitor.
+
