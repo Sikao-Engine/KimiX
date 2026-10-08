@@ -520,16 +520,25 @@ e8dc4e77 review(C10,K01,K04): author-written probe suites and reports
 72257564 chore(review): per-tool gate harness, report generator, P1 sweep evidence
 ```
 
-## 13. Post-merge polish (after `tools-review/p5-final`)
+## 13. Post-merge polish (after the tagged review revision)
 
-`tools-review/p5-final` marks the **merged review revision** (`36045bd7`), which was
-fast-forwarded onto `master`.  The commits below come after it and only continue the
-plan's recorded next steps; they are not part of the tagged review revision.
+`tools-review/p5-final` (annotated tag; `^{commit}` = `36045bd7`) marks the **merged,
+reviewed revision**.  That commit was fast-forwarded onto `master`, so `master`'s
+history contains the whole review linearly.  The tagged revision itself is the
+`revert(FP-03)` commit: it restored `src/kimix/agent_worker.json` byte-for-byte and
+moved `FindStr`/`ParserTool` to `tools/tool_registry_allowlist.txt` on the owner's
+"no new tool registrations" decision, so **no agent manifest is modified by this
+review**.
 
-* `9c9c35b9 refactor(C04,C14): G1 now fully green for 15 of 33 tools` - `refactor(C04,C14)`, bringing G1 fully green to
-  **14 of 33 tools** (see §2/§5). Full gate block re-run for both; the compaction
-  invariants were re-checked because C14 owns G-COMPACT.
-* the commit before it - `revert(FP-03)`, restoring `src/kimix/agent_worker.json`
-  byte-for-byte and moving `FindStr`/`ParserTool` to the allowlist, on the owner's
-  "no new tool registrations" decision.  No agent manifest is modified by this
-  review.
+The commits below come after the tag and only continue the plan's recorded next
+steps; they are not part of the tagged revision:
+
+```
+82721e12 review: correct the final-report G1 counts to the measured values
+4e15eaa8 review: record the post-merge polish commits and the manifest reversal
+9c9c35b9 refactor(C04,C14): G1 now fully green for more tools
+```
+
+`9c9c35b9` re-ran the full gate block for C04 and C14 and re-checked the compaction
+invariants (C14 owns G-COMPACT); `82721e12` corrects this report's G1 aggregates to
+the values measured from `reviews/tools/gates/<ID>.json`.
