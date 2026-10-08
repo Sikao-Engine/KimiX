@@ -4,8 +4,8 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=1 tests=1 registration=`ParserTool` (src/kimix/tools/parser/__init__.py:105) |
-| G1 simplicity | fail | ruff=fail C901=pass metrics=pass complexity_max=12 longest_fn_loc=113 |
+| G0 scope | pass | files=1 tests=1 registration=`ParserTool` (src/kimix/tools/parser/__init__.py:104) |
+| G1 simplicity | pass | ruff=pass C901=pass metrics=pass complexity_max=12 longest_fn_loc=113 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=85 no coverage line recorded |
 | G4 behavior | fail | `tests/unit/tools/test_parser_gate.py` required=10 present=0 |
@@ -16,34 +16,33 @@
 
 | source | LOC |
 |---|---|
-| `src/kimix/tools/parser/__init__.py` | 237 |
+| `src/kimix/tools/parser/__init__.py` | 226 |
 
 Tests in scope: `tests/test_parsers.py`
 
-Module LOC total: **237**
+Module LOC total: **226**
 
 ## 2. Behaviour map
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `ParserTool` | `src/kimix/tools/parser/__init__.py:105` | CallableTool2 | - | True |
+| `ParserTool` | `src/kimix/tools/parser/__init__.py:104` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
 | function | LOC | complexity | branches | max nesting | file |
 |---|---|---|---|---|---|
 | `__call__` | 113 | 12 | 11 | 4 | `C:/dev/kimi-agent/src/kimix/tools/parser/__init__.py` |
-| `__init__` | 9 | 1 | 0 | 0 | `C:/dev/kimi-agent/src/kimix/tools/parser/__init__.py` |
 | `_to_json` | 3 | 1 | 0 | 0 | `C:/dev/kimi-agent/src/kimix/tools/parser/__init__.py` |
 
 ## 3. S1 Simplicity (G1 detail)
 
-verdict: **fail**
+verdict: **pass**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `pass`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `pass`
-* module LOC **237** → decision: **keep (below the 1200-LOC split threshold)**
+* module LOC **226** → decision: **keep (below the 1200-LOC split threshold)**
 * longest function `__call__` = 113 LOC (`C:/dev/kimi-agent/src/kimix/tools/parser/__init__.py`)
 * functions > 120 LOC: **0** · complexity > 12: **0**
 
@@ -52,7 +51,6 @@ Top-5 by cyclomatic complexity:
 | function | complexity | LOC | file |
 |---|---|---|---|
 | `__call__` | 12 | 113 | `C:/dev/kimi-agent/src/kimix/tools/parser/__init__.py` |
-| `__init__` | 1 | 9 | `C:/dev/kimi-agent/src/kimix/tools/parser/__init__.py` |
 | `_to_json` | 1 | 3 | `C:/dev/kimi-agent/src/kimix/tools/parser/__init__.py` |
 
 ## 4. S2 Potential issues (G2 detail)
@@ -95,7 +93,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -121,7 +119,7 @@ verdict: **major**
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
+      "ruff": "pass",
       "complexity_max": 12,
       "longest_fn_loc": 113,
       "loc_regression": "none",
@@ -131,7 +129,7 @@ verdict: **major**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 1,
-      "open_medium": 1,
+      "open_medium": 0,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -157,16 +155,6 @@ verdict: **major**
   },
   "findings": [
     {
-      "severity": "medium",
-      "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "src/kimix/tools/parser/__init__.py",
-      "evidence": "reviews/tools/gates/K15.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "tests/unit/tools/test_parser_gate.py::test_ruff_clean_in_scope"
-    },
-    {
       "severity": "high",
       "axis": "coverage",
       "title": "G4 probe suite missing/insufficient (0/10)",
@@ -180,14 +168,13 @@ verdict: **major**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 2,
+    "gaps": 1,
     "gap_list": [
-      "ruff check fails on the in-scope files",
       "G4 probe suite missing/insufficient (0/10)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/K15.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

@@ -1,140 +1,64 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
- M kimi-cli/src/kimi_cli/tools/file/conflict_detect.py
- M kimi-cli/src/kimi_cli/tools/file/read_media.py
- M src/kimix/tools/common.py
- M src/kimix/tools/file/bash/bash_tool.py
- M src/kimix/tools/file/bash/pwsh_tool.py
- M src/kimix/tools/file/run.py
- M src/kimix/tools/py/__init__.py
-?? .coverage
-?? kimi-cli/tests/tools/test_edit_gate.py
-?? kimi-cli/tests/tools/test_read_media_gate.py
-?? kimi-cli/tests/tools/test_tools_integrity_gate.py
-?? reviews/tools/90-findings.md
-?? reviews/tools/93-orphans-and-removal.md
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/X03-security.md
-?? reviews/tools/X04-native-parity.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C06.json
-?? reviews/tools/gates/C06.txt
-?? reviews/tools/gates/C07.json
-?? reviews/tools/gates/C07.txt
-?? reviews/tools/gates/C08.json
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.json
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.json
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C11.json
-?? reviews/tools/gates/C11.txt
-?? reviews/tools/gates/C12.json
-?? reviews/tools/gates/C12.txt
-?? reviews/tools/gates/C13.json
-?? reviews/tools/gates/C13.txt
-?? reviews/tools/gates/C14.json
-?? reviews/tools/gates/C14.txt
-?? reviews/tools/gates/C15.json
-?? reviews/tools/gates/C15.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K00.json
-?? reviews/tools/gates/K00.txt
-?? reviews/tools/gates/K01.json
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K02.json
-?? reviews/tools/gates/K02.txt
-?? reviews/tools/gates/K03.json
-?? reviews/tools/gates/K03.txt
-?? reviews/tools/gates/K04.json
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/K05.json
-?? reviews/tools/gates/K05.txt
-?? reviews/tools/gates/K06.json
-?? reviews/tools/gates/K06.txt
-?? reviews/tools/gates/K07.json
-?? reviews/tools/gates/K07.txt
-?? reviews/tools/gates/K08.json
-?? reviews/tools/gates/K08.txt
-?? reviews/tools/gates/K09.json
-?? reviews/tools/gates/K09.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tests/kimix/test_agent_gate.py
-?? tests/test_review_orchestrator.py
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+ M reviews/tools/gates/C06.json
+ M reviews/tools/gates/C06.txt
+ M reviews/tools/gates/C07.json
+ M reviews/tools/gates/C07.txt
+ M reviews/tools/gates/C08.json
+ M reviews/tools/gates/C08.txt
+ M reviews/tools/gates/C09.json
+ M reviews/tools/gates/C09.txt
+ M reviews/tools/gates/C10.json
+ M reviews/tools/gates/C10.txt
+ M reviews/tools/gates/C11.json
+ M reviews/tools/gates/C11.txt
+ M reviews/tools/gates/C12.json
+ M reviews/tools/gates/C12.txt
+ M reviews/tools/gates/C13.json
+ M reviews/tools/gates/C13.txt
+ M reviews/tools/gates/C14.json
+ M reviews/tools/gates/C14.txt
+ M reviews/tools/gates/C15.json
+ M reviews/tools/gates/C15.txt
+ M reviews/tools/gates/K00.json
+ M reviews/tools/gates/K00.txt
+ M reviews/tools/gates/K01.json
+ M reviews/tools/gates/K01.txt
+ M reviews/tools/gates/K02.json
+ M reviews/tools/gates/K02.txt
+ M reviews/tools/gates/K03.json
+ M reviews/tools/gates/K03.txt
+ M reviews/tools/gates/K04.json
+ M reviews/tools/gates/K04.txt
+ M reviews/tools/gates/K05.json
+ M reviews/tools/gates/K05.txt
+ M reviews/tools/gates/K06.json
+ M reviews/tools/gates/K06.txt
+ M reviews/tools/gates/K07.json
+ M reviews/tools/gates/K07.txt
+ M reviews/tools/gates/K08.json
+ M reviews/tools/gates/K08.txt
+ M reviews/tools/gates/K09.json
+ M reviews/tools/gates/K09.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check src/kimix/tools/note/__init__.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> src\kimix\tools\note\__init__.py:3:1
-   |
- 1 |   """Plan file tools: WritePlan, ReadPlan, EditPlan, EditTool."""
- 2 |
- 3 | / from pathlib import Path
- 4 | | from typing import Any, Literal
- 5 | |
- 6 | | import anyio
- 7 | | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
- 8 | | from kimi_cli.session import Session
- 9 | | from pydantic import BaseModel, Field, model_validator
-10 | | from kimi_cli.tools import SkipThisTool
-11 | | from kimi_cli.tools.utils import truncate_line
-12 | | from rapidfuzz import fuzz, process
-13 | | from kimix.tools.prompt_common import accepts_alias_text
-   | |________________________________________________________^
-14 |
-15 |   MAX_LINES = 1000
-   |
-help: Organize imports
-   |
-6  | import anyio
-   - from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-7  | from kimi_cli.session import Session
-   - from pydantic import BaseModel, Field, model_validator
-8  | from kimi_cli.tools import SkipThisTool
-9  | from kimi_cli.tools.utils import truncate_line
-10 + from pydantic import BaseModel, Field, model_validator
-11 | from rapidfuzz import fuzz, process
-12 +
-13 + from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-14 | from kimix.tools.prompt_common import accepts_alias_text
-   |
-
-F401 `typing.Any` imported but unused
- --> src\kimix\tools\note\__init__.py:4:20
-  |
-3 | from pathlib import Path
-4 | from typing import Any, Literal
-  |                    ^^^
-5 |
-6 | import anyio
-  |
-help: Remove unused import: `typing.Any`
-
-Found 2 errors.
-[*] 1 fixable with the `--fix` option.
-[elapsed 0.1s, rc=1]
+All checks passed!
+[elapsed 0.3s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
 C901 `_read_tail` is too complex (13 > 12)
@@ -161,7 +85,7 @@ Found 1 error.
       "functions": [
         {
           "name": "_set_enable_plan",
-          "lineno": 22,
+          "lineno": 23,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -169,7 +93,7 @@ Found 1 error.
         },
         {
           "name": "__init__",
-          "lineno": 48,
+          "lineno": 49,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -177,7 +101,7 @@ Found 1 error.
         },
         {
           "name": "__call__",
-          "lineno": 54,
+          "lineno": 55,
           "loc": 25,
           "complexity": 5,
           "branches": 4,
@@ -185,7 +109,7 @@ Found 1 error.
         },
         {
           "name": "_validate_line_offset",
-          "lineno": 108,
+          "lineno": 109,
           "loc": 12,
           "complexity": 3,
           "branches": 2,
@@ -193,7 +117,7 @@ Found 1 error.
         },
         {
           "name": "__init__",
-          "lineno": 127,
+          "lineno": 128,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -201,11 +125,11 @@ Found 1 error.
         },
         {
           "name": "__call__",
-          "lineno": 133,
-          "loc": 34,
+          "lineno": 134,
+          "loc": 33,
           "complexity": 8,
           "branches": 7,
-          "max_nesting": 3
+          "max_nesting": 2
         },
         {
           "name": "_read_forward",
@@ -297,12 +221,12 @@ Found 1 error.
     "src/kimix/tools/note/__init__.py::_find_similar complexity=13 > 12"
   ]
 }
-[elapsed 0.2s, rc=1]
+[elapsed 0.1s, rc=1]
 
 === uv run pytest tests/test_note.py -q -rs ===
 ..............................................                           [100%]
-46 passed in 1.16s
-[elapsed 2.2s, rc=0]
+46 passed in 0.94s
+[elapsed 1.8s, rc=0]
 
 === uv run --with pytest-cov pytest tests/test_note.py --cov=kimix.tools.note ===
 ..............................................                           [100%]
@@ -311,8 +235,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                               Stmts   Miss Branch BrPart  Cover   Missing
 ------------------------------------------------------------------------------
-src\kimix\tools\note\__init__.py     311     38    132     19    84%   25, 110, 114, 158->161, 159->161, 202, 244-252, 262, 273, 275, 277, 339-346, 348->353, 351, 371, 374-375, 403-408, 444, 489, 496
+src\kimix\tools\note\__init__.py     310     38    130     18    84%   26, 111, 115, 159->161, 202, 244-252, 262, 273, 275, 277, 339-346, 348->353, 351, 371, 374-375, 403-408, 444, 489, 496
 ------------------------------------------------------------------------------
-TOTAL                                311     38    132     19    84%
-46 passed in 1.21s
-[elapsed 5.1s, rc=0]
+TOTAL                                310     38    130     18    84%
+46 passed in 0.84s
+[elapsed 4.0s, rc=0]

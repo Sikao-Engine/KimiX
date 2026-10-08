@@ -4,11 +4,11 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=1 tests=1 registration=`WritePlan` (src/kimix/tools/note/__init__.py:43), `ReadPlan` (src/kimix/tools/note/__init__.py:122), `EditPlan` (src/kimix/tools/note/__init__.py:311) |
-| G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=15 longest_fn_loc=66 |
+| G0 scope | pass | files=1 tests=1 registration=`WritePlan` (src/kimix/tools/note/__init__.py:44), `ReadPlan` (src/kimix/tools/note/__init__.py:123), `EditPlan` (src/kimix/tools/note/__init__.py:311) |
+| G1 simplicity | fail | ruff=pass C901=fail metrics=fail complexity_max=15 longest_fn_loc=66 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=90 no coverage line recorded |
-| G4 behavior | fail | `tests/unit/tools/test_note_gate.py` required=5 present=0 |
+| G4 behavior | pass | `tests/unit/tools/test_note_gate.py` required=5 present=23 |
 | G5 regression | pass | pytest=pass (rc=0); see 00-baseline.txt |
 | G6 independent rerun | not-run | orchestrator re-run pending |
 
@@ -26,8 +26,8 @@ Module LOC total: **517**
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `WritePlan` | `src/kimix/tools/note/__init__.py:43` | CallableTool2 | - | True |
-| `ReadPlan` | `src/kimix/tools/note/__init__.py:122` | CallableTool2 | - | True |
+| `WritePlan` | `src/kimix/tools/note/__init__.py:44` | CallableTool2 | - | True |
+| `ReadPlan` | `src/kimix/tools/note/__init__.py:123` | CallableTool2 | - | True |
 | `EditPlan` | `src/kimix/tools/note/__init__.py:311` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
@@ -39,7 +39,7 @@ Largest functions (by LOC):
 | `_read_forward` | 49 | 12 | 11 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_apply_edit` | 41 | 8 | 7 | 2 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_find_best_fuzzy_match` | 36 | 7 | 6 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
-| `__call__` | 34 | 8 | 7 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
+| `__call__` | 33 | 8 | 7 | 2 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_find_similar` | 28 | 13 | 12 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `__call__` | 25 | 5 | 4 | 3 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
 | `_try_strip_match` | 24 | 7 | 6 | 5 | `C:/dev/kimi-agent/src/kimix/tools/note/__init__.py` |
@@ -51,7 +51,7 @@ Largest functions (by LOC):
 
 verdict: **fail**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
 * module LOC **517** → decision: **keep (below the 1200-LOC split threshold)**
@@ -103,7 +103,7 @@ Top-5 by cyclomatic complexity:
 
 ## 6. G4 Behavioural probes
 
-* required **5** · present **0** (`tests/unit/tools/test_note_gate.py`) → **fail**
+* required **5** · present **23** (`tests/unit/tools/test_note_gate.py`) → **pass**
 * The required probe topics are enumerated verbatim in the plan §4.3 block for this ID
   (reproduced under `.kimix_cache/tmp_30108/p2_prompts/`).
 
@@ -115,8 +115,8 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
-[elapsed 0.1s, rc=0]`
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+[elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
 
@@ -128,7 +128,7 @@ Top-5 by cyclomatic complexity:
 
 ## 10. Verdict + JSON
 
-verdict: **major**
+verdict: **minor**
 
 ```json
 {
@@ -137,11 +137,11 @@ verdict: **major**
   "files": [
     "src/kimix/tools/note/__init__.py"
   ],
-  "verdict": "major",
+  "verdict": "minor",
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
+      "ruff": "pass",
       "complexity_max": 15,
       "longest_fn_loc": 66,
       "loc_regression": "none",
@@ -150,8 +150,8 @@ verdict: **major**
     },
     "G2_risk": {
       "items_answered": 13,
-      "open_high": 1,
-      "open_medium": 2,
+      "open_high": 0,
+      "open_medium": 1,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -164,8 +164,8 @@ verdict: **major**
     "G4_behavior": {
       "probe_file": "tests/unit/tools/test_note_gate.py",
       "probes_required": 5,
-      "probes_present": 0,
-      "result": "fail"
+      "probes_present": 23,
+      "result": "pass"
     },
     "G5_regression": {
       "root_suite": "blocked (missing tests/bash/cases.json)",
@@ -179,46 +179,24 @@ verdict: **major**
     {
       "severity": "medium",
       "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "src/kimix/tools/note/__init__.py",
-      "evidence": "reviews/tools/gates/K11.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "tests/unit/tools/test_note_gate.py::test_ruff_clean_in_scope"
-    },
-    {
-      "severity": "medium",
-      "axis": "simplicity",
       "title": "2 functions exceed complexity 12",
       "file": "src/kimix/tools/note/__init__.py",
       "evidence": "gates/K11.json complexity_max=15",
       "impact": "hard G1 breach for the >15 offenders; branches are untestable",
       "fix": "extract cohesive helpers until every function is <= 12",
       "test_to_add": "tests/unit/tools/test_note_gate.py::test_no_function_over_complexity_12"
-    },
-    {
-      "severity": "high",
-      "axis": "coverage",
-      "title": "G4 probe suite missing/insufficient (0/5)",
-      "file": "tests/unit/tools/test_note_gate.py",
-      "evidence": "tests/unit/tools/test_note_gate.py contains 0 test functions",
-      "impact": "no binary behavioural evidence for this tool",
-      "fix": "author >= 5 adversarial probes per the plan §4.3 block",
-      "test_to_add": "tests/unit/tools/test_note_gate.py"
     }
   ],
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 3,
+    "gaps": 1,
     "gap_list": [
-      "ruff check fails on the in-scope files",
-      "2 functions exceed complexity 12",
-      "G4 probe suite missing/insufficient (0/5)"
+      "2 functions exceed complexity 12"
     ]
   },
   "gate_evidence": "reviews/tools/gates/K11.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.1s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

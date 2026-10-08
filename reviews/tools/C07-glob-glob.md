@@ -4,7 +4,7 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=4 tests=5 registration=`Glob` (kimi-cli/src/kimi_cli/tools/file/glob.py:476) |
+| G0 scope | pass | files=4 tests=5 registration=`Glob` (kimi-cli/src/kimi_cli/tools/file/glob.py:480) |
 | G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=37 longest_fn_loc=199 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=85 no coverage line recorded |
@@ -16,20 +16,20 @@
 
 | source | LOC |
 |---|---|
-| `kimi-cli/src/kimi_cli/tools/file/glob.py` | 707 |
+| `kimi-cli/src/kimi_cli/tools/file/glob.py` | 711 |
 | `kimi-cli/src/kimi_cli/tools/file/glob.md` | 3 |
 | `kimi-cli/src/kimi_cli/tools/file/output_utils.py` | 239 |
-| `kimi-cli/src/kimi_cli/tools/file/fs_cache.py` | 137 |
+| `kimi-cli/src/kimi_cli/tools/file/fs_cache.py` | 136 |
 
 Tests in scope: `kimi-cli/tests/tools/test_glob.py`, `kimi-cli/tests/tools/test_fs_cache_invalidation.py`, `kimi-cli/tests/tools/test_additional_dirs.py`, `kimi-cli/tests/tools/test_work_dir_resolution.py`, `kimi-cli/tests/tools/test_output_utils.py`
 
-Module LOC total: **1083**
+Module LOC total: **1086**
 
 ## 2. Behaviour map
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `Glob` | `kimi-cli/src/kimi_cli/tools/file/glob.py:476` | CallableTool2 | - | True |
+| `Glob` | `kimi-cli/src/kimi_cli/tools/file/glob.py:480` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
@@ -55,7 +55,7 @@ verdict: **fail**
 * `ruff check` → `fail`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **1083** → decision: **keep (below the 1200-LOC split threshold)**
+* module LOC **1086** → decision: **keep (below the 1200-LOC split threshold)**
 * longest function `__call__` = 199 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/glob.py`)
 * functions > 120 LOC: **1** · complexity > 12: **2**
 
@@ -117,7 +117,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -234,7 +234,7 @@ verdict: **major**
     ]
   },
   "gate_evidence": "reviews/tools/gates/C07.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

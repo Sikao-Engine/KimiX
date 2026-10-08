@@ -4,7 +4,7 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=1 tests=3 registration=`HashRead` (kimi-cli/src/kimi_cli/tools/file/hash_line.py:677), `HashEdit` (kimi-cli/src/kimi_cli/tools/file/hash_line.py:872) |
+| G0 scope | pass | files=1 tests=3 registration=`HashRead` (kimi-cli/src/kimi_cli/tools/file/hash_line.py:680), `HashEdit` (kimi-cli/src/kimi_cli/tools/file/hash_line.py:875) |
 | G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=61 longest_fn_loc=205 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=85 no coverage line recorded |
@@ -16,18 +16,18 @@
 
 | source | LOC |
 |---|---|
-| `kimi-cli/src/kimi_cli/tools/file/hash_line.py` | 1156 |
+| `kimi-cli/src/kimi_cli/tools/file/hash_line.py` | 1157 |
 
 Tests in scope: `kimi-cli/tests/tools/test_hash_line.py`, `kimi-cli/tests/tools/test_plan25_integration.py`, `kimi-cli/tests/native/test_diff_glob_tools_equivalence.py`
 
-Module LOC total: **1156**
+Module LOC total: **1157**
 
 ## 2. Behaviour map
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `HashRead` | `kimi-cli/src/kimi_cli/tools/file/hash_line.py:677` | CallableTool2 | - | True |
-| `HashEdit` | `kimi-cli/src/kimi_cli/tools/file/hash_line.py:872` | CallableTool2 | - | True |
+| `HashRead` | `kimi-cli/src/kimi_cli/tools/file/hash_line.py:680` | CallableTool2 | - | True |
+| `HashEdit` | `kimi-cli/src/kimi_cli/tools/file/hash_line.py:875` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
@@ -37,14 +37,14 @@ Largest functions (by LOC):
 | `_do_edit` | 135 | 18 | 17 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `_do_read` | 110 | 15 | 14 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `generate_hash_aware_diff` | 89 | 20 | 19 | 4 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
-| `_recover_stale_anchors` | 72 | 13 | 12 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
+| `_recover_stale_anchors` | 70 | 12 | 11 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `validate_anchor_ref` | 52 | 12 | 11 | 6 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `_validate_path` | 39 | 5 | 4 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `_validate_path` | 39 | 5 | 4 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `__str__` | 36 | 8 | 7 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `compute_line_hash` | 33 | 9 | 8 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `_deduplicate_edits` | 27 | 10 | 9 | 5 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
-| `_cumulative_hashes` | 20 | 6 | 5 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
+| `_cumulative_hashes` | 21 | 6 | 5 | 1 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 
 ## 3. S1 Simplicity (G1 detail)
 
@@ -53,9 +53,9 @@ verdict: **fail**
 * `ruff check` → `fail`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **1156** → decision: **keep (below the 1200-LOC split threshold)**
+* module LOC **1157** → decision: **keep (below the 1200-LOC split threshold)**
 * longest function `apply_hashline_edits` = 205 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py`)
-* functions > 120 LOC: **2** · complexity > 12: **5**
+* functions > 120 LOC: **2** · complexity > 12: **4**
 
 Threshold breaches recorded:
 
@@ -65,7 +65,6 @@ Threshold breaches recorded:
 | `kimi-cli/src/kimi_cli/tools/file/hash_line.py::apply_hashline_edits complexity=61 > 12` |
 | `kimi-cli/src/kimi_cli/tools/file/hash_line.py::generate_hash_aware_diff complexity=20 > 12` |
 | `kimi-cli/src/kimi_cli/tools/file/hash_line.py::_do_read complexity=15 > 12` |
-| `kimi-cli/src/kimi_cli/tools/file/hash_line.py::_recover_stale_anchors complexity=13 > 12` |
 | `kimi-cli/src/kimi_cli/tools/file/hash_line.py::_do_edit loc=135 > 120` |
 | `kimi-cli/src/kimi_cli/tools/file/hash_line.py::_do_edit complexity=18 > 12` |
 
@@ -77,7 +76,7 @@ Top-5 by cyclomatic complexity:
 | `generate_hash_aware_diff` | 20 | 89 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `_do_edit` | 18 | 135 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 | `_do_read` | 15 | 110 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
-| `_recover_stale_anchors` | 13 | 72 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
+| `_recover_stale_anchors` | 12 | 70 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/hash_line.py` |
 
 ## 4. S2 Potential issues (G2 detail)
 
@@ -119,7 +118,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -193,7 +192,7 @@ verdict: **major**
     {
       "severity": "medium",
       "axis": "simplicity",
-      "title": "5 functions exceed complexity 12",
+      "title": "4 functions exceed complexity 12",
       "file": "kimi-cli/src/kimi_cli/tools/file/hash_line.py",
       "evidence": "gates/C15.json complexity_max=61",
       "impact": "hard G1 breach for the >15 offenders; branches are untestable",
@@ -227,13 +226,13 @@ verdict: **major**
     "gaps": 4,
     "gap_list": [
       "ruff check fails on the in-scope files",
-      "5 functions exceed complexity 12",
+      "4 functions exceed complexity 12",
       "2 functions exceed 120 LOC",
       "G4 probe suite missing/insufficient (0/10)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/C15.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

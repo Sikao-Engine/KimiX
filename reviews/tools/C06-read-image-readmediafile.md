@@ -4,8 +4,8 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=3 tests=2 registration=`ReadMediaFile` (kimi-cli/src/kimi_cli/tools/file/read_media.py:232) |
-| G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=29 longest_fn_loc=224 |
+| G0 scope | pass | files=3 tests=2 registration=`ReadMediaFile` (kimi-cli/src/kimi_cli/tools/file/read_media.py:236) |
+| G1 simplicity | fail | ruff=pass C901=fail metrics=fail complexity_max=29 longest_fn_loc=237 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=85 no coverage line recorded |
 | G4 behavior | pass | `kimi-cli/tests/tools/test_read_media_gate.py` required=10 present=15 |
@@ -16,26 +16,26 @@
 
 | source | LOC |
 |---|---|
-| `kimi-cli/src/kimi_cli/tools/file/read_media.py` | 673 |
+| `kimi-cli/src/kimi_cli/tools/file/read_media.py` | 679 |
 | `kimi-cli/src/kimi_cli/tools/file/read_media.md` | 20 |
 | `kimi-cli/src/kimi_cli/tools/file/read_media_shared.py` | 119 |
 
 Tests in scope: `kimi-cli/tests/tools/test_read_media_file.py`, `kimi-cli/tests/tools/test_read_media_file_desc.py`
 
-Module LOC total: **792**
+Module LOC total: **798**
 
 ## 2. Behaviour map
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `ReadMediaFile` | `kimi-cli/src/kimi_cli/tools/file/read_media.py:232` | CallableTool2 | - | True |
+| `ReadMediaFile` | `kimi-cli/src/kimi_cli/tools/file/read_media.py:236` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
 | function | LOC | complexity | branches | max nesting | file |
 |---|---|---|---|---|---|
-| `_read_media` | 236 | 26 | 25 | 5 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
-| `__call__` | 157 | 29 | 28 | 5 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
+| `_read_media` | 237 | 26 | 25 | 5 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
+| `__call__` | 158 | 29 | 28 | 5 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
 | `build_media_note` | 60 | 16 | 15 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media_shared.py` |
 | `_try_mipmap_fallback` | 38 | 4 | 3 | 1 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
 | `_validate_path` | 19 | 3 | 2 | 1 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
@@ -51,20 +51,20 @@ Largest functions (by LOC):
 
 verdict: **fail**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **792** → decision: **keep (below the 1200-LOC split threshold)**
-* longest function `_read_media` = 236 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py`)
+* module LOC **798** → decision: **keep (below the 1200-LOC split threshold)**
+* longest function `_read_media` = 237 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py`)
 * functions > 120 LOC: **2** · complexity > 12: **3**
 
 Threshold breaches recorded:
 
 | breach |
 |---|
-| `kimi-cli/src/kimi_cli/tools/file/read_media.py::_read_media loc=224 > 120` |
+| `kimi-cli/src/kimi_cli/tools/file/read_media.py::_read_media loc=237 > 120` |
 | `kimi-cli/src/kimi_cli/tools/file/read_media.py::_read_media complexity=26 > 12` |
-| `kimi-cli/src/kimi_cli/tools/file/read_media.py::__call__ loc=157 > 120` |
+| `kimi-cli/src/kimi_cli/tools/file/read_media.py::__call__ loc=158 > 120` |
 | `kimi-cli/src/kimi_cli/tools/file/read_media.py::__call__ complexity=29 > 12` |
 | `kimi-cli/src/kimi_cli/tools/file/read_media_shared.py::build_media_note complexity=16 > 12` |
 
@@ -72,8 +72,8 @@ Top-5 by cyclomatic complexity:
 
 | function | complexity | LOC | file |
 |---|---|---|---|
-| `__call__` | 29 | 157 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
-| `_read_media` | 26 | 236 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
+| `__call__` | 29 | 158 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
+| `_read_media` | 26 | 237 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
 | `build_media_note` | 16 | 60 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media_shared.py` |
 | `_try_mipmap_fallback` | 4 | 38 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
 | `__init__` | 4 | 18 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_media.py` |
@@ -118,7 +118,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -146,9 +146,9 @@ verdict: **minor**
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
+      "ruff": "pass",
       "complexity_max": 29,
-      "longest_fn_loc": 224,
+      "longest_fn_loc": 237,
       "loc_regression": "none",
       "vulture_hits": 0,
       "vulture_waived": 0
@@ -156,7 +156,7 @@ verdict: **minor**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 0,
-      "open_medium": 2,
+      "open_medium": 1,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -184,16 +184,6 @@ verdict: **minor**
     {
       "severity": "medium",
       "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "kimi-cli/src/kimi_cli/tools/file/read_media.py",
-      "evidence": "reviews/tools/gates/C06.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "kimi-cli/tests/tools/test_read_media_gate.py::test_ruff_clean_in_scope"
-    },
-    {
-      "severity": "medium",
-      "axis": "simplicity",
       "title": "3 functions exceed complexity 12",
       "file": "kimi-cli/src/kimi_cli/tools/file/read_media.py",
       "evidence": "gates/C06.json complexity_max=29",
@@ -206,7 +196,7 @@ verdict: **minor**
       "axis": "simplicity",
       "title": "2 functions exceed 120 LOC",
       "file": "kimi-cli/src/kimi_cli/tools/file/read_media.py",
-      "evidence": "longest = _read_media (224 LOC)",
+      "evidence": "longest = _read_media (237 LOC)",
       "impact": "long functions resist review and coverage",
       "fix": "split along the natural sub-steps",
       "test_to_add": "kimi-cli/tests/tools/test_read_media_gate.py::test_no_function_over_120_loc"
@@ -215,15 +205,14 @@ verdict: **minor**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 3,
+    "gaps": 2,
     "gap_list": [
-      "ruff check fails on the in-scope files",
       "3 functions exceed complexity 12",
       "2 functions exceed 120 LOC"
     ]
   },
   "gate_evidence": "reviews/tools/gates/C06.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

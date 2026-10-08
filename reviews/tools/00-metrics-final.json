@@ -2,12 +2,12 @@
   "files": [
     {
       "path": "kimi-cli/src/kimi_cli/tools/__init__.py",
-      "loc": 168,
-      "module_loc": 168,
+      "loc": 167,
+      "module_loc": 167,
       "functions": [
         {
           "name": "resolve_tool_class",
-          "lineno": 29,
+          "lineno": 28,
           "loc": 33,
           "complexity": 9,
           "branches": 8,
@@ -15,7 +15,7 @@
         },
         {
           "name": "_first_web_extract_url",
-          "lineno": 64,
+          "lineno": 63,
           "loc": 18,
           "complexity": 10,
           "branches": 9,
@@ -23,7 +23,7 @@
         },
         {
           "name": "extract_key_argument",
-          "lineno": 84,
+          "lineno": 83,
           "loc": 78,
           "complexity": 34,
           "branches": 33,
@@ -31,7 +31,7 @@
         },
         {
           "name": "_normalize_path",
-          "lineno": 164,
+          "lineno": 163,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -46,8 +46,8 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/agent/__init__.py",
-      "loc": 269,
-      "module_loc": 269,
+      "loc": 270,
+      "module_loc": 270,
       "functions": [
         {
           "name": "effective_timeout",
@@ -116,15 +116,15 @@
         {
           "name": "_run_in_background",
           "lineno": 160,
-          "loc": 107,
+          "loc": 108,
           "complexity": 14,
           "branches": 13,
-          "max_nesting": 4
+          "max_nesting": 3
         }
       ],
       "longest_fn": {
         "name": "_run_in_background",
-        "loc": 107
+        "loc": 108
       },
       "module_complexity": 14
     },
@@ -258,8 +258,8 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/auto_generated.py",
-      "loc": 345,
-      "module_loc": 345,
+      "loc": 343,
+      "module_loc": 343,
       "functions": [
         {
           "name": "strip_bom",
@@ -288,14 +288,14 @@
         {
           "name": "extract_leading_header_comment_text",
           "lineno": 140,
-          "loc": 66,
+          "loc": 64,
           "complexity": 26,
           "branches": 25,
           "max_nesting": 5
         },
         {
           "name": "detect_auto_generated_marker",
-          "lineno": 208,
+          "lineno": 206,
           "loc": 20,
           "complexity": 5,
           "branches": 4,
@@ -303,7 +303,7 @@
         },
         {
           "name": "build_auto_generated_error",
-          "lineno": 230,
+          "lineno": 228,
           "loc": 12,
           "complexity": 1,
           "branches": 0,
@@ -311,7 +311,7 @@
         },
         {
           "name": "should_block_auto_generated",
-          "lineno": 244,
+          "lineno": 242,
           "loc": 9,
           "complexity": 3,
           "branches": 2,
@@ -319,7 +319,7 @@
         },
         {
           "name": "_clear_marker_cache",
-          "lineno": 261,
+          "lineno": 259,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -327,7 +327,7 @@
         },
         {
           "name": "_cached_marker",
-          "lineno": 266,
+          "lineno": 264,
           "loc": 26,
           "complexity": 7,
           "branches": 6,
@@ -335,7 +335,7 @@
         },
         {
           "name": "_check_path_guard",
-          "lineno": 297,
+          "lineno": 295,
           "loc": 16,
           "complexity": 6,
           "branches": 5,
@@ -343,7 +343,7 @@
         },
         {
           "name": "assert_editable_file",
-          "lineno": 315,
+          "lineno": 313,
           "loc": 11,
           "complexity": 1,
           "branches": 0,
@@ -351,7 +351,7 @@
         },
         {
           "name": "assert_editable_file_content",
-          "lineno": 328,
+          "lineno": 326,
           "loc": 18,
           "complexity": 4,
           "branches": 3,
@@ -360,7 +360,7 @@
       ],
       "longest_fn": {
         "name": "extract_leading_header_comment_text",
-        "loc": 66
+        "loc": 64
       },
       "module_complexity": 26
     },
@@ -658,12 +658,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/conflict_detect.py",
-      "loc": 863,
-      "module_loc": 863,
+      "loc": 864,
+      "module_loc": 864,
       "functions": [
         {
           "name": "_strip_trailing_cr",
-          "lineno": 126,
+          "lineno": 127,
           "loc": 2,
           "complexity": 2,
           "branches": 1,
@@ -671,7 +671,7 @@
         },
         {
           "name": "match_marker",
-          "lineno": 130,
+          "lineno": 131,
           "loc": 20,
           "complexity": 6,
           "branches": 5,
@@ -679,7 +679,7 @@
         },
         {
           "name": "is_separator",
-          "lineno": 152,
+          "lineno": 153,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -687,7 +687,7 @@
         },
         {
           "name": "scan_conflict_lines",
-          "lineno": 161,
+          "lineno": 162,
           "loc": 127,
           "complexity": 23,
           "branches": 22,
@@ -695,7 +695,7 @@
         },
         {
           "name": "scan_file_for_conflicts",
-          "lineno": 290,
+          "lineno": 291,
           "loc": 22,
           "complexity": 3,
           "branches": 2,
@@ -703,7 +703,7 @@
         },
         {
           "name": "find_dangling_openers",
-          "lineno": 314,
+          "lineno": 315,
           "loc": 29,
           "complexity": 8,
           "branches": 7,
@@ -711,7 +711,7 @@
         },
         {
           "name": "get_conflict_history",
-          "lineno": 430,
+          "lineno": 431,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -719,7 +719,7 @@
         },
         {
           "name": "parse_conflict_uri",
-          "lineno": 445,
+          "lineno": 446,
           "loc": 43,
           "complexity": 8,
           "branches": 7,
@@ -727,7 +727,7 @@
         },
         {
           "name": "expand_content_tokens",
-          "lineno": 494,
+          "lineno": 495,
           "loc": 22,
           "complexity": 7,
           "branches": 6,
@@ -735,7 +735,7 @@
         },
         {
           "name": "_region_lines",
-          "lineno": 522,
+          "lineno": 523,
           "loc": 10,
           "complexity": 3,
           "branches": 2,
@@ -743,7 +743,7 @@
         },
         {
           "name": "_render_marker",
-          "lineno": 534,
+          "lineno": 535,
           "loc": 2,
           "complexity": 2,
           "branches": 1,
@@ -751,7 +751,7 @@
         },
         {
           "name": "_block_signature",
-          "lineno": 538,
+          "lineno": 539,
           "loc": 10,
           "complexity": 3,
           "branches": 2,
@@ -759,7 +759,7 @@
         },
         {
           "name": "_matches_at",
-          "lineno": 550,
+          "lineno": 551,
           "loc": 13,
           "complexity": 7,
           "branches": 6,
@@ -767,7 +767,7 @@
         },
         {
           "name": "_delimiter_balance",
-          "lineno": 565,
+          "lineno": 566,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -775,7 +775,7 @@
         },
         {
           "name": "_echo_prefix_len",
-          "lineno": 569,
+          "lineno": 570,
           "loc": 9,
           "complexity": 3,
           "branches": 2,
@@ -783,7 +783,7 @@
         },
         {
           "name": "_echo_suffix_len",
-          "lineno": 580,
+          "lineno": 581,
           "loc": 9,
           "complexity": 3,
           "branches": 2,
@@ -791,7 +791,7 @@
         },
         {
           "name": "_trim_echo",
-          "lineno": 591,
+          "lineno": 592,
           "loc": 29,
           "complexity": 8,
           "branches": 7,
@@ -799,7 +799,7 @@
         },
         {
           "name": "splice_conflict",
-          "lineno": 622,
+          "lineno": 623,
           "loc": 53,
           "complexity": 11,
           "branches": 10,
@@ -807,7 +807,7 @@
         },
         {
           "name": "_region_text",
-          "lineno": 681,
+          "lineno": 682,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -815,7 +815,7 @@
         },
         {
           "name": "conflict_regions_equal",
-          "lineno": 685,
+          "lineno": 686,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -823,7 +823,7 @@
         },
         {
           "name": "conflict_region_present",
-          "lineno": 693,
+          "lineno": 694,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -831,7 +831,7 @@
         },
         {
           "name": "render_conflict_region",
-          "lineno": 702,
+          "lineno": 703,
           "loc": 22,
           "complexity": 6,
           "branches": 5,
@@ -839,7 +839,7 @@
         },
         {
           "name": "_preview_lines",
-          "lineno": 726,
+          "lineno": 727,
           "loc": 7,
           "complexity": 3,
           "branches": 2,
@@ -847,7 +847,7 @@
         },
         {
           "name": "_collect_labels",
-          "lineno": 735,
+          "lineno": 736,
           "loc": 9,
           "complexity": 6,
           "branches": 5,
@@ -855,7 +855,7 @@
         },
         {
           "name": "format_conflict_warning",
-          "lineno": 746,
+          "lineno": 747,
           "loc": 59,
           "complexity": 14,
           "branches": 13,
@@ -863,7 +863,7 @@
         },
         {
           "name": "format_conflict_summary",
-          "lineno": 807,
+          "lineno": 808,
           "loc": 30,
           "complexity": 8,
           "branches": 7,
@@ -871,7 +871,7 @@
         },
         {
           "name": "parse_bulk_directives",
-          "lineno": 846,
+          "lineno": 847,
           "loc": 18,
           "complexity": 5,
           "branches": 4,
@@ -879,7 +879,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 67,
+          "lineno": 68,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -887,7 +887,7 @@
         },
         {
           "name": "reset",
-          "lineno": 181,
+          "lineno": 182,
           "loc": 10,
           "complexity": 1,
           "branches": 0,
@@ -895,7 +895,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 352,
+          "lineno": 353,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -903,7 +903,7 @@
         },
         {
           "name": "register",
-          "lineno": 357,
+          "lineno": 358,
           "loc": 49,
           "complexity": 3,
           "branches": 2,
@@ -911,7 +911,7 @@
         },
         {
           "name": "get",
-          "lineno": 407,
+          "lineno": 408,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -919,7 +919,7 @@
         },
         {
           "name": "entries",
-          "lineno": 410,
+          "lineno": 411,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -927,7 +927,7 @@
         },
         {
           "name": "invalidate",
-          "lineno": 413,
+          "lineno": 414,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -935,7 +935,7 @@
         },
         {
           "name": "invalidate_path",
-          "lineno": 420,
+          "lineno": 421,
           "loc": 8,
           "complexity": 3,
           "branches": 2,
@@ -950,12 +950,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/edit/__init__.py",
-      "loc": 107,
-      "module_loc": 107,
+      "loc": 106,
+      "module_loc": 106,
       "functions": [
         {
           "name": "__init__",
-          "lineno": 25,
+          "lineno": 24,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -963,7 +963,7 @@
         },
         {
           "name": "_work_dir",
-          "lineno": 30,
+          "lineno": 29,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -971,7 +971,7 @@
         },
         {
           "name": "_approval",
-          "lineno": 34,
+          "lineno": 33,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -979,7 +979,7 @@
         },
         {
           "name": "_session",
-          "lineno": 38,
+          "lineno": 37,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -987,7 +987,7 @@
         },
         {
           "name": "_vfs",
-          "lineno": 42,
+          "lineno": 41,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -995,7 +995,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 45,
+          "lineno": 44,
           "loc": 12,
           "complexity": 4,
           "branches": 3,
@@ -1003,7 +1003,7 @@
         },
         {
           "name": "_apply_edit",
-          "lineno": 63,
+          "lineno": 62,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1011,7 +1011,7 @@
         },
         {
           "name": "_normalize_line_endings",
-          "lineno": 66,
+          "lineno": 65,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1019,7 +1019,7 @@
         },
         {
           "name": "_find_similar",
-          "lineno": 69,
+          "lineno": 68,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1027,7 +1027,7 @@
         },
         {
           "name": "_try_strip_match",
-          "lineno": 72,
+          "lineno": 71,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1035,7 +1035,7 @@
         },
         {
           "name": "_find_best_fuzzy_match",
-          "lineno": 75,
+          "lineno": 74,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -1043,7 +1043,7 @@
         },
         {
           "name": "_apply_replace_all",
-          "lineno": 80,
+          "lineno": 79,
           "loc": 9,
           "complexity": 1,
           "branches": 0,
@@ -1051,7 +1051,7 @@
         },
         {
           "name": "_apply_fuzzy_fallback",
-          "lineno": 90,
+          "lineno": 89,
           "loc": 9,
           "complexity": 1,
           "branches": 0,
@@ -1066,8 +1066,8 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/edit/base.py",
-      "loc": 218,
-      "module_loc": 218,
+      "loc": 219,
+      "module_loc": 219,
       "functions": [
         {
           "name": "__init__",
@@ -1088,14 +1088,14 @@
         {
           "name": "_validate_path",
           "lineno": 51,
-          "loc": 34,
+          "loc": 35,
           "complexity": 5,
           "branches": 4,
-          "max_nesting": 2
+          "max_nesting": 1
         },
         {
           "name": "_resolve_for_write",
-          "lineno": 86,
+          "lineno": 87,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -1103,7 +1103,7 @@
         },
         {
           "name": "_is_within_workspace",
-          "lineno": 91,
+          "lineno": 92,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1111,7 +1111,7 @@
         },
         {
           "name": "_read_text",
-          "lineno": 94,
+          "lineno": 95,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1119,7 +1119,7 @@
         },
         {
           "name": "_write_text",
-          "lineno": 97,
+          "lineno": 98,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1127,7 +1127,7 @@
         },
         {
           "name": "_remove_file",
-          "lineno": 100,
+          "lineno": 101,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1135,7 +1135,7 @@
         },
         {
           "name": "_ensure_parent",
-          "lineno": 103,
+          "lineno": 104,
           "loc": 4,
           "complexity": 3,
           "branches": 2,
@@ -1143,7 +1143,7 @@
         },
         {
           "name": "_check_format",
-          "lineno": 108,
+          "lineno": 109,
           "loc": 14,
           "complexity": 5,
           "branches": 4,
@@ -1151,7 +1151,7 @@
         },
         {
           "name": "_try_repair_json",
-          "lineno": 123,
+          "lineno": 124,
           "loc": 8,
           "complexity": 3,
           "branches": 2,
@@ -1159,7 +1159,7 @@
         },
         {
           "name": "_request_approval",
-          "lineno": 132,
+          "lineno": 133,
           "loc": 25,
           "complexity": 3,
           "branches": 2,
@@ -1167,7 +1167,7 @@
         },
         {
           "name": "_check_conflicts",
-          "lineno": 158,
+          "lineno": 159,
           "loc": 26,
           "complexity": 7,
           "branches": 6,
@@ -1175,7 +1175,7 @@
         },
         {
           "name": "_check_staleness",
-          "lineno": 185,
+          "lineno": 186,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -1183,7 +1183,7 @@
         },
         {
           "name": "_stat_is_regular_file",
-          "lineno": 197,
+          "lineno": 198,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -1191,7 +1191,7 @@
         },
         {
           "name": "_wrap_exception",
-          "lineno": 205,
+          "lineno": 206,
           "loc": 14,
           "complexity": 2,
           "branches": 1,
@@ -1200,26 +1200,26 @@
       ],
       "longest_fn": {
         "name": "_validate_path",
-        "loc": 34
+        "loc": 35
       },
       "module_complexity": 7
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/edit/modes/__init__.py",
-      "loc": 18,
-      "module_loc": 18,
+      "loc": 17,
+      "module_loc": 17,
       "functions": [],
       "longest_fn": null,
       "module_complexity": 0
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/edit/modes/replace.py",
-      "loc": 525,
-      "module_loc": 525,
+      "loc": 524,
+      "module_loc": 524,
       "functions": [
         {
           "name": "__init__",
-          "lineno": 51,
+          "lineno": 50,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1227,7 +1227,7 @@
         },
         {
           "name": "_normalize_line_endings",
-          "lineno": 54,
+          "lineno": 53,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -1235,7 +1235,7 @@
         },
         {
           "name": "_find_similar",
-          "lineno": 58,
+          "lineno": 57,
           "loc": 28,
           "complexity": 5,
           "branches": 4,
@@ -1243,7 +1243,7 @@
         },
         {
           "name": "_try_strip_match",
-          "lineno": 87,
+          "lineno": 86,
           "loc": 22,
           "complexity": 7,
           "branches": 6,
@@ -1251,7 +1251,7 @@
         },
         {
           "name": "_find_best_fuzzy_match",
-          "lineno": 110,
+          "lineno": 109,
           "loc": 34,
           "complexity": 7,
           "branches": 6,
@@ -1259,7 +1259,7 @@
         },
         {
           "name": "_apply_replace_all",
-          "lineno": 145,
+          "lineno": 144,
           "loc": 26,
           "complexity": 6,
           "branches": 5,
@@ -1267,7 +1267,7 @@
         },
         {
           "name": "_apply_fuzzy_fallback",
-          "lineno": 172,
+          "lineno": 171,
           "loc": 28,
           "complexity": 5,
           "branches": 4,
@@ -1275,7 +1275,7 @@
         },
         {
           "name": "_apply_edit",
-          "lineno": 201,
+          "lineno": 200,
           "loc": 27,
           "complexity": 6,
           "branches": 5,
@@ -1283,7 +1283,7 @@
         },
         {
           "name": "_try_snapshot_recovery",
-          "lineno": 229,
+          "lineno": 228,
           "loc": 57,
           "complexity": 12,
           "branches": 11,
@@ -1291,7 +1291,7 @@
         },
         {
           "name": "execute",
-          "lineno": 287,
+          "lineno": 286,
           "loc": 239,
           "complexity": 38,
           "branches": 37,
@@ -1299,7 +1299,7 @@
         },
         {
           "name": "_best",
-          "lineno": 66,
+          "lineno": 65,
           "loc": 5,
           "complexity": 3,
           "branches": 2,
@@ -1307,7 +1307,7 @@
         },
         {
           "name": "_work",
-          "lineno": 364,
+          "lineno": 363,
           "loc": 10,
           "complexity": 3,
           "branches": 2,
@@ -1322,8 +1322,8 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/edit/modes/sloppy.py",
-      "loc": 363,
-      "module_loc": 363,
+      "loc": 366,
+      "module_loc": 366,
       "functions": [
         {
           "name": "_split_sections",
@@ -1360,14 +1360,14 @@
         {
           "name": "_find_fuzzy_block",
           "lineno": 150,
-          "loc": 23,
+          "loc": 26,
           "complexity": 6,
           "branches": 5,
           "max_nesting": 2
         },
         {
           "name": "_apply_block_op",
-          "lineno": 175,
+          "lineno": 178,
           "loc": 38,
           "complexity": 11,
           "branches": 10,
@@ -1375,7 +1375,7 @@
         },
         {
           "name": "_apply_inline_op",
-          "lineno": 215,
+          "lineno": 218,
           "loc": 24,
           "complexity": 8,
           "branches": 7,
@@ -1383,7 +1383,7 @@
         },
         {
           "name": "execute",
-          "lineno": 247,
+          "lineno": 250,
           "loc": 117,
           "complexity": 23,
           "branches": 22,
@@ -1398,12 +1398,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/edit/params.py",
-      "loc": 194,
-      "module_loc": 194,
+      "loc": 198,
+      "module_loc": 198,
       "functions": [
         {
           "name": "normalize_edit_mode",
-          "lineno": 162,
+          "lineno": 166,
           "loc": 10,
           "complexity": 2,
           "branches": 1,
@@ -1411,7 +1411,7 @@
         },
         {
           "name": "detect_mode",
-          "lineno": 174,
+          "lineno": 178,
           "loc": 21,
           "complexity": 8,
           "branches": 7,
@@ -1419,15 +1419,15 @@
         },
         {
           "name": "_normalize_single_edit",
-          "lineno": 110,
-          "loc": 17,
+          "lineno": 111,
+          "loc": 20,
           "complexity": 6,
           "branches": 5,
-          "max_nesting": 2
+          "max_nesting": 1
         },
         {
           "name": "_normalize_edit",
-          "lineno": 130,
+          "lineno": 134,
           "loc": 9,
           "complexity": 4,
           "branches": 3,
@@ -1435,7 +1435,7 @@
         },
         {
           "name": "_coerce_edit",
-          "lineno": 141,
+          "lineno": 145,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -1443,7 +1443,7 @@
         },
         {
           "name": "_resolve_mode",
-          "lineno": 149,
+          "lineno": 153,
           "loc": 11,
           "complexity": 3,
           "branches": 2,
@@ -1510,12 +1510,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/fs_cache.py",
-      "loc": 137,
-      "module_loc": 137,
+      "loc": 136,
+      "module_loc": 136,
       "functions": [
         {
           "name": "register_invalidator",
-          "lineno": 33,
+          "lineno": 34,
           "loc": 10,
           "complexity": 2,
           "branches": 1,
@@ -1523,15 +1523,15 @@
         },
         {
           "name": "unregister_invalidator",
-          "lineno": 45,
-          "loc": 6,
-          "complexity": 2,
-          "branches": 1,
+          "lineno": 46,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
           "max_nesting": 1
         },
         {
           "name": "_canonical",
-          "lineno": 53,
+          "lineno": 52,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -1539,7 +1539,7 @@
         },
         {
           "name": "_bust_gitignore_cache",
-          "lineno": 59,
+          "lineno": 58,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -1547,7 +1547,7 @@
         },
         {
           "name": "_run_registered_invalidators",
-          "lineno": 68,
+          "lineno": 67,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -1555,7 +1555,7 @@
         },
         {
           "name": "_session_snapshot_store",
-          "lineno": 76,
+          "lineno": 75,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -1563,7 +1563,7 @@
         },
         {
           "name": "invalidate_fs_scan_after_write",
-          "lineno": 82,
+          "lineno": 81,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -1571,7 +1571,7 @@
         },
         {
           "name": "invalidate_fs_scan_after_delete",
-          "lineno": 98,
+          "lineno": 97,
           "loc": 16,
           "complexity": 3,
           "branches": 2,
@@ -1579,7 +1579,7 @@
         },
         {
           "name": "invalidate_fs_scan_after_rename",
-          "lineno": 116,
+          "lineno": 115,
           "loc": 22,
           "complexity": 5,
           "branches": 4,
@@ -1594,12 +1594,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/glob.py",
-      "loc": 707,
-      "module_loc": 707,
+      "loc": 711,
+      "module_loc": 711,
       "functions": [
         {
           "name": "_is_unsafe_recursive_pattern",
-          "lineno": 46,
+          "lineno": 50,
           "loc": 22,
           "complexity": 2,
           "branches": 1,
@@ -1607,7 +1607,7 @@
         },
         {
           "name": "_description_for_os",
-          "lineno": 105,
+          "lineno": 109,
           "loc": 8,
           "complexity": 2,
           "branches": 1,
@@ -1615,7 +1615,7 @@
         },
         {
           "name": "_parse_gitignore",
-          "lineno": 115,
+          "lineno": 119,
           "loc": 52,
           "complexity": 11,
           "branches": 10,
@@ -1623,7 +1623,7 @@
         },
         {
           "name": "_gitignore_match",
-          "lineno": 169,
+          "lineno": 173,
           "loc": 70,
           "complexity": 24,
           "branches": 23,
@@ -1631,7 +1631,7 @@
         },
         {
           "name": "_is_ignored_by_gitignore",
-          "lineno": 241,
+          "lineno": 245,
           "loc": 46,
           "complexity": 11,
           "branches": 10,
@@ -1639,7 +1639,7 @@
         },
         {
           "name": "_safe_getmtime",
-          "lineno": 289,
+          "lineno": 293,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -1647,7 +1647,7 @@
         },
         {
           "name": "_top_dirs_summary",
-          "lineno": 296,
+          "lineno": 300,
           "loc": 22,
           "complexity": 6,
           "branches": 5,
@@ -1655,7 +1655,7 @@
         },
         {
           "name": "_find_gitignore_files",
-          "lineno": 320,
+          "lineno": 324,
           "loc": 10,
           "complexity": 4,
           "branches": 3,
@@ -1663,7 +1663,7 @@
         },
         {
           "name": "_load_gitignore_rules",
-          "lineno": 332,
+          "lineno": 336,
           "loc": 15,
           "complexity": 3,
           "branches": 2,
@@ -1671,7 +1671,7 @@
         },
         {
           "name": "_get_gitignore_rules",
-          "lineno": 349,
+          "lineno": 353,
           "loc": 38,
           "complexity": 8,
           "branches": 7,
@@ -1679,7 +1679,7 @@
         },
         {
           "name": "invalidate_gitignore_cache",
-          "lineno": 389,
+          "lineno": 393,
           "loc": 29,
           "complexity": 9,
           "branches": 8,
@@ -1687,7 +1687,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 480,
+          "lineno": 484,
           "loc": 6,
           "complexity": 1,
           "branches": 0,
@@ -1695,7 +1695,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 509,
+          "lineno": 513,
           "loc": 199,
           "complexity": 37,
           "branches": 36,
@@ -1762,12 +1762,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/grep_local.py",
-      "loc": 2355,
-      "module_loc": 2355,
+      "loc": 2357,
+      "module_loc": 2357,
       "functions": [
         {
           "name": "_pattern_has_regex_newline",
-          "lineno": 102,
+          "lineno": 104,
           "loc": 10,
           "complexity": 2,
           "branches": 1,
@@ -1775,7 +1775,7 @@
         },
         {
           "name": "_multiline_pattern",
-          "lineno": 114,
+          "lineno": 116,
           "loc": 17,
           "complexity": 3,
           "branches": 2,
@@ -1783,7 +1783,7 @@
         },
         {
           "name": "parse_content_line",
-          "lineno": 279,
+          "lineno": 281,
           "loc": 16,
           "complexity": 4,
           "branches": 3,
@@ -1791,7 +1791,7 @@
         },
         {
           "name": "_env_with_shared_bin_path",
-          "lineno": 297,
+          "lineno": 299,
           "loc": 22,
           "complexity": 4,
           "branches": 3,
@@ -1799,7 +1799,7 @@
         },
         {
           "name": "_find_existing_rtk",
-          "lineno": 321,
+          "lineno": 323,
           "loc": 13,
           "complexity": 2,
           "branches": 1,
@@ -1807,7 +1807,7 @@
         },
         {
           "name": "_ensure_rtk_path",
-          "lineno": 336,
+          "lineno": 338,
           "loc": 13,
           "complexity": 3,
           "branches": 2,
@@ -1815,7 +1815,7 @@
         },
         {
           "name": "_find_existing_rg",
-          "lineno": 351,
+          "lineno": 353,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -1823,7 +1823,7 @@
         },
         {
           "name": "_download_and_install_rg",
-          "lineno": 364,
+          "lineno": 366,
           "loc": 33,
           "complexity": 4,
           "branches": 3,
@@ -1831,7 +1831,7 @@
         },
         {
           "name": "_ensure_rg_path",
-          "lineno": 399,
+          "lineno": 401,
           "loc": 13,
           "complexity": 3,
           "branches": 2,
@@ -1839,7 +1839,7 @@
         },
         {
           "name": "_build_rg_args",
-          "lineno": 414,
+          "lineno": 416,
           "loc": 105,
           "complexity": 26,
           "branches": 25,
@@ -1847,7 +1847,7 @@
         },
         {
           "name": "_format_cmd",
-          "lineno": 521,
+          "lineno": 523,
           "loc": 12,
           "complexity": 4,
           "branches": 3,
@@ -1855,7 +1855,7 @@
         },
         {
           "name": "_read_stream",
-          "lineno": 535,
+          "lineno": 537,
           "loc": 30,
           "complexity": 7,
           "branches": 6,
@@ -1863,7 +1863,7 @@
         },
         {
           "name": "_kill_process",
-          "lineno": 567,
+          "lineno": 569,
           "loc": 8,
           "complexity": 2,
           "branches": 1,
@@ -1871,7 +1871,7 @@
         },
         {
           "name": "_is_eagain",
-          "lineno": 577,
+          "lineno": 579,
           "loc": 2,
           "complexity": 2,
           "branches": 1,
@@ -1879,7 +1879,7 @@
         },
         {
           "name": "_is_windows_reserved_name",
-          "lineno": 589,
+          "lineno": 591,
           "loc": 12,
           "complexity": 5,
           "branches": 4,
@@ -1887,7 +1887,7 @@
         },
         {
           "name": "_is_sensitive_cached",
-          "lineno": 607,
+          "lineno": 609,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -1895,7 +1895,7 @@
         },
         {
           "name": "_join_with_byte_limit",
-          "lineno": 612,
+          "lineno": 614,
           "loc": 15,
           "complexity": 4,
           "branches": 3,
@@ -1903,7 +1903,7 @@
         },
         {
           "name": "_strip_path_prefix",
-          "lineno": 629,
+          "lineno": 631,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -1911,7 +1911,7 @@
         },
         {
           "name": "_rtk_fold_note",
-          "lineno": 645,
+          "lineno": 647,
           "loc": 38,
           "complexity": 12,
           "branches": 11,
@@ -1919,7 +1919,7 @@
         },
         {
           "name": "_is_binary",
-          "lineno": 737,
+          "lineno": 739,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1927,7 +1927,7 @@
         },
         {
           "name": "_should_skip_dir",
-          "lineno": 741,
+          "lineno": 743,
           "loc": 4,
           "complexity": 3,
           "branches": 2,
@@ -1935,7 +1935,7 @@
         },
         {
           "name": "_matches_type",
-          "lineno": 747,
+          "lineno": 749,
           "loc": 8,
           "complexity": 3,
           "branches": 2,
@@ -1943,7 +1943,7 @@
         },
         {
           "name": "_matches_glob",
-          "lineno": 757,
+          "lineno": 759,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -1951,7 +1951,7 @@
         },
         {
           "name": "_safe_getmtime",
-          "lineno": 763,
+          "lineno": 765,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -1959,7 +1959,7 @@
         },
         {
           "name": "_safe_getmtime_async",
-          "lineno": 770,
+          "lineno": 772,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -1967,7 +1967,7 @@
         },
         {
           "name": "_compile_regex_cached",
-          "lineno": 778,
+          "lineno": 780,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1975,7 +1975,7 @@
         },
         {
           "name": "_read_file_text",
-          "lineno": 782,
+          "lineno": 784,
           "loc": 13,
           "complexity": 4,
           "branches": 3,
@@ -1983,7 +1983,7 @@
         },
         {
           "name": "_merge_intervals",
-          "lineno": 797,
+          "lineno": 799,
           "loc": 11,
           "complexity": 4,
           "branches": 3,
@@ -1991,7 +1991,7 @@
         },
         {
           "name": "_reattach_single_file_prefix",
-          "lineno": 825,
+          "lineno": 827,
           "loc": 18,
           "complexity": 4,
           "branches": 3,
@@ -1999,7 +1999,7 @@
         },
         {
           "name": "_plain_ctx",
-          "lineno": 845,
+          "lineno": 847,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -2007,7 +2007,7 @@
         },
         {
           "name": "_glob_chars",
-          "lineno": 854,
+          "lineno": 856,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -2015,7 +2015,7 @@
         },
         {
           "name": "_resolve_selector_specs",
-          "lineno": 858,
+          "lineno": 860,
           "loc": 97,
           "complexity": 16,
           "branches": 15,
@@ -2023,7 +2023,7 @@
         },
         {
           "name": "_strip_key_for",
-          "lineno": 957,
+          "lineno": 959,
           "loc": 7,
           "complexity": 3,
           "branches": 2,
@@ -2031,7 +2031,7 @@
         },
         {
           "name": "_build_ranges_map",
-          "lineno": 966,
+          "lineno": 968,
           "loc": 23,
           "complexity": 5,
           "branches": 4,
@@ -2039,7 +2039,7 @@
         },
         {
           "name": "_remap_display",
-          "lineno": 991,
+          "lineno": 993,
           "loc": 18,
           "complexity": 5,
           "branches": 4,
@@ -2047,7 +2047,7 @@
         },
         {
           "name": "_normalize_slashes_content",
-          "lineno": 1011,
+          "lineno": 1013,
           "loc": 17,
           "complexity": 6,
           "branches": 5,
@@ -2055,7 +2055,7 @@
         },
         {
           "name": "_range_filter_lines",
-          "lineno": 1030,
+          "lineno": 1032,
           "loc": 25,
           "complexity": 12,
           "branches": 11,
@@ -2063,7 +2063,7 @@
         },
         {
           "name": "_collect_record_files",
-          "lineno": 1057,
+          "lineno": 1059,
           "loc": 13,
           "complexity": 7,
           "branches": 6,
@@ -2071,7 +2071,7 @@
         },
         {
           "name": "_text_in_ranges",
-          "lineno": 1072,
+          "lineno": 1074,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -2079,7 +2079,7 @@
         },
         {
           "name": "_entries_are_rich",
-          "lineno": 1079,
+          "lineno": 1081,
           "loc": 8,
           "complexity": 3,
           "branches": 2,
@@ -2087,7 +2087,7 @@
         },
         {
           "name": "_validate_output_mode",
-          "lineno": 184,
+          "lineno": 186,
           "loc": 9,
           "complexity": 2,
           "branches": 1,
@@ -2095,7 +2095,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 1115,
+          "lineno": 1117,
           "loc": 22,
           "complexity": 5,
           "branches": 4,
@@ -2103,7 +2103,7 @@
         },
         {
           "name": "_resolve_rtk_path",
-          "lineno": 1138,
+          "lineno": 1140,
           "loc": 20,
           "complexity": 4,
           "branches": 3,
@@ -2111,7 +2111,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 1160,
+          "lineno": 1162,
           "loc": 166,
           "complexity": 27,
           "branches": 26,
@@ -2119,7 +2119,7 @@
         },
         {
           "name": "_run_rg_subprocess",
-          "lineno": 1327,
+          "lineno": 1329,
           "loc": 49,
           "complexity": 3,
           "branches": 2,
@@ -2127,7 +2127,7 @@
         },
         {
           "name": "_rich_call",
-          "lineno": 1377,
+          "lineno": 1379,
           "loc": 151,
           "complexity": 30,
           "branches": 29,
@@ -2135,7 +2135,7 @@
         },
         {
           "name": "_postprocess",
-          "lineno": 1529,
+          "lineno": 1531,
           "loc": 297,
           "complexity": 77,
           "branches": 76,
@@ -2143,7 +2143,7 @@
         },
         {
           "name": "backup_grep",
-          "lineno": 1827,
+          "lineno": 1829,
           "loc": 18,
           "complexity": 2,
           "branches": 1,
@@ -2151,7 +2151,7 @@
         },
         {
           "name": "_backup_grep_impl",
-          "lineno": 1846,
+          "lineno": 1848,
           "loc": 158,
           "complexity": 31,
           "branches": 30,
@@ -2159,7 +2159,7 @@
         },
         {
           "name": "_backup_grep_search",
-          "lineno": 2005,
+          "lineno": 2007,
           "loc": 233,
           "complexity": 51,
           "branches": 50,
@@ -2167,7 +2167,7 @@
         },
         {
           "name": "_collect_files",
-          "lineno": 2239,
+          "lineno": 2241,
           "loc": 16,
           "complexity": 7,
           "branches": 6,
@@ -2175,7 +2175,7 @@
         },
         {
           "name": "_is_valid_file",
-          "lineno": 2256,
+          "lineno": 2258,
           "loc": 11,
           "complexity": 5,
           "branches": 4,
@@ -2183,7 +2183,7 @@
         },
         {
           "name": "_search_content_single",
-          "lineno": 2268,
+          "lineno": 2270,
           "loc": 66,
           "complexity": 22,
           "branches": 21,
@@ -2191,7 +2191,7 @@
         },
         {
           "name": "_extract_path",
-          "lineno": 2335,
+          "lineno": 2337,
           "loc": 21,
           "complexity": 8,
           "branches": 7,
@@ -2199,7 +2199,7 @@
         },
         {
           "name": "_process_one",
-          "lineno": 2025,
+          "lineno": 2027,
           "loc": 24,
           "complexity": 8,
           "branches": 7,
@@ -2214,12 +2214,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/grep_output.py",
-      "loc": 115,
-      "module_loc": 115,
+      "loc": 116,
+      "module_loc": 116,
       "functions": [
         {
           "name": "format_match_line",
-          "lineno": 22,
+          "lineno": 23,
           "loc": 8,
           "complexity": 2,
           "branches": 1,
@@ -2227,7 +2227,7 @@
         },
         {
           "name": "group_lines_by_file",
-          "lineno": 32,
+          "lineno": 33,
           "loc": 29,
           "complexity": 6,
           "branches": 5,
@@ -2235,7 +2235,7 @@
         },
         {
           "name": "format_grouped_output",
-          "lineno": 63,
+          "lineno": 64,
           "loc": 20,
           "complexity": 5,
           "branches": 4,
@@ -2243,7 +2243,7 @@
         },
         {
           "name": "group_line_indices_by_blank",
-          "lineno": 85,
+          "lineno": 86,
           "loc": 18,
           "complexity": 5,
           "branches": 4,
@@ -2251,7 +2251,7 @@
         },
         {
           "name": "should_group",
-          "lineno": 105,
+          "lineno": 106,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -2426,12 +2426,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/hash_line.py",
-      "loc": 1156,
-      "module_loc": 1156,
+      "loc": 1157,
+      "module_loc": 1157,
       "functions": [
         {
           "name": "compute_line_hash",
-          "lineno": 54,
+          "lineno": 56,
           "loc": 33,
           "complexity": 9,
           "branches": 8,
@@ -2439,15 +2439,15 @@
         },
         {
           "name": "_cumulative_hashes",
-          "lineno": 89,
-          "loc": 20,
+          "lineno": 91,
+          "loc": 21,
           "complexity": 6,
           "branches": 5,
-          "max_nesting": 2
+          "max_nesting": 1
         },
         {
           "name": "parse_anchor",
-          "lineno": 115,
+          "lineno": 118,
           "loc": 19,
           "complexity": 5,
           "branches": 4,
@@ -2455,7 +2455,7 @@
         },
         {
           "name": "validate_anchor_ref",
-          "lineno": 249,
+          "lineno": 252,
           "loc": 52,
           "complexity": 12,
           "branches": 11,
@@ -2463,7 +2463,7 @@
         },
         {
           "name": "_deduplicate_edits",
-          "lineno": 308,
+          "lineno": 311,
           "loc": 27,
           "complexity": 10,
           "branches": 9,
@@ -2471,7 +2471,7 @@
         },
         {
           "name": "_track_first_changed",
-          "lineno": 337,
+          "lineno": 340,
           "loc": 3,
           "complexity": 3,
           "branches": 2,
@@ -2479,7 +2479,7 @@
         },
         {
           "name": "_normalize_edit",
-          "lineno": 342,
+          "lineno": 345,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -2487,7 +2487,7 @@
         },
         {
           "name": "apply_hashline_edits",
-          "lineno": 348,
+          "lineno": 351,
           "loc": 205,
           "complexity": 61,
           "branches": 60,
@@ -2495,7 +2495,7 @@
         },
         {
           "name": "generate_hash_aware_diff",
-          "lineno": 560,
+          "lineno": 563,
           "loc": 89,
           "complexity": 20,
           "branches": 19,
@@ -2503,7 +2503,7 @@
         },
         {
           "name": "_parse_string",
-          "lineno": 147,
+          "lineno": 150,
           "loc": 15,
           "complexity": 4,
           "branches": 3,
@@ -2511,7 +2511,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 200,
+          "lineno": 203,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -2519,7 +2519,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 207,
+          "lineno": 210,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -2527,7 +2527,7 @@
         },
         {
           "name": "__str__",
-          "lineno": 211,
+          "lineno": 214,
           "loc": 36,
           "complexity": 8,
           "branches": 7,
@@ -2535,7 +2535,7 @@
         },
         {
           "name": "_get_edit_range",
-          "lineno": 421,
+          "lineno": 424,
           "loc": 17,
           "complexity": 9,
           "branches": 8,
@@ -2543,7 +2543,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 682,
+          "lineno": 685,
           "loc": 9,
           "complexity": 1,
           "branches": 0,
@@ -2551,7 +2551,7 @@
         },
         {
           "name": "_validate_path",
-          "lineno": 692,
+          "lineno": 695,
           "loc": 39,
           "complexity": 5,
           "branches": 4,
@@ -2559,7 +2559,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 733,
+          "lineno": 736,
           "loc": 10,
           "complexity": 3,
           "branches": 2,
@@ -2567,7 +2567,7 @@
         },
         {
           "name": "_do_read",
-          "lineno": 744,
+          "lineno": 747,
           "loc": 110,
           "complexity": 15,
           "branches": 14,
@@ -2575,7 +2575,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 882,
+          "lineno": 885,
           "loc": 9,
           "complexity": 1,
           "branches": 0,
@@ -2583,7 +2583,7 @@
         },
         {
           "name": "_validate_path",
-          "lineno": 892,
+          "lineno": 895,
           "loc": 39,
           "complexity": 5,
           "branches": 4,
@@ -2591,7 +2591,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 933,
+          "lineno": 936,
           "loc": 10,
           "complexity": 3,
           "branches": 2,
@@ -2599,15 +2599,15 @@
         },
         {
           "name": "_recover_stale_anchors",
-          "lineno": 944,
-          "loc": 72,
-          "complexity": 13,
-          "branches": 12,
+          "lineno": 947,
+          "loc": 70,
+          "complexity": 12,
+          "branches": 11,
           "max_nesting": 2
         },
         {
           "name": "_do_edit",
-          "lineno": 1017,
+          "lineno": 1018,
           "loc": 135,
           "complexity": 18,
           "branches": 17,
@@ -2622,12 +2622,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/micro_compress.py",
-      "loc": 972,
-      "module_loc": 972,
+      "loc": 974,
+      "module_loc": 974,
       "functions": [
         {
           "name": "_compat_tools",
-          "lineno": 56,
+          "lineno": 61,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -2635,7 +2635,7 @@
         },
         {
           "name": "infer_content_kind",
-          "lineno": 162,
+          "lineno": 167,
           "loc": 19,
           "complexity": 7,
           "branches": 6,
@@ -2643,7 +2643,7 @@
         },
         {
           "name": "normalize_encoding",
-          "lineno": 250,
+          "lineno": 255,
           "loc": 12,
           "complexity": 1,
           "branches": 0,
@@ -2651,7 +2651,7 @@
         },
         {
           "name": "strip_control_noise",
-          "lineno": 269,
+          "lineno": 274,
           "loc": 9,
           "complexity": 4,
           "branches": 3,
@@ -2659,7 +2659,7 @@
         },
         {
           "name": "collapse_whitespace",
-          "lineno": 286,
+          "lineno": 291,
           "loc": 55,
           "complexity": 15,
           "branches": 14,
@@ -2667,7 +2667,7 @@
         },
         {
           "name": "_factor_common_indent",
-          "lineno": 343,
+          "lineno": 348,
           "loc": 38,
           "complexity": 10,
           "branches": 9,
@@ -2675,7 +2675,7 @@
         },
         {
           "name": "renumber_lines",
-          "lineno": 388,
+          "lineno": 393,
           "loc": 9,
           "complexity": 4,
           "branches": 3,
@@ -2683,7 +2683,7 @@
         },
         {
           "name": "fold_per_line_prefix",
-          "lineno": 404,
+          "lineno": 409,
           "loc": 59,
           "complexity": 19,
           "branches": 18,
@@ -2691,7 +2691,7 @@
         },
         {
           "name": "_longest_common_prefix",
-          "lineno": 465,
+          "lineno": 470,
           "loc": 20,
           "complexity": 6,
           "branches": 5,
@@ -2699,7 +2699,7 @@
         },
         {
           "name": "drop_boilerplate",
-          "lineno": 492,
+          "lineno": 497,
           "loc": 43,
           "complexity": 12,
           "branches": 11,
@@ -2707,7 +2707,7 @@
         },
         {
           "name": "_is_banner_line",
-          "lineno": 537,
+          "lineno": 542,
           "loc": 14,
           "complexity": 7,
           "branches": 6,
@@ -2715,7 +2715,7 @@
         },
         {
           "name": "_merge_system_metadata",
-          "lineno": 553,
+          "lineno": 558,
           "loc": 14,
           "complexity": 4,
           "branches": 3,
@@ -2723,7 +2723,7 @@
         },
         {
           "name": "intra_line_dedup",
-          "lineno": 574,
+          "lineno": 579,
           "loc": 31,
           "complexity": 12,
           "branches": 11,
@@ -2731,7 +2731,7 @@
         },
         {
           "name": "_compress_repeating_unit",
-          "lineno": 607,
+          "lineno": 612,
           "loc": 22,
           "complexity": 6,
           "branches": 5,
@@ -2739,7 +2739,7 @@
         },
         {
           "name": "near_duplicate_collapse",
-          "lineno": 636,
+          "lineno": 641,
           "loc": 52,
           "complexity": 13,
           "branches": 12,
@@ -2747,7 +2747,7 @@
         },
         {
           "name": "_is_counter_run",
-          "lineno": 690,
+          "lineno": 695,
           "loc": 43,
           "complexity": 9,
           "branches": 8,
@@ -2755,7 +2755,7 @@
         },
         {
           "name": "_near_dup_marker",
-          "lineno": 735,
+          "lineno": 740,
           "loc": 14,
           "complexity": 5,
           "branches": 4,
@@ -2763,7 +2763,7 @@
         },
         {
           "name": "elide_low_value_content",
-          "lineno": 756,
+          "lineno": 761,
           "loc": 67,
           "complexity": 23,
           "branches": 22,
@@ -2771,7 +2771,7 @@
         },
         {
           "name": "_is_license_line",
-          "lineno": 832,
+          "lineno": 837,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -2779,7 +2779,7 @@
         },
         {
           "name": "_is_import_line",
-          "lineno": 840,
+          "lineno": 845,
           "loc": 8,
           "complexity": 5,
           "branches": 4,
@@ -2787,7 +2787,7 @@
         },
         {
           "name": "_is_comment_line",
-          "lineno": 850,
+          "lineno": 855,
           "loc": 12,
           "complexity": 8,
           "branches": 7,
@@ -2795,7 +2795,7 @@
         },
         {
           "name": "_is_lockfile",
-          "lineno": 864,
+          "lineno": 869,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -2803,7 +2803,7 @@
         },
         {
           "name": "compress",
-          "lineno": 874,
+          "lineno": 879,
           "loc": 67,
           "complexity": 6,
           "branches": 5,
@@ -2811,8 +2811,8 @@
         },
         {
           "name": "compress_lines",
-          "lineno": 948,
-          "loc": 25,
+          "lineno": 953,
+          "loc": 22,
           "complexity": 3,
           "branches": 2,
           "max_nesting": 1
@@ -2914,12 +2914,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/read.py",
-      "loc": 1826,
-      "module_loc": 1826,
+      "loc": 1824,
+      "module_loc": 1824,
       "functions": [
         {
           "name": "_is_glob_pattern",
-          "lineno": 302,
+          "lineno": 300,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -2927,7 +2927,7 @@
         },
         {
           "name": "_split_glob_path",
-          "lineno": 307,
+          "lineno": 305,
           "loc": 20,
           "complexity": 5,
           "branches": 4,
@@ -2935,7 +2935,7 @@
         },
         {
           "name": "_split_conflicts_suffix",
-          "lineno": 329,
+          "lineno": 327,
           "loc": 15,
           "complexity": 5,
           "branches": 4,
@@ -2943,7 +2943,7 @@
         },
         {
           "name": "_broadcast_option",
-          "lineno": 346,
+          "lineno": 344,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -2951,7 +2951,7 @@
         },
         {
           "name": "_apply_char_window_to_entries",
-          "lineno": 351,
+          "lineno": 349,
           "loc": 44,
           "complexity": 9,
           "branches": 8,
@@ -2959,7 +2959,7 @@
         },
         {
           "name": "_similar_names",
-          "lineno": 397,
+          "lineno": 395,
           "loc": 50,
           "complexity": 9,
           "branches": 8,
@@ -2967,7 +2967,7 @@
         },
         {
           "name": "_validate",
-          "lineno": 238,
+          "lineno": 236,
           "loc": 41,
           "complexity": 13,
           "branches": 12,
@@ -2975,7 +2975,7 @@
         },
         {
           "name": "_validate_value",
-          "lineno": 281,
+          "lineno": 279,
           "loc": 16,
           "complexity": 5,
           "branches": 4,
@@ -2983,7 +2983,7 @@
         },
         {
           "name": "_score",
-          "lineno": 433,
+          "lineno": 431,
           "loc": 6,
           "complexity": 1,
           "branches": 0,
@@ -2991,7 +2991,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 459,
+          "lineno": 457,
           "loc": 22,
           "complexity": 1,
           "branches": 0,
@@ -2999,7 +2999,7 @@
         },
         {
           "name": "_validate_path",
-          "lineno": 482,
+          "lineno": 480,
           "loc": 15,
           "complexity": 3,
           "branches": 2,
@@ -3007,7 +3007,7 @@
         },
         {
           "name": "_validate_glob_directory",
-          "lineno": 498,
+          "lineno": 496,
           "loc": 20,
           "complexity": 3,
           "branches": 2,
@@ -3015,7 +3015,7 @@
         },
         {
           "name": "_expand_glob_path",
-          "lineno": 519,
+          "lineno": 517,
           "loc": 85,
           "complexity": 15,
           "branches": 14,
@@ -3023,7 +3023,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 606,
+          "lineno": 604,
           "loc": 164,
           "complexity": 26,
           "branches": 25,
@@ -3031,7 +3031,7 @@
         },
         {
           "name": "_read_single_file",
-          "lineno": 771,
+          "lineno": 769,
           "loc": 220,
           "complexity": 28,
           "branches": 27,
@@ -3039,7 +3039,7 @@
         },
         {
           "name": "_apply_conflict_footer",
-          "lineno": 992,
+          "lineno": 990,
           "loc": 55,
           "complexity": 6,
           "branches": 5,
@@ -3047,7 +3047,7 @@
         },
         {
           "name": "_read_conflict_entries",
-          "lineno": 1048,
+          "lineno": 1046,
           "loc": 40,
           "complexity": 8,
           "branches": 7,
@@ -3055,7 +3055,7 @@
         },
         {
           "name": "_read_conflict_entry",
-          "lineno": 1089,
+          "lineno": 1087,
           "loc": 13,
           "complexity": 3,
           "branches": 2,
@@ -3063,7 +3063,7 @@
         },
         {
           "name": "_read_conflict_uri",
-          "lineno": 1103,
+          "lineno": 1101,
           "loc": 56,
           "complexity": 10,
           "branches": 9,
@@ -3071,7 +3071,7 @@
         },
         {
           "name": "_read_conflicts_selector",
-          "lineno": 1160,
+          "lineno": 1158,
           "loc": 47,
           "complexity": 6,
           "branches": 5,
@@ -3079,7 +3079,7 @@
         },
         {
           "name": "_read_rich_format",
-          "lineno": 1208,
+          "lineno": 1206,
           "loc": 136,
           "complexity": 28,
           "branches": 27,
@@ -3087,7 +3087,7 @@
         },
         {
           "name": "_read_archive",
-          "lineno": 1345,
+          "lineno": 1343,
           "loc": 76,
           "complexity": 7,
           "branches": 6,
@@ -3095,7 +3095,7 @@
         },
         {
           "name": "_similar_file_suggestions",
-          "lineno": 1422,
+          "lineno": 1420,
           "loc": 21,
           "complexity": 3,
           "branches": 2,
@@ -3103,7 +3103,7 @@
         },
         {
           "name": "_read_content",
-          "lineno": 1444,
+          "lineno": 1442,
           "loc": 30,
           "complexity": 2,
           "branches": 1,
@@ -3111,7 +3111,7 @@
         },
         {
           "name": "_render_lines",
-          "lineno": 1475,
+          "lineno": 1473,
           "loc": 46,
           "complexity": 2,
           "branches": 1,
@@ -3119,7 +3119,7 @@
         },
         {
           "name": "_render_forward",
-          "lineno": 1522,
+          "lineno": 1520,
           "loc": 55,
           "complexity": 6,
           "branches": 5,
@@ -3127,7 +3127,7 @@
         },
         {
           "name": "_render_tail",
-          "lineno": 1578,
+          "lineno": 1576,
           "loc": 73,
           "complexity": 10,
           "branches": 9,
@@ -3135,7 +3135,7 @@
         },
         {
           "name": "_render_result",
-          "lineno": 1652,
+          "lineno": 1650,
           "loc": 82,
           "complexity": 18,
           "branches": 17,
@@ -3143,7 +3143,7 @@
         },
         {
           "name": "_read_as_text",
-          "lineno": 1735,
+          "lineno": 1733,
           "loc": 48,
           "complexity": 3,
           "branches": 2,
@@ -3151,7 +3151,7 @@
         },
         {
           "name": "_read_forward",
-          "lineno": 1784,
+          "lineno": 1782,
           "loc": 21,
           "complexity": 1,
           "branches": 0,
@@ -3159,7 +3159,7 @@
         },
         {
           "name": "_read_tail",
-          "lineno": 1806,
+          "lineno": 1804,
           "loc": 21,
           "complexity": 1,
           "branches": 0,
@@ -3167,7 +3167,7 @@
         },
         {
           "name": "_text_lines",
-          "lineno": 1458,
+          "lineno": 1456,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -3182,12 +3182,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/read_archive.py",
-      "loc": 341,
-      "module_loc": 341,
+      "loc": 336,
+      "module_loc": 336,
       "functions": [
         {
           "name": "_longest_archive_extension",
-          "lineno": 68,
+          "lineno": 67,
           "loc": 7,
           "complexity": 3,
           "branches": 2,
@@ -3195,7 +3195,7 @@
         },
         {
           "name": "is_archive_path",
-          "lineno": 77,
+          "lineno": 76,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -3203,15 +3203,15 @@
         },
         {
           "name": "sniff_archive",
-          "lineno": 81,
-          "loc": 17,
-          "complexity": 9,
-          "branches": 8,
+          "lineno": 80,
+          "loc": 15,
+          "complexity": 8,
+          "branches": 7,
           "max_nesting": 1
         },
         {
           "name": "normalize_member_path",
-          "lineno": 100,
+          "lineno": 97,
           "loc": 29,
           "complexity": 9,
           "branches": 8,
@@ -3219,7 +3219,7 @@
         },
         {
           "name": "is_binary_data",
-          "lineno": 325,
+          "lineno": 320,
           "loc": 4,
           "complexity": 4,
           "branches": 3,
@@ -3227,7 +3227,7 @@
         },
         {
           "name": "format_archive_listing",
-          "lineno": 331,
+          "lineno": 326,
           "loc": 11,
           "complexity": 4,
           "branches": 3,
@@ -3235,7 +3235,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 134,
+          "lineno": 131,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -3243,7 +3243,7 @@
         },
         {
           "name": "check",
-          "lineno": 139,
+          "lineno": 136,
           "loc": 7,
           "complexity": 3,
           "branches": 2,
@@ -3251,7 +3251,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 158,
+          "lineno": 155,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -3259,7 +3259,7 @@
         },
         {
           "name": "__enter__",
-          "lineno": 164,
+          "lineno": 161,
           "loc": 23,
           "complexity": 6,
           "branches": 5,
@@ -3267,7 +3267,7 @@
         },
         {
           "name": "__exit__",
-          "lineno": 188,
+          "lineno": 185,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -3275,15 +3275,15 @@
         },
         {
           "name": "list_directory",
-          "lineno": 192,
-          "loc": 62,
+          "lineno": 189,
+          "loc": 60,
           "complexity": 35,
           "branches": 34,
-          "max_nesting": 5
+          "max_nesting": 4
         },
         {
           "name": "read_file",
-          "lineno": 255,
+          "lineno": 250,
           "loc": 55,
           "complexity": 17,
           "branches": 16,
@@ -3291,7 +3291,7 @@
         },
         {
           "name": "_read_compressed_single",
-          "lineno": 311,
+          "lineno": 306,
           "loc": 12,
           "complexity": 3,
           "branches": 2,
@@ -3300,7 +3300,7 @@
       ],
       "longest_fn": {
         "name": "list_directory",
-        "loc": 62
+        "loc": 60
       },
       "module_complexity": 35
     },
@@ -3546,12 +3546,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/read_media.py",
-      "loc": 673,
-      "module_loc": 673,
+      "loc": 679,
+      "module_loc": 679,
       "functions": [
         {
           "name": "_build_image_decode_limit_error",
-          "lineno": 83,
+          "lineno": 87,
           "loc": 8,
           "complexity": 1,
           "branches": 0,
@@ -3559,7 +3559,7 @@
         },
         {
           "name": "_build_image_delivery_limit_error",
-          "lineno": 93,
+          "lineno": 97,
           "loc": 17,
           "complexity": 1,
           "branches": 0,
@@ -3567,7 +3567,7 @@
         },
         {
           "name": "_try_mipmap_fallback",
-          "lineno": 112,
+          "lineno": 116,
           "loc": 38,
           "complexity": 4,
           "branches": 3,
@@ -3575,7 +3575,7 @@
         },
         {
           "name": "_build_full_resolution_limit_error",
-          "lineno": 152,
+          "lineno": 156,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -3583,7 +3583,7 @@
         },
         {
           "name": "_validate_region",
-          "lineno": 220,
+          "lineno": 224,
           "loc": 4,
           "complexity": 3,
           "branches": 2,
@@ -3591,7 +3591,7 @@
         },
         {
           "name": "_validate_video_params",
-          "lineno": 226,
+          "lineno": 230,
           "loc": 4,
           "complexity": 3,
           "branches": 2,
@@ -3599,7 +3599,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 236,
+          "lineno": 240,
           "loc": 18,
           "complexity": 4,
           "branches": 3,
@@ -3607,7 +3607,7 @@
         },
         {
           "name": "_validate_path",
-          "lineno": 255,
+          "lineno": 259,
           "loc": 19,
           "complexity": 3,
           "branches": 2,
@@ -3615,7 +3615,7 @@
         },
         {
           "name": "_os_kind",
-          "lineno": 275,
+          "lineno": 279,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -3623,16 +3623,16 @@
         },
         {
           "name": "_read_media",
-          "lineno": 279,
-          "loc": 236,
+          "lineno": 283,
+          "loc": 237,
           "complexity": 26,
           "branches": 25,
           "max_nesting": 5
         },
         {
           "name": "__call__",
-          "lineno": 517,
-          "loc": 157,
+          "lineno": 522,
+          "loc": 158,
           "complexity": 29,
           "branches": 28,
           "max_nesting": 5
@@ -3640,7 +3640,7 @@
       ],
       "longest_fn": {
         "name": "_read_media",
-        "loc": 236
+        "loc": 237
       },
       "module_complexity": 29
     },
@@ -3682,12 +3682,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/read_pdf_pages.py",
-      "loc": 186,
-      "module_loc": 186,
+      "loc": 185,
+      "module_loc": 185,
       "functions": [
         {
           "name": "_render_pdf_page_to_png",
-          "lineno": 34,
+          "lineno": 33,
           "loc": 15,
           "complexity": 4,
           "branches": 3,
@@ -3695,7 +3695,7 @@
         },
         {
           "name": "_build_pdf_delivery_preview",
-          "lineno": 51,
+          "lineno": 50,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -3703,7 +3703,7 @@
         },
         {
           "name": "_compress_pdf_page",
-          "lineno": 58,
+          "lineno": 57,
           "loc": 61,
           "complexity": 7,
           "branches": 6,
@@ -3711,7 +3711,7 @@
         },
         {
           "name": "render_pdf_page",
-          "lineno": 121,
+          "lineno": 120,
           "loc": 66,
           "complexity": 8,
           "branches": 7,
@@ -4062,8 +4062,8 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/replace.py",
-      "loc": 12,
-      "module_loc": 12,
+      "loc": 13,
+      "module_loc": 13,
       "functions": [],
       "longest_fn": null,
       "module_complexity": 0
@@ -4075,7 +4075,7 @@
       "functions": [
         {
           "name": "normalize_to_lf",
-          "lineno": 52,
+          "lineno": 54,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -4083,7 +4083,7 @@
         },
         {
           "name": "detect_line_ending",
-          "lineno": 61,
+          "lineno": 63,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -4091,7 +4091,7 @@
         },
         {
           "name": "compute_file_hash",
-          "lineno": 66,
+          "lineno": 68,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -4099,7 +4099,7 @@
         },
         {
           "name": "canonical_snapshot_key",
-          "lineno": 75,
+          "lineno": 77,
           "loc": 12,
           "complexity": 3,
           "branches": 2,
@@ -4107,7 +4107,7 @@
         },
         {
           "name": "get_edit_snapshot_store",
-          "lineno": 399,
+          "lineno": 401,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -4115,7 +4115,7 @@
         },
         {
           "name": "get_file_snapshot_store",
-          "lineno": 408,
+          "lineno": 410,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -4123,7 +4123,7 @@
         },
         {
           "name": "_content_tag",
-          "lineno": 417,
+          "lineno": 419,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -4131,7 +4131,7 @@
         },
         {
           "name": "_line1_hash",
-          "lineno": 422,
+          "lineno": 424,
           "loc": 6,
           "complexity": 1,
           "branches": 0,
@@ -4139,10 +4139,10 @@
         },
         {
           "name": "_record_both_stores",
-          "lineno": 435,
-          "loc": 17,
-          "complexity": 3,
-          "branches": 2,
+          "lineno": 437,
+          "loc": 15,
+          "complexity": 2,
+          "branches": 1,
           "max_nesting": 1
         },
         {
@@ -4195,7 +4195,7 @@
         },
         {
           "name": "head",
-          "lineno": 108,
+          "lineno": 110,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4203,7 +4203,7 @@
         },
         {
           "name": "by_hash",
-          "lineno": 111,
+          "lineno": 113,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4211,7 +4211,7 @@
         },
         {
           "name": "by_content",
-          "lineno": 114,
+          "lineno": 116,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4219,7 +4219,7 @@
         },
         {
           "name": "find_by_hash",
-          "lineno": 117,
+          "lineno": 119,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4227,7 +4227,7 @@
         },
         {
           "name": "versions",
-          "lineno": 120,
+          "lineno": 122,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -4235,7 +4235,7 @@
         },
         {
           "name": "record",
-          "lineno": 124,
+          "lineno": 126,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -4243,7 +4243,7 @@
         },
         {
           "name": "record_seen_lines",
-          "lineno": 132,
+          "lineno": 134,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4251,7 +4251,7 @@
         },
         {
           "name": "invalidate",
-          "lineno": 135,
+          "lineno": 137,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4259,7 +4259,7 @@
         },
         {
           "name": "relocate",
-          "lineno": 138,
+          "lineno": 140,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4267,7 +4267,7 @@
         },
         {
           "name": "clear",
-          "lineno": 141,
+          "lineno": 143,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4275,7 +4275,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 154,
+          "lineno": 156,
           "loc": 11,
           "complexity": 1,
           "branches": 0,
@@ -4283,7 +4283,7 @@
         },
         {
           "name": "_size",
-          "lineno": 169,
+          "lineno": 171,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4291,7 +4291,7 @@
         },
         {
           "name": "_drop_history",
-          "lineno": 172,
+          "lineno": 174,
           "loc": 5,
           "complexity": 3,
           "branches": 2,
@@ -4299,7 +4299,7 @@
         },
         {
           "name": "_enforce_bounds",
-          "lineno": 178,
+          "lineno": 180,
           "loc": 7,
           "complexity": 4,
           "branches": 3,
@@ -4307,7 +4307,7 @@
         },
         {
           "name": "head",
-          "lineno": 188,
+          "lineno": 190,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -4315,7 +4315,7 @@
         },
         {
           "name": "by_hash",
-          "lineno": 192,
+          "lineno": 194,
           "loc": 8,
           "complexity": 4,
           "branches": 3,
@@ -4323,7 +4323,7 @@
         },
         {
           "name": "by_content",
-          "lineno": 201,
+          "lineno": 203,
           "loc": 9,
           "complexity": 4,
           "branches": 3,
@@ -4331,7 +4331,7 @@
         },
         {
           "name": "find_by_hash",
-          "lineno": 211,
+          "lineno": 213,
           "loc": 7,
           "complexity": 4,
           "branches": 3,
@@ -4339,7 +4339,7 @@
         },
         {
           "name": "versions",
-          "lineno": 219,
+          "lineno": 221,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -4347,7 +4347,7 @@
         },
         {
           "name": "record",
-          "lineno": 223,
+          "lineno": 225,
           "loc": 53,
           "complexity": 11,
           "branches": 10,
@@ -4355,7 +4355,7 @@
         },
         {
           "name": "record_seen_lines",
-          "lineno": 277,
+          "lineno": 279,
           "loc": 14,
           "complexity": 6,
           "branches": 5,
@@ -4363,7 +4363,7 @@
         },
         {
           "name": "invalidate",
-          "lineno": 292,
+          "lineno": 294,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4371,7 +4371,7 @@
         },
         {
           "name": "relocate",
-          "lineno": 295,
+          "lineno": 297,
           "loc": 11,
           "complexity": 3,
           "branches": 2,
@@ -4379,7 +4379,7 @@
         },
         {
           "name": "clear",
-          "lineno": 307,
+          "lineno": 309,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -4387,7 +4387,7 @@
         },
         {
           "name": "__len__",
-          "lineno": 311,
+          "lineno": 313,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4395,7 +4395,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 334,
+          "lineno": 336,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -4403,7 +4403,7 @@
         },
         {
           "name": "_prune",
-          "lineno": 338,
+          "lineno": 340,
           "loc": 14,
           "complexity": 6,
           "branches": 5,
@@ -4411,7 +4411,7 @@
         },
         {
           "name": "record",
-          "lineno": 353,
+          "lineno": 355,
           "loc": 26,
           "complexity": 4,
           "branches": 3,
@@ -4419,7 +4419,7 @@
         },
         {
           "name": "record_seen_lines",
-          "lineno": 380,
+          "lineno": 382,
           "loc": 7,
           "complexity": 3,
           "branches": 2,
@@ -4427,7 +4427,7 @@
         },
         {
           "name": "lookup",
-          "lineno": 388,
+          "lineno": 390,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -4435,7 +4435,7 @@
         },
         {
           "name": "__len__",
-          "lineno": 392,
+          "lineno": 394,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4450,12 +4450,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/utils.py",
-      "loc": 316,
-      "module_loc": 316,
+      "loc": 315,
+      "module_loc": 315,
       "functions": [
         {
           "name": "_sniff_ftyp_brand",
-          "lineno": 183,
+          "lineno": 182,
           "loc": 5,
           "complexity": 3,
           "branches": 2,
@@ -4463,7 +4463,7 @@
         },
         {
           "name": "sniff_media_from_magic",
-          "lineno": 190,
+          "lineno": 189,
           "loc": 36,
           "complexity": 19,
           "branches": 18,
@@ -4471,7 +4471,7 @@
         },
         {
           "name": "detect_file_type",
-          "lineno": 228,
+          "lineno": 227,
           "loc": 35,
           "complexity": 16,
           "branches": 15,
@@ -4479,7 +4479,7 @@
         },
         {
           "name": "resolve_vfs",
-          "lineno": 265,
+          "lineno": 264,
           "loc": 19,
           "complexity": 3,
           "branches": 2,
@@ -4487,7 +4487,7 @@
         },
         {
           "name": "check_path_protected",
-          "lineno": 286,
+          "lineno": 285,
           "loc": 31,
           "complexity": 7,
           "branches": 6,
@@ -4502,8 +4502,8 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/write.py",
-      "loc": 839,
-      "module_loc": 839,
+      "loc": 838,
+      "module_loc": 838,
       "functions": [
         {
           "name": "_validate_mode",
@@ -4532,14 +4532,14 @@
         {
           "name": "__call__",
           "lineno": 212,
-          "loc": 302,
+          "loc": 301,
           "complexity": 64,
           "branches": 63,
           "max_nesting": 5
         },
         {
           "name": "_conflict_guard",
-          "lineno": 515,
+          "lineno": 514,
           "loc": 77,
           "complexity": 13,
           "branches": 12,
@@ -4547,7 +4547,7 @@
         },
         {
           "name": "_conflict_markers_error",
-          "lineno": 593,
+          "lineno": 592,
           "loc": 19,
           "complexity": 2,
           "branches": 1,
@@ -4555,7 +4555,7 @@
         },
         {
           "name": "_dispatch_conflict_write",
-          "lineno": 613,
+          "lineno": 612,
           "loc": 22,
           "complexity": 5,
           "branches": 4,
@@ -4563,7 +4563,7 @@
         },
         {
           "name": "_resolve_single_conflict_by_id",
-          "lineno": 636,
+          "lineno": 635,
           "loc": 72,
           "complexity": 12,
           "branches": 11,
@@ -4571,7 +4571,7 @@
         },
         {
           "name": "_resolve_all_conflicts",
-          "lineno": 709,
+          "lineno": 708,
           "loc": 131,
           "complexity": 28,
           "branches": 27,
@@ -4580,18 +4580,18 @@
       ],
       "longest_fn": {
         "name": "__call__",
-        "loc": 302
+        "loc": 301
       },
       "module_complexity": 64
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/memory/__init__.py",
-      "loc": 131,
-      "module_loc": 131,
+      "loc": 132,
+      "module_loc": 132,
       "functions": [
         {
           "name": "__init__",
-          "lineno": 46,
+          "lineno": 47,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -4599,7 +4599,7 @@
         },
         {
           "name": "attach_history_index",
-          "lineno": 50,
+          "lineno": 51,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -4607,7 +4607,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 55,
+          "lineno": 56,
           "loc": 56,
           "complexity": 9,
           "branches": 8,
@@ -4615,7 +4615,7 @@
         },
         {
           "name": "_retrieve_by_id",
-          "lineno": 112,
+          "lineno": 113,
           "loc": 20,
           "complexity": 3,
           "branches": 2,
@@ -4630,12 +4630,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/reason.py",
-      "loc": 103,
-      "module_loc": 103,
+      "loc": 104,
+      "module_loc": 104,
       "functions": [
         {
           "name": "__init__",
-          "lineno": 23,
+          "lineno": 24,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4643,7 +4643,7 @@
         },
         {
           "name": "add_tool_call_reason",
-          "lineno": 26,
+          "lineno": 27,
           "loc": 18,
           "complexity": 3,
           "branches": 2,
@@ -4651,7 +4651,7 @@
         },
         {
           "name": "formatted_print",
-          "lineno": 45,
+          "lineno": 46,
           "loc": 20,
           "complexity": 3,
           "branches": 2,
@@ -4659,7 +4659,7 @@
         },
         {
           "name": "changed_files",
-          "lineno": 67,
+          "lineno": 68,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -4667,7 +4667,7 @@
         },
         {
           "name": "to_markdown",
-          "lineno": 71,
+          "lineno": 72,
           "loc": 23,
           "complexity": 6,
           "branches": 5,
@@ -4675,7 +4675,7 @@
         },
         {
           "name": "clear",
-          "lineno": 95,
+          "lineno": 96,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -4683,7 +4683,7 @@
         },
         {
           "name": "__len__",
-          "lineno": 99,
+          "lineno": 100,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4691,7 +4691,7 @@
         },
         {
           "name": "__bool__",
-          "lineno": 102,
+          "lineno": 103,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -4705,45 +4705,9 @@
       "module_complexity": 6
     },
     {
-      "path": "kimi-cli/src/kimi_cli/tools/test.py",
-      "loc": 55,
-      "module_loc": 55,
-      "functions": [
-        {
-          "name": "__call__",
-          "lineno": 19,
-          "loc": 2,
-          "complexity": 1,
-          "branches": 0,
-          "max_nesting": 0
-        },
-        {
-          "name": "__call__",
-          "lineno": 34,
-          "loc": 7,
-          "complexity": 3,
-          "branches": 2,
-          "max_nesting": 2
-        },
-        {
-          "name": "__call__",
-          "lineno": 53,
-          "loc": 3,
-          "complexity": 1,
-          "branches": 0,
-          "max_nesting": 0
-        }
-      ],
-      "longest_fn": {
-        "name": "__call__",
-        "loc": 7
-      },
-      "module_complexity": 3
-    },
-    {
       "path": "kimi-cli/src/kimi_cli/tools/todo/__init__.py",
-      "loc": 2452,
-      "module_loc": 2452,
+      "loc": 2458,
+      "module_loc": 2458,
       "functions": [
         {
           "name": "_truncate_prompt",
@@ -5012,14 +4976,14 @@
         {
           "name": "_write_todos",
           "lineno": 964,
-          "loc": 82,
+          "loc": 88,
           "complexity": 17,
           "branches": 16,
-          "max_nesting": 4
+          "max_nesting": 3
         },
         {
           "name": "_error",
-          "lineno": 1048,
+          "lineno": 1054,
           "loc": 19,
           "complexity": 3,
           "branches": 2,
@@ -5027,7 +4991,7 @@
         },
         {
           "name": "_find_duplicate_titles",
-          "lineno": 1069,
+          "lineno": 1075,
           "loc": 10,
           "complexity": 4,
           "branches": 3,
@@ -5035,7 +4999,7 @@
         },
         {
           "name": "_format_todos",
-          "lineno": 1081,
+          "lineno": 1087,
           "loc": 27,
           "complexity": 7,
           "branches": 6,
@@ -5043,7 +5007,7 @@
         },
         {
           "name": "_find_nearest_titles",
-          "lineno": 1121,
+          "lineno": 1127,
           "loc": 49,
           "complexity": 6,
           "branches": 5,
@@ -5051,7 +5015,7 @@
         },
         {
           "name": "_max_tree_depth",
-          "lineno": 1173,
+          "lineno": 1179,
           "loc": 13,
           "complexity": 1,
           "branches": 0,
@@ -5059,7 +5023,7 @@
         },
         {
           "name": "_build_noop_response",
-          "lineno": 1187,
+          "lineno": 1193,
           "loc": 20,
           "complexity": 4,
           "branches": 3,
@@ -5067,7 +5031,7 @@
         },
         {
           "name": "_detect_fuzzy_warnings",
-          "lineno": 1208,
+          "lineno": 1214,
           "loc": 29,
           "complexity": 5,
           "branches": 4,
@@ -5075,7 +5039,7 @@
         },
         {
           "name": "_check_regressions",
-          "lineno": 1239,
+          "lineno": 1245,
           "loc": 33,
           "complexity": 1,
           "branches": 0,
@@ -5083,7 +5047,7 @@
         },
         {
           "name": "_build_success_response",
-          "lineno": 1273,
+          "lineno": 1279,
           "loc": 70,
           "complexity": 15,
           "branches": 14,
@@ -5091,7 +5055,7 @@
         },
         {
           "name": "_status_counts",
-          "lineno": 1345,
+          "lineno": 1351,
           "loc": 11,
           "complexity": 1,
           "branches": 0,
@@ -5099,7 +5063,7 @@
         },
         {
           "name": "_count_all",
-          "lineno": 1358,
+          "lineno": 1364,
           "loc": 9,
           "complexity": 2,
           "branches": 1,
@@ -5107,7 +5071,7 @@
         },
         {
           "name": "_count_unfinished_descendants",
-          "lineno": 1369,
+          "lineno": 1375,
           "loc": 13,
           "complexity": 1,
           "branches": 0,
@@ -5115,7 +5079,7 @@
         },
         {
           "name": "_mark_subtree_done",
-          "lineno": 1384,
+          "lineno": 1390,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -5123,7 +5087,7 @@
         },
         {
           "name": "_build_display_block",
-          "lineno": 1391,
+          "lineno": 1397,
           "loc": 21,
           "complexity": 1,
           "branches": 0,
@@ -5131,7 +5095,7 @@
         },
         {
           "name": "_render_read_tree",
-          "lineno": 1415,
+          "lineno": 1421,
           "loc": 28,
           "complexity": 1,
           "branches": 0,
@@ -5139,7 +5103,7 @@
         },
         {
           "name": "_read_todos",
-          "lineno": 1444,
+          "lineno": 1450,
           "loc": 54,
           "complexity": 11,
           "branches": 10,
@@ -5147,7 +5111,7 @@
         },
         {
           "name": "_save_todos",
-          "lineno": 1501,
+          "lineno": 1507,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -5155,14 +5119,6 @@
         },
         {
           "name": "_load_todos",
-          "lineno": 1509,
-          "loc": 5,
-          "complexity": 2,
-          "branches": 1,
-          "max_nesting": 1
-        },
-        {
-          "name": "_load_archived_todos",
           "lineno": 1515,
           "loc": 5,
           "complexity": 2,
@@ -5170,8 +5126,16 @@
           "max_nesting": 1
         },
         {
-          "name": "_max_layers",
+          "name": "_load_archived_todos",
           "lineno": 1521,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
+          "max_nesting": 1
+        },
+        {
+          "name": "_max_layers",
+          "lineno": 1527,
           "loc": 14,
           "complexity": 4,
           "branches": 3,
@@ -5179,7 +5143,7 @@
         },
         {
           "name": "_save_root_todos",
-          "lineno": 1536,
+          "lineno": 1542,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -5187,7 +5151,7 @@
         },
         {
           "name": "_load_root_todos",
-          "lineno": 1548,
+          "lineno": 1554,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -5195,7 +5159,7 @@
         },
         {
           "name": "_save_subagent_todos",
-          "lineno": 1563,
+          "lineno": 1569,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -5203,7 +5167,7 @@
         },
         {
           "name": "_load_subagent_todos",
-          "lineno": 1578,
+          "lineno": 1584,
           "loc": 14,
           "complexity": 5,
           "branches": 4,
@@ -5211,7 +5175,7 @@
         },
         {
           "name": "_load_subagent_archived_todos",
-          "lineno": 1593,
+          "lineno": 1599,
           "loc": 18,
           "complexity": 5,
           "branches": 4,
@@ -5219,7 +5183,7 @@
         },
         {
           "name": "_item_states",
-          "lineno": 1613,
+          "lineno": 1619,
           "loc": 10,
           "complexity": 1,
           "branches": 0,
@@ -5227,7 +5191,7 @@
         },
         {
           "name": "_subagent_state_file",
-          "lineno": 1624,
+          "lineno": 1630,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -5235,7 +5199,7 @@
         },
         {
           "name": "_read_subagent_state",
-          "lineno": 1632,
+          "lineno": 1638,
           "loc": 12,
           "complexity": 4,
           "branches": 3,
@@ -5243,7 +5207,7 @@
         },
         {
           "name": "_write_subagent_state",
-          "lineno": 1646,
+          "lineno": 1652,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -5251,7 +5215,7 @@
         },
         {
           "name": "_effective_item",
-          "lineno": 1654,
+          "lineno": 1660,
           "loc": 15,
           "complexity": 8,
           "branches": 7,
@@ -5259,7 +5223,7 @@
         },
         {
           "name": "_merge_upsert",
-          "lineno": 1670,
+          "lineno": 1676,
           "loc": 86,
           "complexity": 22,
           "branches": 21,
@@ -5267,7 +5231,7 @@
         },
         {
           "name": "_upsert_one",
-          "lineno": 1757,
+          "lineno": 1763,
           "loc": 73,
           "complexity": 14,
           "branches": 13,
@@ -5275,7 +5239,7 @@
         },
         {
           "name": "_upsert_in_container",
-          "lineno": 1831,
+          "lineno": 1837,
           "loc": 74,
           "complexity": 16,
           "branches": 15,
@@ -5283,7 +5247,7 @@
         },
         {
           "name": "_merge_node",
-          "lineno": 1906,
+          "lineno": 1912,
           "loc": 23,
           "complexity": 8,
           "branches": 7,
@@ -5291,7 +5255,7 @@
         },
         {
           "name": "_summary",
-          "lineno": 1931,
+          "lineno": 1937,
           "loc": 14,
           "complexity": 12,
           "branches": 11,
@@ -5299,7 +5263,7 @@
         },
         {
           "name": "_find_conflict",
-          "lineno": 1946,
+          "lineno": 1952,
           "loc": 35,
           "complexity": 10,
           "branches": 9,
@@ -5307,7 +5271,7 @@
         },
         {
           "name": "_conflict_error",
-          "lineno": 1982,
+          "lineno": 1988,
           "loc": 19,
           "complexity": 3,
           "branches": 2,
@@ -5315,7 +5279,7 @@
         },
         {
           "name": "_resolve_scope_path",
-          "lineno": 2002,
+          "lineno": 2008,
           "loc": 26,
           "complexity": 4,
           "branches": 3,
@@ -5323,7 +5287,7 @@
         },
         {
           "name": "_replace_node",
-          "lineno": 2029,
+          "lineno": 2035,
           "loc": 15,
           "complexity": 4,
           "branches": 3,
@@ -5331,7 +5295,7 @@
         },
         {
           "name": "_finalize",
-          "lineno": 2045,
+          "lineno": 2051,
           "loc": 68,
           "complexity": 16,
           "branches": 15,
@@ -5339,7 +5303,7 @@
         },
         {
           "name": "_apply_one_update",
-          "lineno": 2114,
+          "lineno": 2120,
           "loc": 29,
           "complexity": 4,
           "branches": 3,
@@ -5347,7 +5311,7 @@
         },
         {
           "name": "_update_global_in_memory",
-          "lineno": 2144,
+          "lineno": 2150,
           "loc": 39,
           "complexity": 4,
           "branches": 3,
@@ -5355,7 +5319,7 @@
         },
         {
           "name": "_update_or_create_under_parent_in_memory",
-          "lineno": 2184,
+          "lineno": 2190,
           "loc": 96,
           "complexity": 13,
           "branches": 12,
@@ -5363,7 +5327,7 @@
         },
         {
           "name": "_apply_update_to_tree",
-          "lineno": 2281,
+          "lineno": 2287,
           "loc": 102,
           "complexity": 21,
           "branches": 20,
@@ -5371,7 +5335,7 @@
         },
         {
           "name": "_insert_child_at_path",
-          "lineno": 2385,
+          "lineno": 2391,
           "loc": 21,
           "complexity": 3,
           "branches": 2,
@@ -5379,7 +5343,7 @@
         },
         {
           "name": "_collect_titles",
-          "lineno": 2408,
+          "lineno": 2414,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -5387,7 +5351,7 @@
         },
         {
           "name": "_find_path",
-          "lineno": 2417,
+          "lineno": 2423,
           "loc": 11,
           "complexity": 5,
           "branches": 4,
@@ -5395,7 +5359,7 @@
         },
         {
           "name": "_node_at_path",
-          "lineno": 2430,
+          "lineno": 2436,
           "loc": 6,
           "complexity": 2,
           "branches": 1,
@@ -5403,7 +5367,7 @@
         },
         {
           "name": "_update_at_path",
-          "lineno": 2438,
+          "lineno": 2444,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -5427,7 +5391,7 @@
         },
         {
           "name": "walk",
-          "lineno": 1177,
+          "lineno": 1183,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -5435,7 +5399,7 @@
         },
         {
           "name": "collect",
-          "lineno": 1251,
+          "lineno": 1257,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -5443,7 +5407,7 @@
         },
         {
           "name": "clamp",
-          "lineno": 1260,
+          "lineno": 1266,
           "loc": 10,
           "complexity": 5,
           "branches": 4,
@@ -5451,7 +5415,7 @@
         },
         {
           "name": "walk",
-          "lineno": 1349,
+          "lineno": 1355,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -5459,7 +5423,7 @@
         },
         {
           "name": "walk",
-          "lineno": 1373,
+          "lineno": 1379,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -5467,7 +5431,7 @@
         },
         {
           "name": "walk",
-          "lineno": 1398,
+          "lineno": 1404,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -5475,7 +5439,7 @@
         },
         {
           "name": "walk",
-          "lineno": 1431,
+          "lineno": 1437,
           "loc": 9,
           "complexity": 5,
           "branches": 4,
@@ -5490,12 +5454,12 @@
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/utils.py",
-      "loc": 298,
-      "module_loc": 298,
+      "loc": 299,
+      "module_loc": 299,
       "functions": [
         {
           "name": "_looks_like_json",
-          "lineno": 13,
+          "lineno": 14,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -5503,7 +5467,7 @@
         },
         {
           "name": "repair_json_string",
-          "lineno": 19,
+          "lineno": 20,
           "loc": 20,
           "complexity": 6,
           "branches": 5,
@@ -5511,7 +5475,7 @@
         },
         {
           "name": "_is_plain_string_annotation",
-          "lineno": 41,
+          "lineno": 42,
           "loc": 8,
           "complexity": 4,
           "branches": 3,
@@ -5519,7 +5483,7 @@
         },
         {
           "name": "repair_tool_arguments",
-          "lineno": 51,
+          "lineno": 52,
           "loc": 36,
           "complexity": 10,
           "branches": 9,
@@ -5527,7 +5491,7 @@
         },
         {
           "name": "load_desc",
-          "lineno": 98,
+          "lineno": 99,
           "loc": 13,
           "complexity": 2,
           "branches": 1,
@@ -5535,7 +5499,7 @@
         },
         {
           "name": "truncate_line",
-          "lineno": 113,
+          "lineno": 114,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -5543,7 +5507,7 @@
         },
         {
           "name": "__str__",
-          "lineno": 90,
+          "lineno": 91,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -5551,7 +5515,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 139,
+          "lineno": 140,
           "loc": 16,
           "complexity": 2,
           "branches": 1,
@@ -5559,7 +5523,7 @@
         },
         {
           "name": "is_full",
-          "lineno": 157,
+          "lineno": 158,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -5567,7 +5531,7 @@
         },
         {
           "name": "n_chars",
-          "lineno": 162,
+          "lineno": 163,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -5575,7 +5539,7 @@
         },
         {
           "name": "n_lines",
-          "lineno": 167,
+          "lineno": 168,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -5583,7 +5547,7 @@
         },
         {
           "name": "write",
-          "lineno": 171,
+          "lineno": 172,
           "loc": 38,
           "complexity": 8,
           "branches": 7,
@@ -5591,7 +5555,7 @@
         },
         {
           "name": "tail",
-          "lineno": 210,
+          "lineno": 211,
           "loc": 19,
           "complexity": 7,
           "branches": 6,
@@ -5599,7 +5563,7 @@
         },
         {
           "name": "display",
-          "lineno": 230,
+          "lineno": 231,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -5607,7 +5571,7 @@
         },
         {
           "name": "extras",
-          "lineno": 234,
+          "lineno": 235,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -5615,7 +5579,7 @@
         },
         {
           "name": "ok",
-          "lineno": 240,
+          "lineno": 241,
           "loc": 20,
           "complexity": 6,
           "branches": 5,
@@ -5623,7 +5587,7 @@
         },
         {
           "name": "error",
-          "lineno": 261,
+          "lineno": 262,
           "loc": 19,
           "complexity": 4,
           "branches": 3,
@@ -5631,7 +5595,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 285,
+          "lineno": 286,
           "loc": 14,
           "complexity": 2,
           "branches": 1,
@@ -6758,12 +6722,12 @@
     },
     {
       "path": "src/kimix/tools/agent/__init__.py",
-      "loc": 1179,
-      "module_loc": 1179,
+      "loc": 1171,
+      "module_loc": 1171,
       "functions": [
         {
           "name": "_background_tasks_for",
-          "lineno": 42,
+          "lineno": 43,
           "loc": 23,
           "complexity": 5,
           "branches": 4,
@@ -6771,7 +6735,7 @@
         },
         {
           "name": "wait_for_background_agents",
-          "lineno": 67,
+          "lineno": 68,
           "loc": 12,
           "complexity": 3,
           "branches": 2,
@@ -6779,7 +6743,7 @@
         },
         {
           "name": "_register_agent_session",
-          "lineno": 88,
+          "lineno": 89,
           "loc": 3,
           "complexity": 3,
           "branches": 2,
@@ -6787,7 +6751,7 @@
         },
         {
           "name": "_register_child_session",
-          "lineno": 106,
+          "lineno": 107,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -6795,7 +6759,7 @@
         },
         {
           "name": "_forget_child_session",
-          "lineno": 114,
+          "lineno": 115,
           "loc": 11,
           "complexity": 4,
           "branches": 3,
@@ -6803,7 +6767,7 @@
         },
         {
           "name": "_take_child_sessions",
-          "lineno": 127,
+          "lineno": 128,
           "loc": 8,
           "complexity": 3,
           "branches": 2,
@@ -6811,7 +6775,7 @@
         },
         {
           "name": "_forget_child_session_record",
-          "lineno": 137,
+          "lineno": 138,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -6819,7 +6783,7 @@
         },
         {
           "name": "_release_child_session",
-          "lineno": 144,
+          "lineno": 145,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -6827,15 +6791,15 @@
         },
         {
           "name": "_destroy_child_sessions_async",
-          "lineno": 151,
-          "loc": 19,
-          "complexity": 4,
-          "branches": 3,
+          "lineno": 152,
+          "loc": 17,
+          "complexity": 3,
+          "branches": 2,
           "max_nesting": 3
         },
         {
           "name": "_on_parent_session_closed",
-          "lineno": 172,
+          "lineno": 171,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -6843,7 +6807,7 @@
         },
         {
           "name": "_get_agent_session",
-          "lineno": 186,
+          "lineno": 185,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -6851,7 +6815,7 @@
         },
         {
           "name": "_unregister_agent_session",
-          "lineno": 192,
+          "lineno": 191,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -6859,7 +6823,7 @@
         },
         {
           "name": "_cli_session_id",
-          "lineno": 196,
+          "lineno": 195,
           "loc": 14,
           "complexity": 5,
           "branches": 4,
@@ -6867,7 +6831,7 @@
         },
         {
           "name": "_session_work_dir",
-          "lineno": 212,
+          "lineno": 211,
           "loc": 19,
           "complexity": 7,
           "branches": 6,
@@ -6875,7 +6839,7 @@
         },
         {
           "name": "_session_dir",
-          "lineno": 233,
+          "lineno": 232,
           "loc": 10,
           "complexity": 2,
           "branches": 1,
@@ -6883,7 +6847,7 @@
         },
         {
           "name": "_sdk_session_by_id",
-          "lineno": 245,
+          "lineno": 244,
           "loc": 13,
           "complexity": 4,
           "branches": 3,
@@ -6891,7 +6855,7 @@
         },
         {
           "name": "_register_entry",
-          "lineno": 260,
+          "lineno": 259,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -6899,7 +6863,7 @@
         },
         {
           "name": "_get_entry",
-          "lineno": 264,
+          "lineno": 263,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -6907,7 +6871,7 @@
         },
         {
           "name": "_unregister_entry",
-          "lineno": 268,
+          "lineno": 267,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -6915,7 +6879,7 @@
         },
         {
           "name": "_resolve_prompt",
-          "lineno": 272,
+          "lineno": 271,
           "loc": 24,
           "complexity": 6,
           "branches": 5,
@@ -6923,7 +6887,7 @@
         },
         {
           "name": "_prompt_saved_message",
-          "lineno": 298,
+          "lineno": 297,
           "loc": 14,
           "complexity": 2,
           "branches": 1,
@@ -6931,15 +6895,15 @@
         },
         {
           "name": "_consume_background_task_error",
-          "lineno": 414,
-          "loc": 8,
-          "complexity": 3,
-          "branches": 2,
+          "lineno": 413,
+          "loc": 6,
+          "complexity": 2,
+          "branches": 1,
           "max_nesting": 1
         },
         {
           "name": "_get_store",
-          "lineno": 424,
+          "lineno": 421,
           "loc": 9,
           "complexity": 2,
           "branches": 1,
@@ -6947,7 +6911,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 436,
+          "lineno": 433,
           "loc": 6,
           "complexity": 1,
           "branches": 0,
@@ -6955,7 +6919,7 @@
         },
         {
           "name": "_finalize_previous",
-          "lineno": 443,
+          "lineno": 440,
           "loc": 28,
           "complexity": 4,
           "branches": 3,
@@ -6963,7 +6927,7 @@
         },
         {
           "name": "consume",
-          "lineno": 472,
+          "lineno": 469,
           "loc": 23,
           "complexity": 9,
           "branches": 8,
@@ -6971,7 +6935,7 @@
         },
         {
           "name": "finalize_user_turn",
-          "lineno": 496,
+          "lineno": 493,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -6979,15 +6943,15 @@
         },
         {
           "name": "finalize_assistant_turn",
-          "lineno": 504,
-          "loc": 12,
+          "lineno": 501,
+          "loc": 11,
           "complexity": 6,
           "branches": 5,
-          "max_nesting": 3
+          "max_nesting": 2
         },
         {
           "name": "__init__",
-          "lineno": 538,
+          "lineno": 534,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -6995,7 +6959,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 554,
+          "lineno": 550,
           "loc": 19,
           "complexity": 5,
           "branches": 4,
@@ -7003,15 +6967,15 @@
         },
         {
           "name": "_prepare_run",
-          "lineno": 574,
-          "loc": 71,
+          "lineno": 570,
+          "loc": 67,
           "complexity": 11,
           "branches": 10,
           "max_nesting": 4
         },
         {
           "name": "_launch_background",
-          "lineno": 646,
+          "lineno": 638,
           "loc": 45,
           "complexity": 6,
           "branches": 5,
@@ -7019,7 +6983,7 @@
         },
         {
           "name": "_run_background",
-          "lineno": 692,
+          "lineno": 684,
           "loc": 14,
           "complexity": 2,
           "branches": 1,
@@ -7027,7 +6991,7 @@
         },
         {
           "name": "_notify_parent_background_finished",
-          "lineno": 707,
+          "lineno": 699,
           "loc": 53,
           "complexity": 19,
           "branches": 18,
@@ -7035,7 +6999,7 @@
         },
         {
           "name": "_execute",
-          "lineno": 761,
+          "lineno": 753,
           "loc": 88,
           "complexity": 8,
           "branches": 7,
@@ -7043,7 +7007,7 @@
         },
         {
           "name": "_build_extras",
-          "lineno": 850,
+          "lineno": 842,
           "loc": 26,
           "complexity": 2,
           "branches": 1,
@@ -7051,7 +7015,7 @@
         },
         {
           "name": "_format_history",
-          "lineno": 877,
+          "lineno": 869,
           "loc": 26,
           "complexity": 14,
           "branches": 13,
@@ -7059,7 +7023,7 @@
         },
         {
           "name": "_resolve_session",
-          "lineno": 904,
+          "lineno": 896,
           "loc": 73,
           "complexity": 9,
           "branches": 8,
@@ -7067,7 +7031,7 @@
         },
         {
           "name": "_inherit_parent_context",
-          "lineno": 978,
+          "lineno": 970,
           "loc": 34,
           "complexity": 3,
           "branches": 2,
@@ -7075,7 +7039,7 @@
         },
         {
           "name": "_reset_inherited_system_prompt",
-          "lineno": 1013,
+          "lineno": 1005,
           "loc": 25,
           "complexity": 5,
           "branches": 4,
@@ -7083,7 +7047,7 @@
         },
         {
           "name": "_register_agent_sessions",
-          "lineno": 1039,
+          "lineno": 1031,
           "loc": 17,
           "complexity": 4,
           "branches": 3,
@@ -7091,7 +7055,7 @@
         },
         {
           "name": "_update_store",
-          "lineno": 1057,
+          "lineno": 1049,
           "loc": 39,
           "complexity": 5,
           "branches": 4,
@@ -7099,7 +7063,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 1123,
+          "lineno": 1115,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7107,7 +7071,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 1127,
+          "lineno": 1119,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -7115,7 +7079,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 1159,
+          "lineno": 1151,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7123,7 +7087,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 1163,
+          "lineno": 1155,
           "loc": 17,
           "complexity": 2,
           "branches": 1,
@@ -7131,7 +7095,7 @@
         },
         {
           "name": "output_function",
-          "lineno": 771,
+          "lineno": 763,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -7146,12 +7110,12 @@
     },
     {
       "path": "src/kimix/tools/agent/store.py",
-      "loc": 139,
-      "module_loc": 139,
+      "loc": 134,
+      "module_loc": 134,
       "functions": [
         {
           "name": "__init__",
-          "lineno": 21,
+          "lineno": 20,
           "loc": 19,
           "complexity": 1,
           "branches": 0,
@@ -7159,7 +7123,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 52,
+          "lineno": 51,
           "loc": 12,
           "complexity": 1,
           "branches": 0,
@@ -7167,15 +7131,15 @@
         },
         {
           "name": "_notify_closed",
-          "lineno": 65,
-          "loc": 7,
-          "complexity": 3,
-          "branches": 2,
+          "lineno": 64,
+          "loc": 5,
+          "complexity": 2,
+          "branches": 1,
           "max_nesting": 1
         },
         {
           "name": "get",
-          "lineno": 73,
+          "lineno": 70,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -7183,7 +7147,7 @@
         },
         {
           "name": "put",
-          "lineno": 76,
+          "lineno": 73,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -7191,7 +7155,7 @@
         },
         {
           "name": "close",
-          "lineno": 82,
+          "lineno": 79,
           "loc": 6,
           "complexity": 2,
           "branches": 1,
@@ -7199,7 +7163,7 @@
         },
         {
           "name": "was_closed",
-          "lineno": 89,
+          "lineno": 86,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -7207,7 +7171,7 @@
         },
         {
           "name": "discard_closed",
-          "lineno": 94,
+          "lineno": 91,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7215,7 +7179,7 @@
         },
         {
           "name": "_remember_closed",
-          "lineno": 98,
+          "lineno": 95,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -7223,7 +7187,7 @@
         },
         {
           "name": "list_active",
-          "lineno": 104,
+          "lineno": 101,
           "loc": 13,
           "complexity": 3,
           "branches": 2,
@@ -7231,27 +7195,27 @@
         },
         {
           "name": "evict_lru_if_needed",
-          "lineno": 118,
-          "loc": 22,
-          "complexity": 5,
-          "branches": 4,
+          "lineno": 115,
+          "loc": 20,
+          "complexity": 4,
+          "branches": 3,
           "max_nesting": 2
         }
       ],
       "longest_fn": {
         "name": "evict_lru_if_needed",
-        "loc": 22
+        "loc": 20
       },
-      "module_complexity": 5
+      "module_complexity": 4
     },
     {
       "path": "src/kimix/tools/background/__init__.py",
-      "loc": 508,
-      "module_loc": 508,
+      "loc": 512,
+      "module_loc": 512,
       "functions": [
         {
           "name": "_normalize_legacy_timeout",
-          "lineno": 90,
+          "lineno": 91,
           "loc": 5,
           "complexity": 4,
           "branches": 3,
@@ -7259,7 +7223,7 @@
         },
         {
           "name": "_normalize_kill",
-          "lineno": 97,
+          "lineno": 98,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -7267,7 +7231,7 @@
         },
         {
           "name": "__del__",
-          "lineno": 117,
+          "lineno": 118,
           "loc": 13,
           "complexity": 5,
           "branches": 4,
@@ -7275,7 +7239,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 131,
+          "lineno": 132,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7283,7 +7247,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 135,
+          "lineno": 136,
           "loc": 28,
           "complexity": 7,
           "branches": 6,
@@ -7291,7 +7255,7 @@
         },
         {
           "name": "_list_tasks",
-          "lineno": 164,
+          "lineno": 165,
           "loc": 26,
           "complexity": 8,
           "branches": 7,
@@ -7299,7 +7263,7 @@
         },
         {
           "name": "_kill_task",
-          "lineno": 191,
+          "lineno": 192,
           "loc": 61,
           "complexity": 7,
           "branches": 6,
@@ -7307,7 +7271,7 @@
         },
         {
           "name": "_process_completed_output",
-          "lineno": 253,
+          "lineno": 254,
           "loc": 26,
           "complexity": 3,
           "branches": 2,
@@ -7315,16 +7279,16 @@
         },
         {
           "name": "_get_history_output",
-          "lineno": 280,
-          "loc": 60,
+          "lineno": 281,
+          "loc": 61,
           "complexity": 10,
           "branches": 9,
           "max_nesting": 2
         },
         {
           "name": "_get_output",
-          "lineno": 341,
-          "loc": 152,
+          "lineno": 343,
+          "loc": 154,
           "complexity": 29,
           "branches": 28,
           "max_nesting": 4
@@ -7332,18 +7296,18 @@
       ],
       "longest_fn": {
         "name": "_get_output",
-        "loc": 152
+        "loc": 154
       },
       "module_complexity": 29
     },
     {
       "path": "src/kimix/tools/background/utils.py",
-      "loc": 626,
-      "module_loc": 626,
+      "loc": 631,
+      "module_loc": 631,
       "functions": [
         {
           "name": "bounded_append",
-          "lineno": 58,
+          "lineno": 61,
           "loc": 35,
           "complexity": 6,
           "branches": 5,
@@ -7351,7 +7315,7 @@
         },
         {
           "name": "bounded_put",
-          "lineno": 95,
+          "lineno": 98,
           "loc": 13,
           "complexity": 3,
           "branches": 2,
@@ -7359,7 +7323,7 @@
         },
         {
           "name": "_get_or_add_task_data",
-          "lineno": 147,
+          "lineno": 150,
           "loc": 6,
           "complexity": 2,
           "branches": 1,
@@ -7367,7 +7331,7 @@
         },
         {
           "name": "_get_task_data",
-          "lineno": 155,
+          "lineno": 158,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -7375,7 +7339,7 @@
         },
         {
           "name": "_pop_task_data",
-          "lineno": 159,
+          "lineno": 162,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -7383,15 +7347,15 @@
         },
         {
           "name": "generate_task_id",
-          "lineno": 475,
-          "loc": 12,
+          "lineno": 483,
+          "loc": 9,
           "complexity": 3,
           "branches": 2,
           "max_nesting": 1
         },
         {
           "name": "remove_task_id",
-          "lineno": 489,
+          "lineno": 494,
           "loc": 33,
           "complexity": 4,
           "branches": 3,
@@ -7399,7 +7363,7 @@
         },
         {
           "name": "_record_from_stream",
-          "lineno": 524,
+          "lineno": 529,
           "loc": 17,
           "complexity": 1,
           "branches": 0,
@@ -7407,7 +7371,7 @@
         },
         {
           "name": "_store_finished_locked",
-          "lineno": 543,
+          "lineno": 548,
           "loc": 14,
           "complexity": 2,
           "branches": 1,
@@ -7415,7 +7379,7 @@
         },
         {
           "name": "_store_finished",
-          "lineno": 559,
+          "lineno": 564,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -7423,7 +7387,7 @@
         },
         {
           "name": "record_finished_task",
-          "lineno": 565,
+          "lineno": 570,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -7431,7 +7395,7 @@
         },
         {
           "name": "get_finished_task",
-          "lineno": 574,
+          "lineno": 579,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -7439,7 +7403,7 @@
         },
         {
           "name": "add_task",
-          "lineno": 583,
+          "lineno": 588,
           "loc": 10,
           "complexity": 1,
           "branches": 0,
@@ -7447,7 +7411,7 @@
         },
         {
           "name": "get_all_tasks",
-          "lineno": 595,
+          "lineno": 600,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -7455,7 +7419,7 @@
         },
         {
           "name": "join_task",
-          "lineno": 599,
+          "lineno": 604,
           "loc": 18,
           "complexity": 3,
           "branches": 2,
@@ -7463,7 +7427,7 @@
         },
         {
           "name": "discard_all_tasks",
-          "lineno": 619,
+          "lineno": 624,
           "loc": 8,
           "complexity": 3,
           "branches": 2,
@@ -7471,7 +7435,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 141,
+          "lineno": 144,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -7479,7 +7443,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 166,
+          "lineno": 169,
           "loc": 16,
           "complexity": 1,
           "branches": 0,
@@ -7487,7 +7451,7 @@
         },
         {
           "name": "success",
-          "lineno": 183,
+          "lineno": 186,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -7495,7 +7459,7 @@
         },
         {
           "name": "exit_code",
-          "lineno": 187,
+          "lineno": 190,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7503,7 +7467,7 @@
         },
         {
           "name": "output_truncated",
-          "lineno": 192,
+          "lineno": 195,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7511,7 +7475,7 @@
         },
         {
           "name": "process_elapsed",
-          "lineno": 197,
+          "lineno": 200,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7519,7 +7483,7 @@
         },
         {
           "name": "process_elapsed",
-          "lineno": 202,
+          "lineno": 205,
           "loc": 8,
           "complexity": 1,
           "branches": 0,
@@ -7527,15 +7491,15 @@
         },
         {
           "name": "start",
-          "lineno": 211,
-          "loc": 35,
+          "lineno": 214,
+          "loc": 40,
           "complexity": 2,
           "branches": 1,
           "max_nesting": 2
         },
         {
           "name": "input",
-          "lineno": 247,
+          "lineno": 255,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -7543,7 +7507,7 @@
         },
         {
           "name": "thread_is_alive",
-          "lineno": 254,
+          "lineno": 262,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -7551,7 +7515,7 @@
         },
         {
           "name": "wait",
-          "lineno": 258,
+          "lineno": 266,
           "loc": 11,
           "complexity": 4,
           "branches": 3,
@@ -7559,7 +7523,7 @@
         },
         {
           "name": "get_output",
-          "lineno": 270,
+          "lineno": 278,
           "loc": 17,
           "complexity": 6,
           "branches": 5,
@@ -7567,7 +7531,7 @@
         },
         {
           "name": "drain_output_sync",
-          "lineno": 288,
+          "lineno": 296,
           "loc": 22,
           "complexity": 6,
           "branches": 5,
@@ -7575,7 +7539,7 @@
         },
         {
           "name": "pop_output",
-          "lineno": 311,
+          "lineno": 319,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -7583,7 +7547,7 @@
         },
         {
           "name": "get_queue",
-          "lineno": 317,
+          "lineno": 325,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -7591,7 +7555,7 @@
         },
         {
           "name": "is_started",
-          "lineno": 325,
+          "lineno": 333,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7599,7 +7563,7 @@
         },
         {
           "name": "is_stopped",
-          "lineno": 329,
+          "lineno": 337,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7607,7 +7571,7 @@
         },
         {
           "name": "wait_with_inactivity_timeout",
-          "lineno": 333,
+          "lineno": 341,
           "loc": 53,
           "complexity": 8,
           "branches": 7,
@@ -7615,7 +7579,7 @@
         },
         {
           "name": "wait_for_output",
-          "lineno": 387,
+          "lineno": 395,
           "loc": 63,
           "complexity": 11,
           "branches": 10,
@@ -7623,7 +7587,7 @@
         },
         {
           "name": "stop",
-          "lineno": 451,
+          "lineno": 459,
           "loc": 22,
           "complexity": 8,
           "branches": 7,
@@ -7631,8 +7595,8 @@
         },
         {
           "name": "func",
-          "lineno": 225,
-          "loc": 15,
+          "lineno": 228,
+          "loc": 20,
           "complexity": 6,
           "branches": 5,
           "max_nesting": 2
@@ -7654,20 +7618,20 @@
     },
     {
       "path": "src/kimix/tools/common.py",
-      "loc": 2350,
-      "module_loc": 2350,
+      "loc": 2340,
+      "module_loc": 2340,
       "functions": [
         {
           "name": "_looks_like_malformed_json_param",
-          "lineno": 57,
-          "loc": 48,
-          "complexity": 21,
-          "branches": 20,
+          "lineno": 61,
+          "loc": 46,
+          "complexity": 20,
+          "branches": 19,
           "max_nesting": 4
         },
         {
           "name": "_extract_content_from_malformed",
-          "lineno": 107,
+          "lineno": 109,
           "loc": 47,
           "complexity": 20,
           "branches": 19,
@@ -7675,7 +7639,7 @@
         },
         {
           "name": "_extract_and_save_long_param",
-          "lineno": 156,
+          "lineno": 158,
           "loc": 61,
           "complexity": 11,
           "branches": 10,
@@ -7683,7 +7647,7 @@
         },
         {
           "name": "_build_long_param_retry_msg",
-          "lineno": 219,
+          "lineno": 221,
           "loc": 32,
           "complexity": 2,
           "branches": 1,
@@ -7691,7 +7655,7 @@
         },
         {
           "name": "_compat_stream",
-          "lineno": 262,
+          "lineno": 264,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -7699,7 +7663,7 @@
         },
         {
           "name": "_compat_shell",
-          "lineno": 269,
+          "lineno": 271,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -7707,7 +7671,7 @@
         },
         {
           "name": "make_tool_error",
-          "lineno": 307,
+          "lineno": 309,
           "loc": 38,
           "complexity": 9,
           "branches": 8,
@@ -7715,7 +7679,7 @@
         },
         {
           "name": "_find_error_line_index",
-          "lineno": 371,
+          "lineno": 373,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -7723,7 +7687,7 @@
         },
         {
           "name": "_rtk_binary_path",
-          "lineno": 461,
+          "lineno": 463,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -7731,7 +7695,7 @@
         },
         {
           "name": "_rtk_available",
-          "lineno": 470,
+          "lineno": 472,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -7739,7 +7703,7 @@
         },
         {
           "name": "_is_known_rtk_command",
-          "lineno": 474,
+          "lineno": 476,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -7747,7 +7711,7 @@
         },
         {
           "name": "filter_output",
-          "lineno": 481,
+          "lineno": 483,
           "loc": 21,
           "complexity": 4,
           "branches": 3,
@@ -7755,7 +7719,7 @@
         },
         {
           "name": "_pid_alive",
-          "lineno": 529,
+          "lineno": 533,
           "loc": 30,
           "complexity": 6,
           "branches": 5,
@@ -7763,7 +7727,7 @@
         },
         {
           "name": "_rmtree_retry",
-          "lineno": 561,
+          "lineno": 565,
           "loc": 18,
           "complexity": 5,
           "branches": 4,
@@ -7771,7 +7735,7 @@
         },
         {
           "name": "_folder_has_fresh_file",
-          "lineno": 589,
+          "lineno": 593,
           "loc": 13,
           "complexity": 6,
           "branches": 5,
@@ -7779,18 +7743,18 @@
         },
         {
           "name": "_cleanup_temp_folder",
-          "lineno": 604,
-          "loc": 6,
-          "complexity": 2,
-          "branches": 1,
+          "lineno": 608,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
           "max_nesting": 1
         },
         {
           "name": "_cleanup_stale_temp_folders",
-          "lineno": 612,
-          "loc": 35,
-          "complexity": 12,
-          "branches": 11,
+          "lineno": 614,
+          "loc": 33,
+          "complexity": 11,
+          "branches": 10,
           "max_nesting": 3
         },
         {
@@ -7876,14 +7840,14 @@
         {
           "name": "_summarize_long_output_async",
           "lineno": 845,
-          "loc": 90,
-          "complexity": 8,
-          "branches": 7,
+          "loc": 88,
+          "complexity": 7,
+          "branches": 6,
           "max_nesting": 3
         },
         {
           "name": "_extract_export_path",
-          "lineno": 937,
+          "lineno": 935,
           "loc": 14,
           "complexity": 4,
           "branches": 3,
@@ -7891,7 +7855,7 @@
         },
         {
           "name": "_coerce_seconds",
-          "lineno": 961,
+          "lineno": 959,
           "loc": 13,
           "complexity": 4,
           "branches": 3,
@@ -7899,7 +7863,7 @@
         },
         {
           "name": "_format_elapsed_seconds",
-          "lineno": 976,
+          "lineno": 974,
           "loc": 16,
           "complexity": 4,
           "branches": 3,
@@ -7907,7 +7871,7 @@
         },
         {
           "name": "_reportable_seconds",
-          "lineno": 994,
+          "lineno": 992,
           "loc": 15,
           "complexity": 3,
           "branches": 2,
@@ -7915,7 +7879,7 @@
         },
         {
           "name": "_elapsed_suffix",
-          "lineno": 1011,
+          "lineno": 1009,
           "loc": 10,
           "complexity": 2,
           "branches": 1,
@@ -7923,7 +7887,7 @@
         },
         {
           "name": "_elapsed_tag",
-          "lineno": 1023,
+          "lineno": 1021,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -7931,7 +7895,7 @@
         },
         {
           "name": "_append_elapsed",
-          "lineno": 1036,
+          "lineno": 1034,
           "loc": 22,
           "complexity": 6,
           "branches": 5,
@@ -7939,7 +7903,7 @@
         },
         {
           "name": "_subprocess_elapsed",
-          "lineno": 1060,
+          "lineno": 1058,
           "loc": 19,
           "complexity": 4,
           "branches": 3,
@@ -7947,7 +7911,7 @@
         },
         {
           "name": "_build_session_output_block",
-          "lineno": 1081,
+          "lineno": 1079,
           "loc": 44,
           "complexity": 9,
           "branches": 8,
@@ -7955,7 +7919,7 @@
         },
         {
           "name": "_dedup_output",
-          "lineno": 1127,
+          "lineno": 1125,
           "loc": 104,
           "complexity": 19,
           "branches": 18,
@@ -7963,7 +7927,7 @@
         },
         {
           "name": "_truncate_lines",
-          "lineno": 1233,
+          "lineno": 1231,
           "loc": 65,
           "complexity": 11,
           "branches": 10,
@@ -7971,7 +7935,7 @@
         },
         {
           "name": "_find_ansi_c_end",
-          "lineno": 1300,
+          "lineno": 1298,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7979,7 +7943,7 @@
         },
         {
           "name": "_find_backtick_end",
-          "lineno": 1305,
+          "lineno": 1303,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7987,7 +7951,7 @@
         },
         {
           "name": "_find_dq_end",
-          "lineno": 1310,
+          "lineno": 1308,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -7995,7 +7959,7 @@
         },
         {
           "name": "_find_matching_paren",
-          "lineno": 1315,
+          "lineno": 1313,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -8003,7 +7967,7 @@
         },
         {
           "name": "_split_shell_segments",
-          "lineno": 1320,
+          "lineno": 1318,
           "loc": 80,
           "complexity": 23,
           "branches": 22,
@@ -8011,7 +7975,7 @@
         },
         {
           "name": "_read_shell_word",
-          "lineno": 1402,
+          "lineno": 1400,
           "loc": 66,
           "complexity": 21,
           "branches": 20,
@@ -8019,7 +7983,7 @@
         },
         {
           "name": "_is_shell_assignment",
-          "lineno": 1477,
+          "lineno": 1475,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -8027,7 +7991,7 @@
         },
         {
           "name": "_rewrite_shell_segment",
-          "lineno": 1481,
+          "lineno": 1479,
           "loc": 38,
           "complexity": 11,
           "branches": 10,
@@ -8035,7 +7999,7 @@
         },
         {
           "name": "_maybe_rewrite_shell_command_with_rtk",
-          "lineno": 1521,
+          "lineno": 1519,
           "loc": 70,
           "complexity": 18,
           "branches": 17,
@@ -8043,8 +8007,8 @@
         },
         {
           "name": "_token_filter_output",
-          "lineno": 1593,
-          "loc": 112,
+          "lineno": 1591,
+          "loc": 114,
           "complexity": 12,
           "branches": 11,
           "max_nesting": 2
@@ -8108,14 +8072,14 @@
         {
           "name": "_kill_registered_process_trees",
           "lineno": 1889,
-          "loc": 14,
-          "complexity": 3,
-          "branches": 2,
+          "loc": 12,
+          "complexity": 2,
+          "branches": 1,
           "max_nesting": 2
         },
         {
           "name": "__init__",
-          "lineno": 1911,
+          "lineno": 1909,
           "loc": 29,
           "complexity": 4,
           "branches": 3,
@@ -8123,23 +8087,23 @@
         },
         {
           "name": "_run_process_bg",
-          "lineno": 1941,
-          "loc": 279,
-          "complexity": 35,
-          "branches": 34,
+          "lineno": 1939,
+          "loc": 273,
+          "complexity": 32,
+          "branches": 31,
           "max_nesting": 5
         },
         {
           "name": "_stop_function",
-          "lineno": 2221,
-          "loc": 10,
-          "complexity": 4,
-          "branches": 3,
+          "lineno": 2213,
+          "loc": 8,
+          "complexity": 3,
+          "branches": 2,
           "max_nesting": 2
         },
         {
           "name": "_input_function",
-          "lineno": 2232,
+          "lineno": 2222,
           "loc": 31,
           "complexity": 9,
           "branches": 8,
@@ -8147,7 +8111,7 @@
         },
         {
           "name": "start",
-          "lineno": 2264,
+          "lineno": 2254,
           "loc": 21,
           "complexity": 1,
           "branches": 0,
@@ -8155,7 +8119,7 @@
         },
         {
           "name": "wait",
-          "lineno": 2286,
+          "lineno": 2276,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -8163,7 +8127,7 @@
         },
         {
           "name": "wait_with_monitor",
-          "lineno": 2289,
+          "lineno": 2279,
           "loc": 23,
           "complexity": 3,
           "branches": 2,
@@ -8171,7 +8135,7 @@
         },
         {
           "name": "thread_is_alive",
-          "lineno": 2313,
+          "lineno": 2303,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -8179,7 +8143,7 @@
         },
         {
           "name": "stop",
-          "lineno": 2316,
+          "lineno": 2306,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -8187,7 +8151,7 @@
         },
         {
           "name": "input",
-          "lineno": 2321,
+          "lineno": 2311,
           "loc": 12,
           "complexity": 2,
           "branches": 1,
@@ -8195,7 +8159,7 @@
         },
         {
           "name": "task_id",
-          "lineno": 2335,
+          "lineno": 2325,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -8203,7 +8167,7 @@
         },
         {
           "name": "stream",
-          "lineno": 2340,
+          "lineno": 2330,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -8211,7 +8175,7 @@
         },
         {
           "name": "completed_event",
-          "lineno": 2345,
+          "lineno": 2335,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -8227,7 +8191,7 @@
         },
         {
           "name": "_write_output",
-          "lineno": 1963,
+          "lineno": 1961,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -8235,7 +8199,7 @@
         },
         {
           "name": "read_stdout",
-          "lineno": 2024,
+          "lineno": 2022,
           "loc": 34,
           "complexity": 11,
           "branches": 10,
@@ -8243,7 +8207,7 @@
         },
         {
           "name": "read_stderr",
-          "lineno": 2059,
+          "lineno": 2057,
           "loc": 39,
           "complexity": 12,
           "branches": 11,
@@ -8251,7 +8215,7 @@
         },
         {
           "name": "write_stdin",
-          "lineno": 2099,
+          "lineno": 2097,
           "loc": 16,
           "complexity": 7,
           "branches": 6,
@@ -8260,18 +8224,18 @@
       ],
       "longest_fn": {
         "name": "_run_process_bg",
-        "loc": 279
+        "loc": 273
       },
-      "module_complexity": 35
+      "module_complexity": 32
     },
     {
       "path": "src/kimix/tools/context/__init__.py",
-      "loc": 130,
-      "module_loc": 130,
+      "loc": 131,
+      "module_loc": 131,
       "functions": [
         {
           "name": "_resolve_mode",
-          "lineno": 37,
+          "lineno": 38,
           "loc": 13,
           "complexity": 5,
           "branches": 4,
@@ -8279,7 +8243,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 65,
+          "lineno": 66,
           "loc": 66,
           "complexity": 10,
           "branches": 9,
@@ -8294,39 +8258,11 @@
     },
     {
       "path": "src/kimix/tools/file/__init__.py",
-      "loc": 61,
-      "module_loc": 61,
-      "functions": [
-        {
-          "name": "__call__",
-          "lineno": 18,
-          "loc": 12,
-          "complexity": 2,
-          "branches": 1,
-          "max_nesting": 1
-        },
-        {
-          "name": "__call__",
-          "lineno": 43,
-          "loc": 19,
-          "complexity": 2,
-          "branches": 1,
-          "max_nesting": 1
-        },
-        {
-          "name": "_remove",
-          "lineno": 47,
-          "loc": 5,
-          "complexity": 2,
-          "branches": 1,
-          "max_nesting": 1
-        }
-      ],
-      "longest_fn": {
-        "name": "__call__",
-        "loc": 19
-      },
-      "module_complexity": 2
+      "loc": 8,
+      "module_loc": 8,
+      "functions": [],
+      "longest_fn": null,
+      "module_complexity": 0
     },
     {
       "path": "src/kimix/tools/file/bash/__init__.py",
@@ -8358,8 +8294,8 @@
     },
     {
       "path": "src/kimix/tools/file/bash/bash_tool.py",
-      "loc": 1461,
-      "module_loc": 1461,
+      "loc": 1462,
+      "module_loc": 1462,
       "functions": [
         {
           "name": "_encode_startup_script",
@@ -8452,14 +8388,14 @@
         {
           "name": "_is_git_bash_install",
           "lineno": 275,
-          "loc": 30,
+          "loc": 27,
           "complexity": 8,
           "branches": 7,
           "max_nesting": 1
         },
         {
           "name": "_with_msystem_neutralized",
-          "lineno": 315,
+          "lineno": 312,
           "loc": 16,
           "complexity": 4,
           "branches": 3,
@@ -8467,7 +8403,7 @@
         },
         {
           "name": "_find_git_bash_windows",
-          "lineno": 333,
+          "lineno": 330,
           "loc": 51,
           "complexity": 13,
           "branches": 12,
@@ -8475,15 +8411,15 @@
         },
         {
           "name": "_git_bash_for_macos",
-          "lineno": 386,
-          "loc": 15,
+          "lineno": 383,
+          "loc": 12,
           "complexity": 6,
           "branches": 5,
           "max_nesting": 2
         },
         {
           "name": "_bash_candidates_macos",
-          "lineno": 403,
+          "lineno": 397,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -8491,7 +8427,7 @@
         },
         {
           "name": "_bash_candidates_system",
-          "lineno": 412,
+          "lineno": 406,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -8499,7 +8435,7 @@
         },
         {
           "name": "find_bash",
-          "lineno": 418,
+          "lineno": 412,
           "loc": 33,
           "complexity": 11,
           "branches": 10,
@@ -8507,7 +8443,7 @@
         },
         {
           "name": "_configured_shell",
-          "lineno": 453,
+          "lineno": 447,
           "loc": 23,
           "complexity": 5,
           "branches": 4,
@@ -8515,7 +8451,7 @@
         },
         {
           "name": "_should_enable_bash",
-          "lineno": 478,
+          "lineno": 472,
           "loc": 29,
           "complexity": 7,
           "branches": 6,
@@ -8523,7 +8459,7 @@
         },
         {
           "name": "_should_enable_powershell",
-          "lineno": 509,
+          "lineno": 503,
           "loc": 26,
           "complexity": 5,
           "branches": 4,
@@ -8531,7 +8467,7 @@
         },
         {
           "name": "_process_unquoted",
-          "lineno": 557,
+          "lineno": 551,
           "loc": 19,
           "complexity": 3,
           "branches": 2,
@@ -8539,7 +8475,7 @@
         },
         {
           "name": "_prepare_bash_cmd",
-          "lineno": 580,
+          "lineno": 574,
           "loc": 21,
           "complexity": 2,
           "branches": 1,
@@ -8547,7 +8483,7 @@
         },
         {
           "name": "_usable",
-          "lineno": 350,
+          "lineno": 347,
           "loc": 2,
           "complexity": 2,
           "branches": 1,
@@ -8555,7 +8491,7 @@
         },
         {
           "name": "_normalize_mode",
-          "lineno": 629,
+          "lineno": 623,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -8563,15 +8499,15 @@
         },
         {
           "name": "__init__",
-          "lineno": 646,
-          "loc": 45,
+          "lineno": 641,
+          "loc": 51,
           "complexity": 9,
           "branches": 8,
           "max_nesting": 2
         },
         {
           "name": "_hardline_blocked",
-          "lineno": 692,
+          "lineno": 693,
           "loc": 21,
           "complexity": 4,
           "branches": 3,
@@ -8579,7 +8515,7 @@
         },
         {
           "name": "_self_kill_blocked",
-          "lineno": 714,
+          "lineno": 715,
           "loc": 25,
           "complexity": 4,
           "branches": 3,
@@ -8587,7 +8523,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 740,
+          "lineno": 741,
           "loc": 325,
           "complexity": 51,
           "branches": 50,
@@ -8595,7 +8531,7 @@
         },
         {
           "name": "_forbidden_error",
-          "lineno": 1066,
+          "lineno": 1067,
           "loc": 16,
           "complexity": 6,
           "branches": 5,
@@ -8603,7 +8539,7 @@
         },
         {
           "name": "_prepare_command",
-          "lineno": 1083,
+          "lineno": 1084,
           "loc": 21,
           "complexity": 3,
           "branches": 2,
@@ -8611,7 +8547,7 @@
         },
         {
           "name": "_continuation_may_be_incomplete",
-          "lineno": 1105,
+          "lineno": 1106,
           "loc": 41,
           "complexity": 5,
           "branches": 4,
@@ -8619,7 +8555,7 @@
         },
         {
           "name": "_compile_pattern",
-          "lineno": 1147,
+          "lineno": 1148,
           "loc": 11,
           "complexity": 3,
           "branches": 2,
@@ -8627,7 +8563,7 @@
         },
         {
           "name": "_stop_after_timeout",
-          "lineno": 1159,
+          "lineno": 1160,
           "loc": 27,
           "complexity": 2,
           "branches": 1,
@@ -8635,7 +8571,7 @@
         },
         {
           "name": "_execute_background",
-          "lineno": 1187,
+          "lineno": 1188,
           "loc": 65,
           "complexity": 11,
           "branches": 10,
@@ -8643,7 +8579,7 @@
         },
         {
           "name": "_continue_session",
-          "lineno": 1253,
+          "lineno": 1254,
           "loc": 75,
           "complexity": 12,
           "branches": 11,
@@ -8651,7 +8587,7 @@
         },
         {
           "name": "_process_output",
-          "lineno": 1329,
+          "lineno": 1330,
           "loc": 39,
           "complexity": 9,
           "branches": 8,
@@ -8659,7 +8595,7 @@
         },
         {
           "name": "_format_session_result",
-          "lineno": 1369,
+          "lineno": 1370,
           "loc": 51,
           "complexity": 11,
           "branches": 10,
@@ -8667,7 +8603,7 @@
         },
         {
           "name": "_format_background_output",
-          "lineno": 1421,
+          "lineno": 1422,
           "loc": 41,
           "complexity": 10,
           "branches": 9,
@@ -8682,12 +8618,12 @@
     },
     {
       "path": "src/kimix/tools/file/bash/output_enhance.py",
-      "loc": 106,
-      "module_loc": 106,
+      "loc": 112,
+      "module_loc": 112,
       "functions": [
         {
           "name": "_compat_tools",
-          "lineno": 40,
+          "lineno": 44,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -8695,7 +8631,7 @@
         },
         {
           "name": "interpret_exit_code",
-          "lineno": 54,
+          "lineno": 58,
           "loc": 17,
           "complexity": 8,
           "branches": 7,
@@ -8703,7 +8639,7 @@
         },
         {
           "name": "is_expected_exit",
-          "lineno": 73,
+          "lineno": 77,
           "loc": 17,
           "complexity": 7,
           "branches": 6,
@@ -8711,7 +8647,7 @@
         },
         {
           "name": "annotate_failure",
-          "lineno": 92,
+          "lineno": 96,
           "loc": 12,
           "complexity": 5,
           "branches": 4,
@@ -8726,8 +8662,8 @@
     },
     {
       "path": "src/kimix/tools/file/bash/process_pwsh.py",
-      "loc": 94,
-      "module_loc": 94,
+      "loc": 91,
+      "module_loc": 91,
       "functions": [],
       "longest_fn": null,
       "module_complexity": 0
@@ -8942,12 +8878,12 @@
     },
     {
       "path": "src/kimix/tools/file/bash/safety.py",
-      "loc": 665,
-      "module_loc": 665,
+      "loc": 668,
+      "module_loc": 668,
       "functions": [
         {
           "name": "_compat_tools",
-          "lineno": 42,
+          "lineno": 45,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -8955,7 +8891,7 @@
         },
         {
           "name": "command_detection_variants",
-          "lineno": 59,
+          "lineno": 62,
           "loc": 14,
           "complexity": 1,
           "branches": 0,
@@ -8963,7 +8899,7 @@
         },
         {
           "name": "_segment_tokens",
-          "lineno": 75,
+          "lineno": 78,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -8971,7 +8907,7 @@
         },
         {
           "name": "_looks_like_flag",
-          "lineno": 84,
+          "lineno": 87,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -8979,7 +8915,7 @@
         },
         {
           "name": "detect_hardline_command",
-          "lineno": 90,
+          "lineno": 93,
           "loc": 8,
           "complexity": 1,
           "branches": 0,
@@ -8987,7 +8923,7 @@
         },
         {
           "name": "check_hardline_blocked",
-          "lineno": 100,
+          "lineno": 103,
           "loc": 10,
           "complexity": 4,
           "branches": 3,
@@ -8995,7 +8931,7 @@
         },
         {
           "name": "foreground_background_guidance",
-          "lineno": 117,
+          "lineno": 120,
           "loc": 12,
           "complexity": 6,
           "branches": 5,
@@ -9003,7 +8939,7 @@
         },
         {
           "name": "_posix_ppid",
-          "lineno": 152,
+          "lineno": 155,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -9011,7 +8947,7 @@
         },
         {
           "name": "_windows_parent_map",
-          "lineno": 165,
+          "lineno": 168,
           "loc": 44,
           "complexity": 4,
           "branches": 3,
@@ -9019,7 +8955,7 @@
         },
         {
           "name": "_agent_pids",
-          "lineno": 211,
+          "lineno": 214,
           "loc": 34,
           "complexity": 12,
           "branches": 11,
@@ -9027,7 +8963,7 @@
         },
         {
           "name": "_split_image_name",
-          "lineno": 247,
+          "lineno": 250,
           "loc": 11,
           "complexity": 4,
           "branches": 3,
@@ -9035,7 +8971,7 @@
         },
         {
           "name": "_agent_image_names",
-          "lineno": 260,
+          "lineno": 263,
           "loc": 26,
           "complexity": 8,
           "branches": 7,
@@ -9043,7 +8979,7 @@
         },
         {
           "name": "_agent_cmdline",
-          "lineno": 288,
+          "lineno": 291,
           "loc": 7,
           "complexity": 3,
           "branches": 2,
@@ -9051,7 +8987,7 @@
         },
         {
           "name": "_segment_text",
-          "lineno": 297,
+          "lineno": 300,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -9059,7 +8995,7 @@
         },
         {
           "name": "_numeric_pid_targets",
-          "lineno": 302,
+          "lineno": 305,
           "loc": 18,
           "complexity": 6,
           "branches": 5,
@@ -9067,7 +9003,7 @@
         },
         {
           "name": "_loop_pid_sources",
-          "lineno": 341,
+          "lineno": 344,
           "loc": 24,
           "complexity": 8,
           "branches": 7,
@@ -9075,7 +9011,7 @@
         },
         {
           "name": "_variable_pid_hit",
-          "lineno": 367,
+          "lineno": 370,
           "loc": 31,
           "complexity": 6,
           "branches": 5,
@@ -9083,7 +9019,7 @@
         },
         {
           "name": "_name_kill_hit",
-          "lineno": 400,
+          "lineno": 403,
           "loc": 21,
           "complexity": 10,
           "branches": 9,
@@ -9091,7 +9027,7 @@
         },
         {
           "name": "_pattern_kill_hit",
-          "lineno": 423,
+          "lineno": 426,
           "loc": 21,
           "complexity": 8,
           "branches": 7,
@@ -9099,7 +9035,7 @@
         },
         {
           "name": "_pkill_full_match",
-          "lineno": 446,
+          "lineno": 449,
           "loc": 9,
           "complexity": 6,
           "branches": 5,
@@ -9107,7 +9043,7 @@
         },
         {
           "name": "detect_self_kill",
-          "lineno": 457,
+          "lineno": 460,
           "loc": 173,
           "complexity": 52,
           "branches": 51,
@@ -9115,7 +9051,7 @@
         },
         {
           "name": "self_kill_hint",
-          "lineno": 642,
+          "lineno": 645,
           "loc": 24,
           "complexity": 5,
           "branches": 4,
@@ -9123,7 +9059,7 @@
         },
         {
           "name": "_pid_hit",
-          "lineno": 494,
+          "lineno": 497,
           "loc": 8,
           "complexity": 3,
           "branches": 2,
@@ -9138,12 +9074,12 @@
     },
     {
       "path": "src/kimix/tools/file/bash/shell_common.py",
-      "loc": 159,
-      "module_loc": 159,
+      "loc": 157,
+      "module_loc": 157,
       "functions": [
         {
           "name": "_bash_tool",
-          "lineno": 33,
+          "lineno": 31,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -9151,7 +9087,7 @@
         },
         {
           "name": "_pwsh_tool",
-          "lineno": 40,
+          "lineno": 38,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -9159,7 +9095,7 @@
         },
         {
           "name": "inspect_bash_command",
-          "lineno": 49,
+          "lineno": 47,
           "loc": 10,
           "complexity": 1,
           "branches": 0,
@@ -9167,7 +9103,7 @@
         },
         {
           "name": "prepare_bash_command",
-          "lineno": 61,
+          "lineno": 59,
           "loc": 9,
           "complexity": 1,
           "branches": 0,
@@ -9175,7 +9111,7 @@
         },
         {
           "name": "bash_argv",
-          "lineno": 72,
+          "lineno": 70,
           "loc": 17,
           "complexity": 3,
           "branches": 2,
@@ -9183,7 +9119,7 @@
         },
         {
           "name": "bash_file_argv",
-          "lineno": 91,
+          "lineno": 89,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -9191,7 +9127,7 @@
         },
         {
           "name": "wrap_pwsh_command",
-          "lineno": 100,
+          "lineno": 98,
           "loc": 12,
           "complexity": 1,
           "branches": 0,
@@ -9199,7 +9135,7 @@
         },
         {
           "name": "pwsh_executable",
-          "lineno": 114,
+          "lineno": 112,
           "loc": 6,
           "complexity": 4,
           "branches": 3,
@@ -9207,7 +9143,7 @@
         },
         {
           "name": "pwsh_argv",
-          "lineno": 122,
+          "lineno": 120,
           "loc": 29,
           "complexity": 5,
           "branches": 4,
@@ -9215,7 +9151,7 @@
         },
         {
           "name": "pwsh_file_argv",
-          "lineno": 153,
+          "lineno": 151,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -9230,48 +9166,56 @@
     },
     {
       "path": "src/kimix/tools/file/find_str.py",
-      "loc": 193,
-      "module_loc": 193,
+      "loc": 196,
+      "module_loc": 196,
       "functions": [
         {
           "name": "__call__",
-          "lineno": 32,
-          "loc": 162,
+          "lineno": 36,
+          "loc": 161,
           "complexity": 7,
           "branches": 6,
           "max_nesting": 3
         },
         {
           "name": "find_files",
-          "lineno": 36,
-          "loc": 68,
+          "lineno": 40,
+          "loc": 66,
           "complexity": 19,
           "branches": 18,
           "max_nesting": 6
         },
         {
           "name": "find_in_file",
-          "lineno": 105,
-          "loc": 53,
+          "lineno": 107,
+          "loc": 47,
           "complexity": 13,
           "branches": 12,
           "max_nesting": 3
+        },
+        {
+          "name": "_offload",
+          "lineno": 156,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
         }
       ],
       "longest_fn": {
         "name": "__call__",
-        "loc": 162
+        "loc": 161
       },
       "module_complexity": 19
     },
     {
       "path": "src/kimix/tools/file/run.py",
-      "loc": 799,
-      "module_loc": 799,
+      "loc": 789,
+      "module_loc": 789,
       "functions": [
         {
           "name": "_cd_prefix",
-          "lineno": 58,
+          "lineno": 61,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -9279,8 +9223,8 @@
         },
         {
           "name": "find_bash",
-          "lineno": 77,
-          "loc": 36,
+          "lineno": 80,
+          "loc": 33,
           "complexity": 11,
           "branches": 10,
           "max_nesting": 4
@@ -9320,14 +9264,14 @@
         {
           "name": "__call__",
           "lineno": 246,
-          "loc": 361,
-          "complexity": 92,
-          "branches": 91,
+          "loc": 351,
+          "complexity": 86,
+          "branches": 85,
           "max_nesting": 5
         },
         {
           "name": "_run_via_shell",
-          "lineno": 608,
+          "lineno": 598,
           "loc": 43,
           "complexity": 4,
           "branches": 3,
@@ -9335,7 +9279,7 @@
         },
         {
           "name": "_compile_pattern",
-          "lineno": 652,
+          "lineno": 642,
           "loc": 11,
           "complexity": 3,
           "branches": 2,
@@ -9343,7 +9287,7 @@
         },
         {
           "name": "_continue_session",
-          "lineno": 664,
+          "lineno": 654,
           "loc": 52,
           "complexity": 9,
           "branches": 8,
@@ -9351,7 +9295,7 @@
         },
         {
           "name": "_process_output",
-          "lineno": 717,
+          "lineno": 707,
           "loc": 37,
           "complexity": 9,
           "branches": 8,
@@ -9359,7 +9303,7 @@
         },
         {
           "name": "_format_session_result",
-          "lineno": 755,
+          "lineno": 745,
           "loc": 45,
           "complexity": 10,
           "branches": 9,
@@ -9368,9 +9312,9 @@
       ],
       "longest_fn": {
         "name": "__call__",
-        "loc": 361
+        "loc": 351
       },
-      "module_complexity": 92
+      "module_complexity": 86
     },
     {
       "path": "src/kimix/tools/note/__init__.py",
@@ -9379,7 +9323,7 @@
       "functions": [
         {
           "name": "_set_enable_plan",
-          "lineno": 22,
+          "lineno": 23,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -9387,7 +9331,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 48,
+          "lineno": 49,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -9395,7 +9339,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 54,
+          "lineno": 55,
           "loc": 25,
           "complexity": 5,
           "branches": 4,
@@ -9403,7 +9347,7 @@
         },
         {
           "name": "_validate_line_offset",
-          "lineno": 108,
+          "lineno": 109,
           "loc": 12,
           "complexity": 3,
           "branches": 2,
@@ -9411,7 +9355,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 127,
+          "lineno": 128,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -9419,11 +9363,11 @@
         },
         {
           "name": "__call__",
-          "lineno": 133,
-          "loc": 34,
+          "lineno": 134,
+          "loc": 33,
           "complexity": 8,
           "branches": 7,
-          "max_nesting": 3
+          "max_nesting": 2
         },
         {
           "name": "_read_forward",
@@ -9506,28 +9450,20 @@
     },
     {
       "path": "src/kimix/tools/parser/__init__.py",
-      "loc": 237,
-      "module_loc": 237,
+      "loc": 226,
+      "module_loc": 226,
       "functions": [
         {
           "name": "_to_json",
-          "lineno": 61,
+          "lineno": 60,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
           "max_nesting": 0
         },
         {
-          "name": "__init__",
-          "lineno": 115,
-          "loc": 9,
-          "complexity": 1,
-          "branches": 0,
-          "max_nesting": 0
-        },
-        {
           "name": "__call__",
-          "lineno": 125,
+          "lineno": 114,
           "loc": 113,
           "complexity": 12,
           "branches": 11,
@@ -9631,7 +9567,7 @@
       "functions": [
         {
           "name": "_normalize_mode",
-          "lineno": 81,
+          "lineno": 83,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -9639,7 +9575,7 @@
         },
         {
           "name": "_validate_source",
-          "lineno": 86,
+          "lineno": 88,
           "loc": 6,
           "complexity": 6,
           "branches": 5,
@@ -9647,7 +9583,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 106,
+          "lineno": 108,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -9655,7 +9591,7 @@
         },
         {
           "name": "_resolve_python",
-          "lineno": 112,
+          "lineno": 114,
           "loc": 16,
           "complexity": 3,
           "branches": 2,
@@ -9663,10 +9599,10 @@
         },
         {
           "name": "_resolve_python_uncached",
-          "lineno": 129,
-          "loc": 31,
-          "complexity": 11,
-          "branches": 10,
+          "lineno": 131,
+          "loc": 29,
+          "complexity": 10,
+          "branches": 9,
           "max_nesting": 4
         },
         {
@@ -9790,12 +9726,12 @@
     },
     {
       "path": "src/kimix/tools/security.py",
-      "loc": 91,
-      "module_loc": 91,
+      "loc": 95,
+      "module_loc": 95,
       "functions": [
         {
           "name": "_compat_tools",
-          "lineno": 33,
+          "lineno": 37,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -9803,7 +9739,7 @@
         },
         {
           "name": "scrub_child_env",
-          "lineno": 46,
+          "lineno": 50,
           "loc": 20,
           "complexity": 4,
           "branches": 3,
@@ -9811,7 +9747,7 @@
         },
         {
           "name": "redact_sensitive_output",
-          "lineno": 68,
+          "lineno": 72,
           "loc": 12,
           "complexity": 5,
           "branches": 4,
@@ -9819,7 +9755,7 @@
         },
         {
           "name": "validate_workdir",
-          "lineno": 82,
+          "lineno": 86,
           "loc": 10,
           "complexity": 1,
           "branches": 0,
@@ -9834,12 +9770,12 @@
     },
     {
       "path": "src/kimix/tools/swarm/__init__.py",
-      "loc": 542,
-      "module_loc": 542,
+      "loc": 539,
+      "module_loc": 539,
       "functions": [
         {
           "name": "_expand_template",
-          "lineno": 338,
+          "lineno": 337,
           "loc": 7,
           "complexity": 5,
           "branches": 4,
@@ -9847,7 +9783,7 @@
         },
         {
           "name": "_validate_uniqueness",
-          "lineno": 347,
+          "lineno": 346,
           "loc": 9,
           "complexity": 4,
           "branches": 3,
@@ -9855,7 +9791,7 @@
         },
         {
           "name": "_xml_escape",
-          "lineno": 358,
+          "lineno": 357,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -9863,7 +9799,7 @@
         },
         {
           "name": "_render_results",
-          "lineno": 362,
+          "lineno": 361,
           "loc": 28,
           "complexity": 7,
           "branches": 6,
@@ -9871,7 +9807,7 @@
         },
         {
           "name": "_run_swarm",
-          "lineno": 392,
+          "lineno": 391,
           "loc": 25,
           "complexity": 3,
           "branches": 2,
@@ -9879,7 +9815,7 @@
         },
         {
           "name": "_is_rate_limit_error",
-          "lineno": 419,
+          "lineno": 418,
           "loc": 15,
           "complexity": 1,
           "branches": 0,
@@ -9887,15 +9823,15 @@
         },
         {
           "name": "_run_subagent_task",
-          "lineno": 436,
-          "loc": 65,
-          "complexity": 12,
-          "branches": 11,
+          "lineno": 435,
+          "loc": 63,
+          "complexity": 11,
+          "branches": 10,
           "max_nesting": 4
         },
         {
           "name": "_resolve_subagent_session",
-          "lineno": 503,
+          "lineno": 500,
           "loc": 40,
           "complexity": 5,
           "branches": 4,
@@ -9903,7 +9839,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 49,
+          "lineno": 50,
           "loc": 15,
           "complexity": 1,
           "branches": 0,
@@ -9911,7 +9847,7 @@
         },
         {
           "name": "_validate",
-          "lineno": 113,
+          "lineno": 114,
           "loc": 35,
           "complexity": 19,
           "branches": 18,
@@ -9919,7 +9855,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 158,
+          "lineno": 159,
           "loc": 6,
           "complexity": 1,
           "branches": 0,
@@ -9927,7 +9863,7 @@
         },
         {
           "name": "acquire",
-          "lineno": 165,
+          "lineno": 166,
           "loc": 15,
           "complexity": 2,
           "branches": 1,
@@ -9935,7 +9871,7 @@
         },
         {
           "name": "__init__",
-          "lineno": 196,
+          "lineno": 197,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -9943,7 +9879,7 @@
         },
         {
           "name": "__call__",
-          "lineno": 202,
+          "lineno": 203,
           "loc": 22,
           "complexity": 3,
           "branches": 2,
@@ -9951,7 +9887,7 @@
         },
         {
           "name": "_execute",
-          "lineno": 225,
+          "lineno": 226,
           "loc": 25,
           "complexity": 4,
           "branches": 3,
@@ -9959,15 +9895,15 @@
         },
         {
           "name": "_execute_parallel_sample",
-          "lineno": 251,
-          "loc": 85,
+          "lineno": 252,
+          "loc": 83,
           "complexity": 12,
           "branches": 11,
           "max_nesting": 1
         },
         {
           "name": "_run_one",
-          "lineno": 410,
+          "lineno": 409,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -9975,15 +9911,15 @@
         },
         {
           "name": "_sample_runner",
-          "lineno": 267,
-          "loc": 25,
-          "complexity": 3,
-          "branches": 2,
+          "lineno": 268,
+          "loc": 23,
+          "complexity": 2,
+          "branches": 1,
           "max_nesting": 2
         },
         {
           "name": "_selector",
-          "lineno": 293,
+          "lineno": 292,
           "loc": 13,
           "complexity": 2,
           "branches": 1,
@@ -9991,7 +9927,7 @@
         },
         {
           "name": "output_function",
-          "lineno": 452,
+          "lineno": 451,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -10000,18 +9936,18 @@
       ],
       "longest_fn": {
         "name": "_execute_parallel_sample",
-        "loc": 85
+        "loc": 83
       },
       "module_complexity": 19
     },
     {
       "path": "src/kimix/tools/swarm/best_of_n.py",
-      "loc": 422,
-      "module_loc": 422,
+      "loc": 433,
+      "module_loc": 433,
       "functions": [
         {
           "name": "_is_git_repo",
-          "lineno": 85,
+          "lineno": 87,
           "loc": 12,
           "complexity": 3,
           "branches": 2,
@@ -10019,7 +9955,7 @@
         },
         {
           "name": "create_worker_workspace",
-          "lineno": 105,
+          "lineno": 107,
           "loc": 21,
           "complexity": 2,
           "branches": 1,
@@ -10027,7 +9963,7 @@
         },
         {
           "name": "cleanup_worker_workspace",
-          "lineno": 128,
+          "lineno": 130,
           "loc": 15,
           "complexity": 4,
           "branches": 3,
@@ -10035,7 +9971,7 @@
         },
         {
           "name": "_snapshot_files",
-          "lineno": 145,
+          "lineno": 147,
           "loc": 17,
           "complexity": 5,
           "branches": 4,
@@ -10043,7 +9979,7 @@
         },
         {
           "name": "collect_diff",
-          "lineno": 164,
+          "lineno": 166,
           "loc": 50,
           "complexity": 10,
           "branches": 9,
@@ -10051,7 +9987,7 @@
         },
         {
           "name": "apply_diff_to_workspace",
-          "lineno": 216,
+          "lineno": 218,
           "loc": 34,
           "complexity": 9,
           "branches": 8,
@@ -10059,15 +9995,15 @@
         },
         {
           "name": "run_parallel_sample",
-          "lineno": 257,
-          "loc": 40,
+          "lineno": 259,
+          "loc": 49,
           "complexity": 2,
           "branches": 1,
           "max_nesting": 1
         },
         {
           "name": "format_candidates_for_review",
-          "lineno": 304,
+          "lineno": 315,
           "loc": 10,
           "complexity": 3,
           "branches": 2,
@@ -10075,7 +10011,7 @@
         },
         {
           "name": "select_best_candidate",
-          "lineno": 316,
+          "lineno": 327,
           "loc": 46,
           "complexity": 10,
           "branches": 9,
@@ -10083,7 +10019,7 @@
         },
         {
           "name": "best_of_n",
-          "lineno": 369,
+          "lineno": 380,
           "loc": 54,
           "complexity": 7,
           "branches": 6,
@@ -10091,8 +10027,8 @@
         },
         {
           "name": "_one",
-          "lineno": 270,
-          "loc": 25,
+          "lineno": 272,
+          "loc": 34,
           "complexity": 4,
           "branches": 3,
           "max_nesting": 2
@@ -10114,13 +10050,13 @@
     },
     {
       "path": "src/kimix/tools/web/fetch_url.py",
-      "loc": 72,
-      "module_loc": 72,
+      "loc": 74,
+      "module_loc": 74,
       "functions": [
         {
           "name": "__call__",
           "lineno": 29,
-          "loc": 44,
+          "loc": 46,
           "complexity": 5,
           "branches": 4,
           "max_nesting": 2
@@ -10128,7 +10064,7 @@
       ],
       "longest_fn": {
         "name": "__call__",
-        "loc": 44
+        "loc": 46
       },
       "module_complexity": 5
     },
@@ -10142,20 +10078,20 @@
     },
     {
       "path": "src/kimix/tools/web/web_fetcher/fetcher.py",
-      "loc": 233,
-      "module_loc": 233,
+      "loc": 230,
+      "module_loc": 230,
       "functions": [
         {
           "name": "_fetch_html",
-          "lineno": 36,
-          "loc": 49,
-          "complexity": 7,
-          "branches": 6,
+          "lineno": 37,
+          "loc": 47,
+          "complexity": 6,
+          "branches": 5,
           "max_nesting": 4
         },
         {
           "name": "_build_ssl_context",
-          "lineno": 87,
+          "lineno": 86,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -10163,7 +10099,7 @@
         },
         {
           "name": "_fetch_html_http",
-          "lineno": 103,
+          "lineno": 102,
           "loc": 42,
           "complexity": 10,
           "branches": 9,
@@ -10171,7 +10107,7 @@
         },
         {
           "name": "fetch_html_http_with_fallback",
-          "lineno": 147,
+          "lineno": 146,
           "loc": 15,
           "complexity": 4,
           "branches": 3,
@@ -10179,7 +10115,7 @@
         },
         {
           "name": "_html_to_markdown",
-          "lineno": 164,
+          "lineno": 163,
           "loc": 41,
           "complexity": 7,
           "branches": 6,
@@ -10187,24 +10123,24 @@
         },
         {
           "name": "fetch_to_markdown",
-          "lineno": 207,
-          "loc": 27,
-          "complexity": 8,
-          "branches": 7,
+          "lineno": 206,
+          "loc": 25,
+          "complexity": 7,
+          "branches": 6,
           "max_nesting": 3
         }
       ],
       "longest_fn": {
         "name": "_fetch_html",
-        "loc": 49
+        "loc": 47
       },
       "module_complexity": 10
     }
   ],
   "totals": {
-    "files": 84,
-    "loc": 36763,
-    "functions": 1154
+    "files": 83,
+    "loc": 36659,
+    "functions": 1148
   },
   "breaches": []
 }

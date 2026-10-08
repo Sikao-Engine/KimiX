@@ -1,199 +1,58 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
- M kimi-cli/src/kimi_cli/tools/file/conflict_detect.py
- M kimi-cli/src/kimi_cli/tools/file/read_media.py
- M src/kimix/tools/file/bash/pwsh_tool.py
- M src/kimix/tools/file/run.py
-?? .coverage
-?? kimi-cli/tests/tools/test_edit_gate.py
-?? reviews/tools/90-findings.md
-?? reviews/tools/93-orphans-and-removal.md
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/X03-security.md
-?? reviews/tools/X04-native-parity.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C06.json
-?? reviews/tools/gates/C06.txt
-?? reviews/tools/gates/C07.json
-?? reviews/tools/gates/C07.txt
-?? reviews/tools/gates/C08.json
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.json
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.json
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C11.json
-?? reviews/tools/gates/C11.txt
-?? reviews/tools/gates/C12.json
-?? reviews/tools/gates/C12.txt
-?? reviews/tools/gates/C13.json
-?? reviews/tools/gates/C13.txt
-?? reviews/tools/gates/C14.json
-?? reviews/tools/gates/C14.txt
-?? reviews/tools/gates/C15.json
-?? reviews/tools/gates/C15.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K00.json
-?? reviews/tools/gates/K00.txt
-?? reviews/tools/gates/K01.json
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K02.json
-?? reviews/tools/gates/K02.txt
-?? reviews/tools/gates/K03.json
-?? reviews/tools/gates/K03.txt
-?? reviews/tools/gates/K04.json
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/K05.json
-?? reviews/tools/gates/K05.txt
-?? reviews/tools/gates/K06.json
-?? reviews/tools/gates/K06.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tests/kimix/test_agent_gate.py
-?? tests/test_review_orchestrator.py
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+ M reviews/tools/gates/C06.json
+ M reviews/tools/gates/C06.txt
+ M reviews/tools/gates/C07.json
+ M reviews/tools/gates/C07.txt
+ M reviews/tools/gates/C08.json
+ M reviews/tools/gates/C08.txt
+ M reviews/tools/gates/C09.json
+ M reviews/tools/gates/C09.txt
+ M reviews/tools/gates/C10.json
+ M reviews/tools/gates/C10.txt
+ M reviews/tools/gates/C11.json
+ M reviews/tools/gates/C11.txt
+ M reviews/tools/gates/C12.json
+ M reviews/tools/gates/C12.txt
+ M reviews/tools/gates/C13.json
+ M reviews/tools/gates/C13.txt
+ M reviews/tools/gates/C14.json
+ M reviews/tools/gates/C14.txt
+ M reviews/tools/gates/C15.json
+ M reviews/tools/gates/C15.txt
+ M reviews/tools/gates/K00.json
+ M reviews/tools/gates/K00.txt
+ M reviews/tools/gates/K01.json
+ M reviews/tools/gates/K01.txt
+ M reviews/tools/gates/K02.json
+ M reviews/tools/gates/K02.txt
+ M reviews/tools/gates/K03.json
+ M reviews/tools/gates/K03.txt
+ M reviews/tools/gates/K04.json
+ M reviews/tools/gates/K04.txt
+ M reviews/tools/gates/K05.json
+ M reviews/tools/gates/K05.txt
+ M reviews/tools/gates/K06.json
+ M reviews/tools/gates/K06.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check src/kimix/tools/py/__init__.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> src\kimix\tools\py\__init__.py:3:1
-   |
- 1 |   """Python tool that executes code or runs .py files via the system Python executable."""
- 2 |
- 3 | / import asyncio
- 4 | | import functools
- 5 | | import os
- 6 | | import sys
- 7 | | from pathlib import Path
- 8 | | from typing import TYPE_CHECKING, Literal
- 9 | |
-10 | | import anyio
-11 | | import regex as re
-12 | | from kimix.tools.common import (
-13 | |     _append_elapsed,
-14 | |     _build_session_output_block,
-15 | |     _create_script_file,
-16 | |     _display_temp_path,
-17 | |     _extract_export_path,
-18 | |     _interactive_scope_text,
-19 | |     _maybe_export_output_async,
-20 | |     _maybe_export_rtk_original_async,
-21 | |     _original_saved_message,
-22 | |     _save_original_output_async,
-23 | |     _subprocess_elapsed,
-24 | |     _summarize_long_output_async,
-25 | |     _token_filter_output,
-26 | |     ProcessTask,
-27 | | )
-28 | | from kimix.tools.prompt_common import (
-29 | |     accepts_alias_text,
-30 | |     max_lines_field,
-31 | |     mode_field,
-32 | |     normalize_mode_validator,
-33 | |     task_id_field,
-34 | |     timeout_field,
-35 | |     wait_for_pattern_field,
-36 | | )
-37 | | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-38 | | from pydantic import AliasChoices, BaseModel, Field, model_validator
-39 | | from kimi_cli.session import Session
-40 | | from kimi_cli.share import get_share_dir
-   | |________________________________________^
-41 |
-42 |   if TYPE_CHECKING:
-   |
-help: Organize imports
-   |
-11 | import regex as re
-12 + from kimi_cli.session import Session
-13 + from kimi_cli.share import get_share_dir
-14 + from pydantic import AliasChoices, BaseModel, Field, model_validator
-15 +
-16 + from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-17 | from kimix.tools.common import (
-18 +     ProcessTask,
-19 |     _append_elapsed,
---------------------------------------------------------------------------------
-31 |     _token_filter_output,
-   -     ProcessTask,
-32 | )
---------------------------------------------------------------------------------
-41 | )
-   - from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-   - from pydantic import AliasChoices, BaseModel, Field, model_validator
-   - from kimi_cli.session import Session
-   - from kimi_cli.share import get_share_dir
-42 |
-   |
-
-N801 Class name `python` should use CapWords convention
-  --> src\kimix\tools\py\__init__.py:94:7
-   |
-94 | class python(CallableTool2[Params]):
-   |       ^^^^^^
-95 |     name: str = "python"
-96 |     description: str = (
-   |
-
-F541 [*] f-string without any placeholders
-   --> src\kimix\tools\py\__init__.py:510:33
-    |
-508 |                         task_id, process_task.stream, params, output, "running",
-509 |                         wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-510 |                         message=f"Python code matched pattern and is still running.",
-    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-511 |                         brief="Pattern matched",
-512 |                     )
-    |
-help: Remove extraneous `f` prefix
-    |
-509 |                         wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-    -                         message=f"Python code matched pattern and is still running.",
-510 +                         message="Python code matched pattern and is still running.",
-511 |                         brief="Pattern matched",
-    |
-
-F541 [*] f-string without any placeholders
-   --> src\kimix\tools\py\__init__.py:526:25
-    |
-524 |             return ToolError(
-525 |                 output=output,
-526 |                 message=f"Python execution was cancelled.",
-    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-527 |                 brief="Execution cancelled",
-528 |             )
-    |
-help: Remove extraneous `f` prefix
-    |
-525 |                 output=output,
-    -                 message=f"Python execution was cancelled.",
-526 +                 message="Python execution was cancelled.",
-527 |                 brief="Execution cancelled",
-    |
-
-Found 4 errors.
-[*] 3 fixable with the `--fix` option.
-[elapsed 0.1s, rc=1]
+All checks passed!
+[elapsed 0.1s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
 C901 `_execute_code` is too complex (17 > 12)
@@ -219,7 +78,7 @@ Found 1 error.
       "functions": [
         {
           "name": "_normalize_mode",
-          "lineno": 81,
+          "lineno": 83,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -227,7 +86,7 @@ Found 1 error.
         },
         {
           "name": "_validate_source",
-          "lineno": 86,
+          "lineno": 88,
           "loc": 6,
           "complexity": 6,
           "branches": 5,
@@ -235,7 +94,7 @@ Found 1 error.
         },
         {
           "name": "__init__",
-          "lineno": 106,
+          "lineno": 108,
           "loc": 5,
           "complexity": 1,
           "branches": 0,
@@ -243,7 +102,7 @@ Found 1 error.
         },
         {
           "name": "_resolve_python",
-          "lineno": 112,
+          "lineno": 114,
           "loc": 16,
           "complexity": 3,
           "branches": 2,
@@ -251,10 +110,10 @@ Found 1 error.
         },
         {
           "name": "_resolve_python_uncached",
-          "lineno": 129,
-          "loc": 31,
-          "complexity": 11,
-          "branches": 10,
+          "lineno": 131,
+          "loc": 29,
+          "complexity": 10,
+          "branches": 9,
           "max_nesting": 4
         },
         {
@@ -392,8 +251,8 @@ Found 1 error.
 === uv run pytest tests/unit/tools/test_python.py tests/test_tools_async.py tests/unit/tools/test_elapsed_report.py -q -rs ===
 ........................................................................ [ 57%]
 ......................................................                   [100%]
-126 passed in 47.94s
-[elapsed 55.2s, rc=0]
+126 passed in 42.91s
+[elapsed 47.7s, rc=0]
 
 === uv run --with pytest-cov pytest tests/unit/tools/test_python.py tests/test_tools_async.py tests/unit/tools/test_elapsed_report.py --cov=kimix.tools.py ===
 ........................................................................ [ 57%]
@@ -403,8 +262,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                             Stmts   Miss Branch BrPart  Cover   Missing
 ----------------------------------------------------------------------------
-src\kimix\tools\py\__init__.py     338     31    124     20    88%   88, 90, 138-139, 152->159, 156->152, 191, 232-233, 262-263, 278->280, 350, 366->375, 426, 454->463, 500-507, 518-524, 560, 644, 655, 661->663, 664, 756, 769->771, 805-811, 814->816
+src\kimix\tools\py\__init__.py     337     29    124     20    89%   90, 92, 152->159, 156->152, 191, 232-233, 262-263, 278->280, 350, 366->375, 426, 454->463, 500-507, 518-524, 560, 644, 655, 661->663, 664, 756, 769->771, 805-811, 814->816
 ----------------------------------------------------------------------------
-TOTAL                              338     31    124     20    88%
-126 passed in 49.39s
-[elapsed 63.4s, rc=0]
+TOTAL                              337     29    124     20    89%
+126 passed in 42.75s
+[elapsed 49.0s, rc=0]

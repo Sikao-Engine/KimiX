@@ -1,453 +1,98 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
- M kimi-cli/src/kimi_cli/tools/file/conflict_detect.py
- M kimi-cli/src/kimi_cli/tools/file/read_media.py
- M src/kimix/tools/common.py
- M src/kimix/tools/file/bash/bash_tool.py
- M src/kimix/tools/file/bash/pwsh_tool.py
- M src/kimix/tools/file/run.py
- M src/kimix/tools/py/__init__.py
-?? .coverage
-?? kimi-cli/tests/tools/test_edit_gate.py
-?? kimi-cli/tests/tools/test_read_media_gate.py
-?? kimi-cli/tests/tools/test_tools_integrity_gate.py
-?? reviews/tools/90-findings.md
-?? reviews/tools/93-orphans-and-removal.md
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/X03-security.md
-?? reviews/tools/X04-native-parity.md
-?? reviews/tools/X05-dead-code.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C06.json
-?? reviews/tools/gates/C06.txt
-?? reviews/tools/gates/C07.json
-?? reviews/tools/gates/C07.txt
-?? reviews/tools/gates/C08.json
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.json
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.json
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C11.json
-?? reviews/tools/gates/C11.txt
-?? reviews/tools/gates/C12.json
-?? reviews/tools/gates/C12.txt
-?? reviews/tools/gates/C13.json
-?? reviews/tools/gates/C13.txt
-?? reviews/tools/gates/C14.json
-?? reviews/tools/gates/C14.txt
-?? reviews/tools/gates/C15.json
-?? reviews/tools/gates/C15.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K00.json
-?? reviews/tools/gates/K00.txt
-?? reviews/tools/gates/K01.json
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K02.json
-?? reviews/tools/gates/K02.txt
-?? reviews/tools/gates/K03.json
-?? reviews/tools/gates/K03.txt
-?? reviews/tools/gates/K04.json
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/K05.json
-?? reviews/tools/gates/K05.txt
-?? reviews/tools/gates/K06.json
-?? reviews/tools/gates/K06.txt
-?? reviews/tools/gates/K07.json
-?? reviews/tools/gates/K07.txt
-?? reviews/tools/gates/K08.json
-?? reviews/tools/gates/K08.txt
-?? reviews/tools/gates/K09.json
-?? reviews/tools/gates/K09.txt
-?? reviews/tools/gates/K10.json
-?? reviews/tools/gates/K10.txt
-?? reviews/tools/gates/K11.json
-?? reviews/tools/gates/K11.txt
-?? reviews/tools/gates/K12.json
-?? reviews/tools/gates/K12.txt
-?? reviews/tools/gates/K13.json
-?? reviews/tools/gates/K13.txt
-?? reviews/tools/gates/K14.json
-?? reviews/tools/gates/K14.txt
-?? reviews/tools/gates/K15.json
-?? reviews/tools/gates/K15.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tests/kimix/test_agent_gate.py
-?? tests/test_review_orchestrator.py
-?? tests/unit/tools/test_bash_gate.py
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+ M reviews/tools/gates/C06.json
+ M reviews/tools/gates/C06.txt
+ M reviews/tools/gates/C07.json
+ M reviews/tools/gates/C07.txt
+ M reviews/tools/gates/C08.json
+ M reviews/tools/gates/C08.txt
+ M reviews/tools/gates/C09.json
+ M reviews/tools/gates/C09.txt
+ M reviews/tools/gates/C10.json
+ M reviews/tools/gates/C10.txt
+ M reviews/tools/gates/C11.json
+ M reviews/tools/gates/C11.txt
+ M reviews/tools/gates/C12.json
+ M reviews/tools/gates/C12.txt
+ M reviews/tools/gates/C13.json
+ M reviews/tools/gates/C13.txt
+ M reviews/tools/gates/C14.json
+ M reviews/tools/gates/C14.txt
+ M reviews/tools/gates/C15.json
+ M reviews/tools/gates/C15.txt
+ M reviews/tools/gates/K00.json
+ M reviews/tools/gates/K00.txt
+ M reviews/tools/gates/K01.json
+ M reviews/tools/gates/K01.txt
+ M reviews/tools/gates/K02.json
+ M reviews/tools/gates/K02.txt
+ M reviews/tools/gates/K03.json
+ M reviews/tools/gates/K03.txt
+ M reviews/tools/gates/K04.json
+ M reviews/tools/gates/K04.txt
+ M reviews/tools/gates/K05.json
+ M reviews/tools/gates/K05.txt
+ M reviews/tools/gates/K06.json
+ M reviews/tools/gates/K06.txt
+ M reviews/tools/gates/K07.json
+ M reviews/tools/gates/K07.txt
+ M reviews/tools/gates/K08.json
+ M reviews/tools/gates/K08.txt
+ M reviews/tools/gates/K09.json
+ M reviews/tools/gates/K09.txt
+ M reviews/tools/gates/K10.json
+ M reviews/tools/gates/K10.txt
+ M reviews/tools/gates/K11.json
+ M reviews/tools/gates/K11.txt
+ M reviews/tools/gates/K12.json
+ M reviews/tools/gates/K12.txt
+ M reviews/tools/gates/K13.json
+ M reviews/tools/gates/K13.txt
+ M reviews/tools/gates/K14.json
+ M reviews/tools/gates/K14.txt
+ M reviews/tools/gates/K15.json
+ M reviews/tools/gates/K15.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check src/kimix/tools/file/find_str.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> src\kimix\tools\file\find_str.py:2:1
-   |
- 2 | / from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
- 3 | | from pydantic import BaseModel, Field
- 4 | | from kimi_cli.native_loader import (
- 5 | |     get_module as _native_get_module,
- 6 | |     use_native as _native_use_native,
- 7 | | )
- 8 | | from kimix.tools.common import _maybe_export_output
-   | |___________________________________________________^
- 9 |
-10 |   # Resolved once at import time (stable runtime: result never changes).
-   |
-help: Organize imports
-   |
-1  |
-   - from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-   - from pydantic import BaseModel, Field
-2  | from kimi_cli.native_loader import (
-3  |     get_module as _native_get_module,
-4  + )
-5  + from kimi_cli.native_loader import (
-6  |     use_native as _native_use_native,
-7  | )
-8  + from pydantic import BaseModel, Field
-9  +
-10 + from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-11 | from kimix.tools.common import _maybe_export_output
-   |
-
-I001 [*] Import block is un-sorted or un-formatted
-  --> src\kimix\tools\file\find_str.py:33:9
-   |
-32 |       async def __call__(self, params: FindStrParams) -> ToolReturnValue:
-33 | /         import os
-34 | |         import fnmatch
-   | |______________________^
-35 |
-36 |           def find_files(target_path: str) -> list[str]:
-   |
-help: Organize imports
-   |
-32 |     async def __call__(self, params: FindStrParams) -> ToolReturnValue:
-33 +         import fnmatch
-34 |         import os
-   -         import fnmatch
-35 |
-   |
-
-W293 [*] Blank line contains whitespace
-  --> src\kimix\tools\file\find_str.py:41:1
-   |
-39 |             if os.path.isfile(target_path):
-40 |                 return [target_path]
-41 |             
-   | ^^^^^^^^^^^^
-42 |             # Check if path contains glob patterns
-43 |             has_glob = '*' in target_path or '?' in target_path
-   |
-help: Remove whitespace from blank line
-   |
-40 |                 return [target_path]
-   -             
-41 +
-42 |             # Check if path contains glob patterns
-   |
-
-W293 [*] Blank line contains whitespace
-  --> src\kimix\tools\file\find_str.py:44:1
-   |
-42 |             # Check if path contains glob patterns
-43 |             has_glob = '*' in target_path or '?' in target_path
-44 |             
-   | ^^^^^^^^^^^^
-45 |             if has_glob:
-46 |                 # Split into base directory and pattern
-   |
-help: Remove whitespace from blank line
-   |
-43 |             has_glob = '*' in target_path or '?' in target_path
-   -             
-44 +
-45 |             if has_glob:
-   |
-
-F841 Local variable `dir_part` is assigned to but never used
-  --> src\kimix\tools\file\find_str.py:48:17
-   |
-46 |                 # Split into base directory and pattern
-47 |                 # Handle patterns like "dir/*.ext" or "dir/**.ext"
-48 |                 dir_part = target_path
-   |                 ^^^^^^^^
-49 |                 pattern = "*"
-   |
-help: Remove assignment to unused variable `dir_part`
-
-F841 Local variable `pattern` is assigned to but never used
-  --> src\kimix\tools\file\find_str.py:49:17
-   |
-47 |                 # Handle patterns like "dir/*.ext" or "dir/**.ext"
-48 |                 dir_part = target_path
-49 |                 pattern = "*"
-   |                 ^^^^^^^
-50 |                 
-51 |                 # Find the last path separator that is not part of a glob
-   |
-help: Remove assignment to unused variable `pattern`
-
-W293 [*] Blank line contains whitespace
-  --> src\kimix\tools\file\find_str.py:50:1
-   |
-48 |                 dir_part = target_path
-49 |                 pattern = "*"
-50 |                 
-   | ^^^^^^^^^^^^^^^^
-51 |                 # Find the last path separator that is not part of a glob
-52 |                 # We need to find where the directory ends and the file pattern begins
-   |
-help: Remove whitespace from blank line
-   |
-49 |                 pattern = "*"
-   -                 
-50 +
-51 |                 # Find the last path separator that is not part of a glob
-   |
-
-W293 [*] Blank line contains whitespace
-  --> src\kimix\tools\file\find_str.py:54:1
-   |
-52 |                 # We need to find where the directory ends and the file pattern begins
-53 |                 parts = target_path.replace('\\', '/').split('/')
-54 |                 
-   | ^^^^^^^^^^^^^^^^
-55 |                 # Rebuild to find the split point
-56 |                 base_dir = ""
-   |
-help: Remove whitespace from blank line
-   |
-53 |                 parts = target_path.replace('\\', '/').split('/')
-   -                 
-54 +
-55 |                 # Rebuild to find the split point
-   |
-
-W293 [*] Blank line contains whitespace
-  --> src\kimix\tools\file\find_str.py:58:1
-   |
-56 |                 base_dir = ""
-57 |                 pattern_part = ""
-58 |                 
-   | ^^^^^^^^^^^^^^^^
-59 |                 for i, part in enumerate(parts):
-60 |                     if '*' in part or '?' in part:
-   |
-help: Remove whitespace from blank line
-   |
-57 |                 pattern_part = ""
-   -                 
-58 +
-59 |                 for i, part in enumerate(parts):
-   |
-
-W293 [*] Blank line contains whitespace
-  --> src\kimix\tools\file\find_str.py:69:1
-   |
-67 |                     base_dir = os.path.dirname(target_path)
-68 |                     pattern_part = os.path.basename(target_path)
-69 |                 
-   | ^^^^^^^^^^^^^^^^
-70 |                 if not base_dir:
-71 |                     base_dir = "."
-   |
-help: Remove whitespace from blank line
-   |
-68 |                     pattern_part = os.path.basename(target_path)
-   -                 
-69 +
-70 |                 if not base_dir:
-   |
-
-W293 [*] Blank line contains whitespace
-  --> src\kimix\tools\file\find_str.py:72:1
-   |
-70 |                 if not base_dir:
-71 |                     base_dir = "."
-72 |                 
-   | ^^^^^^^^^^^^^^^^
-73 |                 # Check for recursive pattern (**)
-74 |                 if '**' in pattern_part:
-   |
-help: Remove whitespace from blank line
-   |
-71 |                     base_dir = "."
-   -                 
-72 +
-73 |                 # Check for recursive pattern (**)
-   |
-
-W293 [*] Blank line contains whitespace
-   --> src\kimix\tools\file\find_str.py:161:1
-    |
-159 |         try:
-160 |             files = find_files(params.path)
-161 |             
-    | ^^^^^^^^^^^^
-162 |             if not files:
-163 |                 return ToolOk(output=_maybe_export_output(f"No files found matching path: {params.path}"))
-    |
-help: Remove whitespace from blank line
-    |
-160 |             files = find_files(params.path)
-    -             
-161 +
-162 |             if not files:
-    |
-
-W293 [*] Blank line contains whitespace
-   --> src\kimix\tools\file\find_str.py:164:1
-    |
-162 |             if not files:
-163 |                 return ToolOk(output=_maybe_export_output(f"No files found matching path: {params.path}"))
-164 |             
-    | ^^^^^^^^^^^^
-165 |             all_matches = []
-166 |             for file_path in files:
-    |
-help: Remove whitespace from blank line
-    |
-163 |                 return ToolOk(output=_maybe_export_output(f"No files found matching path: {params.path}"))
-    -             
-164 +
-165 |             all_matches = []
-    |
-
-W293 [*] Blank line contains whitespace
-   --> src\kimix\tools\file\find_str.py:169:1
-    |
-167 |                 matches = find_in_file(file_path, params.content, params.case_sensitive)
-168 |                 all_matches.extend(matches)
-169 |             
-    | ^^^^^^^^^^^^
-170 |             if not all_matches:
-171 |                 return ToolOk(output=_maybe_export_output(f"No matches found for '{params.content}' in {params.path}"))
-    |
-help: Remove whitespace from blank line
-    |
-168 |                 all_matches.extend(matches)
-    -             
-169 +
-170 |             if not all_matches:
-    |
-
-W293 [*] Blank line contains whitespace
-   --> src\kimix\tools\file\find_str.py:172:1
-    |
-170 |             if not all_matches:
-171 |                 return ToolOk(output=_maybe_export_output(f"No matches found for '{params.content}' in {params.path}"))
-172 |             
-    | ^^^^^^^^^^^^
-173 |             # Format results
-174 |             result_lines = [
-    |
-help: Remove whitespace from blank line
-    |
-171 |                 return ToolOk(output=_maybe_export_output(f"No matches found for '{params.content}' in {params.path}"))
-    -             
-172 +
-173 |             # Format results
-    |
-
-W293 [*] Blank line contains whitespace
-   --> src\kimix\tools\file\find_str.py:178:1
-    |
-176 |                 ""
-177 |             ]
-178 |             
-    | ^^^^^^^^^^^^
-179 |             current_file = None
-180 |             for match in all_matches:
-    |
-help: Remove whitespace from blank line
-    |
-177 |             ]
-    -             
-178 +
-179 |             current_file = None
-    |
-
-W293 [*] Blank line contains whitespace
-   --> src\kimix\tools\file\find_str.py:185:1
-    |
-183 |                     result_lines.append(f"File: {current_file}")
-184 |                 result_lines.append(f"  Line {match['line']}, Col {match['column']}: {match['content']}")
-185 |             
-    | ^^^^^^^^^^^^
-186 |             return ToolOk(output=_maybe_export_output("\n".join(result_lines)))
-    |
-help: Remove whitespace from blank line
-    |
-184 |                 result_lines.append(f"  Line {match['line']}, Col {match['column']}: {match['content']}")
-    -             
-185 +
-186 |             return ToolOk(output=_maybe_export_output("\n".join(result_lines)))
-    |
-
-W293 [*] Blank line contains whitespace
-   --> src\kimix\tools\file\find_str.py:187:1
-    |
-186 |             return ToolOk(output=_maybe_export_output("\n".join(result_lines)))
-187 |             
-    | ^^^^^^^^^^^^
-188 |         except Exception as exc:
-189 |             return ToolError(
-    |
-help: Remove whitespace from blank line
-    |
-186 |             return ToolOk(output=_maybe_export_output("\n".join(result_lines)))
-    -             
-187 +
-188 |         except Exception as exc:
-    |
-
-Found 18 errors.
-[*] 16 fixable with the `--fix` option (2 hidden fixes can be enabled with the `--unsafe-fixes` option).
-[elapsed 0.4s, rc=1]
+All checks passed!
+[elapsed 0.1s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
-C901 `__call__` is too complex (33 > 12)
-  --> src\kimix\tools\file\find_str.py:32:15
+C901 `__call__` is too complex (32 > 12)
+  --> src\kimix\tools\file\find_str.py:36:15
    |
-30 |     params: type[FindStrParams] = FindStrParams
-31 |
-32 |     async def __call__(self, params: FindStrParams) -> ToolReturnValue:
+34 |     params: type[FindStrParams] = FindStrParams
+35 |
+36 |     async def __call__(self, params: FindStrParams) -> ToolReturnValue:
    |               ^^^^^^^^
-33 |         import os
-34 |         import fnmatch
+37 |         import fnmatch
+38 |         import os
    |
 
 C901 `find_files` is too complex (17 > 12)
-  --> src\kimix\tools\file\find_str.py:36:13
+  --> src\kimix\tools\file\find_str.py:40:13
    |
-34 |         import fnmatch
-35 |
-36 |         def find_files(target_path: str) -> list[str]:
+38 |         import os
+39 |
+40 |         def find_files(target_path: str) -> list[str]:
    |             ^^^^^^^^^^
-37 |             """Find files matching the path pattern."""
-38 |             # If path is a file, return it directly
+41 |             """Find files matching the path pattern."""
+42 |             # If path is a file, return it directly
    |
 
 Found 2 errors.
@@ -458,59 +103,67 @@ Found 2 errors.
   "files": [
     {
       "path": "src/kimix/tools/file/find_str.py",
-      "loc": 193,
-      "module_loc": 193,
+      "loc": 196,
+      "module_loc": 196,
       "functions": [
         {
           "name": "__call__",
-          "lineno": 32,
-          "loc": 162,
+          "lineno": 36,
+          "loc": 161,
           "complexity": 7,
           "branches": 6,
           "max_nesting": 3
         },
         {
           "name": "find_files",
-          "lineno": 36,
-          "loc": 68,
+          "lineno": 40,
+          "loc": 66,
           "complexity": 19,
           "branches": 18,
           "max_nesting": 6
         },
         {
           "name": "find_in_file",
-          "lineno": 105,
-          "loc": 53,
+          "lineno": 107,
+          "loc": 47,
           "complexity": 13,
           "branches": 12,
           "max_nesting": 3
+        },
+        {
+          "name": "_offload",
+          "lineno": 156,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
         }
       ],
       "longest_fn": {
         "name": "__call__",
-        "loc": 162
+        "loc": 161
       },
       "module_complexity": 19
     }
   ],
   "totals": {
     "files": 1,
-    "loc": 193,
-    "functions": 3
+    "loc": 196,
+    "functions": 4
   },
   "breaches": [
-    "src/kimix/tools/file/find_str.py::__call__ loc=162 > 120",
+    "src/kimix/tools/file/find_str.py::__call__ loc=161 > 120",
     "src/kimix/tools/file/find_str.py::find_files complexity=19 > 12",
     "src/kimix/tools/file/find_str.py::find_in_file complexity=13 > 12"
   ]
 }
-[elapsed 0.2s, rc=1]
+[elapsed 0.1s, rc=1]
 
 === uv run pytest tests/native/test_behavior_equivalence.py -q -rs ===
 ........................................................................ [ 63%]
 ..........................................                               [100%]
-114 passed in 1.43s
-[elapsed 2.6s, rc=0]
+114 passed in 0.96s
+[elapsed 1.8s, rc=0]
 
 === uv run --with pytest-cov pytest tests/native/test_behavior_equivalence.py --cov=kimix.tools.file.find_str ===
 ........................................................................ [ 63%]
@@ -520,8 +173,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                               Stmts   Miss Branch BrPart  Cover   Missing
 ------------------------------------------------------------------------------
-src\kimix\tools\file\find_str.py     106     48     54      4    49%   43-103, 112-113, 135, 141, 163, 188-189
+src\kimix\tools\file\find_str.py     104     44     50      2    51%   47-105, 114-115, 164, 191-192
 ------------------------------------------------------------------------------
-TOTAL                                106     48     54      4    49%
-114 passed in 1.28s
-[elapsed 5.1s, rc=0]
+TOTAL                                104     44     50      2    51%
+114 passed in 0.91s
+[elapsed 3.9s, rc=0]

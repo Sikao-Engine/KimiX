@@ -5,7 +5,7 @@
 | Gate | Result | Evidence |
 |---|---|---|
 | G0 scope | pass | files=4 tests=5 registration=- |
-| G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=34 longest_fn_loc=74 |
+| G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=34 longest_fn_loc=78 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | fail | floor=90 no coverage line recorded |
 | G4 behavior | fail | `kimi-cli/tests/tools/test_tools_init_gate.py` required=10 present=0 |
@@ -16,14 +16,14 @@
 
 | source | LOC |
 |---|---|
-| `kimi-cli/src/kimi_cli/tools/__init__.py` | 166 |
-| `kimi-cli/src/kimi_cli/tools/utils.py` | 298 |
+| `kimi-cli/src/kimi_cli/tools/__init__.py` | 167 |
+| `kimi-cli/src/kimi_cli/tools/utils.py` | 299 |
 | `kimi-cli/src/kimi_cli/tools/display.py` | 49 |
-| `kimi-cli/src/kimi_cli/tools/reason.py` | 103 |
+| `kimi-cli/src/kimi_cli/tools/reason.py` | 104 |
 
 Tests in scope: `kimi-cli/tests/tools/test_extract_key_argument.py`, `kimi-cli/tests/tools/test_utils.py`, `kimi-cli/tests/tools/test_reason.py`, `kimi-cli/tests/core/test_toolset.py`, `kimi-cli/tests/core/test_toolset_todo_redirects.py`
 
-Module LOC total: **616**
+Module LOC total: **619**
 
 ## 2. Behaviour map
 
@@ -34,7 +34,7 @@ Largest functions (by LOC):
 
 | function | LOC | complexity | branches | max nesting | file |
 |---|---|---|---|---|---|
-| `extract_key_argument` | 74 | 34 | 33 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/__init__.py` |
+| `extract_key_argument` | 78 | 34 | 33 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/__init__.py` |
 | `write` | 38 | 8 | 7 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/utils.py` |
 | `repair_tool_arguments` | 36 | 10 | 9 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/utils.py` |
 | `resolve_tool_class` | 33 | 9 | 8 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/__init__.py` |
@@ -54,8 +54,8 @@ verdict: **fail**
 * `ruff check` → `fail`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **616** → decision: **keep (below the 1200-LOC split threshold)**
-* longest function `extract_key_argument` = 74 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/__init__.py`)
+* module LOC **619** → decision: **keep (below the 1200-LOC split threshold)**
+* longest function `extract_key_argument` = 78 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/__init__.py`)
 * functions > 120 LOC: **0** · complexity > 12: **1**
 
 Threshold breaches recorded:
@@ -68,7 +68,7 @@ Top-5 by cyclomatic complexity:
 
 | function | complexity | LOC | file |
 |---|---|---|---|
-| `extract_key_argument` | 34 | 74 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/__init__.py` |
+| `extract_key_argument` | 34 | 78 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/__init__.py` |
 | `repair_tool_arguments` | 10 | 36 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/utils.py` |
 | `_first_web_extract_url` | 10 | 18 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/__init__.py` |
 | `resolve_tool_class` | 9 | 33 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/__init__.py` |
@@ -114,8 +114,8 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
-[elapsed 0.3s, rc=0]`
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+[elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
 
@@ -145,7 +145,7 @@ verdict: **major**
     "G1_simplicity": {
       "ruff": "fail",
       "complexity_max": 34,
-      "longest_fn_loc": 74,
+      "longest_fn_loc": 78,
       "loc_regression": "none",
       "vulture_hits": 0,
       "vulture_waived": 0
@@ -220,7 +220,7 @@ verdict: **major**
     ]
   },
   "gate_evidence": "reviews/tools/gates/C00.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.3s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

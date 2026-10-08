@@ -4,8 +4,8 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=1 tests=3 registration=`python` (src/kimix/tools/py/__init__.py:94) |
-| G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=28 longest_fn_loc=210 |
+| G0 scope | pass | files=1 tests=3 registration=`python` (src/kimix/tools/py/__init__.py:96) |
+| G1 simplicity | fail | ruff=pass C901=fail metrics=fail complexity_max=28 longest_fn_loc=210 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=85 no coverage line recorded |
 | G4 behavior | fail | `tests/unit/tools/test_python_gate.py` required=12 present=0 |
@@ -26,7 +26,7 @@ Module LOC total: **816**
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `python` | `src/kimix/tools/py/__init__.py:94` | CallableTool2 | - | True |
+| `python` | `src/kimix/tools/py/__init__.py:96` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
@@ -40,7 +40,7 @@ Largest functions (by LOC):
 | `_process_output` | 45 | 7 | 6 | 2 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
 | `_format_session_result` | 44 | 8 | 7 | 2 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
 | `_format_background_output` | 38 | 4 | 3 | 2 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
-| `_resolve_python_uncached` | 31 | 11 | 10 | 4 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
+| `_resolve_python_uncached` | 29 | 10 | 9 | 4 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
 | `_resolve_script_source` | 25 | 4 | 3 | 1 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
 | `_resolve_python` | 16 | 3 | 2 | 1 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
 | `_python_config` | 14 | 4 | 3 | 1 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
@@ -49,7 +49,7 @@ Largest functions (by LOC):
 
 verdict: **fail**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
 * module LOC **816** → decision: **keep (below the 1200-LOC split threshold)**
@@ -69,7 +69,7 @@ Top-5 by cyclomatic complexity:
 |---|---|---|---|
 | `_execute_code` | 28 | 210 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
 | `_start_interactive` | 11 | 74 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
-| `_resolve_python_uncached` | 11 | 31 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
+| `_resolve_python_uncached` | 10 | 29 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
 | `_continue_session` | 9 | 58 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
 | `_syntax_check_error` | 9 | 48 | `C:/dev/kimi-agent/src/kimix/tools/py/__init__.py` |
 
@@ -113,7 +113,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -139,7 +139,7 @@ verdict: **major**
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
+      "ruff": "pass",
       "complexity_max": 28,
       "longest_fn_loc": 210,
       "loc_regression": "none",
@@ -149,7 +149,7 @@ verdict: **major**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 1,
-      "open_medium": 2,
+      "open_medium": 1,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -174,16 +174,6 @@ verdict: **major**
     "G6_independent_rerun": "not-run"
   },
   "findings": [
-    {
-      "severity": "medium",
-      "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "src/kimix/tools/py/__init__.py",
-      "evidence": "reviews/tools/gates/K07.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "tests/unit/tools/test_python_gate.py::test_ruff_clean_in_scope"
-    },
     {
       "severity": "medium",
       "axis": "simplicity",
@@ -218,16 +208,15 @@ verdict: **major**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 4,
+    "gaps": 3,
     "gap_list": [
-      "ruff check fails on the in-scope files",
       "1 functions exceed complexity 12",
       "1 functions exceed 120 LOC",
       "G4 probe suite missing/insufficient (0/12)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/K07.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

@@ -4,8 +4,8 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=1 tests=1 registration=`Agent` (src/kimix/tools/agent/__init__.py:518), `AgentList` (src/kimix/tools/agent/__init__.py:1109), `AgentClose` (src/kimix/tools/agent/__init__.py:1146) |
-| G1 simplicity | fail | ruff=fail C901=pass metrics=fail complexity_max=19 longest_fn_loc=88 |
+| G0 scope | pass | files=1 tests=1 registration=`Agent` (src/kimix/tools/agent/__init__.py:514), `AgentList` (src/kimix/tools/agent/__init__.py:1101), `AgentClose` (src/kimix/tools/agent/__init__.py:1138) |
+| G1 simplicity | fail | ruff=pass C901=pass metrics=fail complexity_max=19 longest_fn_loc=88 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=85 no coverage line recorded |
 | G4 behavior | fail | `tests/kimix/test_agent_list_gate.py` required=5 present=0 |
@@ -16,19 +16,19 @@
 
 | source | LOC |
 |---|---|
-| `src/kimix/tools/agent/__init__.py` | 1179 |
+| `src/kimix/tools/agent/__init__.py` | 1171 |
 
 Tests in scope: `tests/kimix/test_agent_conversation.py`
 
-Module LOC total: **1179**
+Module LOC total: **1171**
 
 ## 2. Behaviour map
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `Agent` | `src/kimix/tools/agent/__init__.py:518` | CallableTool2 | - | True |
-| `AgentList` | `src/kimix/tools/agent/__init__.py:1109` | CallableTool2 | - | True |
-| `AgentClose` | `src/kimix/tools/agent/__init__.py:1146` | CallableTool2 | - | True |
+| `Agent` | `src/kimix/tools/agent/__init__.py:514` | CallableTool2 | - | True |
+| `AgentList` | `src/kimix/tools/agent/__init__.py:1101` | CallableTool2 | - | True |
+| `AgentClose` | `src/kimix/tools/agent/__init__.py:1138` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
@@ -36,7 +36,7 @@ Largest functions (by LOC):
 |---|---|---|---|---|---|
 | `_execute` | 88 | 8 | 7 | 3 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
 | `_resolve_session` | 73 | 9 | 8 | 2 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
-| `_prepare_run` | 71 | 11 | 10 | 4 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
+| `_prepare_run` | 67 | 11 | 10 | 4 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
 | `_notify_parent_background_finished` | 53 | 19 | 18 | 2 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
 | `_launch_background` | 45 | 6 | 5 | 1 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
 | `_update_store` | 39 | 5 | 4 | 3 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
@@ -51,10 +51,10 @@ Largest functions (by LOC):
 
 verdict: **fail**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `pass`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **1179** → decision: **keep (below the 1200-LOC split threshold)**
+* module LOC **1171** → decision: **keep (below the 1200-LOC split threshold)**
 * longest function `_execute` = 88 LOC (`C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py`)
 * functions > 120 LOC: **0** · complexity > 12: **2**
 
@@ -71,7 +71,7 @@ Top-5 by cyclomatic complexity:
 |---|---|---|---|
 | `_notify_parent_background_finished` | 19 | 53 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
 | `_format_history` | 14 | 26 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
-| `_prepare_run` | 11 | 71 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
+| `_prepare_run` | 11 | 67 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
 | `_resolve_session` | 9 | 73 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
 | `consume` | 9 | 23 | `C:/dev/kimi-agent/src/kimix/tools/agent/__init__.py` |
 
@@ -115,7 +115,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -141,7 +141,7 @@ verdict: **major**
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
+      "ruff": "pass",
       "complexity_max": 19,
       "longest_fn_loc": 88,
       "loc_regression": "none",
@@ -151,7 +151,7 @@ verdict: **major**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 1,
-      "open_medium": 2,
+      "open_medium": 1,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -179,16 +179,6 @@ verdict: **major**
     {
       "severity": "medium",
       "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "src/kimix/tools/agent/__init__.py",
-      "evidence": "reviews/tools/gates/K02.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "tests/kimix/test_agent_list_gate.py::test_ruff_clean_in_scope"
-    },
-    {
-      "severity": "medium",
-      "axis": "simplicity",
       "title": "2 functions exceed complexity 12",
       "file": "src/kimix/tools/agent/__init__.py",
       "evidence": "gates/K02.json complexity_max=19",
@@ -210,15 +200,14 @@ verdict: **major**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 3,
+    "gaps": 2,
     "gap_list": [
-      "ruff check fails on the in-scope files",
       "2 functions exceed complexity 12",
       "G4 probe suite missing/insufficient (0/5)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/K02.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

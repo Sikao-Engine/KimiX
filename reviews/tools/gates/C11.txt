@@ -1,80 +1,34 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
-[elapsed 0.0s, rc=0]
-?? .coverage
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C06.json
-?? reviews/tools/gates/C06.txt
-?? reviews/tools/gates/C07.json
-?? reviews/tools/gates/C07.txt
-?? reviews/tools/gates/C08.json
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.json
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.json
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tests/test_review_orchestrator.py
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
+[elapsed 0.1s, rc=0]
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+ M reviews/tools/gates/C06.json
+ M reviews/tools/gates/C06.txt
+ M reviews/tools/gates/C07.json
+ M reviews/tools/gates/C07.txt
+ M reviews/tools/gates/C08.json
+ M reviews/tools/gates/C08.txt
+ M reviews/tools/gates/C09.json
+ M reviews/tools/gates/C09.txt
+ M reviews/tools/gates/C10.json
+ M reviews/tools/gates/C10.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check kimi-cli/src/kimi_cli/tools/web/search.py kimi-cli/src/kimi_cli/tools/web/providers.py kimi-cli/src/kimi_cli/tools/web/content.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> kimi-cli\src\kimi_cli\tools\web\search.py:1:1
-   |
- 1 | / import inspect
- 2 | | from typing import Any, override
- 3 | |
- 4 | | from kosong.tooling import CallableTool2, ToolReturnValue
- 5 | | from pydantic import BaseModel, Field
- 6 | |
- 7 | | from kimi_cli.config import Config
- 8 | | from kimi_cli.soul.agent import Runtime
- 9 | | from kimi_cli.tools import SkipThisTool
-10 | | from kimi_cli.tools.utils import ToolResultBuilder
-11 | | from kimi_cli.utils.logging import logger as _logging_logger
-   | |____________________________________________________________^
-12 |
-13 |   # Module-level ``logger`` attribute kept so tests can patch
-   |
-help: Organize imports
-   |
-3  |
-   - from kosong.tooling import CallableTool2, ToolReturnValue
-4  | from pydantic import BaseModel, Field
---------------------------------------------------------------------------------
-10 | from kimi_cli.utils.logging import logger as _logging_logger
-11 + from kosong.tooling import CallableTool2, ToolReturnValue
-12 |
-   |
-
-Found 1 error.
-[*] 1 fixable with the `--fix` option.
-[elapsed 0.4s, rc=1]
+All checks passed!
+[elapsed 0.2s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
 All checks passed!
@@ -1028,8 +982,8 @@ All checks passed!
 === uv run pytest kimi-cli/tests/tools/test_web_search_dispatch.py kimi-cli/tests/tools/test_web_providers.py kimi-cli/tests/tools/test_web_providers_extra.py -q -rs ===
 ........................................................................ [ 69%]
 ...............................                                          [100%]
-103 passed in 0.69s
-[elapsed 2.5s, rc=0]
+103 passed in 0.65s
+[elapsed 2.4s, rc=0]
 
 === uv run --with pytest-cov pytest kimi-cli/tests/tools/test_web_search_dispatch.py kimi-cli/tests/tools/test_web_providers.py kimi-cli/tests/tools/test_web_providers_extra.py --cov=kimi_cli.tools.web.search ===
 ........................................................................ [ 69%]
@@ -1042,5 +996,5 @@ Name                                        Stmts   Miss Branch BrPart  Cover   
 kimi-cli\src\kimi_cli\tools\web\search.py      63      4     20      4    90%   88, 104, 116, 123
 ---------------------------------------------------------------------------------------
 TOTAL                                          63      4     20      4    90%
-103 passed in 0.77s
-[elapsed 4.8s, rc=0]
+103 passed in 0.73s
+[elapsed 4.5s, rc=0]

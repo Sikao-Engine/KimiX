@@ -4,7 +4,7 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=10 tests=10 registration=`ReadFile` (kimi-cli/src/kimi_cli/tools/file/read.py:449) |
+| G0 scope | pass | files=10 tests=10 registration=`ReadFile` (kimi-cli/src/kimi_cli/tools/file/read.py:447) |
 | G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=35 longest_fn_loc=220 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | fail | floor=85 no coverage line recorded |
@@ -16,26 +16,26 @@
 
 | source | LOC |
 |---|---|
-| `kimi-cli/src/kimi_cli/tools/file/read.py` | 1826 |
+| `kimi-cli/src/kimi_cli/tools/file/read.py` | 1824 |
 | `kimi-cli/src/kimi_cli/tools/file/read.md` | 10 |
 | `kimi-cli/src/kimi_cli/tools/file/read_extract.py` | 330 |
-| `kimi-cli/src/kimi_cli/tools/file/read_archive.py` | 341 |
+| `kimi-cli/src/kimi_cli/tools/file/read_archive.py` | 336 |
 | `kimi-cli/src/kimi_cli/tools/file/read_sqlite.py` | 500 |
-| `kimi-cli/src/kimi_cli/tools/file/read_pdf_pages.py` | 186 |
+| `kimi-cli/src/kimi_cli/tools/file/read_pdf_pages.py` | 185 |
 | `kimi-cli/src/kimi_cli/tools/file/read_profiles.py` | 429 |
 | `kimi-cli/src/kimi_cli/tools/file/read_markit.py` | 267 |
 | `kimi-cli/src/kimi_cli/tools/file/read_media_shared.py` | 119 |
-| `kimi-cli/src/kimi_cli/tools/file/utils.py` | 316 |
+| `kimi-cli/src/kimi_cli/tools/file/utils.py` | 315 |
 
 Tests in scope: `kimi-cli/tests/tools/test_read_file.py`, `kimi-cli/tests/tools/test_read_extract.py`, `kimi-cli/tests/tools/test_read_conflict.py`, `tests/unit/tools/test_read_archive.py`, `tests/unit/tools/test_read_markit.py`, `tests/unit/tools/test_read_pdf_pages.py`, `tests/unit/tools/test_read_profiles.py`, `tests/unit/tools/test_read_rich_dispatch.py`, `tests/unit/tools/test_read_sqlite.py`, `tests/unit/tools/test_read_window.py`
 
-Module LOC total: **4314**
+Module LOC total: **4305**
 
 ## 2. Behaviour map
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `ReadFile` | `kimi-cli/src/kimi_cli/tools/file/read.py:449` | CallableTool2 | - | True |
+| `ReadFile` | `kimi-cli/src/kimi_cli/tools/file/read.py:447` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
@@ -52,7 +52,7 @@ Largest functions (by LOC):
 | `_convert_docx_to_markdown` | 69 | 19 | 18 | 5 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_markit.py` |
 | `render_cpu_profile` | 67 | 14 | 13 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_profiles.py` |
 | `render_pdf_page` | 66 | 8 | 7 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_pdf_pages.py` |
-| `list_directory` | 62 | 35 | 34 | 5 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_archive.py` |
+| `_compress_pdf_page` | 61 | 7 | 6 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_pdf_pages.py` |
 
 ## 3. S1 Simplicity (G1 detail)
 
@@ -61,7 +61,7 @@ verdict: **fail**
 * `ruff check` → `fail`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **4314** → decision: **split (plan)**
+* module LOC **4305** → decision: **split (plan)**
 * longest function `_read_single_file` = 220 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read.py`)
 * functions > 120 LOC: **3** · complexity > 12: **17**
 
@@ -94,7 +94,7 @@ Top-5 by cyclomatic complexity:
 
 | function | complexity | LOC | file |
 |---|---|---|---|
-| `list_directory` | 35 | 62 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_archive.py` |
+| `list_directory` | 35 | 60 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read_archive.py` |
 | `_read_single_file` | 28 | 220 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read.py` |
 | `_read_rich_format` | 28 | 136 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read.py` |
 | `__call__` | 26 | 164 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/file/read.py` |
@@ -140,7 +140,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -263,7 +263,7 @@ verdict: **major**
     ]
   },
   "gate_evidence": "reviews/tools/gates/C05.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

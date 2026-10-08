@@ -1,132 +1,28 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
-?? .coverage
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C06.json
-?? reviews/tools/gates/C06.txt
-?? reviews/tools/gates/C07.json
-?? reviews/tools/gates/C07.txt
-?? reviews/tools/gates/C08.json
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tests/test_review_orchestrator.py
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+ M reviews/tools/gates/C06.json
+ M reviews/tools/gates/C06.txt
+ M reviews/tools/gates/C07.json
+ M reviews/tools/gates/C07.txt
+ M reviews/tools/gates/C08.json
+ M reviews/tools/gates/C08.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check kimi-cli/src/kimi_cli/tools/file/write.py kimi-cli/src/kimi_cli/tools/file/check_fmt.py kimi-cli/src/kimi_cli/tools/file/parse_check.py kimi-cli/src/kimi_cli/tools/file/auto_repair.py kimi-cli/src/kimi_cli/tools/file/auto_generated.py kimi-cli/src/kimi_cli/tools/file/blackbox.py kimi-cli/src/kimi_cli/tools/file/conflict_detect.py kimi-cli/src/kimi_cli/tools/file/snapshot_store.py kimi-cli/src/kimi_cli/tools/file/fs_cache.py kimi-cli/src/kimi_cli/tools/file/edit_safety.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> kimi-cli\src\kimi_cli\tools\file\auto_generated.py:24:1
-   |
-22 |   """
-23 |
-24 | / from __future__ import annotations
-25 | |
-26 | | from collections import OrderedDict
-27 | | from pathlib import Path
-28 | |
-29 | | import regex
-30 | | from kosong.tooling import ToolError
-31 | |
-32 | | from kimi_cli.session import Session
-   | |____________________________________^
-33 |
-34 |   CHECK_BYTE_COUNT = 1024
-   |
-help: Organize imports
-   |
-29 | import regex
-   - from kosong.tooling import ToolError
-30 |
-31 | from kimi_cli.session import Session
-32 + from kosong.tooling import ToolError
-33 |
-   |
-
-SIM114 [*] Combine `if` branches using logical `or` operator
-   --> kimi-cli\src\kimi_cli\tools\file\auto_generated.py:168:13
-    |
-166 |           if in_block is not None:
-167 |               collected.append(stripped)
-168 | /             if in_block == "slash" and "*/" in stripped:
-169 | |                 in_block = None
-170 | |             elif in_block == "html" and "-->" in stripped:
-171 | |                 in_block = None
-    | |_______________________________^
-172 |               started = True
-173 |               continue
-    |
-help: Combine `if` branches
-    |
-167 |             collected.append(stripped)
-    -             if in_block == "slash" and "*/" in stripped:
-    -                 in_block = None
-    -             elif in_block == "html" and "-->" in stripped:
-168 +             if in_block == "slash" and "*/" in stripped or in_block == "html" and "-->" in stripped:
-169 |                 in_block = None
-    |
-
-UP037 [*] Remove quotes from type annotation
-   --> kimi-cli\src\kimi_cli\tools\file\auto_generated.py:257:16
-    |
-255 | # ── detection cache (port of the LRU(10) keyed by (mtime, size)) ─────────────
-256 |
-257 | _MARKER_CACHE: "OrderedDict[str, tuple[int, int, str | None]]" = OrderedDict()
-    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-258 | _MARKER_CACHE_MAX = 10
-    |
-help: Remove quotes
-    |
-256 |
-    - _MARKER_CACHE: "OrderedDict[str, tuple[int, int, str | None]]" = OrderedDict()
-257 + _MARKER_CACHE: OrderedDict[str, tuple[int, int, str | None]] = OrderedDict()
-258 | _MARKER_CACHE_MAX = 10
-    |
-
-UP035 [*] Import from `collections.abc` instead: `Awaitable`, `Callable`
-  --> kimi-cli\src\kimi_cli\tools\file\auto_repair.py:8:1
-   |
- 6 | from dataclasses import dataclass
- 7 | from pathlib import Path
- 8 | from typing import Awaitable, Callable
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
- 9 |
-10 | from rapidfuzz.distance import Levenshtein
-   |
-help: Import from `collections.abc`
-  |
-7 | from pathlib import Path
-  - from typing import Awaitable, Callable
-8 + from collections.abc import Awaitable, Callable
-9 |
-  |
-
 E501 Line too long (108 > 100)
    --> kimi-cli\src\kimi_cli\tools\file\auto_repair.py:119:101
     |
@@ -134,28 +30,6 @@ E501 Line too long (108 > 100)
     |                                                                                                     ^^^^^^^^
 120 |     """Find the smallest hunk set whose reversion restores the parse."""
 121 |     n = len(hunks)
-    |
-
-E741 Ambiguous variable name: `l`
-   --> kimi-cli\src\kimi_cli\tools\file\auto_repair.py:208:24
-    |
-206 |     out = candidate.split("\n")
-207 |     opcodes = Levenshtein.opcodes(
-208 |         [l.strip() for l in src_lines],
-    |                        ^
-209 |         [l.strip() for l in out],
-210 |     )
-    |
-
-E741 Ambiguous variable name: `l`
-   --> kimi-cli\src\kimi_cli\tools\file\auto_repair.py:209:24
-    |
-207 |     opcodes = Levenshtein.opcodes(
-208 |         [l.strip() for l in src_lines],
-209 |         [l.strip() for l in out],
-    |                        ^
-210 |     )
-211 |     merged: list[str] = []
     |
 
 E501 Line too long (111 > 100)
@@ -213,17 +87,6 @@ E501 Line too long (118 > 100)
 267 |         )
     |
 
-B007 Loop control variable `attempt` not used within loop body
-   --> kimi-cli\src\kimi_cli\tools\file\auto_repair.py:296:9
-    |
-295 |     previous_attempt: str | None = None
-296 |     for attempt in range(1, MAX_ATTEMPTS + 1):
-    |         ^^^^^^^
-297 |         try:
-298 |             prompt = _build_prompt(region, previous_attempt)
-    |
-help: Rename unused `attempt` to `_attempt`
-
 E501 Line too long (114 > 100)
    --> kimi-cli\src\kimi_cli\tools\file\auto_repair.py:299:101
     |
@@ -255,92 +118,6 @@ E501 Line too long (105 > 100)
 42 |         self._log_path = log_path
 43 |         self._model = model
    |
-
-UP015 [*] Unnecessary mode argument
-   --> kimi-cli\src\kimi_cli\tools\file\check_fmt.py:109:30
-    |
-107 |     try:
-108 |         js = None
-109 |         with open(file_path, "r", encoding="utf-8") as f:
-    |                              ^^^
-110 |             js = orjson.loads(f.read())
-111 |         if json_callback:
-    |
-help: Remove mode argument
-    |
-108 |         js = None
-    -         with open(file_path, "r", encoding="utf-8") as f:
-109 +         with open(file_path, encoding="utf-8") as f:
-110 |             js = orjson.loads(f.read())
-    |
-
-UP035 [*] Import from `collections.abc` instead: `Sequence`
-  --> kimi-cli\src\kimi_cli\tools\file\conflict_detect.py:16:1
-   |
-15 | from dataclasses import dataclass
-16 | from typing import TYPE_CHECKING, Literal, Sequence
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-17 |
-18 | import regex as re
-   |
-help: Import from `collections.abc`
-   |
-15 | from dataclasses import dataclass
-   - from typing import TYPE_CHECKING, Literal, Sequence
-16 + from typing import TYPE_CHECKING, Literal
-17 + from collections.abc import Sequence
-18 |
-   |
-
-F822 Undefined name `EchoTrimLimit` in `__all__`
-  --> kimi-cli\src\kimi_cli\tools\file\conflict_detect.py:30:5
-   |
-28 |     "SCAN_FILE_DEFAULT_MAX_BYTES",
-29 |     "PREVIEW_SIDE_LINES",
-30 |     "EchoTrimLimit",
-   |     ^^^^^^^^^^^^^^^
-31 |     "ConflictBlock",
-32 |     "ConflictEntry",
-   |
-
-B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-   --> kimi-cli\src\kimi_cli\tools\file\conflict_detect.py:304:9
-    |
-302 |               data = fh.read(max_bytes + 1)
-303 |       except OSError as exc:  # pragma: no cover - caller guards
-304 | /         raise ConflictError(
-305 | |                 f"Cannot scan {absolute_path}: {exc}"
-306 | |             )
-    | |_____________^
-307 |       truncated = len(data) > max_bytes
-308 |       if truncated:
-    |
-
-F841 Local variable `old` is assigned to but never used
-   --> kimi-cli\src\kimi_cli\tools\file\conflict_detect.py:369:13
-    |
-367 |         if entry_id is not None and entry_id in self._entries:
-368 |             # Overwrite the recorded region (ids survive re-reads).
-369 |             old = self._entries[entry_id]
-    |             ^^^
-370 |             entry = ConflictEntry(
-371 |                 start_line=block.start_line,
-    |
-help: Remove assignment to unused variable `old`
-
-B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
-   --> kimi-cli\src\kimi_cli\tools\file\conflict_detect.py:480:9
-    |
-478 |           entry_id = int(id_part)
-479 |       except ValueError:
-480 | /         raise ConflictError(
-481 | |                 f"Invalid conflict id '{id_part}' in '{raw}'. "
-482 | |                 "Expected conflict://<N> or conflict://<N>/<ours|theirs|base>."
-483 | |             )
-    | |_____________^
-484 |       if entry_id <= 0:
-485 |           raise ConflictError(
-    |
 
 E501 Line too long (106 > 100)
    --> kimi-cli\src\kimi_cli\tools\file\conflict_detect.py:653:101
@@ -472,127 +249,6 @@ E501 Line too long (103 > 100)
 83 |                         "Review the repaired region; adjust it if the repair guessed wrong."
    |
 
-SIM105 Use `contextlib.suppress(ValueError)` instead of `try`-`except`-`pass`
-  --> kimi-cli\src\kimi_cli\tools\file\fs_cache.py:47:5
-   |
-45 |   def unregister_invalidator(fn: Callable[[str], None]) -> None:
-46 |       """Remove a previously registered invalidator (test hook)."""
-47 | /     try:
-48 | |         _INVALIDATORS.remove(fn)
-49 | |     except ValueError:
-50 | |         pass
-   | |____________^
-help: Replace `try`-`except`-`pass` with `with contextlib.suppress(ValueError): ...`
-
-UP035 [*] Import from `collections.abc` instead: `Iterable`
-  --> kimi-cli\src\kimi_cli\tools\file\snapshot_store.py:30:1
-   |
-28 | from dataclasses import dataclass, field
-29 | from pathlib import Path
-30 | from typing import TYPE_CHECKING, Iterable
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-31 |
-32 | import xxhash
-   |
-help: Import from `collections.abc`
-   |
-29 | from pathlib import Path
-   - from typing import TYPE_CHECKING, Iterable
-30 + from typing import TYPE_CHECKING
-31 + from collections.abc import Iterable
-32 |
-   |
-
-SIM105 Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`
-   --> kimi-cli\src\kimi_cli\tools\file\snapshot_store.py:447:5
-    |
-445 |       except Exception:
-446 |           tag = None
-447 | /     try:
-448 | |         get_edit_snapshot_store(session).record(absolute_path, text, seen_lines)
-449 | |     except Exception:
-450 | |         pass
-    | |____________^
-451 |       return tag
-    |
-help: Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`
-
-I001 [*] Import block is un-sorted or un-formatted
-  --> kimi-cli\src\kimi_cli\tools\file\write.py:1:1
-   |
- 1 | / import contextlib
- 2 | | from typing import Literal, override
- 3 | |
- 4 | | import json_repair
- 5 | | from kaos.path import KaosPath
- 6 | | from kosong.tooling import CallableTool2, DisplayBlock, ToolError, ToolReturnValue, alias_note
- 7 | | from pydantic import AliasChoices, BaseModel, Field, field_validator
- 8 | |
- 9 | | from kimi_cli import logger
-10 | | from kimi_cli.session import Session
-11 | | from kimi_cli.soul.agent import Runtime
-12 | | from kimi_cli.soul.approval import Approval
-13 | | from kimi_cli.tools.display import DiffDisplayBlock
-14 | | from kimi_cli.tools.file import FileActions
-15 | | from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
-16 | | from kimi_cli.tools.file.check_fmt import (
-17 | |     check_json_text,
-18 | |     check_toml_text,
-19 | |     check_xml_text,
-20 | |     check_yaml_text,
-21 | | )
-22 | | from kimi_cli.utils.diff import build_diff_blocks, format_unified_diff
-23 | | from kimi_cli.utils.path import (
-24 | |     is_within_directory,
-25 | |     is_within_workspace,
-26 | |     kaos_path_from_tool_input,
-27 | |     kaos_path_from_user_input,
-28 | | )
-29 | | from kimi_cli.vfs import VFS
-30 | |
-31 | | from .auto_generated import assert_editable_file
-32 | | from .conflict_detect import (
-33 | |     ConflictError,
-34 | |     conflict_region_present,
-35 | |     conflict_regions_equal,
-36 | |     expand_content_tokens,
-37 | |     find_dangling_openers,
-38 | |     get_conflict_history,
-39 | |     parse_bulk_directives,
-40 | |     parse_conflict_uri,
-41 | |     scan_conflict_lines,
-42 | |     splice_conflict,
-43 | | )
-44 | | from .fs_cache import invalidate_fs_scan_after_write
-45 | | from .snapshot_store import record_content_snapshot
-46 | | from .utils import resolve_vfs
-   | |______________________________^
-47 |
-48 |   _BASE_DESCRIPTION = (
-   |
-help: Organize imports
-   |
-4  | import json_repair
-   - from kaos.path import KaosPath
-   - from kosong.tooling import CallableTool2, DisplayBlock, ToolError, ToolReturnValue, alias_note
-5  | from pydantic import AliasChoices, BaseModel, Field, field_validator
-6  |
-7  + from kaos.path import KaosPath
-8  | from kimi_cli import logger
---------------------------------------------------------------------------------
-13 | from kimi_cli.tools.file import FileActions
-   - from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
-14 | from kimi_cli.tools.file.check_fmt import (
---------------------------------------------------------------------------------
-19 | )
-20 + from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
-21 | from kimi_cli.utils.diff import build_diff_blocks, format_unified_diff
---------------------------------------------------------------------------------
-28 | from kimi_cli.vfs import VFS
-29 + from kosong.tooling import CallableTool2, DisplayBlock, ToolError, ToolReturnValue, alias_note
-30 |
-   |
-
 E501 Line too long (103 > 100)
    --> kimi-cli\src\kimi_cli\tools\file\write.py:163:101
     |
@@ -627,110 +283,96 @@ E501 Line too long (103 > 100)
     |
 
 E501 Line too long (103 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:237:101
+   --> kimi-cli\src\kimi_cli\tools\file\write.py:242:101
     |
-235 |                 return err
-236 |
-237 |             p = await resolve_vfs(params.file_path, self._vfs, for_write=True, work_dir=self._work_dir)
+240 |                 return err
+241 |
+242 |             p = await resolve_vfs(params.file_path, self._vfs, for_write=True, work_dir=self._work_dir)
     |                                                                                                     ^^^
-238 |             display_p = str(p).replace("\\", "/")
+243 |             display_p = str(p).replace("\\", "/")
     |
 
 E501 Line too long (115 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:242:101
+   --> kimi-cli\src\kimi_cli\tools\file\write.py:247:101
     |
-240 |             if await p.is_dir():
-241 |                 return ToolError(
-242 |                     message=f"{'[out of work-dir] ' if _outside else ''}`{display_p}` is a directory, not a file.",
+245 |             if await p.is_dir():
+246 |                 return ToolError(
+247 |                     message=f"{'[out of work-dir] ' if _outside else ''}`{display_p}` is a directory, not a file.",
     |                                                                                                     ^^^^^^^^^^^^^^^
-243 |                     brief="Path is a directory",
-244 |                 )
+248 |                     brief="Path is a directory",
+249 |                 )
     |
 
 E501 Line too long (136 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:254:101
+   --> kimi-cli\src\kimi_cli\tools\file\write.py:259:101
     |
-252 | …     except OSError as e:
-253 | …         return ToolError(
-254 | …             message=f"{'[out of work-dir] ' if _outside else ''}Failed to create parent directory for {display_p}: {e}",
+257 | …     except OSError as e:
+258 | …         return ToolError(
+259 | …             message=f"{'[out of work-dir] ' if _outside else ''}Failed to create parent directory for {display_p}: {e}",
     |                                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-255 | …             brief="Parent directory not found",
-256 | …         )
+260 | …             brief="Parent directory not found",
+261 | …         )
     |
 
 E501 Line too long (149 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:259:101
+   --> kimi-cli\src\kimi_cli\tools\file\write.py:264:101
     |
-257 | …
-258 | …
-259 | …_outside else ''}Parent directory does not exist: {parent}. Set mkdir=True to create it.",
+262 | …
+263 | …
+264 | …_outside else ''}Parent directory does not exist: {parent}. Set mkdir=True to create it.",
     |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-260 | …
-261 | …
+265 | …
+266 | …
     |
-
-SIM102 Use a single `if` statement instead of nested `if` statements
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:304:13
-    |
-302 |               # Try to repair broken JSON before building diff (if auto_fix_json is enabled)
-303 |               _repair_diff: str | None = None
-304 | /             if is_json and fmt_error:
-305 | |                 if params.auto_fix_json:
-    | |________________________________________^
-306 |                       try:
-307 |                           repaired_text = json_repair.repair_json(new_text, return_objects=False)
-    |
-help: Combine `if` statements using `and`
 
 E501 Line too long (136 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:443:101
+   --> kimi-cli\src\kimi_cli\tools\file\write.py:447:101
     |
-442 | …
-443 | …tside else ''}File successfully {action_desc}, but {fmt_error} Path: {display_path}"
+446 | …
+447 | …tside else ''}File successfully {action_desc}, but {fmt_error} Path: {display_path}"
     |                                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-444 | …
-445 | …s)
+448 | …
+449 | …s)
     |
 
 E501 Line too long (119 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:506:101
+   --> kimi-cli\src\kimi_cli\tools\file\write.py:510:101
     |
-504 |                 )
-505 |             return ToolError(
-506 |                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to write to {display_path}. Error: {e}.",
+508 |                 )
+509 |             return ToolError(
+510 |                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to write to {display_path}. Error: {e}.",
     |                                                                                                     ^^^^^^^^^^^^^^^^^^^
-507 |                 brief="Failed to write file",
-508 |             )
+511 |                 brief="Failed to write file",
+512 |             )
     |
 
 E501 Line too long (103 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:546:101
+   --> kimi-cli\src\kimi_cli\tools\file\write.py:550:101
     |
-544 |                             "the file ends inside an unclosed conflict block.\n"
-545 |                             f"{lines_str}\n"
-546 |                             "Resolve the conflict first, or set allow_conflicts=True to append anyway."
+548 |                             "the file ends inside an unclosed conflict block.\n"
+549 |                             f"{lines_str}\n"
+550 |                             "Resolve the conflict first, or set allow_conflicts=True to append anyway."
     |                                                                                                     ^^^
-547 |                         ),
-548 |                         brief="Conflict markers detected",
+551 |                         ),
+552 |                         brief="Conflict markers detected",
     |
 
 E501 Line too long (112 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:569:101
+   --> kimi-cli\src\kimi_cli\tools\file\write.py:573:101
     |
-567 |                     f" Note: `{display_path}` still contains {len(old_blocks)} unresolved "
-568 |                     "conflict marker block(s); the appended text was clean. "
-569 |                     "Resolve them via `read <path>:conflicts` + `write({ path: \"conflict://<N>\", content })`."
+571 |                     f" Note: `{display_path}` still contains {len(old_blocks)} unresolved "
+572 |                     "conflict marker block(s); the appended text was clean. "
+573 |                     "Resolve them via `read <path>:conflicts` + `write({ path: \"conflict://<N>\", content })`."
     |                                                                                                     ^^^^^^^^^^^^
-570 |                 )
-571 |             return None, note, old_had_blocks
+574 |                 )
+575 |             return None, note, old_had_blocks
     |
 
-Found 50 errors.
-[*] 8 fixable with the `--fix` option (5 hidden fixes can be enabled with the `--unsafe-fixes` option).
+Found 32 errors.
 [elapsed 0.1s, rc=1]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
-C901 `extract_leading_header_comment_text` is too complex (17 > 12)
+C901 `extract_leading_header_comment_text` is too complex (16 > 12)
    --> kimi-cli\src\kimi_cli\tools\file\auto_generated.py:140:5
     |
 140 | def extract_leading_header_comment_text(
@@ -748,25 +390,25 @@ C901 `scan_conflict_lines` is too complex (16 > 12)
 164 | ) -> list[ConflictBlock]:
     |
 
-C901 `__call__` is too complex (41 > 12)
+C901 `__call__` is too complex (40 > 12)
    --> kimi-cli\src\kimi_cli\tools\file\write.py:212:15
     |
 211 |     @override
 212 |     async def __call__(self, params: Params) -> ToolReturnValue:
     |               ^^^^^^^^
 213 |         display_path = params.file_path.replace("\\", "/")
-214 |         # TODO: checks:
+214 |         # The former `TODO: checks:` block here asked for a "path may contain secrets"
     |
 
 C901 `_resolve_all_conflicts` is too complex (19 > 12)
-   --> kimi-cli\src\kimi_cli\tools\file\write.py:704:15
+   --> kimi-cli\src\kimi_cli\tools\file\write.py:708:15
     |
-702 |         )
-703 |
-704 |     async def _resolve_all_conflicts(self, content: str) -> ToolReturnValue:
+706 |         )
+707 |
+708 |     async def _resolve_all_conflicts(self, content: str) -> ToolReturnValue:
     |               ^^^^^^^^^^^^^^^^^^^^^^
-705 |         history = get_conflict_history(self._session)
-706 |         all_entries = history.entries()
+709 |         history = get_conflict_history(self._session)
+710 |         all_entries = history.entries()
     |
 
 Found 4 errors.
@@ -777,8 +419,8 @@ Found 4 errors.
   "files": [
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/write.py",
-      "loc": 834,
-      "module_loc": 834,
+      "loc": 838,
+      "module_loc": 838,
       "functions": [
         {
           "name": "_validate_mode",
@@ -807,14 +449,14 @@ Found 4 errors.
         {
           "name": "__call__",
           "lineno": 212,
-          "loc": 297,
+          "loc": 301,
           "complexity": 64,
           "branches": 63,
           "max_nesting": 5
         },
         {
           "name": "_conflict_guard",
-          "lineno": 510,
+          "lineno": 514,
           "loc": 77,
           "complexity": 13,
           "branches": 12,
@@ -822,7 +464,7 @@ Found 4 errors.
         },
         {
           "name": "_conflict_markers_error",
-          "lineno": 588,
+          "lineno": 592,
           "loc": 19,
           "complexity": 2,
           "branches": 1,
@@ -830,7 +472,7 @@ Found 4 errors.
         },
         {
           "name": "_dispatch_conflict_write",
-          "lineno": 608,
+          "lineno": 612,
           "loc": 22,
           "complexity": 5,
           "branches": 4,
@@ -838,7 +480,7 @@ Found 4 errors.
         },
         {
           "name": "_resolve_single_conflict_by_id",
-          "lineno": 631,
+          "lineno": 635,
           "loc": 72,
           "complexity": 12,
           "branches": 11,
@@ -846,7 +488,7 @@ Found 4 errors.
         },
         {
           "name": "_resolve_all_conflicts",
-          "lineno": 704,
+          "lineno": 708,
           "loc": 131,
           "complexity": 28,
           "branches": 27,
@@ -855,7 +497,7 @@ Found 4 errors.
       ],
       "longest_fn": {
         "name": "__call__",
-        "loc": 297
+        "loc": 301
       },
       "module_complexity": 64
     },
@@ -1129,8 +771,8 @@ Found 4 errors.
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/auto_generated.py",
-      "loc": 345,
-      "module_loc": 345,
+      "loc": 343,
+      "module_loc": 343,
       "functions": [
         {
           "name": "strip_bom",
@@ -1159,14 +801,14 @@ Found 4 errors.
         {
           "name": "extract_leading_header_comment_text",
           "lineno": 140,
-          "loc": 66,
+          "loc": 64,
           "complexity": 26,
           "branches": 25,
           "max_nesting": 5
         },
         {
           "name": "detect_auto_generated_marker",
-          "lineno": 208,
+          "lineno": 206,
           "loc": 20,
           "complexity": 5,
           "branches": 4,
@@ -1174,7 +816,7 @@ Found 4 errors.
         },
         {
           "name": "build_auto_generated_error",
-          "lineno": 230,
+          "lineno": 228,
           "loc": 12,
           "complexity": 1,
           "branches": 0,
@@ -1182,7 +824,7 @@ Found 4 errors.
         },
         {
           "name": "should_block_auto_generated",
-          "lineno": 244,
+          "lineno": 242,
           "loc": 9,
           "complexity": 3,
           "branches": 2,
@@ -1190,7 +832,7 @@ Found 4 errors.
         },
         {
           "name": "_clear_marker_cache",
-          "lineno": 261,
+          "lineno": 259,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -1198,7 +840,7 @@ Found 4 errors.
         },
         {
           "name": "_cached_marker",
-          "lineno": 266,
+          "lineno": 264,
           "loc": 26,
           "complexity": 7,
           "branches": 6,
@@ -1206,7 +848,7 @@ Found 4 errors.
         },
         {
           "name": "_check_path_guard",
-          "lineno": 297,
+          "lineno": 295,
           "loc": 16,
           "complexity": 6,
           "branches": 5,
@@ -1214,7 +856,7 @@ Found 4 errors.
         },
         {
           "name": "assert_editable_file",
-          "lineno": 315,
+          "lineno": 313,
           "loc": 11,
           "complexity": 1,
           "branches": 0,
@@ -1222,7 +864,7 @@ Found 4 errors.
         },
         {
           "name": "assert_editable_file_content",
-          "lineno": 328,
+          "lineno": 326,
           "loc": 18,
           "complexity": 4,
           "branches": 3,
@@ -1231,7 +873,7 @@ Found 4 errors.
       ],
       "longest_fn": {
         "name": "extract_leading_header_comment_text",
-        "loc": 66
+        "loc": 64
       },
       "module_complexity": 26
     },
@@ -1594,7 +1236,7 @@ Found 4 errors.
       "functions": [
         {
           "name": "normalize_to_lf",
-          "lineno": 52,
+          "lineno": 54,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -1602,7 +1244,7 @@ Found 4 errors.
         },
         {
           "name": "detect_line_ending",
-          "lineno": 61,
+          "lineno": 63,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -1610,7 +1252,7 @@ Found 4 errors.
         },
         {
           "name": "compute_file_hash",
-          "lineno": 66,
+          "lineno": 68,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -1618,7 +1260,7 @@ Found 4 errors.
         },
         {
           "name": "canonical_snapshot_key",
-          "lineno": 75,
+          "lineno": 77,
           "loc": 12,
           "complexity": 3,
           "branches": 2,
@@ -1626,7 +1268,7 @@ Found 4 errors.
         },
         {
           "name": "get_edit_snapshot_store",
-          "lineno": 399,
+          "lineno": 401,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -1634,7 +1276,7 @@ Found 4 errors.
         },
         {
           "name": "get_file_snapshot_store",
-          "lineno": 408,
+          "lineno": 410,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -1642,7 +1284,7 @@ Found 4 errors.
         },
         {
           "name": "_content_tag",
-          "lineno": 417,
+          "lineno": 419,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -1650,7 +1292,7 @@ Found 4 errors.
         },
         {
           "name": "_line1_hash",
-          "lineno": 422,
+          "lineno": 424,
           "loc": 6,
           "complexity": 1,
           "branches": 0,
@@ -1658,10 +1300,10 @@ Found 4 errors.
         },
         {
           "name": "_record_both_stores",
-          "lineno": 435,
-          "loc": 17,
-          "complexity": 3,
-          "branches": 2,
+          "lineno": 437,
+          "loc": 15,
+          "complexity": 2,
+          "branches": 1,
           "max_nesting": 1
         },
         {
@@ -1714,7 +1356,7 @@ Found 4 errors.
         },
         {
           "name": "head",
-          "lineno": 108,
+          "lineno": 110,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1722,7 +1364,7 @@ Found 4 errors.
         },
         {
           "name": "by_hash",
-          "lineno": 111,
+          "lineno": 113,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1730,7 +1372,7 @@ Found 4 errors.
         },
         {
           "name": "by_content",
-          "lineno": 114,
+          "lineno": 116,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1738,7 +1380,7 @@ Found 4 errors.
         },
         {
           "name": "find_by_hash",
-          "lineno": 117,
+          "lineno": 119,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1746,7 +1388,7 @@ Found 4 errors.
         },
         {
           "name": "versions",
-          "lineno": 120,
+          "lineno": 122,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -1754,7 +1396,7 @@ Found 4 errors.
         },
         {
           "name": "record",
-          "lineno": 124,
+          "lineno": 126,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -1762,7 +1404,7 @@ Found 4 errors.
         },
         {
           "name": "record_seen_lines",
-          "lineno": 132,
+          "lineno": 134,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1770,7 +1412,7 @@ Found 4 errors.
         },
         {
           "name": "invalidate",
-          "lineno": 135,
+          "lineno": 137,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1778,7 +1420,7 @@ Found 4 errors.
         },
         {
           "name": "relocate",
-          "lineno": 138,
+          "lineno": 140,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1786,7 +1428,7 @@ Found 4 errors.
         },
         {
           "name": "clear",
-          "lineno": 141,
+          "lineno": 143,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1794,7 +1436,7 @@ Found 4 errors.
         },
         {
           "name": "__init__",
-          "lineno": 154,
+          "lineno": 156,
           "loc": 11,
           "complexity": 1,
           "branches": 0,
@@ -1802,7 +1444,7 @@ Found 4 errors.
         },
         {
           "name": "_size",
-          "lineno": 169,
+          "lineno": 171,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1810,7 +1452,7 @@ Found 4 errors.
         },
         {
           "name": "_drop_history",
-          "lineno": 172,
+          "lineno": 174,
           "loc": 5,
           "complexity": 3,
           "branches": 2,
@@ -1818,7 +1460,7 @@ Found 4 errors.
         },
         {
           "name": "_enforce_bounds",
-          "lineno": 178,
+          "lineno": 180,
           "loc": 7,
           "complexity": 4,
           "branches": 3,
@@ -1826,7 +1468,7 @@ Found 4 errors.
         },
         {
           "name": "head",
-          "lineno": 188,
+          "lineno": 190,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -1834,7 +1476,7 @@ Found 4 errors.
         },
         {
           "name": "by_hash",
-          "lineno": 192,
+          "lineno": 194,
           "loc": 8,
           "complexity": 4,
           "branches": 3,
@@ -1842,7 +1484,7 @@ Found 4 errors.
         },
         {
           "name": "by_content",
-          "lineno": 201,
+          "lineno": 203,
           "loc": 9,
           "complexity": 4,
           "branches": 3,
@@ -1850,7 +1492,7 @@ Found 4 errors.
         },
         {
           "name": "find_by_hash",
-          "lineno": 211,
+          "lineno": 213,
           "loc": 7,
           "complexity": 4,
           "branches": 3,
@@ -1858,7 +1500,7 @@ Found 4 errors.
         },
         {
           "name": "versions",
-          "lineno": 219,
+          "lineno": 221,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -1866,7 +1508,7 @@ Found 4 errors.
         },
         {
           "name": "record",
-          "lineno": 223,
+          "lineno": 225,
           "loc": 53,
           "complexity": 11,
           "branches": 10,
@@ -1874,7 +1516,7 @@ Found 4 errors.
         },
         {
           "name": "record_seen_lines",
-          "lineno": 277,
+          "lineno": 279,
           "loc": 14,
           "complexity": 6,
           "branches": 5,
@@ -1882,7 +1524,7 @@ Found 4 errors.
         },
         {
           "name": "invalidate",
-          "lineno": 292,
+          "lineno": 294,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1890,7 +1532,7 @@ Found 4 errors.
         },
         {
           "name": "relocate",
-          "lineno": 295,
+          "lineno": 297,
           "loc": 11,
           "complexity": 3,
           "branches": 2,
@@ -1898,7 +1540,7 @@ Found 4 errors.
         },
         {
           "name": "clear",
-          "lineno": 307,
+          "lineno": 309,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -1906,7 +1548,7 @@ Found 4 errors.
         },
         {
           "name": "__len__",
-          "lineno": 311,
+          "lineno": 313,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1914,7 +1556,7 @@ Found 4 errors.
         },
         {
           "name": "__init__",
-          "lineno": 334,
+          "lineno": 336,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -1922,7 +1564,7 @@ Found 4 errors.
         },
         {
           "name": "_prune",
-          "lineno": 338,
+          "lineno": 340,
           "loc": 14,
           "complexity": 6,
           "branches": 5,
@@ -1930,7 +1572,7 @@ Found 4 errors.
         },
         {
           "name": "record",
-          "lineno": 353,
+          "lineno": 355,
           "loc": 26,
           "complexity": 4,
           "branches": 3,
@@ -1938,7 +1580,7 @@ Found 4 errors.
         },
         {
           "name": "record_seen_lines",
-          "lineno": 380,
+          "lineno": 382,
           "loc": 7,
           "complexity": 3,
           "branches": 2,
@@ -1946,7 +1588,7 @@ Found 4 errors.
         },
         {
           "name": "lookup",
-          "lineno": 388,
+          "lineno": 390,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -1954,7 +1596,7 @@ Found 4 errors.
         },
         {
           "name": "__len__",
-          "lineno": 392,
+          "lineno": 394,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -1969,12 +1611,12 @@ Found 4 errors.
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/fs_cache.py",
-      "loc": 137,
-      "module_loc": 137,
+      "loc": 136,
+      "module_loc": 136,
       "functions": [
         {
           "name": "register_invalidator",
-          "lineno": 33,
+          "lineno": 34,
           "loc": 10,
           "complexity": 2,
           "branches": 1,
@@ -1982,15 +1624,15 @@ Found 4 errors.
         },
         {
           "name": "unregister_invalidator",
-          "lineno": 45,
-          "loc": 6,
-          "complexity": 2,
-          "branches": 1,
+          "lineno": 46,
+          "loc": 4,
+          "complexity": 1,
+          "branches": 0,
           "max_nesting": 1
         },
         {
           "name": "_canonical",
-          "lineno": 53,
+          "lineno": 52,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -1998,7 +1640,7 @@ Found 4 errors.
         },
         {
           "name": "_bust_gitignore_cache",
-          "lineno": 59,
+          "lineno": 58,
           "loc": 7,
           "complexity": 2,
           "branches": 1,
@@ -2006,7 +1648,7 @@ Found 4 errors.
         },
         {
           "name": "_run_registered_invalidators",
-          "lineno": 68,
+          "lineno": 67,
           "loc": 6,
           "complexity": 3,
           "branches": 2,
@@ -2014,7 +1656,7 @@ Found 4 errors.
         },
         {
           "name": "_session_snapshot_store",
-          "lineno": 76,
+          "lineno": 75,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -2022,7 +1664,7 @@ Found 4 errors.
         },
         {
           "name": "invalidate_fs_scan_after_write",
-          "lineno": 82,
+          "lineno": 81,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -2030,7 +1672,7 @@ Found 4 errors.
         },
         {
           "name": "invalidate_fs_scan_after_delete",
-          "lineno": 98,
+          "lineno": 97,
           "loc": 16,
           "complexity": 3,
           "branches": 2,
@@ -2038,7 +1680,7 @@ Found 4 errors.
         },
         {
           "name": "invalidate_fs_scan_after_rename",
-          "lineno": 116,
+          "lineno": 115,
           "loc": 22,
           "complexity": 5,
           "branches": 4,
@@ -2106,11 +1748,11 @@ Found 4 errors.
   ],
   "totals": {
     "files": 10,
-    "loc": 3719,
+    "loc": 3720,
     "functions": 151
   },
   "breaches": [
-    "kimi-cli/src/kimi_cli/tools/file/write.py::__call__ loc=297 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/write.py::__call__ loc=301 > 120",
     "kimi-cli/src/kimi_cli/tools/file/write.py::__call__ complexity=64 > 12",
     "kimi-cli/src/kimi_cli/tools/file/write.py::_conflict_guard complexity=13 > 12",
     "kimi-cli/src/kimi_cli/tools/file/write.py::_resolve_all_conflicts loc=131 > 120",
@@ -2128,8 +1770,8 @@ Found 4 errors.
 ........................................................................ [ 54%]
 ........................................................................ [ 81%]
 .................................................                        [100%]
-265 passed in 1.28s
-[elapsed 3.0s, rc=0]
+265 passed in 1.22s
+[elapsed 2.9s, rc=0]
 
 === uv run --with pytest-cov pytest kimi-cli/tests/tools/test_write_file.py kimi-cli/tests/tools/test_write_conflict.py kimi-cli/tests/tools/test_auto_repair.py kimi-cli/tests/tools/test_parse_check.py kimi-cli/tests/tools/test_auto_generated_guard.py kimi-cli/tests/tools/test_check_fmt.py kimi-cli/tests/tools/test_blackbox.py kimi-cli/tests/tools/test_conflict_detect.py kimi-cli/tests/tools/test_snapshot_store.py --cov=kimi_cli.tools.file.write ===
 ........................................................................ [ 27%]
@@ -2141,8 +1783,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                                        Stmts   Miss Branch BrPart  Cover   Missing
 ---------------------------------------------------------------------------------------
-kimi-cli\src\kimi_cli\tools\file\write.py     360     51    136     14    84%   152, 199-201, 252-253, 278, 296, 298, 314-315, 353, 385-386, 399-403, 445, 456->458, 561, 612-613, 615, 651-652, 662-663, 678-684, 763-774, 787-801, 804-814, 826
+kimi-cli\src\kimi_cli\tools\file\write.py     359     51    134     14    84%   152, 199-201, 257-258, 283, 301, 303, 318-319, 357, 389-390, 403-407, 449, 460->462, 565, 616-617, 619, 655-656, 666-667, 682-688, 767-778, 791-805, 808-818, 830
 ---------------------------------------------------------------------------------------
-TOTAL                                         360     51    136     14    84%
-265 passed in 1.38s
-[elapsed 4.8s, rc=0]
+TOTAL                                         359     51    134     14    84%
+265 passed in 1.46s
+[elapsed 5.1s, rc=0]

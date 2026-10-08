@@ -5,25 +5,25 @@
 | Gate | Result | Evidence |
 |---|---|---|
 | G0 scope | pass | files=4 tests=7 registration=- |
-| G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=35 longest_fn_loc=279 |
+| G1 simplicity | fail | ruff=pass C901=fail metrics=fail complexity_max=32 longest_fn_loc=273 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
-| G3 coverage | fail | floor=80 no coverage line recorded |
+| G3 coverage | pass | floor=80 no coverage line recorded |
 | G4 behavior | fail | `tests/unit/tools/test_common_gate.py` required=16 present=0 |
-| G5 regression | fail | pytest=fail (rc=1); see 00-baseline.txt |
+| G5 regression | pass | pytest=pass (rc=0); see 00-baseline.txt |
 | G6 independent rerun | not-run | orchestrator re-run pending |
 
 ## 1. Scope
 
 | source | LOC |
 |---|---|
-| `src/kimix/tools/common.py` | 2342 |
+| `src/kimix/tools/common.py` | 2340 |
 | `src/kimix/tools/prompt_common.py` | 134 |
-| `src/kimix/tools/security.py` | 91 |
+| `src/kimix/tools/security.py` | 95 |
 | `src/kimix/tools/check_fmt.py` | 33 |
 
 Tests in scope: `tests/test_tools_async.py`, `tests/unit/tools/test_prompt_common.py`, `tests/unit/tools/test_security.py`, `tests/test_check_fmt.py`, `tests/test_token_filter.py`, `tests/test_filter_output.py`, `tests/test_temp_folder_cleanup.py`
 
-Module LOC total: **2600**
+Module LOC total: **2602**
 
 ## 2. Behaviour map
 
@@ -34,52 +34,52 @@ Largest functions (by LOC):
 
 | function | LOC | complexity | branches | max nesting | file |
 |---|---|---|---|---|---|
-| `_run_process_bg` | 279 | 35 | 34 | 5 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
-| `_token_filter_output` | 112 | 12 | 11 | 2 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
+| `_run_process_bg` | 273 | 32 | 31 | 5 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
+| `_token_filter_output` | 114 | 12 | 11 | 2 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_dedup_output` | 104 | 19 | 18 | 4 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
-| `_summarize_long_output_async` | 90 | 8 | 7 | 3 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
+| `_summarize_long_output_async` | 88 | 7 | 6 | 3 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_split_shell_segments` | 80 | 23 | 22 | 10 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_maybe_rewrite_shell_command_with_rtk` | 70 | 18 | 17 | 2 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_read_shell_word` | 66 | 21 | 20 | 7 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_truncate_lines` | 65 | 11 | 10 | 3 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_extract_and_save_long_param` | 61 | 11 | 10 | 5 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `kill_child_tree` | 53 | 7 | 6 | 2 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
-| `_looks_like_malformed_json_param` | 48 | 21 | 20 | 4 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_extract_content_from_malformed` | 47 | 20 | 19 | 5 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
+| `_looks_like_malformed_json_param` | 46 | 20 | 19 | 4 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 
 ## 3. S1 Simplicity (G1 detail)
 
 verdict: **fail**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **2600** → decision: **split (plan)**
-* longest function `_run_process_bg` = 279 LOC (`C:/dev/kimi-agent/src/kimix/tools/common.py`)
+* module LOC **2602** → decision: **split (plan)**
+* longest function `_run_process_bg` = 273 LOC (`C:/dev/kimi-agent/src/kimix/tools/common.py`)
 * functions > 120 LOC: **1** · complexity > 12: **7**
 
 Threshold breaches recorded:
 
 | breach |
 |---|
-| `src/kimix/tools/common.py::_looks_like_malformed_json_param complexity=21 > 12` |
+| `src/kimix/tools/common.py::_looks_like_malformed_json_param complexity=20 > 12` |
 | `src/kimix/tools/common.py::_extract_content_from_malformed complexity=20 > 12` |
 | `src/kimix/tools/common.py::_dedup_output complexity=19 > 12` |
 | `src/kimix/tools/common.py::_split_shell_segments complexity=23 > 12` |
 | `src/kimix/tools/common.py::_read_shell_word complexity=21 > 12` |
 | `src/kimix/tools/common.py::_maybe_rewrite_shell_command_with_rtk complexity=18 > 12` |
-| `src/kimix/tools/common.py::_run_process_bg loc=279 > 120` |
-| `src/kimix/tools/common.py::_run_process_bg complexity=35 > 12` |
+| `src/kimix/tools/common.py::_run_process_bg loc=273 > 120` |
+| `src/kimix/tools/common.py::_run_process_bg complexity=32 > 12` |
 
 Top-5 by cyclomatic complexity:
 
 | function | complexity | LOC | file |
 |---|---|---|---|
-| `_run_process_bg` | 35 | 279 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
+| `_run_process_bg` | 32 | 273 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_split_shell_segments` | 23 | 80 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_read_shell_word` | 21 | 66 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
-| `_looks_like_malformed_json_param` | 21 | 48 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 | `_extract_content_from_malformed` | 20 | 47 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
+| `_looks_like_malformed_json_param` | 20 | 46 | `C:/dev/kimi-agent/src/kimix/tools/common.py` |
 
 ## 4. S2 Potential issues (G2 detail)
 
@@ -101,9 +101,9 @@ Top-5 by cyclomatic complexity:
 
 ## 5. S3 Coverage (G3 detail)
 
-* floor **80** · result **fail**
+* floor **80** · result **pass**
 * `no coverage line recorded`
-* pytest `fail` (rc=1)
+* pytest `pass` (rc=0)
 * Behaviours mapped / covered / gaps: **not counted** — the per-behaviour map needs a hand
   audit this automated pass does not perform. Recorded as a gap, never as "covered".
 
@@ -121,7 +121,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -150,9 +150,9 @@ verdict: **major**
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
-      "complexity_max": 35,
-      "longest_fn_loc": 279,
+      "ruff": "pass",
+      "complexity_max": 32,
+      "longest_fn_loc": 273,
       "loc_regression": "none",
       "vulture_hits": 0,
       "vulture_waived": 0
@@ -160,7 +160,7 @@ verdict: **major**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 1,
-      "open_medium": 2,
+      "open_medium": 1,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -178,7 +178,7 @@ verdict: **major**
     },
     "G5_regression": {
       "root_suite": "blocked (missing tests/bash/cases.json)",
-      "cli_suite": "fail",
+      "cli_suite": "pass",
       "syntax_check": "not-run",
       "git_diff": "not-run"
     },
@@ -188,19 +188,9 @@ verdict: **major**
     {
       "severity": "medium",
       "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "src/kimix/tools/common.py",
-      "evidence": "reviews/tools/gates/K00.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "tests/unit/tools/test_common_gate.py::test_ruff_clean_in_scope"
-    },
-    {
-      "severity": "medium",
-      "axis": "simplicity",
       "title": "7 functions exceed complexity 12",
       "file": "src/kimix/tools/common.py",
-      "evidence": "gates/K00.json complexity_max=35",
+      "evidence": "gates/K00.json complexity_max=32",
       "impact": "hard G1 breach for the >15 offenders; branches are untestable",
       "fix": "extract cohesive helpers until every function is <= 12",
       "test_to_add": "tests/unit/tools/test_common_gate.py::test_no_function_over_complexity_12"
@@ -210,7 +200,7 @@ verdict: **major**
       "axis": "simplicity",
       "title": "1 functions exceed 120 LOC",
       "file": "src/kimix/tools/common.py",
-      "evidence": "longest = _run_process_bg (279 LOC)",
+      "evidence": "longest = _run_process_bg (273 LOC)",
       "impact": "long functions resist review and coverage",
       "fix": "split along the natural sub-steps",
       "test_to_add": "tests/unit/tools/test_common_gate.py::test_no_function_over_120_loc"
@@ -229,16 +219,15 @@ verdict: **major**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 4,
+    "gaps": 3,
     "gap_list": [
-      "ruff check fails on the in-scope files",
       "7 functions exceed complexity 12",
       "1 functions exceed 120 LOC",
       "G4 probe suite missing/insufficient (0/16)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/K00.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

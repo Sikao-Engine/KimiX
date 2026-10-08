@@ -5,7 +5,7 @@
 | Gate | Result | Evidence |
 |---|---|---|
 | G0 scope | pass | files=5 tests=2 registration=`fetch_url` (kimi-cli/src/kimi_cli/tools/web/fetch.py:101) |
-| G1 simplicity | fail | ruff=fail C901=fail metrics=fail complexity_max=19 longest_fn_loc=165 |
+| G1 simplicity | fail | ruff=pass C901=fail metrics=fail complexity_max=19 longest_fn_loc=165 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=90 no coverage line recorded |
 | G4 behavior | fail | `kimi-cli/tests/tools/test_fetch_url_gate.py` required=11 present=0 |
@@ -53,7 +53,7 @@ Largest functions (by LOC):
 
 verdict: **fail**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
 * module LOC **2985** → decision: **split (plan)**
@@ -124,7 +124,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -154,7 +154,7 @@ verdict: **major**
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
+      "ruff": "pass",
       "complexity_max": 19,
       "longest_fn_loc": 165,
       "loc_regression": "none",
@@ -164,7 +164,7 @@ verdict: **major**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 1,
-      "open_medium": 2,
+      "open_medium": 1,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -189,16 +189,6 @@ verdict: **major**
     "G6_independent_rerun": "not-run"
   },
   "findings": [
-    {
-      "severity": "medium",
-      "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "kimi-cli/src/kimi_cli/tools/web/fetch.py",
-      "evidence": "reviews/tools/gates/C12.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "kimi-cli/tests/tools/test_fetch_url_gate.py::test_ruff_clean_in_scope"
-    },
     {
       "severity": "medium",
       "axis": "simplicity",
@@ -233,16 +223,15 @@ verdict: **major**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 4,
+    "gaps": 3,
     "gap_list": [
-      "ruff check fails on the in-scope files",
       "7 functions exceed complexity 12",
       "2 functions exceed 120 LOC",
       "G4 probe suite missing/insufficient (0/11)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/C12.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": [

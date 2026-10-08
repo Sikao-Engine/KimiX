@@ -5,7 +5,7 @@
 | Gate | Result | Evidence |
 |---|---|---|
 | G0 scope | pass | files=2 tests=1 registration=`AskUserQuestion` (kimi-cli/src/kimi_cli/tools/ask_user/__init__.py:59) |
-| G1 simplicity | fail | ruff=fail C901=pass metrics=pass complexity_max=8 longest_fn_loc=79 |
+| G1 simplicity | pass | ruff=pass C901=pass metrics=pass complexity_max=8 longest_fn_loc=79 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=95 no coverage line recorded |
 | G4 behavior | fail | `kimi-cli/tests/tools/test_ask_user_gate.py` required=7 present=0 |
@@ -39,9 +39,9 @@ Largest functions (by LOC):
 
 ## 3. S1 Simplicity (G1 detail)
 
-verdict: **fail**
+verdict: **pass**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `pass`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `pass`
 * module LOC **151** → decision: **keep (below the 1200-LOC split threshold)**
@@ -96,7 +96,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -123,7 +123,7 @@ verdict: **major**
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
+      "ruff": "pass",
       "complexity_max": 8,
       "longest_fn_loc": 79,
       "loc_regression": "none",
@@ -133,7 +133,7 @@ verdict: **major**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 1,
-      "open_medium": 1,
+      "open_medium": 0,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -159,16 +159,6 @@ verdict: **major**
   },
   "findings": [
     {
-      "severity": "medium",
-      "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "kimi-cli/src/kimi_cli/tools/ask_user/__init__.py",
-      "evidence": "reviews/tools/gates/C02.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "kimi-cli/tests/tools/test_ask_user_gate.py::test_ruff_clean_in_scope"
-    },
-    {
       "severity": "high",
       "axis": "coverage",
       "title": "G4 probe suite missing/insufficient (0/7)",
@@ -182,14 +172,13 @@ verdict: **major**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 2,
+    "gaps": 1,
     "gap_list": [
-      "ruff check fails on the in-scope files",
       "G4 probe suite missing/insufficient (0/7)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/C02.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

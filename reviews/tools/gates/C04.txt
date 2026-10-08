@@ -1,31 +1,14 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
-?? .coverage
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
@@ -39,45 +22,18 @@ E501 Line too long (108 > 100)
 3 | The context window is volatile working memory. This tool recalls earlier
   |
 
-I001 [*] Import block is un-sorted or un-formatted
-  --> kimi-cli\src\kimi_cli\tools\memory\__init__.py:8:1
-   |
- 6 |   """
- 7 |
- 8 | / from __future__ import annotations
- 9 | |
-10 | | from typing import TYPE_CHECKING, override
-11 | |
-12 | | from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
-13 | | from pydantic import BaseModel, Field
-   | |_____________________________________^
-14 |
-15 |   if TYPE_CHECKING:
-   |
-help: Organize imports
-   |
-11 |
-   - from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
-12 | from pydantic import BaseModel, Field
-13 |
-14 + from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
-15 +
-16 | if TYPE_CHECKING:
-   |
-
 E501 Line too long (114 > 100)
-  --> kimi-cli\src\kimi_cli\tools\memory\__init__.py:22:101
+  --> kimi-cli\src\kimi_cli\tools\memory\__init__.py:23:101
    |
-20 |     query: str = Field(
-21 |         default="",
-22 |         description="Search past conversation history (BM25 with recency boost) for this natural-language query.",
+21 |     query: str = Field(
+22 |         default="",
+23 |         description="Search past conversation history (BM25 with recency boost) for this natural-language query.",
    |                                                                                                     ^^^^^^^^^^^^^^
-23 |     )
-24 |     id: str | None = Field(
+24 |     )
+25 |     id: str | None = Field(
    |
 
-Found 3 errors.
-[*] 1 fixable with the `--fix` option.
+Found 2 errors.
 [elapsed 0.2s, rc=1]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
@@ -89,12 +45,12 @@ All checks passed!
   "files": [
     {
       "path": "kimi-cli/src/kimi_cli/tools/memory/__init__.py",
-      "loc": 131,
-      "module_loc": 131,
+      "loc": 132,
+      "module_loc": 132,
       "functions": [
         {
           "name": "__init__",
-          "lineno": 46,
+          "lineno": 47,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -102,7 +58,7 @@ All checks passed!
         },
         {
           "name": "attach_history_index",
-          "lineno": 50,
+          "lineno": 51,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -110,7 +66,7 @@ All checks passed!
         },
         {
           "name": "__call__",
-          "lineno": 55,
+          "lineno": 56,
           "loc": 56,
           "complexity": 9,
           "branches": 8,
@@ -118,7 +74,7 @@ All checks passed!
         },
         {
           "name": "_retrieve_by_id",
-          "lineno": 112,
+          "lineno": 113,
           "loc": 20,
           "complexity": 3,
           "branches": 2,
@@ -134,7 +90,7 @@ All checks passed!
   ],
   "totals": {
     "files": 1,
-    "loc": 131,
+    "loc": 132,
     "functions": 4
   },
   "breaches": []
@@ -143,8 +99,8 @@ All checks passed!
 
 === uv run pytest kimi-cli/tests/tools/test_memory_retrieve.py -q -rs ===
 .....................                                                    [100%]
-21 passed in 0.51s
-[elapsed 2.5s, rc=0]
+21 passed in 0.46s
+[elapsed 2.3s, rc=0]
 
 === uv run --with pytest-cov pytest kimi-cli/tests/tools/test_memory_retrieve.py --cov=kimi_cli.tools.memory ===
 .....................                                                    [100%]
@@ -153,8 +109,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                                             Stmts   Miss Branch BrPart  Cover   Missing
 --------------------------------------------------------------------------------------------
-kimi-cli\src\kimi_cli\tools\memory\__init__.py      49      1     14      1    97%   101
+kimi-cli\src\kimi_cli\tools\memory\__init__.py      49      1     14      1    97%   102
 --------------------------------------------------------------------------------------------
 TOTAL                                               49      1     14      1    97%
-21 passed in 0.45s
-[elapsed 3.3s, rc=0]
+21 passed in 0.44s
+[elapsed 3.0s, rc=0]

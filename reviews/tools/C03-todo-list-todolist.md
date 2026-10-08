@@ -16,12 +16,12 @@
 
 | source | LOC |
 |---|---|
-| `kimi-cli/src/kimi_cli/tools/todo/__init__.py` | 2452 |
+| `kimi-cli/src/kimi_cli/tools/todo/__init__.py` | 2458 |
 | `kimi-cli/src/kimi_cli/tools/display.py` | 49 |
 
 Tests in scope: `kimi-cli/tests/tools/test_todo.py`, `kimi-cli/tests/tools/test_todo_edits.py`, `kimi-cli/tests/tools/test_todo_fixes.py`, `kimi-cli/tests/tools/test_todo_list_compat.py`, `kimi-cli/tests/tools/test_todo_list_conflict.py`, `kimi-cli/tests/tools/test_todo_list_contract.py`, `kimi-cli/tests/tools/test_todo_stack.py`, `kimi-cli/tests/tools/test_todo_title_diagnosis.py`
 
-Module LOC total: **2501**
+Module LOC total: **2507**
 
 ## 2. Behaviour map
 
@@ -35,8 +35,8 @@ Largest functions (by LOC):
 |---|---|---|---|---|---|
 | `_apply_update_to_tree` | 102 | 21 | 20 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
 | `_update_or_create_under_parent_in_memory` | 96 | 13 | 12 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
+| `_write_todos` | 88 | 17 | 16 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
 | `_merge_upsert` | 86 | 22 | 21 | 2 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
-| `_write_todos` | 82 | 17 | 16 | 4 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
 | `_upsert_in_container` | 74 | 16 | 15 | 5 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
 | `_upsert_one` | 73 | 14 | 13 | 3 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
 | `_build_success_response` | 70 | 15 | 14 | 1 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
@@ -53,7 +53,7 @@ verdict: **fail**
 * `ruff check` → `fail`
 * `ruff check --select C901 --max-complexity=12` → `fail`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **2501** → decision: **split (plan)**
+* module LOC **2507** → decision: **split (plan)**
 * longest function `_apply_update_to_tree` = 102 LOC (`C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py`)
 * functions > 120 LOC: **0** · complexity > 12: **10**
 
@@ -78,7 +78,7 @@ Top-5 by cyclomatic complexity:
 |---|---|---|---|
 | `_merge_upsert` | 22 | 86 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
 | `_apply_update_to_tree` | 21 | 102 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
-| `_write_todos` | 17 | 82 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
+| `_write_todos` | 17 | 88 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
 | `_upsert_in_container` | 16 | 74 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
 | `_finalize` | 16 | 68 | `C:/dev/kimi-agent/kimi-cli/src/kimi_cli/tools/todo/__init__.py` |
 
@@ -122,7 +122,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -226,7 +226,7 @@ verdict: **major**
     ]
   },
   "gate_evidence": "reviews/tools/gates/C03.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

@@ -1,238 +1,45 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
-?? .coverage
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check kimi-cli/src/kimi_cli/tools/file/read_media.py kimi-cli/src/kimi_cli/tools/file/read_media_shared.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> kimi-cli\src\kimi_cli\tools\file\read_media.py:33:1
-   |
-31 |   """
-32 |
-33 | / from __future__ import annotations
-34 | |
-35 | | from pathlib import Path
-36 | | from typing import TYPE_CHECKING, Literal, override
-37 | |
-38 | | from kaos.path import KaosPath
-39 | | from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
-40 | | from pydantic import AliasChoices, BaseModel, Field, model_validator
-41 | |
-42 | | from kimi_cli.soul.agent import Runtime
-43 | | from kimi_cli.tools import SkipThisTool
-44 | | from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, FileType, detect_file_type
-45 | | from kimi_cli.tools.utils import load_desc
-46 | | from kimi_cli.utils.image_compress import (
-47 | |     IMAGE_BYTE_BUDGET,
-48 | |     MAX_IMAGE_DECODE_BYTES,
-49 | |     CropRegion,
-50 | |     compress_image_for_model,
-51 | |     crop_image_for_model,
-52 | |     format_byte_size,
-53 | |     mipmap_downsample,
-54 | |     resolve_max_image_edge_px,
-55 | |     resolve_read_image_byte_budget,
-56 | |     sniff_image_dimensions,
-57 | | )
-58 | | from kimi_cli.utils.image_format_policy import (
-59 | |     build_image_conversion_guidance,
-60 | |     is_model_accepted_image_mime,
-61 | | )
-62 | | from kimi_cli.utils.logging import logger
-63 | | from kimi_cli.utils.media_tags import wrap_media_part
-64 | | from kimi_cli.utils.path import (
-65 | |     is_within_workspace,
-66 | |     kaos_path_from_tool_input,
-67 | |     kaos_path_from_user_input,
-68 | | )
-69 | | from kimi_cli.wire.types import ImageURLPart, TextPart, VideoURLPart
-70 | |
-71 | | from .read_media_shared import (
-72 | |     ImageDelivery as _ImageDelivery,
-73 | |     build_media_note,
-74 | |     to_data_url as _to_data_url,
-75 | | )
-   | |_^
-76 |
-77 |   if TYPE_CHECKING:
-   |
-help: Organize imports
-   |
-37 |
-   - from kaos.path import KaosPath
-   - from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
-38 | from pydantic import AliasChoices, BaseModel, Field, model_validator
-39 |
-40 + from kaos.path import KaosPath
-41 | from kimi_cli.soul.agent import Runtime
---------------------------------------------------------------------------------
-68 | from kimi_cli.wire.types import ImageURLPart, TextPart, VideoURLPart
-69 + from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
-70 |
-71 | from .read_media_shared import (
-72 |     ImageDelivery as _ImageDelivery,
-73 + )
-74 + from .read_media_shared import (
-75 |     build_media_note,
-76 + )
-77 + from .read_media_shared import (
-78 |     to_data_url as _to_data_url,
-   |
-
-F841 Local variable `wrapped` is assigned to but never used
-   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:120:9
-    |
-118 |             )
-119 |         )
-120 |         wrapped = wrap_media_part(part, tag="image", attrs={"path": media_path})
-    |         ^^^^^^^
-121 |         delivery = _ImageDelivery(
-122 |             kind="downsampled",
-    |
-help: Remove assignment to unused variable `wrapped`
-
-UP037 [*] Remove quotes from type annotation
-   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:201:35
-    |
-200 |     @model_validator(mode="after")
-201 |     def _validate_region(self) -> "Params":
-    |                                   ^^^^^^^^
-202 |         if self.region is not None and self.region_pct is not None:
-203 |             raise ValueError("Specify either `region` or `region_pct`, not both.")
-    |
-help: Remove quotes
-    |
-200 |     @model_validator(mode="after")
-    -     def _validate_region(self) -> "Params":
-201 +     def _validate_region(self) -> Params:
-202 |         if self.region is not None and self.region_pct is not None:
-    |
-
-UP037 [*] Remove quotes from type annotation
-   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:207:41
-    |
-206 |     @model_validator(mode="after")
-207 |     def _validate_video_params(self) -> "Params":
-    |                                         ^^^^^^^^
-208 |         if self.full_resolution and self.info_only:
-209 |             raise ValueError("Cannot set both full_resolution=True and info_only=True.")
-    |
-help: Remove quotes
-    |
-206 |     @model_validator(mode="after")
-    -     def _validate_video_params(self) -> "Params":
-207 +     def _validate_video_params(self) -> Params:
-208 |         if self.full_resolution and self.info_only:
-    |
-
-I001 [*] Import block is un-sorted or un-formatted
-   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:275:17
-    |
-273 |           if params.info_only:
-274 |               if kind == "image":
-275 | /                 from PIL import Image as PILImage
-276 | |                 import io
-    | |_________________________^
-277 |                   pil = PILImage.open(io.BytesIO(data))
-278 |                   dims = f"{pil.width}x{pil.height}"
-    |
-help: Organize imports
-    |
-274 |             if kind == "image":
-    -                 from PIL import Image as PILImage
-275 |                 import io
-276 +
-277 +                 from PIL import Image as PILImage
-278 |                 pil = PILImage.open(io.BytesIO(data))
-    |
-
-F821 Undefined name `_build_image_delivery_limit_error`
-   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:427:37
-    |
-425 |                     else:
-426 |                         return ToolError(
-427 |                             message=_build_image_delivery_limit_error(
-    |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-428 |                                 compressed.final_byte_length, read_byte_budget, max_edge
-429 |                             ),
-    |
-
-I001 [*] Import block is un-sorted or un-formatted
-   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:552:21
-    |
-550 |                   if params.auto_convert:
-551 |                       # Auto-convert unsupported format to PNG
-552 | /                     from PIL import Image as PILImage
-553 | |                     import io
-    | |_____________________________^
-554 |                       try:
-555 |                           full_data = await p.read_bytes()
-    |
-help: Organize imports
-    |
-551 |                     # Auto-convert unsupported format to PNG
-    -                     from PIL import Image as PILImage
-552 |                     import io
-553 +
-554 +                     from PIL import Image as PILImage
-555 |                     try:
-    |
-
-Found 7 errors.
-[*] 5 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
-[elapsed 0.1s, rc=1]
+All checks passed!
+[elapsed 0.1s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
-C901 `_read_media` is too complex (18 > 12)
-   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:260:15
+C901 `_read_media` is too complex (19 > 12)
+   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:283:15
     |
-258 |         return self._runtime.environment.os_kind or self._runtime.builtin_args.KIMI_OS
-259 |
-260 |     async def _read_media(
+281 |         return self._runtime.environment.os_kind or self._runtime.builtin_args.KIMI_OS
+282 |
+283 |     async def _read_media(
     |               ^^^^^^^^^^^
-261 |         self,
-262 |         path: KaosPath,
+284 |         self,
+285 |         path: KaosPath,
     |
 
 C901 `__call__` is too complex (18 > 12)
-   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:486:15
+   --> kimi-cli\src\kimi_cli\tools\file\read_media.py:522:15
     |
-485 |     @override
-486 |     async def __call__(self, params: Params) -> ToolReturnValue:
+521 |     @override
+522 |     async def __call__(self, params: Params) -> ToolReturnValue:
     |               ^^^^^^^^
-487 |         if not params.file_path:
-488 |             return ToolError(
+523 |         if not params.file_path:
+524 |             return ToolError(
     |
 
 Found 2 errors.
@@ -243,20 +50,28 @@ Found 2 errors.
   "files": [
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/read_media.py",
-      "loc": 642,
-      "module_loc": 642,
+      "loc": 679,
+      "module_loc": 679,
       "functions": [
         {
           "name": "_build_image_decode_limit_error",
-          "lineno": 83,
+          "lineno": 87,
           "loc": 8,
           "complexity": 1,
           "branches": 0,
           "max_nesting": 0
         },
         {
+          "name": "_build_image_delivery_limit_error",
+          "lineno": 97,
+          "loc": 17,
+          "complexity": 1,
+          "branches": 0,
+          "max_nesting": 0
+        },
+        {
           "name": "_try_mipmap_fallback",
-          "lineno": 93,
+          "lineno": 116,
           "loc": 38,
           "complexity": 4,
           "branches": 3,
@@ -264,7 +79,7 @@ Found 2 errors.
         },
         {
           "name": "_build_full_resolution_limit_error",
-          "lineno": 133,
+          "lineno": 156,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -272,7 +87,7 @@ Found 2 errors.
         },
         {
           "name": "_validate_region",
-          "lineno": 201,
+          "lineno": 224,
           "loc": 4,
           "complexity": 3,
           "branches": 2,
@@ -280,7 +95,7 @@ Found 2 errors.
         },
         {
           "name": "_validate_video_params",
-          "lineno": 207,
+          "lineno": 230,
           "loc": 4,
           "complexity": 3,
           "branches": 2,
@@ -288,7 +103,7 @@ Found 2 errors.
         },
         {
           "name": "__init__",
-          "lineno": 217,
+          "lineno": 240,
           "loc": 18,
           "complexity": 4,
           "branches": 3,
@@ -296,7 +111,7 @@ Found 2 errors.
         },
         {
           "name": "_validate_path",
-          "lineno": 236,
+          "lineno": 259,
           "loc": 19,
           "complexity": 3,
           "branches": 2,
@@ -304,7 +119,7 @@ Found 2 errors.
         },
         {
           "name": "_os_kind",
-          "lineno": 256,
+          "lineno": 279,
           "loc": 3,
           "complexity": 2,
           "branches": 1,
@@ -312,16 +127,16 @@ Found 2 errors.
         },
         {
           "name": "_read_media",
-          "lineno": 260,
-          "loc": 224,
+          "lineno": 283,
+          "loc": 237,
           "complexity": 26,
           "branches": 25,
           "max_nesting": 5
         },
         {
           "name": "__call__",
-          "lineno": 486,
-          "loc": 157,
+          "lineno": 522,
+          "loc": 158,
           "complexity": 29,
           "branches": 28,
           "max_nesting": 5
@@ -329,7 +144,7 @@ Found 2 errors.
       ],
       "longest_fn": {
         "name": "_read_media",
-        "loc": 224
+        "loc": 237
       },
       "module_complexity": 29
     },
@@ -372,13 +187,13 @@ Found 2 errors.
   ],
   "totals": {
     "files": 2,
-    "loc": 761,
-    "functions": 13
+    "loc": 798,
+    "functions": 14
   },
   "breaches": [
-    "kimi-cli/src/kimi_cli/tools/file/read_media.py::_read_media loc=224 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/read_media.py::_read_media loc=237 > 120",
     "kimi-cli/src/kimi_cli/tools/file/read_media.py::_read_media complexity=26 > 12",
-    "kimi-cli/src/kimi_cli/tools/file/read_media.py::__call__ loc=157 > 120",
+    "kimi-cli/src/kimi_cli/tools/file/read_media.py::__call__ loc=158 > 120",
     "kimi-cli/src/kimi_cli/tools/file/read_media.py::__call__ complexity=29 > 12",
     "kimi-cli/src/kimi_cli/tools/file/read_media_shared.py::build_media_note complexity=16 > 12"
   ]
@@ -387,8 +202,8 @@ Found 2 errors.
 
 === uv run pytest kimi-cli/tests/tools/test_read_media_file.py kimi-cli/tests/tools/test_read_media_file_desc.py -q -rs ===
 ............................                                             [100%]
-28 passed in 5.73s
-[elapsed 7.8s, rc=0]
+28 passed in 5.35s
+[elapsed 7.4s, rc=0]
 
 === uv run --with pytest-cov pytest kimi-cli/tests/tools/test_read_media_file.py kimi-cli/tests/tools/test_read_media_file_desc.py --cov=kimi_cli.tools.file.read_media ===
 ............................                                             [100%]
@@ -397,8 +212,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                                             Stmts   Miss Branch BrPart  Cover   Missing
 --------------------------------------------------------------------------------------------
-kimi-cli\src\kimi_cli\tools\file\read_media.py     206     43     72     17    78%   130, 203, 209, 246, 302-314, 322, 373, 426, 454-458, 481, 488, 496, 500, 505, 521, 552-568, 594, 637-639
+kimi-cli\src\kimi_cli\tools\file\read_media.py     213     47     74     17    76%   106, 153, 226, 232, 269, 326-350, 358, 409, 462, 490-494, 517, 524, 532, 536, 541, 557, 588-605, 631, 674-676
 --------------------------------------------------------------------------------------------
-TOTAL                                              206     43     72     17    78%
-28 passed in 6.16s
-[elapsed 10.0s, rc=0]
+TOTAL                                              213     47     74     17    76%
+28 passed in 5.67s
+[elapsed 9.5s, rc=0]

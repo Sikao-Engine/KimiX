@@ -1,158 +1,74 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
- M kimi-cli/src/kimi_cli/tools/file/conflict_detect.py
- M kimi-cli/src/kimi_cli/tools/file/read_media.py
- M src/kimix/tools/common.py
- M src/kimix/tools/file/bash/bash_tool.py
- M src/kimix/tools/file/bash/pwsh_tool.py
- M src/kimix/tools/file/run.py
- M src/kimix/tools/py/__init__.py
-?? .coverage
-?? kimi-cli/tests/tools/test_edit_gate.py
-?? kimi-cli/tests/tools/test_read_media_gate.py
-?? kimi-cli/tests/tools/test_tools_integrity_gate.py
-?? reviews/tools/90-findings.md
-?? reviews/tools/93-orphans-and-removal.md
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/X03-security.md
-?? reviews/tools/X04-native-parity.md
-?? reviews/tools/X05-dead-code.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C06.json
-?? reviews/tools/gates/C06.txt
-?? reviews/tools/gates/C07.json
-?? reviews/tools/gates/C07.txt
-?? reviews/tools/gates/C08.json
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.json
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.json
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C11.json
-?? reviews/tools/gates/C11.txt
-?? reviews/tools/gates/C12.json
-?? reviews/tools/gates/C12.txt
-?? reviews/tools/gates/C13.json
-?? reviews/tools/gates/C13.txt
-?? reviews/tools/gates/C14.json
-?? reviews/tools/gates/C14.txt
-?? reviews/tools/gates/C15.json
-?? reviews/tools/gates/C15.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K00.json
-?? reviews/tools/gates/K00.txt
-?? reviews/tools/gates/K01.json
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K02.json
-?? reviews/tools/gates/K02.txt
-?? reviews/tools/gates/K03.json
-?? reviews/tools/gates/K03.txt
-?? reviews/tools/gates/K04.json
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/K05.json
-?? reviews/tools/gates/K05.txt
-?? reviews/tools/gates/K06.json
-?? reviews/tools/gates/K06.txt
-?? reviews/tools/gates/K07.json
-?? reviews/tools/gates/K07.txt
-?? reviews/tools/gates/K08.json
-?? reviews/tools/gates/K08.txt
-?? reviews/tools/gates/K09.json
-?? reviews/tools/gates/K09.txt
-?? reviews/tools/gates/K10.json
-?? reviews/tools/gates/K10.txt
-?? reviews/tools/gates/K11.json
-?? reviews/tools/gates/K11.txt
-?? reviews/tools/gates/K12.json
-?? reviews/tools/gates/K12.txt
-?? reviews/tools/gates/K13.json
-?? reviews/tools/gates/K13.txt
-?? reviews/tools/gates/K14.json
-?? reviews/tools/gates/K14.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tests/kimix/test_agent_gate.py
-?? tests/test_review_orchestrator.py
-?? tests/unit/tools/test_bash_gate.py
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
-[elapsed 0.1s, rc=0]
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+ M reviews/tools/gates/C06.json
+ M reviews/tools/gates/C06.txt
+ M reviews/tools/gates/C07.json
+ M reviews/tools/gates/C07.txt
+ M reviews/tools/gates/C08.json
+ M reviews/tools/gates/C08.txt
+ M reviews/tools/gates/C09.json
+ M reviews/tools/gates/C09.txt
+ M reviews/tools/gates/C10.json
+ M reviews/tools/gates/C10.txt
+ M reviews/tools/gates/C11.json
+ M reviews/tools/gates/C11.txt
+ M reviews/tools/gates/C12.json
+ M reviews/tools/gates/C12.txt
+ M reviews/tools/gates/C13.json
+ M reviews/tools/gates/C13.txt
+ M reviews/tools/gates/C14.json
+ M reviews/tools/gates/C14.txt
+ M reviews/tools/gates/C15.json
+ M reviews/tools/gates/C15.txt
+ M reviews/tools/gates/K00.json
+ M reviews/tools/gates/K00.txt
+ M reviews/tools/gates/K01.json
+ M reviews/tools/gates/K01.txt
+ M reviews/tools/gates/K02.json
+ M reviews/tools/gates/K02.txt
+ M reviews/tools/gates/K03.json
+ M reviews/tools/gates/K03.txt
+ M reviews/tools/gates/K04.json
+ M reviews/tools/gates/K04.txt
+ M reviews/tools/gates/K05.json
+ M reviews/tools/gates/K05.txt
+ M reviews/tools/gates/K06.json
+ M reviews/tools/gates/K06.txt
+ M reviews/tools/gates/K07.json
+ M reviews/tools/gates/K07.txt
+ M reviews/tools/gates/K08.json
+ M reviews/tools/gates/K08.txt
+ M reviews/tools/gates/K09.json
+ M reviews/tools/gates/K09.txt
+ M reviews/tools/gates/K10.json
+ M reviews/tools/gates/K10.txt
+ M reviews/tools/gates/K11.json
+ M reviews/tools/gates/K11.txt
+ M reviews/tools/gates/K12.json
+ M reviews/tools/gates/K12.txt
+ M reviews/tools/gates/K13.json
+ M reviews/tools/gates/K13.txt
+ M reviews/tools/gates/K14.json
+ M reviews/tools/gates/K14.txt
+?? reviews/tools/gates/_harness2.log
+[elapsed 0.0s, rc=0]
 
 
 === uv run ruff check src/kimix/tools/parser/__init__.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> src\kimix\tools\parser\__init__.py:3:1
-   |
- 1 |   """Parser tool: wraps kimix.parser parsers into a CallableTool2 for use by agents."""
- 2 |
- 3 | / from __future__ import annotations
- 4 | |
- 5 | | from typing import Any
- 6 | |
- 7 | | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
- 8 | | from pydantic import BaseModel, Field
- 9 | | from kimix.parser import (
-10 | |     PythonParser,
-11 | |     CParser,
-12 | |     ShellParser,
-13 | |     HtmlParser,
-14 | |     PascalParser,
-15 | |     LispParser,
-16 | |     SqlParser,
-17 | |     BaseParser,
-18 | | )
-19 | |
-20 | | import orjson
-   | |_____________^
-help: Organize imports
-   |
-6  |
-7  + import orjson
-8  + from pydantic import BaseModel, Field
-9  +
-10 | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-   - from pydantic import BaseModel, Field
-11 | from kimix.parser import (
-   -     PythonParser,
-12 +     BaseParser,
-13 |     CParser,
-   -     ShellParser,
-14 |     HtmlParser,
-   -     PascalParser,
-15 |     LispParser,
-16 +     PascalParser,
-17 +     PythonParser,
-18 +     ShellParser,
-19 |     SqlParser,
-   -     BaseParser,
-20 | )
-   -
-   - import orjson
-   -
-21 |
-   |
-
-Found 1 error.
-[*] 1 fixable with the `--fix` option.
-[elapsed 0.3s, rc=1]
+All checks passed!
+[elapsed 0.1s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
 All checks passed!
@@ -163,28 +79,20 @@ All checks passed!
   "files": [
     {
       "path": "src/kimix/tools/parser/__init__.py",
-      "loc": 237,
-      "module_loc": 237,
+      "loc": 226,
+      "module_loc": 226,
       "functions": [
         {
           "name": "_to_json",
-          "lineno": 61,
+          "lineno": 60,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
           "max_nesting": 0
         },
         {
-          "name": "__init__",
-          "lineno": 115,
-          "loc": 9,
-          "complexity": 1,
-          "branches": 0,
-          "max_nesting": 0
-        },
-        {
           "name": "__call__",
-          "lineno": 125,
+          "lineno": 114,
           "loc": 113,
           "complexity": 12,
           "branches": 11,
@@ -200,17 +108,17 @@ All checks passed!
   ],
   "totals": {
     "files": 1,
-    "loc": 237,
-    "functions": 3
+    "loc": 226,
+    "functions": 2
   },
   "breaches": []
 }
-[elapsed 0.2s, rc=0]
+[elapsed 0.1s, rc=0]
 
 === uv run pytest tests/test_parsers.py -q -rs ===
 .................................................................        [100%]
-65 passed in 0.84s
-[elapsed 1.9s, rc=0]
+65 passed in 0.64s
+[elapsed 1.4s, rc=0]
 
 === uv run --with pytest-cov pytest tests/test_parsers.py --cov=kimix.tools.parser ===
 .................................................................        [100%]
@@ -219,8 +127,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                                 Stmts   Miss Branch BrPart  Cover   Missing
 --------------------------------------------------------------------------------
-src\kimix\tools\parser\__init__.py      54      9     12      1    85%   156-169, 224-233
+src\kimix\tools\parser\__init__.py      51      9     12      1    84%   145-158, 213-222
 --------------------------------------------------------------------------------
-TOTAL                                   54      9     12      1    85%
-65 passed in 0.85s
-[elapsed 4.9s, rc=0]
+TOTAL                                   51      9     12      1    84%
+65 passed in 0.63s
+[elapsed 3.7s, rc=0]

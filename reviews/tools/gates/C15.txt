@@ -1,268 +1,158 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
-?? .coverage
-?? kimi-cli/tests/tools/test_edit_gate.py
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C06.json
-?? reviews/tools/gates/C06.txt
-?? reviews/tools/gates/C07.json
-?? reviews/tools/gates/C07.txt
-?? reviews/tools/gates/C08.json
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.json
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.json
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C11.json
-?? reviews/tools/gates/C11.txt
-?? reviews/tools/gates/C12.json
-?? reviews/tools/gates/C12.txt
-?? reviews/tools/gates/C13.json
-?? reviews/tools/gates/C13.txt
-?? reviews/tools/gates/C14.json
-?? reviews/tools/gates/C14.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tests/kimix/test_agent_gate.py
-?? tests/test_review_orchestrator.py
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+ M reviews/tools/gates/C06.json
+ M reviews/tools/gates/C06.txt
+ M reviews/tools/gates/C07.json
+ M reviews/tools/gates/C07.txt
+ M reviews/tools/gates/C08.json
+ M reviews/tools/gates/C08.txt
+ M reviews/tools/gates/C09.json
+ M reviews/tools/gates/C09.txt
+ M reviews/tools/gates/C10.json
+ M reviews/tools/gates/C10.txt
+ M reviews/tools/gates/C11.json
+ M reviews/tools/gates/C11.txt
+ M reviews/tools/gates/C12.json
+ M reviews/tools/gates/C12.txt
+ M reviews/tools/gates/C13.json
+ M reviews/tools/gates/C13.txt
+ M reviews/tools/gates/C14.json
+ M reviews/tools/gates/C14.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check kimi-cli/src/kimi_cli/tools/file/hash_line.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:1:1
-   |
- 1 | / from __future__ import annotations
- 2 | |
- 3 | | import contextlib
- 4 | | from typing import Annotated, Literal, override
- 5 | |
- 6 | | import xxhash
- 7 | | from rapidfuzz.distance import Levenshtein
- 8 | | from kaos.path import KaosPath
- 9 | | from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
-10 | | from pydantic import BaseModel, Field, model_validator
-11 | |
-12 | | from kimi_cli.native_loader import (
-13 | |     get_module as _native_get_module,
-14 | |     use_native as _native_use_native,
-15 | | )
-16 | | from kimi_cli.session import Session
-17 | | from kimi_cli.soul.agent import Runtime
-18 | | from kimi_cli.tools.utils import ToolResultBuilder, truncate_line
-19 | | from kimi_cli.utils.diff import build_diff_blocks
-20 | | from kimi_cli.utils.logging import logger
-21 | | from kimi_cli.utils.path import (
-22 | |     is_within_directory,
-23 | |     is_within_workspace,
-24 | |     kaos_path_from_tool_input,
-25 | |     kaos_path_from_user_input,
-26 | | )
-27 | | from kimi_cli.utils.sensitive import is_sensitive_file
-28 | | from kimi_cli.vfs import VFS
-29 | |
-30 | | from .auto_generated import assert_editable_file_content
-31 | | from .fs_cache import invalidate_fs_scan_after_write
-32 | | from .snapshot_store import (
-33 | |     get_file_snapshot_store,
-34 | |     record_content_snapshot,
-35 | | )
-36 | | from .utils import resolve_vfs
-   | |______________________________^
-37 |
-38 |   NIBBLE_STR = "ZPMQVRWSNKTXJBYH"
-   |
-help: Organize imports
-   |
-6  | import xxhash
-7  + from pydantic import BaseModel, Field, model_validator
-8  | from rapidfuzz.distance import Levenshtein
-9  +
-10 | from kaos.path import KaosPath
-   - from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
-   - from pydantic import BaseModel, Field, model_validator
-   -
-11 | from kimi_cli.native_loader import (
-12 |     get_module as _native_get_module,
-13 + )
-14 + from kimi_cli.native_loader import (
-15 |     use_native as _native_use_native,
---------------------------------------------------------------------------------
-29 | from kimi_cli.vfs import VFS
-30 + from kosong.tooling import BriefDisplayBlock, CallableTool2, ToolError, ToolReturnValue
-31 |
-   |
-
-SIM102 Use a single `if` statement instead of nested `if` statements
-   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:99:5
-    |
- 97 |       pure-Python loop below is bit-identical otherwise.
- 98 |       """
- 99 | /     if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None:
-100 | |         if not file_lines or file_lines[-1] != "":
-    | |__________________________________________________^
-101 |               return _NATIVE_TOOLS.compute_line_hashes("\n".join(file_lines))
-102 |       hashes: list[str] = []
-    |
-help: Combine `if` statements using `and`
-
 E501 Line too long (115 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:158:101
+   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:161:101
     |
-156 |             except ValueError:
-157 |                 raise ValueError(
-158 |                     f"Invalid line number '{parts[0]}' in anchor '{v}', expected format 'LINE#HASH' (e.g., '8#RT')"
+159 |             except ValueError:
+160 |                 raise ValueError(
+161 |                     f"Invalid line number '{parts[0]}' in anchor '{v}', expected format 'LINE#HASH' (e.g., '8#RT')"
     |                                                                                                     ^^^^^^^^^^^^^^^
-159 |                 ) from None
-160 |             return {"line": line, "hash": parts[1]}
+162 |                 ) from None
+163 |             return {"line": line, "hash": parts[1]}
     |
 
 E501 Line too long (111 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:397:101
+   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:400:101
     |
-395 |                     f"Range start line {edit.pos.line} must be <= end line {edit.end.line}"
-396 |                 )
-397 |             validate_anchor_ref(edit.pos, file_lines, mismatches, validation_errors, file_hashes, fuzzy_hashes)
+398 |                     f"Range start line {edit.pos.line} must be <= end line {edit.end.line}"
+399 |                 )
+400 |             validate_anchor_ref(edit.pos, file_lines, mismatches, validation_errors, file_hashes, fuzzy_hashes)
     |                                                                                                     ^^^^^^^^^^^
-398 |             if edit.end is not None:
-399 |                 validate_anchor_ref(
+401 |             if edit.end is not None:
+402 |                 validate_anchor_ref(
     |
 
 E501 Line too long (101 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:451:101
+   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:454:101
     |
-449 |             intervals_overlap = not (range_i[1] < range_j[0] or range_j[1] < range_i[0])
-450 |
-451 |             # Special case: Append and Prepend at same ref line are conceptually at the same position
+452 |             intervals_overlap = not (range_i[1] < range_j[0] or range_j[1] < range_i[0])
+453 |
+454 |             # Special case: Append and Prepend at same ref line are conceptually at the same position
     |                                                                                                     ^
-452 |             same_ref_line = False
-453 |             if isinstance(edits[i], AppendEdit) and isinstance(edits[j], PrependEdit):
+455 |             same_ref_line = False
+456 |             if isinstance(edits[i], AppendEdit) and isinstance(edits[j], PrependEdit):
     |
 
 E501 Line too long (124 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:482:101
+   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:485:101
     |
-480 |                 )
-481 |                 overlapping.append(
-482 |                     f"  - {op_i} at lines {range_i[0]}-{range_i[1]} overlaps with {op_j} at lines {range_j[0]}-{range_j[1]}"
-    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
 483 |                 )
+484 |                 overlapping.append(
+485 |                     f"  - {op_i} at lines {range_i[0]}-{range_i[1]} overlaps with {op_j} at lines {range_j[0]}-{range_j[1]}"
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^^^
+486 |                 )
     |
 
 E501 Line too long (119 > 100)
-   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:832:101
+   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:835:101
     |
-830 |         if max_bytes_reached:
-831 |             builder.write(
-832 |                 f"\n(Output truncated at {MAX_BYTES // 1024}KB limit. Use 'offset' to read beyond line {actual_end})\n"
+833 |         if max_bytes_reached:
+834 |             builder.write(
+835 |                 f"\n(Output truncated at {MAX_BYTES // 1024}KB limit. Use 'offset' to read beyond line {actual_end})\n"
     |                                                                                                     ^^^^^^^^^^^^^^^^^^^
-833 |             )
-834 |         elif end < total_lines:
+836 |             )
+837 |         elif end < total_lines:
     |
-
-SIM105 Use `contextlib.suppress(Exception)` instead of `try`-`except`-`pass`
-    --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:997:9
-     |
- 995 |           with contextlib.suppress(Exception):
- 996 |               invalidate_fs_scan_after_write(str(p))
- 997 | /         try:
- 998 | |             self._session.file_mtime.mark_dirty(str(p))
- 999 | |         except Exception:
-1000 | |             pass
-     | |________________^
-1001 |           import pendulum
-     |
-help: Replace `try`-`except`-`pass` with `with contextlib.suppress(Exception): ...`
 
 E501 Line too long (117 > 100)
-    --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:1041:101
+    --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:1042:101
      |
-1039 |                 if not S_ISREG(st.st_mode):
-1040 |                     return ToolError(
-1041 |                         message=f"{'[out of work-dir] ' if _outside else ''}`{display_logical_path}` is not a file.",
+1040 |                 if not S_ISREG(st.st_mode):
+1041 |                     return ToolError(
+1042 |                         message=f"{'[out of work-dir] ' if _outside else ''}`{display_logical_path}` is not a file.",
      |                                                                                                     ^^^^^^^^^^^^^^^^^
-1042 |                         brief="Invalid path",
-1043 |                     )
+1043 |                         brief="Invalid path",
+1044 |                     )
      |
 
 E501 Line too long (114 > 100)
-    --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:1046:101
+    --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:1047:101
      |
-1044 |             except FileNotFoundError:
-1045 |                 return ToolError(
-1046 |                     message=f"{'[out of work-dir] ' if _outside else ''}`{display_logical_path}` does not exist.",
+1045 |             except FileNotFoundError:
+1046 |                 return ToolError(
+1047 |                     message=f"{'[out of work-dir] ' if _outside else ''}`{display_logical_path}` does not exist.",
      |                                                                                                     ^^^^^^^^^^^^^^
-1047 |                     brief="File not found",
-1048 |                 )
+1048 |                     brief="File not found",
+1049 |                 )
      |
 
-Found 10 errors.
-[*] 1 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).
-[elapsed 0.3s, rc=1]
+Found 7 errors.
+[elapsed 0.1s, rc=1]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
 C901 `apply_hashline_edits` is too complex (43 > 12)
-   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:348:5
+   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:351:5
     |
-348 | def apply_hashline_edits(
+351 | def apply_hashline_edits(
     |     ^^^^^^^^^^^^^^^^^^^^
-349 |     content: str, edits: list[HashlineEdit]
-350 | ) -> tuple[str, int | None]:
+352 |     content: str, edits: list[HashlineEdit]
+353 | ) -> tuple[str, int | None]:
     |
 
 C901 `generate_hash_aware_diff` is too complex (16 > 12)
-   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:560:5
+   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:563:5
     |
-560 | def generate_hash_aware_diff(
+563 | def generate_hash_aware_diff(
     |     ^^^^^^^^^^^^^^^^^^^^^^^^
-561 |     old_content: str, new_content: str, first_changed_line: int
-562 | ) -> str:
+564 |     old_content: str, new_content: str, first_changed_line: int
+565 | ) -> str:
     |
 
 C901 `_do_read` is too complex (14 > 12)
-   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:744:15
+   --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:747:15
     |
-742 |             return ToolError(message=str(e), brief='Internal error.')
-743 |
-744 |     async def _do_read(self, params: HashReadParams) -> ToolReturnValue:
+745 |             return ToolError(message=str(e), brief='Internal error.')
+746 |
+747 |     async def _do_read(self, params: HashReadParams) -> ToolReturnValue:
     |               ^^^^^^^^
-745 |         display_path = params.path.replace("\\", "/")
-746 |         p = kaos_path_from_tool_input(params.path, self._work_dir)
+748 |         display_path = params.path.replace("\\", "/")
+749 |         p = kaos_path_from_tool_input(params.path, self._work_dir)
     |
 
 C901 `_do_edit` is too complex (14 > 12)
-    --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:1017:15
+    --> kimi-cli\src\kimi_cli\tools\file\hash_line.py:1018:15
      |
-1015 |         )
-1016 |
-1017 |     async def _do_edit(self, params: HashEditParams) -> ToolReturnValue:
+1016 |         )
+1017 |
+1018 |     async def _do_edit(self, params: HashEditParams) -> ToolReturnValue:
      |               ^^^^^^^^
-1018 |         original_content = ""
-1019 |         p: KaosPath | None = None
+1019 |         original_content = ""
+1020 |         p: KaosPath | None = None
      |
 
 Found 4 errors.
@@ -273,12 +163,12 @@ Found 4 errors.
   "files": [
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/hash_line.py",
-      "loc": 1156,
-      "module_loc": 1156,
+      "loc": 1157,
+      "module_loc": 1157,
       "functions": [
         {
           "name": "compute_line_hash",
-          "lineno": 54,
+          "lineno": 56,
           "loc": 33,
           "complexity": 9,
           "branches": 8,
@@ -286,15 +176,15 @@ Found 4 errors.
         },
         {
           "name": "_cumulative_hashes",
-          "lineno": 89,
-          "loc": 20,
+          "lineno": 91,
+          "loc": 21,
           "complexity": 6,
           "branches": 5,
-          "max_nesting": 2
+          "max_nesting": 1
         },
         {
           "name": "parse_anchor",
-          "lineno": 115,
+          "lineno": 118,
           "loc": 19,
           "complexity": 5,
           "branches": 4,
@@ -302,7 +192,7 @@ Found 4 errors.
         },
         {
           "name": "validate_anchor_ref",
-          "lineno": 249,
+          "lineno": 252,
           "loc": 52,
           "complexity": 12,
           "branches": 11,
@@ -310,7 +200,7 @@ Found 4 errors.
         },
         {
           "name": "_deduplicate_edits",
-          "lineno": 308,
+          "lineno": 311,
           "loc": 27,
           "complexity": 10,
           "branches": 9,
@@ -318,7 +208,7 @@ Found 4 errors.
         },
         {
           "name": "_track_first_changed",
-          "lineno": 337,
+          "lineno": 340,
           "loc": 3,
           "complexity": 3,
           "branches": 2,
@@ -326,7 +216,7 @@ Found 4 errors.
         },
         {
           "name": "_normalize_edit",
-          "lineno": 342,
+          "lineno": 345,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -334,7 +224,7 @@ Found 4 errors.
         },
         {
           "name": "apply_hashline_edits",
-          "lineno": 348,
+          "lineno": 351,
           "loc": 205,
           "complexity": 61,
           "branches": 60,
@@ -342,7 +232,7 @@ Found 4 errors.
         },
         {
           "name": "generate_hash_aware_diff",
-          "lineno": 560,
+          "lineno": 563,
           "loc": 89,
           "complexity": 20,
           "branches": 19,
@@ -350,7 +240,7 @@ Found 4 errors.
         },
         {
           "name": "_parse_string",
-          "lineno": 147,
+          "lineno": 150,
           "loc": 15,
           "complexity": 4,
           "branches": 3,
@@ -358,7 +248,7 @@ Found 4 errors.
         },
         {
           "name": "__init__",
-          "lineno": 200,
+          "lineno": 203,
           "loc": 4,
           "complexity": 1,
           "branches": 0,
@@ -366,7 +256,7 @@ Found 4 errors.
         },
         {
           "name": "__init__",
-          "lineno": 207,
+          "lineno": 210,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -374,7 +264,7 @@ Found 4 errors.
         },
         {
           "name": "__str__",
-          "lineno": 211,
+          "lineno": 214,
           "loc": 36,
           "complexity": 8,
           "branches": 7,
@@ -382,7 +272,7 @@ Found 4 errors.
         },
         {
           "name": "_get_edit_range",
-          "lineno": 421,
+          "lineno": 424,
           "loc": 17,
           "complexity": 9,
           "branches": 8,
@@ -390,7 +280,7 @@ Found 4 errors.
         },
         {
           "name": "__init__",
-          "lineno": 682,
+          "lineno": 685,
           "loc": 9,
           "complexity": 1,
           "branches": 0,
@@ -398,7 +288,7 @@ Found 4 errors.
         },
         {
           "name": "_validate_path",
-          "lineno": 692,
+          "lineno": 695,
           "loc": 39,
           "complexity": 5,
           "branches": 4,
@@ -406,7 +296,7 @@ Found 4 errors.
         },
         {
           "name": "__call__",
-          "lineno": 733,
+          "lineno": 736,
           "loc": 10,
           "complexity": 3,
           "branches": 2,
@@ -414,7 +304,7 @@ Found 4 errors.
         },
         {
           "name": "_do_read",
-          "lineno": 744,
+          "lineno": 747,
           "loc": 110,
           "complexity": 15,
           "branches": 14,
@@ -422,7 +312,7 @@ Found 4 errors.
         },
         {
           "name": "__init__",
-          "lineno": 882,
+          "lineno": 885,
           "loc": 9,
           "complexity": 1,
           "branches": 0,
@@ -430,7 +320,7 @@ Found 4 errors.
         },
         {
           "name": "_validate_path",
-          "lineno": 892,
+          "lineno": 895,
           "loc": 39,
           "complexity": 5,
           "branches": 4,
@@ -438,7 +328,7 @@ Found 4 errors.
         },
         {
           "name": "__call__",
-          "lineno": 933,
+          "lineno": 936,
           "loc": 10,
           "complexity": 3,
           "branches": 2,
@@ -446,15 +336,15 @@ Found 4 errors.
         },
         {
           "name": "_recover_stale_anchors",
-          "lineno": 944,
-          "loc": 72,
-          "complexity": 13,
-          "branches": 12,
+          "lineno": 947,
+          "loc": 70,
+          "complexity": 12,
+          "branches": 11,
           "max_nesting": 2
         },
         {
           "name": "_do_edit",
-          "lineno": 1017,
+          "lineno": 1018,
           "loc": 135,
           "complexity": 18,
           "branches": 17,
@@ -470,7 +360,7 @@ Found 4 errors.
   ],
   "totals": {
     "files": 1,
-    "loc": 1156,
+    "loc": 1157,
     "functions": 23
   },
   "breaches": [
@@ -478,7 +368,6 @@ Found 4 errors.
     "kimi-cli/src/kimi_cli/tools/file/hash_line.py::apply_hashline_edits complexity=61 > 12",
     "kimi-cli/src/kimi_cli/tools/file/hash_line.py::generate_hash_aware_diff complexity=20 > 12",
     "kimi-cli/src/kimi_cli/tools/file/hash_line.py::_do_read complexity=15 > 12",
-    "kimi-cli/src/kimi_cli/tools/file/hash_line.py::_recover_stale_anchors complexity=13 > 12",
     "kimi-cli/src/kimi_cli/tools/file/hash_line.py::_do_edit loc=135 > 120",
     "kimi-cli/src/kimi_cli/tools/file/hash_line.py::_do_edit complexity=18 > 12"
   ]
@@ -490,8 +379,8 @@ Found 4 errors.
 ........................................................................ [ 66%]
 ........................................................................ [ 99%]
 ..                                                                       [100%]
-218 passed in 1.22s
-[elapsed 3.1s, rc=0]
+218 passed in 1.25s
+[elapsed 3.2s, rc=0]
 
 === uv run --with pytest-cov pytest kimi-cli/tests/tools/test_hash_line.py kimi-cli/tests/tools/test_plan25_integration.py kimi-cli/tests/native/test_diff_glob_tools_equivalence.py --cov=kimi_cli.tools.file.hash_line ===
 ........................................................................ [ 33%]
@@ -503,10 +392,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                                            Stmts   Miss Branch BrPart  Cover   Missing
 -------------------------------------------------------------------------------------------
-kimi-cli\src\kimi_cli\tools\file\hash_line.py     645     84    254     29    85%   129-130, 149-160, 236, 280-281, 283-292, 293->exit, 325-328, 338->exit, 378-385, 402->391, 437, 446, 460-464, 502, 531, 535->509, 545, 586->581, 603->606, 620, 701, 717-722, 741-742, 750, 755, 775-776, 783-784, 850->853, 901, 917-922, 941-942, 958, 962-963, 974-975, 977, 989-990, 999-1000, 1029-1031, 1074-1075, 1136-1148
-src\kimix\tools\agent\__init__.py                 532     24    176     31    92%   77->exit, 89->exit, 121, 163->168, 166-167, 188, 203, 221, 253, 256, 265, 305, 420-421, 478->480, 483, 484->494, 486->494, 513->507, 603->611, 650->652, 686, 717, 724, 738->740, 741, 743, 756->exit, 758-759, 772->exit, 814->817, 843-844, 964->967, 1008, 1034->exit, 1052, 1053->exit
-src\kimix\tools\agent\store.py                     74      2     12      1    97%   107->106, 138-139
+kimi-cli\src\kimi_cli\tools\file\hash_line.py     643     82    252     29    85%   132-133, 152-163, 239, 283-284, 286-295, 296->exit, 328-331, 341->exit, 381-388, 405->394, 440, 449, 463-467, 505, 534, 538->512, 548, 589->584, 606->609, 623, 704, 720-725, 744-745, 753, 758, 778-779, 786-787, 853->856, 904, 920-925, 944-945, 961, 965-966, 977-978, 980, 992-993, 1030-1032, 1075-1076, 1137-1149
 -------------------------------------------------------------------------------------------
-TOTAL                                            1251    110    442     61    89%
-218 passed in 1.37s
-[elapsed 5.0s, rc=0]
+TOTAL                                             643     82    252     29    85%
+218 passed in 1.72s
+[elapsed 5.7s, rc=0]

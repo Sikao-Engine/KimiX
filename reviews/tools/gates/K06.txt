@@ -1,292 +1,67 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
- M kimi-cli/src/kimi_cli/tools/file/conflict_detect.py
- M kimi-cli/src/kimi_cli/tools/file/read_media.py
- M src/kimix/tools/file/bash/pwsh_tool.py
- M src/kimix/tools/file/run.py
-?? .coverage
-?? kimi-cli/tests/tools/test_edit_gate.py
-?? reviews/tools/90-findings.md
-?? reviews/tools/93-orphans-and-removal.md
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/X03-security.md
-?? reviews/tools/X04-native-parity.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C06.json
-?? reviews/tools/gates/C06.txt
-?? reviews/tools/gates/C07.json
-?? reviews/tools/gates/C07.txt
-?? reviews/tools/gates/C08.json
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.json
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.json
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C11.json
-?? reviews/tools/gates/C11.txt
-?? reviews/tools/gates/C12.json
-?? reviews/tools/gates/C12.txt
-?? reviews/tools/gates/C13.json
-?? reviews/tools/gates/C13.txt
-?? reviews/tools/gates/C14.json
-?? reviews/tools/gates/C14.txt
-?? reviews/tools/gates/C15.json
-?? reviews/tools/gates/C15.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K00.json
-?? reviews/tools/gates/K00.txt
-?? reviews/tools/gates/K01.json
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K02.json
-?? reviews/tools/gates/K02.txt
-?? reviews/tools/gates/K03.json
-?? reviews/tools/gates/K03.txt
-?? reviews/tools/gates/K04.json
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/K05.json
-?? reviews/tools/gates/K05.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tests/kimix/test_agent_gate.py
-?? tests/test_review_orchestrator.py
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+ M reviews/tools/gates/C06.json
+ M reviews/tools/gates/C06.txt
+ M reviews/tools/gates/C07.json
+ M reviews/tools/gates/C07.txt
+ M reviews/tools/gates/C08.json
+ M reviews/tools/gates/C08.txt
+ M reviews/tools/gates/C09.json
+ M reviews/tools/gates/C09.txt
+ M reviews/tools/gates/C10.json
+ M reviews/tools/gates/C10.txt
+ M reviews/tools/gates/C11.json
+ M reviews/tools/gates/C11.txt
+ M reviews/tools/gates/C12.json
+ M reviews/tools/gates/C12.txt
+ M reviews/tools/gates/C13.json
+ M reviews/tools/gates/C13.txt
+ M reviews/tools/gates/C14.json
+ M reviews/tools/gates/C14.txt
+ M reviews/tools/gates/C15.json
+ M reviews/tools/gates/C15.txt
+ M reviews/tools/gates/K00.json
+ M reviews/tools/gates/K00.txt
+ M reviews/tools/gates/K01.json
+ M reviews/tools/gates/K01.txt
+ M reviews/tools/gates/K02.json
+ M reviews/tools/gates/K02.txt
+ M reviews/tools/gates/K03.json
+ M reviews/tools/gates/K03.txt
+ M reviews/tools/gates/K04.json
+ M reviews/tools/gates/K04.txt
+ M reviews/tools/gates/K05.json
+ M reviews/tools/gates/K05.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check src/kimix/tools/file/run.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> src\kimix\tools\file\run.py:2:1
-   |
- 1 |   """run tool for executing a process from a path."""
- 2 | / import anyio
- 3 | | import asyncio
- 4 | | import os
- 5 | | from pathlib import Path
- 6 | | from typing import Literal
- 7 | | import regex as re
- 8 | | import shlex
- 9 | | import sys
-10 | | from kimi_cli.tools import SkipThisTool
-11 | | from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-12 | | from pydantic import AliasChoices, BaseModel, Field, model_validator
-13 | | from kimi_cli.session import Session
-14 | | from kimix.tools.common import (
-15 | |     _build_session_output_block,
-16 | |     _create_script_file,
-17 | |     _env_with_rg_bin_path,
-18 | |     _extract_export_path,
-19 | |     _interactive_scope_text,
-20 | |     _is_known_rtk_command,
-21 | |     _maybe_export_output_async,
-22 | |     _maybe_export_rtk_original_async,
-23 | |     _export_to_temp_file_async,
-24 | |     _original_saved_message,
-25 | |     _save_original_output_async,
-26 | |     _rtk_binary_path,
-27 | |     _summarize_long_output_async,
-28 | |     _token_filter_output,
-29 | |     ProcessTask,
-30 | | )
-31 | | from kimix.tools.file.bash.output_enhance import (
-32 | |     annotate_failure,
-33 | |     interpret_exit_code,
-34 | |     is_expected_exit,
-35 | |     redact_sensitive_output,
-36 | | )
-37 | | from kimix.tools.file.bash.safety import (
-38 | |     check_hardline_blocked,
-39 | |     foreground_background_guidance,
-40 | |     validate_workdir,
-41 | | )
-42 | | from kimix.tools.prompt_common import (
-43 | |     max_lines_field,
-44 | |     mode_field,
-45 | |     task_id_field,
-46 | |     timeout_field,
-47 | |     wait_for_pattern_field,
-48 | | )
-49 | | from kimi_cli.tools.display import ShellDisplayBlock
-50 | | from kimi_cli.share import get_share_dir
-51 | | import functools
-52 | | import shutil
-   | |_____________^
-53 |   _HUGE_CMD_THRESHOLD = 10000
-54 |   """Character count above which command display is culled to only the path."""
-   |
-help: Organize imports
-   |
-1  | """run tool for executing a process from a path."""
-   - import anyio
-2  | import asyncio
-3  + import functools
-4  | import os
-5  + import shlex
-6  + import shutil
-7  + import sys
-8  | from pathlib import Path
-9  | from typing import Literal
-10 +
-11 + import anyio
-12 | import regex as re
-   - import shlex
-   - import sys
-13 + from kimi_cli.session import Session
-14 + from kimi_cli.share import get_share_dir
-15 | from kimi_cli.tools import SkipThisTool
-   - from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-16 + from kimi_cli.tools.display import ShellDisplayBlock
-17 | from pydantic import AliasChoices, BaseModel, Field, model_validator
-   - from kimi_cli.session import Session
-18 +
-19 + from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-20 | from kimix.tools.common import (
-21 +     ProcessTask,
-22 |     _build_session_output_block,
-23 |     _create_script_file,
-24 |     _env_with_rg_bin_path,
-25 +     _export_to_temp_file_async,
-26 |     _extract_export_path,
---------------------------------------------------------------------------------
-30 |     _maybe_export_rtk_original_async,
-   -     _export_to_temp_file_async,
-31 |     _original_saved_message,
-   -     _save_original_output_async,
-32 |     _rtk_binary_path,
-33 +     _save_original_output_async,
-34 |     _summarize_long_output_async,
-35 |     _token_filter_output,
-   -     ProcessTask,
-36 | )
---------------------------------------------------------------------------------
-54 | )
-   - from kimi_cli.tools.display import ShellDisplayBlock
-   - from kimi_cli.share import get_share_dir
-   - import functools
-   - import shutil
-55 +
-56 | _HUGE_CMD_THRESHOLD = 10000
-   |
-
-F401 [*] `kimi_cli.share.get_share_dir` imported but unused
-  --> src\kimix\tools\file\run.py:50:28
-   |
-48 | )
-49 | from kimi_cli.tools.display import ShellDisplayBlock
-50 | from kimi_cli.share import get_share_dir
-   |                            ^^^^^^^^^^^^^
-51 | import functools
-52 | import shutil
-   |
-help: Remove unused import: `kimi_cli.share.get_share_dir`
-   |
-49 | from kimi_cli.tools.display import ShellDisplayBlock
-   - from kimi_cli.share import get_share_dir
-50 | import functools
-   |
-
-F841 Local variable `display_cmd` is assigned to but never used
-   --> src\kimix\tools\file\run.py:385:13
-    |
-383 |                 arg[:100] + '...' if len(arg) > 100 else arg for arg in args_list]
-384 |             cmd_str = shlex.join([display_executable] + display_args)
-385 |             display_cmd = display_executable if len(
-    |             ^^^^^^^^^^^
-386 |                 cmd_str) > _HUGE_CMD_THRESHOLD else cmd_str
-    |
-help: Remove assignment to unused variable `display_cmd`
-
-F541 [*] f-string without any placeholders
-   --> src\kimix\tools\file\run.py:457:38
-    |
-455 | …                     task_id, task.stream, params, output, "running",
-456 | …                     wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-457 | …                     message=(f"[rtk] Matched pattern, still running" if rtk_rewritten else "Matched pattern, still running"),
-    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-458 | …                     brief="Pattern matched",
-459 | …                     rtk_rewritten=rtk_rewritten,
-    |
-help: Remove extraneous `f` prefix
-    |
-456 |                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-    -                             message=(f"[rtk] Matched pattern, still running" if rtk_rewritten else "Matched pattern, still running"),
-457 +                             message=("[rtk] Matched pattern, still running" if rtk_rewritten else "Matched pattern, still running"),
-458 |                             brief="Pattern matched",
-    |
-
-F841 Local variable `elapsed` is assigned to but never used
-   --> src\kimix\tools\file\run.py:583:17
-    |
-581 |                     original_path=original_path,
-582 |                 )
-583 |                 elapsed = task.stream.process_elapsed if task.stream else None
-    |                 ^^^^^^^
-584 |                 msg = (meaning or "expected non-zero exit") if not success else ("[rtk] success" if rtk_rewritten else "success")
-585 |                 suffix = _original_saved_message(original_path)
-    |
-help: Remove assignment to unused variable `elapsed`
-
-F841 [*] Local variable `e` is assigned to but never used
-   --> src\kimix\tools\file\run.py:594:29
-    |
-592 |                     display_block=ShellDisplayBlock(language="shell"),
-593 |                 )
-594 |         except Exception as e:
-    |                             ^
-595 |             return ToolError(
-596 |                 output='',
-    |
-help: Remove assignment to unused variable `e`
-    |
-593 |                 )
-    -         except Exception as e:
-594 +         except Exception:
-595 |             return ToolError(
-    |
-
-F821 Undefined name `BackgroundStream`
-   --> src\kimix\tools\file\run.py:757:18
-    |
-755 |         self,
-756 |         task_id: str,
-757 |         stream: 'BackgroundStream' | None,
-    |                  ^^^^^^^^^^^^^^^^
-758 |         params: RunParams,
-759 |         output: str,
-    |
-
-Found 7 errors.
-[*] 4 fixable with the `--fix` option (2 hidden fixes can be enabled with the `--unsafe-fixes` option).
-[elapsed 0.1s, rc=1]
+All checks passed!
+[elapsed 0.2s, rc=0]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
-C901 `__call__` is too complex (52 > 12)
-   --> src\kimix\tools\file\run.py:245:15
+C901 `__call__` is too complex (51 > 12)
+   --> src\kimix\tools\file\run.py:246:15
     |
-243 |         )
-244 |
-245 |     async def __call__(self, params: RunParams) -> ToolReturnValue:
+244 |         )
+245 |
+246 |     async def __call__(self, params: RunParams) -> ToolReturnValue:
     |               ^^^^^^^^
-246 |         # Hardline safety floor: never spawn a process for destructive commands.
-247 |         blocked = self._hardline_blocked(params.command)
+247 |         # Hardline safety floor: never spawn a process for destructive commands.
+248 |         blocked = self._hardline_blocked(params.command)
     |
 
 Found 1 error.
@@ -297,12 +72,12 @@ Found 1 error.
   "files": [
     {
       "path": "src/kimix/tools/file/run.py",
-      "loc": 798,
-      "module_loc": 798,
+      "loc": 789,
+      "module_loc": 789,
       "functions": [
         {
           "name": "_cd_prefix",
-          "lineno": 57,
+          "lineno": 61,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -310,15 +85,15 @@ Found 1 error.
         },
         {
           "name": "find_bash",
-          "lineno": 76,
-          "loc": 36,
+          "lineno": 80,
+          "loc": 33,
           "complexity": 11,
           "branches": 10,
           "max_nesting": 4
         },
         {
           "name": "_infer_mode",
-          "lineno": 160,
+          "lineno": 161,
           "loc": 5,
           "complexity": 3,
           "branches": 2,
@@ -326,7 +101,7 @@ Found 1 error.
         },
         {
           "name": "_validate_cmd",
-          "lineno": 167,
+          "lineno": 168,
           "loc": 11,
           "complexity": 8,
           "branches": 7,
@@ -334,7 +109,7 @@ Found 1 error.
         },
         {
           "name": "__init__",
-          "lineno": 188,
+          "lineno": 189,
           "loc": 34,
           "complexity": 10,
           "branches": 9,
@@ -342,7 +117,7 @@ Found 1 error.
         },
         {
           "name": "_hardline_blocked",
-          "lineno": 223,
+          "lineno": 224,
           "loc": 21,
           "complexity": 4,
           "branches": 3,
@@ -350,15 +125,15 @@ Found 1 error.
         },
         {
           "name": "__call__",
-          "lineno": 245,
-          "loc": 361,
-          "complexity": 92,
-          "branches": 91,
+          "lineno": 246,
+          "loc": 351,
+          "complexity": 86,
+          "branches": 85,
           "max_nesting": 5
         },
         {
           "name": "_run_via_shell",
-          "lineno": 607,
+          "lineno": 598,
           "loc": 43,
           "complexity": 4,
           "branches": 3,
@@ -366,7 +141,7 @@ Found 1 error.
         },
         {
           "name": "_compile_pattern",
-          "lineno": 651,
+          "lineno": 642,
           "loc": 11,
           "complexity": 3,
           "branches": 2,
@@ -374,7 +149,7 @@ Found 1 error.
         },
         {
           "name": "_continue_session",
-          "lineno": 663,
+          "lineno": 654,
           "loc": 52,
           "complexity": 9,
           "branches": 8,
@@ -382,7 +157,7 @@ Found 1 error.
         },
         {
           "name": "_process_output",
-          "lineno": 716,
+          "lineno": 707,
           "loc": 37,
           "complexity": 9,
           "branches": 8,
@@ -390,7 +165,7 @@ Found 1 error.
         },
         {
           "name": "_format_session_result",
-          "lineno": 754,
+          "lineno": 745,
           "loc": 45,
           "complexity": 10,
           "branches": 9,
@@ -399,19 +174,19 @@ Found 1 error.
       ],
       "longest_fn": {
         "name": "__call__",
-        "loc": 361
+        "loc": 351
       },
-      "module_complexity": 92
+      "module_complexity": 86
     }
   ],
   "totals": {
     "files": 1,
-    "loc": 798,
+    "loc": 789,
     "functions": 12
   },
   "breaches": [
-    "src/kimix/tools/file/run.py::__call__ loc=361 > 120",
-    "src/kimix/tools/file/run.py::__call__ complexity=92 > 12"
+    "src/kimix/tools/file/run.py::__call__ loc=351 > 120",
+    "src/kimix/tools/file/run.py::__call__ complexity=86 > 12"
   ]
 }
 [elapsed 0.2s, rc=1]
@@ -419,8 +194,8 @@ Found 1 error.
 === uv run pytest tests/test_run.py tests/test_custom_config.py tests/test_windows_env.py -q -rs ===
 ........................................................................ [ 98%]
 .                                                                        [100%]
-73 passed in 1.32s
-[elapsed 2.6s, rc=0]
+73 passed in 1.06s
+[elapsed 1.9s, rc=0]
 
 === uv run --with pytest-cov pytest tests/test_run.py tests/test_custom_config.py tests/test_windows_env.py --cov=kimix.tools.file.run ===
 ........................................................................ [ 98%]
@@ -430,8 +205,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                          Stmts   Miss Branch BrPart  Cover   Missing
 -------------------------------------------------------------------------
-src\kimix\tools\file\run.py     389    103    178     44    68%   78-111, 169, 172, 174, 176, 192, 195, 207, 209->205, 220-221, 232, 258, 282, 293, 297->315, 304, 310-311, 319, 323, 342->346, 354, 361-362, 403-412, 416-422, 441, 450-454, 466-476, 490->494, 506-510, 515-519, 529->541, 531-535, 557, 560, 568->570, 618-619, 636-637, 673, 689, 695->697, 698, 722->727, 730, 738->740, 745-749, 777-779, 781, 797
+src\kimix\tools\file\run.py     380    101    176     44    68%   82-112, 170, 173, 175, 177, 193, 196, 208, 210->206, 221-222, 233, 259, 283, 294, 298->316, 305, 311-312, 320, 324, 343->347, 355, 362-363, 398-407, 411-417, 436, 445-449, 461-471, 485->489, 501-505, 510-514, 524->536, 526-530, 551, 554, 562->564, 609-610, 627-628, 664, 680, 686->688, 689, 713->718, 721, 729->731, 736-740, 768-770, 772, 788
 -------------------------------------------------------------------------
-TOTAL                           389    103    178     44    68%
-73 passed in 1.89s
-[elapsed 6.1s, rc=0]
+TOTAL                           380    101    176     44    68%
+73 passed in 1.81s
+[elapsed 4.9s, rc=0]

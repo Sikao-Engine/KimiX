@@ -1,339 +1,173 @@
-52192b7c3a1baa66c96e0015d2868f3b106fc043
+d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]
-?? .coverage
-?? reviews/tools/X01-library-policy.md
-?? reviews/tools/X02-async-resources.md
-?? reviews/tools/gates/C00.json
-?? reviews/tools/gates/C00.txt
-?? reviews/tools/gates/C01.json
-?? reviews/tools/gates/C01.txt
-?? reviews/tools/gates/C02.json
-?? reviews/tools/gates/C02.txt
-?? reviews/tools/gates/C03.json
-?? reviews/tools/gates/C03.txt
-?? reviews/tools/gates/C04.json
-?? reviews/tools/gates/C04.txt
-?? reviews/tools/gates/C05.json
-?? reviews/tools/gates/C05.txt
-?? reviews/tools/gates/C06.json
-?? reviews/tools/gates/C06.txt
-?? reviews/tools/gates/C07.json
-?? reviews/tools/gates/C07.txt
-?? reviews/tools/gates/C08.txt
-?? reviews/tools/gates/C09.txt
-?? reviews/tools/gates/C10.txt
-?? reviews/tools/gates/C16.json
-?? reviews/tools/gates/C16.txt
-?? reviews/tools/gates/K01.txt
-?? reviews/tools/gates/K04.txt
-?? reviews/tools/gates/X01.txt
-?? reviews/tools/gates/X02.txt
-?? reviews/tools/gates/X03.txt
-?? reviews/tools/gates/X04.txt
-?? reviews/tools/gates/X05.txt
-?? reviews/tools/gates/X06.txt
-?? reviews/tools/gates/_harness.log
-?? tests/test_review_orchestrator.py
-?? tools/gen_tool_reports.py
-?? tools/review_gates.py
+ M reviews/tools/gates/C00.json
+ M reviews/tools/gates/C00.txt
+ M reviews/tools/gates/C01.json
+ M reviews/tools/gates/C01.txt
+ M reviews/tools/gates/C02.json
+ M reviews/tools/gates/C02.txt
+ M reviews/tools/gates/C03.json
+ M reviews/tools/gates/C03.txt
+ M reviews/tools/gates/C04.json
+ M reviews/tools/gates/C04.txt
+ M reviews/tools/gates/C05.json
+ M reviews/tools/gates/C05.txt
+ M reviews/tools/gates/C06.json
+ M reviews/tools/gates/C06.txt
+ M reviews/tools/gates/C07.json
+ M reviews/tools/gates/C07.txt
+?? reviews/tools/gates/_harness2.log
 [elapsed 0.0s, rc=0]
 
 
 === uv run ruff check kimi-cli/src/kimi_cli/tools/file/grep_local.py kimi-cli/src/kimi_cli/tools/file/grep_archive.py kimi-cli/src/kimi_cli/tools/file/grep_output.py kimi-cli/src/kimi_cli/tools/file/grep_recorder.py kimi-cli/src/kimi_cli/tools/file/grep_selectors.py ===
-I001 [*] Import block is un-sorted or un-formatted
-  --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:12:1
-   |
-10 |   """
-11 |
-12 | / import asyncio
-13 | | import concurrent.futures
-14 | | import contextlib
-15 | | import fnmatch
-16 | | import heapq
-17 | | import os
-18 | | import platform
-19 | | import regex as re
-20 | | import shlex
-21 | | import tempfile
-22 | | from dataclasses import dataclass, field
-23 | | from functools import lru_cache
-24 | | from pathlib import Path
-25 | | from typing import Any, Literal, override
-26 | |
-27 | | from kaos.path import KaosPath
-28 | | from kosong.tooling import (
-29 | |     FIELD_ALIASES_FILE,
-30 | |     FIELD_ALIASES_GENERAL,
-31 | |     FIELD_ALIASES_WEB,
-32 | |     CallableTool2,
-33 | |     ToolError,
-34 | |     ToolReturnValue,
-35 | |     alias_note,
-36 | | )
-37 | | from pydantic import AliasChoices, BaseModel, Field, field_validator
-38 | |
-39 | | from kimi_cli._ripgrep_common import (
-40 | |     RG_VERSION,
-41 | |     _detect_rg_target,
-42 | |     _extract_rg_archive,
-43 | |     _rg_archive_name,
-44 | |     _rg_binary_name,
-45 | |     _rg_download_url,
-46 | | )
-47 | | from kimi_cli._rtk_common import _rtk_binary_name
-48 | | from kimi_cli.install import _RTK_DOWNLOAD_LOCK, _download_and_install_rtk
-49 | | from kimi_cli.share import get_share_dir
-50 | | from kimi_cli.soul.agent import Runtime
-51 | | from kimi_cli.tools.file.grep_archive import (
-52 | |     materialize_archive_members,
-53 | |     parse_archive_path_candidates,
-54 | | )
-55 | | from kimi_cli.tools.file.grep_output import (
-56 | |     format_grouped_output,
-57 | |     group_lines_by_file,
-58 | |     should_group,
-59 | | )
-60 | | from kimi_cli.tools.file.grep_recorder import record_grep_files
-61 | | from kimi_cli.tools.file.grep_selectors import (
-62 | |     GrepPathSpec,
-63 | |     LineRange,
-64 | |     expand_path_entries,
-65 | |     is_line_in_ranges,
-66 | |     selector_line_ranges,
-67 | |     split_path_and_sel,
-68 | | )
-69 | | from kimi_cli.tools.file.micro_compress import (
-70 | |     MicroCompressConfig,
-71 | |     compress_lines as _mc_compress_lines,
-72 | | )
-73 | | from kimi_cli.tools.file.output_utils import (
-74 | |     dedup_lines,
-75 | |     fold_lines,
-76 | |     parse_rtk_rg_output,
-77 | |     truncate_line,
-78 | | )
-79 | | from kimi_cli.tools.utils import ToolResultBuilder
-80 | | from kimi_cli.utils.logging import logger
-81 | | from kimi_cli.utils.path import (
-82 | |     is_within_workspace,
-83 | |     kaos_path_from_user_input,
-84 | |     local_path_for_cwd,
-85 | |     normalize_user_path,
-86 | | )
-87 | | from kimi_cli.utils.sensitive import is_sensitive_file, sensitive_file_warning
-88 | | from kimi_cli.vfs import VFS
-   | |____________________________^
-89 |
-90 |   # Output mode map — only canonical values accepted
-   |
-help: Organize imports
-   |
-18 | import platform
-   - import regex as re
-19 | import shlex
---------------------------------------------------------------------------------
-25 |
-   - from kaos.path import KaosPath
-   - from kosong.tooling import (
-   -     FIELD_ALIASES_FILE,
-   -     FIELD_ALIASES_GENERAL,
-   -     FIELD_ALIASES_WEB,
-   -     CallableTool2,
-   -     ToolError,
-   -     ToolReturnValue,
-   -     alias_note,
-   - )
-26 + import regex as re
-27 | from pydantic import AliasChoices, BaseModel, Field, field_validator
-28 |
-29 + from kaos.path import KaosPath
-30 | from kimi_cli._ripgrep_common import (
---------------------------------------------------------------------------------
-61 |     MicroCompressConfig,
-62 + )
-63 + from kimi_cli.tools.file.micro_compress import (
-64 |     compress_lines as _mc_compress_lines,
---------------------------------------------------------------------------------
-81 | from kimi_cli.vfs import VFS
-82 + from kosong.tooling import (
-83 +     FIELD_ALIASES_FILE,
-84 +     FIELD_ALIASES_GENERAL,
-85 +     FIELD_ALIASES_WEB,
-86 +     CallableTool2,
-87 +     ToolError,
-88 +     ToolReturnValue,
-89 +     alias_note,
-90 + )
-91 |
-   |
-
 E501 Line too long (116 > 100)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1213:101
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1215:101
      |
-1211 |                         f"and cannot be searched."
-1212 |                     ),
-1213 |                     brief=f"Reserved device name | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+1213 |                         f"and cannot be searched."
+1214 |                     ),
+1215 |                     brief=f"Reserved device name | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
      |                                                                                                     ^^^^^^^^^^^^^^^^
-1214 |                 )
+1216 |                 )
      |
 
 E501 Line too long (118 > 100)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1228:101
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1230:101
      |
-1226 |                 return ToolError(
-1227 |                     message=f"`{display_path}` is outside the workspace.",
-1228 |                     brief=f"Path outside workspace | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+1228 |                 return ToolError(
+1229 |                     message=f"`{display_path}` is outside the workspace.",
+1230 |                     brief=f"Path outside workspace | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
      |                                                                                                     ^^^^^^^^^^^^^^^^^^
-1229 |                 )
+1231 |                 )
      |
 
 E501 Line too long (114 > 100)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1260:101
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1262:101
      |
-1258 |                             "Try a more specific path or pattern."
-1259 |                         ),
-1260 |                         brief=f"Grep timed out | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+1260 |                             "Try a more specific path or pattern."
+1261 |                         ),
+1262 |                         brief=f"Grep timed out | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
      |                                                                                                     ^^^^^^^^^^^^^^
-1261 |                     )
-1262 |                 message = (
+1263 |                     )
+1264 |                 message = (
      |
 
 E501 Line too long (110 > 100)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1277:101
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1279:101
      |
-1275 |                 return ToolError(
-1276 |                     message=f"Failed to grep. Error: {stderr_str}",
-1277 |                     brief=f"Failed to grep | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+1277 |                 return ToolError(
+1278 |                     message=f"Failed to grep. Error: {stderr_str}",
+1279 |                     brief=f"Failed to grep | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
      |                                                                                                     ^^^^^^^^^^
-1278 |                 )
+1280 |                 )
      |
 
 E501 Line too long (106 > 100)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1324:101
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1326:101
      |
-1322 |             return ToolError(
-1323 |                 message=f"Failed to grep. Error: {str(e)}",
-1324 |                 brief=f"Failed to grep | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
+1324 |             return ToolError(
+1325 |                 message=f"Failed to grep. Error: {str(e)}",
+1326 |                 brief=f"Failed to grep | {_format_cmd(params, rtk_path=rtk_path, path_input=path_input)}",
      |                                                                                                     ^^^^^^
-1325 |             )
+1327 |             )
      |
 
 E501 Line too long (103 > 100)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1903:101
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1905:101
      |
-1901 |                 original_is_absolute = kaos_path_from_user_input(entry_display).is_absolute()
-1902 |                 if (
-1903 |                     not is_within_workspace(logical_search_path, self._work_dir, self._additional_dirs)
+1903 |                 original_is_absolute = kaos_path_from_user_input(entry_display).is_absolute()
+1904 |                 if (
+1905 |                     not is_within_workspace(logical_search_path, self._work_dir, self._additional_dirs)
      |                                                                                                     ^^^
-1904 |                     and not original_is_absolute
-1905 |                 ):
+1906 |                     and not original_is_absolute
+1907 |                 ):
      |
 
-UP035 [*] Import from `collections.abc` instead: `Callable`
-  --> kimi-cli\src\kimi_cli\tools\file\grep_output.py:11:1
-   |
- 9 | from __future__ import annotations
-10 |
-11 | from typing import Any, Callable
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-12 |
-13 | __all__ = [
-   |
-help: Import from `collections.abc`
-   |
-10 |
-   - from typing import Any, Callable
-11 + from typing import Any
-12 + from collections.abc import Callable
-13 |
-   |
-
-Found 8 errors.
-[*] 2 fixable with the `--fix` option.
-[elapsed 0.1s, rc=1]
+Found 6 errors.
+[elapsed 0.5s, rc=1]
 
 === uv run ruff check --select C901 --max-complexity=12 ===
 C901 `_build_rg_args` is too complex (20 > 12)
-   --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:414:5
+   --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:416:5
     |
-414 | def _build_rg_args(
+416 | def _build_rg_args(
     |     ^^^^^^^^^^^^^^
-415 |     rg_cmd: str,
-416 |     params: Params,
+417 |     rg_cmd: str,
+418 |     params: Params,
     |
 
 C901 `_resolve_selector_specs` is too complex (13 > 12)
-   --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:858:11
+   --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:860:11
     |
-858 | async def _resolve_selector_specs(
+860 | async def _resolve_selector_specs(
     |           ^^^^^^^^^^^^^^^^^^^^^^^
-859 |     entries: list[str],
-860 |     work_dir,
+861 |     entries: list[str],
+862 |     work_dir,
     |
 
 C901 `__call__` is too complex (18 > 12)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1160:15
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1162:15
      |
-1159 |     @override
-1160 |     async def __call__(self, params: Params, *, _retry: bool = False) -> ToolReturnValue:
+1161 |     @override
+1162 |     async def __call__(self, params: Params, *, _retry: bool = False) -> ToolReturnValue:
      |               ^^^^^^^^
-1161 |         has_dirty = (
-1162 |             self._vfs is not None
+1163 |         has_dirty = (
+1164 |             self._vfs is not None
      |
 
 C901 `_rich_call` is too complex (15 > 12)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1377:15
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1379:15
      |
-1375 |         )
-1376 |
-1377 |     async def _rich_call(
+1377 |         )
+1378 |
+1379 |     async def _rich_call(
      |               ^^^^^^^^^^
-1378 |         self,
-1379 |         params: Params,
+1380 |         self,
+1381 |         params: Params,
      |
 
 C901 `_postprocess` is too complex (40 > 12)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1529:15
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1531:15
      |
-1527 |                     tmp_dir.cleanup()
-1528 |
-1529 |     async def _postprocess(
+1529 |                     tmp_dir.cleanup()
+1530 |
+1531 |     async def _postprocess(
      |               ^^^^^^^^^^^^
-1530 |         self,
-1531 |         *,
+1532 |         self,
+1533 |         *,
      |
 
 C901 `_backup_grep_impl` is too complex (20 > 12)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1846:15
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:1848:15
      |
-1844 |             )
-1845 |
-1846 |     async def _backup_grep_impl(self, params: Params) -> ToolReturnValue:
+1846 |             )
+1847 |
+1848 |     async def _backup_grep_impl(self, params: Params) -> ToolReturnValue:
      |               ^^^^^^^^^^^^^^^^^
-1847 |         try:
-1848 |             if not params.pattern:
+1849 |         try:
+1850 |             if not params.pattern:
      |
 
 C901 `_backup_grep_search` is too complex (36 > 12)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:2005:15
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:2007:15
      |
-2003 |             )
-2004 |
-2005 |     async def _backup_grep_search(
+2005 |             )
+2006 |
+2007 |     async def _backup_grep_search(
      |               ^^^^^^^^^^^^^^^^^^^
-2006 |         self,
-2007 |         params: Params,
+2008 |         self,
+2009 |         params: Params,
      |
 
 C901 `_search_content_single` is too complex (17 > 12)
-    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:2268:9
+    --> kimi-cli\src\kimi_cli\tools\file\grep_local.py:2270:9
      |
-2266 |         return _matches_type(file_path, params.type)
-2267 |
-2268 |     def _search_content_single(
+2268 |         return _matches_type(file_path, params.type)
+2269 |
+2270 |     def _search_content_single(
      |         ^^^^^^^^^^^^^^^^^^^^^^
-2269 |         self,
-2270 |         file_path: Path,
+2271 |         self,
+2272 |         file_path: Path,
      |
 
 Found 8 errors.
@@ -344,12 +178,12 @@ Found 8 errors.
   "files": [
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/grep_local.py",
-      "loc": 2355,
-      "module_loc": 2355,
+      "loc": 2357,
+      "module_loc": 2357,
       "functions": [
         {
           "name": "_pattern_has_regex_newline",
-          "lineno": 102,
+          "lineno": 104,
           "loc": 10,
           "complexity": 2,
           "branches": 1,
@@ -357,7 +191,7 @@ Found 8 errors.
         },
         {
           "name": "_multiline_pattern",
-          "lineno": 114,
+          "lineno": 116,
           "loc": 17,
           "complexity": 3,
           "branches": 2,
@@ -365,7 +199,7 @@ Found 8 errors.
         },
         {
           "name": "parse_content_line",
-          "lineno": 279,
+          "lineno": 281,
           "loc": 16,
           "complexity": 4,
           "branches": 3,
@@ -373,7 +207,7 @@ Found 8 errors.
         },
         {
           "name": "_env_with_shared_bin_path",
-          "lineno": 297,
+          "lineno": 299,
           "loc": 22,
           "complexity": 4,
           "branches": 3,
@@ -381,7 +215,7 @@ Found 8 errors.
         },
         {
           "name": "_find_existing_rtk",
-          "lineno": 321,
+          "lineno": 323,
           "loc": 13,
           "complexity": 2,
           "branches": 1,
@@ -389,7 +223,7 @@ Found 8 errors.
         },
         {
           "name": "_ensure_rtk_path",
-          "lineno": 336,
+          "lineno": 338,
           "loc": 13,
           "complexity": 3,
           "branches": 2,
@@ -397,7 +231,7 @@ Found 8 errors.
         },
         {
           "name": "_find_existing_rg",
-          "lineno": 351,
+          "lineno": 353,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -405,7 +239,7 @@ Found 8 errors.
         },
         {
           "name": "_download_and_install_rg",
-          "lineno": 364,
+          "lineno": 366,
           "loc": 33,
           "complexity": 4,
           "branches": 3,
@@ -413,7 +247,7 @@ Found 8 errors.
         },
         {
           "name": "_ensure_rg_path",
-          "lineno": 399,
+          "lineno": 401,
           "loc": 13,
           "complexity": 3,
           "branches": 2,
@@ -421,7 +255,7 @@ Found 8 errors.
         },
         {
           "name": "_build_rg_args",
-          "lineno": 414,
+          "lineno": 416,
           "loc": 105,
           "complexity": 26,
           "branches": 25,
@@ -429,7 +263,7 @@ Found 8 errors.
         },
         {
           "name": "_format_cmd",
-          "lineno": 521,
+          "lineno": 523,
           "loc": 12,
           "complexity": 4,
           "branches": 3,
@@ -437,7 +271,7 @@ Found 8 errors.
         },
         {
           "name": "_read_stream",
-          "lineno": 535,
+          "lineno": 537,
           "loc": 30,
           "complexity": 7,
           "branches": 6,
@@ -445,7 +279,7 @@ Found 8 errors.
         },
         {
           "name": "_kill_process",
-          "lineno": 567,
+          "lineno": 569,
           "loc": 8,
           "complexity": 2,
           "branches": 1,
@@ -453,7 +287,7 @@ Found 8 errors.
         },
         {
           "name": "_is_eagain",
-          "lineno": 577,
+          "lineno": 579,
           "loc": 2,
           "complexity": 2,
           "branches": 1,
@@ -461,7 +295,7 @@ Found 8 errors.
         },
         {
           "name": "_is_windows_reserved_name",
-          "lineno": 589,
+          "lineno": 591,
           "loc": 12,
           "complexity": 5,
           "branches": 4,
@@ -469,7 +303,7 @@ Found 8 errors.
         },
         {
           "name": "_is_sensitive_cached",
-          "lineno": 607,
+          "lineno": 609,
           "loc": 3,
           "complexity": 1,
           "branches": 0,
@@ -477,7 +311,7 @@ Found 8 errors.
         },
         {
           "name": "_join_with_byte_limit",
-          "lineno": 612,
+          "lineno": 614,
           "loc": 15,
           "complexity": 4,
           "branches": 3,
@@ -485,7 +319,7 @@ Found 8 errors.
         },
         {
           "name": "_strip_path_prefix",
-          "lineno": 629,
+          "lineno": 631,
           "loc": 14,
           "complexity": 3,
           "branches": 2,
@@ -493,7 +327,7 @@ Found 8 errors.
         },
         {
           "name": "_rtk_fold_note",
-          "lineno": 645,
+          "lineno": 647,
           "loc": 38,
           "complexity": 12,
           "branches": 11,
@@ -501,7 +335,7 @@ Found 8 errors.
         },
         {
           "name": "_is_binary",
-          "lineno": 737,
+          "lineno": 739,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -509,7 +343,7 @@ Found 8 errors.
         },
         {
           "name": "_should_skip_dir",
-          "lineno": 741,
+          "lineno": 743,
           "loc": 4,
           "complexity": 3,
           "branches": 2,
@@ -517,7 +351,7 @@ Found 8 errors.
         },
         {
           "name": "_matches_type",
-          "lineno": 747,
+          "lineno": 749,
           "loc": 8,
           "complexity": 3,
           "branches": 2,
@@ -525,7 +359,7 @@ Found 8 errors.
         },
         {
           "name": "_matches_glob",
-          "lineno": 757,
+          "lineno": 759,
           "loc": 4,
           "complexity": 2,
           "branches": 1,
@@ -533,7 +367,7 @@ Found 8 errors.
         },
         {
           "name": "_safe_getmtime",
-          "lineno": 763,
+          "lineno": 765,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -541,7 +375,7 @@ Found 8 errors.
         },
         {
           "name": "_safe_getmtime_async",
-          "lineno": 770,
+          "lineno": 772,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -549,7 +383,7 @@ Found 8 errors.
         },
         {
           "name": "_compile_regex_cached",
-          "lineno": 778,
+          "lineno": 780,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -557,7 +391,7 @@ Found 8 errors.
         },
         {
           "name": "_read_file_text",
-          "lineno": 782,
+          "lineno": 784,
           "loc": 13,
           "complexity": 4,
           "branches": 3,
@@ -565,7 +399,7 @@ Found 8 errors.
         },
         {
           "name": "_merge_intervals",
-          "lineno": 797,
+          "lineno": 799,
           "loc": 11,
           "complexity": 4,
           "branches": 3,
@@ -573,7 +407,7 @@ Found 8 errors.
         },
         {
           "name": "_reattach_single_file_prefix",
-          "lineno": 825,
+          "lineno": 827,
           "loc": 18,
           "complexity": 4,
           "branches": 3,
@@ -581,7 +415,7 @@ Found 8 errors.
         },
         {
           "name": "_plain_ctx",
-          "lineno": 845,
+          "lineno": 847,
           "loc": 7,
           "complexity": 1,
           "branches": 0,
@@ -589,7 +423,7 @@ Found 8 errors.
         },
         {
           "name": "_glob_chars",
-          "lineno": 854,
+          "lineno": 856,
           "loc": 2,
           "complexity": 1,
           "branches": 0,
@@ -597,7 +431,7 @@ Found 8 errors.
         },
         {
           "name": "_resolve_selector_specs",
-          "lineno": 858,
+          "lineno": 860,
           "loc": 97,
           "complexity": 16,
           "branches": 15,
@@ -605,7 +439,7 @@ Found 8 errors.
         },
         {
           "name": "_strip_key_for",
-          "lineno": 957,
+          "lineno": 959,
           "loc": 7,
           "complexity": 3,
           "branches": 2,
@@ -613,7 +447,7 @@ Found 8 errors.
         },
         {
           "name": "_build_ranges_map",
-          "lineno": 966,
+          "lineno": 968,
           "loc": 23,
           "complexity": 5,
           "branches": 4,
@@ -621,7 +455,7 @@ Found 8 errors.
         },
         {
           "name": "_remap_display",
-          "lineno": 991,
+          "lineno": 993,
           "loc": 18,
           "complexity": 5,
           "branches": 4,
@@ -629,7 +463,7 @@ Found 8 errors.
         },
         {
           "name": "_normalize_slashes_content",
-          "lineno": 1011,
+          "lineno": 1013,
           "loc": 17,
           "complexity": 6,
           "branches": 5,
@@ -637,7 +471,7 @@ Found 8 errors.
         },
         {
           "name": "_range_filter_lines",
-          "lineno": 1030,
+          "lineno": 1032,
           "loc": 25,
           "complexity": 12,
           "branches": 11,
@@ -645,7 +479,7 @@ Found 8 errors.
         },
         {
           "name": "_collect_record_files",
-          "lineno": 1057,
+          "lineno": 1059,
           "loc": 13,
           "complexity": 7,
           "branches": 6,
@@ -653,7 +487,7 @@ Found 8 errors.
         },
         {
           "name": "_text_in_ranges",
-          "lineno": 1072,
+          "lineno": 1074,
           "loc": 5,
           "complexity": 2,
           "branches": 1,
@@ -661,7 +495,7 @@ Found 8 errors.
         },
         {
           "name": "_entries_are_rich",
-          "lineno": 1079,
+          "lineno": 1081,
           "loc": 8,
           "complexity": 3,
           "branches": 2,
@@ -669,7 +503,7 @@ Found 8 errors.
         },
         {
           "name": "_validate_output_mode",
-          "lineno": 184,
+          "lineno": 186,
           "loc": 9,
           "complexity": 2,
           "branches": 1,
@@ -677,7 +511,7 @@ Found 8 errors.
         },
         {
           "name": "__init__",
-          "lineno": 1115,
+          "lineno": 1117,
           "loc": 22,
           "complexity": 5,
           "branches": 4,
@@ -685,7 +519,7 @@ Found 8 errors.
         },
         {
           "name": "_resolve_rtk_path",
-          "lineno": 1138,
+          "lineno": 1140,
           "loc": 20,
           "complexity": 4,
           "branches": 3,
@@ -693,7 +527,7 @@ Found 8 errors.
         },
         {
           "name": "__call__",
-          "lineno": 1160,
+          "lineno": 1162,
           "loc": 166,
           "complexity": 27,
           "branches": 26,
@@ -701,7 +535,7 @@ Found 8 errors.
         },
         {
           "name": "_run_rg_subprocess",
-          "lineno": 1327,
+          "lineno": 1329,
           "loc": 49,
           "complexity": 3,
           "branches": 2,
@@ -709,7 +543,7 @@ Found 8 errors.
         },
         {
           "name": "_rich_call",
-          "lineno": 1377,
+          "lineno": 1379,
           "loc": 151,
           "complexity": 30,
           "branches": 29,
@@ -717,7 +551,7 @@ Found 8 errors.
         },
         {
           "name": "_postprocess",
-          "lineno": 1529,
+          "lineno": 1531,
           "loc": 297,
           "complexity": 77,
           "branches": 76,
@@ -725,7 +559,7 @@ Found 8 errors.
         },
         {
           "name": "backup_grep",
-          "lineno": 1827,
+          "lineno": 1829,
           "loc": 18,
           "complexity": 2,
           "branches": 1,
@@ -733,7 +567,7 @@ Found 8 errors.
         },
         {
           "name": "_backup_grep_impl",
-          "lineno": 1846,
+          "lineno": 1848,
           "loc": 158,
           "complexity": 31,
           "branches": 30,
@@ -741,7 +575,7 @@ Found 8 errors.
         },
         {
           "name": "_backup_grep_search",
-          "lineno": 2005,
+          "lineno": 2007,
           "loc": 233,
           "complexity": 51,
           "branches": 50,
@@ -749,7 +583,7 @@ Found 8 errors.
         },
         {
           "name": "_collect_files",
-          "lineno": 2239,
+          "lineno": 2241,
           "loc": 16,
           "complexity": 7,
           "branches": 6,
@@ -757,7 +591,7 @@ Found 8 errors.
         },
         {
           "name": "_is_valid_file",
-          "lineno": 2256,
+          "lineno": 2258,
           "loc": 11,
           "complexity": 5,
           "branches": 4,
@@ -765,7 +599,7 @@ Found 8 errors.
         },
         {
           "name": "_search_content_single",
-          "lineno": 2268,
+          "lineno": 2270,
           "loc": 66,
           "complexity": 22,
           "branches": 21,
@@ -773,7 +607,7 @@ Found 8 errors.
         },
         {
           "name": "_extract_path",
-          "lineno": 2335,
+          "lineno": 2337,
           "loc": 21,
           "complexity": 8,
           "branches": 7,
@@ -781,7 +615,7 @@ Found 8 errors.
         },
         {
           "name": "_process_one",
-          "lineno": 2025,
+          "lineno": 2027,
           "loc": 24,
           "complexity": 8,
           "branches": 7,
@@ -848,12 +682,12 @@ Found 8 errors.
     },
     {
       "path": "kimi-cli/src/kimi_cli/tools/file/grep_output.py",
-      "loc": 115,
-      "module_loc": 115,
+      "loc": 116,
+      "module_loc": 116,
       "functions": [
         {
           "name": "format_match_line",
-          "lineno": 22,
+          "lineno": 23,
           "loc": 8,
           "complexity": 2,
           "branches": 1,
@@ -861,7 +695,7 @@ Found 8 errors.
         },
         {
           "name": "group_lines_by_file",
-          "lineno": 32,
+          "lineno": 33,
           "loc": 29,
           "complexity": 6,
           "branches": 5,
@@ -869,7 +703,7 @@ Found 8 errors.
         },
         {
           "name": "format_grouped_output",
-          "lineno": 63,
+          "lineno": 64,
           "loc": 20,
           "complexity": 5,
           "branches": 4,
@@ -877,7 +711,7 @@ Found 8 errors.
         },
         {
           "name": "group_line_indices_by_blank",
-          "lineno": 85,
+          "lineno": 86,
           "loc": 18,
           "complexity": 5,
           "branches": 4,
@@ -885,7 +719,7 @@ Found 8 errors.
         },
         {
           "name": "should_group",
-          "lineno": 105,
+          "lineno": 106,
           "loc": 11,
           "complexity": 2,
           "branches": 1,
@@ -1061,7 +895,7 @@ Found 8 errors.
   ],
   "totals": {
     "files": 5,
-    "loc": 3042,
+    "loc": 3045,
     "functions": 82
   },
   "breaches": [
@@ -1080,9 +914,9 @@ Found 8 errors.
     "kimi-cli/src/kimi_cli/tools/file/grep_local.py::_search_content_single complexity=22 > 12"
   ]
 }
-[elapsed 0.2s, rc=1]
+[elapsed 0.3s, rc=1]
 
-=== uv run pytest kimi-cli/tests/tools\test_grep.py kimi-cli/tests/tools\test_grep_archive.py kimi-cli/tests/tools\test_grep_output.py kimi-cli/tests/tools\test_grep_recorder.py kimi-cli/tests/tools\test_grep_rich.py kimi-cli/tests/tools\test_grep_ripgrep_only.py kimi-cli/tests/tools\test_grep_selectors.py -q -rs ===
+=== uv run pytest kimi-cli/tests/tools/test_grep.py kimi-cli/tests/tools/test_grep_archive.py kimi-cli/tests/tools/test_grep_output.py kimi-cli/tests/tools/test_grep_recorder.py kimi-cli/tests/tools/test_grep_rich.py kimi-cli/tests/tools/test_grep_ripgrep_only.py kimi-cli/tests/tools/test_grep_selectors.py -q -rs ===
 ........................................................................ [ 26%]
 ..........sss........................................................... [ 53%]
 ........................................................................ [ 79%]
@@ -1091,10 +925,10 @@ Found 8 errors.
 SKIPPED [1] kimi-cli\tests\tools\test_grep.py:1622: [out of work-dir] warning not implemented in Grep
 SKIPPED [1] kimi-cli\tests\tools\test_grep.py:1643: [out of work-dir] warning not implemented in Grep
 SKIPPED [1] kimi-cli\tests\tools\test_grep.py:1658: [out of work-dir] warning not implemented in Grep
-268 passed, 3 skipped in 9.11s
-[elapsed 11.1s, rc=0]
+268 passed, 3 skipped in 7.49s
+[elapsed 9.4s, rc=0]
 
-=== uv run --with pytest-cov pytest kimi-cli/tests/tools\test_grep.py kimi-cli/tests/tools\test_grep_archive.py kimi-cli/tests/tools\test_grep_output.py kimi-cli/tests/tools\test_grep_recorder.py kimi-cli/tests/tools\test_grep_rich.py kimi-cli/tests/tools\test_grep_ripgrep_only.py kimi-cli/tests/tools\test_grep_selectors.py --cov=kimi_cli.tools.file.grep_local ===
+=== uv run --with pytest-cov pytest kimi-cli/tests/tools/test_grep.py kimi-cli/tests/tools/test_grep_archive.py kimi-cli/tests/tools/test_grep_output.py kimi-cli/tests/tools/test_grep_recorder.py kimi-cli/tests/tools/test_grep_rich.py kimi-cli/tests/tools/test_grep_ripgrep_only.py kimi-cli/tests/tools/test_grep_selectors.py --cov=kimi_cli.tools.file.grep_local ===
 ........................................................................ [ 26%]
 ..........sss........................................................... [ 53%]
 ........................................................................ [ 79%]
@@ -1104,8 +938,8 @@ _______________ coverage: platform win32, python 3.14.3-final-0 _______________
 
 Name                                             Stmts   Miss Branch BrPart  Cover   Missing
 --------------------------------------------------------------------------------------------
-kimi-cli\src\kimi_cli\tools\file\grep_local.py    1105    174    496     62    84%   188, 293, 337-348, 361, 365-396, 400-411, 557-563, 569-574, 592, 596, 599, 625, 674->678, 676-677, 678->680, 766-767, 785-786, 793-794, 833, 910, 942, 962, 1015, 1024, 1035, 1050, 1053, 1127-1128, 1135-1136, 1156-1157, 1167, 1176-1181, 1208, 1225-1226, 1248-1250, 1254-1262, 1273-1274, 1313-1322, 1360-1365, 1453-1456, 1462-1464, 1472-1477, 1481->1440, 1494-1497, 1516-1517, 1556, 1685->1683, 1689-1690, 1774->1788, 1821-1822, 1890-1891, 1914-1915, 1943-1945, 1959-1960, 1962-1964, 1993-2000, 2028, 2043, 2071->2068, 2109->2107, 2113-2114, 2131-2132, 2138, 2186-2190, 2199->2210, 2202-2207, 2216->2218, 2221-2222, 2227-2234, 2242->2254, 2261-2263, 2283, 2307, 2320, 2331
+kimi-cli\src\kimi_cli\tools\file\grep_local.py    1106    174    496     62    84%   190, 295, 339-350, 363, 367-398, 402-413, 559-565, 571-576, 594, 598, 601, 627, 676->680, 678-679, 680->682, 768-769, 787-788, 795-796, 835, 912, 944, 964, 1017, 1026, 1037, 1052, 1055, 1129-1130, 1137-1138, 1158-1159, 1169, 1178-1183, 1210, 1227-1228, 1250-1252, 1256-1264, 1275-1276, 1315-1324, 1362-1367, 1455-1458, 1464-1466, 1474-1479, 1483->1442, 1496-1499, 1518-1519, 1558, 1687->1685, 1691-1692, 1776->1790, 1823-1824, 1892-1893, 1916-1917, 1945-1947, 1961-1962, 1964-1966, 1995-2002, 2030, 2045, 2073->2070, 2111->2109, 2115-2116, 2133-2134, 2140, 2188-2192, 2201->2212, 2204-2209, 2218->2220, 2223-2224, 2229-2236, 2244->2256, 2263-2265, 2285, 2309, 2322, 2333
 --------------------------------------------------------------------------------------------
-TOTAL                                             1105    174    496     62    84%
-268 passed, 3 skipped in 8.09s
-[elapsed 11.8s, rc=0]
+TOTAL                                             1106    174    496     62    84%
+268 passed, 3 skipped in 7.41s
+[elapsed 10.8s, rc=0]

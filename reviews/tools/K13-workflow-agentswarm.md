@@ -4,8 +4,8 @@
 
 | Gate | Result | Evidence |
 |---|---|---|
-| G0 scope | pass | files=2 tests=2 registration=`AgentSwarm` (src/kimix/tools/swarm/__init__.py:182) |
-| G1 simplicity | fail | ruff=fail C901=pass metrics=fail complexity_max=19 longest_fn_loc=85 |
+| G0 scope | pass | files=2 tests=2 registration=`AgentSwarm` (src/kimix/tools/swarm/__init__.py:183) |
+| G1 simplicity | fail | ruff=pass C901=pass metrics=fail complexity_max=19 longest_fn_loc=83 |
 | G2 risk | not-independently-verified | item rows in §4; X02/X03 sweeps own the async/security rows |
 | G3 coverage | pass | floor=85 no coverage line recorded |
 | G4 behavior | fail | `tests/unit/tools/test_swarm_gate.py` required=11 present=0 |
@@ -16,45 +16,45 @@
 
 | source | LOC |
 |---|---|
-| `src/kimix/tools/swarm/__init__.py` | 542 |
-| `src/kimix/tools/swarm/best_of_n.py` | 423 |
+| `src/kimix/tools/swarm/__init__.py` | 539 |
+| `src/kimix/tools/swarm/best_of_n.py` | 433 |
 
 Tests in scope: `tests/kimix/test_agent_swarm.py`, `tests/test_best_of_n.py`
 
-Module LOC total: **965**
+Module LOC total: **972**
 
 ## 2. Behaviour map
 
 | entry point | file:line | bases | params model(s) | __call__ |
 |---|---|---|---|---|
-| `AgentSwarm` | `src/kimix/tools/swarm/__init__.py:182` | CallableTool2 | - | True |
+| `AgentSwarm` | `src/kimix/tools/swarm/__init__.py:183` | CallableTool2 | - | True |
 
 Largest functions (by LOC):
 
 | function | LOC | complexity | branches | max nesting | file |
 |---|---|---|---|---|---|
-| `_execute_parallel_sample` | 85 | 12 | 11 | 1 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
-| `_run_subagent_task` | 65 | 12 | 11 | 4 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
+| `_execute_parallel_sample` | 83 | 12 | 11 | 1 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
+| `_run_subagent_task` | 63 | 11 | 10 | 4 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
 | `best_of_n` | 54 | 7 | 6 | 2 | `C:/dev/kimi-agent/src/kimix/tools/swarm/best_of_n.py` |
 | `collect_diff` | 50 | 10 | 9 | 3 | `C:/dev/kimi-agent/src/kimix/tools/swarm/best_of_n.py` |
+| `run_parallel_sample` | 49 | 2 | 1 | 1 | `C:/dev/kimi-agent/src/kimix/tools/swarm/best_of_n.py` |
 | `select_best_candidate` | 46 | 10 | 9 | 4 | `C:/dev/kimi-agent/src/kimix/tools/swarm/best_of_n.py` |
 | `_resolve_subagent_session` | 40 | 5 | 4 | 1 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
-| `run_parallel_sample` | 40 | 2 | 1 | 1 | `C:/dev/kimi-agent/src/kimix/tools/swarm/best_of_n.py` |
 | `_validate` | 35 | 19 | 18 | 2 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
 | `apply_diff_to_workspace` | 34 | 9 | 8 | 4 | `C:/dev/kimi-agent/src/kimix/tools/swarm/best_of_n.py` |
+| `_one` | 34 | 4 | 3 | 2 | `C:/dev/kimi-agent/src/kimix/tools/swarm/best_of_n.py` |
 | `_render_results` | 28 | 7 | 6 | 2 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
 | `_run_swarm` | 25 | 3 | 2 | 2 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
-| `_execute` | 25 | 4 | 3 | 2 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
 
 ## 3. S1 Simplicity (G1 detail)
 
 verdict: **fail**
 
-* `ruff check` → `fail`
+* `ruff check` → `pass`
 * `ruff check --select C901 --max-complexity=12` → `pass`
 * `review_metrics --max-fn-loc 120 --max-complexity 12` → `fail`
-* module LOC **965** → decision: **keep (below the 1200-LOC split threshold)**
-* longest function `_execute_parallel_sample` = 85 LOC (`C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py`)
+* module LOC **972** → decision: **keep (below the 1200-LOC split threshold)**
+* longest function `_execute_parallel_sample` = 83 LOC (`C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py`)
 * functions > 120 LOC: **0** · complexity > 12: **1**
 
 Threshold breaches recorded:
@@ -68,8 +68,8 @@ Top-5 by cyclomatic complexity:
 | function | complexity | LOC | file |
 |---|---|---|---|
 | `_validate` | 19 | 35 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
-| `_execute_parallel_sample` | 12 | 85 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
-| `_run_subagent_task` | 12 | 65 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
+| `_execute_parallel_sample` | 12 | 83 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
+| `_run_subagent_task` | 11 | 63 | `C:/dev/kimi-agent/src/kimix/tools/swarm/__init__.py` |
 | `collect_diff` | 10 | 50 | `C:/dev/kimi-agent/src/kimix/tools/swarm/best_of_n.py` |
 | `select_best_candidate` | 10 | 46 | `C:/dev/kimi-agent/src/kimix/tools/swarm/best_of_n.py` |
 
@@ -113,7 +113,7 @@ Top-5 by cyclomatic complexity:
 
 ## 8. Git provenance
 
-* `git rev-parse HEAD` at review time: `52192b7c3a1baa66c96e0015d2868f3b106fc043
+* `git rev-parse HEAD` at review time: `d684f5a8cd5cfc39549a6a3566b83d9a454deec7
 [elapsed 0.0s, rc=0]`
 * branch `review/tools-hardgate` · base tag `tools-review/p0-base`
 * the commit/tag for this unit is assigned by the orchestrator on acceptance
@@ -140,9 +140,9 @@ verdict: **major**
   "gates": {
     "G0_scope": "pass",
     "G1_simplicity": {
-      "ruff": "fail",
+      "ruff": "pass",
       "complexity_max": 19,
-      "longest_fn_loc": 85,
+      "longest_fn_loc": 83,
       "loc_regression": "none",
       "vulture_hits": 0,
       "vulture_waived": 0
@@ -150,7 +150,7 @@ verdict: **major**
     "G2_risk": {
       "items_answered": 13,
       "open_high": 1,
-      "open_medium": 2,
+      "open_medium": 1,
       "waived_medium": 0
     },
     "G3_coverage": {
@@ -178,16 +178,6 @@ verdict: **major**
     {
       "severity": "medium",
       "axis": "simplicity",
-      "title": "ruff check fails on the in-scope files",
-      "file": "src/kimix/tools/swarm/__init__.py",
-      "evidence": "reviews/tools/gates/K13.txt §ruff (rc=1)",
-      "impact": "G1 lint gate is red; import-order/style/naming violations accumulate",
-      "fix": "uv run ruff check --fix <files>, then hand-fix the remainder",
-      "test_to_add": "tests/unit/tools/test_swarm_gate.py::test_ruff_clean_in_scope"
-    },
-    {
-      "severity": "medium",
-      "axis": "simplicity",
       "title": "1 functions exceed complexity 12",
       "file": "src/kimix/tools/swarm/__init__.py",
       "evidence": "gates/K13.json complexity_max=19",
@@ -209,15 +199,14 @@ verdict: **major**
   "coverage": {
     "behaviors_mapped": 0,
     "covered": 0,
-    "gaps": 3,
+    "gaps": 2,
     "gap_list": [
-      "ruff check fails on the in-scope files",
       "1 functions exceed complexity 12",
       "G4 probe suite missing/insufficient (0/11)"
     ]
   },
   "gate_evidence": "reviews/tools/gates/K13.txt",
-  "git_sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "git_sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "worktree_clean_at_start": true,
   "needs_fix_phase": true,
   "duplication_notes": []

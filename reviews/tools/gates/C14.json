@@ -10,7 +10,7 @@
     "kimi-cli/tests/core/test_current_turn_start_index.py"
   ],
   "cov_module": "kimi_cli.tools.context_prune",
-  "sha": "52192b7c3a1baa66c96e0015d2868f3b106fc043\n[elapsed 0.0s, rc=0]",
+  "sha": "d684f5a8cd5cfc39549a6a3566b83d9a454deec7\n[elapsed 0.0s, rc=0]",
   "ruff_rc": 1,
   "ruff": "fail",
   "c901_rc": 0,
