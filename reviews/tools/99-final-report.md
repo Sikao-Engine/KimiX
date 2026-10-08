@@ -436,7 +436,10 @@ Overall change scope, `git diff --stat tools-review/p0-base HEAD`:
 
 ## 13. Resolved provenance (appended after the report commit)
 
-* tagged revision `tools-review/p5-final` = `902805d4a8a34c9ec109489c1e1ae4fcb92356f4`
+The diffstat below was captured at the report commit; `tools-review/p5-final`
+is force-moved onto the commit that adds this section, so `git rev-parse tools-review/p5-final` is the authoritative final SHA (one commit newer).
+
+* report commit (the main body of this document) = `902805d4a8a34c9ec109489c1e1ae4fcb92356f4`
 * `git log --oneline master ^review/tools-hardgate` = `(empty)`
 * `git diff --stat tools-review/p0-base tools-review/p5-final`:
 
