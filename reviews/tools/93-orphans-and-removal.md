@@ -25,15 +25,22 @@ Before this phase: 37 discovered / 27 registered / 1 allowlisted / **9 orphans**
 | `kimi_cli.tools.test:Panic` (`panic`) | as above | **delete** | yes |
 | `kimix.tools.file:Mkdir` | no tests, no manifest, no docs, no native mirror | **delete** | yes — class removed |
 | `kimix.tools.file:Rm` | as above (and registering it would grant the model file deletion) | **delete** | yes — class removed |
-| `kimix.tools.file.find_str:FindStr` | **mirrored in the native shim** (`bin/kimix_native/tools.py:362`) and imported directly by `tests/native/test_behavior_equivalence.py:110` — clearly an intended tool with a wiring gap | **register** | yes — added to `src/kimix/agent_worker.json` |
-| `kimix.tools.parser:ParserTool` | imported directly by 6 test sites in `tests/test_parsers.py` | **register** | yes — added to `src/kimix/agent_worker.json` |
+| `kimix.tools.file.find_str:FindStr` | **mirrored in the native shim** (`bin/kimix_native/tools.py:362`) and imported directly by `tests/native/test_behavior_equivalence.py:110` | **allowlist with rationale** (REVISED - was "register") | yes — `tools/tool_registry_allowlist.txt` |
+| `kimix.tools.parser:ParserTool` | imported directly by 6 test sites in `tests/test_parsers.py` | **allowlist with rationale** (REVISED - was "register") | yes — `tools/tool_registry_allowlist.txt` |
 | `kimi_cli.tools.file.hash_line:HashRead` | exported by `kimi_cli.tools.file.__all__`, canonical in `kimi_cli/soul/tool_taxonomy.py`, covered by `test_hash_line.py`; opt-in rather than default | **allowlist with rationale** | yes — `tools/tool_registry_allowlist.txt` |
 | `kimi_cli.tools.file.hash_line:HashEdit` | as above | **allowlist with rationale** | yes |
 | `kimi_cli.tools.context_prune:context_prune` | registered programmatically at `kimisoul.py:490` | allowlist (already) | yes |
 
-Rule applied: **tested + mirrored + maintained -> register; untested + unwired + undocumented -> delete;
-exported-but-opt-in -> allowlist with a written rationale.** No tool was deleted that any test,
-manifest, native mirror or document referenced.
+Rule applied: **untested + unwired + undocumented -> delete; everything else -> allowlist with a
+written rationale.** No tool was deleted that any test, manifest, native mirror or document
+referenced.
+
+**Revision (owner decision, post-review):** `FindStr` and `ParserTool` were initially *registered*
+in `src/kimix/agent_worker.json`, which is the option the plan's K15/K16 gates name first.  The owner
+then directed **no new tool registrations**, so that manifest change was reverted byte-for-byte and
+both tools moved to the allowlist instead.  G-ORPHAN's own pass condition (plan §3 G7) accepts
+"registered in a manifest **or** listed in `tools/tool_registry_allowlist.txt` with a rationale", so
+the gate stays green: 32 discovered / 27 registered / 5 allowlisted / **0 orphans**.
 
 ## 3. Duplicate tool names (G-DUP)
 

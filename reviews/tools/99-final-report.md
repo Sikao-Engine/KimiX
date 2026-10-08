@@ -37,7 +37,7 @@ uv run tools/gate_validate.py reviews/tools/[CK]*-*.md
 | G3 coverage passes | 30 / 36 | **31 / 33** |
 | G4 probe suites green | 0 / 36 | **8 / 33** |
 | G-DUP | FAIL | **PASS** |
-| G-ORPHAN | FAIL (9 orphans) | **PASS (0 orphans)** |
+| G-ORPHAN | FAIL (9 orphans) | **PASS (0 orphans: 27 registered / 5 allowlisted)** |
 | G-POLICY | FAIL (3 hits) | **PASS (0 hits, 1 justified waiver)** |
 | G-COMPACT | PASS | **PASS** |
 | root suite | **collection ERROR** (exit 2) | **5551 passed, 11 skipped, exit 0** |
@@ -131,7 +131,7 @@ are the probes whose modules do not declare `__all__`.
 | FP-00 | **done** | missing optional corpus no longer aborts collection; 6 probes |
 | FP-01 | **done** | `write.py` open `TODO: checks:` removed + explained; 30 C09 probes |
 | FP-02 | **done** | G-DUP green: `fetch_url` waived with a runtime/transport rationale + `tests/test_fetch_url_parity.py` (12 probes) |
-| FP-03 | **done** | G-ORPHAN green: `plus`/`compare`/`panic`/`Mkdir`/`Rm` deleted, `FindStr`/`ParserTool` registered, `HashRead`/`HashEdit` allowlisted |
+| FP-03 | **done** | G-ORPHAN green: `plus`/`compare`/`panic`/`Mkdir`/`Rm` deleted; `FindStr`, `ParserTool`, `HashRead`, `HashEdit`, `context_prune` allowlisted with rationales (27 registered / 5 allowlisted / 0 orphans). The initial `agent_worker.json` registration of `FindStr`/`ParserTool` was **reverted** on the owner's "no new tool registrations" decision |
 | FP-05 | **done** | G-POLICY green: stdlib `json`/`re` removed, `difflib` waived with a rationale, dead `xxhash` import deleted; 11 probes |
 | FP-06 | **done** | 24 stale `__pycache__` / 238 `.pyc` removed under both tool roots |
 | FP-07 | **partial** | 8 probe suites (C06 22, C09 30, C10 28, K01 20, K04 72, K10/K11/K12 23) + 4 structural gates; **25 tools still lack a suite** |
@@ -163,7 +163,7 @@ uv run tools/gate_dup.py
   G-DUP: PASS
 
 uv run tools/review_tool_registry.py --sources kimi-cli/src/kimi_cli/tools src/kimix/tools
-  # discovered 32  registered 29  allowlisted 3  ORPHANS 0
+  # discovered 32  registered 27  allowlisted 5  ORPHANS 0
   G-ORPHAN: PASS
 
 uv run tools/gate_library_policy.py kimi-cli/src/kimi_cli/tools src/kimix/tools

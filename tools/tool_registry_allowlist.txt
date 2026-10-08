@@ -18,3 +18,15 @@ kimi_cli.tools.context_prune:context_prune  # wired by kimisoul.py:490, no manif
 # `kimi_cli/soul/tool_taxonomy.py`, so they are deliberate built-ins, not leftovers.
 kimi_cli.tools.file.hash_line:HashRead  # family export + taxonomy canonical; opt-in, not in a default manifest
 kimi_cli.tools.file.hash_line:HashEdit  # family export + taxonomy canonical; opt-in, not in a default manifest
+
+# FindStr / ParserTool - implemented and tested, but deliberately NOT enabled in
+# any default agent manifest.  The owner's call for this review was "no new tool
+# registrations", so these are allowlisted rather than wired into agent_worker.json
+# (the earlier FP-03 decision to register them was reverted for exactly that
+# reason).  Both remain importable and opt-in for a host that lists them itself:
+#   * FindStr    - has a native-shim mirror at bin/kimix_native/tools.py:362 and is
+#                  imported directly by tests/native/test_behavior_equivalence.py
+#   * ParserTool - imported directly by six call sites in tests/test_parsers.py
+# Deleting them was the alternative, but they are maintained, tested code.
+kimix.tools.file.find_str:FindStr  # tested + native-mirrored, but not registered (no new tools by owner decision)
+kimix.tools.parser:ParserTool  # tested (6 call sites), but not registered (no new tools by owner decision)

@@ -84,7 +84,7 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 | FP-00 | **done** | root suite: collection ERROR -> 5402 passed / 1 failed / 3 skipped (the 1 failure is F-30, pre-existing and newly surfaced) |
 | FP-01 | **done** | TODO removed + explained; 30 new C09 probes |
 | FP-02 | **done** | G-DUP green: `fetch_url` waived with a runtime/transport rationale + `tests/test_fetch_url_parity.py` (12 probes) pins both contracts |
-| FP-03 | **done** | all 9 orphans resolved: `plus`/`compare`/`panic`/`Mkdir`/`Rm` deleted, `FindStr`/`ParserTool` registered in `agent_worker.json`, `HashRead`/`HashEdit` allowlisted with rationale; G-ORPHAN PASS |
+| FP-03 | **done** | all 9 orphans resolved: `plus`/`compare`/`panic`/`Mkdir`/`Rm` deleted; `FindStr`/`ParserTool`/`HashRead`/`HashEdit`/`context_prune` allowlisted with written rationales (the initial `agent_worker.json` registration of the first two was reverted on the owner's "no new tool registrations" decision); G-ORPHAN PASS - 27 registered / 5 allowlisted / 0 orphans |
 | FP-05 | **done** | G-POLICY green (0 hits / 1 justified waiver) |
 | FP-06 | **done** | 24 `__pycache__` / 238 `.pyc` removed (gitignored, so no diff) |
 | FP-07 | **partial** | 3 probe suites authored (C06 22, C09 30, C10 28) + K01 20 + K04 72; 31 tools still have no suite |
