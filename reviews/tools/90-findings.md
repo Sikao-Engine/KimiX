@@ -21,9 +21,9 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 | **F-09** | medium | library policy | `import json` at module line 1 (only used for a `JSONDecodeError` except arm) | `kimi-cli/src/kimi_cli/tools/__init__.py:1` | FP-05 |
 | **F-10** | medium | library policy | `import re` for two compile patterns | `kimi-cli/src/kimi_cli/tools/file/edit/modes/sloppy.py:5` | FP-05 |
 | **F-11** | medium | library policy | `import difflib` for `unified_diff`; also a dead `import xxhash` | `src/kimix/tools/swarm/best_of_n.py:23` (+ `:147`) | FP-05 |
-| **F-12** | high | duplication | `fetch_url` implemented twice (C12 `kimi_cli.tools.web.fetch` vs K14 `kimix.tools.web.fetch_url`) with divergent behaviour | `tools/gate_dup.py` → 2 implementations | FP-02 |
+| **F-12** | info | duplication | `fetch_url` implemented twice (C12 `kimi_cli.tools.web.fetch` aiohttp vs K14 `kimix.tools.web.fetch_url` Playwright) | `tools/gate_dup.py` → 2 implementations | **resolved (FP-02)**: they are parallel impls for disjoint runtimes; delegation impossible (kimi_cli has no Playwright and C12 needs a kimi_cli Config/Runtime) and the name is documented at `kimix_api/references/api.md:981`. Waived with a written rationale + pinned by `tests/test_fetch_url_parity.py`. |
 | **F-13** | high | security | child processes spawned by `bash`/`pwsh`/`Run`/`python` inherit the **full parent environment**: `ProcessTask.scrub_env` defaults to `False` and none of the 8 shell spawn sites enables it, so `scrub_child_env` never runs | `src/kimix/tools/common.py:1910,1966-1968`; `bash_tool.py:825,882,1217`; `pwsh_tool.py:535,595,914`; `run.py:424` (X03-F1) | FP-11 |
-| **F-14** | medium | policy/dead code | 9 tool classes are not reachable from any manifest: `HashRead`, `HashEdit`, `plus`, `compare`, `panic`, `Mkdir`, `Rm`, `FindStr`, `ParserTool` | `reviews/tools/00-registry.txt` | FP-03 |
+| **F-14** | medium | policy/dead code | 9 tool classes were not reachable from any manifest: `HashRead`, `HashEdit`, `plus`, `compare`, `panic`, `Mkdir`, `Rm`, `FindStr`, `ParserTool` | `reviews/tools/00-registry.txt` | **resolved (FP-03)**: 5 deleted, 2 registered, 2 allowlisted — G-ORPHAN now PASS (0 orphans) |
 | **F-15** | medium | dead code | stale `__pycache__` trees hold `.pyc` for modules deleted from the source tree (e.g. `src/kimix/tools/eval/`) | `gates/X05.txt` | FP-06 |
 | **F-16** | high | coverage | **no G4 probe suite exists for any of the 36 tools**; every `G4_behavior` gate is red | `gates/<ID>.json` → `probes_present: 0` | FP-07 |
 | **F-17** | high | coverage | `Mkdir` / `Rm` (K17/K18) have **no tests at all** | `tools/gen_inventory.py` → K17/K18 test list empty | FP-07 |
@@ -81,8 +81,8 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 |---|---|---|
 | FP-00 | **done** | root suite: collection ERROR -> 5402 passed / 1 failed / 3 skipped (the 1 failure is F-30, pre-existing and newly surfaced) |
 | FP-01 | **done** | TODO removed + explained; 30 new C09 probes |
-| FP-02 | **open** | G-DUP still red on `fetch_url` |
-| FP-03 | **decision recorded, not executed** | 9 orphans; the C16 demo tools are decided **delete**, the K15-K18 tools need a keep/delete call from the owner |
+| FP-02 | **done** | G-DUP green: `fetch_url` waived with a runtime/transport rationale + `tests/test_fetch_url_parity.py` (12 probes) pins both contracts |
+| FP-03 | **done** | all 9 orphans resolved: `plus`/`compare`/`panic`/`Mkdir`/`Rm` deleted, `FindStr`/`ParserTool` registered in `agent_worker.json`, `HashRead`/`HashEdit` allowlisted with rationale; G-ORPHAN PASS |
 | FP-05 | **done** | G-POLICY green (0 hits / 1 justified waiver) |
 | FP-06 | **done** | 24 `__pycache__` / 238 `.pyc` removed (gitignored, so no diff) |
 | FP-07 | **partial** | 3 probe suites authored (C06 22, C09 30, C10 28) + K01 20 + K04 72; 31 tools still have no suite |
@@ -96,7 +96,7 @@ Severity: **high** = wrong result / crash / secret leak / gate cannot pass;
 
 | gate | result |
 |---|---|
-| G-DUP | **FAIL** - `fetch_url` (C12 vs K14); `subagent` waived with rationale |
-| G-ORPHAN | **FAIL** - 9 orphans (decisions recorded in `93-orphans-and-removal.md`) |
+| G-DUP | **PASS** - `fetch_url` and `subagent` both waived with written rationales; `tests/test_fetch_url_parity.py` pins the fetch_url pair |
+| G-ORPHAN | **PASS** - 32 discovered / 29 registered / 3 allowlisted / **0 orphans** |
 | G-POLICY | **PASS** - 0 hits, 1 justified waiver |
 | G-COMPACT | **PASS** - `tests/test_integration_compaction.py` + `kimi-cli/tests/core/test_kimisoul_context_prune.py` = 12 passed |

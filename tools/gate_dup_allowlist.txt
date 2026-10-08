@@ -12,6 +12,34 @@
 # can collapse them — the divergence is the contract.
 subagent  # intentionally distinct C01 (fg default) vs K01 (bg default); contrast probes mandated
 
-# NOTE: `fetch_url` is NOT waived.  C12 (kimi_cli) and K14 (kimix) are duplicate
-# implementations that FP-02 must reconcile (shared core or exact forwarding);
-# until then G-DUP must fail on `fetch_url`.
+# `fetch_url` -- WAIVED after inspecting both implementations (FP-02).
+#
+# The earlier note here said this must stay red.  That was written before either
+# implementation was read; the evidence now says the opposite, and the reversed
+# position is recorded deliberately rather than silently dropped.
+#
+# C12  kimi_cli.tools.web.fetch.fetch_url
+#        params: url, timeout, method, headers, body, follow_redirects, max_redirects
+#        transport: aiohttp (plus an optional configured fetch *service*)
+#        safety: web/url_safety.py SSRF checks, redirect re-validation, size caps
+#        runs on: kimi_cli agents (kimi_cli.soul.Runtime + Config)
+# K14  kimix.tools.web.fetch_url.fetch_url
+#        params: url, output_path
+#        transport: Playwright -> Markdown (web_fetcher/fetcher.py::fetch_to_markdown)
+#        runs on: kimix agents (kimi_agent_sdk + Session)
+#
+# Neither can be a thin delegator: C12 cannot be constructed without a
+# kimi_cli Config/Runtime, which the kimix stack does not have, and K14's
+# Playwright transport has no equivalent anywhere in kimi_cli (`grep -rln
+# playwright kimi-cli/src` is empty).  Delegating in either direction would
+# regress a working transport.
+#
+# Renaming is also wrong: `kimi_cli/skills/kimix_api/references/api.md:981`
+# documents `fetch_url` with exactly K14's `url`/`output_path` signature, and
+# `:982` documents `fetch_to_markdown` as the Playwright helper, so the name
+# `fetch_url` is load-bearing for the kimix stack's documented API.
+#
+# The two are parallel implementations for two disjoint runtimes - the same
+# situation as `subagent` below.  Divergence cannot silently drift because
+# `tests/test_fetch_url_parity.py` pins both contracts.
+fetch_url  # parallel impls for disjoint runtimes (aiohttp vs Playwright); delegation impossible, name documented

@@ -7,9 +7,9 @@
 | G0 scope | pass | `reviews/tools/gates/K04.txt` §G0 (6/6 source files + 6/6 test files cited below; registration `00-registry.txt:44`) |
 | G1 simplicity | **fail** | ruff 5 errors (`I001`×3, `E402`×2); `ruff --select C901` 2 errors (`__call__` 36, `detect_self_kill` 46); metrics `--max-fn-loc 120 --max-complexity 12` exit 1 (`loc=1461`, `longest_fn=325`, `cx_max=52`, `max_nest=6`); vulture 1 hit (waived 1) |
 | G2 risk | **pass at HEAD** (review-SHA state: fail) | 13/13 items answered; the single `high` item (child-env scrubbing, X03-F1) was **fixed by FP-11 `a42992ff`** and verified green → `open_high = 0` at HEAD; `open_medium = 3` (blocking IO, kill latency, `output_truncated`), `waived_medium = 0` (2 low/info waivers) |
-| G3 coverage | pass (with finding) | verbatim gate exit 0; but the verbatim `--cov` target never measures `bash_tool.py` (module-not-imported) → corrected target: **bash_tool.py 82.0 %** (Stmts 590, Miss 82), TOTAL 87.39 %, floor 80, waived_lines 82 / budget 100 |
+| G3 coverage | pass (with finding) | verbatim gate exit 0; but the verbatim `--cov` target never measures `bash_tool.py` (module-not-imported) → corrected target: **bash_tool.py 82.0 %** (Stmts 590, Miss 82), TOTAL 87.39 % (review SHA) / 85.91 % (HEAD, 5 in-scope modules only), floor 80, waived_lines 82 / budget 100 |
 | G4 behavior | **pass at HEAD** (fail at the pinned SHA) | `tests/unit/tools/test_bash_gate.py`, 45 probe functions / 72 collected — at the review SHA `test_probe05_child_env_scrubbed` was red (env leak, X03-F1); at HEAD (`a42992ff`, FP-11 committed) **72 passed** |
-| G5 regression | pass | ROOT suite: at the review SHA it could not collect (`tests/bash/cases.json` missing, baseline-identical); at HEAD (`9dd21cb7`, FP-00) it collects and the e2e corpus test self-skips with a reason → `5 passed, 1 skipped` for `tests/test_bash_e2e.py`. CLI suite 43 failed / 5241 passed, failure set byte-identical to `00-baseline.txt` (NEW = ∅); syntax_check clean; git_diff only the new probe file |
+| G5 regression | pass (1 named non-K04 failure) | ROOT suite: at the review SHA it could not collect (`tests/bash/cases.json` missing, baseline-identical); at HEAD (`9dd21cb7`, FP-00) `uv run pytest tests -q` = **1 failed, 5407 passed, 3 skipped in 305 s** — the single failure is the stale bash-description snapshot already filed by **X06** (`reviews/tools/X06-test-hygiene.md:550`), not a K04 regression. CLI suite 43 failed / 5241 passed, failure set byte-identical to `00-baseline.txt` (NEW = ∅); `tests/test_bash_e2e.py` at HEAD = 5 passed / 1 skipped (corpus not tracked). syntax_check clean; git_diff only the new probe file |
 | G6 independent rerun | pending (orchestrator) | numbers above are the ones to compare; see §8 for the HEAD movement that G6 must account for |
 
 ## 1. Scope
@@ -96,6 +96,7 @@ verdict: **fail** (3 hard breaches + lint).
 | hot-path function-local imports on every call | `bash_tool.py:999`, `:1092`, `:1176`, `:1255`, `:1313` (`remove_task_id`, `shell_common`, `get_all_tasks`, `DEFAULT_INACTIVITY_TIMEOUT`) | `grep '^    from '` §G1 in the evidence file | module-level imports (cycle-safe per the module docstring of `shell_common.py:13-16`) | partial — justified only if the cycle is proven |
 | `_encode_startup_script` imports `gzip`+`pybase64` inside the function | `bash_tool.py:111-115` | same grep | module-level (pybase64 is a declared dep) | no |
 | vulture `unused variable 'cls'` | `bash_tool.py:629` | `vulture --min-confidence 90` (stable across 3 runs) | **waived**: `cls` is mandatory in the pydantic `@model_validator(mode="before") @classmethod` idiom (`prompt_common.py:95`); removing it breaks the validator | yes (1) |
+| model-facing description is composed without separators | `bash_tool.py:640-643`, `:659` | live value is `'Execute a bash command.For long sessions: …close.ALWAYS use native POSIX syntax, even on Windows Safety: …'` (verified by constructing the tool); the same text makes the X06 snapshot fail | add the missing spaces (`"Execute a bash command. "`, `" ALWAYS use native POSIX syntax, even on Windows"`) — the PID hint at `:687` already has one | no |
 | vulture `unused import 'BackgroundStream'` (90 %, boundary) | `bash_tool.py:83` | observed in one earlier run of the same command | **waived**: `TYPE_CHECKING` import used by the runtime annotation at `:1375`; safe because `requires-python >=3.14` (PEP 649) | yes (boundary, not counted) |
 | duplicated logic vs sibling tool | `bash_tool.py:1187-1251` vs `pwsh_tool.py` (K05 scope) | the `_execute_background` / `_continue_session` / `_process_output` / `_format_background_output` quartet is near-identical to the pwsh tool's | extract the shared session plumbing into `shell_common` (same owner rationale as `PWSH_ONESHOT_FLAGS`) | no |
 
@@ -358,7 +359,8 @@ path, and unblock the async path).
                     "actual": 82.0, "waived_lines": 82, "waiver_budget": 100},
     "G4_behavior": {"probe_file": "tests/unit/tools/test_bash_gate.py",
                     "probes_required": 15, "probes_present": 45, "result": "pass"},
-    "G5_regression": {"root_suite": "pass", "cli_suite": "pass",
+    "G5_regression": {"root_suite": "pass (1 non-K04 failure: X06 stale description snapshot)",
+                      "cli_suite": "pass",
                       "syntax_check": "pass", "git_diff": "pass"},
     "G6_independent_rerun": "pending"
   },
@@ -433,6 +435,13 @@ path, and unblock the async path).
      "impact": "if the launcher re-parents (restart, wrapper upgrade) the guard compares against a stale ancestor set and can let a self-kill through",
      "fix": "re-walk when os.getppid() changes, or expose an invalidate() used by tests",
      "test_to_add": "tests/test_shell_safety.py::TestSelfKillHint::test_cache_invalidated_on_ppid_change"},
+    {"severity": "low", "axis": "simplicity",
+     "title": "model-facing bash description is composed without word separators",
+     "file": "src/kimix/tools/file/bash/bash_tool.py:642",
+     "evidence": "constructing the tool yields 'Execute a bash command.For long sessions: interactive=True, …close.ALWAYS use native POSIX syntax, even on Windows Safety: runs in the agent process (PID n); …' — the base concatenation (:640-643) and the win32 suffix (:659) lack a leading/trailing space; the PID hint (:687) has one",
+     "impact": "malformed prompt text sent to the model on every request; also what makes the X06 description snapshot mismatch visible",
+     "fix": "add the missing separators ('Execute a bash command. ' and ' ALWAYS use native POSIX syntax, even on Windows')",
+     "test_to_add": "tests/unit/tools/test_prompt_common.py::test_descriptions_unchanged (existing; update the snapshot after the fix)"},
     {"severity": "info", "axis": "cross-cutting",
      "title": "G3 verbatim --cov target never measures bash_tool.py; TOTAL unstable",
      "file": "src/kimix/tools/file/bash/bash_tool.py",

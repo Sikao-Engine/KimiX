@@ -2297,3 +2297,77 @@ VALIDATE_EXIT=0
  M reviews/tools/gates/K04.txt
 === final git rev-parse HEAD ===
 a42992ffbcfcda75a5f117171ed0a496e2dd6035
+
+########## HEAD-state re-runs (post-FP-00 / FP-11) ##########
+HEAD at re-run time:
+a45f336be13df643142afb510f436885c92bfab7
+a45f336b review(P5): fix a stray escape in the report's provenance section
+src tree clean:
+(no lines above = clean)
+
+=== HEAD: uv run pytest tests -q (ROOT suite, FP-00 applied) ===
+=== HEAD-state re-run: uv run pytest tests -q (ROOT suite, FP-00 applied) ===
+tests/test_print_agent_json.py::test_stream_redirected_tool_names
+  C:\dev\kimi-agent\tests\test_print_agent_json.py:1510: DeprecationWarning: kimix.base._strip_ansi is deprecated; import it from kimix.ui.printing / kimix.ui.stream instead. This compatibility shim will be removed in the next minor release.
+    plain = base._strip_ansi(output)
+
+tests/test_print_agent_json.py::test_stream_redirected_tool_names
+  C:\dev\kimi-agent\tests\test_print_agent_json.py:1525: DeprecationWarning: kimix.base._TOOL_CALL_STREAM_KEY is deprecated; import it from kimix.ui.printing / kimix.ui.stream instead. This compatibility shim will be removed in the next minor release.
+    assert base._TOOL_CALL_STREAM_KEY in session2._tmp_data, (
+
+tests/test_print_agent_json.py::test_stream_redirected_tool_names
+  C:\dev\kimi-agent\tests\test_print_agent_json.py:1535: DeprecationWarning: kimix.base._strip_ansi is deprecated; import it from kimix.ui.printing / kimix.ui.stream instead. This compatibility shim will be removed in the next minor release.
+    plain2 = base._strip_ansi(output2)
+
+tests/test_print_agent_json.py::test_stream_fuzzy_alias_changes_maps_to_edit
+  C:\dev\kimi-agent\tests\test_print_agent_json.py:1563: DeprecationWarning: kimix.base._strip_ansi is deprecated; import it from kimix.ui.printing / kimix.ui.stream instead. This compatibility shim will be removed in the next minor release.
+    plain = base._strip_ansi(output)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/unit/tools/test_prompt_common.py::test_descriptions_unchanged - ...
+1 failed, 5407 passed, 3 skipped, 81 warnings in 305.46s (0:05:05)
+ROOT_SUITE_PIPE_EXIT=1
+
+=== HEAD: corrected G3 coverage (bash_tool.py) ===
+=== HEAD-state re-run: CORRECTED G3 coverage ===
+........................................................................ [ 98%]
+....................                                                     [100%]
+=============================== tests coverage ================================
+_______________ coverage: platform win32, python 3.14.3-final-0 _______________
+
+Name                                          Stmts   Miss Branch BrPart  Cover   Missing
+-----------------------------------------------------------------------------------------
+src\kimix\tools\file\bash\bash_fix.py            27      0      2      0   100%
+src\kimix\tools\file\bash\bash_tool.py          590     82    260     41    82%   136-137, 218-219, 221, 241-242, 244, 247->245, 249, 366->359, 367->366, 375, 388-400, 405, 414, 432-450, 494, 575, 653, 667, 669->665, 770, 782->786, 792, 806, 809, 812, 823-824, 827->833, 875, 878, 884->891, 899-931, 941-951, 1042, 1117, 1133-1135, 1179->1181, 1201, 1207, 1210, 1213, 1219->1226, 1279, 1304->1306, 1394, 1451, 1453, 1456, 1459->1461
+src\kimix\tools\file\bash\output_enhance.py      31      1     18      2    94%   89
+src\kimix\tools\file\bash\safety.py             328     31    200     22    89%   97, 154-162, 197, 222->224, 228-229, 230->243, 237-242, 271->273, 276, 280->282, 282->274, 362->358, 412, 414->413, 416, 436, 440-442, 451, 480, 482, 484, 486, 567, 607, 619->604, 620->619
+src\kimix\tools\file\bash\shell_common.py        50      0      6      0   100%
+-----------------------------------------------------------------------------------------
+TOTAL                                          1026    114    486     65    86%
+Required test coverage of 80% reached. Total coverage: 85.91%
+1603 passed, 1 skipped in 99.92s (0:01:39)
+
+=== HEAD-state re-run: G3 additional (e2e corpus) ===
+
+=== HEAD: probe suite ===
+72 passed in 45.62s   (0 failed; probe 05 green after FP-11 a42992ff)
+
+=== attribution of the single ROOT-suite failure (not K04) ===
+tests/unit/tools/test_prompt_common.py::test_descriptions_unchanged = stale bash-description
+snapshot, already filed by X06:  reviews/tools/X06-test-hygiene.md:550
+" stale bash description snapshot (expects the removed Prefer glob/grep over ... prose);\"
+echo \"    live composition is Execute a bash command.For long sessions: ... ALWAYS use native POSIX syntax,"
+    'even on Windows Safety: ...'"
+
+=== K04-owned side finding from the same probe: description composed without separators ===
+Bash(description)[:40] = 'Execute a bash command.For long sessions:'   (missing space at bash_tool.py:640-643, :659)
+
+=== final G0 validation ===
+VALID   reviews/tools/K04-bash-bash.md  id=K04
+VALIDATE_EXIT=0
+=== final artifacts ===
+-rw-r--r-- 1 maxwellgeng 197121 55059 2026-10-08 12:18:02.373559100 +0800 reviews/tools/K04-bash-bash.md
+-rw-r--r-- 1 maxwellgeng 197121 43716 2026-10-08 11:55:38.703787500 +0800 tests/unit/tools/test_bash_gate.py
+=== final HEAD ===
+a45f336be13df643142afb510f436885c92bfab7
