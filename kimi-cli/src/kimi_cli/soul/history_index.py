@@ -3,7 +3,7 @@
 The primary backend is a per-session SQLite ``history.db`` opened through
 ``apsw`` (synchronous, bundles a recent SQLite with FTS5 + trigram support).
 The public API is unchanged from the old in-memory BM25 implementation so
-``kimisoul.py``, ``context_prune``, and tests keep working:
+``kimisoul.py`` and tests keep working:
 
 - ``index_messages`` batches turns into ``history.turns``; FTS triggers keep
   the unicode61 + trigram virtual tables in sync.

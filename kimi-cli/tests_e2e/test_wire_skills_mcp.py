@@ -229,7 +229,7 @@ def test_mcp_tool_call(tmp_path) -> None:
                 {
                     "method": "event",
                     "type": "LLMToolsSnapshot",
-                    "payload": {"hash": "5c33efeaef3c6d18d2882d95e38d3ee590c1c554f36a3ffebfb3db785fb67bfc", "tools": [
+                    "payload": {"hash": "a6db3ded174d3279f522d4443c45106c68c9acda0d487a7e20a87ea115132c71", "tools": [
     {
         "name": "subagent",
         "description": """\
@@ -1305,50 +1305,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
             "required": ["urls"],
             "type": "object",
         },
-    },
-    {
-        "name": "context_prune",
-        "description": "Prune old session content (reasoning, tool results, stale messages) to save tokens. Recent turns and tool-call pairs are always preserved. Modes: 'prune' (smart elision), 'compact' (full compaction), 'strip_reasoning' (remove old thinking content). Use dry_run=True to preview changes.",
-        "parameters": {
-            "properties": {
-                "mode": {
-                    "default": "prune",
-                    "description": "Strategy: prune stale content, compact old turns, or strip old reasoning.",
-                    "enum": ["prune", "compact", "strip_reasoning"],
-                    "type": "string",
-                },
-                "target_token_count": {
-                    "anyOf": [{"minimum": 1000, "type": "integer"}, {"type": "null"}],
-                    "default": None,
-                    "description": "Target max tokens after pruning.",
-                },
-                "remove_reasoning": {
-                    "default": True,
-                    "description": "Remove old reasoning/thinking content.",
-                    "type": "boolean",
-                },
-                "remove_tool_results": {
-                    "default": True,
-                    "description": "Remove old tool-result messages.",
-                    "type": "boolean",
-                },
-                "keep_recent_turns": {
-                    "default": 6,
-                    "description": "Recent user/assistant turns to keep.",
-                    "maximum": 20,
-                    "minimum": 1,
-                    "type": "integer",
-                },
-                "dry_run": {
-                    "default": False,
-                    "description": "Report what would be removed without changing the session.",
-                    "type": "boolean",
-                },
-            },
-            "type": "object",
-        },
-    },
-    {
+    }, {
         "name": "ping",
         "description": """\
 This is an MCP (Model Context Protocol) tool from MCP server `test`.
@@ -1367,7 +1324,7 @@ No description provided.\
                 {
                     "method": "event",
                     "type": "LLMRequest",
-                    "payload": {"kind": "loop", "provider": "scripted_echo", "model": "scripted_echo", "thinking_effort": None, "temperature": None, "top_p": None, "max_tokens": None, "system_prompt_hash": "<SYSTEM_PROMPT_HASH>", "system_prompt": "<SYSTEM_PROMPT>", "tools_hash": "5c33efeaef3c6d18d2882d95e38d3ee590c1c554f36a3ffebfb3db785fb67bfc", "message_count": 1, "turn_step": 1, "attempt": 1, "dropped_count": None},
+                    "payload": {"kind": "loop", "provider": "scripted_echo", "model": "scripted_echo", "thinking_effort": None, "temperature": None, "top_p": None, "max_tokens": None, "system_prompt_hash": "<SYSTEM_PROMPT_HASH>", "system_prompt": "<SYSTEM_PROMPT>", "tools_hash": "a6db3ded174d3279f522d4443c45106c68c9acda0d487a7e20a87ea115132c71", "message_count": 1, "turn_step": 1, "attempt": 1, "dropped_count": None},
                 },
                 {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
                 {
@@ -1399,7 +1356,7 @@ No description provided.\
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "5c33efeaef3c6d18d2882d95e38d3ee590c1c554f36a3ffebfb3db785fb67bfc",
+        "tools_hash": "a6db3ded174d3279f522d4443c45106c68c9acda0d487a7e20a87ea115132c71",
         "message_count": 3,
         "turn_step": 2,
         "attempt": 1,

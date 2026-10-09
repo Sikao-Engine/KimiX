@@ -1176,9 +1176,9 @@ class ContextPruner:
     ) -> PruningResult:
         """Run a policy-driven prune pass suitable for manual invocation.
 
-        This method configures a fresh :class:`ContextPruner` instance from the
-        high-level parameters and runs ``prune()``.  It bypasses hysteresis so
-        that a manual ``context_prune`` tool call always acts when content is
+        This method configures a fresh :class:`ContextPruner` instance from
+        the high-level parameters and runs ``prune()``.  It bypasses hysteresis so
+        that a manual prune invocation always acts when content is
         available to drop/elide.
 
         Args:

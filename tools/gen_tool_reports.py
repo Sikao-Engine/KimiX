@@ -54,7 +54,6 @@ PROBE_FILE = {
     "C11": "kimi-cli/tests/tools/test_web_search_gate.py",
     "C12": "kimi-cli/tests/tools/test_fetch_url_gate.py",
     "C13": "kimi-cli/tests/tools/test_web_extract_gate.py",
-    "C14": "kimi-cli/tests/tools/test_context_prune_gate.py",
     "C15": "kimi-cli/tests/tools/test_hash_line_gate.py",
     "K00": "tests/unit/tools/test_common_gate.py",
     "K01": "tests/kimix/test_agent_gate.py",
@@ -78,7 +77,7 @@ PROBE_FILE = {
 PROBES_REQUIRED = {
     "C00": 10, "C01": 8, "C02": 7, "C03": 20, "C05": 14, "C06": 10,
     "C07": 12, "C08": 15, "C09": 12, "C10": 12, "C11": 10, "C12": 11, "C13": 10,
-    "C14": 11, "C15": 10, "K00": 16, "K01": 14, "K02": 5, "K03": 5,
+    "C15": 10, "K00": 16, "K01": 14, "K02": 5, "K03": 5,
     "K04": 15, "K05": 10, "K06": 12, "K07": 12, "K08": 12, "K09": 10, "K10": 5,
     "K11": 5, "K12": 6, "K13": 11, "K14": 8, "K15": 10, "K16": 10,
 }
@@ -86,7 +85,7 @@ PROBES_REQUIRED = {
 FLOOR = {
     "C00": 90, "C01": 90, "C02": 95, "C03": 90, "C05": 85, "C06": 85,
     "C07": 85, "C08": 80, "C09": 85, "C10": 85, "C11": 80, "C12": 90, "C13": 90,
-    "C14": 90, "C15": 85, "K00": 80, "K01": 85, "K02": 85, "K03": 85,
+    "C15": 85, "K00": 80, "K01": 85, "K02": 85, "K03": 85,
     "K04": 80, "K05": 85, "K06": 90, "K07": 85, "K08": 85, "K09": 90, "K10": 90,
     "K11": 90, "K12": 90, "K13": 85, "K14": 90, "K15": 85, "K16": 85,
 }

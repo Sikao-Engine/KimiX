@@ -776,27 +776,6 @@ VALUE_ALIASES_COMPACT_MODE: dict[str, str] = {
     "detail": "technical",
 }
 
-# --- context_prune mode (Literal["prune", "compact", "strip_reasoning"]) ---
-# source: kimi_cli/tools/context_prune.py:38
-VALUE_ALIASES_PRUNE_MODE: dict[str, str] = {
-    "prune": "prune",
-    "trim": "prune",
-    "clean": "prune",
-    "shrink": "prune",
-    "remove": "prune",
-    # compact synonyms
-    "compact": "compact",
-    "compress": "compact",
-    "summarize": "compact",
-    "reduce": "compact",
-    # strip_reasoning synonyms
-    "strip_reasoning": "strip_reasoning",
-    "strip": "strip_reasoning",
-    "reasoning": "strip_reasoning",
-    "thinking": "strip_reasoning",
-    "strip-thinking": "strip_reasoning",
-}
-
 # --- Swarm mode (Literal["fanout", "parallel_sample"]) ---
 # source: src/kimix/tools/swarm/__init__.py:70
 VALUE_ALIASES_SWARM_MODE: dict[str, str] = {
@@ -1043,7 +1022,6 @@ _COMMON_VALUE_ALIASES: dict[str, str] = {
     **VALUE_ALIASES_MEDIA_KIND,
     **VALUE_ALIASES_MEDIA_TYPE,
     **VALUE_ALIASES_OVERWRITE_MODE,
-    **VALUE_ALIASES_PRUNE_MODE,
     **VALUE_ALIASES_RUN_MODE,
     **VALUE_ALIASES_SWARM_MODE,
     **VALUE_ALIASES_SWARM_SELECTOR,
@@ -1758,14 +1736,11 @@ TOOL_NAME_REDIRECTS: dict[str, str] = {
     "LookupWeb": "web_search",
     "FindOnline": "web_search",
     # ── Context management hallucinations ──
-    # compact and context_prune are canonical
-    "PruneContext": "context_prune",
+    # compact is canonical
     "CompactContext": "compact",
     "Summarize": "compact",
     "SummarizeContext": "compact",
     "ContextSummary": "compact",
-    "ContextTrim": "context_prune",
-    "TrimContext": "context_prune",
     # ── Agent/Subagent hallucinations ──
     "SubAgent": "subagent",
     "Subagent": "subagent",

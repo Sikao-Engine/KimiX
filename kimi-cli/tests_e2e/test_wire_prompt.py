@@ -95,7 +95,7 @@ def test_basic_prompt_events(tmp_path) -> None:
     "method": "event",
     "type": "LLMToolsSnapshot",
     "payload": {
-        "hash": "5108e96bbe9edcee21b8992464d8037ef6d1345df67c62071adf52380a8cdf7c",
+        "hash": "2a5a15ca39c058d075c6591c131411fb58f8f27a423442cc1a76561a95157e44",
         "tools": [
             {
                 "name": "subagent",
@@ -1184,53 +1184,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
                     "required": ["urls"],
                     "type": "object",
                 },
-            },
-            {
-                "name": "context_prune",
-                "description": "Prune old session content (reasoning, tool results, stale messages) to save tokens. Recent turns and tool-call pairs are always preserved. Modes: 'prune' (smart elision), 'compact' (full compaction), 'strip_reasoning' (remove old thinking content). Use dry_run=True to preview changes.",
-                "parameters": {
-                    "properties": {
-                        "mode": {
-                            "default": "prune",
-                            "description": "Strategy: prune stale content, compact old turns, or strip old reasoning.",
-                            "enum": ["prune", "compact", "strip_reasoning"],
-                            "type": "string",
-                        },
-                        "target_token_count": {
-                            "anyOf": [
-                                {"minimum": 1000, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Target max tokens after pruning.",
-                        },
-                        "remove_reasoning": {
-                            "default": True,
-                            "description": "Remove old reasoning/thinking content.",
-                            "type": "boolean",
-                        },
-                        "remove_tool_results": {
-                            "default": True,
-                            "description": "Remove old tool-result messages.",
-                            "type": "boolean",
-                        },
-                        "keep_recent_turns": {
-                            "default": 6,
-                            "description": "Recent user/assistant turns to keep.",
-                            "maximum": 20,
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                        "dry_run": {
-                            "default": False,
-                            "description": "Report what would be removed without changing the session.",
-                            "type": "boolean",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-        ],
+            }],
     },
 }, {
     "method": "event",
@@ -1245,7 +1199,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "5108e96bbe9edcee21b8992464d8037ef6d1345df67c62071adf52380a8cdf7c",
+        "tools_hash": "2a5a15ca39c058d075c6591c131411fb58f8f27a423442cc1a76561a95157e44",
         "message_count": 1,
         "turn_step": 1,
         "attempt": 1,
@@ -1485,7 +1439,7 @@ Tool `TodoList` was not found. Auto-corrected to `todo_list`.
     "method": "event",
     "type": "LLMToolsSnapshot",
     "payload": {
-        "hash": "5108e96bbe9edcee21b8992464d8037ef6d1345df67c62071adf52380a8cdf7c",
+        "hash": "2a5a15ca39c058d075c6591c131411fb58f8f27a423442cc1a76561a95157e44",
         "tools": [
             {
                 "name": "subagent",
@@ -2574,53 +2528,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
                     "required": ["urls"],
                     "type": "object",
                 },
-            },
-            {
-                "name": "context_prune",
-                "description": "Prune old session content (reasoning, tool results, stale messages) to save tokens. Recent turns and tool-call pairs are always preserved. Modes: 'prune' (smart elision), 'compact' (full compaction), 'strip_reasoning' (remove old thinking content). Use dry_run=True to preview changes.",
-                "parameters": {
-                    "properties": {
-                        "mode": {
-                            "default": "prune",
-                            "description": "Strategy: prune stale content, compact old turns, or strip old reasoning.",
-                            "enum": ["prune", "compact", "strip_reasoning"],
-                            "type": "string",
-                        },
-                        "target_token_count": {
-                            "anyOf": [
-                                {"minimum": 1000, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Target max tokens after pruning.",
-                        },
-                        "remove_reasoning": {
-                            "default": True,
-                            "description": "Remove old reasoning/thinking content.",
-                            "type": "boolean",
-                        },
-                        "remove_tool_results": {
-                            "default": True,
-                            "description": "Remove old tool-result messages.",
-                            "type": "boolean",
-                        },
-                        "keep_recent_turns": {
-                            "default": 6,
-                            "description": "Recent user/assistant turns to keep.",
-                            "maximum": 20,
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                        "dry_run": {
-                            "default": False,
-                            "description": "Report what would be removed without changing the session.",
-                            "type": "boolean",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-        ],
+            }],
     },
 }, {
     "method": "event",
@@ -2635,7 +2543,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "5108e96bbe9edcee21b8992464d8037ef6d1345df67c62071adf52380a8cdf7c",
+        "tools_hash": "2a5a15ca39c058d075c6591c131411fb58f8f27a423442cc1a76561a95157e44",
         "message_count": 1,
         "turn_step": 1,
         "attempt": 1,
@@ -2835,7 +2743,7 @@ def test_concurrent_prompt_error(tmp_path) -> None:
     "method": "event",
     "type": "LLMToolsSnapshot",
     "payload": {
-        "hash": "cf7293decb104e75edb869ae03b11de75bcd6730fe9b3fb5f44664a83a1063e3",
+        "hash": "87ecd142b792df11b9bbb99d959f0978999966f4edadd582544949bfb5086c1d",
         "tools": [
             {
                 "name": "subagent",
@@ -3981,53 +3889,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
                     "required": ["urls"],
                     "type": "object",
                 },
-            },
-            {
-                "name": "context_prune",
-                "description": "Prune old session content (reasoning, tool results, stale messages) to save tokens. Recent turns and tool-call pairs are always preserved. Modes: 'prune' (smart elision), 'compact' (full compaction), 'strip_reasoning' (remove old thinking content). Use dry_run=True to preview changes.",
-                "parameters": {
-                    "properties": {
-                        "mode": {
-                            "default": "prune",
-                            "description": "Strategy: prune stale content, compact old turns, or strip old reasoning.",
-                            "enum": ["prune", "compact", "strip_reasoning"],
-                            "type": "string",
-                        },
-                        "target_token_count": {
-                            "anyOf": [
-                                {"minimum": 1000, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Target max tokens after pruning.",
-                        },
-                        "remove_reasoning": {
-                            "default": True,
-                            "description": "Remove old reasoning/thinking content.",
-                            "type": "boolean",
-                        },
-                        "remove_tool_results": {
-                            "default": True,
-                            "description": "Remove old tool-result messages.",
-                            "type": "boolean",
-                        },
-                        "keep_recent_turns": {
-                            "default": 6,
-                            "description": "Recent user/assistant turns to keep.",
-                            "maximum": 20,
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                        "dry_run": {
-                            "default": False,
-                            "description": "Report what would be removed without changing the session.",
-                            "type": "boolean",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-        ],
+            }],
     },
 }, {
     "method": "event",
@@ -4042,7 +3904,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "cf7293decb104e75edb869ae03b11de75bcd6730fe9b3fb5f44664a83a1063e3",
+        "tools_hash": "87ecd142b792df11b9bbb99d959f0978999966f4edadd582544949bfb5086c1d",
         "message_count": 1,
         "turn_step": 1,
         "attempt": 1,
@@ -4072,7 +3934,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "cf7293decb104e75edb869ae03b11de75bcd6730fe9b3fb5f44664a83a1063e3",
+        "tools_hash": "87ecd142b792df11b9bbb99d959f0978999966f4edadd582544949bfb5086c1d",
         "message_count": 3,
         "turn_step": 2,
         "attempt": 1,
