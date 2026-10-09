@@ -60,7 +60,6 @@ COV_MODULE: dict[str, str] = {
     "C11": "kimi_cli.tools.web.search",
     "C12": "kimi_cli.tools.web.fetch",
     "C13": "kimi_cli.tools.web.extract",
-    
     "C15": "kimi_cli.tools.file.hash_line",
     "K00": "kimix.tools.common",
     "K01": "kimix.tools.agent",
