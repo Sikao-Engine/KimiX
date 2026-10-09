@@ -288,16 +288,6 @@ class TestHistoryIndexFts:
         assert len(results) == 1
         idx.close()
 
-    def test_get_by_id_with_prune_prefix(self, tmp_path: Path):
-        idx = self._make(tmp_path)
-        idx.index_messages([_msg("user", "First"), _msg("user", "Second")])
-        turn = idx.get_by_id("prune_1")
-        assert turn is not None
-        assert turn["turn_id"] == 1
-        assert idx.get_by_id("prune_99") is None
-        assert idx.get_by_id("not-a-number") is None
-        idx.close()
-
     def test_clear_removes_db(self, tmp_path: Path):
         db_path = tmp_path / "history.db"
         idx = HistoryIndex(db_path=db_path)

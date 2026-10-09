@@ -872,7 +872,6 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
         planner_provider = copy.deepcopy(planner_provider) if planner_provider else {}
         planner_provider.setdefault("loop_control", {})
         planner_provider["loop_control"]["budget_reminder_enabled"] = False
-        planner_provider["loop_control"]["context_meter_enabled"] = False
         planner_provider["loop_control"]["compact_reminder_enabled"] = False
         planner_provider["loop_control"]["todo_reminder_enabled"] = False
         planner_provider["loop_control"]["target_churn_enabled"] = False

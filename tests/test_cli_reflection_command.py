@@ -45,7 +45,6 @@ def test_build_reflection_prompt_includes_architecture_map():
         "python",
         "job_output",
         "todo_list",
-        "retrieve",
         "read",
         "edit",
         "write",
@@ -83,7 +82,6 @@ def test_build_reflection_prompt_includes_architecture_map():
     for injector in (
         "budget_reminder.py",
         "compact_reminder.py",
-        "context_meter.py",
         "target_churn.py",
         "todo_reminder.py",
     ):

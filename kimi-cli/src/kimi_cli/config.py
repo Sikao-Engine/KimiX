@@ -403,18 +403,6 @@ Default is 3."""
     'self_eval' (one model review call) or 'majority' (pairwise votes).
     Default is 'self_eval'."""
 
-    context_meter_enabled: bool = Field(default=False)
-    """When true, inject a reminder to recall past history with the `Retrieve`
-    tool when usage materially changes, so the agent can self-regulate
-    (recall past decisions, paths, or errors) before the harness compacts.
-    Default is false."""
-    context_meter_min_delta: float = Field(default=0.15, ge=0.0, le=0.5)
-    """Minimum usage-ratio change since the last context-meter injection
-    required to inject again. Default is 0.15 (15%)."""
-    context_meter_cooldown_steps: int = Field(default=30, ge=0)
-    """Minimum number of steps between context-meter injections.
-    Default is 30."""
-
     auto_retrieve_history: bool = Field(default=True)
     """When true, automatically search archived conversation history before each
     turn and inject the most relevant past turn if it exceeds the similarity

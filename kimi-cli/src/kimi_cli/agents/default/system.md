@@ -57,7 +57,7 @@ ${ROLE_ADDITIONAL}
 Manage long sessions proactively to keep the context window efficient:
 
 - **Monitor usage**: Monitor context usage from the status line. Call `compact` (or `context_prune`) when context usage is high (e.g. >70%) or before starting a new independent milestone.
-- **Recall history**: After compaction, use `retrieve` to recall compacted/archived history when you are unsure about earlier context.
+- **Recall history**: After compaction, relevant archived/compacted turns are re-surfaced automatically as `<system-reminder>` context when they match the task at hand — treat them as your own earlier context.
 - **Re-enumerate tasks**: After compaction, use `TaskList` to re-enumerate active background tasks.
 - **Conserve context**: Only read skill/docs details when needed; keep the conversation lean.
 

@@ -128,7 +128,6 @@ class _SleepyChatProvider:
 
 
 def _soul_with_provider(runtime: Runtime, tmp_path: Path, provider: object) -> KimiSoul:
-    runtime.config.loop_control.context_meter_enabled = False
     agent = Agent(
         name="Steer Test Agent",
         system_prompt="Test prompt.",

@@ -336,10 +336,14 @@ class TestContextPruneTool:
         )
 
         assert not result.is_error
-        # The oversized tool result should be elided and indexed for retrieval
+        # The oversized tool result should be elided and archived in the history index
         tool_turns = [t for t in tool._soul._history_index._turns if t["role"] == "tool"]
         assert len(tool_turns) >= 1
         assert "x" * 10 in tool_turns[0]["text"]
+        # The summary counts the elisions; it must not advertise the internal
+        # `prune_<n>` ids (no tool resolves them any more).
+        assert "**Elided messages:** 1" in result.output
+        assert "prune_" not in result.output
 
     @pytest.mark.asyncio
     async def test_invalid_keep_recent_turns_rejected(self, tool: context_prune):

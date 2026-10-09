@@ -539,8 +539,7 @@ def _apply_tier_c(
     when an *annotated* stage actually fired (Stages 4/6/7/8 — markers such as
     ``[prefix: …]``, ``[N banner lines dropped]``, ``[×k near-dup …]``);
     lossless-only changes (Stages 1-3/5) are applied silently.  The original
-    text is archived on the record so ``retrieve``/``HistoryIndex`` retrieval
-    stays lossless.
+    text is archived on the record so ``HistoryIndex`` retrieval stays lossless.
 
     Returns ``(work_history, records, freed_tokens, changed_indices, next_ref)``.
     The caller's *history* is never mutated (changed messages are copies).
@@ -637,7 +636,7 @@ class ContextPruner:
       before Tier B and works with both the native and Python paths.
     * **Tier B — Stale/oversized substantive content** (escalation only).
       Elides (not deletes) superseded reads, oversized tool outputs, resolved
-      errors — replaces with a compact stub + retrieval ref.
+      errors — replaces with a compact stub whose original stays archived.
 
     **Cache-conservative policy:**
     1. Protect the recent tail (hot cache + high value).
@@ -998,7 +997,8 @@ class ContextPruner:
                 stub_text = (
                     f"<system>[context-elided: {kind} — content elided. "
                     f"~{savings} tokens freed. "
-                    f"Retrieve full content with retrieve id={ref}]</system>"
+                    f"The original is archived in the conversation history "
+                    f"and can resurface automatically.]</system>"
                 )
 
                 elided_records.append(

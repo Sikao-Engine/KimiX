@@ -36,7 +36,7 @@ Verify: run tests/checks before declaring done — never declare done from readi
 compact after each milestone.
 Track with todo_* tools.
 ''',
-    'sp_worker_optional': '{YOLO}\n{RETRIEVE}\n{SUBAGENT}\n{TRIVIAL}\n',
+    'sp_worker_optional': '{YOLO}\n{SUBAGENT}\n{TRIVIAL}\n',
     'sp_thinker_items': '''\
 Think in <thinking>...</thinking>. End with <quit/>. Concise, no text outside tags.
 Self-verify: catch errors and bad assumptions.
@@ -73,7 +73,6 @@ Do not implement tasks yourself; only dispatch and summarize the aggregated resu
 # Optional worker clauses, substituted into ``sp_worker_optional`` per role.
 _WORKER_OPTIONAL_CLAUSES: dict[str, str] = {
     'YOLO': 'Yolo: never ask — independently pick the best option and continue.',
-    'RETRIEVE': 'Use `retrieve` whenever unsure about past conversation history.',
  'SUBAGENT': (
      'Sub-Agent: deliver a self-contained final result — the parent sees only '
      'your result, not your transcript or reasoning.\n'
@@ -169,13 +168,12 @@ def get_system_prompt(
             use_skills = True
             role_doc = role
             items.extend(_load_items('sp_worker_core', shell_tool=_shell_tool_name()))
-            subs = {'YOLO': '', 'RETRIEVE': '', 'SUBAGENT': '', 'TRIVIAL': ''}
+            subs = {'YOLO': '', 'SUBAGENT': '', 'TRIVIAL': ''}
             if is_sub_agent:
                 subs['SUBAGENT'] = _WORKER_OPTIONAL_CLAUSES['SUBAGENT']
             else:
                 if yolo:
                     subs['YOLO'] = _WORKER_OPTIONAL_CLAUSES['YOLO']
-                subs['RETRIEVE'] = _WORKER_OPTIONAL_CLAUSES['RETRIEVE']
             items.extend(_load_items('sp_worker_optional', **subs))
         if extra_system_prompt and extra_system_prompt.role_callback:
             extra_system_prompt.role_callback(agent_role, items)

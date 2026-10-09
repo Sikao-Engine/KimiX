@@ -8,7 +8,6 @@
       "kimix.tools.py:python",
       "kimix.tools.background:job_output",
       "kimi_cli.tools.todo:todo_list",
-      "kimi_cli.tools.memory:retrieve",
       "kimi_cli.tools.file:read",
       "kimi_cli.tools.file:read_image",
       "kimi_cli.tools.file:edit",

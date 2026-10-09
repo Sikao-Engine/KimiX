@@ -51,7 +51,6 @@ COV_MODULE: dict[str, str] = {
     "C01": "kimi_cli.tools.agent",
     "C02": "kimi_cli.tools.ask_user",
     "C03": "kimi_cli.tools.todo",
-    "C04": "kimi_cli.tools.memory",
     "C05": "kimi_cli.tools.file.read",
     "C06": "kimi_cli.tools.file.read_media",
     "C07": "kimi_cli.tools.file.glob",

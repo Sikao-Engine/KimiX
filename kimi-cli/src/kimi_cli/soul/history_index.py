@@ -3,8 +3,7 @@
 The primary backend is a per-session SQLite ``history.db`` opened through
 ``apsw`` (synchronous, bundles a recent SQLite with FTS5 + trigram support).
 The public API is unchanged from the old in-memory BM25 implementation so
-``kimisoul.py``, the ``retrieve`` tool, ``context_prune``, and tests keep
-working:
+``kimisoul.py``, ``context_prune``, and tests keep working:
 
 - ``index_messages`` batches turns into ``history.turns``; FTS triggers keep
   the unicode61 + trigram virtual tables in sync.
@@ -521,8 +520,8 @@ class HistoryIndex:
             (*params, top_k),
         )
         # LIKE has no native ranking: score each row by query-token coverage so
-        # downstream recency boosting and the retrieve tool's relevance display
-        # get a meaningful (0, 1] number instead of an always-0.00 placeholder.
+        # downstream recency boosting and relevance display get a meaningful
+        # (0, 1] number instead of an always-0.00 placeholder.
         lowered = [t.lower() for t in tokens]
         out: list[dict[str, Any]] = []
         for row in cursor:
@@ -551,46 +550,6 @@ class HistoryIndex:
                     out.append({**turn, "score": score})
                     break
         return out
-
-    def get_by_id(self, ref: str) -> dict[str, Any] | None:
-        """Retrieve a turn by its reference ID (turn_id).
-
-        The *ref* may be a plain integer string (``"42"``) or a prefixed
-        reference like ``"prune_42"`` — the numeric suffix is tried.
-        """
-        ref_str = str(ref)
-        if ref_str.startswith("prune_"):
-            ref_str = ref_str[len("prune_"):]
-        try:
-            turn_id = int(ref_str)
-        except ValueError:
-            return None
-
-        if self._use_fts:
-            cursor = None
-            try:
-                conn = self._ensure_conn()
-                cursor = conn.execute(
-                    "SELECT turn_id, role, text, timestamp, is_compacted FROM turns WHERE turn_id = ?",
-                    (turn_id,),
-                )
-                row = cursor.fetchone()
-                if row is None:
-                    return None
-                return self._row_to_turn(row)
-            except Exception:
-                return None
-            finally:
-                if cursor is not None:
-                    try:
-                        cursor.close()
-                    except Exception:
-                        pass
-
-        for turn in self._turns_list:
-            if turn["turn_id"] == turn_id:
-                return dict(turn)
-        return None
 
     def search_with_recency(
         self,

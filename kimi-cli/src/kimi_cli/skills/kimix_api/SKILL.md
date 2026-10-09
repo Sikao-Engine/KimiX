@@ -106,7 +106,7 @@ High-level guide to `kimix.utils`, `kimix.base`, the full public API of `src/kim
 
 ## Context Pruning
 
-`ContextPruner`/`PruningResult`/`ElidedRecord` in `kimi_cli/soul/context_pruning.py`, integrated in `KimiSoul._step()`. Tier A drops consumed ephemera; Tier B elides stale/oversized content with `retrieve`-able stubs. Config via `LoopControl.prune_*` fields (master switch `context_pruning_enabled`). Manual trigger: `/prune`.
+`ContextPruner`/`PruningResult`/`ElidedRecord` in `kimi_cli/soul/context_pruning.py`, integrated in `KimiSoul._step()`. Tier A drops consumed ephemera; Tier B elides stale/oversized content with archived stubs. Config via `LoopControl.prune_*` fields (master switch `context_pruning_enabled`). Manual trigger: `/prune`.
 
 ## Complete Package Index
 

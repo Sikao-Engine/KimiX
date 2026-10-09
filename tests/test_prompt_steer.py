@@ -102,7 +102,6 @@ def _make_runtime(tmp_path: Path, provider: object) -> Runtime:
 
     work_kaos = KaosPath.unsafe_from_local_path(work_dir)
     config = get_default_config()
-    config.loop_control.context_meter_enabled = False
     llm = LLM(
         chat_provider=provider,
         max_context_size=100_000,

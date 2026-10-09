@@ -83,7 +83,6 @@ from kimi_cli.soul.dynamic_injection import (
 )
 from kimi_cli.soul.dynamic_injections.budget_reminder import BudgetReminderProvider
 from kimi_cli.soul.dynamic_injections.compact_reminder import CompactReminderProvider
-from kimi_cli.soul.dynamic_injections.context_meter import ContextMeterProvider
 from kimi_cli.soul.dynamic_injections.target_churn import TargetChurnProvider
 from kimi_cli.soul.verification_gate import VerificationGate
 from kimi_cli.soul.dynamic_injections.todo_reminder import TodoReminderProvider
@@ -479,14 +478,6 @@ class KimiSoul:
 
         # Register context-management tools if the toolset supports it
         if isinstance(agent.toolset, KimiToolset):
-            # Attach the history index to the retrieve tool so it can search
-            # past conversation turns.
-            from kimi_cli.tools.memory import retrieve
-            retrieve_tool = agent.toolset.find("retrieve")
-            if not isinstance(retrieve_tool, retrieve):
-                retrieve_tool = retrieve()
-                agent.toolset.add(retrieve_tool)
-            retrieve_tool.attach_history_index(self._history_index)
             agent.toolset.add(context_prune(self))
 
         self._llm_request_recorder = LLMRequestRecorder()
@@ -538,19 +529,6 @@ class KimiSoul:
                 else [BudgetReminderProvider(
                     warn_ratios=tuple(self._loop_control.budget_warn_ratios),
                     wall_clock_seconds=self._loop_control.budget_wall_clock_seconds,
-                )]
-            ),
-            *(
-                []
-                if not self._loop_control.context_meter_enabled
-                else [ContextMeterProvider(
-                    min_delta=self._loop_control.context_meter_min_delta,
-                    cooldown_steps=self._loop_control.context_meter_cooldown_steps,
-                    suppress_above=(
-                        self._loop_control.compact_reminder_threshold
-                        if self._loop_control.compact_reminder_enabled
-                        else None
-                    ),
                 )]
             ),
         ]
@@ -2154,7 +2132,7 @@ class KimiSoul:
             ),
         )
 
-        # (Pre-compaction durable-state flush removed: Retrieve is history-only.)
+        # (Pre-compaction durable-state flush removed: recall is archive-only.)
         # Phase 3 transaction envelope: the Begin/End wire pair carries the
         # compaction_id (a provisional uuid generated before the LLM call;
         # ``CompactionEnd`` prefers the authoritative id returned by the
@@ -2255,7 +2233,7 @@ class KimiSoul:
                     )
                     await self._context.append_message(active_task_message)
 
-            # (Post-compaction state-restore message removed: Retrieve is history-only.)
+            # (Post-compaction state-restore message removed: recall is archive-only.)
 
             # Recompute the token estimate from the rebuilt context so it reflects
             # the checkpoint marker, preserved messages, compaction summary, and any

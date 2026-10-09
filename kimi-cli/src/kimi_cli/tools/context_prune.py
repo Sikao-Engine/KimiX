@@ -402,11 +402,10 @@ class context_prune(CallableTool2[Params]):  # noqa: N801
         ]
         if result.earliest_removed_index is not None:
             lines.append(f"- **Earliest changed index:** {result.earliest_removed_index}")
-        if result.elided:
-            refs = ", ".join(f"`{rec.ref}`" for rec in result.elided)
-            lines.append(f"- **Elided references:** {refs}")
-        else:
-            lines.append("- **Elided references:** none")
+        # Only the count is reported: the elided originals stay archived in the
+        # history index and are re-surfaced automatically, so exposing their
+        # internal `prune_<n>` ids would advertise a lookup the model cannot make.
+        lines.append(f"- **Elided messages:** {len(result.elided)}")
 
         blocked: list[str] = []
         if mode == "prune" and not result.elided:

@@ -38,11 +38,6 @@ INVENTORY: dict[str, tuple[str, list[str], list[str]]] = {
         ["kimi-cli/src/kimi_cli/tools/todo/__init__.py", "kimi-cli/src/kimi_cli/tools/display.py"],
         ["kimi-cli/tests/tools/test_todo*.py"],
     ),
-    "C04": (
-        "retrieve",
-        ["kimi-cli/src/kimi_cli/tools/memory/__init__.py"],
-        ["kimi-cli/tests/tools/test_memory_retrieve.py"],
-    ),
     "C05": (
         "read (ReadFile)",
         ["kimi-cli/src/kimi_cli/tools/file/read.py", "kimi-cli/src/kimi_cli/tools/file/read.md",

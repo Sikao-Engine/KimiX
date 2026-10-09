@@ -849,7 +849,7 @@ Every builtin tool and the exact file where its implementation lives:
   `get_system_prompt()` returns a per-runtime builder, picks the active shell, enforces
   `max_system_prompt_tokens`.
 - Worker tool manifest: `{worker_agent_json}` — the exact tool list for the worker agent
-  (`agent.extend=default`): Bash, pwsh, Run, python, job_output, todo_list, retrieve,
+  (`agent.extend=default`): Bash, pwsh, Run, python, job_output, todo_list,
   read, read_image, edit, write, subagent, list_agents, interrupt_agent,
   workflow, glob, grep, fetch_url, web_search, compact (from `kimix.tools.*`
   and `kimi_cli.tools.*`).
@@ -869,7 +869,6 @@ Every builtin tool and the exact file where its implementation lives:
 - Dynamic injectors (reminders): `{dynamic_injections_dir}`
   - budget_reminder.py — budget warnings as step/wall-clock usage crosses ratios (default 0.7/0.9)
   - compact_reminder.py — suggests `compact` when usage exceeds threshold (default 0.70)
-  - context_meter.py — nudges `retrieve` when context usage materially changes
   - target_churn.py — anti-loop: repeated edits to same file / repeated identical errors
   - todo_reminder.py — re-injects unfinished todo items at the context tail
 - Config: `{config_path}` — pydantic `Config` (model/provider, loop_control, background,

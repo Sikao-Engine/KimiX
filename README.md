@@ -81,21 +81,18 @@ Triggered when context token ratio hits `compaction_trigger_ratio` or free space
 - **Cascade handling**: When already-compacted content is compressed again (depth ≥3), switches to `COMPACT_CASCADE` prompt to prevent information degradation.
 - Post-compaction, all rounds marked `is_compacted` in HistoryIndex for future retrieval.
 
-#### 3. Auto History Retrieval + On-Demand Recall
+#### 3. Auto History Retrieval
 
 - **Auto retrieval** (`_maybe_auto_retrieve_history`): Each round, if user input ≥10 chars, BM25-searches HistoryIndex for matching compacted rounds; injects matches above `auto_retrieve_history_threshold` as `[Auto-retrieved from past conversation]`.
-- **`retrieve` tool**: the agent can actively search all archived history (including compacted rounds) by natural-language query, returning verbatim excerpts with relevance scores (or fetch a turn by `id`).
 
 ```
 ┌──────────────┐    append     ┌──────────────┐    overflow    ┌──────────────────┐
 │   Context    │ ───────────► │ HistoryIndex │ ────────────► │ SimpleCompaction │
 │ (live window)│              │ (BM25 index) │               │ (LLM summary)    │
 └──────────────┘              └──────────────┘               └──────────────────┘
-       ▲                            │                               │
-       │       auto-retrieve        │                               │
-       └────────────────────────────┘                               │
-       │              Retrieve (agent主动recall)                       │
-       └────────────────────────────────────────────────────────────┘
+       ▲                            │   
+       │       auto-retrieve        │   
+       └────────────────────────────┘   
 ```
 
 ---
@@ -109,7 +106,6 @@ The `KimiSoul` core loop actively keeps long runs on track — no manual babysit
 - **Todo reminders** — unfinished todos are periodically re-surfaced at the end of the context, so goals never drift out of attention.
 - **Compact reminders** — when context fills up (~70%), the agent is prompted to compact on its own terms before forced auto-compaction kicks in.
 - **Budget reminders** (opt-in) — wrap-up warnings as the per-turn step/time budget runs out, so the agent finishes gracefully instead of being cut off.
-- **Context meter** — when context usage shifts materially, the agent is reminded to recall past history with the `Retrieve` tool.
 - **Decision-aware compaction** — compaction summaries preserve a `Decisions & Conclusions` and a `Verification Status` section, so early decisions and verified work survive.
 - **Context pruning** — stale tool outputs, thinking blocks, and near-duplicate content are automatically elided to reclaim context space.
 

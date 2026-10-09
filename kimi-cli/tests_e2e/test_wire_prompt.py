@@ -95,7 +95,7 @@ def test_basic_prompt_events(tmp_path) -> None:
     "method": "event",
     "type": "LLMToolsSnapshot",
     "payload": {
-        "hash": "0192290bb02ad3977a519ac42212525a6192b4615f784971f5d243f9c819ff96",
+        "hash": "5108e96bbe9edcee21b8992464d8037ef6d1345df67c62071adf52380a8cdf7c",
         "tools": [
             {
                 "name": "subagent",
@@ -598,36 +598,9 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                                                                                    'done; False errors '
                                                                                    'instead.',
                                                                     'type': 'boolean'}},
-                                  'type': 'object'}},
-            {
-                "name": "retrieve",
-                "description": "Retrieve past conversation history, including compacted/archived turns. Use `query` to search (natural language, relevance-ranked with a recency boost) or `id` to fetch a specific turn (e.g. a `prune_<n>` reference left by context pruning).",
-                "parameters": {
-                    "properties": {
-                        "query": {
-                            "default": "",
-                            "description": "Search past conversation history (BM25 with recency boost) for this natural-language query.",
-                            "type": "string",
-                        },
-                        "id": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Fetch a specific history turn by id (e.g. '0' or 'prune_0').",
-                        },
-                        "k": {
-                            "default": 3,
-                            "description": "Maximum number of history turns to return.",
-                            "maximum": 10,
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-            {
-                "name": "read",
-                "description": """\
+                                  'type': 'object'}}, {
+    "name": "read",
+    "description": """\
 Read a UTF-8 text file and return line-numbered content.
 file_path: single path or list; offset/limit: scalar or one per file. Lines over 4000 chars truncated; max 5000 lines per file; bytes scale with context (≥102400, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to 32 files. Prefer glob/grep to find/search, then read.
 
@@ -639,122 +612,115 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
 - Profiles: read *.cpuprofile / *.sample.txt returns a compact bottleneck summary (hot paths, top-20 self time, idle excluded); profile_raw=True returns raw JSON/text.
 - Conflict markers: reads of files containing unresolved git conflict blocks (<<<<<<< / ======= / >>>>>>>) append a warning footer with registered conflict ids. Inspect one block with read conflict://<N> (add /ours, /theirs or /base for a single side) and get a whole-file index with read <path>:conflicts. Resolve via write({ path: "conflict://<N>", content }).\
 """,
-                "parameters": {
-                    "properties": {
-                        "file_path": {
-                            "anyOf": [
-                                {"type": "string"},
-                                {"items": {"type": "string"}, "type": "array"},
-                            ],
-                            "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. May be a single file path or a list of file paths. When `glob=True`, the final path component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
-                        },
-                        "offset": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 1,
-                            "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000. May be a scalar applied to all files, or a list with one value per file path.",
-                        },
-                        "limit": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 2000,
-                            "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000. May be a scalar applied to all files, or a list with one value per file path.",
-                        },
-                        "max_char": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 16000,
-                            "description": "Maximum number of characters to return (starting from char_offset). May be a scalar applied to all files, or a list with one value per file path. Default 16K balances completeness with context efficiency.",
-                        },
-                        "char_offset": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 0,
-                            "description": "Character offset to start returning from. May be a scalar applied to all files, or a list with one value per file path.",
-                        },
-                        "glob": {
-                            "default": False,
-                            "description": "When True, treat `path` as a glob pattern (e.g., '*.py', 'src/**/*.ts'). When False (default), treat `path` as a literal file path.",
-                            "type": "boolean",
-                        },
-                        "show_line_numbers": {
-                            "default": True,
-                            "description": "When True (default), prefix each line with its line number (e.g., ' 42/tcontent'). When False, return raw content without line numbers.",
-                            "type": "boolean",
-                        },
-                        "archive_member": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Archive member path to read inside an archive. When omitted, ``read`` lists the archive root entries. Applies to zip/tar/tar.gz/tgz/tar.bz2/tar.xz and bare gz/bz2/xz files.",
-                        },
-                        "sql_query": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Raw read-only SQL query for SQLite files. Only SELECT statements are allowed; capped at 1000 rows. Cannot be combined with sql_table/sql_where/sql_order/sql_limit/sql_offset.",
-                        },
-                        "sql_table": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Table name to browse in a SQLite file.",
-                        },
-                        "sql_where": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "WHERE fragment for sql_table (e.g. ``id > 10``). Rejects statement terminators, comments, and LIMIT/UNION/etc.",
-                        },
-                        "sql_order": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "ORDER BY column for sql_table, as 'col' or 'col:asc|desc'.",
-                        },
-                        "sql_limit": {
-                            "anyOf": [
-                                {"maximum": 500, "minimum": 1, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Maximum rows for sql_table queries (default 20, max 500).",
-                        },
-                        "sql_offset": {
-                            "anyOf": [
-                                {"minimum": 0, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Offset for sql_table queries.",
-                        },
-                        "pdf_page": {
-                            "anyOf": [
-                                {"minimum": 1, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Render this PDF page as an image. Requires a model with image_in capability; otherwise returns an error.",
-                        },
-                        "profile_raw": {
-                            "default": False,
-                            "description": "When True, return the raw bytes/text of .cpuprofile or .sample.txt files. When False (default), return a compact bottleneck summary.",
-                            "type": "boolean",
-                        },
-                        "render_markdown": {
-                            "default": True,
-                            "description": "When True (default), extract supported documents as markdown-flavored text and convert .md/.html files to plain text. When False, use the legacy plain-text extractor.",
-                            "type": "boolean",
-                        },
-                    },
-                    "required": ["file_path"],
-                    "type": "object",
-                },
+    "parameters": {
+        "properties": {
+            "file_path": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"items": {"type": "string"}, "type": "array"},
+                ],
+                "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. May be a single file path or a list of file paths. When `glob=True`, the final path component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
             },
-            {
+            "offset": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 1,
+                "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000. May be a scalar applied to all files, or a list with one value per file path.",
+            },
+            "limit": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 2000,
+                "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000. May be a scalar applied to all files, or a list with one value per file path.",
+            },
+            "max_char": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 16000,
+                "description": "Maximum number of content characters to return (starting from char_offset). Content characters exclude line-number prefixes, so the window is identical regardless of show_line_numbers. May be a scalar applied to all files, or a list with one value per file path. Default 16K balances completeness with context efficiency.",
+            },
+            "char_offset": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 0,
+                "description": "Content-character offset to start returning from (excluding line-number prefixes). May be a scalar applied to all files, or a list with one value per file path.",
+            },
+            "glob": {
+                "default": False,
+                "description": "When True, treat `path` as a glob pattern (e.g., '*.py', 'src/**/*.ts'). When False (default), treat `path` as a literal file path.",
+                "type": "boolean",
+            },
+            "show_line_numbers": {
+                "default": True,
+                "description": "When True (default), prefix each line with its line number (e.g., ' 42/tcontent'). When False, return raw content without line numbers.",
+                "type": "boolean",
+            },
+            "archive_member": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "Archive member path to read inside an archive. When omitted, ``read`` lists the archive root entries. Applies to zip/tar/tar.gz/tgz/tar.bz2/tar.xz and bare gz/bz2/xz files.",
+            },
+            "sql_query": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "Raw read-only SQL query for SQLite files. Only SELECT statements are allowed; capped at 1000 rows. Cannot be combined with sql_table/sql_where/sql_order/sql_limit/sql_offset.",
+            },
+            "sql_table": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "Table name to browse in a SQLite file.",
+            },
+            "sql_where": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "WHERE fragment for sql_table (e.g. ``id > 10``). Rejects statement terminators, comments, and LIMIT/UNION/etc.",
+            },
+            "sql_order": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "ORDER BY column for sql_table, as 'col' or 'col:asc|desc'.",
+            },
+            "sql_limit": {
+                "anyOf": [
+                    {"maximum": 500, "minimum": 1, "type": "integer"},
+                    {"type": "null"},
+                ],
+                "default": None,
+                "description": "Maximum rows for sql_table queries (default 20, max 500).",
+            },
+            "sql_offset": {
+                "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+                "default": None,
+                "description": "Offset for sql_table queries.",
+            },
+            "pdf_page": {
+                "anyOf": [{"minimum": 1, "type": "integer"}, {"type": "null"}],
+                "default": None,
+                "description": "Render this PDF page as an image. Requires a model with image_in capability; otherwise returns an error.",
+            },
+            "profile_raw": {
+                "default": False,
+                "description": "When True, return the raw bytes/text of .cpuprofile or .sample.txt files. When False (default), return a compact bottleneck summary.",
+                "type": "boolean",
+            },
+            "render_markdown": {
+                "default": True,
+                "description": "When True (default), extract supported documents as markdown-flavored text and convert .md/.html files to plain text. When False, use the legacy plain-text extractor.",
+                "type": "boolean",
+            },
+        },
+        "required": ["file_path"],
+        "type": "object",
+    },
+}, {
                 "name": "glob",
                 "description": """\
 Find files by glob. Returns file paths — never directories — including hidden/ignored (VCS metadata excluded), in modification-time order: up to 100 paths (first 100 with a note; full list saved elsewhere). Does not enumerate directory entries.
@@ -1279,7 +1245,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "cacb7258493396316ce30be759abe02bc984d1794e3f83be31933d4cf5f861a6",
+        "tools_hash": "5108e96bbe9edcee21b8992464d8037ef6d1345df67c62071adf52380a8cdf7c",
         "message_count": 1,
         "turn_step": 1,
         "attempt": 1,
@@ -1519,7 +1485,7 @@ Tool `TodoList` was not found. Auto-corrected to `todo_list`.
     "method": "event",
     "type": "LLMToolsSnapshot",
     "payload": {
-        "hash": "0192290bb02ad3977a519ac42212525a6192b4615f784971f5d243f9c819ff96",
+        "hash": "5108e96bbe9edcee21b8992464d8037ef6d1345df67c62071adf52380a8cdf7c",
         "tools": [
             {
                 "name": "subagent",
@@ -2022,36 +1988,9 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                                                                                    'done; False errors '
                                                                                    'instead.',
                                                                     'type': 'boolean'}},
-                                  'type': 'object'}},
-            {
-                "name": "retrieve",
-                "description": "Retrieve past conversation history, including compacted/archived turns. Use `query` to search (natural language, relevance-ranked with a recency boost) or `id` to fetch a specific turn (e.g. a `prune_<n>` reference left by context pruning).",
-                "parameters": {
-                    "properties": {
-                        "query": {
-                            "default": "",
-                            "description": "Search past conversation history (BM25 with recency boost) for this natural-language query.",
-                            "type": "string",
-                        },
-                        "id": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Fetch a specific history turn by id (e.g. '0' or 'prune_0').",
-                        },
-                        "k": {
-                            "default": 3,
-                            "description": "Maximum number of history turns to return.",
-                            "maximum": 10,
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-            {
-                "name": "read",
-                "description": """\
+                                  'type': 'object'}}, {
+    "name": "read",
+    "description": """\
 Read a UTF-8 text file and return line-numbered content.
 file_path: single path or list; offset/limit: scalar or one per file. Lines over 4000 chars truncated; max 5000 lines per file; bytes scale with context (≥102400, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to 32 files. Prefer glob/grep to find/search, then read.
 
@@ -2063,122 +2002,115 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
 - Profiles: read *.cpuprofile / *.sample.txt returns a compact bottleneck summary (hot paths, top-20 self time, idle excluded); profile_raw=True returns raw JSON/text.
 - Conflict markers: reads of files containing unresolved git conflict blocks (<<<<<<< / ======= / >>>>>>>) append a warning footer with registered conflict ids. Inspect one block with read conflict://<N> (add /ours, /theirs or /base for a single side) and get a whole-file index with read <path>:conflicts. Resolve via write({ path: "conflict://<N>", content }).\
 """,
-                "parameters": {
-                    "properties": {
-                        "file_path": {
-                            "anyOf": [
-                                {"type": "string"},
-                                {"items": {"type": "string"}, "type": "array"},
-                            ],
-                            "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. May be a single file path or a list of file paths. When `glob=True`, the final path component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
-                        },
-                        "offset": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 1,
-                            "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000. May be a scalar applied to all files, or a list with one value per file path.",
-                        },
-                        "limit": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 2000,
-                            "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000. May be a scalar applied to all files, or a list with one value per file path.",
-                        },
-                        "max_char": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 16000,
-                            "description": "Maximum number of characters to return (starting from char_offset). May be a scalar applied to all files, or a list with one value per file path. Default 16K balances completeness with context efficiency.",
-                        },
-                        "char_offset": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 0,
-                            "description": "Character offset to start returning from. May be a scalar applied to all files, or a list with one value per file path.",
-                        },
-                        "glob": {
-                            "default": False,
-                            "description": "When True, treat `path` as a glob pattern (e.g., '*.py', 'src/**/*.ts'). When False (default), treat `path` as a literal file path.",
-                            "type": "boolean",
-                        },
-                        "show_line_numbers": {
-                            "default": True,
-                            "description": "When True (default), prefix each line with its line number (e.g., ' 42/tcontent'). When False, return raw content without line numbers.",
-                            "type": "boolean",
-                        },
-                        "archive_member": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Archive member path to read inside an archive. When omitted, ``read`` lists the archive root entries. Applies to zip/tar/tar.gz/tgz/tar.bz2/tar.xz and bare gz/bz2/xz files.",
-                        },
-                        "sql_query": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Raw read-only SQL query for SQLite files. Only SELECT statements are allowed; capped at 1000 rows. Cannot be combined with sql_table/sql_where/sql_order/sql_limit/sql_offset.",
-                        },
-                        "sql_table": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Table name to browse in a SQLite file.",
-                        },
-                        "sql_where": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "WHERE fragment for sql_table (e.g. ``id > 10``). Rejects statement terminators, comments, and LIMIT/UNION/etc.",
-                        },
-                        "sql_order": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "ORDER BY column for sql_table, as 'col' or 'col:asc|desc'.",
-                        },
-                        "sql_limit": {
-                            "anyOf": [
-                                {"maximum": 500, "minimum": 1, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Maximum rows for sql_table queries (default 20, max 500).",
-                        },
-                        "sql_offset": {
-                            "anyOf": [
-                                {"minimum": 0, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Offset for sql_table queries.",
-                        },
-                        "pdf_page": {
-                            "anyOf": [
-                                {"minimum": 1, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Render this PDF page as an image. Requires a model with image_in capability; otherwise returns an error.",
-                        },
-                        "profile_raw": {
-                            "default": False,
-                            "description": "When True, return the raw bytes/text of .cpuprofile or .sample.txt files. When False (default), return a compact bottleneck summary.",
-                            "type": "boolean",
-                        },
-                        "render_markdown": {
-                            "default": True,
-                            "description": "When True (default), extract supported documents as markdown-flavored text and convert .md/.html files to plain text. When False, use the legacy plain-text extractor.",
-                            "type": "boolean",
-                        },
-                    },
-                    "required": ["file_path"],
-                    "type": "object",
-                },
+    "parameters": {
+        "properties": {
+            "file_path": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"items": {"type": "string"}, "type": "array"},
+                ],
+                "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. May be a single file path or a list of file paths. When `glob=True`, the final path component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
             },
-            {
+            "offset": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 1,
+                "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000. May be a scalar applied to all files, or a list with one value per file path.",
+            },
+            "limit": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 2000,
+                "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000. May be a scalar applied to all files, or a list with one value per file path.",
+            },
+            "max_char": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 16000,
+                "description": "Maximum number of content characters to return (starting from char_offset). Content characters exclude line-number prefixes, so the window is identical regardless of show_line_numbers. May be a scalar applied to all files, or a list with one value per file path. Default 16K balances completeness with context efficiency.",
+            },
+            "char_offset": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 0,
+                "description": "Content-character offset to start returning from (excluding line-number prefixes). May be a scalar applied to all files, or a list with one value per file path.",
+            },
+            "glob": {
+                "default": False,
+                "description": "When True, treat `path` as a glob pattern (e.g., '*.py', 'src/**/*.ts'). When False (default), treat `path` as a literal file path.",
+                "type": "boolean",
+            },
+            "show_line_numbers": {
+                "default": True,
+                "description": "When True (default), prefix each line with its line number (e.g., ' 42/tcontent'). When False, return raw content without line numbers.",
+                "type": "boolean",
+            },
+            "archive_member": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "Archive member path to read inside an archive. When omitted, ``read`` lists the archive root entries. Applies to zip/tar/tar.gz/tgz/tar.bz2/tar.xz and bare gz/bz2/xz files.",
+            },
+            "sql_query": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "Raw read-only SQL query for SQLite files. Only SELECT statements are allowed; capped at 1000 rows. Cannot be combined with sql_table/sql_where/sql_order/sql_limit/sql_offset.",
+            },
+            "sql_table": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "Table name to browse in a SQLite file.",
+            },
+            "sql_where": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "WHERE fragment for sql_table (e.g. ``id > 10``). Rejects statement terminators, comments, and LIMIT/UNION/etc.",
+            },
+            "sql_order": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "ORDER BY column for sql_table, as 'col' or 'col:asc|desc'.",
+            },
+            "sql_limit": {
+                "anyOf": [
+                    {"maximum": 500, "minimum": 1, "type": "integer"},
+                    {"type": "null"},
+                ],
+                "default": None,
+                "description": "Maximum rows for sql_table queries (default 20, max 500).",
+            },
+            "sql_offset": {
+                "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+                "default": None,
+                "description": "Offset for sql_table queries.",
+            },
+            "pdf_page": {
+                "anyOf": [{"minimum": 1, "type": "integer"}, {"type": "null"}],
+                "default": None,
+                "description": "Render this PDF page as an image. Requires a model with image_in capability; otherwise returns an error.",
+            },
+            "profile_raw": {
+                "default": False,
+                "description": "When True, return the raw bytes/text of .cpuprofile or .sample.txt files. When False (default), return a compact bottleneck summary.",
+                "type": "boolean",
+            },
+            "render_markdown": {
+                "default": True,
+                "description": "When True (default), extract supported documents as markdown-flavored text and convert .md/.html files to plain text. When False, use the legacy plain-text extractor.",
+                "type": "boolean",
+            },
+        },
+        "required": ["file_path"],
+        "type": "object",
+    },
+}, {
                 "name": "glob",
                 "description": """\
 Find files by glob. Returns file paths — never directories — including hidden/ignored (VCS metadata excluded), in modification-time order: up to 100 paths (first 100 with a note; full list saved elsewhere). Does not enumerate directory entries.
@@ -2703,7 +2635,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "cacb7258493396316ce30be759abe02bc984d1794e3f83be31933d4cf5f861a6",
+        "tools_hash": "5108e96bbe9edcee21b8992464d8037ef6d1345df67c62071adf52380a8cdf7c",
         "message_count": 1,
         "turn_step": 1,
         "attempt": 1,
@@ -2903,7 +2835,7 @@ def test_concurrent_prompt_error(tmp_path) -> None:
     "method": "event",
     "type": "LLMToolsSnapshot",
     "payload": {
-        "hash": "82a777df8fd492d239b44a3d29c62bae1594e166a46dfc86aea623acc7eab598",
+        "hash": "cf7293decb104e75edb869ae03b11de75bcd6730fe9b3fb5f44664a83a1063e3",
         "tools": [
             {
                 "name": "subagent",
@@ -3463,36 +3395,9 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                                                                                    'done; False errors '
                                                                                    'instead.',
                                                                     'type': 'boolean'}},
-                                  'type': 'object'}},
-            {
-                "name": "retrieve",
-                "description": "Retrieve past conversation history, including compacted/archived turns. Use `query` to search (natural language, relevance-ranked with a recency boost) or `id` to fetch a specific turn (e.g. a `prune_<n>` reference left by context pruning).",
-                "parameters": {
-                    "properties": {
-                        "query": {
-                            "default": "",
-                            "description": "Search past conversation history (BM25 with recency boost) for this natural-language query.",
-                            "type": "string",
-                        },
-                        "id": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Fetch a specific history turn by id (e.g. '0' or 'prune_0').",
-                        },
-                        "k": {
-                            "default": 3,
-                            "description": "Maximum number of history turns to return.",
-                            "maximum": 10,
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-            {
-                "name": "read",
-                "description": """\
+                                  'type': 'object'}}, {
+    "name": "read",
+    "description": """\
 Read a UTF-8 text file and return line-numbered content.
 file_path: single path or list; offset/limit: scalar or one per file. Lines over 4000 chars truncated; max 5000 lines per file; bytes scale with context (≥102400, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to 32 files. Prefer glob/grep to find/search, then read.
 
@@ -3504,122 +3409,115 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
 - Profiles: read *.cpuprofile / *.sample.txt returns a compact bottleneck summary (hot paths, top-20 self time, idle excluded); profile_raw=True returns raw JSON/text.
 - Conflict markers: reads of files containing unresolved git conflict blocks (<<<<<<< / ======= / >>>>>>>) append a warning footer with registered conflict ids. Inspect one block with read conflict://<N> (add /ours, /theirs or /base for a single side) and get a whole-file index with read <path>:conflicts. Resolve via write({ path: "conflict://<N>", content }).\
 """,
-                "parameters": {
-                    "properties": {
-                        "file_path": {
-                            "anyOf": [
-                                {"type": "string"},
-                                {"items": {"type": "string"}, "type": "array"},
-                            ],
-                            "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. May be a single file path or a list of file paths. When `glob=True`, the final path component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
-                        },
-                        "offset": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 1,
-                            "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000. May be a scalar applied to all files, or a list with one value per file path.",
-                        },
-                        "limit": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 2000,
-                            "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000. May be a scalar applied to all files, or a list with one value per file path.",
-                        },
-                        "max_char": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 16000,
-                            "description": "Maximum number of characters to return (starting from char_offset). May be a scalar applied to all files, or a list with one value per file path. Default 16K balances completeness with context efficiency.",
-                        },
-                        "char_offset": {
-                            "anyOf": [
-                                {"type": "integer"},
-                                {"items": {"type": "integer"}, "type": "array"},
-                            ],
-                            "default": 0,
-                            "description": "Character offset to start returning from. May be a scalar applied to all files, or a list with one value per file path.",
-                        },
-                        "glob": {
-                            "default": False,
-                            "description": "When True, treat `path` as a glob pattern (e.g., '*.py', 'src/**/*.ts'). When False (default), treat `path` as a literal file path.",
-                            "type": "boolean",
-                        },
-                        "show_line_numbers": {
-                            "default": True,
-                            "description": "When True (default), prefix each line with its line number (e.g., ' 42/tcontent'). When False, return raw content without line numbers.",
-                            "type": "boolean",
-                        },
-                        "archive_member": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Archive member path to read inside an archive. When omitted, ``read`` lists the archive root entries. Applies to zip/tar/tar.gz/tgz/tar.bz2/tar.xz and bare gz/bz2/xz files.",
-                        },
-                        "sql_query": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Raw read-only SQL query for SQLite files. Only SELECT statements are allowed; capped at 1000 rows. Cannot be combined with sql_table/sql_where/sql_order/sql_limit/sql_offset.",
-                        },
-                        "sql_table": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Table name to browse in a SQLite file.",
-                        },
-                        "sql_where": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "WHERE fragment for sql_table (e.g. ``id > 10``). Rejects statement terminators, comments, and LIMIT/UNION/etc.",
-                        },
-                        "sql_order": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "ORDER BY column for sql_table, as 'col' or 'col:asc|desc'.",
-                        },
-                        "sql_limit": {
-                            "anyOf": [
-                                {"maximum": 500, "minimum": 1, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Maximum rows for sql_table queries (default 20, max 500).",
-                        },
-                        "sql_offset": {
-                            "anyOf": [
-                                {"minimum": 0, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Offset for sql_table queries.",
-                        },
-                        "pdf_page": {
-                            "anyOf": [
-                                {"minimum": 1, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Render this PDF page as an image. Requires a model with image_in capability; otherwise returns an error.",
-                        },
-                        "profile_raw": {
-                            "default": False,
-                            "description": "When True, return the raw bytes/text of .cpuprofile or .sample.txt files. When False (default), return a compact bottleneck summary.",
-                            "type": "boolean",
-                        },
-                        "render_markdown": {
-                            "default": True,
-                            "description": "When True (default), extract supported documents as markdown-flavored text and convert .md/.html files to plain text. When False, use the legacy plain-text extractor.",
-                            "type": "boolean",
-                        },
-                    },
-                    "required": ["file_path"],
-                    "type": "object",
-                },
+    "parameters": {
+        "properties": {
+            "file_path": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"items": {"type": "string"}, "type": "array"},
+                ],
+                "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. May be a single file path or a list of file paths. When `glob=True`, the final path component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
             },
-            {
+            "offset": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 1,
+                "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000. May be a scalar applied to all files, or a list with one value per file path.",
+            },
+            "limit": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 2000,
+                "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000. May be a scalar applied to all files, or a list with one value per file path.",
+            },
+            "max_char": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 16000,
+                "description": "Maximum number of content characters to return (starting from char_offset). Content characters exclude line-number prefixes, so the window is identical regardless of show_line_numbers. May be a scalar applied to all files, or a list with one value per file path. Default 16K balances completeness with context efficiency.",
+            },
+            "char_offset": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"items": {"type": "integer"}, "type": "array"},
+                ],
+                "default": 0,
+                "description": "Content-character offset to start returning from (excluding line-number prefixes). May be a scalar applied to all files, or a list with one value per file path.",
+            },
+            "glob": {
+                "default": False,
+                "description": "When True, treat `path` as a glob pattern (e.g., '*.py', 'src/**/*.ts'). When False (default), treat `path` as a literal file path.",
+                "type": "boolean",
+            },
+            "show_line_numbers": {
+                "default": True,
+                "description": "When True (default), prefix each line with its line number (e.g., ' 42/tcontent'). When False, return raw content without line numbers.",
+                "type": "boolean",
+            },
+            "archive_member": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "Archive member path to read inside an archive. When omitted, ``read`` lists the archive root entries. Applies to zip/tar/tar.gz/tgz/tar.bz2/tar.xz and bare gz/bz2/xz files.",
+            },
+            "sql_query": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "Raw read-only SQL query for SQLite files. Only SELECT statements are allowed; capped at 1000 rows. Cannot be combined with sql_table/sql_where/sql_order/sql_limit/sql_offset.",
+            },
+            "sql_table": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "Table name to browse in a SQLite file.",
+            },
+            "sql_where": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "WHERE fragment for sql_table (e.g. ``id > 10``). Rejects statement terminators, comments, and LIMIT/UNION/etc.",
+            },
+            "sql_order": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "description": "ORDER BY column for sql_table, as 'col' or 'col:asc|desc'.",
+            },
+            "sql_limit": {
+                "anyOf": [
+                    {"maximum": 500, "minimum": 1, "type": "integer"},
+                    {"type": "null"},
+                ],
+                "default": None,
+                "description": "Maximum rows for sql_table queries (default 20, max 500).",
+            },
+            "sql_offset": {
+                "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+                "default": None,
+                "description": "Offset for sql_table queries.",
+            },
+            "pdf_page": {
+                "anyOf": [{"minimum": 1, "type": "integer"}, {"type": "null"}],
+                "default": None,
+                "description": "Render this PDF page as an image. Requires a model with image_in capability; otherwise returns an error.",
+            },
+            "profile_raw": {
+                "default": False,
+                "description": "When True, return the raw bytes/text of .cpuprofile or .sample.txt files. When False (default), return a compact bottleneck summary.",
+                "type": "boolean",
+            },
+            "render_markdown": {
+                "default": True,
+                "description": "When True (default), extract supported documents as markdown-flavored text and convert .md/.html files to plain text. When False, use the legacy plain-text extractor.",
+                "type": "boolean",
+            },
+        },
+        "required": ["file_path"],
+        "type": "object",
+    },
+}, {
                 "name": "glob",
                 "description": """\
 Find files by glob. Returns file paths — never directories — including hidden/ignored (VCS metadata excluded), in modification-time order: up to 100 paths (first 100 with a note; full list saved elsewhere). Does not enumerate directory entries.
@@ -4144,7 +4042,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "ca84214f72334d7d2e21737050eac5e86339525fce4c8d1dcd57a14b2df2fa2f",
+        "tools_hash": "cf7293decb104e75edb869ae03b11de75bcd6730fe9b3fb5f44664a83a1063e3",
         "message_count": 1,
         "turn_step": 1,
         "attempt": 1,
@@ -4174,7 +4072,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "ca84214f72334d7d2e21737050eac5e86339525fce4c8d1dcd57a14b2df2fa2f",
+        "tools_hash": "cf7293decb104e75edb869ae03b11de75bcd6730fe9b3fb5f44664a83a1063e3",
         "message_count": 3,
         "turn_step": 2,
         "attempt": 1,
