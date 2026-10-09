@@ -1,5 +1,5 @@
 Read a UTF-8 text file and return line-numbered content.
-file_path: single path or list; offset/limit: scalar or one per file. Lines over ${MAX_LINE_LENGTH} chars truncated; max ${MAX_LINES} lines per file; bytes scale with context (≥${MAX_BYTES}, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to ${MAX_FILES} files. Prefer glob/grep to find/search, then read.
+file_path: single path or list. offset/limit/max_char/char_offset: scalar, or one value per file in a list read. Lines over ${MAX_LINE_LENGTH} chars truncated; max ${MAX_LINES} lines per file; bytes scale with context (≥${MAX_BYTES}, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to ${MAX_FILES} files. Prefer glob/grep to find/search, then read.
 
 Rich formats (one per call; scalar params apply to every file in a multi-file read):
 - Archives (zip/jar/war/apk/whl/cbz, tar/tgz/tbz2/txz, bare gz/bz2/xz): read data.zip lists up to 500 root entries; archive_member="src/main.py" reads one member as text. Traversal (.., absolute, backslash) rejected; binary members get an explicit notice.

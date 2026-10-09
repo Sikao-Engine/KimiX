@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -236,12 +237,22 @@ async def test_read_with_relative_path(
 async def test_read_with_relative_path_outside_work_dir(
     read_file_tool: ReadFile, temp_work_dir: KaosPath
 ):
-    """Test reading a file outside the work directory with a relative path (should fail)."""
-    path = Path("..") / "outside_file.txt"
-    result = await read_file_tool(Params(path=str(path)))
-    assert result.is_error
-    assert "absolute path" in result.message.lower()
-    assert "outside the working directory" in result.message
+    """`../x` resolves against the work dir; the absolute-path guard was removed in
+    commit 304a8b46, so an existing outside file reads fine and a missing one errors."""
+    outside = Path(str(temp_work_dir)).parent / "kimix_read_outside_file.txt"
+    outside.write_text("outside content\n", encoding="utf-8")
+    try:
+        path = Path("..") / outside.name
+        result = await read_file_tool(Params(path=str(path)))
+        assert not result.is_error
+        assert "outside content" in result.output
+
+        missing = Path("..") / "kimix_read_no_such_outside_file.txt"
+        result = await read_file_tool(Params(path=str(missing)))
+        assert result.is_error
+        assert "does not exist" in result.message
+    finally:
+        outside.unlink(missing_ok=True)
 
 
 async def test_read_empty_file(read_file_tool: ReadFile, temp_work_dir: KaosPath):
@@ -1358,25 +1369,39 @@ class TestReadFileGlob:
         assert "does not exist" in result.message
         assert result.brief == "Directory not found"
 
-    async def test_read_glob_outside_workspace_relative(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
-        """`../outside/*.md` is rejected."""
-        import tempfile
+    async def test_read_glob_outside_workspace_relative(
+        self, read_file_tool: ReadFile, temp_work_dir: KaosPath
+    ):
+        """`../<dir>/*.md` resolves against the work dir, not the process cwd.
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            outside = Path(tmpdir) / "outside"
-            outside.mkdir()
-            (outside / "x.md").write_text("x")
-
-            # Change into temp_work_dir so ../outside resolves to the outside dir.
+        The absolute-path guard for glob bases was removed in commit 304a8b46:
+        the glob base now always resolves relative to the session work dir, so
+        a `..`-escape that exists there matches, and one that does not exists
+        errors with "does not exist".
+        """
+        wd = Path(str(temp_work_dir))
+        outside = wd.parent / f"kimix_outside_{wd.name}"
+        outside.mkdir(exist_ok=True)
+        (outside / "x.md").write_text("x", encoding="utf-8")
+        rel = f"../{outside.name}/*.md"
+        try:
+            # Chdir to an unrelated directory: `rel` must still resolve via the
+            # work dir and match, proving process cwd is irrelevant.
             original_cwd = Path.cwd()
-            os.chdir(str(temp_work_dir))
+            os.chdir(str(wd.parent))
             try:
-                result = await read_file_tool(Params(path="../outside/*.md", glob=True))
+                result = await read_file_tool(Params(path=rel, glob=True))
             finally:
                 os.chdir(original_cwd)
+            assert not result.is_error
+            assert "x" in result.output
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
 
+        # A `..`-escape to a directory that does not exist still errors.
+        result = await read_file_tool(Params(path="../no-such-outside-dir/*.md", glob=True))
         assert result.is_error
-        assert "absolute path" in result.message.lower()
+        assert "does not exist" in result.message
 
     async def test_read_glob_with_literal_files(self, read_file_tool: ReadFile, temp_work_dir: KaosPath):
         """A list mixing a glob and a literal path aggregates correctly."""

@@ -1093,8 +1093,6 @@ class Grep(CallableTool2[Params]):
     description: str = (
         "Search file contents with a ripgrep regular expression. "
         "Returns matching lines with line numbers, grouped by file. "
-        "Returns the first 250 matches inline; a capped result reports where "
-        "the complete match list was saved. "
         "Use read on a matched file for surrounding context. "
         "Multiline patterns match across line boundaries."
     )

@@ -340,7 +340,7 @@ class SloppyModeExecutor:
                 return ToolError(
                     message=(
                         f"`{prep.display_path}` changed externally or was written after the last read. "
-                        "Re-read the file and re-issue the edit."
+                        "Re-read it, then re-issue the edit."
                     ),
                     brief="Stale file",
                 )

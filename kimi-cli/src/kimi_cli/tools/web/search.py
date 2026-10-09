@@ -27,13 +27,13 @@ def __getattr__(name: str) -> Any:
 class Params(BaseModel):
     query: str = Field(description="The search query.")
     limit: int = Field(
-        description="Number of results. Prefer a specific query over a high limit.",
+        description="Results to return (1-20). Prefer a specific query.",
         default=5,
         ge=1,
         le=20,
     )
     include_content: bool = Field(
-        description="Include full page content. Increases token usage.",
+        description="Include full page content (more tokens).",
         default=False,
     )
 
@@ -56,8 +56,8 @@ class Response(BaseModel):
 class SearchWeb(CallableTool2[Params]):
     name: str = "web_search"
     description: str = (
-        "Search the web for current information. Returns an optional summary "
-        "answer and a list of source URLs."
+        "Search the web for current information. "
+        "Returns a summary answer and source URLs."
     )
     params: type[Params] = Params
 
@@ -86,7 +86,7 @@ class SearchWeb(CallableTool2[Params]):
         provider = get_active_search_provider(self._config)
         if provider is None:
             return builder.error(
-                "Search service is not configured. You may want to try other methods to search.",
+                "Search service not configured; try another search method.",
                 brief="Search service not configured",
             )
 

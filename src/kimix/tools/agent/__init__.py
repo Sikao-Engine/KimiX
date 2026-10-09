@@ -306,7 +306,7 @@ def _prompt_saved_message(prompt: str, ext: str = ".md") -> str:
     shown = _display_temp_path(saved)
     return (
         f"[prompt saved to {shown}] "
-        f"Retry with subagent(prompt=@{shown}) to reuse this prompt."
+        f"Retry with subagent(prompt=@{shown})."
     )
 
 
@@ -315,16 +315,13 @@ class SubAgentParams(BaseModel):
 
     description: str | None = Field(
         default=None,
-        description=(
-            "A short (3-5 word) description of the delegated task, for display."
-        ),
+        description="Short (3-5 word) task label, for display.",
     )
     prompt: str = Field(
         validation_alias=AliasChoices("prompt", "task"),
         description=(
             "The complete, self-contained task for the subagent. "
-            "Inline prompt text, or @path to read the task from a file "
-            "(saved prompt paths are returned on failure). "
+            "Inline text, or @path to read the task from a file. "
             + accepts_alias_text("prompt", "task", word=False)
         ),
     )
@@ -332,64 +329,53 @@ class SubAgentParams(BaseModel):
         default=True,
         description=(
             "Whether to run in the background and return a durable subagent id "
-            "immediately. Defaults to true. Set false to wait for the result "
-            "when your next action depends on it."
+            "immediately. Defaults to true; set false to block for the result."
         ),
     )
     session_id: str | None = Field(
         default=None,
         alias="session",  # common LLM variant
         description=(
-            "Optional session ID to resume an existing sub-agent session. "
-            "Sub-agent sessions are scratch space: one created by this tool is "
-            "anonymous, so its directory is deleted once the session closes "
-            "and the id then resumes from a fresh conversation. "
+            "Session ID to resume an existing sub-agent session. Sub-agent "
+            "sessions are scratch: one created here is anonymous, so its dir is "
+            "deleted on close and the id then resumes from a fresh conversation. "
             + accepts_alias_text("session_id", "session", word=False)
         ),
     )
     close_session: bool | None = Field(
         default=None,
         description=(
-            "Close the subagent session after this prompt. Unset (the default): "
-            "a foreground run (run_in_background=false) closes the session, "
-            "while a background run keeps it open so its durable id stays "
-            "listed by list_agents and resumable later. Set "
-            "true/false to override explicitly for either mode. Closing "
-            "deletes the scratch session directory (`.kimix_cache/<session "
-            "id>`), so a closed sub-agent session can no longer be resumed "
+            "Close the subagent session after this prompt. Unset (default): a "
+            "foreground run closes it, a background run keeps it open so its "
+            "durable id stays listed by list_agents and resumable. Set "
+            "true/false to override. Closing deletes the scratch dir "
+            "(`.kimix_cache/<id>`), so the session can no longer be resumed "
             "with its history."
         ),
     )
     return_history: bool = Field(
         default=False,
-        description="Return the full conversation history in extras."
+        description="Return the full conversation history in extras.",
     )
     history_format: Literal["json", "markdown", "summary"] = Field(
         default="json",
-        description="'json': Raw conversation turns in JSON. "
-        "'markdown': Formatted as Markdown with headings. "
-        "'summary': Concise summary of what the sub-agent did.",
+        description="json: raw turns as JSON. markdown: transcript with headings. summary: what the sub-agent did.",
     )
     context_files: list[str] | None = Field(
         default=None,
-        description="File paths to pre-read into the sub-agent's context before the prompt. "
-        "Each file's content is included as context."
+        description="File paths to pre-read into the sub-agent's context before the prompt.",
     )
     context_data: dict[str, Any] | None = Field(
         default=None,
-        description="Structured JSON data to pass as context to the sub-agent."
+        description="Structured JSON data to pass as context to the sub-agent.",
     )
     inherit_context: bool = Field(
         default=False,
         description=(
-            "When True, a NEW sub-agent session is initialized by copying the "
-            "parent agent's current session context (its conversation history "
-            "so far), mirroring the CLI `/store` + `/load` session-copy logic "
-            "in `src/kimix/cli_impl/commands.py`: the parent session directory "
-            "is copied to the new sub-agent session id via "
-            "`kimi_cli.session.Session.copy` and the sub-agent resumes from "
-            "that copy. Ignored when `session_id` resolves to an active "
-            "sub-agent session (which is reused as-is)."
+            "For a NEW session, initialize it by copying the parent session's "
+            "context (conversation history so far) into the sub-agent's id, like "
+            "the CLI `/store`+`/load`, and resume from that copy. Ignored when "
+            "`session_id` resolves to an active session (reused as-is)."
         ),
     )
 
@@ -514,20 +500,18 @@ class _AgentConversationCollector:
 class Agent(CallableTool2):
     name: str = "subagent"
     description: str = (
-        "Delegate a self-contained task to a subagent (a separate agent that "
-        "works in its own context) to offload focused, independent work — "
-        "research, a scoped implementation, an analysis — so it does not "
-        "consume this conversation's context. The subagent returns its result, "
-        "not its intermediate steps. Give it a complete, standalone prompt: it "
-        "does not see this conversation. This tool runs in the background by "
-        "default, immediately returns a durable subagent id, and keeps the "
-        "child conversation available for later turns: resume it with "
-        "subagent(session_id='<id>', ...) to give it more work or answer its "
-        "questions. Set run_in_background: false only when your next "
-        "action depends on receiving the result. "
-        "Sub-agents belong to the session that spawned them: closing or clearing "
-        "that session closes them all and deletes their scratch session "
-        "directories, so their ids are only usable while the parent session lives."
+        "Delegate a self-contained task to a subagent (a separate agent in its "
+        "own context) to offload focused, independent work — research, a scoped "
+        "implementation, an analysis — without consuming this conversation's "
+        "context. It returns its result, not its intermediate steps, and does "
+        "not see this conversation, so give it a complete standalone prompt. "
+        "Runs in the background by default, returning a durable subagent id and "
+        "keeping the child conversation resumable via "
+        "subagent(session_id='<id>', ...). Set run_in_background: false only "
+        "when your next action depends on the result. Sub-agents belong to the "
+        "session that spawned them: closing or clearing that session closes "
+        "them all and deletes their scratch dirs, so ids work only while the "
+        "parent session lives."
     )
     params: type[SubAgentParams] = SubAgentParams
 
@@ -663,9 +647,8 @@ class Agent(CallableTool2):
         result = ToolOk(
             output=(
                 f"Session ID: {prepared.session_id}\n\n"
-                "Subagent started in the background. You will receive a "
-                "notice when it finishes; meanwhile you can use list_agents "
-                "to check its state."
+                "Started in the background; you'll be notified when it "
+                "finishes. Use list_agents to check its state."
             ),
             brief="Background subagent started",
         )
@@ -1048,8 +1031,7 @@ class AgentListParams(BaseModel):
         default="children",
         description=(
             "`children` (default) lists direct children only. `descendants` is "
-            "accepted for compatibility but currently returns the same "
-            "direct-children list."
+            "accepted but returns the same list."
         ),
     )
 
@@ -1059,12 +1041,11 @@ class AgentList(CallableTool2):
     description: str = (
         "List your continuable background subagents by durable id and label. "
         "Use it to recall which ones you started, not to poll for completion — "
-        "you are told when one finishes. Each entry reports session_id, "
-        "created_at, last_accessed, total_turns, state and is_active; sessions "
-        "closed via interrupt_agent are removed from the list. A listed child "
-        "remains resumable: subagent(session_id=..., ...) starts a new turn on "
-        "the same conversation. Scope `descendants` is accepted for "
-        "compatibility but currently returns the same direct-children list."
+        "you're told when one finishes. Each entry reports session_id, "
+        "created_at, last_accessed, total_turns, state, is_active; sessions "
+        "closed via interrupt_agent are removed. A listed child stays resumable: "
+        "subagent(session_id=..., ...) starts a new turn on the same "
+        "conversation."
     )
     params: type[BaseModel] = AgentListParams
 
@@ -1095,12 +1076,11 @@ class AgentClose(CallableTool2):
     name: str = "interrupt_agent"
     description: str = (
         "Request cancellation of a background agent's current turn by its agent "
-        "id. The target may be your direct child or a deeper agent created "
-        "under you. The current turn stops (agents it started keep running) and "
-        "the subagent session is closed and removed from the active list. "
-        "This call returns as soon as the stop request is accepted, so the "
-        "target may keep running briefly; interrupting an agent that already "
-        "finished still closes its session (no error)."
+        "id. The target may be your direct child or a deeper agent under you. "
+        "Its current turn stops (agents it started keep running) and the "
+        "subagent session is closed and removed from the active list. Returns "
+        "as soon as the stop is accepted, so the target may run briefly; "
+        "interrupting an already-finished agent still closes its session."
     )
     params: type[BaseModel] = AgentCloseParams
 

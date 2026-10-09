@@ -1,4 +1,4 @@
-"""Plan file tools: WritePlan, ReadPlan, EditPlan, EditTool."""
+"""Plan file tools: write_plan, read_plan, edit_plan (alias: WritePlan, ReadPlan, EditPlan)."""
 
 from pathlib import Path
 from typing import Literal
@@ -26,7 +26,7 @@ def _set_enable_plan(value: bool) -> None:
     _enable_plan = value
 
 
-# --- WritePlan ---
+# --- write_plan ---
 
 class WritePlanParams(BaseModel):
     model_config = {"populate_by_name": True}
@@ -36,14 +36,14 @@ class WritePlanParams(BaseModel):
         description="Content to write. " + accepts_alias_text("content", "text", word=False),
     )
     mode: Literal["overwrite", "append"] = Field(
-        description="Write mode: overwrite or append.",
+        description="Overwrite or append.",
         default="overwrite",
     )
 
 
-class WritePlan(CallableTool2):
-    name: str = "WritePlan"
-    description: str = 'Write the plan to the plan file.'
+class write_plan(CallableTool2):  # noqa: N801
+    name: str = "write_plan"
+    description: str = "Write the plan file."
     params: type[WritePlanParams] = WritePlanParams
 
     def __init__(self, session: Session):
@@ -57,7 +57,7 @@ class WritePlan(CallableTool2):
         if path is None:
             return ToolError(
                 output="",
-                message="WritePlan tool invalid: no plan_writing_path set.",
+                message="Invalid: no plan_writing_path set.",
                 brief="invalid tool.",
             )
         try:
@@ -79,14 +79,11 @@ class WritePlan(CallableTool2):
             )
 
 
-# --- ReadPlan ---
+# --- read_plan ---
 
 class ReadPlanParams(BaseModel):
     line_offset: int = Field(
-        description=(
-            "Start line, 1-based. Negative reads from end. "
-            f"Max abs {MAX_LINES}."
-        ),
+        description=f"1-based start line; negative reads from end, max abs {MAX_LINES}.",
         default=1,
     )
     n_lines: int = Field(
@@ -95,12 +92,12 @@ class ReadPlanParams(BaseModel):
         ge=1,
     )
     max_char: int = Field(
-        description="Maximum number of characters to return.",
+        description="Max characters to return.",
         default=65536,
         ge=0,
     )
     char_offset: int = Field(
-        description="Character offset to start returning from.",
+        description="Character offset to start from.",
         default=0,
         ge=0,
     )
@@ -109,19 +106,18 @@ class ReadPlanParams(BaseModel):
     def _validate_line_offset(self) -> "ReadPlanParams":
         if self.line_offset == 0:
             raise ValueError(
-                "line_offset cannot be 0; use 1 for the first line or -1 for the last line"
+                "line_offset cannot be 0; use 1 (first line) or -1 (last line)"
             )
         if self.line_offset < -MAX_LINES:
             raise ValueError(
                 f"line_offset cannot be less than -{MAX_LINES}. "
-                "Use a positive line_offset with the total line count "
-                "to read from a specific position."
+                "Use a positive line_offset to read from a position."
             )
         return self
 
 
-class ReadPlan(CallableTool2):
-    name: str = "ReadPlan"
+class read_plan(CallableTool2):  # noqa: N801
+    name: str = "read_plan"
     description: str = "Read the plan file."
     params: type[ReadPlanParams] = ReadPlanParams
 
@@ -136,7 +132,7 @@ class ReadPlan(CallableTool2):
         if path is None:
             return ToolError(
                 output="",
-                message="ReadPlan tool invalid: no plan_writing_path set.",
+                message="Invalid: no plan_writing_path set.",
                 brief="invalid tool.",
             )
         try:
@@ -161,7 +157,7 @@ class ReadPlan(CallableTool2):
             return result
         except Exception as exc:
             return ToolError(
-                message=f"Failed to read plan. Error: {exc}",
+                message=f"Failed to read plan: {exc}",
                 brief="Failed to read plan",
             )
 
@@ -197,9 +193,9 @@ class ReadPlan(CallableTool2):
 
         message_parts: list[str] = []
         if len(lines_with_no) > 0:
-            message_parts.append(f"{len(lines_with_no)} lines read from plan starting from line {start_line}.")
+            message_parts.append(f"{len(lines_with_no)} lines read from line {start_line}.")
         else:
-            message_parts.append("No lines read from plan.")
+            message_parts.append("No lines read.")
         if len(lines_with_no) < target_lines and not max_bytes_reached:
             message_parts.append(f"Total lines in file: {current_line_no}.")
         if max_lines_reached:
@@ -294,11 +290,9 @@ def _build_plan_read_message(
 ) -> str:
     """Assemble the human-facing summary for a plan read (extracted for G1)."""
     if lines_with_no:
-        parts = [
-            f"{len(lines_with_no)} lines read from plan starting from line {start_line}."
-        ]
+        parts = [f"{len(lines_with_no)} lines read from line {start_line}."]
     else:
-        parts = ["No lines read from plan."]
+        parts = ["No lines read."]
     parts.append(f"Total lines in file: {total_lines}.")
     if max_lines_reached:
         parts.append(f"Max {MAX_LINES} lines reached.")
@@ -309,7 +303,7 @@ def _build_plan_read_message(
     return " ".join(parts)
 
 
-# --- EditPlan ---
+# --- edit_plan ---
 
 class Edit(BaseModel):
     model_config = {"populate_by_name": True}
@@ -334,8 +328,8 @@ class EditPlanParams(BaseModel):
     )
 
 
-class EditPlan(CallableTool2):
-    name: str = "EditPlan"
+class edit_plan(CallableTool2):  # noqa: N801
+    name: str = "edit_plan"
     description: str = "Replace strings in the plan file."
     params: type[EditPlanParams] = EditPlanParams
 
@@ -495,7 +489,7 @@ class EditPlan(CallableTool2):
         if path is None:
             return ToolError(
                 output="",
-                message="EditPlan tool invalid: no plan_writing_path set.",
+                message="Invalid: no plan_writing_path set.",
                 brief="invalid tool.",
             )
 
@@ -539,13 +533,24 @@ class EditPlan(CallableTool2):
 
             return ToolOk(
                 output="",
-                message=f"Plan file successfully edited. Applied {len(edits)} edit(s) with {total} total replacement(s).",
+                message=f"Edited plan: {len(edits)} edit(s), {total} replacement(s).",
             )
         except Exception as exc:
             return ToolError(
-                message=f"Failed to edit plan. Error: {exc}",
+                message=f"Failed to edit plan: {exc}",
                 brief="Failed to edit plan",
             )
+
+
+# --- Legacy aliases ---
+# Old CamelCase tool names (used by agent manifests, prompt text and sessions
+# recorded before the rename) resolve to the snake_case classes so nothing
+# breaks while callers migrate.  The toolset redirect map
+# (``kimi_cli.soul.toolset._build_platform_redirects``) maps the old *tool*
+# names to the new ones at call time.
+WritePlan = write_plan
+ReadPlan = read_plan
+EditPlan = edit_plan
 
 
 

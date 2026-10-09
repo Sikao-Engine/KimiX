@@ -1,225 +1,94 @@
 from __future__ import annotations
 
+import hashlib
 import json
-from typing import Any
+import sys
+import textwrap
+from pathlib import Path
 
 from inline_snapshot import snapshot
 
-from kimi_cli.wire.protocol import WIRE_PROTOCOL_VERSION
 from tests_e2e.wire_helpers import (
+    build_approval_response,
     collect_until_response,
     make_home_dir,
     make_work_dir,
-    normalize_response,
     send_initialize,
+    share_dir,
     start_wire,
     summarize_messages,
     write_scripted_config,
 )
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    return value if isinstance(value, dict) else {}
+def _session_dir(home_dir: Path, work_dir: Path, session_id: str) -> Path:
+    digest = hashlib.md5(str(work_dir).encode("utf-8")).hexdigest()
+    return share_dir(home_dir) / "sessions" / digest / session_id
 
 
-def test_initialize_handshake(tmp_path) -> None:
-    config_path = write_scripted_config(tmp_path, ["text: hello"])
-    work_dir = make_work_dir(tmp_path)
-    home_dir = make_home_dir(tmp_path)
+def _read_user_texts(context_file: Path) -> list[str]:
+    texts: list[str] = []
+    for line in context_file.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        payload = json.loads(line)
+        if payload.get("role") != "user":
+            continue
+        content = payload.get("content", "")
+        if isinstance(content, str):
+            texts.append(content)
+            continue
+        if isinstance(content, list):
+            text = "".join(
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            )
+            texts.append(text)
+    return texts
 
-    wire = start_wire(
-        config_path=config_path,
-        config_text=None,
-        work_dir=work_dir,
-        home_dir=home_dir,
-        yolo=True,
+
+def _normalize_newlines(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def test_mcp_tool_call(tmp_path) -> None:
+    server_path = tmp_path / "mcp_server.py"
+    server_path.write_text(
+        textwrap.dedent(
+            """
+            from fastmcp.server import FastMCP
+
+            server = FastMCP("test-mcp")
+
+            @server.tool
+            def ping(text: str) -> str:
+                return f"pong:{text}"
+
+            if __name__ == "__main__":
+                server.run(transport="stdio", show_banner=False)
+            """
+        ).strip()
+        + "\n",
+        encoding="utf-8",
     )
-    try:
-        resp = send_initialize(wire)
-        result = _as_dict(resp.get("result"))
-        assert result.get("protocol_version") == WIRE_PROTOCOL_VERSION
-        assert "slash_commands" in result
-        assert normalize_response(resp) == snapshot(
-            {
-                "result": {
-                    "protocol_version": WIRE_PROTOCOL_VERSION,
-                    "server": {"name": "Kimi Code CLI", "version": "<VERSION>"},
-                    "slash_commands": [
-                        {
-                            "name": "init",
-                            "description": "Analyze the codebase and generate an `AGENTS.md` file",
-                            "aliases": [],
-                        },
-                        {
-                            "name": "compact",
-                            "description": "Compact the context (optionally with a custom focus, e.g. /compact keep db discussions)",
-                            "aliases": [],
-                        }, {
-    "name": "prune",
-    "description": "Manually trigger context pruning (smart history removal)",
-    "aliases": [],
-}, {"name": "clear", "description": "Clear the context", "aliases": ["reset"]},
-                        {
-                            "name": "yolo",
-                            "description": "Toggle YOLO mode (auto-approve all actions)",
-                            "aliases": [],
-                        },
-                        {
-                            "name": "afk",
-                            "description": "Toggle afk mode (auto-dismiss AskUserQuestion, auto-approve tool calls)",
-                            "aliases": [],
-                        }, {
-                            "name": "add-dir",
-                            "description": "Add a directory to the workspace. Usage: /add-dir <path>. Run without args to list added dirs",
-                            "aliases": [],
-                        },
-                        {
-                            "name": "export",
-                            "description": "Export current session context to a markdown file",
-                            "aliases": [],
-                        }, {
-    "name": "refresh-env",
-    "description": "Refresh PATH/PATHEXT from the Windows registry (no restart required)",
-    "aliases": [],
-}, {
-                            "name": "import",
-                            "description": "Import context from a file or session ID",
-                            "aliases": [],
-                        },
-                    ],
-                    "hooks": {
-                        "supported_events": [
-                            "PreToolUse",
-                            "PostToolUse",
-                            "PostToolUseFailure",
-                            "StopFailure",
-                            "SessionStart",
-                            "SessionEnd",
-                            "SubagentStart",
-                            "SubagentStop",
-                            "PreCompact",
-                            "PostCompact",
-                            "Notification",
-                        ],
-                        "configured": {},
-                    },
-                    "capabilities": {"supports_question": True},
-                }
+    mcp_config = {
+        "mcpServers": {
+            "test": {
+                "command": sys.executable,
+                "args": [str(server_path)],
             }
-        )
-    finally:
-        wire.close()
-
-
-def test_initialize_external_tool_conflict(tmp_path) -> None:
-    config_path = write_scripted_config(tmp_path, ["text: hello"])
-    work_dir = make_work_dir(tmp_path)
-    home_dir = make_home_dir(tmp_path)
-    external_tools = [
-        {
-            "name": "read",
-            "description": "Conflicts with built-in",
-            "parameters": {"type": "object", "properties": {}},
         }
-    ]
+    }
+    mcp_config_path = tmp_path / "mcp.json"
+    mcp_config_path.write_text(json.dumps(mcp_config), encoding="utf-8")
 
-    wire = start_wire(
-        config_path=config_path,
-        config_text=None,
-        work_dir=work_dir,
-        home_dir=home_dir,
-        yolo=True,
-    )
-    try:
-        resp = send_initialize(wire, external_tools=external_tools)
-        result = _as_dict(resp.get("result"))
-        external_tools_result = _as_dict(result.get("external_tools"))
-        rejected = external_tools_result.get("rejected")
-        assert isinstance(rejected, list)
-        assert any(isinstance(item, dict) and item.get("name") == "read" for item in rejected)
-        assert normalize_response(resp) == snapshot(
-            {
-                "result": {
-                    "protocol_version": WIRE_PROTOCOL_VERSION,
-                    "server": {"name": "Kimi Code CLI", "version": "<VERSION>"},
-                    "slash_commands": [
-                        {
-                            "name": "init",
-                            "description": "Analyze the codebase and generate an `AGENTS.md` file",
-                            "aliases": [],
-                        },
-                        {
-                            "name": "compact",
-                            "description": "Compact the context (optionally with a custom focus, e.g. /compact keep db discussions)",
-                            "aliases": [],
-                        }, {
-    "name": "prune",
-    "description": "Manually trigger context pruning (smart history removal)",
-    "aliases": [],
-}, {"name": "clear", "description": "Clear the context", "aliases": ["reset"]},
-                        {
-                            "name": "yolo",
-                            "description": "Toggle YOLO mode (auto-approve all actions)",
-                            "aliases": [],
-                        },
-                        {
-                            "name": "afk",
-                            "description": "Toggle afk mode (auto-dismiss AskUserQuestion, auto-approve tool calls)",
-                            "aliases": [],
-                        }, {
-                            "name": "add-dir",
-                            "description": "Add a directory to the workspace. Usage: /add-dir <path>. Run without args to list added dirs",
-                            "aliases": [],
-                        },
-                        {
-                            "name": "export",
-                            "description": "Export current session context to a markdown file",
-                            "aliases": [],
-                        }, {
-    "name": "refresh-env",
-    "description": "Refresh PATH/PATHEXT from the Windows registry (no restart required)",
-    "aliases": [],
-}, {
-                            "name": "import",
-                            "description": "Import context from a file or session ID",
-                            "aliases": [],
-                        },
-                    ],
-                    "external_tools": {
-                        "accepted": [],
-                        "rejected": [{"name": "read", "reason": "conflicts with builtin tool"}],
-                    },
-                    "hooks": {
-                        "supported_events": [
-                            "PreToolUse",
-                            "PostToolUse",
-                            "PostToolUseFailure",
-                            "StopFailure",
-                            "SessionStart",
-                            "SessionEnd",
-                            "SubagentStart",
-                            "SubagentStop",
-                            "PreCompact",
-                            "PostCompact",
-                            "Notification",
-                        ],
-                        "configured": {},
-                    },
-                    "capabilities": {"supports_question": True},
-                }
-            }
-        )
-    finally:
-        wire.close()
-
-
-def test_external_tool_call(tmp_path) -> None:
-    tool_args = json.dumps({"path": "README.md"})
-    tool_call = json.dumps({"id": "tc-1", "name": "ext_tool", "arguments": tool_args})
+    tool_args = json.dumps({"text": "hi"})
+    tool_call = json.dumps({"id": "tc-1", "name": "ping", "arguments": tool_args})
     scripts = [
         "\n".join(
             [
-                "text: calling external tool",
+                "text: call mcp",
                 f"tool_call: {tool_call}",
             ]
         ),
@@ -228,69 +97,101 @@ def test_external_tool_call(tmp_path) -> None:
     config_path = write_scripted_config(tmp_path, scripts)
     work_dir = make_work_dir(tmp_path)
     home_dir = make_home_dir(tmp_path)
-    external_tools = [
-        {
-            "name": "ext_tool",
-            "description": "External tool",
-            "parameters": {
-                "type": "object",
-                "properties": {"path": {"type": "string"}},
-                "required": ["path"],
-            },
-        }
-    ]
 
     wire = start_wire(
         config_path=config_path,
         config_text=None,
         work_dir=work_dir,
         home_dir=home_dir,
-        yolo=True,
+        mcp_config_path=mcp_config_path,
+        yolo=False,
     )
     try:
-        send_initialize(wire, external_tools=external_tools)
+        send_initialize(wire)
         wire.send_json(
             {
                 "jsonrpc": "2.0",
                 "id": "prompt-1",
                 "method": "prompt",
-                "params": {"user_input": "run external tool"},
+                "params": {"user_input": "call mcp"},
             }
         )
-
-        def handle_request(msg: dict[str, Any]) -> dict[str, Any]:
-            params = msg.get("params")
-            payload = params.get("payload") if isinstance(params, dict) else None
-            tool_call_id = payload.get("id") if isinstance(payload, dict) else None
-            assert isinstance(tool_call_id, str)
-            return {
-                "jsonrpc": "2.0",
-                "id": msg.get("id"),
-                "result": {
-                    "tool_call_id": tool_call_id,
-                    "return_value": {
-                        "is_error": False,
-                        "output": "Opened",
-                        "message": "Opened README.md",
-                        "display": [],
-                    },
-                },
-            }
-
-        resp, messages = collect_until_response(wire, "prompt-1", request_handler=handle_request)
+        resp, messages = collect_until_response(
+            wire,
+            "prompt-1",
+            request_handler=lambda msg: build_approval_response(msg, "approve"),
+        )
         assert resp.get("result", {}).get("status") == "finished"
         assert summarize_messages(messages) == snapshot(
             [
                 {
                     "method": "event",
                     "type": "TurnBegin",
-                    "payload": {"user_input": "run external tool"},
+                    "payload": {"user_input": "call mcp"},
                 },
-                {"method": "event", "type": "StepBegin", "payload": {"n": 1}},
+                {
+                    "method": "event",
+                    "type": "StatusUpdate",
+                    "payload": {
+                        "context_usage": None,
+                        "context_tokens": None,
+                        "max_context_tokens": None,
+                        "token_usage": None,
+                        "message_id": None,
+                        "mcp_status": {
+                            "loading": True,
+                            "connected": 0,
+                            "total": 1,
+                            "tools": "<N>",
+                            "servers": [{"name": "test", "status": "<STATUS>", "tools": ["<TOOL>"], "resources": [], "prompts": []}],
+                        },
+                    },
+                },
+                {"method": "event", "type": "MCPLoadingBegin", "payload": {}},
+                {
+                    "method": "event",
+                    "type": "StatusUpdate",
+                    "payload": {
+                        "context_usage": None,
+                        "context_tokens": None,
+                        "max_context_tokens": None,
+                        "token_usage": None,
+                        "message_id": None,
+                        "mcp_status": {
+                            "loading": False,
+                            "connected": 1,
+                            "total": 1,
+                            "tools": 1,
+                            "servers": [{"name": "test", "status": "connected", "tools": ["ping"], "resources": [], "prompts": []}],
+                        },
+                    },
+                },
+                {"method": "event", "type": "MCPLoadingEnd", "payload": {}}, {
+    "method": "event",
+    "type": "MCPToolsDiscovered",
+    "payload": {
+        "server_name": "test",
+        "hash": "f8ecc72e3ea845669b418864c84e57060873458ee102be6c65485df5f2a35e39",
+        "tools": [
+            {
+                "name": "ping",
+                "description": "",
+                "parameters": {
+                    "additionalProperties": False,
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                    "type": "object",
+                },
+            }
+        ],
+        "enabled_names": ["ping"],
+        "collisions": [],
+    },
+}, {"method": "event", "type": "StepBegin", "payload": {"n": 1}},
                 {
                     "method": "event",
                     "type": "ContentPart",
-                    "payload": {"type": "text", "text": "calling external tool"},
+                    "payload": {"type": "text", "text": "call mcp"},
                 },
                 {
                     "method": "event",
@@ -298,7 +199,7 @@ def test_external_tool_call(tmp_path) -> None:
                     "payload": {
                         "type": "function",
                         "id": "tc-1",
-                        "function": {"name": "ext_tool", "arguments": '{"path": "README.md"}'},
+                        "function": {"name": "ping", "arguments": '{"text": "hi"}'},
                         "extras": None,
                     },
                 },
@@ -313,28 +214,25 @@ def test_external_tool_call(tmp_path) -> None:
                         "message_id": None,
                         "mcp_status": None,
                     },
-                }, {
-    "method": "event",
-    "type": "ToolResult",
-    "payload": {
-        "tool_call_id": "tc-1",
-        "return_value": {
-            "is_error": True,
-            "output": "",
-            "message": "Error running tool: 'WireExternalTool' object has no attribute 'params'",
-            "display": [{"type": "brief", "text": "Tool runtime error"}],
-            "extras": None,
-        },
-    },
-}, {
-    "method": "event",
-    "type": "LLMToolsSnapshot",
-    "payload": {
-        "hash": "7d492c3cdda30430a949c00871c19553f2bff885d51defe1f16dfd38d583ff84",
-        "tools": [
-            {
-                "name": "subagent",
-                "description": """\
+                },
+                {
+                    "method": "event",
+                    "type": "ToolResult",
+                    "payload": {"tool_call_id": "tc-1", "return_value": {
+    "is_error": True,
+    "output": "",
+    "message": "Error running tool: 'MCPTool' object has no attribute 'params'",
+    "display": [{"type": "brief", "text": "Tool runtime error"}],
+    "extras": None,
+}},
+                },
+                {
+                    "method": "event",
+                    "type": "LLMToolsSnapshot",
+                    "payload": {"hash": "145fc19473ac535eb6baa90d0a33571814389fd3bb635c9a954f1b833524cd47", "tools": [
+    {
+        "name": "subagent",
+        "description": """\
 Start a subagent for focused tasks; create new or resume by agent_id.
 
 Usage
@@ -345,499 +243,295 @@ Usage
 
 Explore Agent — preferred for read-only codebase research. Use when you need >3 searches, module understanding, or concurrent investigations. Thoroughness: "quick" (find file), "medium" (understand module), "thorough" (architecture analysis).\
 """,
-                "parameters": {
-                    "properties": {
-                        "description": {
-                            "description": "Short task label (3–5 words).",
-                            "type": "string",
-                        },
-                        "prompt": {
-                            "description": "Task for the agent.",
-                            "type": "string",
-                        },
-                        "subagent_type": {
-                            "default": "coder",
-                            "description": "Built-in agent type (default: coder).",
-                            "type": "string",
-                        },
-                        "model": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Optional model override.",
-                        },
-                        "resume": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Agent ID to resume.",
-                        },
-                        "run_in_background": {
-                            "default": False,
-                            "description": "Run in background.",
-                            "type": "boolean",
-                        },
-                        "timeout": {
-                            "anyOf": [
-                                {"maximum": 3600, "minimum": 30, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Timeout in seconds (30–3600).",
-                        },
-                    },
-                    "required": ["description", "prompt"],
-                    "type": "object",
+        "parameters": {
+            "properties": {
+                "description": {
+                    "description": "Short task label (3–5 words).",
+                    "type": "string",
+                },
+                "prompt": {"description": "Task for the agent.", "type": "string"},
+                "subagent_type": {
+                    "default": "coder",
+                    "description": "Built-in agent type (default: coder).",
+                    "type": "string",
+                },
+                "model": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Optional model override.",
+                },
+                "resume": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Agent ID to resume.",
+                },
+                "run_in_background": {
+                    "default": False,
+                    "description": "Run in background.",
+                    "type": "boolean",
+                },
+                "timeout": {
+                    "anyOf": [
+                        {"maximum": 3600, "minimum": 30, "type": "integer"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "description": "Timeout in seconds (30–3600).",
                 },
             },
-            {   'name': 'todo_list',
-                'description': 'Read or write the todo plan — one tool, one item shape, every operation.\n'
-                               '\n'
-                               'Item shape (all modes): `{title, status?, notes?, children?}` plus the edit '
-                               'keys `parent`, `rename_to`, `complete`. `title` is the one short imperative '
-                               'line that identifies the item and the only required key; `notes` is optional '
-                               'detail (an item of only `notes` has no identity).\n'
-                               '\n'
-                               'Dispatch:\n'
-                               '- `todos` omitted → read the current tree.\n'
-                               "- mode='merge' (default) → upsert each item: an existing title patches it in "
-                               'place (omitted fields keep their value), an unknown title creates it. `parent` '
-                               "/ top-level `scope` pick the sub-tree ('' = root).\n"
-                               "- mode='replace' → the list IS the tree (children included); needs all "
-                               'existing todos done unless force=True.\n'
-                               "- mode='clear' → empty the tree (all-done guard unless force=True).\n"
-                               '\n'
-                               'Near-duplicate titles are treated as the same task, not a new one: an incoming '
-                               'title that differs from an existing one only in numbering, punctuation, case '
-                               "or word order hits the conflict policy — on_conflict='error' (default) refuses "
-                               'the call and names the existing title plus the exact payload to send instead; '
-                               "'reuse' patches that item; 'append' really adds a second one.\n"
-                               '\n'
-                               'Invariants: exactly one item in_progress (auto_fix=True demotes earlier ones, '
-                               'keeping the last listed); done items never move back to pending/in_progress '
-                               'unless force=True; done items dropped by replace/clear are archived.',
-                'parameters': {   'additionalProperties': False,
-                                  'properties': {   'todos': {   'description': 'The items to write; omit to '
-                                                                                'READ the tree. In the default '
-                                                                                "mode='merge' this is an "
-                                                                                'upsert batch — send only the '
-                                                                                'items you mean to touch, each '
-                                                                                'with `title` plus any of '
-                                                                                'status / notes / children / '
-                                                                                'rename_to / parent / '
-                                                                                'complete: an existing title '
-                                                                                'is patched, an unknown one is '
-                                                                                "created. In mode='replace' "
-                                                                                'send the COMPLETE tree '
-                                                                                'instead. A single object, a '
-                                                                                'bare title string or a JSON '
-                                                                                'string of those forms also '
-                                                                                'work. Accepts `todos` or '
-                                                                                '`items`.',
-                                                                 'items': {   'additionalProperties': False,
-                                                                              'description': 'One todo item.\n'
-                                                                                             '\n'
-                                                                                             'The single item '
-                                                                                             'shape for the '
-                                                                                             'one todo tool: '
-                                                                                             'the same object '
-                                                                                             'expresses a\n'
-                                                                                             'whole-tree write '
-                                                                                             "(``mode='replace'``), "
-                                                                                             'an upsert '
-                                                                                             "(``mode='merge'``) "
-                                                                                             'and a\n'
-                                                                                             'targeted edit '
-                                                                                             '(``parent`` / '
-                                                                                             '``rename_to`` / '
-                                                                                             '``complete``). '
-                                                                                             'Fields that '
-                                                                                             'only\n'
-                                                                                             'make sense for '
-                                                                                             'an edit are '
-                                                                                             'ignored by a '
-                                                                                             'whole-tree '
-                                                                                             'write.',
-                                                                              'properties': {   'title': {   'description': 'Required. '
-                                                                                                                            'The '
-                                                                                                                            'task '
-                                                                                                                            'title: '
-                                                                                                                            'one '
-                                                                                                                            'short '
-                                                                                                                            'imperative '
-                                                                                                                            'line, '
-                                                                                                                            'and '
-                                                                                                                            'the '
-                                                                                                                            "item's "
-                                                                                                                            'identity '
-                                                                                                                            '— '
-                                                                                                                            "mode='merge' "
-                                                                                                                            'matches '
-                                                                                                                            'items '
-                                                                                                                            'by '
-                                                                                                                            'it '
-                                                                                                                            'and '
-                                                                                                                            '`parent`/`scope` '
-                                                                                                                            'look '
-                                                                                                                            'items '
-                                                                                                                            'up '
-                                                                                                                            'by '
-                                                                                                                            'it, '
-                                                                                                                            'so '
-                                                                                                                            'it '
-                                                                                                                            'must '
-                                                                                                                            'always '
-                                                                                                                            'be '
-                                                                                                                            'sent. '
-                                                                                                                            'Accepts '
-                                                                                                                            '`title`, '
-                                                                                                                            '`content`, '
-                                                                                                                            '`task`, '
-                                                                                                                            '`todo`, '
-                                                                                                                            '`item` '
-                                                                                                                            'or '
-                                                                                                                            '`name`.',
-                                                                                                             'maxLength': 65536,
-                                                                                                             'minLength': 1,
-                                                                                                             'type': 'string'},
-                                                                                                'status': {   'default': 'pending',
-                                                                                                              'description': 'One '
-                                                                                                                             'of: '
-                                                                                                                             'pending, '
-                                                                                                                             'in_progress, '
-                                                                                                                             'done '
-                                                                                                                             '(or '
-                                                                                                                             'completed). '
-                                                                                                                             'Omit '
-                                                                                                                             'to '
-                                                                                                                             'keep '
-                                                                                                                             'an '
-                                                                                                                             'existing '
-                                                                                                                             "item's "
-                                                                                                                             'status; '
-                                                                                                                             'created '
-                                                                                                                             'items '
-                                                                                                                             'default '
-                                                                                                                             'to '
-                                                                                                                             'pending.',
-                                                                                                              'enum': [   'pending',
-                                                                                                                          'in_progress',
-                                                                                                                          'done'],
-                                                                                                              'type': 'string'},
-                                                                                                'notes': {   'anyOf': [   {   'maxLength': 65536,
-                                                                                                                              'type': 'string'},
-                                                                                                                          {   'type': 'null'}],
-                                                                                                             'default': None,
-                                                                                                             'description': 'Optional '
-                                                                                                                            'supporting '
-                                                                                                                            'detail '
-                                                                                                                            '(evidence, '
-                                                                                                                            'file '
-                                                                                                                            'paths, '
-                                                                                                                            'findings). '
-                                                                                                                            'Not '
-                                                                                                                            'the '
-                                                                                                                            'title '
-                                                                                                                            '— '
-                                                                                                                            'an '
-                                                                                                                            'item '
-                                                                                                                            'with '
-                                                                                                                            'only '
-                                                                                                                            '`notes` '
-                                                                                                                            'has '
-                                                                                                                            'no '
-                                                                                                                            'identity, '
-                                                                                                                            'so '
-                                                                                                                            'always '
-                                                                                                                            'send '
-                                                                                                                            '`title` '
-                                                                                                                            'too. '
-                                                                                                                            'Omit '
-                                                                                                                            'it '
-                                                                                                                            '(or '
-                                                                                                                            'send '
-                                                                                                                            '"") '
-                                                                                                                            'to '
-                                                                                                                            'keep '
-                                                                                                                            'the '
-                                                                                                                            'current '
-                                                                                                                            'notes.'},
-                                                                                                'children': {   'description': 'Sub-todos '
-                                                                                                                               'of '
-                                                                                                                               'this '
-                                                                                                                               'item; '
-                                                                                                                               'same '
-                                                                                                                               'shape, '
-                                                                                                                               'any '
-                                                                                                                               'depth. '
-                                                                                                                               'Leave '
-                                                                                                                               'empty '
-                                                                                                                               'for '
-                                                                                                                               'a '
-                                                                                                                               'leaf. '
-                                                                                                                               'A '
-                                                                                                                               'bare '
-                                                                                                                               'title '
-                                                                                                                               'string '
-                                                                                                                               'is '
-                                                                                                                               'accepted '
-                                                                                                                               'and '
-                                                                                                                               'means '
-                                                                                                                               'a '
-                                                                                                                               'pending '
-                                                                                                                               'item.',
-                                                                                                                'items': {   'additionalProperties': False,
-                                                                                                                             'description': 'One '
-                                                                                                                                            'todo '
-                                                                                                                                            'item.\n'
-                                                                                                                                            '\n'
-                                                                                                                                            'The '
-                                                                                                                                            'single '
-                                                                                                                                            'item '
-                                                                                                                                            'shape '
-                                                                                                                                            'for '
-                                                                                                                                            'the '
-                                                                                                                                            'one '
-                                                                                                                                            'todo '
-                                                                                                                                            'tool: '
-                                                                                                                                            'the '
-                                                                                                                                            'same '
-                                                                                                                                            'object '
-                                                                                                                                            'expresses '
-                                                                                                                                            'a\n'
-                                                                                                                                            'whole-tree '
-                                                                                                                                            'write '
-                                                                                                                                            "(``mode='replace'``), "
-                                                                                                                                            'an '
-                                                                                                                                            'upsert '
-                                                                                                                                            "(``mode='merge'``) "
-                                                                                                                                            'and '
-                                                                                                                                            'a\n'
-                                                                                                                                            'targeted '
-                                                                                                                                            'edit '
-                                                                                                                                            '(``parent`` '
-                                                                                                                                            '/ '
-                                                                                                                                            '``rename_to`` '
-                                                                                                                                            '/ '
-                                                                                                                                            '``complete``). '
-                                                                                                                                            'Fields '
-                                                                                                                                            'that '
-                                                                                                                                            'only\n'
-                                                                                                                                            'make '
-                                                                                                                                            'sense '
-                                                                                                                                            'for '
-                                                                                                                                            'an '
-                                                                                                                                            'edit '
-                                                                                                                                            'are '
-                                                                                                                                            'ignored '
-                                                                                                                                            'by '
-                                                                                                                                            'a '
-                                                                                                                                            'whole-tree '
-                                                                                                                                            'write.',
-                                                                                                                             'properties': {   'title': {   'description': 'Sub-todo '
-                                                                                                                                                                           'title: '
-                                                                                                                                                                           'one '
-                                                                                                                                                                           'short '
-                                                                                                                                                                           'imperative '
-                                                                                                                                                                           'line '
-                                                                                                                                                                           '(required).',
-                                                                                                                                                            'maxLength': 65536,
-                                                                                                                                                            'minLength': 1,
-                                                                                                                                                            'type': 'string'},
-                                                                                                                                               'status': {   'default': 'pending',
-                                                                                                                                                             'description': 'One '
-                                                                                                                                                                            'of: '
-                                                                                                                                                                            'pending, '
-                                                                                                                                                                            'in_progress, '
-                                                                                                                                                                            'done '
-                                                                                                                                                                            '(or '
-                                                                                                                                                                            'completed). '
-                                                                                                                                                                            'Omit '
-                                                                                                                                                                            'to '
-                                                                                                                                                                            'keep '
-                                                                                                                                                                            'an '
-                                                                                                                                                                            'existing '
-                                                                                                                                                                            "item's "
-                                                                                                                                                                            'status; '
-                                                                                                                                                                            'created '
-                                                                                                                                                                            'items '
-                                                                                                                                                                            'default '
-                                                                                                                                                                            'to '
-                                                                                                                                                                            'pending.',
-                                                                                                                                                             'enum': [   'pending',
-                                                                                                                                                                         'in_progress',
-                                                                                                                                                                         'done'],
-                                                                                                                                                             'type': 'string'},
-                                                                                                                                               'notes': {   'anyOf': [   {   'maxLength': 65536,
-                                                                                                                                                                             'type': 'string'},
-                                                                                                                                                                         {   'type': 'null'}],
-                                                                                                                                                            'default': None,
-                                                                                                                                                            'description': 'Optional '
-                                                                                                                                                                           'detail '
-                                                                                                                                                                           'for '
-                                                                                                                                                                           'this '
-                                                                                                                                                                           'sub-todo; '
-                                                                                                                                                                           'the '
-                                                                                                                                                                           'title '
-                                                                                                                                                                           'is '
-                                                                                                                                                                           'the '
-                                                                                                                                                                           'identity.'}},
-                                                                                                                             'required': [   'title'],
-                                                                                                                             'type': 'object'},
-                                                                                                                'type': 'array'},
-                                                                                                'parent': {   'anyOf': [   {   'type': 'string'},
-                                                                                                                           {   'type': 'null'}],
-                                                                                                              'default': None,
-                                                                                                              'description': 'Scope '
-                                                                                                                             'this '
-                                                                                                                             'item '
-                                                                                                                             'to '
-                                                                                                                             'the '
-                                                                                                                             'children '
-                                                                                                                             'of '
-                                                                                                                             'the '
-                                                                                                                             'named '
-                                                                                                                             'todo '
-                                                                                                                             '(both '
-                                                                                                                             'its '
-                                                                                                                             'lookup '
-                                                                                                                             'and '
-                                                                                                                             'its '
-                                                                                                                             'creation). '
-                                                                                                                             '"" '
-                                                                                                                             '= '
-                                                                                                                             'root '
-                                                                                                                             'scope. '
-                                                                                                                             'Overrides '
-                                                                                                                             'the '
-                                                                                                                             'top-level '
-                                                                                                                             '`scope`.'},
-                                                                                                'rename_to': {   'anyOf': [   {   'type': 'string'},
-                                                                                                                              {   'type': 'null'}],
-                                                                                                                 'default': None,
-                                                                                                                 'description': 'Rename '
-                                                                                                                                'the '
-                                                                                                                                'matched '
-                                                                                                                                'item '
-                                                                                                                                'to '
-                                                                                                                                'this '
-                                                                                                                                'title '
-                                                                                                                                'instead '
-                                                                                                                                'of '
-                                                                                                                                'editing '
-                                                                                                                                'a '
-                                                                                                                                'field. '
-                                                                                                                                'Renaming '
-                                                                                                                                'onto '
-                                                                                                                                'an '
-                                                                                                                                'existing '
-                                                                                                                                'title '
-                                                                                                                                'is '
-                                                                                                                                'rejected.'},
-                                                                                                'complete': {   'default': False,
-                                                                                                                'description': 'Mark '
-                                                                                                                               'this '
-                                                                                                                               'item '
-                                                                                                                               'and '
-                                                                                                                               'its '
-                                                                                                                               'whole '
-                                                                                                                               'sub-tree '
-                                                                                                                               'done '
-                                                                                                                               'in '
-                                                                                                                               'one '
-                                                                                                                               'call. '
-                                                                                                                               'Not '
-                                                                                                                               'combined '
-                                                                                                                               'with '
-                                                                                                                               'an '
-                                                                                                                               'explicit '
-                                                                                                                               'pending/in_progress '
-                                                                                                                               'status '
-                                                                                                                               'or '
-                                                                                                                               'with '
-                                                                                                                               '`children`.',
-                                                                                                                'type': 'boolean'},
-                                                                                                'fuzzy': {   'default': True,
-                                                                                                             'description': 'Per-item '
-                                                                                                                            'override '
-                                                                                                                            'of '
-                                                                                                                            'the '
-                                                                                                                            'top-level '
-                                                                                                                            '`fuzzy`.',
-                                                                                                             'type': 'boolean'},
-                                                                                                'force': {   'default': False,
-                                                                                                             'description': 'Per-item '
-                                                                                                                            'override '
-                                                                                                                            'of '
-                                                                                                                            'the '
-                                                                                                                            'top-level '
-                                                                                                                            '`force`.',
-                                                                                                             'type': 'boolean'}},
-                                                                              'required': ['title'],
-                                                                              'type': 'object'},
-                                                                 'type': 'array'},
-                                                    'mode': {   'default': 'merge',
-                                                                'description': "'merge' (default) upserts the "
-                                                                               "given items; 'replace' makes "
-                                                                               'the given list the whole tree '
-                                                                               'and needs every existing todo '
-                                                                               'done unless force=True; '
-                                                                               '"clear" empties the tree (same '
-                                                                               'guard).',
-                                                                'enum': ['merge', 'replace', 'clear'],
-                                                                'type': 'string'},
-                                                    'scope': {   'anyOf': [   {'type': 'string'},
-                                                                              {'type': 'null'}],
-                                                                 'default': None,
-                                                                 'description': 'Restrict this call to the '
-                                                                                'children of the named todo; '
-                                                                                '"" means the root. An item\'s '
-                                                                                'own `parent` wins.'},
-                                                    'on_conflict': {   'default': 'error',
-                                                                       'description': 'What to do when an '
-                                                                                      'incoming title is a '
-                                                                                      'near-duplicate of an '
-                                                                                      'existing one (same '
-                                                                                      'words, different '
-                                                                                      'numbering / punctuation '
-                                                                                      "/ case): 'error' "
-                                                                                      '(default) refuses the '
-                                                                                      'call and names the '
-                                                                                      'existing title plus the '
-                                                                                      'exact payload to send '
-                                                                                      "instead; 'reuse' "
-                                                                                      'patches that item; '
-                                                                                      "'append' really adds a "
-                                                                                      'second one.',
-                                                                       'enum': ['error', 'reuse', 'append'],
-                                                                       'type': 'string'},
-                                                    'fuzzy': {   'default': True,
-                                                                 'description': 'When True (default) a title '
-                                                                                'that misses exactly may still '
-                                                                                'match the nearest existing '
-                                                                                'todo; False requires exact '
-                                                                                'titles.',
-                                                                 'type': 'boolean'},
-                                                    'force': {   'default': False,
-                                                                 'description': 'Bypass the guards: the '
-                                                                                'all-done requirement of '
-                                                                                'replace/clear, reopening a '
-                                                                                'done item, renaming onto one, '
-                                                                                'and the single-in_progress '
-                                                                                'and regression checks.',
-                                                                 'type': 'boolean'},
-                                                    'auto_fix': {   'default': True,
-                                                                    'description': 'When True (default) and '
-                                                                                   'several items are '
-                                                                                   'in_progress, the last '
-                                                                                   'listed one is kept and '
-                                                                                   'earlier ones are marked '
-                                                                                   'done; False errors '
-                                                                                   'instead.',
-                                                                    'type': 'boolean'}},
-                                  'type': 'object'}}, {
+            "required": ["description", "prompt"],
+            "type": "object",
+        },
+    },
+    {   'name': 'todo_list',
+        'description': """\
+Read or write the todo plan — one tool, one item shape.
+
+Item: `{title, status?, notes?, children?}` + edit keys `parent`, `rename_to`, `complete`. `title` is the only required key (one short imperative line) and the item's identity; `notes` is optional detail.
+
+Dispatch:
+- `todos` omitted → read the current tree.
+- mode='merge' (default) → upsert each item: an existing title patches it in place (omitted fields keep their value), an unknown title creates it. `parent` / top-level `scope` pick the sub-tree ('' = root).
+- mode='replace' → the list IS the whole tree (children included); needs all existing todos done unless force=True.
+- mode='clear' → empty the tree (all-done guard unless force=True).
+
+A near-duplicate title (differs only in numbering, punctuation, case or word order) is the same task, not a new one — on_conflict='error' (default) refuses the call and names the existing title plus the exact payload to send; 'reuse' patches it; 'append' adds a second.
+
+Invariants: exactly one in_progress (auto_fix demotes earlier ones, keeping the last); done items never move back to pending/in_progress unless force; done items dropped by replace/clear are archived.\
+""",
+        'parameters': {   'additionalProperties': False,
+                          'properties': {   'todos': {   'description': "The items to write; omit to READ the tree. mode='merge' upserts them: send only the items you mean to touch, each with `title` plus any of status / notes / children / rename_to / parent / complete (existing title patched, unknown created). In mode='replace' send the COMPLETE tree instead. A single object, a bare title string or a JSON string of those forms also work. Accepts `todos` or `items`.",
+                                                         'items': {   'additionalProperties': False,
+                                                                      'description': 'One todo item.\n'
+                                                                                     '\n'
+                                                                                     'The single item '
+                                                                                     'shape for the '
+                                                                                     'one todo tool: '
+                                                                                     'the same object '
+                                                                                     'expresses a\n'
+                                                                                     'whole-tree write '
+                                                                                     "(``mode='replace'``), "
+                                                                                     'an upsert '
+                                                                                     "(``mode='merge'``) "
+                                                                                     'and a\n'
+                                                                                     'targeted edit '
+                                                                                     '(``parent`` / '
+                                                                                     '``rename_to`` / '
+                                                                                     '``complete``). '
+                                                                                     'Fields that '
+                                                                                     'only\n'
+                                                                                     'make sense for '
+                                                                                     'an edit are '
+                                                                                     'ignored by a '
+                                                                                     'whole-tree '
+                                                                                     'write.',
+                                                                      'properties': {   'title': {   'description': "Required. The task title: one short imperative line; the item's identity — mode='merge' matches and `parent`/`scope` look up by it, so always send it. Accepts `title`, `content`, `task`, `todo`, `item` or `name`.",
+                                                                                                     'maxLength': 65536,
+                                                                                                     'minLength': 1,
+                                                                                                     'type': 'string'},
+                                                                                        'status': {   'default': 'pending',
+                                                                                                      'description': 'One '
+                                                                                                                     'of: '
+                                                                                                                     'pending, '
+                                                                                                                     'in_progress, '
+                                                                                                                     'done '
+                                                                                                                     '(or '
+                                                                                                                     'completed). '
+                                                                                                                     'Omit '
+                                                                                                                     'to '
+                                                                                                                     'keep '
+                                                                                                                     'an '
+                                                                                                                     'existing '
+                                                                                                                     "item's "
+                                                                                                                     'status; '
+                                                                                                                     'created '
+                                                                                                                     'items '
+                                                                                                                     'default '
+                                                                                                                     'to '
+                                                                                                                     'pending.',
+                                                                                                      'enum': [   'pending',
+                                                                                                                  'in_progress',
+                                                                                                                  'done'],
+                                                                                                      'type': 'string'},
+                                                                                        'notes': {   'anyOf': [   {   'maxLength': 65536,
+                                                                                                                      'type': 'string'},
+                                                                                                                  {   'type': 'null'}],
+                                                                                                     'default': None,
+                                                                                                     'description': 'Optional supporting detail (evidence, file paths, findings). Not the title — an item of only `notes` has no identity, so always send `title` too. Omit it (or send "") to keep current notes.'},
+                                                                                        'children': {   'description': "Sub-todos; same shape, any depth. Leave empty for a leaf. A bare title string is accepted and means a pending item.",
+                                                                                                        'items': {   'additionalProperties': False,
+                                                                                                                     'description': 'One '
+                                                                                                                                    'todo '
+                                                                                                                                    'item.\n'
+                                                                                                                                    '\n'
+                                                                                                                                    'The '
+                                                                                                                                    'single '
+                                                                                                                                    'item '
+                                                                                                                                    'shape '
+                                                                                                                                    'for '
+                                                                                                                                    'the '
+                                                                                                                                    'one '
+                                                                                                                                    'todo '
+                                                                                                                                    'tool: '
+                                                                                                                                    'the '
+                                                                                                                                    'same '
+                                                                                                                                    'object '
+                                                                                                                                    'expresses '
+                                                                                                                                    'a\n'
+                                                                                                                                    'whole-tree '
+                                                                                                                                    'write '
+                                                                                                                                    "(``mode='replace'``), "
+                                                                                                                                    'an '
+                                                                                                                                    'upsert '
+                                                                                                                                    "(``mode='merge'``) "
+                                                                                                                                    'and '
+                                                                                                                                    'a\n'
+                                                                                                                                    'targeted '
+                                                                                                                                    'edit '
+                                                                                                                                    '(``parent`` '
+                                                                                                                                    '/ '
+                                                                                                                                    '``rename_to`` '
+                                                                                                                                    '/ '
+                                                                                                                                    '``complete``). '
+                                                                                                                                    'Fields '
+                                                                                                                                    'that '
+                                                                                                                                    'only\n'
+                                                                                                                                    'make '
+                                                                                                                                    'sense '
+                                                                                                                                    'for '
+                                                                                                                                    'an '
+                                                                                                                                    'edit '
+                                                                                                                                    'are '
+                                                                                                                                    'ignored '
+                                                                                                                                    'by '
+                                                                                                                                    'a '
+                                                                                                                                    'whole-tree '
+                                                                                                                                    'write.',
+                                                                                                                     'properties': {   'title': {   'description': 'Sub-todo '
+                                                                                                                                                                   'title: '
+                                                                                                                                                                   'one '
+                                                                                                                                                                   'short '
+                                                                                                                                                                   'imperative '
+                                                                                                                                                                   'line '
+                                                                                                                                                                   '(required).',
+                                                                                                                                                    'maxLength': 65536,
+                                                                                                                                                    'minLength': 1,
+                                                                                                                                                    'type': 'string'},
+                                                                                                                                       'status': {   'default': 'pending',
+                                                                                                                                                     'description': 'One '
+                                                                                                                                                                    'of: '
+                                                                                                                                                                    'pending, '
+                                                                                                                                                                    'in_progress, '
+                                                                                                                                                                    'done '
+                                                                                                                                                                    '(or '
+                                                                                                                                                                    'completed). '
+                                                                                                                                                                    'Omit '
+                                                                                                                                                                    'to '
+                                                                                                                                                                    'keep '
+                                                                                                                                                                    'an '
+                                                                                                                                                                    'existing '
+                                                                                                                                                                    "item's "
+                                                                                                                                                                    'status; '
+                                                                                                                                                                    'created '
+                                                                                                                                                                    'items '
+                                                                                                                                                                    'default '
+                                                                                                                                                                    'to '
+                                                                                                                                                                    'pending.',
+                                                                                                                                                     'enum': [   'pending',
+                                                                                                                                                                 'in_progress',
+                                                                                                                                                                 'done'],
+                                                                                                                                                     'type': 'string'},
+                                                                                                                                       'notes': {   'anyOf': [   {   'maxLength': 65536,
+                                                                                                                                                                     'type': 'string'},
+                                                                                                                                                                 {   'type': 'null'}],
+                                                                                                                                                    'default': None,
+                                                                                                                                                    'description': 'Optional '
+                                                                                                                                                                   'detail '
+                                                                                                                                                                   'for '
+                                                                                                                                                                   'this '
+                                                                                                                                                                   'sub-todo; '
+                                                                                                                                                                   'the '
+                                                                                                                                                                   'title '
+                                                                                                                                                                   'is '
+                                                                                                                                                                   'the '
+                                                                                                                                                                   'identity.'}},
+                                                                                                                     'required': [   'title'],
+                                                                                                                     'type': 'object'},
+                                                                                                        'type': 'array'},
+                                                                                        'parent': {   'anyOf': [   {   'type': 'string'},
+                                                                                                                   {   'type': 'null'}],
+                                                                                                      'default': None,
+                                                                                                      'description': 'Scope this item to children of the named todo (its lookup and creation). "" = root scope. Overrides the top-level `scope`.'},
+                                                                                        'rename_to': {   'anyOf': [   {   'type': 'string'},
+                                                                                                                      {   'type': 'null'}],
+                                                                                                         'default': None,
+                                                                                                         'description': 'Rename '
+                                                                                                                        'the '
+                                                                                                                        'matched '
+                                                                                                                        'item '
+                                                                                                                        'to '
+                                                                                                                        'this '
+                                                                                                                        'title '
+                                                                                                                        'instead '
+                                                                                                                        'of '
+                                                                                                                        'editing '
+                                                                                                                        'a '
+                                                                                                                        'field. '
+                                                                                                                        'Renaming '
+                                                                                                                        'onto '
+                                                                                                                        'an '
+                                                                                                                        'existing '
+                                                                                                                        'title '
+                                                                                                                        'is '
+                                                                                                                        'rejected.'},
+                                                                                        'complete': {   'default': False,
+                                                                                                        'description': "Mark this item and its whole sub-tree done in one call. Not combined with a pending/in_progress status or with `children`.",
+                                                                                                        'type': 'boolean'},
+                                                                                        'fuzzy': {   'default': True,
+                                                                                                     'description': 'Per-item '
+                                                                                                                    'override '
+                                                                                                                    'of '
+                                                                                                                    'the '
+                                                                                                                    'top-level '
+                                                                                                                    '`fuzzy`.',
+                                                                                                     'type': 'boolean'},
+                                                                                        'force': {   'default': False,
+                                                                                                     'description': 'Per-item '
+                                                                                                                    'override '
+                                                                                                                    'of '
+                                                                                                                    'the '
+                                                                                                                    'top-level '
+                                                                                                                    '`force`.',
+                                                                                                     'type': 'boolean'}},
+                                                                      'required': ['title'],
+                                                                      'type': 'object'},
+                                                         'type': 'array'},
+                                            'mode': {   'default': 'merge',
+                                                        'description': "'merge' (default) upserts the given items; 'replace' makes the list the whole tree and needs every existing todo done unless force=True; 'clear' empties the tree (same guard).",
+                                                        'enum': ['merge', 'replace', 'clear'],
+                                                        'type': 'string'},
+                                            'scope': {   'anyOf': [   {'type': 'string'},
+                                                                      {'type': 'null'}],
+                                                         'default': None,
+                                                         'description': 'Restrict this call to children of the named todo; "" = root. An item\'s own `parent` wins.'},
+                                            'on_conflict': {   'default': 'error',
+                                                               'description': "What to do when an incoming title is a near-duplicate of an existing one (same words, different numbering / punctuation / case): 'error' (default) refuses and names the existing title plus the exact payload to send; 'reuse' patches it; 'append' adds a second one.",
+                                                               'enum': ['error', 'reuse', 'append'],
+                                                               'type': 'string'},
+                                            'fuzzy': {   'default': True,
+                                                         'description': "True (default): a title that misses exactly may still match the nearest existing todo; False requires exact titles.",
+                                                         'type': 'boolean'},
+                                            'force': {   'default': False,
+                                                         'description': "Bypass guards: replace/clear all-done, reopening a done item, rename collisions, and the single-in_progress / regression checks.",
+                                                         'type': 'boolean'},
+                                            'auto_fix': {   'default': True,
+                                                            'description': "True (default): with several in_progress, keep the last listed and mark earlier ones done; False errors instead.",
+                                                            'type': 'boolean'}},
+                          'type': 'object'}}, {
     "name": "read",
     "description": """\
 Read a UTF-8 text file and return line-numbered content.
-file_path: single path or list; offset/limit: scalar or one per file. Lines over 4000 chars truncated; max 5000 lines per file; bytes scale with context (≥102400, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to 32 files. Prefer glob/grep to find/search, then read.
+file_path: single path or list. offset/limit/max_char/char_offset: scalar, or one value per file in a list read. Lines over 4000 chars truncated; max 5000 lines per file; bytes scale with context (≥102400, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to 32 files. Prefer glob/grep to find/search, then read.
 
 Rich formats (one per call; scalar params apply to every file in a multi-file read):
 - Archives (zip/jar/war/apk/whl/cbz, tar/tgz/tbz2/txz, bare gz/bz2/xz): read data.zip lists up to 500 root entries; archive_member="src/main.py" reads one member as text. Traversal (.., absolute, backslash) rejected; binary members get an explicit notice.
@@ -854,7 +548,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"type": "string"},
                     {"items": {"type": "string"}, "type": "array"},
                 ],
-                "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. May be a single file path or a list of file paths. When `glob=True`, the final path component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
+                "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. Single path or list. With `glob=True` the final component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
             },
             "offset": {
                 "anyOf": [
@@ -862,7 +556,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"items": {"type": "integer"}, "type": "array"},
                 ],
                 "default": 1,
-                "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000. May be a scalar applied to all files, or a list with one value per file path.",
+                "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000.",
             },
             "limit": {
                 "anyOf": [
@@ -870,7 +564,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"items": {"type": "integer"}, "type": "array"},
                 ],
                 "default": 2000,
-                "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000. May be a scalar applied to all files, or a list with one value per file path.",
+                "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000.",
             },
             "max_char": {
                 "anyOf": [
@@ -878,7 +572,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"items": {"type": "integer"}, "type": "array"},
                 ],
                 "default": 16000,
-                "description": "Maximum number of content characters to return (starting from char_offset). Content characters exclude line-number prefixes, so the window is identical regardless of show_line_numbers. May be a scalar applied to all files, or a list with one value per file path. Default 16K balances completeness with context efficiency.",
+                "description": "Maximum number of content characters to return (starting from char_offset). Excludes line-number prefixes, so the window is identical regardless of show_line_numbers.",
             },
             "char_offset": {
                 "anyOf": [
@@ -886,7 +580,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"items": {"type": "integer"}, "type": "array"},
                 ],
                 "default": 0,
-                "description": "Content-character offset to start returning from (excluding line-number prefixes). May be a scalar applied to all files, or a list with one value per file path.",
+                "description": "Content-character offset to start returning from (excluding line-number prefixes).",
             },
             "glob": {
                 "default": False,
@@ -956,500 +650,482 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
         "type": "object",
     },
 }, {
-                "name": "glob",
-                "description": """\
+        "name": "glob",
+        "description": """\
 Find files by glob. Returns file paths — never directories — including hidden/ignored (VCS metadata excluded), in modification-time order: up to 100 paths (first 100 with a note; full list saved elsewhere). Does not enumerate directory entries.
 Use `read` to open matches (up to 1000 collected; omitted count reported in `message`).
 Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`) paths. Results use backslashes — convert to forward slashes for shell commands.
 """,
-                "parameters": {
-                    "properties": {
-                        "pattern": {
-                            "description": 'Glob pattern to match file paths against (e.g. `**/*.ts`, `src/**/*.test.js`). A pattern with no "/" matches the basename at any depth, so `*` and `*.ts` both search the whole tree; include a separator to anchor the depth. Unsafe recursive patterns (``**``, ``**/*``, ``**/**``, etc.) are forbidden.',
-                            "type": "string",
-                        },
-                        "path": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Directory to search in. Defaults to the session workspace; a relative path resolves against it. Accepts `path` or `directory`.",
-                        },
-                        "include_dirs": {
-                            "default": False,
-                            "description": "Include directories in results.",
-                            "type": "boolean",
-                        },
-                        "respect_gitignore": {
-                            "default": True,
-                            "description": "When True (default), skip files matched by .gitignore rules. When False, include all files regardless of .gitignore settings.",
-                            "type": "boolean",
-                        },
-                        "include_ignored": {
-                            "default": False,
-                            "description": "[Deprecated] Use respect_gitignore=False instead.",
-                            "type": "boolean",
-                        },
-                        "verbose": {
-                            "default": False,
-                            "description": "When True, include file size, modification time, and type for each match.",
-                            "type": "boolean",
-                        },
-                        "timeout": {
-                            "default": 10,
-                            "description": "Maximum time in seconds to wait for the search to complete.",
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                        "fold": {
-                            "default": 500,
-                            "description": "Maximum number of result lines in the output. Longer results are head+tail folded with an omitted-count marker and the total is reported in `message`. 0 = unlimited (the MAX_MATCHES collection cap still applies).",
-                            "minimum": 0,
-                            "type": "integer",
-                        },
-                    },
-                    "required": ["pattern"],
-                    "type": "object",
+        "parameters": {
+            "properties": {
+                "pattern": {
+                    "description": 'Glob pattern to match file paths against (e.g. `**/*.ts`). A pattern with no "/" matches the basename at any depth (`*` and `*.ts` search the whole tree); include a separator to anchor depth. All-wildcard recursive patterns (``**``, ``**/*``) are forbidden.',
+                    "type": "string",
+                },
+                "path": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Directory to search in. Defaults to the session workspace; a relative path resolves against it. Accepts `path` or `directory`.",
+                },
+                "include_dirs": {
+                    "default": False,
+                    "description": "Include directories in results.",
+                    "type": "boolean",
+                },
+                "respect_gitignore": {
+                    "default": True,
+                    "description": "Default True: skip .gitignore-matched files. False: include all.",
+                    "type": "boolean",
+                },
+                "include_ignored": {
+                    "default": False,
+                    "description": "[Deprecated] Use respect_gitignore=False instead.",
+                    "type": "boolean",
+                },
+                "verbose": {
+                    "default": False,
+                    "description": "Include size, mtime, and type per match.",
+                    "type": "boolean",
+                },
+                "timeout": {
+                    "default": 10,
+                    "description": "Max seconds to wait for the search.",
+                    "minimum": 1,
+                    "type": "integer",
+                },
+                "fold": {
+                    "default": 500,
+                    "description": "Max result lines to show. Longer results are head+tail folded with an omitted-count marker (total in `message`). 0 = unlimited; the MAX_MATCHES collection cap still applies.",
+                    "minimum": 0,
+                    "type": "integer",
                 },
             },
-            {
-                "name": "grep",
-                "description": "Search file contents with a ripgrep regular expression. Returns matching lines with line numbers, grouped by file. Returns the first 250 matches inline; a capped result reports where the complete match list was saved. Use read on a matched file for surrounding context. Multiline patterns match across line boundaries.",
-                "parameters": {
-                    "properties": {
-                        "pattern": {
-                            "description": "Regular expression to search for (ripgrep syntax).",
-                            "type": "string",
-                        },
-                        "path": {
-                            "anyOf": [
-                                {"type": "string"},
-                                {"items": {"type": "string"}, "type": "array"},
-                            ],
-                            "default": ".",
-                            "description": 'File or directory to search. Defaults to the session workspace; a relative path resolves against it. Also accepts embedded line-range selectors (`file.py:50-100`, `file.py:50+10`, `file.py:301-`, `file.py:5-16,960-973`, `..` alias), archive members (`bundle.zip:src/foo.ts`, combined `bundle.zip:src/foo.ts:50-100`), and multi-entry strings (`"src; tests"`) or lists.',
-                        },
-                        "grouped": {
-                            "anyOf": [{"type": "boolean"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Group content-mode results by file with `# path` headers and `*N|`/` N|` match/context markers. None = auto: grouped only when a line-range selector or archive member is used; True force grouped; False force legacy `path:line:text` output.",
-                        },
-                        "record": {
-                            "default": True,
-                            "description": "Persist the deduplicated matched-file list (relative paths) in the session so a follow-up read/edit pass can operate on exactly the files this grep surfaced.",
-                            "type": "boolean",
-                        },
-                        "include": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "One glob filter for which files to search (e.g. `*.ts`, `*.{js,jsx}`). Not a list; negation is not supported. Accepts `include` or `glob`.",
-                        },
-                        "output_mode": {
-                            "default": "files_with_matches",
-                            "description": "Output format: 'files_with_matches', 'count_matches', or 'content'.",
-                            "enum": ["files_with_matches", "count_matches", "content"],
-                            "type": "string",
-                        },
-                        "-B": {
-                            "anyOf": [{"type": "integer"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Lines before match (content mode only).",
-                        },
-                        "-A": {
-                            "anyOf": [{"type": "integer"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Lines after match (content mode only).",
-                        },
-                        "-C": {
-                            "anyOf": [{"type": "integer"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Lines around match (content mode only).",
-                        },
-                        "-n": {
-                            "default": True,
-                            "description": "Show line numbers (content mode only).",
-                            "type": "boolean",
-                        },
-                        "-i": {
-                            "default": False,
-                            "description": "Case-insensitive search.",
-                            "type": "boolean",
-                        },
-                        "type": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "File type filter.",
-                        },
-                        "head_limit": {
-                            "anyOf": [
-                                {"minimum": 0, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": 500,
-                            "description": "Max results (0 = unlimited).",
-                        },
-                        "offset": {
-                            "default": 0,
-                            "description": "Skip first N results.",
-                            "minimum": 0,
-                            "type": "integer",
-                        },
-                        "multiline": {
-                            "default": False,
-                            "description": "Multiline regex mode. Patterns containing a newline or a `/n` regex escape automatically enable multiline mode.",
-                            "type": "boolean",
-                        },
-                        "include_ignored": {
-                            "default": False,
-                            "description": "Include .gitignore files.",
-                            "type": "boolean",
-                        },
-                        "timeout": {
-                            "default": 60,
-                            "description": "Maximum time in seconds to wait for the search to complete.",
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                        "token_kill": {
-                            "default": True,
-                            "description": "Deduplicate repeated output lines via rtk (token killer). Set to False to see raw, unfiltered output.",
-                            "type": "boolean",
-                        },
-                        "fold": {
-                            "default": 500,
-                            "description": "Maximum number of lines in the final tool output. Longer results are head+tail folded with an omitted-count marker and a summary in `message`. 0 = unlimited (the byte cap still applies). Applied after offset/head_limit pagination.",
-                            "minimum": 0,
-                            "type": "integer",
-                        },
-                    },
-                    "required": ["pattern"],
-                    "type": "object",
+            "required": ["pattern"],
+            "type": "object",
+        },
+    },
+    {
+        "name": "grep",
+        "description": "Search file contents with a ripgrep regular expression. Returns matching lines with line numbers, grouped by file. Use read on a matched file for surrounding context. Multiline patterns match across line boundaries.",
+        "parameters": {
+            "properties": {
+                "pattern": {
+                    "description": "Regular expression to search for (ripgrep syntax).",
+                    "type": "string",
+                },
+                "path": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {"items": {"type": "string"}, "type": "array"},
+                    ],
+                    "default": ".",
+                    "description": 'File or directory to search. Defaults to the session workspace; a relative path resolves against it. Also accepts embedded line-range selectors (`file.py:50-100`, `file.py:50+10`, `file.py:301-`, `file.py:5-16,960-973`, `..` alias), archive members (`bundle.zip:src/foo.ts`, combined `bundle.zip:src/foo.ts:50-100`), and multi-entry strings (`"src; tests"`) or lists.',
+                },
+                "grouped": {
+                    "anyOf": [{"type": "boolean"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Group content-mode results by file with `# path` headers and `*N|`/` N|` match/context markers. None = auto: grouped only when a line-range selector or archive member is used; True force grouped; False force legacy `path:line:text` output.",
+                },
+                "record": {
+                    "default": True,
+                    "description": "Persist the deduplicated matched-file list (relative paths) in the session so a follow-up read/edit pass can operate on exactly the files this grep surfaced.",
+                    "type": "boolean",
+                },
+                "include": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "One glob filter for which files to search (e.g. `*.ts`, `*.{js,jsx}`). Not a list; negation is not supported. Accepts `include` or `glob`.",
+                },
+                "output_mode": {
+                    "default": "files_with_matches",
+                    "description": "Output format: 'files_with_matches', 'count_matches', or 'content'.",
+                    "enum": ["files_with_matches", "count_matches", "content"],
+                    "type": "string",
+                },
+                "-B": {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Lines before match (content mode only).",
+                },
+                "-A": {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Lines after match (content mode only).",
+                },
+                "-C": {
+                    "anyOf": [{"type": "integer"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Lines around match (content mode only).",
+                },
+                "-n": {
+                    "default": True,
+                    "description": "Show line numbers (content mode only).",
+                    "type": "boolean",
+                },
+                "-i": {
+                    "default": False,
+                    "description": "Case-insensitive search.",
+                    "type": "boolean",
+                },
+                "type": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "File type filter.",
+                },
+                "head_limit": {
+                    "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
+                    "default": 500,
+                    "description": "Max results (0 = unlimited).",
+                },
+                "offset": {
+                    "default": 0,
+                    "description": "Skip first N results.",
+                    "minimum": 0,
+                    "type": "integer",
+                },
+                "multiline": {
+                    "default": False,
+                    "description": "Multiline regex mode. Patterns containing a newline or a `/n` regex escape automatically enable multiline mode.",
+                    "type": "boolean",
+                },
+                "include_ignored": {
+                    "default": False,
+                    "description": "Include .gitignore files.",
+                    "type": "boolean",
+                },
+                "timeout": {
+                    "default": 60,
+                    "description": "Maximum time in seconds to wait for the search to complete.",
+                    "minimum": 1,
+                    "type": "integer",
+                },
+                "token_kill": {
+                    "default": True,
+                    "description": "Deduplicate repeated output lines via rtk (token killer). Set to False to see raw, unfiltered output.",
+                    "type": "boolean",
+                },
+                "fold": {
+                    "default": 500,
+                    "description": "Maximum number of lines in the final tool output. Longer results are head+tail folded with an omitted-count marker and a summary in `message`. 0 = unlimited (the byte cap still applies). Applied after offset/head_limit pagination.",
+                    "minimum": 0,
+                    "type": "integer",
                 },
             },
-            {
-                "name": "write",
-                "description": "Create or fully replace a UTF-8 text file. Overwriting an existing auto-generated file (e.g. zz_generated.*, *.pb.go, *_pb2.py, *.gen.ts, or files with a '@generated' / 'Code generated by …' header) is refused by default; pass allow_auto_generated=True to override.",
-                "parameters": {
-                    "properties": {
-                        "file_path": {
-                            "description": "Path to write, resolved by the filesystem backend. Accepts `file_path` or `path`.",
+            "required": ["pattern"],
+            "type": "object",
+        },
+    },
+    {
+        "name": "write",
+        "description": "Create or fully replace a UTF-8 text file. Overwriting an existing auto-generated file (zz_generated.*, *.pb.go, *_pb2.py, *.gen.ts, or a '@generated' / 'Code generated by …' header) is refused; pass allow_auto_generated=True to override.",
+        "parameters": {
+            "properties": {
+                "file_path": {
+                    "description": "Path to write, resolved by the filesystem backend. Accepts `file_path` or `path`.",
+                    "type": "string",
+                },
+                "content": {
+                    "description": "Full UTF-8 text content to write. Accepts `content` or `text`.",
+                    "type": "string",
+                },
+                "sandbox_permissions": {
+                    "anyOf": [
+                        {
+                            "enum": ["workspace-write", "danger-full-access"],
                             "type": "string",
                         },
-                        "content": {
-                            "description": "Full UTF-8 text content to write. Accepts `content` or `text`.",
-                            "type": "string",
-                        },
-                        "sandbox_permissions": {
-                            "anyOf": [
-                                {
-                                    "enum": ["workspace-write", "danger-full-access"],
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
+                },
+                "justification": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Required with sandbox_permissions: one sentence for the user on why this operation needs the wider access.",
+                },
+                "mode": {
+                    "default": "overwrite",
+                    "description": "Overwrite or append.",
+                    "enum": ["overwrite", "append"],
+                    "type": "string",
+                },
+                "auto_fix_json": {
+                    "default": True,
+                    "description": "Repair broken JSON before writing; False fails on invalid JSON.",
+                    "type": "boolean",
+                },
+                "mkdir": {
+                    "default": True,
+                    "description": "Create missing parent directories; False fails if the parent does not exist.",
+                    "type": "boolean",
+                },
+                "show_diff": {
+                    "default": False,
+                    "description": "When True, include a unified diff in the tool output.",
+                    "type": "boolean",
+                },
+                "allow_conflicts": {
+                    "default": False,
+                    "description": "Allow writing content that still contains conflict markers (bypasses the marker guard); default refuses.",
+                    "type": "boolean",
+                },
+                "allow_auto_generated": {
+                    "default": False,
+                    "description": "Allow overwriting files that appear to be auto-generated (bypasses the generated-file guard); default refuses.",
+                    "type": "boolean",
+                },
+            },
+            "required": ["file_path", "content"],
+            "type": "object",
+        },
+    },
+    {
+        "name": "edit",
+        "description": "Edit an existing UTF-8 text file by replacing literal text. Auto-generated files (e.g. zz_generated.*, *.pb.go, *_pb2.py, or an '@generated' / 'Code generated by …' header) are refused by default; pass allow_auto_generated=True to override.",
+        "parameters": {
+            "description": "Parameters for the multi-mode edit tool.",
+            "properties": {
+                "mode": {
+                    "default": "auto",
+                    "description": "Edit mode. 'auto' detects the mode from the payload shape.",
+                    "enum": ["auto", "replace", "sloppy"],
+                    "type": "string",
+                },
+                "file_path": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Path to edit. Accepts `file_path` or `path`.",
+                },
+                "edits": {
+                    "anyOf": [
+                        {
+                            "description": "A single literal replace edit.",
+                            "properties": {
+                                "old_string": {
+                                    "description": "String to replace. Accepts `old` or `old_string`.",
                                     "type": "string",
                                 },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "The wider sandbox mode this file operation needs (`workspace-write` or `danger-full-access`). Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
-                        },
-                        "justification": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access.",
-                        },
-                        "mode": {
-                            "default": "overwrite",
-                            "description": "Write mode: overwrite or append.",
-                            "enum": ["overwrite", "append"],
-                            "type": "string",
-                        },
-                        "auto_fix_json": {
-                            "default": True,
-                            "description": "When True (default), attempt to repair broken JSON before writing. When False, fail with a format error if JSON is invalid.",
-                            "type": "boolean",
-                        },
-                        "mkdir": {
-                            "default": True,
-                            "description": "When True (default), automatically create parent directories. When False, fail if the parent directory does not exist.",
-                            "type": "boolean",
-                        },
-                        "show_diff": {
-                            "default": False,
-                            "description": "When True, include a unified diff in the tool output.",
-                            "type": "boolean",
-                        },
-                        "allow_conflicts": {
-                            "default": False,
-                            "description": "When True, allow writing content that still contains conflict markers (opt-out of the conflict-marker write guard). Default False refuses to leave unresolved markers in a file.",
-                            "type": "boolean",
-                        },
-                        "allow_auto_generated": {
-                            "default": False,
-                            "description": "When True, allow overwriting files that appear to be auto-generated (opt-out of the auto-generated-file guard). Default False refuses to modify generated files.",
-                            "type": "boolean",
-                        },
-                    },
-                    "required": ["file_path", "content"],
-                    "type": "object",
-                },
-            },
-            {
-                "name": "edit",
-                "description": "Edit an existing UTF-8 text file by replacing literal text. Files that appear to be auto-generated (e.g. zz_generated.*, *.pb.go, *_pb2.py, or files with a '@generated' / 'Code generated by …' header) are refused by default; pass allow_auto_generated=True to override.",
-                "parameters": {
-                    "description": "Parameters for the multi-mode edit tool.",
-                    "properties": {
-                        "mode": {
-                            "default": "auto",
-                            "description": "Edit mode. 'auto' detects the mode from the payload shape.",
-                            "enum": ["auto", "replace", "sloppy"],
-                            "type": "string",
-                        },
-                        "file_path": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Path to edit. Accepts `file_path` or `path`.",
-                        },
-                        "edits": {
-                            "anyOf": [
-                                {
-                                    "description": "A single literal replace edit.",
-                                    "properties": {
-                                        "old_string": {
-                                            "description": "String to replace. Accepts `old` or `old_string`.",
-                                            "type": "string",
-                                        },
-                                        "new_string": {
-                                            "description": "Replacement text. Accepts `new` or `new_string`.",
-                                            "type": "string",
-                                        },
-                                        "replace_all": {
-                                            "default": False,
-                                            "description": "Replace all occurrences. When False, only the first occurrence is replaced.",
-                                            "type": "boolean",
-                                        },
-                                        "max_replacements": {
-                                            "anyOf": [
-                                                {"minimum": 1, "type": "integer"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "Maximum number of occurrences to replace when replace_all=True. None means unlimited.",
-                                        },
-                                        "match_mode": {
-                                            "default": "fuzzy",
-                                            "description": "'fuzzy' (default): Use fuzzy matching when exact match fails (may match similar text). 'exact': Only replace literal matches of `old`.",
-                                            "enum": ["exact", "fuzzy"],
-                                            "type": "string",
-                                        },
-                                    },
-                                    "required": ["old_string", "new_string"],
-                                    "type": "object",
-                                },
-                                {
-                                    "items": {
-                                        "description": "A single literal replace edit.",
-                                        "properties": {
-                                            "old_string": {
-                                                "description": "String to replace. Accepts `old` or `old_string`.",
-                                                "type": "string",
-                                            },
-                                            "new_string": {
-                                                "description": "Replacement text. Accepts `new` or `new_string`.",
-                                                "type": "string",
-                                            },
-                                            "replace_all": {
-                                                "default": False,
-                                                "description": "Replace all occurrences. When False, only the first occurrence is replaced.",
-                                                "type": "boolean",
-                                            },
-                                            "max_replacements": {
-                                                "anyOf": [
-                                                    {"minimum": 1, "type": "integer"},
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "Maximum number of occurrences to replace when replace_all=True. None means unlimited.",
-                                            },
-                                            "match_mode": {
-                                                "default": "fuzzy",
-                                                "description": "'fuzzy' (default): Use fuzzy matching when exact match fails (may match similar text). 'exact': Only replace literal matches of `old`.",
-                                                "enum": ["exact", "fuzzy"],
-                                                "type": "string",
-                                            },
-                                        },
-                                        "required": ["old_string", "new_string"],
-                                        "type": "object",
-                                    },
-                                    "type": "array",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "One or more literal replace edits. Accepts `edit` or `edits`.",
-                        },
-                        "old_string": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Literal text to replace. Single-edit shorthand for `edit`.",
-                        },
-                        "new_string": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Literal replacement text. Single-edit shorthand for `edit`.",
-                        },
-                        "replace_all": {
-                            "default": False,
-                            "description": "Replace all matches. Only used with the single-edit shorthand.",
-                            "type": "boolean",
-                        },
-                        "input": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Input text for sloppy mode.",
-                        },
-                        "sandbox_permissions": {
-                            "anyOf": [
-                                {
-                                    "enum": ["workspace-write", "danger-full-access"],
+                                "new_string": {
+                                    "description": "Replacement text. Accepts `new` or `new_string`.",
                                     "type": "string",
                                 },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "The wider sandbox mode this file operation needs.",
-                        },
-                        "justification": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Required with sandbox_permissions: explanation for the user.",
-                        },
-                        "allow_conflicts": {
-                            "default": False,
-                            "description": "When True, allow editing files that contain conflict markers.",
-                            "type": "boolean",
-                        },
-                        "allow_auto_generated": {
-                            "default": False,
-                            "description": "When True, allow editing files that appear to be auto-generated (opt-out of the auto-generated-file guard). Default False refuses to modify generated files.",
-                            "type": "boolean",
-                        },
-                        "resolved_mode": {
-                            "anyOf": [
-                                {"enum": ["replace", "sloppy"], "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-            {
-                "name": "fetch_url",
-                "description": "Fetch a URL and extract main text.",
-                "parameters": {
-                    "properties": {
-                        "url": {
-                            "description": "URL to fetch content from.",
-                            "type": "string",
-                        },
-                        "timeout": {
-                            "default": 30.0,
-                            "description": "Request timeout in seconds (1-300).",
-                            "maximum": 300.0,
-                            "minimum": 1.0,
-                            "type": "number",
-                        },
-                        "method": {
-                            "default": "GET",
-                            "description": "HTTP method to use.",
-                            "enum": ["GET", "POST"],
-                            "type": "string",
-                        },
-                        "headers": {
-                            "anyOf": [
-                                {
-                                    "additionalProperties": {"type": "string"},
-                                    "type": "object",
+                                "replace_all": {
+                                    "default": False,
+                                    "description": "Replace all occurrences. When False, only the first occurrence is replaced.",
+                                    "type": "boolean",
                                 },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Custom HTTP headers (e.g., {'Authorization': 'Bearer token'}).",
+                                "max_replacements": {
+                                    "anyOf": [
+                                        {"minimum": 1, "type": "integer"},
+                                        {"type": "null"},
+                                    ],
+                                    "default": None,
+                                    "description": "Maximum number of occurrences to replace when replace_all=True. None means unlimited.",
+                                },
+                                "match_mode": {
+                                    "default": "fuzzy",
+                                    "description": "'fuzzy' (default): Use fuzzy matching when exact match fails (may match similar text). 'exact': Only replace literal matches of `old`.",
+                                    "enum": ["exact", "fuzzy"],
+                                    "type": "string",
+                                },
+                            },
+                            "required": ["old_string", "new_string"],
+                            "type": "object",
                         },
-                        "body": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Request body for POST requests.",
-                        },
-                        "follow_redirects": {
-                            "default": True,
-                            "description": "Automatically follow HTTP redirects.",
-                            "type": "boolean",
-                        },
-                        "max_redirects": {
-                            "default": 5,
-                            "description": "Maximum number of redirects to follow (0-20).",
-                            "maximum": 20,
-                            "minimum": 0,
-                            "type": "integer",
-                        },
-                    },
-                    "required": ["url"],
-                    "type": "object",
-                },
-            },
-            {
-                "name": "web_extract",
-                "description": "Extract page content from URLs as markdown/text (no LLM). Within char budget pages return whole; larger pages head+tail truncate with the full text saved to disk (read_file the omitted middle). On failure/timeout use fetch_url.",
-                "parameters": {
-                    "properties": {
-                        "urls": {
-                            "description": "List of URLs (or search-result objects with a 'url'/'href' field) to extract content from (max 5)",
-                            "items": {},
-                            "maxItems": 5,
+                        {
+                            "items": {
+                                "description": "A single literal replace edit.",
+                                "properties": {
+                                    "old_string": {
+                                        "description": "String to replace. Accepts `old` or `old_string`.",
+                                        "type": "string",
+                                    },
+                                    "new_string": {
+                                        "description": "Replacement text. Accepts `new` or `new_string`.",
+                                        "type": "string",
+                                    },
+                                    "replace_all": {
+                                        "default": False,
+                                        "description": "Replace all occurrences. When False, only the first occurrence is replaced.",
+                                        "type": "boolean",
+                                    },
+                                    "max_replacements": {
+                                        "anyOf": [
+                                            {"minimum": 1, "type": "integer"},
+                                            {"type": "null"},
+                                        ],
+                                        "default": None,
+                                        "description": "Maximum number of occurrences to replace when replace_all=True. None means unlimited.",
+                                    },
+                                    "match_mode": {
+                                        "default": "fuzzy",
+                                        "description": "'fuzzy' (default): Use fuzzy matching when exact match fails (may match similar text). 'exact': Only replace literal matches of `old`.",
+                                        "enum": ["exact", "fuzzy"],
+                                        "type": "string",
+                                    },
+                                },
+                                "required": ["old_string", "new_string"],
+                                "type": "object",
+                            },
                             "type": "array",
                         },
-                        "char_limit": {
-                            "anyOf": [
-                                {"maximum": 500000, "minimum": 2000, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Per-page character budget (default 15000). Larger pages are head+tail truncated with the full text saved to disk.",
-                        },
-                    },
-                    "required": ["urls"],
-                    "type": "object",
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "description": "One or more literal replace edits. Accepts `edit` or `edits`.",
                 },
-            }, {
-                "name": "ext_tool",
-                "description": "External tool",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"path": {"type": "string"}},
-                    "required": ["path"],
+                "old_string": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Literal text to replace. Single-edit shorthand for `edit`.",
+                },
+                "new_string": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Literal replacement text. Single-edit shorthand for `edit`.",
+                },
+                "replace_all": {
+                    "default": False,
+                    "description": "Replace all matches. Only used with the single-edit shorthand.",
+                    "type": "boolean",
+                },
+                "input": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Input text for sloppy mode.",
+                },
+                "sandbox_permissions": {
+                    "anyOf": [
+                        {
+                            "enum": ["workspace-write", "danger-full-access"],
+                            "type": "string",
+                        },
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "description": "The wider sandbox mode this file operation needs.",
+                },
+                "justification": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Required with sandbox_permissions: explanation for the user.",
+                },
+                "allow_conflicts": {
+                    "default": False,
+                    "description": "Allow editing files that contain unresolved conflict markers.",
+                    "type": "boolean",
+                },
+                "allow_auto_generated": {
+                    "default": False,
+                    "description": "Allow editing files that appear to be auto-generated (opt-out of the auto-generated-file guard).",
+                    "type": "boolean",
+                },
+                "resolved_mode": {
+                    "anyOf": [
+                        {"enum": ["replace", "sloppy"], "type": "string"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
                 },
             },
-        ],
+            "type": "object",
+        },
     },
-}, {
-    "method": "event",
-    "type": "LLMRequest",
-    "payload": {
-        "kind": "loop",
-        "provider": "scripted_echo",
-        "model": "scripted_echo",
-        "thinking_effort": None,
-        "temperature": None,
-        "top_p": None,
-        "max_tokens": None,
-        "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
-        "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "7d492c3cdda30430a949c00871c19553f2bff885d51defe1f16dfd38d583ff84",
-        "message_count": 1,
-        "turn_step": 1,
-        "attempt": 1,
-        "dropped_count": None,
+    {
+        "name": "fetch_url",
+        "description": "Fetch a URL and extract main text.",
+        "parameters": {
+            "properties": {
+                "url": {"description": "URL to fetch content from.", "type": "string"},
+                "timeout": {
+                    "default": 30.0,
+                    "description": "Request timeout in seconds (1-300).",
+                    "maximum": 300.0,
+                    "minimum": 1.0,
+                    "type": "number",
+                },
+                "method": {
+                    "default": "GET",
+                    "description": "HTTP method to use.",
+                    "enum": ["GET", "POST"],
+                    "type": "string",
+                },
+                "headers": {
+                    "anyOf": [
+                        {"additionalProperties": {"type": "string"}, "type": "object"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "description": "Custom HTTP headers (e.g., {'Authorization': 'Bearer token'}).",
+                },
+                "body": {
+                    "anyOf": [{"type": "string"}, {"type": "null"}],
+                    "default": None,
+                    "description": "Request body for POST requests.",
+                },
+                "follow_redirects": {
+                    "default": True,
+                    "description": "Automatically follow HTTP redirects.",
+                    "type": "boolean",
+                },
+                "max_redirects": {
+                    "default": 5,
+                    "description": "Maximum number of redirects to follow (0-20).",
+                    "maximum": 20,
+                    "minimum": 0,
+                    "type": "integer",
+                },
+            },
+            "required": ["url"],
+            "type": "object",
+        },
     },
-}, {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
+    {
+        "name": "web_extract",
+        "description": "Extract page content from URLs as markdown/text (no LLM). Within char budget pages return whole; larger pages head+tail truncate with the full text saved to disk (read_file the omitted middle). On failure/timeout use fetch_url.",
+        "parameters": {
+            "properties": {
+                "urls": {
+                    "description": "List of URLs (or search-result objects with a 'url'/'href' field) to extract content from (max 5)",
+                    "items": {},
+                    "maxItems": 5,
+                    "type": "array",
+                },
+                "char_limit": {
+                    "anyOf": [
+                        {"maximum": 500000, "minimum": 2000, "type": "integer"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                    "description": "Per-page character budget (default 15000). Larger pages are head+tail truncated with the full text saved to disk.",
+                },
+            },
+            "required": ["urls"],
+            "type": "object",
+        },
+    }, {
+        "name": "ping",
+        "description": """\
+This is an MCP (Model Context Protocol) tool from MCP server `test`.
+
+No description provided.\
+""",
+        "parameters": {
+            "additionalProperties": False,
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "type": "object",
+        },
+    },
+]},
+                },
+                {
+                    "method": "event",
+                    "type": "LLMRequest",
+                    "payload": {"kind": "loop", "provider": "scripted_echo", "model": "scripted_echo", "thinking_effort": None, "temperature": None, "top_p": None, "max_tokens": None, "system_prompt_hash": "<SYSTEM_PROMPT_HASH>", "system_prompt": "<SYSTEM_PROMPT>", "tools_hash": "145fc19473ac535eb6baa90d0a33571814389fd3bb635c9a954f1b833524cd47", "message_count": 1, "turn_step": 1, "attempt": 1, "dropped_count": None},
+                },
+                {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
                 {
                     "method": "event",
                     "type": "ContentPart",
@@ -1479,7 +1155,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "7d492c3cdda30430a949c00871c19553f2bff885d51defe1f16dfd38d583ff84",
+        "tools_hash": "145fc19473ac535eb6baa90d0a33571814389fd3bb635c9a954f1b833524cd47",
         "message_count": 3,
         "turn_step": 2,
         "attempt": 1,
@@ -1490,1225 +1166,3 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         )
     finally:
         wire.close()
-
-
-def test_prompt_without_initialize(tmp_path) -> None:
-    config_path = write_scripted_config(tmp_path, ["text: hello without init"])
-    work_dir = make_work_dir(tmp_path)
-    home_dir = make_home_dir(tmp_path)
-
-    wire = start_wire(
-        config_path=config_path,
-        config_text=None,
-        work_dir=work_dir,
-        home_dir=home_dir,
-        yolo=True,
-    )
-    try:
-        wire.send_json(
-            {
-                "jsonrpc": "2.0",
-                "id": "prompt-1",
-                "method": "prompt",
-                "params": {"user_input": "hi"},
-            }
-        )
-        resp, messages = collect_until_response(wire, "prompt-1")
-        assert resp.get("result", {}).get("status") == "finished"
-        assert summarize_messages(messages) == snapshot(
-            [
-                {"method": "event", "type": "TurnBegin", "payload": {"user_input": "hi"}},
-                {"method": "event", "type": "StepBegin", "payload": {"n": 1}},
-                {
-                    "method": "event",
-                    "type": "ContentPart",
-                    "payload": {"type": "text", "text": "hello without init"},
-                },
-                {
-                    "method": "event",
-                    "type": "StatusUpdate",
-                    "payload": {
-                        "context_usage": None,
-                        "context_tokens": None,
-                        "max_context_tokens": None,
-                        "token_usage": None,
-                        "message_id": None,
-                        "mcp_status": None,
-                    },
-                }, {
-    "method": "event",
-    "type": "LLMToolsSnapshot",
-    "payload": {
-        "hash": "87ecd142b792df11b9bbb99d959f0978999966f4edadd582544949bfb5086c1d",
-        "tools": [
-            {
-                "name": "subagent",
-                "description": """\
-Start a subagent for focused tasks; create new or resume by agent_id.
-
-Usage
-- Keep description short (3-5 words).
-- subagent_type (default: coder), model to override; resume continues existing instances.
-- Foreground by default; run_in_background=true only for independent tasks.
-- Be explicit: code or research only.
-
-Explore Agent — preferred for read-only codebase research. Use when you need >3 searches, module understanding, or concurrent investigations. Thoroughness: "quick" (find file), "medium" (understand module), "thorough" (architecture analysis).\
-""",
-                "parameters": {
-                    "properties": {
-                        "description": {
-                            "description": "Short task label (3–5 words).",
-                            "type": "string",
-                        },
-                        "prompt": {
-                            "description": "Task for the agent.",
-                            "type": "string",
-                        },
-                        "subagent_type": {
-                            "default": "coder",
-                            "description": "Built-in agent type (default: coder).",
-                            "type": "string",
-                        },
-                        "model": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Optional model override.",
-                        },
-                        "resume": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Agent ID to resume.",
-                        },
-                        "run_in_background": {
-                            "default": False,
-                            "description": "Run in background.",
-                            "type": "boolean",
-                        },
-                        "timeout": {
-                            "anyOf": [
-                                {"maximum": 3600, "minimum": 30, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Timeout in seconds (30–3600).",
-                        },
-                    },
-                    "required": ["description", "prompt"],
-                    "type": "object",
-                },
-            },
-            {
-                "name": "AskUserQuestion",
-                "description": 'Ask users structured questions for preferences, ambiguity resolution, or approach decisions. Don\'t use when answer is inferable or trivial—overuse disrupts workflow. Use multi_select for multiple answers; provide 2-4 concise options (1-5 words) per question, recommended first with "(Recommended)". Ask 1-4 related questions at a time. Never add an "Other" option—users always have one.',
-                "parameters": {
-                    "properties": {
-                        "questions": {
-                            "description": "Questions to ask (1-4).",
-                            "items": {
-                                "properties": {
-                                    "question": {
-                                        "description": "Actionable question ending with '?'.",
-                                        "type": "string",
-                                    },
-                                    "header": {
-                                        "default": "",
-                                        "description": "Category tag (max 12 chars).",
-                                        "type": "string",
-                                    },
-                                    "options": {
-                                        "description": "2-4 options. 'Other' is auto-added.",
-                                        "items": {
-                                            "properties": {
-                                                "label": {
-                                                    "description": "Display text (1-5 words).",
-                                                    "type": "string",
-                                                },
-                                                "description": {
-                                                    "default": "",
-                                                    "description": "Option meaning or trade-offs.",
-                                                    "type": "string",
-                                                },
-                                            },
-                                            "required": ["label"],
-                                            "type": "object",
-                                        },
-                                        "maxItems": 4,
-                                        "minItems": 2,
-                                        "type": "array",
-                                    },
-                                    "multi_select": {
-                                        "default": False,
-                                        "description": "Allow multiple selections.",
-                                        "type": "boolean",
-                                    },
-                                },
-                                "required": ["question", "options"],
-                                "type": "object",
-                            },
-                            "maxItems": 4,
-                            "minItems": 1,
-                            "type": "array",
-                        }
-                    },
-                    "required": ["questions"],
-                    "type": "object",
-                },
-            },
-            {   'name': 'todo_list',
-                'description': 'Read or write the todo plan — one tool, one item shape, every operation.\n'
-                               '\n'
-                               'Item shape (all modes): `{title, status?, notes?, children?}` plus the edit '
-                               'keys `parent`, `rename_to`, `complete`. `title` is the one short imperative '
-                               'line that identifies the item and the only required key; `notes` is optional '
-                               'detail (an item of only `notes` has no identity).\n'
-                               '\n'
-                               'Dispatch:\n'
-                               '- `todos` omitted → read the current tree.\n'
-                               "- mode='merge' (default) → upsert each item: an existing title patches it in "
-                               'place (omitted fields keep their value), an unknown title creates it. `parent` '
-                               "/ top-level `scope` pick the sub-tree ('' = root).\n"
-                               "- mode='replace' → the list IS the tree (children included); needs all "
-                               'existing todos done unless force=True.\n'
-                               "- mode='clear' → empty the tree (all-done guard unless force=True).\n"
-                               '\n'
-                               'Near-duplicate titles are treated as the same task, not a new one: an incoming '
-                               'title that differs from an existing one only in numbering, punctuation, case '
-                               "or word order hits the conflict policy — on_conflict='error' (default) refuses "
-                               'the call and names the existing title plus the exact payload to send instead; '
-                               "'reuse' patches that item; 'append' really adds a second one.\n"
-                               '\n'
-                               'Invariants: exactly one item in_progress (auto_fix=True demotes earlier ones, '
-                               'keeping the last listed); done items never move back to pending/in_progress '
-                               'unless force=True; done items dropped by replace/clear are archived.',
-                'parameters': {   'additionalProperties': False,
-                                  'properties': {   'todos': {   'description': 'The items to write; omit to '
-                                                                                'READ the tree. In the default '
-                                                                                "mode='merge' this is an "
-                                                                                'upsert batch — send only the '
-                                                                                'items you mean to touch, each '
-                                                                                'with `title` plus any of '
-                                                                                'status / notes / children / '
-                                                                                'rename_to / parent / '
-                                                                                'complete: an existing title '
-                                                                                'is patched, an unknown one is '
-                                                                                "created. In mode='replace' "
-                                                                                'send the COMPLETE tree '
-                                                                                'instead. A single object, a '
-                                                                                'bare title string or a JSON '
-                                                                                'string of those forms also '
-                                                                                'work. Accepts `todos` or '
-                                                                                '`items`.',
-                                                                 'items': {   'additionalProperties': False,
-                                                                              'description': 'One todo item.\n'
-                                                                                             '\n'
-                                                                                             'The single item '
-                                                                                             'shape for the '
-                                                                                             'one todo tool: '
-                                                                                             'the same object '
-                                                                                             'expresses a\n'
-                                                                                             'whole-tree write '
-                                                                                             "(``mode='replace'``), "
-                                                                                             'an upsert '
-                                                                                             "(``mode='merge'``) "
-                                                                                             'and a\n'
-                                                                                             'targeted edit '
-                                                                                             '(``parent`` / '
-                                                                                             '``rename_to`` / '
-                                                                                             '``complete``). '
-                                                                                             'Fields that '
-                                                                                             'only\n'
-                                                                                             'make sense for '
-                                                                                             'an edit are '
-                                                                                             'ignored by a '
-                                                                                             'whole-tree '
-                                                                                             'write.',
-                                                                              'properties': {   'title': {   'description': 'Required. '
-                                                                                                                            'The '
-                                                                                                                            'task '
-                                                                                                                            'title: '
-                                                                                                                            'one '
-                                                                                                                            'short '
-                                                                                                                            'imperative '
-                                                                                                                            'line, '
-                                                                                                                            'and '
-                                                                                                                            'the '
-                                                                                                                            "item's "
-                                                                                                                            'identity '
-                                                                                                                            '— '
-                                                                                                                            "mode='merge' "
-                                                                                                                            'matches '
-                                                                                                                            'items '
-                                                                                                                            'by '
-                                                                                                                            'it '
-                                                                                                                            'and '
-                                                                                                                            '`parent`/`scope` '
-                                                                                                                            'look '
-                                                                                                                            'items '
-                                                                                                                            'up '
-                                                                                                                            'by '
-                                                                                                                            'it, '
-                                                                                                                            'so '
-                                                                                                                            'it '
-                                                                                                                            'must '
-                                                                                                                            'always '
-                                                                                                                            'be '
-                                                                                                                            'sent. '
-                                                                                                                            'Accepts '
-                                                                                                                            '`title`, '
-                                                                                                                            '`content`, '
-                                                                                                                            '`task`, '
-                                                                                                                            '`todo`, '
-                                                                                                                            '`item` '
-                                                                                                                            'or '
-                                                                                                                            '`name`.',
-                                                                                                             'maxLength': 65536,
-                                                                                                             'minLength': 1,
-                                                                                                             'type': 'string'},
-                                                                                                'status': {   'default': 'pending',
-                                                                                                              'description': 'One '
-                                                                                                                             'of: '
-                                                                                                                             'pending, '
-                                                                                                                             'in_progress, '
-                                                                                                                             'done '
-                                                                                                                             '(or '
-                                                                                                                             'completed). '
-                                                                                                                             'Omit '
-                                                                                                                             'to '
-                                                                                                                             'keep '
-                                                                                                                             'an '
-                                                                                                                             'existing '
-                                                                                                                             "item's "
-                                                                                                                             'status; '
-                                                                                                                             'created '
-                                                                                                                             'items '
-                                                                                                                             'default '
-                                                                                                                             'to '
-                                                                                                                             'pending.',
-                                                                                                              'enum': [   'pending',
-                                                                                                                          'in_progress',
-                                                                                                                          'done'],
-                                                                                                              'type': 'string'},
-                                                                                                'notes': {   'anyOf': [   {   'maxLength': 65536,
-                                                                                                                              'type': 'string'},
-                                                                                                                          {   'type': 'null'}],
-                                                                                                             'default': None,
-                                                                                                             'description': 'Optional '
-                                                                                                                            'supporting '
-                                                                                                                            'detail '
-                                                                                                                            '(evidence, '
-                                                                                                                            'file '
-                                                                                                                            'paths, '
-                                                                                                                            'findings). '
-                                                                                                                            'Not '
-                                                                                                                            'the '
-                                                                                                                            'title '
-                                                                                                                            '— '
-                                                                                                                            'an '
-                                                                                                                            'item '
-                                                                                                                            'with '
-                                                                                                                            'only '
-                                                                                                                            '`notes` '
-                                                                                                                            'has '
-                                                                                                                            'no '
-                                                                                                                            'identity, '
-                                                                                                                            'so '
-                                                                                                                            'always '
-                                                                                                                            'send '
-                                                                                                                            '`title` '
-                                                                                                                            'too. '
-                                                                                                                            'Omit '
-                                                                                                                            'it '
-                                                                                                                            '(or '
-                                                                                                                            'send '
-                                                                                                                            '"") '
-                                                                                                                            'to '
-                                                                                                                            'keep '
-                                                                                                                            'the '
-                                                                                                                            'current '
-                                                                                                                            'notes.'},
-                                                                                                'children': {   'description': 'Sub-todos '
-                                                                                                                               'of '
-                                                                                                                               'this '
-                                                                                                                               'item; '
-                                                                                                                               'same '
-                                                                                                                               'shape, '
-                                                                                                                               'any '
-                                                                                                                               'depth. '
-                                                                                                                               'Leave '
-                                                                                                                               'empty '
-                                                                                                                               'for '
-                                                                                                                               'a '
-                                                                                                                               'leaf. '
-                                                                                                                               'A '
-                                                                                                                               'bare '
-                                                                                                                               'title '
-                                                                                                                               'string '
-                                                                                                                               'is '
-                                                                                                                               'accepted '
-                                                                                                                               'and '
-                                                                                                                               'means '
-                                                                                                                               'a '
-                                                                                                                               'pending '
-                                                                                                                               'item.',
-                                                                                                                'items': {   'additionalProperties': False,
-                                                                                                                             'description': 'One '
-                                                                                                                                            'todo '
-                                                                                                                                            'item.\n'
-                                                                                                                                            '\n'
-                                                                                                                                            'The '
-                                                                                                                                            'single '
-                                                                                                                                            'item '
-                                                                                                                                            'shape '
-                                                                                                                                            'for '
-                                                                                                                                            'the '
-                                                                                                                                            'one '
-                                                                                                                                            'todo '
-                                                                                                                                            'tool: '
-                                                                                                                                            'the '
-                                                                                                                                            'same '
-                                                                                                                                            'object '
-                                                                                                                                            'expresses '
-                                                                                                                                            'a\n'
-                                                                                                                                            'whole-tree '
-                                                                                                                                            'write '
-                                                                                                                                            "(``mode='replace'``), "
-                                                                                                                                            'an '
-                                                                                                                                            'upsert '
-                                                                                                                                            "(``mode='merge'``) "
-                                                                                                                                            'and '
-                                                                                                                                            'a\n'
-                                                                                                                                            'targeted '
-                                                                                                                                            'edit '
-                                                                                                                                            '(``parent`` '
-                                                                                                                                            '/ '
-                                                                                                                                            '``rename_to`` '
-                                                                                                                                            '/ '
-                                                                                                                                            '``complete``). '
-                                                                                                                                            'Fields '
-                                                                                                                                            'that '
-                                                                                                                                            'only\n'
-                                                                                                                                            'make '
-                                                                                                                                            'sense '
-                                                                                                                                            'for '
-                                                                                                                                            'an '
-                                                                                                                                            'edit '
-                                                                                                                                            'are '
-                                                                                                                                            'ignored '
-                                                                                                                                            'by '
-                                                                                                                                            'a '
-                                                                                                                                            'whole-tree '
-                                                                                                                                            'write.',
-                                                                                                                             'properties': {   'title': {   'description': 'Sub-todo '
-                                                                                                                                                                           'title: '
-                                                                                                                                                                           'one '
-                                                                                                                                                                           'short '
-                                                                                                                                                                           'imperative '
-                                                                                                                                                                           'line '
-                                                                                                                                                                           '(required).',
-                                                                                                                                                            'maxLength': 65536,
-                                                                                                                                                            'minLength': 1,
-                                                                                                                                                            'type': 'string'},
-                                                                                                                                               'status': {   'default': 'pending',
-                                                                                                                                                             'description': 'One '
-                                                                                                                                                                            'of: '
-                                                                                                                                                                            'pending, '
-                                                                                                                                                                            'in_progress, '
-                                                                                                                                                                            'done '
-                                                                                                                                                                            '(or '
-                                                                                                                                                                            'completed). '
-                                                                                                                                                                            'Omit '
-                                                                                                                                                                            'to '
-                                                                                                                                                                            'keep '
-                                                                                                                                                                            'an '
-                                                                                                                                                                            'existing '
-                                                                                                                                                                            "item's "
-                                                                                                                                                                            'status; '
-                                                                                                                                                                            'created '
-                                                                                                                                                                            'items '
-                                                                                                                                                                            'default '
-                                                                                                                                                                            'to '
-                                                                                                                                                                            'pending.',
-                                                                                                                                                             'enum': [   'pending',
-                                                                                                                                                                         'in_progress',
-                                                                                                                                                                         'done'],
-                                                                                                                                                             'type': 'string'},
-                                                                                                                                               'notes': {   'anyOf': [   {   'maxLength': 65536,
-                                                                                                                                                                             'type': 'string'},
-                                                                                                                                                                         {   'type': 'null'}],
-                                                                                                                                                            'default': None,
-                                                                                                                                                            'description': 'Optional '
-                                                                                                                                                                           'detail '
-                                                                                                                                                                           'for '
-                                                                                                                                                                           'this '
-                                                                                                                                                                           'sub-todo; '
-                                                                                                                                                                           'the '
-                                                                                                                                                                           'title '
-                                                                                                                                                                           'is '
-                                                                                                                                                                           'the '
-                                                                                                                                                                           'identity.'}},
-                                                                                                                             'required': [   'title'],
-                                                                                                                             'type': 'object'},
-                                                                                                                'type': 'array'},
-                                                                                                'parent': {   'anyOf': [   {   'type': 'string'},
-                                                                                                                           {   'type': 'null'}],
-                                                                                                              'default': None,
-                                                                                                              'description': 'Scope '
-                                                                                                                             'this '
-                                                                                                                             'item '
-                                                                                                                             'to '
-                                                                                                                             'the '
-                                                                                                                             'children '
-                                                                                                                             'of '
-                                                                                                                             'the '
-                                                                                                                             'named '
-                                                                                                                             'todo '
-                                                                                                                             '(both '
-                                                                                                                             'its '
-                                                                                                                             'lookup '
-                                                                                                                             'and '
-                                                                                                                             'its '
-                                                                                                                             'creation). '
-                                                                                                                             '"" '
-                                                                                                                             '= '
-                                                                                                                             'root '
-                                                                                                                             'scope. '
-                                                                                                                             'Overrides '
-                                                                                                                             'the '
-                                                                                                                             'top-level '
-                                                                                                                             '`scope`.'},
-                                                                                                'rename_to': {   'anyOf': [   {   'type': 'string'},
-                                                                                                                              {   'type': 'null'}],
-                                                                                                                 'default': None,
-                                                                                                                 'description': 'Rename '
-                                                                                                                                'the '
-                                                                                                                                'matched '
-                                                                                                                                'item '
-                                                                                                                                'to '
-                                                                                                                                'this '
-                                                                                                                                'title '
-                                                                                                                                'instead '
-                                                                                                                                'of '
-                                                                                                                                'editing '
-                                                                                                                                'a '
-                                                                                                                                'field. '
-                                                                                                                                'Renaming '
-                                                                                                                                'onto '
-                                                                                                                                'an '
-                                                                                                                                'existing '
-                                                                                                                                'title '
-                                                                                                                                'is '
-                                                                                                                                'rejected.'},
-                                                                                                'complete': {   'default': False,
-                                                                                                                'description': 'Mark '
-                                                                                                                               'this '
-                                                                                                                               'item '
-                                                                                                                               'and '
-                                                                                                                               'its '
-                                                                                                                               'whole '
-                                                                                                                               'sub-tree '
-                                                                                                                               'done '
-                                                                                                                               'in '
-                                                                                                                               'one '
-                                                                                                                               'call. '
-                                                                                                                               'Not '
-                                                                                                                               'combined '
-                                                                                                                               'with '
-                                                                                                                               'an '
-                                                                                                                               'explicit '
-                                                                                                                               'pending/in_progress '
-                                                                                                                               'status '
-                                                                                                                               'or '
-                                                                                                                               'with '
-                                                                                                                               '`children`.',
-                                                                                                                'type': 'boolean'},
-                                                                                                'fuzzy': {   'default': True,
-                                                                                                             'description': 'Per-item '
-                                                                                                                            'override '
-                                                                                                                            'of '
-                                                                                                                            'the '
-                                                                                                                            'top-level '
-                                                                                                                            '`fuzzy`.',
-                                                                                                             'type': 'boolean'},
-                                                                                                'force': {   'default': False,
-                                                                                                             'description': 'Per-item '
-                                                                                                                            'override '
-                                                                                                                            'of '
-                                                                                                                            'the '
-                                                                                                                            'top-level '
-                                                                                                                            '`force`.',
-                                                                                                             'type': 'boolean'}},
-                                                                              'required': ['title'],
-                                                                              'type': 'object'},
-                                                                 'type': 'array'},
-                                                    'mode': {   'default': 'merge',
-                                                                'description': "'merge' (default) upserts the "
-                                                                               "given items; 'replace' makes "
-                                                                               'the given list the whole tree '
-                                                                               'and needs every existing todo '
-                                                                               'done unless force=True; '
-                                                                               '"clear" empties the tree (same '
-                                                                               'guard).',
-                                                                'enum': ['merge', 'replace', 'clear'],
-                                                                'type': 'string'},
-                                                    'scope': {   'anyOf': [   {'type': 'string'},
-                                                                              {'type': 'null'}],
-                                                                 'default': None,
-                                                                 'description': 'Restrict this call to the '
-                                                                                'children of the named todo; '
-                                                                                '"" means the root. An item\'s '
-                                                                                'own `parent` wins.'},
-                                                    'on_conflict': {   'default': 'error',
-                                                                       'description': 'What to do when an '
-                                                                                      'incoming title is a '
-                                                                                      'near-duplicate of an '
-                                                                                      'existing one (same '
-                                                                                      'words, different '
-                                                                                      'numbering / punctuation '
-                                                                                      "/ case): 'error' "
-                                                                                      '(default) refuses the '
-                                                                                      'call and names the '
-                                                                                      'existing title plus the '
-                                                                                      'exact payload to send '
-                                                                                      "instead; 'reuse' "
-                                                                                      'patches that item; '
-                                                                                      "'append' really adds a "
-                                                                                      'second one.',
-                                                                       'enum': ['error', 'reuse', 'append'],
-                                                                       'type': 'string'},
-                                                    'fuzzy': {   'default': True,
-                                                                 'description': 'When True (default) a title '
-                                                                                'that misses exactly may still '
-                                                                                'match the nearest existing '
-                                                                                'todo; False requires exact '
-                                                                                'titles.',
-                                                                 'type': 'boolean'},
-                                                    'force': {   'default': False,
-                                                                 'description': 'Bypass the guards: the '
-                                                                                'all-done requirement of '
-                                                                                'replace/clear, reopening a '
-                                                                                'done item, renaming onto one, '
-                                                                                'and the single-in_progress '
-                                                                                'and regression checks.',
-                                                                 'type': 'boolean'},
-                                                    'auto_fix': {   'default': True,
-                                                                    'description': 'When True (default) and '
-                                                                                   'several items are '
-                                                                                   'in_progress, the last '
-                                                                                   'listed one is kept and '
-                                                                                   'earlier ones are marked '
-                                                                                   'done; False errors '
-                                                                                   'instead.',
-                                                                    'type': 'boolean'}},
-                                  'type': 'object'}}, {
-    "name": "read",
-    "description": """\
-Read a UTF-8 text file and return line-numbered content.
-file_path: single path or list; offset/limit: scalar or one per file. Lines over 4000 chars truncated; max 5000 lines per file; bytes scale with context (≥102400, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to 32 files. Prefer glob/grep to find/search, then read.
-
-Rich formats (one per call; scalar params apply to every file in a multi-file read):
-- Archives (zip/jar/war/apk/whl/cbz, tar/tgz/tbz2/txz, bare gz/bz2/xz): read data.zip lists up to 500 root entries; archive_member="src/main.py" reads one member as text. Traversal (.., absolute, backslash) rejected; binary members get an explicit notice.
-- SQLite (.sqlite/.sqlite3/.db/.db3): read app.db lists tables with counts; sql_table/sql_where/sql_order/sql_limit/sql_offset paginate rows; sql_query runs raw read-only SELECT (≤1000 rows; rejects ;, comments, LIMIT/UNION/ATTACH).
-- PDF screenshots: read doc.pdf with pdf_page=3 renders page 3 as PNG (requires image_in); DPI falls back 150→96→72 on over-budget.
-- Document markdown: render_markdown=True converts .docx to markdown (headings, code fences, pipe tables), .md/.html to clean text; False uses the legacy extractor.
-- Profiles: read *.cpuprofile / *.sample.txt returns a compact bottleneck summary (hot paths, top-20 self time, idle excluded); profile_raw=True returns raw JSON/text.
-- Conflict markers: reads of files containing unresolved git conflict blocks (<<<<<<< / ======= / >>>>>>>) append a warning footer with registered conflict ids. Inspect one block with read conflict://<N> (add /ours, /theirs or /base for a single side) and get a whole-file index with read <path>:conflicts. Resolve via write({ path: "conflict://<N>", content }).\
-""",
-    "parameters": {
-        "properties": {
-            "file_path": {
-                "anyOf": [
-                    {"type": "string"},
-                    {"items": {"type": "string"}, "type": "array"},
-                ],
-                "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. May be a single file path or a list of file paths. When `glob=True`, the final path component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
-            },
-            "offset": {
-                "anyOf": [
-                    {"type": "integer"},
-                    {"items": {"type": "integer"}, "type": "array"},
-                ],
-                "default": 1,
-                "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000. May be a scalar applied to all files, or a list with one value per file path.",
-            },
-            "limit": {
-                "anyOf": [
-                    {"type": "integer"},
-                    {"items": {"type": "integer"}, "type": "array"},
-                ],
-                "default": 2000,
-                "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000. May be a scalar applied to all files, or a list with one value per file path.",
-            },
-            "max_char": {
-                "anyOf": [
-                    {"type": "integer"},
-                    {"items": {"type": "integer"}, "type": "array"},
-                ],
-                "default": 16000,
-                "description": "Maximum number of content characters to return (starting from char_offset). Content characters exclude line-number prefixes, so the window is identical regardless of show_line_numbers. May be a scalar applied to all files, or a list with one value per file path. Default 16K balances completeness with context efficiency.",
-            },
-            "char_offset": {
-                "anyOf": [
-                    {"type": "integer"},
-                    {"items": {"type": "integer"}, "type": "array"},
-                ],
-                "default": 0,
-                "description": "Content-character offset to start returning from (excluding line-number prefixes). May be a scalar applied to all files, or a list with one value per file path.",
-            },
-            "glob": {
-                "default": False,
-                "description": "When True, treat `path` as a glob pattern (e.g., '*.py', 'src/**/*.ts'). When False (default), treat `path` as a literal file path.",
-                "type": "boolean",
-            },
-            "show_line_numbers": {
-                "default": True,
-                "description": "When True (default), prefix each line with its line number (e.g., ' 42/tcontent'). When False, return raw content without line numbers.",
-                "type": "boolean",
-            },
-            "archive_member": {
-                "anyOf": [{"type": "string"}, {"type": "null"}],
-                "default": None,
-                "description": "Archive member path to read inside an archive. When omitted, ``read`` lists the archive root entries. Applies to zip/tar/tar.gz/tgz/tar.bz2/tar.xz and bare gz/bz2/xz files.",
-            },
-            "sql_query": {
-                "anyOf": [{"type": "string"}, {"type": "null"}],
-                "default": None,
-                "description": "Raw read-only SQL query for SQLite files. Only SELECT statements are allowed; capped at 1000 rows. Cannot be combined with sql_table/sql_where/sql_order/sql_limit/sql_offset.",
-            },
-            "sql_table": {
-                "anyOf": [{"type": "string"}, {"type": "null"}],
-                "default": None,
-                "description": "Table name to browse in a SQLite file.",
-            },
-            "sql_where": {
-                "anyOf": [{"type": "string"}, {"type": "null"}],
-                "default": None,
-                "description": "WHERE fragment for sql_table (e.g. ``id > 10``). Rejects statement terminators, comments, and LIMIT/UNION/etc.",
-            },
-            "sql_order": {
-                "anyOf": [{"type": "string"}, {"type": "null"}],
-                "default": None,
-                "description": "ORDER BY column for sql_table, as 'col' or 'col:asc|desc'.",
-            },
-            "sql_limit": {
-                "anyOf": [
-                    {"maximum": 500, "minimum": 1, "type": "integer"},
-                    {"type": "null"},
-                ],
-                "default": None,
-                "description": "Maximum rows for sql_table queries (default 20, max 500).",
-            },
-            "sql_offset": {
-                "anyOf": [{"minimum": 0, "type": "integer"}, {"type": "null"}],
-                "default": None,
-                "description": "Offset for sql_table queries.",
-            },
-            "pdf_page": {
-                "anyOf": [{"minimum": 1, "type": "integer"}, {"type": "null"}],
-                "default": None,
-                "description": "Render this PDF page as an image. Requires a model with image_in capability; otherwise returns an error.",
-            },
-            "profile_raw": {
-                "default": False,
-                "description": "When True, return the raw bytes/text of .cpuprofile or .sample.txt files. When False (default), return a compact bottleneck summary.",
-                "type": "boolean",
-            },
-            "render_markdown": {
-                "default": True,
-                "description": "When True (default), extract supported documents as markdown-flavored text and convert .md/.html files to plain text. When False, use the legacy plain-text extractor.",
-                "type": "boolean",
-            },
-        },
-        "required": ["file_path"],
-        "type": "object",
-    },
-}, {
-                "name": "glob",
-                "description": """\
-Find files by glob. Returns file paths — never directories — including hidden/ignored (VCS metadata excluded), in modification-time order: up to 100 paths (first 100 with a note; full list saved elsewhere). Does not enumerate directory entries.
-Use `read` to open matches (up to 1000 collected; omitted count reported in `message`).
-Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`) paths. Results use backslashes — convert to forward slashes for shell commands.
-""",
-                "parameters": {
-                    "properties": {
-                        "pattern": {
-                            "description": 'Glob pattern to match file paths against (e.g. `**/*.ts`, `src/**/*.test.js`). A pattern with no "/" matches the basename at any depth, so `*` and `*.ts` both search the whole tree; include a separator to anchor the depth. Unsafe recursive patterns (``**``, ``**/*``, ``**/**``, etc.) are forbidden.',
-                            "type": "string",
-                        },
-                        "path": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Directory to search in. Defaults to the session workspace; a relative path resolves against it. Accepts `path` or `directory`.",
-                        },
-                        "include_dirs": {
-                            "default": False,
-                            "description": "Include directories in results.",
-                            "type": "boolean",
-                        },
-                        "respect_gitignore": {
-                            "default": True,
-                            "description": "When True (default), skip files matched by .gitignore rules. When False, include all files regardless of .gitignore settings.",
-                            "type": "boolean",
-                        },
-                        "include_ignored": {
-                            "default": False,
-                            "description": "[Deprecated] Use respect_gitignore=False instead.",
-                            "type": "boolean",
-                        },
-                        "verbose": {
-                            "default": False,
-                            "description": "When True, include file size, modification time, and type for each match.",
-                            "type": "boolean",
-                        },
-                        "timeout": {
-                            "default": 10,
-                            "description": "Maximum time in seconds to wait for the search to complete.",
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                        "fold": {
-                            "default": 500,
-                            "description": "Maximum number of result lines in the output. Longer results are head+tail folded with an omitted-count marker and the total is reported in `message`. 0 = unlimited (the MAX_MATCHES collection cap still applies).",
-                            "minimum": 0,
-                            "type": "integer",
-                        },
-                    },
-                    "required": ["pattern"],
-                    "type": "object",
-                },
-            },
-            {
-                "name": "grep",
-                "description": "Search file contents with a ripgrep regular expression. Returns matching lines with line numbers, grouped by file. Returns the first 250 matches inline; a capped result reports where the complete match list was saved. Use read on a matched file for surrounding context. Multiline patterns match across line boundaries.",
-                "parameters": {
-                    "properties": {
-                        "pattern": {
-                            "description": "Regular expression to search for (ripgrep syntax).",
-                            "type": "string",
-                        },
-                        "path": {
-                            "anyOf": [
-                                {"type": "string"},
-                                {"items": {"type": "string"}, "type": "array"},
-                            ],
-                            "default": ".",
-                            "description": 'File or directory to search. Defaults to the session workspace; a relative path resolves against it. Also accepts embedded line-range selectors (`file.py:50-100`, `file.py:50+10`, `file.py:301-`, `file.py:5-16,960-973`, `..` alias), archive members (`bundle.zip:src/foo.ts`, combined `bundle.zip:src/foo.ts:50-100`), and multi-entry strings (`"src; tests"`) or lists.',
-                        },
-                        "grouped": {
-                            "anyOf": [{"type": "boolean"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Group content-mode results by file with `# path` headers and `*N|`/` N|` match/context markers. None = auto: grouped only when a line-range selector or archive member is used; True force grouped; False force legacy `path:line:text` output.",
-                        },
-                        "record": {
-                            "default": True,
-                            "description": "Persist the deduplicated matched-file list (relative paths) in the session so a follow-up read/edit pass can operate on exactly the files this grep surfaced.",
-                            "type": "boolean",
-                        },
-                        "include": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "One glob filter for which files to search (e.g. `*.ts`, `*.{js,jsx}`). Not a list; negation is not supported. Accepts `include` or `glob`.",
-                        },
-                        "output_mode": {
-                            "default": "files_with_matches",
-                            "description": "Output format: 'files_with_matches', 'count_matches', or 'content'.",
-                            "enum": ["files_with_matches", "count_matches", "content"],
-                            "type": "string",
-                        },
-                        "-B": {
-                            "anyOf": [{"type": "integer"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Lines before match (content mode only).",
-                        },
-                        "-A": {
-                            "anyOf": [{"type": "integer"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Lines after match (content mode only).",
-                        },
-                        "-C": {
-                            "anyOf": [{"type": "integer"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Lines around match (content mode only).",
-                        },
-                        "-n": {
-                            "default": True,
-                            "description": "Show line numbers (content mode only).",
-                            "type": "boolean",
-                        },
-                        "-i": {
-                            "default": False,
-                            "description": "Case-insensitive search.",
-                            "type": "boolean",
-                        },
-                        "type": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "File type filter.",
-                        },
-                        "head_limit": {
-                            "anyOf": [
-                                {"minimum": 0, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": 500,
-                            "description": "Max results (0 = unlimited).",
-                        },
-                        "offset": {
-                            "default": 0,
-                            "description": "Skip first N results.",
-                            "minimum": 0,
-                            "type": "integer",
-                        },
-                        "multiline": {
-                            "default": False,
-                            "description": "Multiline regex mode. Patterns containing a newline or a `/n` regex escape automatically enable multiline mode.",
-                            "type": "boolean",
-                        },
-                        "include_ignored": {
-                            "default": False,
-                            "description": "Include .gitignore files.",
-                            "type": "boolean",
-                        },
-                        "timeout": {
-                            "default": 60,
-                            "description": "Maximum time in seconds to wait for the search to complete.",
-                            "minimum": 1,
-                            "type": "integer",
-                        },
-                        "token_kill": {
-                            "default": True,
-                            "description": "Deduplicate repeated output lines via rtk (token killer). Set to False to see raw, unfiltered output.",
-                            "type": "boolean",
-                        },
-                        "fold": {
-                            "default": 500,
-                            "description": "Maximum number of lines in the final tool output. Longer results are head+tail folded with an omitted-count marker and a summary in `message`. 0 = unlimited (the byte cap still applies). Applied after offset/head_limit pagination.",
-                            "minimum": 0,
-                            "type": "integer",
-                        },
-                    },
-                    "required": ["pattern"],
-                    "type": "object",
-                },
-            },
-            {
-                "name": "write",
-                "description": "Create or fully replace a UTF-8 text file. Overwriting an existing auto-generated file (e.g. zz_generated.*, *.pb.go, *_pb2.py, *.gen.ts, or files with a '@generated' / 'Code generated by …' header) is refused by default; pass allow_auto_generated=True to override.",
-                "parameters": {
-                    "properties": {
-                        "file_path": {
-                            "description": "Path to write, resolved by the filesystem backend. Accepts `file_path` or `path`.",
-                            "type": "string",
-                        },
-                        "content": {
-                            "description": "Full UTF-8 text content to write. Accepts `content` or `text`.",
-                            "type": "string",
-                        },
-                        "sandbox_permissions": {
-                            "anyOf": [
-                                {
-                                    "enum": ["workspace-write", "danger-full-access"],
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "The wider sandbox mode this file operation needs (`workspace-write` or `danger-full-access`). Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
-                        },
-                        "justification": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access.",
-                        },
-                        "mode": {
-                            "default": "overwrite",
-                            "description": "Write mode: overwrite or append.",
-                            "enum": ["overwrite", "append"],
-                            "type": "string",
-                        },
-                        "auto_fix_json": {
-                            "default": True,
-                            "description": "When True (default), attempt to repair broken JSON before writing. When False, fail with a format error if JSON is invalid.",
-                            "type": "boolean",
-                        },
-                        "mkdir": {
-                            "default": True,
-                            "description": "When True (default), automatically create parent directories. When False, fail if the parent directory does not exist.",
-                            "type": "boolean",
-                        },
-                        "show_diff": {
-                            "default": False,
-                            "description": "When True, include a unified diff in the tool output.",
-                            "type": "boolean",
-                        },
-                        "allow_conflicts": {
-                            "default": False,
-                            "description": "When True, allow writing content that still contains conflict markers (opt-out of the conflict-marker write guard). Default False refuses to leave unresolved markers in a file.",
-                            "type": "boolean",
-                        },
-                        "allow_auto_generated": {
-                            "default": False,
-                            "description": "When True, allow overwriting files that appear to be auto-generated (opt-out of the auto-generated-file guard). Default False refuses to modify generated files.",
-                            "type": "boolean",
-                        },
-                    },
-                    "required": ["file_path", "content"],
-                    "type": "object",
-                },
-            },
-            {
-                "name": "edit",
-                "description": "Edit an existing UTF-8 text file by replacing literal text. Files that appear to be auto-generated (e.g. zz_generated.*, *.pb.go, *_pb2.py, or files with a '@generated' / 'Code generated by …' header) are refused by default; pass allow_auto_generated=True to override.",
-                "parameters": {
-                    "description": "Parameters for the multi-mode edit tool.",
-                    "properties": {
-                        "mode": {
-                            "default": "auto",
-                            "description": "Edit mode. 'auto' detects the mode from the payload shape.",
-                            "enum": ["auto", "replace", "sloppy"],
-                            "type": "string",
-                        },
-                        "file_path": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Path to edit. Accepts `file_path` or `path`.",
-                        },
-                        "edits": {
-                            "anyOf": [
-                                {
-                                    "description": "A single literal replace edit.",
-                                    "properties": {
-                                        "old_string": {
-                                            "description": "String to replace. Accepts `old` or `old_string`.",
-                                            "type": "string",
-                                        },
-                                        "new_string": {
-                                            "description": "Replacement text. Accepts `new` or `new_string`.",
-                                            "type": "string",
-                                        },
-                                        "replace_all": {
-                                            "default": False,
-                                            "description": "Replace all occurrences. When False, only the first occurrence is replaced.",
-                                            "type": "boolean",
-                                        },
-                                        "max_replacements": {
-                                            "anyOf": [
-                                                {"minimum": 1, "type": "integer"},
-                                                {"type": "null"},
-                                            ],
-                                            "default": None,
-                                            "description": "Maximum number of occurrences to replace when replace_all=True. None means unlimited.",
-                                        },
-                                        "match_mode": {
-                                            "default": "fuzzy",
-                                            "description": "'fuzzy' (default): Use fuzzy matching when exact match fails (may match similar text). 'exact': Only replace literal matches of `old`.",
-                                            "enum": ["exact", "fuzzy"],
-                                            "type": "string",
-                                        },
-                                    },
-                                    "required": ["old_string", "new_string"],
-                                    "type": "object",
-                                },
-                                {
-                                    "items": {
-                                        "description": "A single literal replace edit.",
-                                        "properties": {
-                                            "old_string": {
-                                                "description": "String to replace. Accepts `old` or `old_string`.",
-                                                "type": "string",
-                                            },
-                                            "new_string": {
-                                                "description": "Replacement text. Accepts `new` or `new_string`.",
-                                                "type": "string",
-                                            },
-                                            "replace_all": {
-                                                "default": False,
-                                                "description": "Replace all occurrences. When False, only the first occurrence is replaced.",
-                                                "type": "boolean",
-                                            },
-                                            "max_replacements": {
-                                                "anyOf": [
-                                                    {"minimum": 1, "type": "integer"},
-                                                    {"type": "null"},
-                                                ],
-                                                "default": None,
-                                                "description": "Maximum number of occurrences to replace when replace_all=True. None means unlimited.",
-                                            },
-                                            "match_mode": {
-                                                "default": "fuzzy",
-                                                "description": "'fuzzy' (default): Use fuzzy matching when exact match fails (may match similar text). 'exact': Only replace literal matches of `old`.",
-                                                "enum": ["exact", "fuzzy"],
-                                                "type": "string",
-                                            },
-                                        },
-                                        "required": ["old_string", "new_string"],
-                                        "type": "object",
-                                    },
-                                    "type": "array",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "One or more literal replace edits. Accepts `edit` or `edits`.",
-                        },
-                        "old_string": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Literal text to replace. Single-edit shorthand for `edit`.",
-                        },
-                        "new_string": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Literal replacement text. Single-edit shorthand for `edit`.",
-                        },
-                        "replace_all": {
-                            "default": False,
-                            "description": "Replace all matches. Only used with the single-edit shorthand.",
-                            "type": "boolean",
-                        },
-                        "input": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Input text for sloppy mode.",
-                        },
-                        "sandbox_permissions": {
-                            "anyOf": [
-                                {
-                                    "enum": ["workspace-write", "danger-full-access"],
-                                    "type": "string",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "The wider sandbox mode this file operation needs.",
-                        },
-                        "justification": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Required with sandbox_permissions: explanation for the user.",
-                        },
-                        "allow_conflicts": {
-                            "default": False,
-                            "description": "When True, allow editing files that contain conflict markers.",
-                            "type": "boolean",
-                        },
-                        "allow_auto_generated": {
-                            "default": False,
-                            "description": "When True, allow editing files that appear to be auto-generated (opt-out of the auto-generated-file guard). Default False refuses to modify generated files.",
-                            "type": "boolean",
-                        },
-                        "resolved_mode": {
-                            "anyOf": [
-                                {"enum": ["replace", "sloppy"], "type": "string"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                        },
-                    },
-                    "type": "object",
-                },
-            },
-            {
-                "name": "fetch_url",
-                "description": "Fetch a URL and extract main text.",
-                "parameters": {
-                    "properties": {
-                        "url": {
-                            "description": "URL to fetch content from.",
-                            "type": "string",
-                        },
-                        "timeout": {
-                            "default": 30.0,
-                            "description": "Request timeout in seconds (1-300).",
-                            "maximum": 300.0,
-                            "minimum": 1.0,
-                            "type": "number",
-                        },
-                        "method": {
-                            "default": "GET",
-                            "description": "HTTP method to use.",
-                            "enum": ["GET", "POST"],
-                            "type": "string",
-                        },
-                        "headers": {
-                            "anyOf": [
-                                {
-                                    "additionalProperties": {"type": "string"},
-                                    "type": "object",
-                                },
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Custom HTTP headers (e.g., {'Authorization': 'Bearer token'}).",
-                        },
-                        "body": {
-                            "anyOf": [{"type": "string"}, {"type": "null"}],
-                            "default": None,
-                            "description": "Request body for POST requests.",
-                        },
-                        "follow_redirects": {
-                            "default": True,
-                            "description": "Automatically follow HTTP redirects.",
-                            "type": "boolean",
-                        },
-                        "max_redirects": {
-                            "default": 5,
-                            "description": "Maximum number of redirects to follow (0-20).",
-                            "maximum": 20,
-                            "minimum": 0,
-                            "type": "integer",
-                        },
-                    },
-                    "required": ["url"],
-                    "type": "object",
-                },
-            },
-            {
-                "name": "web_extract",
-                "description": "Extract page content from URLs as markdown/text (no LLM). Within char budget pages return whole; larger pages head+tail truncate with the full text saved to disk (read_file the omitted middle). On failure/timeout use fetch_url.",
-                "parameters": {
-                    "properties": {
-                        "urls": {
-                            "description": "List of URLs (or search-result objects with a 'url'/'href' field) to extract content from (max 5)",
-                            "items": {},
-                            "maxItems": 5,
-                            "type": "array",
-                        },
-                        "char_limit": {
-                            "anyOf": [
-                                {"maximum": 500000, "minimum": 2000, "type": "integer"},
-                                {"type": "null"},
-                            ],
-                            "default": None,
-                            "description": "Per-page character budget (default 15000). Larger pages are head+tail truncated with the full text saved to disk.",
-                        },
-                    },
-                    "required": ["urls"],
-                    "type": "object",
-                },
-            }],
-    },
-}, {
-    "method": "event",
-    "type": "LLMRequest",
-    "payload": {
-        "kind": "loop",
-        "provider": "scripted_echo",
-        "model": "scripted_echo",
-        "thinking_effort": None,
-        "temperature": None,
-        "top_p": None,
-        "max_tokens": None,
-        "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
-        "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "87ecd142b792df11b9bbb99d959f0978999966f4edadd582544949bfb5086c1d",
-        "message_count": 1,
-        "turn_step": 1,
-        "attempt": 1,
-        "dropped_count": None,
-    },
-}, {"method": "event", "type": "TurnEnd", "payload": {}},
-            ]
-        )
-    finally:
-        wire.close()
-

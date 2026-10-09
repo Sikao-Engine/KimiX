@@ -585,6 +585,39 @@ def _build_platform_redirects() -> dict[str, str]:
         "TodoList": "todo_list",
         "Todo": "todo_list",
         "Todos": "todo_list",
+        # Plan file tools (kimix.tools.note): the tools were renamed from the
+        # CamelCase class names to snake_case tool names (mirroring
+        # read/write/edit).  Redirect every plausible LLM spelling - the old
+        # class names, snake/kebab/camel variants and common synonyms - to the
+        # canonical snake_case names.  ``normalize_tool_name`` folds case and
+        # separators, so ``write_plan`` / ``WRITE_PLAN`` / ``WritePlan`` all
+        # share one key here.
+        "WritePlan": "write_plan",
+        "ReadPlan": "read_plan",
+        "EditPlan": "edit_plan",
+        "PlanWrite": "write_plan",
+        "PlanRead": "read_plan",
+        "PlanEdit": "edit_plan",
+        "WritePlanFile": "write_plan",
+        "ReadPlanFile": "read_plan",
+        "EditPlanFile": "edit_plan",
+        "SavePlan": "write_plan",
+        "CreatePlan": "write_plan",
+        "NewPlan": "write_plan",
+        "StorePlan": "write_plan",
+        "OverwritePlan": "write_plan",
+        "ViewPlan": "read_plan",
+        "OpenPlan": "read_plan",
+        "ShowPlan": "read_plan",
+        "PlanView": "read_plan",
+        "UpdatePlan": "edit_plan",
+        "ModifyPlan": "edit_plan",
+        "PatchPlan": "edit_plan",
+        "RevisePlan": "edit_plan",
+        "PlanUpdate": "edit_plan",
+        "PlanPatch": "edit_plan",
+        "PlanModify": "edit_plan",
+        "PlanEditor": "edit_plan",
         "AgentSwarm": "workflow",
         "Swarm": "workflow",
         "MultiAgent": "workflow",

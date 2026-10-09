@@ -12,14 +12,18 @@ EDIT_TOOLS: frozenset[str] = frozenset(
     {
         "write",
         "edit",
-        "HashEdit",
-        "WritePlan",
-        "EditPlan",
-        # Aliases used by other tool naming schemes.
-        "Write",
-        "Edit",
-        "Replace",
-        "StrReplace",
+          "HashEdit",
+          "write_plan",
+          "edit_plan",
+          # Pre-rename spellings of the plan tools: a session recorded before
+          # the rename still counts its edits.
+          "WritePlan",
+          "EditPlan",
+          # Aliases used by other tool naming schemes.
+          "Write",
+          "Edit",
+          "Replace",
+          "StrReplace",
     }
 )
 

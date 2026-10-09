@@ -32,7 +32,7 @@ class FakeStatus:
 # real kimix toolset so display-name resolution (write_file -> write,
 # AppendFile -> write, ...) works exactly as in production.
 _DEFAULT_TOOL_NAMES = (
-    "write", "WritePlan", "read", "ReadPlan", "edit", "EditPlan",
+    "write", "write_plan", "read", "read_plan", "edit", "edit_plan",
     "python", "subagent", "list_agents", "interrupt_agent", "Run", "pwsh",
     "bash", "grep", "glob", "fetch_url", "todo_list", "job_output",
     "compact",
@@ -595,7 +595,7 @@ async def test_any_tool_streams_fragmented_args(monkeypatch: Any) -> None:
 
 
 async def test_whitelisted_tool_empty_initial_args_streams_live(monkeypatch: Any) -> None:
-    """Regression (WritePlan stall): Anthropic-protocol and OpenAI-Responses
+    """Regression (write_plan stall): Anthropic-protocol and OpenAI-Responses
     providers emit the streamed call header as ``ToolCall(arguments="")`` and
     deliver the arguments via subsequent ``ToolCallPart`` fragments.
 
@@ -609,11 +609,11 @@ async def test_whitelisted_tool_empty_initial_args_streams_live(monkeypatch: Any
     session = FakeSession()
 
     await base.print_agent_json(
-        ToolCall(id="call-1", function=ToolCall.FunctionBody(name="WritePlan", arguments="")),
+        ToolCall(id="call-1", function=ToolCall.FunctionBody(name="write_plan", arguments="")),
         session,
     )
     # Header printed immediately at ToolCall time; stream printer created.
-    assert "⚡ WritePlan" in _plain(chunks)
+    assert "⚡ write_plan" in _plain(chunks)
     assert base._TOOL_CALL_STREAM_KEY in session._tmp_data
 
     # Fragments are JSON-escaped, exactly as a provider's input_json_delta sends them.
@@ -632,7 +632,7 @@ async def test_whitelisted_tool_empty_initial_args_streams_live(monkeypatch: Any
     # Mid-stream fragments produced visible output before the JSON completed.
     assert any(base._strip_ansi(text).strip() for text in per_fragment_output[:-1])
     # The compact hidden-content one-liner (bug signature) must not appear.
-    assert "⚡ WritePlan content: ..." not in plain
+    assert "⚡ write_plan content: ..." not in plain
     # Printer finished once the arguments JSON completed.
     assert base._TOOL_CALL_STREAM_KEY not in session._tmp_data
 
@@ -665,7 +665,7 @@ async def test_unknown_tool_truncated_stream_recovers(monkeypatch: Any) -> None:
 
 def test_tool_header_color_always_bright_magenta() -> None:
     for name in (
-        "python", "write", "WritePlan", "edit", "bash", "pwsh",
+        "python", "write", "write_plan", "edit", "bash", "pwsh",
         "grep", "read", "todo_list", "subagent", "compact", "NoSuchTool",
     ):
         assert base._tool_header_color(name) is base.Color.BRIGHT_MAGENTA
@@ -722,12 +722,12 @@ async def test_stream_prints_with_alias_old_string(monkeypatch: Any) -> None:
 
 
 async def test_stream_prints_editplan_with_aliases(monkeypatch: Any) -> None:
-    """EditPlan streaming works with old_string / new_string aliases."""
+    """edit_plan streaming works with old_string / new_string aliases."""
     chunks = _capture_base_stream(monkeypatch)
     session = FakeSession()
     tool_call = ToolCall(
         id="call-1",
-        function=ToolCall.FunctionBody(name="EditPlan", arguments=None),
+        function=ToolCall.FunctionBody(name="edit_plan", arguments=None),
     )
 
     await base.print_agent_json(tool_call, session)
@@ -741,8 +741,8 @@ async def test_stream_prints_editplan_with_aliases(monkeypatch: Any) -> None:
     output = "".join(chunks)
     plain = base._strip_ansi("".join(chunks))
 
-    # EditPlan header printed (bright magenta).
-    assert "\x1b[95m\u26a1 EditPlan\x1b[0m" in output
+    # edit_plan header printed (bright magenta).
+    assert "\x1b[95m\u26a1 edit_plan\x1b[0m" in output
     # Canonical labels displayed.
     assert "\nold:\n" in plain
     assert "\nnew:\n" in plain

@@ -118,21 +118,20 @@ class RunParams(BaseModel):
         default="",
         alias="cmd",  # backward compat: old "cmd" still works
         description=(
-            "Executable command line — real executables only, no shell syntax "
-            "(pipes, redirects, &&, ||, variables). "
-            "Example: `python -c \"print(1)\"` or `git status`. "
-            "Accepts `command` or `cmd`."
+            "Command line — real executables only, no shell syntax "
+            "(pipes, redirects, &&, ||, variables); use `shell=True` for those. "
+            "Example: `git status`. Accepts `command` or `cmd`."
         )
     )
     mode: Literal["execute", "send"] = mode_field(
-        execute_desc="run as a direct process.",
-        send_desc="send `command` as stdin to the `task_id` session.",
+        execute_desc="run the process.",
+        send_desc="send `command` to stdin.",
     )
     shell: bool = Field(
         default=False,
         description=(
-            "True: run via the system shell (bash on Linux/macOS, powershell on Windows) "
-            "with pipes/redirects/variables. False (default): direct process, no shell interpretation."
+            "True: run via system shell (bash, or powershell on Windows), "
+            "enables pipes/redirects/variables."
         ),
     )
     timeout: int = timeout_field()
@@ -147,11 +146,11 @@ class RunParams(BaseModel):
     )
     env: str | list[str] | None = Field(
         default=None,
-        description="Environment variables to set for the subprocess."
+        description="Env vars to set, 'KEY=VAL' string or list."
     )
     run_in_background: bool = Field(
         default=False,
-        description="Run the process in the background and return immediately."
+        description="Return immediately with a task_id; process keeps running."
     )
     task_id: str | None = task_id_field("command")
     wait_for_pattern: str | None = wait_for_pattern_field()
@@ -172,7 +171,7 @@ class RunParams(BaseModel):
             if not self.command:
                 raise ValueError("command cannot be empty when mode='send'")
             if not self.task_id:
-                raise ValueError("mode='send' requires task_id to identify the target session")
+                raise ValueError("mode='send' requires task_id")
         if self.task_id is not None and self.mode != "send":
             raise ValueError("task_id requires mode='send'")
         return self
@@ -236,10 +235,7 @@ class Run(CallableTool2[RunParams]):
             return None
         return ToolError(
             output="",
-            message=(
-                f"Blocked (hardline): {desc}. This command cannot be executed "
-                "via the agent."
-            ),
+            message=f"Blocked (hardline): {desc}.",
             brief="Blocked (hardline)",
         )
 
@@ -258,7 +254,7 @@ class Run(CallableTool2[RunParams]):
             if not params.task_id:
                 return ToolError(
                     output="",
-                    message="mode='send' requires task_id to identify the target session.",
+                    message="mode='send' requires task_id.",
                     brief="Missing task_id",
                 )
             return await self._continue_session(params)
@@ -332,7 +328,7 @@ class Run(CallableTool2[RunParams]):
                     if keyword in normalized_cmd:
                         return ToolError(
                             output="",
-                            message=f"Command `{full_cmd}` is forbidden by config rule.",
+                            message="Command forbidden by config rule.",
                             brief="Forbidden command",
                         )
 
@@ -359,11 +355,11 @@ class Run(CallableTool2[RunParams]):
 
             if not is_process:
                 # Not a real process - check if it's a bash built-in command.
-                error_msg = " This tool does not support shell commands; use the `bash` tool."
+                error_msg = "Not a runnable executable; use the `bash` tool for shell commands."
                 return ToolError(
                     output='',
                     message=error_msg,
-                    brief='Bash not supported.'
+                    brief='Not an executable.'
                 )
 
             # Rewrite known commands through RTK using the share-bin binary only.
@@ -429,13 +425,13 @@ class Run(CallableTool2[RunParams]):
                         return await self._format_session_result(
                             task_id, task.stream, params, output, "running",
                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-                            message=(f"[rtk] Running in background. task_id: `{task_id}`." if rtk_rewritten else f"Running in background. task_id: `{task_id}`."),
+                            message=(f"[rtk] Running in background. task_id: `{task_id}`" if rtk_rewritten else f"Running in background. task_id: `{task_id}`"),
                             brief="Background task started",
                             rtk_rewritten=rtk_rewritten,
                         )
                     return ToolOk(
                         output="",
-                        message=(f"[rtk] Running in background. task_id: `{task_id}`. Use `job_output` tool to retrieve output." if rtk_rewritten else f"Running in background. task_id: `{task_id}`. Use `job_output` tool to retrieve output."),
+                        message=(f"[rtk] Running in background. task_id: `{task_id}`. Use `job_output` to retrieve output." if rtk_rewritten else f"Running in background. task_id: `{task_id}`. Use `job_output` to retrieve output."),
                         brief="Background task started",
                         display_block=ShellDisplayBlock(language="shell"),
                     )
@@ -449,7 +445,7 @@ class Run(CallableTool2[RunParams]):
                         return await self._format_session_result(
                             task_id, task.stream, params, output, "running",
                             wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-                            message=("[rtk] Matched pattern, still running" if rtk_rewritten else "Matched pattern, still running"),
+                            message=("[rtk] Pattern matched, still running" if rtk_rewritten else "Pattern matched, still running"),
                             brief="Pattern matched",
                             rtk_rewritten=rtk_rewritten,
                         )
@@ -466,7 +462,7 @@ class Run(CallableTool2[RunParams]):
                     else:
                         message = (
                             f"Running in background. task_id: `{task_id}`. "
-                            "Use `job_output` to read output or to stop it."
+                            "Use `job_output` to read output or stop it."
                         )
                     return ToolError(
                         output=output,
@@ -587,7 +583,7 @@ class Run(CallableTool2[RunParams]):
         except Exception:
             return ToolError(
                 output='',
-                message='Internal error, quit current session now.',
+                message='Internal error: failed to start or wait for the process.',
                 brief='Internal error'
             )
         finally:
@@ -609,7 +605,7 @@ class Run(CallableTool2[RunParams]):
             except Exception:
                 return ToolError(
                     output="",
-                    message="PowerShell is not available on this system.",
+                    message="PowerShell is not available.",
                     brief="PowerShell unavailable",
                 )
             ps_params = PowershellParams(
@@ -627,7 +623,7 @@ class Run(CallableTool2[RunParams]):
             except Exception:
                 return ToolError(
                     output="",
-                    message="Bash is not available on this system.",
+                    message="Bash is not available.",
                     brief="Bash unavailable",
                 )
             bash_params = BashParams(
@@ -663,16 +659,13 @@ class Run(CallableTool2[RunParams]):
             if not started:
                 return ToolError(
                     output="",
-                    message=f"Task '{params.task_id}' not found. No running tasks.",
+                    message=f"Task '{task_id}' not found. No running tasks.",
                     brief="Task not found",
                 )
             return ToolError(
                 output="",
-                message=(
-                    f"Task '{params.task_id}' not found. "
-                    f"Available tasks: [{', '.join(started)}]"
-                ),
-                brief=f"Task '{params.task_id}' not found",
+                message=f"Task '{task_id}' not found. Available: {', '.join(started)}",
+                brief=f"Task '{task_id}' not found",
             )
 
         pattern = self._compile_pattern(params.wait_for_pattern)
@@ -688,7 +681,7 @@ class Run(CallableTool2[RunParams]):
         if not await stream.input(input_text):
             return ToolError(
                 output="",
-                message=f"Failed to send input to task '{task_id}'",
+                message=f"Failed to send input to task '{task_id}'.",
                 brief="Send input failed",
             )
 
@@ -700,7 +693,7 @@ class Run(CallableTool2[RunParams]):
         return await self._format_session_result(
             task_id, stream, params, output, status,
             wait_matched=matched, elapsed_seconds=elapsed,
-            message=f"Data sent to `{task_id}`. Status: {status}.",
+            message=f"Sent to `{task_id}`. Status: {status}.",
             brief="Data sent and output retrieved",
         )
 

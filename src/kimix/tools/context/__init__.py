@@ -18,17 +18,13 @@ class CompactParams(BaseModel):
     mode: str = Field(
         default="auto",
         description=(
-            "Compaction mode / style. "
-            "'retentive' (default, keep more detail), 'balanced' (structured summary), "
-            "'aggressive' (shorter), 'technical' (emphasize code/errors/design). "
-            "'auto': automatically select based on current context usage. "
-            "Does not affect preserve depth or cascade behavior.\n"
-            "Mode selection guide:\n"
-            "- retentive: Keeps more detail; use when context is moderately full.\n"
-            "- balanced: Structured summary; use when context is very full.\n"
-            "- aggressive: Shortest summary; use only when critically low on context.\n"
-            "- technical: Emphasizes code, errors, and design decisions.\n"
-            "- auto: Automatically picks based on context usage."
+            "Compaction style. "
+            "'retentive' (default): keep more detail, use when context is moderately full. "
+            "'balanced': structured summary, use when context is very full. "
+            "'aggressive': shortest summary, use only when critically low on context. "
+            "'technical': emphasize code, errors, and design decisions. "
+            "'auto': pick based on current context usage. "
+            "Does not affect preserve depth or cascade behavior."
         ),
     )
 
@@ -54,12 +50,10 @@ class compact(CallableTool2):  # noqa: N801
     name = "compact"
     description = (
         "Compact / summarize the conversation context to reduce token usage. "
-        "Call this when context usage shows usage is high and you want to free up context. "
-        "Optionally pass an instruction and a compaction mode (balanced, aggressive, "
-        "retentive, technical, auto) to control the summary style. "
-        "[IMPORTANT] Do NOT call compact more than once every 5 steps, "
-        "and only call it when context usage exceeds 70%. "
-        "Calls are rejected while context usage is below 30% (not high enough to compact)."
+        "Call when context usage is high to free up context. "
+        "Optionally pass an instruction and a compaction mode. "
+        "[IMPORTANT] Do not call more than once every 5 steps, or below 70% usage. "
+        "Rejected below 30%."
     )
     params = CompactParams
 
@@ -77,8 +71,8 @@ class compact(CallableTool2):  # noqa: N801
         if usage < MIN_CONTEXT_USAGE:
             return ToolError(
                 message=(
-                    f"Context usage is only {usage:.0%}, which is not high enough to compact "
-                    f"(minimum is {MIN_CONTEXT_USAGE:.0%}). Skip compaction until usage grows."
+                    f"Context usage is only {usage:.0%}, not high enough to compact "
+                    f"(min {MIN_CONTEXT_USAGE:.0%}). Skip until usage grows."
                 ),
                 output="",
                 brief="Usage too low to compact",
@@ -126,6 +120,6 @@ class compact(CallableTool2):  # noqa: N801
             output="Compaction completed.",
             message=(
                 "Compaction completed. "
-                "[IMPORTANT] Do not call compact again until context usage exceeds 70%."
+                "[IMPORTANT] Do not call again until usage exceeds 70%."
             ),
         )

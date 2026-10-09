@@ -3,7 +3,7 @@
 Background: ``prompt_plan_async`` (and both server session managers) verified
 the plan file on disk with ``plan_file.exists() and size > 0``. On failure the
 loop re-prompted the planner with an inline message ("The plan file was not
-generated. Please generate the plan and save it using the WritePlan tool.")
+generated. Please generate the plan and save it using the write_plan tool.")
 that arrived as a user-role turn but was machine-generated. Planners read it
 as the user confirming/reviewing their work and answered a question nobody
 asked (hallucinated confirmation turns).
@@ -40,7 +40,7 @@ from kimix.utils.prompt import (
 REQUIREMENT = "  Add --max-distance and --ao-gamma to the AO baker.  "
 
 # The full old second sentence; must not be re-inlined at any call site.
-OLD_NUDGE_SENTENCE = "Please generate the plan and save it using the WritePlan tool."
+OLD_NUDGE_SENTENCE = "Please generate the plan and save it using the write_plan tool."
 
 
 class _FakePlannerSession:
@@ -127,7 +127,7 @@ class TestBuildPlanRetryReminder:
 
     def test_contains_actionable_instruction_and_requirement(self):
         text = build_plan_retry_reminder("  spaced requirement \n")
-        assert "Call WritePlan with the complete plan now" in text
+        assert "Call write_plan with the complete plan now" in text
         assert text.endswith("Requirement:\nspaced requirement")
 
     def test_old_ambiguous_phrasing_gone(self):

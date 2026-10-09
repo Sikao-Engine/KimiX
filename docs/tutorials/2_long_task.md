@@ -38,9 +38,9 @@
 
 #### 阶段 1：计划生成
 
-1. **创建 Planner 会话**：优先使用子 Provider 中 `role="planner"` 的配置创建专用会话（未配置时回退到主 Provider），使用 `agent_planner.json` 配置和 `TodoMaker` 系统提示词。该会话被设为**只读**（不能写文件或执行命令），并禁用 budget / context / compact / todo / target_churn 等循环提醒；同时启用计划工具（`WritePlan` / `EditPlan`）。
+1. **创建 Planner 会话**：优先使用子 Provider 中 `role="planner"` 的配置创建专用会话（未配置时回退到主 Provider），使用 `agent_planner.json` 配置和 `TodoMaker` 系统提示词。该会话被设为**只读**（不能写文件或执行命令），并禁用 budget / context / compact / todo / target_churn 等循环提醒；同时启用计划工具（`write_plan` / `edit_plan`）。
 2. **指定计划文件**：若未提供文件路径，则在当前目录的 `.kimix_cache/` 下自动生成 `plan_<随机hex>.md`；若指定的文件已存在，会先删除。
-3. **生成计划**：Planner 读取任务需求，将任务拆解为步骤列表，并通过 `WritePlan` 工具写入计划文件。生成过程最多尝试 **3 次**，每次结束后检查计划文件是否存在且非空，确保计划被正确写入。
+3. **生成计划**：Planner 读取任务需求，将任务拆解为步骤列表，并通过 `write_plan` 工具写入计划文件。生成过程最多尝试 **3 次**，每次结束后检查计划文件是否存在且非空，确保计划被正确写入。
 4. **打开审阅**：计划生成后会用系统默认程序打开该文件，供用户查看。
 
 #### 阶段 2：审阅与修订
@@ -52,7 +52,7 @@
   - 输入 `n` 或其他：进入修订流程。
 - 修订提示：`Please describe the changes you want (/quit to give up):`
   - 输入 `/quit`：放弃执行。
-  - 输入具体修改意见：Planner 会根据反馈使用 `WritePlan` 或 `EditPlan` 工具更新计划文件，并再次打开供审阅，循环往复直到用户确认或放弃。
+  - 输入具体修改意见：Planner 会根据反馈使用 `write_plan` 或 `edit_plan` 工具更新计划文件，并再次打开供审阅，循环往复直到用户确认或放弃。
 
 #### 阶段 3：执行与复核
 

@@ -249,7 +249,7 @@ class TestFileToolLogging:
 
         with (
             patch("kimi_cli.tools.file.read.logger") as mock_logger,
-            patch("kimi_cli.tools.file.read.kaos_path_from_user_input") as mock_path,
+            patch("kimi_cli.tools.file.read.kaos_path_from_tool_input") as mock_path,
         ):
             mock_path.side_effect = RuntimeError("Unexpected")
             result = await read_file_tool(Params(path="/some/file"))

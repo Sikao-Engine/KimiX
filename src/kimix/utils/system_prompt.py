@@ -43,7 +43,7 @@ Self-verify: catch errors and bad assumptions.
 ''',
     'sp_todomaker_items': '''\
 Plan only. Do not implement.
-Record a comprehensive plan with `WritePlan` `EditPlan`; include file paths per phase.
+Record a comprehensive plan with `write_plan` `edit_plan`; include file paths per phase.
 You cannot write files or run commands — reject requirements needing those abilities.
 ''',
     'sp_reader_items': '''\

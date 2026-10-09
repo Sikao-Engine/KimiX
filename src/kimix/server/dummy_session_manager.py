@@ -332,7 +332,7 @@ async def _process_plan(
 
         prompt_text = (
             "read the following requirement carefully and generate a comprehensive plan. "
-            "save the complete plan to a file using the WritePlan tool.\n\n"
+            "save the complete plan to a file using the write_plan tool.\n\n"
             f"Requirement:\n{text.strip()}"
         )
 
@@ -527,7 +527,7 @@ async def _process_plan(
                                 "The user reviewed the plan and requests the following changes:\n"
                                 f"{feedback}\n\n"
                                 "Please revise the plan accordingly and save the updated plan "
-                                "using the WritePlan tool. Overwrite the existing plan file."
+                                "using the write_plan tool. Overwrite the existing plan file."
                             )
                             plan_generated = False
                             continue

@@ -297,7 +297,7 @@ def test_manual_compact(tmp_path) -> None:
             [
                 {"method": "event", "type": "TurnBegin", "payload": {"user_input": "/compact"}},
                 {"method": "event", "type": "CompactionBegin", "payload": {"compaction_id": "<uuid>", "trigger": "manual", "shadowed_tokens": None}},
-                {"method": "event", "type": "CompactionEnd", "payload": {"compaction_id": "<uuid>", "trigger": "manual", "shadowed_tokens": 0, "estimated_token_count": 4133, "error": None}},
+                {"method": "event", "type": "CompactionEnd", "payload": {"compaction_id": "<uuid>", "trigger": "manual", "shadowed_tokens": 0, "estimated_token_count": 3964, "error": None}},
                 {
                     "method": "event",
                     "type": "ContentPart",
@@ -307,8 +307,8 @@ def test_manual_compact(tmp_path) -> None:
                     "method": "event",
                     "type": "StatusUpdate",
                     "payload": {
-                        "context_usage": 0.04133,
-                        "context_tokens": 4133,
+                        "context_usage": 0.03964,
+                        "context_tokens": 3964,
                         "max_context_tokens": 100000,
                         "token_usage": None,
                         "message_id": None,
@@ -490,7 +490,7 @@ exit_code_meaning: null
 failure_hint: null
 output: |
   ok
-output_truncated: false
+output_truncated: true
 output_path: null
 wait_matched: null
 elapsed_seconds: null

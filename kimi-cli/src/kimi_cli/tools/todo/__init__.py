@@ -39,27 +39,25 @@ from kosong.tooling import (
 )
 
 _TODOLIST_DESCRIPTION = (
-    "Read or write the todo plan — one tool, one item shape, every operation.\n\n"
-    "Item shape (all modes): `{title, status?, notes?, children?}` plus the edit keys "
-    "`parent`, `rename_to`, `complete`. `title` is the one short imperative line that "
-    "identifies the item and the only required key; `notes` is optional detail (an item "
-    "of only `notes` has no identity).\n\n"
+    "Read or write the todo plan — one tool, one item shape.\n\n"
+    "Item: `{title, status?, notes?, children?}` + edit keys `parent`, `rename_to`, "
+    "`complete`. `title` is the only required key (one short imperative line) and the "
+    "item's identity; `notes` is optional detail.\n\n"
     "Dispatch:\n"
     "- `todos` omitted → read the current tree.\n"
     "- mode='merge' (default) → upsert each item: an existing title patches it in place "
     "(omitted fields keep their value), an unknown title creates it. `parent` / "
     "top-level `scope` pick the sub-tree ('' = root).\n"
-    "- mode='replace' → the list IS the tree (children included); needs all existing "
-    "todos done unless force=True.\n"
+    "- mode='replace' → the list IS the whole tree (children included); needs all "
+    "existing todos done unless force=True.\n"
     "- mode='clear' → empty the tree (all-done guard unless force=True).\n\n"
-    "Near-duplicate titles are treated as the same task, not a new one: an incoming "
-    "title that differs from an existing one only in numbering, punctuation, case or "
-    "word order hits the conflict policy — on_conflict='error' (default) refuses the "
-    "call and names the existing title plus the exact payload to send instead; "
-    "'reuse' patches that item; 'append' really adds a second one.\n\n"
-    "Invariants: exactly one item in_progress (auto_fix=True demotes earlier ones, "
-    "keeping the last listed); done items never move back to pending/in_progress "
-    "unless force=True; done items dropped by replace/clear are archived."
+    "A near-duplicate title (differs only in numbering, punctuation, case or word "
+    "order) is the same task, not a new one — on_conflict='error' (default) refuses the "
+    "call and names the existing title plus the exact payload to send; "
+    "'reuse' patches it; 'append' adds a second.\n\n"
+    "Invariants: exactly one in_progress (auto_fix demotes earlier ones, keeping the "
+    "last); done items never move back to pending/in_progress unless force; done items "
+    "dropped by replace/clear are archived."
 )
 
 def _truncate_prompt(text: str, max_len: int = 200) -> str:
@@ -99,7 +97,7 @@ def _hint_error(text: str) -> str:
     return "\nHint: " + text
 
 _TODOLIST_SUCCESS_HINT = (
-    'todo_list with no todos to read the tree; parent="<title>" to add a child under an item.'
+    'todo_list with no todos to read the tree; parent="<title>" to add a child.'
 )
 
 # Mode map — only canonical values accepted; every retired spelling of an
@@ -359,7 +357,7 @@ def _describe_item_problems(
         if etype == "missing":
             lines.append(f"{place}: missing required field '{field}'. {keys}")
         elif etype == "extra_forbidden":
-            lines.append(f"{place}: unexpected field '{field}' (not part of this item's shape).")
+            lines.append(f"{place}: unexpected field '{field}' (not in this item's shape).")
         else:
             lines.append(f"{place}: {msg}. {keys}" if "=" not in msg else f"{place}: {msg}")
     return lines
@@ -470,9 +468,9 @@ class Todo(BaseModel):
     title: str =         Field(
         validation_alias=AliasChoices(*_TITLE_ALIASES),
         description=(
-            "Required. The task title: one short imperative line, and the item's "
-            "identity — mode='merge' matches items by it and `parent`/`scope` look "
-            "items up by it, so it must always be sent. "
+            "Required. The task title: one short imperative line; the item's "
+            "identity — mode='merge' matches and `parent`/`scope` look up by it, so "
+            "always send it. "
             + alias_note(*_TITLE_ALIASES, word=False)
         ),
         min_length=1,
@@ -489,8 +487,8 @@ class Todo(BaseModel):
         default=None,
         description=(
             "Optional supporting detail (evidence, file paths, findings). Not the "
-            "title — an item with only `notes` has no identity, so always send "
-            '`title` too. Omit it (or send "") to keep the current notes.'
+            "title — an item of only `notes` has no identity, so always send "
+            '`title` too. Omit it (or send "") to keep current notes.'
         ),
         max_length=65536,
     )
@@ -499,16 +497,16 @@ class Todo(BaseModel):
     children: list[Todo] =         Field(
         default_factory=list,
         description=(
-            "Sub-todos of this item; same shape, any depth. Leave empty for a leaf. "
-            "A bare title string is accepted and means a pending item."
+            "Sub-todos; same shape, any depth. Leave empty for a leaf. A bare title "
+            "string is accepted and means a pending item."
         ),
     )
     # ── Edit-only keys (honoured by mode='merge', rejected by 'replace'/'clear') ──
     parent: str | None =         Field(
         default=None,
         description=(
-            'Scope this item to the children of the named todo (both its lookup and '
-            'its creation). "" = root scope. Overrides the top-level `scope`.'
+            'Scope this item to children of the named todo (its lookup and creation). '
+            '"" = root scope. Overrides the top-level `scope`.'
         ),
     )
     rename_to: str | None =         Field(
@@ -522,7 +520,7 @@ class Todo(BaseModel):
         default=False,
         description=(
             "Mark this item and its whole sub-tree done in one call. Not combined "
-            "with an explicit pending/in_progress status or with `children`."
+            "with a pending/in_progress status or with `children`."
         ),
     )
     fuzzy: bool =         Field(
@@ -667,61 +665,59 @@ class Params(BaseModel):
             "list"
         ),
         description=(
-            "The items to write; omit to READ the tree. In the default mode='merge' "
-            "this is an upsert batch — send only the items you mean to touch, each "
-            "with `title` plus any of status / notes / children / rename_to / parent "
-            "/ complete: an existing title is patched, an unknown one is created. In "
-            "mode='replace' send the COMPLETE tree instead. A single object, a bare "
-            'title string or a JSON string of those forms also work. '
+            "The items to write; omit to READ the tree. mode='merge' upserts them: "
+            "send only the items you mean to touch, each with `title` plus any of "
+            "status / notes / children / rename_to / parent / complete (existing "
+            "title patched, unknown created). In mode='replace' send the COMPLETE "
+            "tree instead. A single object, a bare title string or a JSON string of "
+            "those forms also work. "
             + alias_note("todos", "items", word=False)
         ),
     )
     mode: Literal["merge", "replace", "clear"] =         Field(
         default="merge",
         description=(
-            "'merge' (default) upserts the given items; 'replace' makes the given "
-            "list the whole tree and needs every existing todo done unless "
-            'force=True; "clear" empties the tree (same guard).'
+            "'merge' (default) upserts the given items; 'replace' makes the list the "
+            "whole tree and needs every existing todo done unless force=True; 'clear' "
+            "empties the tree (same guard)."
         ),
     )
     scope: str | None =         Field(
         default=None,
         validation_alias=AliasChoices("scope", "parent"),
         description=(
-            'Restrict this call to the children of the named todo; "" means the '
-            "root. An item's own `parent` wins."
+            'Restrict this call to children of the named todo; "" = root. An item\'s '
+            "own `parent` wins."
         ),
     )
     on_conflict: Literal["error", "reuse", "append"] =         Field(
         default="error",
         description=(
-            "What to do when an incoming title is a near-duplicate of an existing "
-            "one (same words, different numbering / punctuation / case): 'error' "
-            "(default) refuses the call and names the existing title plus the exact "
-            "payload to send instead; 'reuse' patches that item; 'append' really "
-            "adds a second one."
+            "What to do when an incoming title is a near-duplicate of an existing one "
+            "(same words, different numbering / punctuation / case): 'error' "
+            "(default) refuses and names the existing title plus the exact payload to "
+            "send; 'reuse' patches it; 'append' adds a second one."
         ),
     )
     fuzzy: bool =         Field(
         default=True,
         description=(
-            "When True (default) a title that misses exactly may still match the "
-            "nearest existing todo; False requires exact titles."
+            "True (default): a title that misses exactly may still match the nearest "
+            "existing todo; False requires exact titles."
         ),
     )
     force: bool =         Field(
         default=False,
         description=(
-            "Bypass the guards: the all-done requirement of replace/clear, "
-            "reopening a done item, renaming onto one, and the single-in_progress "
-            "and regression checks."
+            "Bypass guards: replace/clear all-done, reopening a done item, rename "
+            "collisions, and the single-in_progress / regression checks."
         ),
     )
     auto_fix: bool =         Field(
         default=True,
         description=(
-            "When True (default) and several items are in_progress, the last listed "
-            "one is kept and earlier ones are marked done; False errors instead."
+            "True (default): with several in_progress, keep the last listed and mark "
+            "earlier ones done; False errors instead."
         ),
     )
 
@@ -973,7 +969,7 @@ class TodoList(CallableTool2[Params]):
         if params.mode == "clear" and new_todos:
             return self._error(
                 "Error: mode='clear' cannot be combined with todos. "
-                "Use mode='merge' or 'replace' to write todos, or call with no todos to read.",
+                "Use mode='merge'/'replace' to write.",
                 "mode='clear' cannot be combined with todos.",
             )
 
@@ -1012,8 +1008,7 @@ class TodoList(CallableTool2[Params]):
                 unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
                 return self._error(
                     "Error: Cannot clear todos while old todos are not all done. "
-                    "Next step: mark them done first, "
-                    "or call with mode='clear' and force=True to discard them intentionally.\n"
+                    "Next step: mark them done, or mode='clear' with force=True.\n"
                     f"Unfinished:\n{unfinished}",
                     "Cannot clear todos while old todos are not all done.",
                     display=[self._build_display_block(old_todos)],
@@ -1029,7 +1024,7 @@ class TodoList(CallableTool2[Params]):
                 unfinished = "\n".join(t.title for t in old_todos if t.status != "done")
                 return self._error(
                     "Error: Cannot replace todos while old todos are not all done. "
-                    "Use force=True if you really want to discard unfinished work.\n"
+                    "Use force=True to discard unfinished work.\n"
                     f"Unfinished:\n{unfinished}",
                     "Cannot replace todos while old todos are not all done.",
                 )
@@ -1063,7 +1058,7 @@ class TodoList(CallableTool2[Params]):
         not have to guess the tool's own contract after a failure.
         """
         if hint is None:
-            hint = "call todo_list with `todos` omitted to read the tree."
+            hint = "todo_list with no `todos` reads the tree."
         return ToolReturnValue(
             is_error=True,
             output=output + _hint_error(hint),
@@ -1235,9 +1230,8 @@ class TodoList(CallableTool2[Params]):
             if hits:
                 warnings.append(
                     f'"{new_todo.title}" looks like existing "{hits[0].choice}" '
-                    "(advisory only — different word set, so the conflict "
-                    "policy/on_conflict does not apply; the new item was still "
-                    "created)"
+                    "(advisory only — different word set, so on_conflict does not "
+                    "apply; still created)"
                 )
         return warnings
 
@@ -1329,12 +1323,12 @@ class TodoList(CallableTool2[Params]):
             message_lines.append(all_done_reminder)
         if force and had_old_todos:
             message_lines.append(
-                "Warning: force=True bypassed the all-done guard and replaced the existing todo list."
+                "Warning: force=True bypassed the all-done guard and replaced the existing list."
             )
         if counts["in_progress"] > 1:
             message_lines.append(
                 f"Note: {counts['in_progress']} items are in_progress; "
-                "prefer exactly one at a time."
+                "prefer exactly one."
             )
         if warnings:
             message_lines.extend(["", *warnings])
@@ -1690,7 +1684,7 @@ class TodoList(CallableTool2[Params]):
             return self._error(
                 f"Error: Duplicate todo titles found: {duplicates}",
                 f"Duplicate todo titles found: {duplicates}",
-                hint="send each item once, or use parent=... to edit a specific sub-tree item.",
+                hint="send each item once, or use parent=... to target one.",
             )
         if self._count_all(items) > _MAX_TODOS:
             return self._error(
@@ -1867,7 +1861,7 @@ class TodoList(CallableTool2[Params]):
             if params.on_conflict == "reuse":
                 warnings.append(
                     f'"{item.title}" matched existing "{conflict}" (near-duplicate title); '
-                    "patched that item instead of adding a new one."
+                    "patched it, not added a new one."
                 )
                 for idx, existing in enumerate(container):
                     if existing.title == payload_title:
@@ -1877,7 +1871,7 @@ class TodoList(CallableTool2[Params]):
                         updated = list(container)
                         updated[idx] = patched
                         return updated, (
-                            f'Updated "{conflict}" ({item.title} was a near-duplicate).'
+                            f'Updated "{conflict}" (near-duplicate).'
                         )
             else:
                 warnings.append(
@@ -1995,13 +1989,13 @@ class TodoList(CallableTool2[Params]):
         replacement = orjson.dumps(payload).decode("utf-8")
         return self._error(
             f'Error: {where} "{item.title}" is a near-duplicate of the existing "{conflict}"\n'
-            f"Patch that item instead of re-declaring the plan — send: {replacement}\n"
-            'Or pass on_conflict="append" to really add a second item, '
+            f"Patch that item instead — send: {replacement}\n"
+            'Or pass on_conflict="append" to add a second item, '
             'or on_conflict="reuse" to patch it silently.',
             f'Near-duplicate title "{item.title}" (existing: "{conflict}").',
             hint=(
                 'todo_list to read the tree, then resend with the existing title, '
-                'or on_conflict="append" for a genuinely new item.'
+                'or on_conflict="append" for a new item.'
             ),
         )
 
@@ -2066,8 +2060,7 @@ class TodoList(CallableTool2[Params]):
         if self._max_tree_depth(final_todos) > max_depth:
             return self._error(
                 f"Error: Todo tree exceeds maximum nesting depth of {max_depth} levels "
-                f"(todo_max_layers={max_layers}). Flatten the tree, or build it one level "
-                "at a time with parent=...",
+                f"(todo_max_layers={max_layers}). Flatten it, or build with parent=... one level at a time.",
                 f"Todo tree exceeds maximum nesting depth of {max_depth} levels.",
                 display=[self._build_display_block(final_todos)],
             )
@@ -2078,8 +2071,7 @@ class TodoList(CallableTool2[Params]):
                 return self._error(
                     "Error: Cannot regress completed todos back to pending/in_progress: "
                     + ", ".join(regressions)
-                    + "\nNext step: resend with these items kept as 'done', "
-                    "or use force=True to restart them intentionally.",
+                    + "\nNext step: resend with these kept 'done', or use force=True.",
                     "Cannot regress completed todos.",
                     display=[self._build_display_block(final_todos)],
                 )
@@ -2102,10 +2094,8 @@ class TodoList(CallableTool2[Params]):
                 else:
                     return self._error(
                         f"Error: Multiple items are in_progress: {conflicts}. "
-                        "Keep exactly one item in_progress at a time. "
-                        "Mark the current item as 'done' before starting another, "
-                        "use force=True to override, "
-                        "or set auto_fix=True to automatically resolve conflicts.",
+                        "Keep exactly one: mark the other 'done', use force=True, "
+                        "or auto_fix=True.",
                         "Multiple items in_progress",
                         display=[self._build_display_block(final_todos)],
                     )
@@ -2159,7 +2149,7 @@ class TodoList(CallableTool2[Params]):
 
         if path is None:
             if not params.fuzzy:
-                hint = 'Omit `todos` to read the tree, or set fuzzy=True to search by similarity.'
+                hint = 'Omit `todos` to read the tree, or fuzzy=True to match similar titles.'
                 return ToolError(
                     message=f'Todo "{target_title}" not found.',
                     brief=hint,
@@ -2202,7 +2192,7 @@ class TodoList(CallableTool2[Params]):
             parent_path = self._find_path(todos, parent_title)
             if parent_path is None:
                 if not params.fuzzy:
-                    hint = 'Omit `todos` to read the tree, or set fuzzy=True to search by similarity.'
+                    hint = 'Omit `todos` to read the tree, or fuzzy=True to match similar titles.'
                     return ToolError(
                         message=f'Parent todo "{parent_title}" not found.',
                         brief=hint,

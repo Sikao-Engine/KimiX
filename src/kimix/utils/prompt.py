@@ -844,7 +844,7 @@ def build_plan_retry_reminder(requirement: str) -> str:
         "plan-file check after your previous turn; it is NOT a message from the user. "
         "No human has read, confirmed, or reviewed anything yet. "
         "The check failed: the plan file was not found on disk or is empty, so the plan "
-        "was never saved. Call WritePlan with the complete plan now, then end your turn. "
+        "was never saved. Call write_plan with the complete plan now, then end your turn. "
         "Do not ask the user questions or phrase your reply as a confirmation request.\n\n"
         f"Requirement:\n{requirement.strip()}"
     )
@@ -909,7 +909,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
         planner_session.get_custom_data()["plan_writing_path"] = plan_file
 
         # Lock the planner session to read-only so it cannot write to the filesystem
-        # or modify external state — its sole job is to generate a plan via WritePlan.
+        # or modify external state — its sole job is to generate a plan via write_plan.
         if hasattr(planner_session, '_cli') and planner_session._cli is not None:
             _runtime = getattr(planner_session._cli, '_runtime', None)
             if _runtime is not None:
@@ -917,7 +917,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
 
         reminder = (
             "read the following requirement carefully and generate a comprehensive plan. "
-            "save the complete plan to a file using the WritePlan tool. "
+            "save the complete plan to a file using the write_plan tool. "
             f"Requirement:\n{requirement.strip()}"
         )
 
@@ -1006,7 +1006,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
             revision_reminder = (
                 "The user reviewed the plan and wants the following changes:\n\n"
                 f"{feedback.strip()}\n\n"
-                "Please update the plan file accordingly using the WritePlan or EditPlan tools. "
+                "Please update the plan file accordingly using the write_plan or edit_plan tools. "
             )
             try:
                 base._stream.colorful_print_word(

@@ -103,11 +103,10 @@ class Params(BaseModel):
         description=(
             "Path to read, resolved by the filesystem backend. "
             + alias_note("file_path", "path", word=False)
-            + " May be a single file path or a list of file paths. "
-            "When `glob=True`, the final path component may contain wildcards "
+            + " Single path or list. "
+            "With `glob=True` the final component may contain wildcards "
             "(`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are "
-            "supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) "
-            "are rejected."
+            "supported, all-wildcard patterns (e.g. `**`, `**/*`) are rejected."
         ),
     )
     offset: int | list[int] = Field(
@@ -117,8 +116,7 @@ class Params(BaseModel):
             "1-based first line to return. Defaults to 1. "
             + alias_note("offset", "line_offset", word=False)
             + " Negative reads from end. "
-            f"Max abs {MAX_LINES}. May be a scalar applied to all files, "
-            "or a list with one value per file path."
+            f"Max abs {MAX_LINES}."
         ),
     )
     limit: int | list[int] = Field(
@@ -127,28 +125,22 @@ class Params(BaseModel):
         description=(
             "Maximum number of lines to return. Defaults to 2000. "
             + alias_note("limit", "n_lines", word=False)
-            + f" Max {MAX_LINES}. May be a scalar applied to all files, "
-            "or a list with one value per file path."
+            + f" Max {MAX_LINES}."
         ),
     )
     max_char: int | list[int] = Field(
         default=16000,
         description=(
             "Maximum number of content characters to return (starting from "
-            "char_offset). Content characters exclude line-number prefixes, "
-            "so the window is identical regardless of show_line_numbers. "
-            "May be a scalar applied to all files, "
-            "or a list with one value per file path. "
-            "Default 16K balances completeness with context efficiency."
+            "char_offset). Excludes line-number prefixes, so the window is "
+            "identical regardless of show_line_numbers."
         ),
     )
     char_offset: int | list[int] = Field(
         default=0,
         description=(
             "Content-character offset to start returning from (excluding "
-            "line-number prefixes). "
-            "May be a scalar applied to all files, "
-            "or a list with one value per file path."
+            "line-number prefixes)."
         ),
     )
     glob: bool = Field(

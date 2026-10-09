@@ -49,7 +49,7 @@ class EditFile(CallableTool2[EditParams]):
         executor_cls = MODE_REGISTRY.get(params.resolved_mode)
         if executor_cls is None:
             return ToolError(
-                message=f"Invalid edit mode: {params.mode}",
+                message=f"Invalid edit mode: {params.mode}; use replace or sloppy.",
                 brief="Invalid edit mode",
             )
         return await executor_cls().execute(self._tool, params)

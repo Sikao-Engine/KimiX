@@ -52,9 +52,8 @@ class Params(BaseModel):
         default="",
         validation_alias=AliasChoices("code", "source_code", "file"),
         description=(
-            "Inline Python code to execute. " + accepts_alias_text("code", "file", word=False) + " "
-            "When the value ends with '.py' and the file exists, "
-            "it is treated as a file path."
+            "Python code or a .py file path to run; an existing '.py' value "
+            "is run as a file. " + accepts_alias_text("code", "file", word=False)
         ),
     )
     output_path: str | None = Field(
@@ -63,7 +62,7 @@ class Params(BaseModel):
     )
     timeout: int = timeout_field()
     mode: Literal["execute", "send", "interactive"] = mode_field(
-        execute_desc="run and wait for completion.",
+        execute_desc="run and wait.",
         send_desc="background, return task_id.",
         interactive_desc="persistent REPL, return task_id.",
     )
@@ -73,8 +72,8 @@ class Params(BaseModel):
     run_in_background: bool = Field(
         default=False,
         description=(
-            "Run the code in the background and return immediately with a "
-            "task_id (same as mode='send'). Poll with job_output."
+            "Alias for mode='send': run in background, return task_id immediately. "
+            "Poll with job_output."
         ),
     )
 
@@ -87,7 +86,7 @@ class Params(BaseModel):
     @model_validator(mode="after")
     def _validate_source(self) -> "Params":
         if not self.code and self.task_id is None and self.mode != "interactive":
-            raise ValueError("`code` must be provided (unless mode='interactive' or task_id is set).")
+            raise ValueError("`code` required (unless mode='interactive' or task_id set).")
         if self.task_id is not None and not self.code:
             raise ValueError("code cannot be empty when continuing a session via task_id")
         return self
@@ -216,9 +215,8 @@ class python(CallableTool2[Params]):  # noqa: N801
         if not match:
             return ""
         return (
-            f" Hint: the script ran with interpreter '{python_exe}'. If you installed "
-            "the package with plain 'pip install', it may have gone to a different "
-            f"environment. Retry with '{python_exe}' -m pip install {match.group(1)}."
+            f" Hint: retry with '{python_exe}' -m pip install {match.group(1)} "
+            "(plain 'pip install' may target a different environment)."
         )
 
     def _python_config(self) -> dict:
@@ -262,7 +260,7 @@ class python(CallableTool2[Params]):  # noqa: N801
             except OSError as e:
                 return ToolError(
                     output="",
-                    message=f"Failed to read script source for syntax check: {e}",
+                    message=f"Failed to read script for syntax check: {e}",
                     brief="Syntax check failed",
                 )
         else:
@@ -396,7 +394,6 @@ class python(CallableTool2[Params]):  # noqa: N801
             output="",
             message=(
                 f"Interactive Python started. task_id: `{task_id}`. "
-                "Use task_id to send commands and job_output to read results. "
                 "Send 'exit()' to close the session."
             ),
             brief="Interactive Python started",
@@ -425,7 +422,7 @@ class python(CallableTool2[Params]):  # noqa: N801
         else:
             return ToolError(
                 output="",
-                message="No code or file provided to execute.",
+                message="No code or file provided.",
                 brief="Missing code/file",
             )
 
@@ -486,7 +483,7 @@ class python(CallableTool2[Params]):  # noqa: N801
                     brief="Background task started",
                 )
             return ToolOk(
-                output=f"{source_label} saved to `{display_script_path}`. Running in background. task_id: `{task_id}`. Use `job_output` tool to retrieve output.",
+                output=f"{source_label} saved to `{display_script_path}`. Running in background. task_id: `{task_id}`. Use `job_output`.",
                 brief="Background task started"
             )
 
@@ -507,7 +504,7 @@ class python(CallableTool2[Params]):  # noqa: N801
                     return await self._format_session_result(
                         task_id, process_task.stream, params, output, "running",
                         wait_matched=wait_matched, elapsed_seconds=elapsed_seconds,
-                        message="Python code matched pattern and is still running.",
+                        message="Pattern matched; still running.",
                         brief="Pattern matched",
                     )
             else:
@@ -523,7 +520,7 @@ class python(CallableTool2[Params]):  # noqa: N801
             output = await _maybe_export_output_async(output)
             return ToolError(
                 output=output,
-                message="Python execution was cancelled.",
+                message="Cancelled.",
                 brief="Execution cancelled",
             )
 
@@ -532,7 +529,7 @@ class python(CallableTool2[Params]):  # noqa: N801
             output = await _maybe_export_output_async(output)
             return ToolError(
                 output=output,
-                message=f"{source_label} saved to `{display_script_path}`. Running in background. task_id: `{task_id}`. use `job_output`",
+                message=f"{source_label} saved to `{display_script_path}`. Running in background. task_id: `{task_id}`. Use `job_output`.",
                 brief="Timeout"
             )
 
@@ -570,7 +567,7 @@ class python(CallableTool2[Params]):  # noqa: N801
             return ToolOk(
                 output=f"{success_message}\n\n{output}",
                 message=_append_elapsed(success_message, spent_seconds),
-                brief=f"Python file executed: {display_script_path}",
+                brief=f"Python executed: {display_script_path}",
             )
 
         # Process output through token filter and summarization
@@ -610,7 +607,7 @@ class python(CallableTool2[Params]):  # noqa: N801
         return ToolOk(
             output=block,
             message=_append_elapsed(success_message, spent_seconds),
-            brief=f"Python {'file' if is_file_mode else 'code'} executed successfully"
+            brief=f"Python {'file' if is_file_mode else 'code'} executed"
         )
 
     def _compile_pattern(self, wait_for_pattern: str | None) -> re.Pattern[str] | ToolError:
@@ -679,7 +676,7 @@ class python(CallableTool2[Params]):  # noqa: N801
             task_id, stream, params, output, status,
             wait_matched=matched, elapsed_seconds=elapsed,
             message=(
-                f"Data sent to `{task_id}`. Status: {status}."
+                f"Sent to `{task_id}`. Status: {status}."
                 + self._module_not_found_hint(output, self._resolve_python(params))
             ),
             brief="Data sent and output retrieved",

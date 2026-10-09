@@ -31,7 +31,7 @@ from gate_library_policy import scan  # noqa: E402
 
 def test_gate_library_policy_has_no_unwaived_hits() -> None:
     hits, waived, unparsable = scan(
-        ["kimi-cli/src/kimi_cli/tools", "src/kimix/tools"],
+        [str(REPO_ROOT / "kimi-cli/src/kimi_cli/tools"), str(REPO_ROOT / "src/kimix/tools")],
         REPO_ROOT / "tools" / "library_policy_allowlist.txt",
     )
     assert unparsable == 0

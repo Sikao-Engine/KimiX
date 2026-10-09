@@ -142,8 +142,8 @@ def test_mcp_tool_call(tmp_path) -> None:
                             "loading": True,
                             "connected": 0,
                             "total": 1,
-                            "tools": 0,
-                            "servers": [{"name": "test", "status": "connecting", "tools": [], "resources": [], "prompts": []}],
+                            "tools": "<N>",
+                            "servers": [{"name": "test", "status": "<STATUS>", "tools": ["<TOOL>"], "resources": [], "prompts": []}],
                         },
                     },
                 },
@@ -229,7 +229,7 @@ def test_mcp_tool_call(tmp_path) -> None:
                 {
                     "method": "event",
                     "type": "LLMToolsSnapshot",
-                    "payload": {"hash": "a6db3ded174d3279f522d4443c45106c68c9acda0d487a7e20a87ea115132c71", "tools": [
+                    "payload": {"hash": "145fc19473ac535eb6baa90d0a33571814389fd3bb635c9a954f1b833524cd47", "tools": [
     {
         "name": "subagent",
         "description": """\
@@ -284,49 +284,23 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
         },
     },
     {   'name': 'todo_list',
-        'description': 'Read or write the todo plan — one tool, one item shape, every operation.\n'
-                       '\n'
-                       'Item shape (all modes): `{title, status?, notes?, children?}` plus the edit '
-                       'keys `parent`, `rename_to`, `complete`. `title` is the one short imperative '
-                       'line that identifies the item and the only required key; `notes` is optional '
-                       'detail (an item of only `notes` has no identity).\n'
-                       '\n'
-                       'Dispatch:\n'
-                       '- `todos` omitted → read the current tree.\n'
-                       "- mode='merge' (default) → upsert each item: an existing title patches it in "
-                       'place (omitted fields keep their value), an unknown title creates it. `parent` '
-                       "/ top-level `scope` pick the sub-tree ('' = root).\n"
-                       "- mode='replace' → the list IS the tree (children included); needs all "
-                       'existing todos done unless force=True.\n'
-                       "- mode='clear' → empty the tree (all-done guard unless force=True).\n"
-                       '\n'
-                       'Near-duplicate titles are treated as the same task, not a new one: an incoming '
-                       'title that differs from an existing one only in numbering, punctuation, case '
-                       "or word order hits the conflict policy — on_conflict='error' (default) refuses "
-                       'the call and names the existing title plus the exact payload to send instead; '
-                       "'reuse' patches that item; 'append' really adds a second one.\n"
-                       '\n'
-                       'Invariants: exactly one item in_progress (auto_fix=True demotes earlier ones, '
-                       'keeping the last listed); done items never move back to pending/in_progress '
-                       'unless force=True; done items dropped by replace/clear are archived.',
+        'description': """\
+Read or write the todo plan — one tool, one item shape.
+
+Item: `{title, status?, notes?, children?}` + edit keys `parent`, `rename_to`, `complete`. `title` is the only required key (one short imperative line) and the item's identity; `notes` is optional detail.
+
+Dispatch:
+- `todos` omitted → read the current tree.
+- mode='merge' (default) → upsert each item: an existing title patches it in place (omitted fields keep their value), an unknown title creates it. `parent` / top-level `scope` pick the sub-tree ('' = root).
+- mode='replace' → the list IS the whole tree (children included); needs all existing todos done unless force=True.
+- mode='clear' → empty the tree (all-done guard unless force=True).
+
+A near-duplicate title (differs only in numbering, punctuation, case or word order) is the same task, not a new one — on_conflict='error' (default) refuses the call and names the existing title plus the exact payload to send; 'reuse' patches it; 'append' adds a second.
+
+Invariants: exactly one in_progress (auto_fix demotes earlier ones, keeping the last); done items never move back to pending/in_progress unless force; done items dropped by replace/clear are archived.\
+""",
         'parameters': {   'additionalProperties': False,
-                          'properties': {   'todos': {   'description': 'The items to write; omit to '
-                                                                        'READ the tree. In the default '
-                                                                        "mode='merge' this is an "
-                                                                        'upsert batch — send only the '
-                                                                        'items you mean to touch, each '
-                                                                        'with `title` plus any of '
-                                                                        'status / notes / children / '
-                                                                        'rename_to / parent / '
-                                                                        'complete: an existing title '
-                                                                        'is patched, an unknown one is '
-                                                                        "created. In mode='replace' "
-                                                                        'send the COMPLETE tree '
-                                                                        'instead. A single object, a '
-                                                                        'bare title string or a JSON '
-                                                                        'string of those forms also '
-                                                                        'work. Accepts `todos` or '
-                                                                        '`items`.',
+                          'properties': {   'todos': {   'description': "The items to write; omit to READ the tree. mode='merge' upserts them: send only the items you mean to touch, each with `title` plus any of status / notes / children / rename_to / parent / complete (existing title patched, unknown created). In mode='replace' send the COMPLETE tree instead. A single object, a bare title string or a JSON string of those forms also work. Accepts `todos` or `items`.",
                                                          'items': {   'additionalProperties': False,
                                                                       'description': 'One todo item.\n'
                                                                                      '\n'
@@ -351,45 +325,7 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                                                                                      'ignored by a '
                                                                                      'whole-tree '
                                                                                      'write.',
-                                                                      'properties': {   'title': {   'description': 'Required. '
-                                                                                                                    'The '
-                                                                                                                    'task '
-                                                                                                                    'title: '
-                                                                                                                    'one '
-                                                                                                                    'short '
-                                                                                                                    'imperative '
-                                                                                                                    'line, '
-                                                                                                                    'and '
-                                                                                                                    'the '
-                                                                                                                    "item's "
-                                                                                                                    'identity '
-                                                                                                                    '— '
-                                                                                                                    "mode='merge' "
-                                                                                                                    'matches '
-                                                                                                                    'items '
-                                                                                                                    'by '
-                                                                                                                    'it '
-                                                                                                                    'and '
-                                                                                                                    '`parent`/`scope` '
-                                                                                                                    'look '
-                                                                                                                    'items '
-                                                                                                                    'up '
-                                                                                                                    'by '
-                                                                                                                    'it, '
-                                                                                                                    'so '
-                                                                                                                    'it '
-                                                                                                                    'must '
-                                                                                                                    'always '
-                                                                                                                    'be '
-                                                                                                                    'sent. '
-                                                                                                                    'Accepts '
-                                                                                                                    '`title`, '
-                                                                                                                    '`content`, '
-                                                                                                                    '`task`, '
-                                                                                                                    '`todo`, '
-                                                                                                                    '`item` '
-                                                                                                                    'or '
-                                                                                                                    '`name`.',
+                                                                      'properties': {   'title': {   'description': "Required. The task title: one short imperative line; the item's identity — mode='merge' matches and `parent`/`scope` look up by it, so always send it. Accepts `title`, `content`, `task`, `todo`, `item` or `name`.",
                                                                                                      'maxLength': 65536,
                                                                                                      'minLength': 1,
                                                                                                      'type': 'string'},
@@ -421,64 +357,8 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                                                                                                                       'type': 'string'},
                                                                                                                   {   'type': 'null'}],
                                                                                                      'default': None,
-                                                                                                     'description': 'Optional '
-                                                                                                                    'supporting '
-                                                                                                                    'detail '
-                                                                                                                    '(evidence, '
-                                                                                                                    'file '
-                                                                                                                    'paths, '
-                                                                                                                    'findings). '
-                                                                                                                    'Not '
-                                                                                                                    'the '
-                                                                                                                    'title '
-                                                                                                                    '— '
-                                                                                                                    'an '
-                                                                                                                    'item '
-                                                                                                                    'with '
-                                                                                                                    'only '
-                                                                                                                    '`notes` '
-                                                                                                                    'has '
-                                                                                                                    'no '
-                                                                                                                    'identity, '
-                                                                                                                    'so '
-                                                                                                                    'always '
-                                                                                                                    'send '
-                                                                                                                    '`title` '
-                                                                                                                    'too. '
-                                                                                                                    'Omit '
-                                                                                                                    'it '
-                                                                                                                    '(or '
-                                                                                                                    'send '
-                                                                                                                    '"") '
-                                                                                                                    'to '
-                                                                                                                    'keep '
-                                                                                                                    'the '
-                                                                                                                    'current '
-                                                                                                                    'notes.'},
-                                                                                        'children': {   'description': 'Sub-todos '
-                                                                                                                       'of '
-                                                                                                                       'this '
-                                                                                                                       'item; '
-                                                                                                                       'same '
-                                                                                                                       'shape, '
-                                                                                                                       'any '
-                                                                                                                       'depth. '
-                                                                                                                       'Leave '
-                                                                                                                       'empty '
-                                                                                                                       'for '
-                                                                                                                       'a '
-                                                                                                                       'leaf. '
-                                                                                                                       'A '
-                                                                                                                       'bare '
-                                                                                                                       'title '
-                                                                                                                       'string '
-                                                                                                                       'is '
-                                                                                                                       'accepted '
-                                                                                                                       'and '
-                                                                                                                       'means '
-                                                                                                                       'a '
-                                                                                                                       'pending '
-                                                                                                                       'item.',
+                                                                                                     'description': 'Optional supporting detail (evidence, file paths, findings). Not the title — an item of only `notes` has no identity, so always send `title` too. Omit it (or send "") to keep current notes.'},
+                                                                                        'children': {   'description': "Sub-todos; same shape, any depth. Leave empty for a leaf. A bare title string is accepted and means a pending item.",
                                                                                                         'items': {   'additionalProperties': False,
                                                                                                                      'description': 'One '
                                                                                                                                     'todo '
@@ -581,30 +461,7 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                                                                                         'parent': {   'anyOf': [   {   'type': 'string'},
                                                                                                                    {   'type': 'null'}],
                                                                                                       'default': None,
-                                                                                                      'description': 'Scope '
-                                                                                                                     'this '
-                                                                                                                     'item '
-                                                                                                                     'to '
-                                                                                                                     'the '
-                                                                                                                     'children '
-                                                                                                                     'of '
-                                                                                                                     'the '
-                                                                                                                     'named '
-                                                                                                                     'todo '
-                                                                                                                     '(both '
-                                                                                                                     'its '
-                                                                                                                     'lookup '
-                                                                                                                     'and '
-                                                                                                                     'its '
-                                                                                                                     'creation). '
-                                                                                                                     '"" '
-                                                                                                                     '= '
-                                                                                                                     'root '
-                                                                                                                     'scope. '
-                                                                                                                     'Overrides '
-                                                                                                                     'the '
-                                                                                                                     'top-level '
-                                                                                                                     '`scope`.'},
+                                                                                                      'description': 'Scope this item to children of the named todo (its lookup and creation). "" = root scope. Overrides the top-level `scope`.'},
                                                                                         'rename_to': {   'anyOf': [   {   'type': 'string'},
                                                                                                                       {   'type': 'null'}],
                                                                                                          'default': None,
@@ -628,27 +485,7 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                                                                                                                         'is '
                                                                                                                         'rejected.'},
                                                                                         'complete': {   'default': False,
-                                                                                                        'description': 'Mark '
-                                                                                                                       'this '
-                                                                                                                       'item '
-                                                                                                                       'and '
-                                                                                                                       'its '
-                                                                                                                       'whole '
-                                                                                                                       'sub-tree '
-                                                                                                                       'done '
-                                                                                                                       'in '
-                                                                                                                       'one '
-                                                                                                                       'call. '
-                                                                                                                       'Not '
-                                                                                                                       'combined '
-                                                                                                                       'with '
-                                                                                                                       'an '
-                                                                                                                       'explicit '
-                                                                                                                       'pending/in_progress '
-                                                                                                                       'status '
-                                                                                                                       'or '
-                                                                                                                       'with '
-                                                                                                                       '`children`.',
+                                                                                                        'description': "Mark this item and its whole sub-tree done in one call. Not combined with a pending/in_progress status or with `children`.",
                                                                                                         'type': 'boolean'},
                                                                                         'fuzzy': {   'default': True,
                                                                                                      'description': 'Per-item '
@@ -670,69 +507,31 @@ Explore Agent — preferred for read-only codebase research. Use when you need >
                                                                       'type': 'object'},
                                                          'type': 'array'},
                                             'mode': {   'default': 'merge',
-                                                        'description': "'merge' (default) upserts the "
-                                                                       "given items; 'replace' makes "
-                                                                       'the given list the whole tree '
-                                                                       'and needs every existing todo '
-                                                                       'done unless force=True; '
-                                                                       '"clear" empties the tree (same '
-                                                                       'guard).',
+                                                        'description': "'merge' (default) upserts the given items; 'replace' makes the list the whole tree and needs every existing todo done unless force=True; 'clear' empties the tree (same guard).",
                                                         'enum': ['merge', 'replace', 'clear'],
                                                         'type': 'string'},
                                             'scope': {   'anyOf': [   {'type': 'string'},
                                                                       {'type': 'null'}],
                                                          'default': None,
-                                                         'description': 'Restrict this call to the '
-                                                                        'children of the named todo; '
-                                                                        '"" means the root. An item\'s '
-                                                                        'own `parent` wins.'},
+                                                         'description': 'Restrict this call to children of the named todo; "" = root. An item\'s own `parent` wins.'},
                                             'on_conflict': {   'default': 'error',
-                                                               'description': 'What to do when an '
-                                                                              'incoming title is a '
-                                                                              'near-duplicate of an '
-                                                                              'existing one (same '
-                                                                              'words, different '
-                                                                              'numbering / punctuation '
-                                                                              "/ case): 'error' "
-                                                                              '(default) refuses the '
-                                                                              'call and names the '
-                                                                              'existing title plus the '
-                                                                              'exact payload to send '
-                                                                              "instead; 'reuse' "
-                                                                              'patches that item; '
-                                                                              "'append' really adds a "
-                                                                              'second one.',
+                                                               'description': "What to do when an incoming title is a near-duplicate of an existing one (same words, different numbering / punctuation / case): 'error' (default) refuses and names the existing title plus the exact payload to send; 'reuse' patches it; 'append' adds a second one.",
                                                                'enum': ['error', 'reuse', 'append'],
                                                                'type': 'string'},
                                             'fuzzy': {   'default': True,
-                                                         'description': 'When True (default) a title '
-                                                                        'that misses exactly may still '
-                                                                        'match the nearest existing '
-                                                                        'todo; False requires exact '
-                                                                        'titles.',
+                                                         'description': "True (default): a title that misses exactly may still match the nearest existing todo; False requires exact titles.",
                                                          'type': 'boolean'},
                                             'force': {   'default': False,
-                                                         'description': 'Bypass the guards: the '
-                                                                        'all-done requirement of '
-                                                                        'replace/clear, reopening a '
-                                                                        'done item, renaming onto one, '
-                                                                        'and the single-in_progress '
-                                                                        'and regression checks.',
+                                                         'description': "Bypass guards: replace/clear all-done, reopening a done item, rename collisions, and the single-in_progress / regression checks.",
                                                          'type': 'boolean'},
                                             'auto_fix': {   'default': True,
-                                                            'description': 'When True (default) and '
-                                                                           'several items are '
-                                                                           'in_progress, the last '
-                                                                           'listed one is kept and '
-                                                                           'earlier ones are marked '
-                                                                           'done; False errors '
-                                                                           'instead.',
+                                                            'description': "True (default): with several in_progress, keep the last listed and mark earlier ones done; False errors instead.",
                                                             'type': 'boolean'}},
                           'type': 'object'}}, {
     "name": "read",
     "description": """\
 Read a UTF-8 text file and return line-numbered content.
-file_path: single path or list; offset/limit: scalar or one per file. Lines over 4000 chars truncated; max 5000 lines per file; bytes scale with context (≥102400, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to 32 files. Prefer glob/grep to find/search, then read.
+file_path: single path or list. offset/limit/max_char/char_offset: scalar, or one value per file in a list read. Lines over 4000 chars truncated; max 5000 lines per file; bytes scale with context (≥102400, up to 1MiB). Negative offset = tail mode. A file_path glob (e.g. ./*.md) reads up to 32 files. Prefer glob/grep to find/search, then read.
 
 Rich formats (one per call; scalar params apply to every file in a multi-file read):
 - Archives (zip/jar/war/apk/whl/cbz, tar/tgz/tbz2/txz, bare gz/bz2/xz): read data.zip lists up to 500 root entries; archive_member="src/main.py" reads one member as text. Traversal (.., absolute, backslash) rejected; binary members get an explicit notice.
@@ -749,7 +548,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"type": "string"},
                     {"items": {"type": "string"}, "type": "array"},
                 ],
-                "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. May be a single file path or a list of file paths. When `glob=True`, the final path component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, only unsafe all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
+                "description": "Path to read, resolved by the filesystem backend. Accepts `file_path` or `path`. Single path or list. With `glob=True` the final component may contain wildcards (`*`, `?`, `[...]`); recursive patterns like `src/**/*.ts` are supported, all-wildcard patterns (e.g. `**`, `**/*`) are rejected.",
             },
             "offset": {
                 "anyOf": [
@@ -757,7 +556,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"items": {"type": "integer"}, "type": "array"},
                 ],
                 "default": 1,
-                "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000. May be a scalar applied to all files, or a list with one value per file path.",
+                "description": "1-based first line to return. Defaults to 1. Accepts `offset` or `line_offset`. Negative reads from end. Max abs 5000.",
             },
             "limit": {
                 "anyOf": [
@@ -765,7 +564,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"items": {"type": "integer"}, "type": "array"},
                 ],
                 "default": 2000,
-                "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000. May be a scalar applied to all files, or a list with one value per file path.",
+                "description": "Maximum number of lines to return. Defaults to 2000. Accepts `limit` or `n_lines`. Max 5000.",
             },
             "max_char": {
                 "anyOf": [
@@ -773,7 +572,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"items": {"type": "integer"}, "type": "array"},
                 ],
                 "default": 16000,
-                "description": "Maximum number of content characters to return (starting from char_offset). Content characters exclude line-number prefixes, so the window is identical regardless of show_line_numbers. May be a scalar applied to all files, or a list with one value per file path. Default 16K balances completeness with context efficiency.",
+                "description": "Maximum number of content characters to return (starting from char_offset). Excludes line-number prefixes, so the window is identical regardless of show_line_numbers.",
             },
             "char_offset": {
                 "anyOf": [
@@ -781,7 +580,7 @@ Rich formats (one per call; scalar params apply to every file in a multi-file re
                     {"items": {"type": "integer"}, "type": "array"},
                 ],
                 "default": 0,
-                "description": "Content-character offset to start returning from (excluding line-number prefixes). May be a scalar applied to all files, or a list with one value per file path.",
+                "description": "Content-character offset to start returning from (excluding line-number prefixes).",
             },
             "glob": {
                 "default": False,
@@ -860,7 +659,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
         "parameters": {
             "properties": {
                 "pattern": {
-                    "description": 'Glob pattern to match file paths against (e.g. `**/*.ts`, `src/**/*.test.js`). A pattern with no "/" matches the basename at any depth, so `*` and `*.ts` both search the whole tree; include a separator to anchor the depth. Unsafe recursive patterns (``**``, ``**/*``, ``**/**``, etc.) are forbidden.',
+                    "description": 'Glob pattern to match file paths against (e.g. `**/*.ts`). A pattern with no "/" matches the basename at any depth (`*` and `*.ts` search the whole tree); include a separator to anchor depth. All-wildcard recursive patterns (``**``, ``**/*``) are forbidden.',
                     "type": "string",
                 },
                 "path": {
@@ -875,7 +674,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
                 },
                 "respect_gitignore": {
                     "default": True,
-                    "description": "When True (default), skip files matched by .gitignore rules. When False, include all files regardless of .gitignore settings.",
+                    "description": "Default True: skip .gitignore-matched files. False: include all.",
                     "type": "boolean",
                 },
                 "include_ignored": {
@@ -885,18 +684,18 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
                 },
                 "verbose": {
                     "default": False,
-                    "description": "When True, include file size, modification time, and type for each match.",
+                    "description": "Include size, mtime, and type per match.",
                     "type": "boolean",
                 },
                 "timeout": {
                     "default": 10,
-                    "description": "Maximum time in seconds to wait for the search to complete.",
+                    "description": "Max seconds to wait for the search.",
                     "minimum": 1,
                     "type": "integer",
                 },
                 "fold": {
                     "default": 500,
-                    "description": "Maximum number of result lines in the output. Longer results are head+tail folded with an omitted-count marker and the total is reported in `message`. 0 = unlimited (the MAX_MATCHES collection cap still applies).",
+                    "description": "Max result lines to show. Longer results are head+tail folded with an omitted-count marker (total in `message`). 0 = unlimited; the MAX_MATCHES collection cap still applies.",
                     "minimum": 0,
                     "type": "integer",
                 },
@@ -907,7 +706,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
     },
     {
         "name": "grep",
-        "description": "Search file contents with a ripgrep regular expression. Returns matching lines with line numbers, grouped by file. Returns the first 250 matches inline; a capped result reports where the complete match list was saved. Use read on a matched file for surrounding context. Multiline patterns match across line boundaries.",
+        "description": "Search file contents with a ripgrep regular expression. Returns matching lines with line numbers, grouped by file. Use read on a matched file for surrounding context. Multiline patterns match across line boundaries.",
         "parameters": {
             "properties": {
                 "pattern": {
@@ -1018,7 +817,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
     },
     {
         "name": "write",
-        "description": "Create or fully replace a UTF-8 text file. Overwriting an existing auto-generated file (e.g. zz_generated.*, *.pb.go, *_pb2.py, *.gen.ts, or files with a '@generated' / 'Code generated by …' header) is refused by default; pass allow_auto_generated=True to override.",
+        "description": "Create or fully replace a UTF-8 text file. Overwriting an existing auto-generated file (zz_generated.*, *.pb.go, *_pb2.py, *.gen.ts, or a '@generated' / 'Code generated by …' header) is refused; pass allow_auto_generated=True to override.",
         "parameters": {
             "properties": {
                 "file_path": {
@@ -1038,27 +837,27 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
                         {"type": "null"},
                     ],
                     "default": None,
-                    "description": "The wider sandbox mode this file operation needs (`workspace-write` or `danger-full-access`). Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
+                    "description": "The wider sandbox mode this file operation needs. Only valid as a one-shot retry of an operation the sandbox just denied; requires justification and user approval.",
                 },
                 "justification": {
                     "anyOf": [{"type": "string"}, {"type": "null"}],
                     "default": None,
-                    "description": "Required with sandbox_permissions: one sentence for the user explaining why this exact file operation needs the wider access.",
+                    "description": "Required with sandbox_permissions: one sentence for the user on why this operation needs the wider access.",
                 },
                 "mode": {
                     "default": "overwrite",
-                    "description": "Write mode: overwrite or append.",
+                    "description": "Overwrite or append.",
                     "enum": ["overwrite", "append"],
                     "type": "string",
                 },
                 "auto_fix_json": {
                     "default": True,
-                    "description": "When True (default), attempt to repair broken JSON before writing. When False, fail with a format error if JSON is invalid.",
+                    "description": "Repair broken JSON before writing; False fails on invalid JSON.",
                     "type": "boolean",
                 },
                 "mkdir": {
                     "default": True,
-                    "description": "When True (default), automatically create parent directories. When False, fail if the parent directory does not exist.",
+                    "description": "Create missing parent directories; False fails if the parent does not exist.",
                     "type": "boolean",
                 },
                 "show_diff": {
@@ -1068,12 +867,12 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
                 },
                 "allow_conflicts": {
                     "default": False,
-                    "description": "When True, allow writing content that still contains conflict markers (opt-out of the conflict-marker write guard). Default False refuses to leave unresolved markers in a file.",
+                    "description": "Allow writing content that still contains conflict markers (bypasses the marker guard); default refuses.",
                     "type": "boolean",
                 },
                 "allow_auto_generated": {
                     "default": False,
-                    "description": "When True, allow overwriting files that appear to be auto-generated (opt-out of the auto-generated-file guard). Default False refuses to modify generated files.",
+                    "description": "Allow overwriting files that appear to be auto-generated (bypasses the generated-file guard); default refuses.",
                     "type": "boolean",
                 },
             },
@@ -1083,7 +882,7 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
     },
     {
         "name": "edit",
-        "description": "Edit an existing UTF-8 text file by replacing literal text. Files that appear to be auto-generated (e.g. zz_generated.*, *.pb.go, *_pb2.py, or files with a '@generated' / 'Code generated by …' header) are refused by default; pass allow_auto_generated=True to override.",
+        "description": "Edit an existing UTF-8 text file by replacing literal text. Auto-generated files (e.g. zz_generated.*, *.pb.go, *_pb2.py, or an '@generated' / 'Code generated by …' header) are refused by default; pass allow_auto_generated=True to override.",
         "parameters": {
             "description": "Parameters for the multi-mode edit tool.",
             "properties": {
@@ -1214,12 +1013,12 @@ Windows: `path` accepts native (`C:/Users/foo`) and POSIX-style (`/c/Users/foo`)
                 },
                 "allow_conflicts": {
                     "default": False,
-                    "description": "When True, allow editing files that contain conflict markers.",
+                    "description": "Allow editing files that contain unresolved conflict markers.",
                     "type": "boolean",
                 },
                 "allow_auto_generated": {
                     "default": False,
-                    "description": "When True, allow editing files that appear to be auto-generated (opt-out of the auto-generated-file guard). Default False refuses to modify generated files.",
+                    "description": "Allow editing files that appear to be auto-generated (opt-out of the auto-generated-file guard).",
                     "type": "boolean",
                 },
                 "resolved_mode": {
@@ -1324,7 +1123,7 @@ No description provided.\
                 {
                     "method": "event",
                     "type": "LLMRequest",
-                    "payload": {"kind": "loop", "provider": "scripted_echo", "model": "scripted_echo", "thinking_effort": None, "temperature": None, "top_p": None, "max_tokens": None, "system_prompt_hash": "<SYSTEM_PROMPT_HASH>", "system_prompt": "<SYSTEM_PROMPT>", "tools_hash": "a6db3ded174d3279f522d4443c45106c68c9acda0d487a7e20a87ea115132c71", "message_count": 1, "turn_step": 1, "attempt": 1, "dropped_count": None},
+                    "payload": {"kind": "loop", "provider": "scripted_echo", "model": "scripted_echo", "thinking_effort": None, "temperature": None, "top_p": None, "max_tokens": None, "system_prompt_hash": "<SYSTEM_PROMPT_HASH>", "system_prompt": "<SYSTEM_PROMPT>", "tools_hash": "145fc19473ac535eb6baa90d0a33571814389fd3bb635c9a954f1b833524cd47", "message_count": 1, "turn_step": 1, "attempt": 1, "dropped_count": None},
                 },
                 {"method": "event", "type": "StepBegin", "payload": {"n": 2}},
                 {
@@ -1356,7 +1155,7 @@ No description provided.\
         "max_tokens": None,
         "system_prompt_hash": "<SYSTEM_PROMPT_HASH>",
         "system_prompt": "<SYSTEM_PROMPT>",
-        "tools_hash": "a6db3ded174d3279f522d4443c45106c68c9acda0d487a7e20a87ea115132c71",
+        "tools_hash": "145fc19473ac535eb6baa90d0a33571814389fd3bb635c9a954f1b833524cd47",
         "message_count": 3,
         "turn_step": 2,
         "attempt": 1,

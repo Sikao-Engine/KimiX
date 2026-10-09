@@ -78,14 +78,14 @@ class EditParseGuard:
                 display = self._display_path(snapshot.path)
                 if repair:
                     notes.append(
-                        f"Note: {display} stopped parsing after this edit; an automatic syntax repair "
-                        f"({repair.model}) was applied on top:\n{repair.diff}\n"
-                        "Review the repaired region; adjust it if the repair guessed wrong."
+                        f"Note: {display} stopped parsing after this edit; "
+                        f"an automatic syntax repair ({repair.model}) applied:\n{repair.diff}\n"
+                        "Review the repaired region in case the repair guessed wrong."
                     )
                 else:
                     notes.append(
                         f"Warning: {display} no longer parses after this edit. "
-                        "The change was applied; re-read the edited region and fix the syntax, "
+                        "Applied anyway; re-read the edited region and fix the syntax, "
                         "or revert if unintended."
                     )
             except Exception as e:
@@ -93,7 +93,7 @@ class EditParseGuard:
                 display = self._display_path(path)
                 notes.append(
                     f"Warning: {display} no longer parses after this edit. "
-                    "The change was applied; re-read the edited region and fix the syntax, "
+                    "Applied anyway; re-read the edited region and fix the syntax, "
                     "or revert if unintended."
                 )
         self._parse_failures.clear()

@@ -1,4 +1,4 @@
-"""G4 gate probes for the plan tools: K10 WritePlan, K11 ReadPlan, K12 EditPlan.
+"""G4 gate probes for the plan tools: K10 write_plan, K11 read_plan, K12 edit_plan.
 
 `tests/test_note.py` already covers the mainstream paths (overwrite/append, parent
 dirs, file-not-found, MAX_LINES/MAX_BYTES). This suite pins the plan §4.3 K10-K12
@@ -24,11 +24,11 @@ from pydantic import ValidationError
 import kimix.tools.note as note
 from kimix.tools.note import (
     MAX_LINES,
-    EditPlan,
+    edit_plan,
     EditPlanParams,
-    ReadPlan,
+    read_plan,
     ReadPlanParams,
-    WritePlan,
+    write_plan,
     WritePlanParams,
 )
 
@@ -53,7 +53,7 @@ def plan_path(session: MagicMock) -> Path:
 
 
 # --------------------------------------------------------------------------- #
-# K10 WritePlan
+# K10 write_plan
 # --------------------------------------------------------------------------- #
 
 
@@ -75,12 +75,12 @@ def test_writepan_content_is_required() -> None:
 def test_writepan_raises_skip_this_tool_when_disabled() -> None:
     note._enable_plan = False
     with pytest.raises(SkipThisTool):
-        WritePlan(session=MagicMock(spec=Session, custom_data={}))
+        write_plan(session=MagicMock(spec=Session, custom_data={}))
 
 
 async def test_writepan_missing_plan_path_is_an_error(session: MagicMock) -> None:
     session.custom_data = {}
-    result = await WritePlan(session=session)(WritePlanParams(content="x"))
+    result = await write_plan(session=session)(WritePlanParams(content="x"))
     assert result.is_error
     assert "plan_writing_path" in result.message
     assert result.brief == "invalid tool."
@@ -89,7 +89,7 @@ async def test_writepan_missing_plan_path_is_an_error(session: MagicMock) -> Non
 async def test_writepan_overwrite_truncates_and_append_extends(
     session: MagicMock, plan_path: Path
 ) -> None:
-    tool = WritePlan(session=session)
+    tool = write_plan(session=session)
     await tool(WritePlanParams(content="first\n"))
     # NOTE: the plan file is opened in text mode, so on Windows the bytes carry
     # CRLF.  read_text() (universal newlines) pins the logical content the model
@@ -106,20 +106,20 @@ async def test_writepan_overwrite_truncates_and_append_extends(
 async def test_writepan_creates_parent_directories(session: MagicMock) -> None:
     nested = Path(session.custom_data["plan_writing_path"]).parent / "a" / "b" / "plan.md"
     session.custom_data["plan_writing_path"] = nested
-    result = await WritePlan(session=session)(WritePlanParams(content="deep\n"))
+    result = await write_plan(session=session)(WritePlanParams(content="deep\n"))
     assert not result.is_error
     assert nested.read_text(encoding="utf-8") == "deep\n"
 
 
 async def test_writepan_success_sets_plan_called(session: MagicMock) -> None:
     session.custom_data.pop("plan_called", None)
-    result = await WritePlan(session=session)(WritePlanParams(content="x"))
+    result = await write_plan(session=session)(WritePlanParams(content="x"))
     assert not result.is_error
     assert session.custom_data.get("plan_called") is True
 
 
 # --------------------------------------------------------------------------- #
-# K11 ReadPlan
+# K11 read_plan
 # --------------------------------------------------------------------------- #
 
 
@@ -149,27 +149,27 @@ def test_readplan_numeric_field_boundaries() -> None:
 
 async def test_readplan_negative_one_reads_the_tail(session: MagicMock, plan_path: Path) -> None:
     plan_path.write_text("l1\nl2\nl3\n", encoding="utf-8")
-    result = await ReadPlan(session=session)(ReadPlanParams(line_offset=-1))
+    result = await read_plan(session=session)(ReadPlanParams(line_offset=-1))
     assert not result.is_error
     assert "l3" in result.output
 
 
 async def test_readplan_missing_file_is_an_error(session: MagicMock, plan_path: Path) -> None:
     assert not plan_path.exists()
-    result = await ReadPlan(session=session)(ReadPlanParams())
+    result = await read_plan(session=session)(ReadPlanParams())
     assert result.is_error
     assert plan_path.name in result.message
 
 
 async def test_readplan_missing_plan_path_is_an_error(session: MagicMock) -> None:
     session.custom_data = {}
-    result = await ReadPlan(session=session)(ReadPlanParams())
+    result = await read_plan(session=session)(ReadPlanParams())
     assert result.is_error
     assert "plan_writing_path" in result.message
 
 
 # --------------------------------------------------------------------------- #
-# K12 EditPlan
+# K12 edit_plan
 # --------------------------------------------------------------------------- #
 
 
@@ -191,7 +191,7 @@ def test_editplan_edit_is_required() -> None:
 
 
 def test_editplan_find_similar_finds_the_exact_line(session: MagicMock) -> None:
-    tool = EditPlan(session=session)
+    tool = edit_plan(session=session)
     assert tool._find_similar("hello world", "hello world\nunrelated\n", cutoff=100.0) == (
         "hello world"
     )
@@ -199,12 +199,12 @@ def test_editplan_find_similar_finds_the_exact_line(session: MagicMock) -> None:
 
 def test_editplan_find_similar_below_cutoff_returns_none(session: MagicMock) -> None:
     """Boundary: a 100-cutoff request must reject a 1-character-off target."""
-    tool = EditPlan(session=session)
+    tool = edit_plan(session=session)
     assert tool._find_similar("hello worl", "hello world\nunrelated\n", cutoff=100.0) is None
 
 
 def test_editplan_find_similar_above_cutoff_returns_the_line(session: MagicMock) -> None:
-    tool = EditPlan(session=session)
+    tool = edit_plan(session=session)
     assert tool._find_similar("hello worl", "hello world\nunrelated\n", cutoff=75.0) == (
         "hello world"
     )
@@ -212,14 +212,14 @@ def test_editplan_find_similar_above_cutoff_returns_the_line(session: MagicMock)
 
 def test_editplan_normalizes_crlf_only(session: MagicMock) -> None:
     """CRLF -> LF (documented). A lone CR is deliberately left alone (F-41)."""
-    tool = EditPlan(session=session)
+    tool = edit_plan(session=session)
     assert tool._normalize_line_endings("a\r\nb\r\n") == "a\nb\n"
     assert tool._normalize_line_endings("a\rb") == "a\rb"
 
 
 async def test_editplan_applies_an_exact_edit(session: MagicMock, plan_path: Path) -> None:
     plan_path.write_text("alpha\nbeta\n", encoding="utf-8")
-    result = await EditPlan(session=session)(EditPlanParams(edit={"old": "beta", "new": "gamma"}))
+    result = await edit_plan(session=session)(EditPlanParams(edit={"old": "beta", "new": "gamma"}))
     assert not result.is_error
     assert plan_path.read_text(encoding="utf-8") == "alpha\ngamma\n"
 
@@ -233,7 +233,7 @@ async def test_editplan_no_match_is_an_error_with_a_clear_brief(
     a behaviour that is not there.
     """
     plan_path.write_text("alpha\nbeta\n", encoding="utf-8")
-    result = await EditPlan(session=session)(
+    result = await edit_plan(session=session)(
         EditPlanParams(edit={"old": "zzzzzzzzzzzzzzzzzzzz", "new": "x"})
     )
     assert result.is_error
@@ -245,6 +245,6 @@ async def test_editplan_no_match_is_an_error_with_a_clear_brief(
 
 async def test_editplan_missing_plan_path_is_an_error(session: MagicMock) -> None:
     session.custom_data = {}
-    result = await EditPlan(session=session)(EditPlanParams(edit={"old": "a", "new": "b"}))
+    result = await edit_plan(session=session)(EditPlanParams(edit={"old": "a", "new": "b"}))
     assert result.is_error
     assert "plan_writing_path" in result.message

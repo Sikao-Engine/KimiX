@@ -82,7 +82,7 @@ High-level guide to `kimix.utils`, `kimix.base`, the full public API of `src/kim
 
 ## `kimix.tools` — Built-in Agent Tools
 
-`Agent` (subagent), `AgentList` (list_agents), `AgentClose` (interrupt_agent), `TaskOutput` (job_output), `BackgroundStream`, `Bash`/`Powershell`, `Run`, `FindStr`, `Mkdir`/`Rm`, `Python`, `SyntaxLint`/`MypyCheck`/`Cpplint`/`JsTsSyntaxCheck`, `Ocr`, `Docx2md`, `Pdf2md`, `ParserTool`, `WritePlan`/`ReadPlan`/`EditPlan`, `StoreSession`/`LoadSession`/`LsSession`, `fetch_url`/`fetch_to_markdown`, `Zip`/`Unzip`.
+`Agent` (subagent), `AgentList` (list_agents), `AgentClose` (interrupt_agent), `TaskOutput` (job_output), `BackgroundStream`, `Bash`/`Powershell`, `Run`, `FindStr`, `Mkdir`/`Rm`, `Python`, `SyntaxLint`/`MypyCheck`/`Cpplint`/`JsTsSyntaxCheck`, `Ocr`, `Docx2md`, `Pdf2md`, `ParserTool`, `write_plan`/`read_plan`/`edit_plan`, `StoreSession`/`LoadSession`/`LsSession`, `fetch_url`/`fetch_to_markdown`, `Zip`/`Unzip`.
 
 ## `kimix.cot` — Chain-of-Thought
 

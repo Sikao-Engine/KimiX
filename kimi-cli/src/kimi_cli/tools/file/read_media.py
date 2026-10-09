@@ -106,10 +106,9 @@ def _build_image_delivery_limit_error(
     return (
         f"Image is still too large to deliver after downsampling "
         f"({final_bytes} bytes over the {byte_budget}-byte budget, "
-        f"or over the {max_edge}px maximum edge). "
-        "The original image was not sent to the model. Do not retry the same file unchanged. "
-        "Use region to read a smaller crop, lower quality, or set max_dimension to create a "
-        "smaller copy first, then call read_image on the resulting file."
+        f"or over the {max_edge}px max edge). "
+        "The original was not sent; do not retry unchanged. Use region for a smaller crop, "
+        "lower quality, or max_dimension to shrink first, then read the copy."
     )
 
 
@@ -173,28 +172,23 @@ class Params(BaseModel):
     file_path: str = Field(
         validation_alias=AliasChoices("file_path", "path"),
         description="Path to the image file, resolved by the filesystem backend. "
-        "Relative paths resolve against the working directory; a path outside "
-        "the working directory must be absolute. Directories and text files "
-        "are not supported.",
+        "Relative paths resolve against the working directory; a path outside it must be absolute.",
     )
     region: Region | None = Field(
         default=None,
-        description="Images only: view just this rectangle of the image (original-image "
-        "pixel coordinates). Use after a downsampled full view to inspect fine detail — "
-        "a region within the size limits is delivered at full fidelity.",
+        description="Images only: view just this rectangle (original-image pixel "
+        "coordinates), delivered at full fidelity when within the size limits.",
     )
     region_pct: str | None = Field(
         default=None,
         description="Images only: region as percentages instead of pixels. "
-        "Format: 'x,y,width,height' where each is 0-100. "
-        "Example: '10,10,50,50' for the center half of the image. "
-        "Mutually exclusive with `region`.",
+        "Format: 'x,y,width,height', each 0-100. Mutually exclusive with `region`.",
     )
     full_resolution: bool | None = Field(
         default=None,
         description="Images only: skip the default downscaling and view at native "
-        "resolution. Fails with an explicit error when the payload would exceed the "
-        "per-image byte limit; use region for files that large.",
+        "resolution. Errors when the payload would exceed the per-image byte limit; "
+        "use region for files that large.",
     )
     info_only: bool = Field(
         default=False,
@@ -203,15 +197,14 @@ class Params(BaseModel):
     )
     max_dimension: int | None = Field(
         default=None,
-        description="Maximum width/height in pixels. If the image exceeds this, it is "
-        "downsampled. Default (None) uses the model's built-in limit.",
+        description="Maximum width/height in pixels; larger images are downsampled. "
+        "Default (None) uses the model's built-in limit.",
     )
     quality: int = Field(
         default=85,
         ge=1,
         le=100,
-        description="JPEG/WebP quality for compressed output (1-100). Higher = better "
-        "quality, larger size.",
+        description="JPEG/WebP compression quality for the output (higher = better, larger).",
     )
     auto_convert: bool = Field(
         default=True,
@@ -269,8 +262,7 @@ class ReadMediaFile(CallableTool2[Params]):
             return ToolError(
                 message=(
                     f"`{raw_path}` is not an absolute path. "
-                    "You must provide an absolute path to read a file "
-                    "outside the working directory."
+                    "Provide an absolute path to read a file outside the working directory."
                 ),
                 brief="Invalid path",
             )
@@ -556,11 +548,9 @@ class ReadMediaFile(CallableTool2[Params]):
             if file_type.kind == "unknown":
                 return ToolError(
                     message=(
-                        f"`{params.file_path}` seems not readable as an image or video file. "
-                        "You may need to read it with proper shell commands, Python tools "
-                        "or MCP tools if available. "
-                        "If you read/operate it with Python, you MUST ensure that any "
-                        "third-party packages are installed in a virtual environment (venv)."
+                        f"`{params.file_path}` is not a readable image or video file. "
+                        "Read it with shell/Python/MCP tools instead; install any required "
+                        "third-party packages in a venv."
                     ),
                     brief="File not readable",
                 )

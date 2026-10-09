@@ -26,7 +26,7 @@ See `src/kimix/utils/prompt.py` and `src/kimix/cli_impl/commands.py`.
 
 1. **Create Planner session**: Using `agent_planner.json` config and the `TodoMaker` system prompt.
 2. **Specify plan file**: If no file path is provided, a `plan_<uuid>.md` is auto-generated under `.kimix_cache/` in the current directory; if the specified file already exists, it is deleted first.
-3. **Generate plan**: The Planner reads the requirement, breaks the task into steps, and writes the plan file via the `WritePlan` tool. Generation retries up to **3 times** to ensure the plan is written correctly.
+3. **Generate plan**: The Planner reads the requirement, breaks the task into steps, and writes the plan file via the `write_plan` tool. Generation retries up to **3 times** to ensure the plan is written correctly.
 4. **Open for review**: After generation, the file is opened with the system default application for review.
 
 #### Phase 2: Review & Revision
@@ -38,7 +38,7 @@ After the plan is generated, a review loop begins:
   - Input `n` or anything else: enter the revision flow.
 - Revision prompt: `Please describe the changes you want (/quit to give up):`
   - Input `/quit`: abandon execution.
-  - Input specific feedback: the Planner updates the plan file using the `WritePlan` or `EditPlan` tools based on the feedback, then reopens it for review. The loop repeats until confirmed or abandoned.
+  - Input specific feedback: the Planner updates the plan file using the `write_plan` or `edit_plan` tools based on the feedback, then reopens it for review. The loop repeats until confirmed or abandoned.
 
 #### Phase 3: Execution & Review
 

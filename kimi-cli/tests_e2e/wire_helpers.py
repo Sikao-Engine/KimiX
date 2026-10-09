@@ -20,6 +20,9 @@ WIRE_COMMAND_ENV = "KIMI_E2E_WIRE_CMD"
 DEFAULT_TIMEOUT = 5.0
 _PATH_REPLACEMENTS: dict[str, str] = {}
 _RTK_TMP_RE = re.compile(r"\.kimix_cache[/\\]tmp_\d+")
+# Shell tool metadata embeds the wall-clock run time; scrub the float so
+# snapshots stay deterministic across runs.
+_SESSION_META_ELAPSED_RE = re.compile(r"^(elapsed_seconds: )\d+(?:\.\d+)$", re.MULTILINE)
 
 
 def repo_root() -> Path:
@@ -429,6 +432,7 @@ def normalize_value(value: Any, *, replacements: Mapping[str, str] | None = None
         value = _normalize_line_endings(value)
         value = _normalize_path_separators(value, active_replacements)
         value = _normalize_rtk_tmp_paths(value)
+        value = _normalize_session_metadata_elapsed(value)
         value = _normalize_echo_error_message(value)
         try:
             uuid.UUID(value)
@@ -505,6 +509,17 @@ def _normalize_rtk_tmp_paths(value: str) -> str:
     return _RTK_TMP_RE.sub("<rtk_tmp>", value)
 
 
+def _normalize_session_metadata_elapsed(value: str) -> str:
+    """Replace the volatile ``elapsed_seconds`` float in shell metadata blocks.
+
+    The shell tool's session metadata block reports the wall-clock duration of
+    the command, which differs on every run (e.g. ``0.11`` vs ``0.12``).
+    Normalize it to ``null`` so snapshots stay deterministic; the value itself
+    is covered by kimix-side unit tests.
+    """
+    return _SESSION_META_ELAPSED_RE.sub(r"\1null", value)
+
+
 def _normalize_echo_error_message(value: str) -> str:
     if not value.startswith("Invalid echo DSL at line") and not value.startswith(
         "Unknown echo DSL kind"
@@ -526,7 +541,30 @@ def _scrub_volatile_payload(event_type: Any, payload: Any) -> Any:
     embed the current date/time (minute precision) and so differ on every
     test run.  Their content is covered by dedicated unit tests
     (e.g. ``test_system_prompt_stability.py``), so scrub them here.
+
+    The in-flight ``StatusUpdate.mcp_status`` (``loading=True``) is racy: the
+    first wire frame may be captured either before or after MCP discovery
+    completes, so its tool counts and per-server tool lists / status differ
+    run to run.  Normalize those to stable placeholders; the settled
+    ``loading=False`` status is left intact for the assertion to cover.
     """
+    if event_type == "StatusUpdate" and isinstance(payload, dict):
+        mcp_status = payload.get("mcp_status")
+        if isinstance(mcp_status, dict) and mcp_status.get("loading") is True:
+            scrubbed = dict(payload)
+            status = dict(mcp_status)
+            status["tools"] = "<N>"
+            servers = []
+            for server in status.get("servers", []):
+                if isinstance(server, dict):
+                    s = dict(server)
+                    s["tools"] = ["<TOOL>"]
+                    s["status"] = "<STATUS>"
+                    servers.append(s)
+            status["servers"] = servers
+            scrubbed["mcp_status"] = status
+            return scrubbed
+        return payload
     if event_type != "LLMRequest" or not isinstance(payload, dict):
         return payload
     scrubbed = dict(payload)

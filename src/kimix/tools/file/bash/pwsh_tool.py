@@ -366,10 +366,7 @@ class Powershell(CallableTool2[PowershellParams]):
             return None
         return ToolError(
             output="",
-            message=(
-                f"Blocked (hardline): {desc}. This command cannot be executed "
-                "via the agent."
-            ),
+            message=f"Blocked (hardline): {desc}.",
             brief="Blocked (hardline)",
         )
 
@@ -489,9 +486,8 @@ class Powershell(CallableTool2[PowershellParams]):
                     transform_warning += "\n[WARNING] " + fix.warning
                 else:
                     transform_warning += (
-                        "\n[WARNING] Command has an apparently unbalanced quote, "
-                        "but the PowerShell-aware parser verified it is valid; "
-                        "executing as-is."
+                        "\n[WARNING] Unbalanced quote, but the PowerShell-aware "
+                        "parser verified it is valid; executing as-is."
                     )
             elif fix.changed:
                 # Validation passed, but the parser made the command safe for
@@ -557,8 +553,7 @@ class Powershell(CallableTool2[PowershellParams]):
                     wait_matched=matched, elapsed_seconds=elapsed,
                     message=(
                         f"Interactive PowerShell started. task_id: `{task_id}`. "
-                        "Use task_id to send commands and job_output to read results. "
-                        "Send 'exit' to close the session."
+                        "Send input to it; job_output to read; 'exit' to close."
                     ) + transform_warning,
                     brief="Interactive PowerShell started",
                 )
@@ -566,8 +561,7 @@ class Powershell(CallableTool2[PowershellParams]):
                 output="",
                 message=(
                     f"Interactive PowerShell started. task_id: `{task_id}`. "
-                    "Use task_id to send commands and job_output to read results. "
-                    "Send 'exit' to close the session."
+                    "Send input to it; job_output to read; 'exit' to close."
                 ) + transform_warning,
                 brief="Interactive PowerShell started",
             )
@@ -945,7 +939,7 @@ class Powershell(CallableTool2[PowershellParams]):
             )
 
         return ToolOk(
-            output=f"Running in background. task_id: `{task_id}`. Use `job_output` tool to retrieve output.",
+            output=f"Running in background. task_id: `{task_id}`. Use `job_output` to read.",
             message=f"Command started in background. task_id: `{task_id}`" + note,
             brief="Background task started",
         )

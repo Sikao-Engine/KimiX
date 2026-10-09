@@ -341,10 +341,10 @@ def _resolve_display_tool_name(name: str, session: Session) -> str:
 # Aliases (e.g. old_string, new_string, text, source_code, task) are
 # canonicalized via _canonical_key() before lookup.
 _STREAM_ARG_KEYS = frozenset({
-    "content",       # WriteFile / WritePlan
+    "content",       # WriteFile / write_plan
     "code",          # Python
     "prompt",        # Agent
-    "old", "new",    # EditFile / EditPlan edit items
+    "old", "new",    # EditFile / edit_plan edit items
     "question", "context", "instruction",
     "command",       # Run / Powershell / Bash
 })

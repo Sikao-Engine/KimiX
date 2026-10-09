@@ -426,11 +426,10 @@ class Params(BaseModel):
 
     pattern: str = Field(
         description=(
-            "Glob pattern to match file paths against (e.g. `**/*.ts`, "
-            "`src/**/*.test.js`). A pattern with no \"/\" matches the basename "
-            "at any depth, so `*` and `*.ts` both search the whole tree; include "
-            "a separator to anchor the depth. Unsafe recursive patterns "
-            "(``**``, ``**/*``, ``**/**``, etc.) are forbidden."
+            "Glob pattern to match file paths against (e.g. `**/*.ts`). A "
+            "pattern with no \"/\" matches the basename at any depth (`*` and "
+            "`*.ts` search the whole tree); include a separator to anchor depth. "
+            "All-wildcard recursive patterns (``**``, ``**/*``) are forbidden."
         )
     )
     path: str | None = Field(
@@ -448,8 +447,7 @@ class Params(BaseModel):
     )
     respect_gitignore: bool = Field(
         default=True,
-        description="When True (default), skip files matched by .gitignore rules. "
-        "When False, include all files regardless of .gitignore settings.",
+        description="Default True: skip .gitignore-matched files. False: include all.",
     )
     include_ignored: bool = Field(
         default=False,
@@ -457,10 +455,10 @@ class Params(BaseModel):
     )
     verbose: bool = Field(
         default=False,
-        description="When True, include file size, modification time, and type for each match.",
+        description="Include size, mtime, and type per match.",
     )
     timeout: int = Field(
-        description="Maximum time in seconds to wait for the search to complete.",
+        description="Max seconds to wait for the search.",
         default=10,
         ge=1,
     )
@@ -469,10 +467,9 @@ class Params(BaseModel):
         alias="fold",
         ge=0,
         description=(
-            "Maximum number of result lines in the output. Longer results "
-            "are head+tail folded with an omitted-count marker and the total "
-            "is reported in `message`. 0 = unlimited (the MAX_MATCHES "
-            "collection cap still applies)."
+            "Max result lines to show. Longer results are head+tail folded with "
+            "an omitted-count marker (total in `message`). 0 = unlimited; the "
+            "MAX_MATCHES collection cap still applies."
         ),
     )
 
@@ -518,9 +515,8 @@ class Glob(CallableTool2[Params]):
             if _is_unsafe_recursive_pattern(pattern):
                 return ToolError(
                     message=(
-                        f"Unsafe pattern `{pattern}` — this would recursively "
-                        "match all files/dirs under the search root, which is "
-                        "meaningless and can be extremely slow. "
+                        f"Unsafe pattern `{pattern}` — it matches all files/dirs "
+                        "under the search root and can be very slow. "
                         "Use a more specific pattern (e.g. `src/**/*.py`)."
                     ),
                     brief=f"Unsafe pattern: {pattern}",
@@ -540,7 +536,7 @@ class Glob(CallableTool2[Params]):
                 display_dir = str(dir_path)
                 return ToolError(
                     message=f"`{display_dir}` is not a directory.",
-                    brief=f"Invalid directory: {display_dir}",
+                    brief=f"Not a directory: {display_dir}",
                 )
 
             # Load gitignore rules if needed (sync I/O in executor) and perform
@@ -664,7 +660,7 @@ class Glob(CallableTool2[Params]):
             # Build message
             shown_count = len(output_lines) - (1 if omitted_by_fold else 0)
             if total > 0:
-                message = f"Found {total} matches for pattern `{pattern}`."
+                message = f"Found {total} matches for `{pattern}`."
             else:
                 message = f"No matches found for pattern `{pattern}`."
                 if respect_gitignore and ignored_count > 0 and not timed_out:
@@ -686,10 +682,7 @@ class Glob(CallableTool2[Params]):
                 message += f" Search capped at {MAX_MATCHES} matches."
 
             if timed_out:
-                message += (
-                    f" Search timed out after {params.timeout}s; "
-                    "showing matches collected so far."
-                )
+                message += f" Search timed out after {params.timeout}s; showing partial results."
 
             if truncated_by_bytes:
                 message += f" Output truncated to {MAX_BYTES} bytes."

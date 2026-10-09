@@ -705,10 +705,7 @@ class Bash(CallableTool2[BashParams]):
             return None
         return ToolError(
             output="",
-            message=(
-                f"Blocked (hardline): {desc}. This command cannot be executed "
-                "via the agent."
-            ),
+            message=f"Blocked (hardline): {desc}.",
             brief="Blocked (hardline)",
         )
 
@@ -845,8 +842,7 @@ class Bash(CallableTool2[BashParams]):
                     wait_matched=matched, elapsed_seconds=elapsed,
                     message=(
                         f"Interactive Bash started. task_id: `{task_id}`. "
-                        "Use task_id to send commands and job_output to read results. "
-                        "Send 'exit' to close the session."
+                        "Send input to it; job_output to read; 'exit' to close."
                     ),
                     brief="Interactive Bash started",
                 )
@@ -854,8 +850,7 @@ class Bash(CallableTool2[BashParams]):
                 output="",
                 message=(
                     f"Interactive Bash started. task_id: `{task_id}`. "
-                    "Use task_id to send commands and job_output to read results. "
-                    "Send 'exit' to close the session."
+                    "Send input to it; job_output to read; 'exit' to close."
                 ),
                 brief="Interactive Bash started",
             )
@@ -1246,7 +1241,7 @@ class Bash(CallableTool2[BashParams]):
             )
 
         return ToolOk(
-            output=f"Running in background. task_id: `{task_id}`. Use `job_output` tool to retrieve output.",
+            output=f"Running in background. task_id: `{task_id}`. Use `job_output` to read.",
             message=f"Command started in background. task_id: `{task_id}`",
             brief="Background task started",
         )

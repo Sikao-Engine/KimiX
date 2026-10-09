@@ -258,7 +258,7 @@ SystemPromptType.Reader           # Read-only agent for retrieval/analysis tasks
 SystemPromptType.SwarmLeader      # Swarm orchestrator (parallelizes a request via the workflow tool)
 
 # Role-prompt rules per type (built into get_system_prompt):
-# - TodoMaker: "Plan only. Do not implement." — records plans via WritePlan/EditPlan, cannot write files or run commands
+# - TodoMaker: "Plan only. Do not implement." — records plans via write_plan/edit_plan, cannot write files or run commands
 # - Thinker:   thinks in <thinking>...</thinking>, ends with <quit/>, self-verifies
 # - TrivialSubAgent: calls the `ask_parent` tool for clarification, then stops
 # - Reader:    reports a concise summary only — no commands, edits, or questions
@@ -506,9 +506,9 @@ await prompt_plan_async("Build a web application", plan_file=Path("plan.md"))
 **Flow:**
 1. Deletes any existing `plan_file` and enables plan mode (`note._enable_plan = True`).
 2. Creates a planner session with `agent_type=SystemPromptType.TodoMaker` and `agent_file='agent_planner.json'`; it uses the `planner` sub-provider when configured (falls back to the main provider), disables budget/context-meter/compact/todo/target-churn reminders in `loop_control`, and is locked **read-only** so it cannot touch the filesystem.
-3. Asks the planner to generate a comprehensive plan and save it via the `WritePlan` tool — up to 3 attempts, retrying when the plan file is not produced.
+3. Asks the planner to generate a comprehensive plan and save it via the `write_plan` tool — up to 3 attempts, retrying when the plan file is not produced.
 4. Opens the generated plan with the system default application.
-5. Interactively asks whether to implement the plan; `y` proceeds, otherwise the user gives revision feedback (fed back to the planner via `WritePlan`/`EditPlan` and the plan is re-opened), or `/quit` aborts.
+5. Interactively asks whether to implement the plan; `y` proceeds, otherwise the user gives revision feedback (fed back to the planner via `write_plan`/`edit_plan` and the plan is re-opened), or `/quit` aborts.
 6. Closes the planner session and runs the implementation in the default Worker session (`ensure_todo_finished=False`, `format_output=True`). Large plans (>100 KiB) are referenced by file path instead of inlined.
 7. Sends a follow-up review prompt to verify all tasks are completed.
 
@@ -976,7 +976,7 @@ All tools are `CallableTool2` subclasses. They are organized in subpackages unde
 - `Docx2md` — convert DOCX to Markdown; params: `docx_path`, `output_path`
 - `Pdf2md` — convert PDF to Markdown; params: `pdf_path`, `output_path`, `extract_images=False`, `ocr=False`, `extract_tables=True`, `page_range`
 - `ParserTool` — parse/extract/strip comments; params: `language`, `source_code|file_path`, `mode="extract"`, `encoding="utf-8"`
-- `WritePlan` / `ReadPlan` / `EditPlan` — plan file tools
+- `write_plan` / `read_plan` / `edit_plan` — plan file tools
 - `StoreSession` / `LoadSession` / `LsSession` — key-value session persistence
 - `fetch_url` — fetch web page as Markdown; params: `url`, `output_path`
 - `fetch_to_markdown(url, wait_until="networkidle")` — Playwright-based fetcher

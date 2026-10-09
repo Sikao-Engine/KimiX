@@ -70,13 +70,13 @@ class AgentSwarmParams(BaseModel):
     description: str = Field(description="Short description of the whole swarm.")
     mode: Literal["fanout", "parallel_sample"] = Field(
         default="fanout",
-        description="'fanout': decompose into independent items (default). "
-        "'parallel_sample': run the SAME task N times in isolated workspaces, "
-        "then select and apply the best result (best-of-N).",
+        description="'fanout' (default): run one sub-agent per item. "
+        "'parallel_sample': run the same task N times in isolated workspaces, "
+        "select and apply the best result (best-of-N).",
     )
     sample_n: int | None = Field(
         default=None,
-        description="Number of parallel samples for mode='parallel_sample' (default 4).",
+        description="Sample count for mode='parallel_sample' (default 4).",
     )
     selector: Literal["self_eval", "majority"] | None = Field(
         default=None,
@@ -84,30 +84,27 @@ class AgentSwarmParams(BaseModel):
     )
     subagent_type: str = Field(
         default="coder",
-        description="Type of sub-agent. Built-in: 'coder', 'explore', 'plan'. "
-        "Custom types can be registered in agent configuration.",
+        description="Sub-agent type: 'coder', 'explore', 'plan', or a custom registered type.",
     )
     prompt_template: str | None = Field(
         default=None,
-        description="Prompt template that contains the placeholder {{item}}. "
-        "Mutually exclusive with prompt_prefix.",
+        description="Prompt template containing {{item}}. Mutually exclusive with prompt_prefix.",
     )
     prompt_prefix: str | None = Field(
         default=None,
-        description="Text to prepend to each item. Alternative to prompt_template. "
-        "Mutually exclusive with prompt_template.",
+        description="Text prepended to each item; alternative to prompt_template (mutually exclusive).",
     )
     prompt_suffix: str | None = Field(
         default=None,
-        description="Text to append after each item. Used with prompt_prefix.",
+        description="Text appended after each item (with prompt_prefix).",
     )
     items: list[str] = Field(
         default_factory=list,
-        description="List of items to expand the template with.",
+        description="Items substituted into the template/prefix (>=2 in fanout mode).",
     )
     resume_agent_ids: dict[str, str] | None = Field(
         default=None,
-        description="Optional mapping of existing agent ID to prompt for re-running failed sub-agents.",
+        description="agent_id -> new prompt, to resume failed sub-agents with adjusted prompts.",
     )
 
     @model_validator(mode="after")
@@ -134,10 +131,7 @@ class AgentSwarmParams(BaseModel):
         _require_exactly_one_prompt_source(
             has_template,
             self.prompt_prefix is not None,
-            mode_hint=(
-                "prompt_template must contain '{{item}}', or set prompt_prefix. "
-                "For example: prompt_template='Fix errors in {{item}}.'"
-            ),
+            mode_hint="Set prompt_template containing {{item}}, or set prompt_prefix.",
         )
         # (The former trailing `if has_template and "{{item}}" not in
         # self.prompt_template:` raise was unreachable: `has_template` is only
@@ -181,13 +175,10 @@ class AgentSwarm(CallableTool2):
     name: str = "workflow"
     description: str = (
         "Run a JavaScript workflow script that orchestrates subagents at scale. "
-        "Use this for work that fans out across many independent pieces — an "
-        "audit over many files, a migration, multi-angle research, adversarial "
-        "verification of findings — where you write the orchestration as a "
-        "script instead of delegating turn by turn. "
-        "(This implementation dispatches a homogeneous swarm of sub-agents: "
-        "split a large request into small, independent items, provide a prompt "
-        "template containing {{item}}, and receive an aggregated XML result.)"
+        "Use for work that fans out across many independent pieces (file audits, "
+        "migrations, multi-angle research). This implementation dispatches a "
+        "homogeneous swarm: split the request into independent items, provide a "
+        "prompt template containing {{item}}, and receive an aggregated XML result."
     )
     params: type[BaseModel] = AgentSwarmParams
 
@@ -365,8 +356,8 @@ def _render_results(results: list[SwarmSubagentResult], description: str) -> str
     lines.append(f"  <failed>{failed_count}</failed>")
     if failed_count > 0:
         lines.append(
-            "  <resume_hint>Some sub-agents failed. Re-run with resume_agent_ids "
-            "mapping the failed agent IDs to adjusted prompts.</resume_hint>"
+            "  <resume_hint>Re-run with resume_agent_ids mapping failed agent IDs "
+            "to adjusted prompts.</resume_hint>"
         )
     lines.append("  <subagents>")
     for result in results:

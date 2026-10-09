@@ -92,14 +92,13 @@ class EditParams(BaseModel):
     )
     allow_conflicts: bool = Field(
         default=False,
-        description="When True, allow editing files that contain conflict markers.",
+        description="Allow editing files that contain unresolved conflict markers.",
     )
     allow_auto_generated: bool = Field(
         default=False,
         description=(
-            "When True, allow editing files that appear to be auto-generated "
-            "(opt-out of the auto-generated-file guard). Default False refuses "
-            "to modify generated files."
+            "Allow editing files that appear to be auto-generated "
+            "(opt-out of the auto-generated-file guard)."
         ),
     )
 

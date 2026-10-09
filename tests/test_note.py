@@ -1,13 +1,13 @@
-"""Tests for plan/note tools: WritePlan, ReadPlan, EditPlan.
+"""Tests for plan/note tools: write_plan, read_plan, edit_plan.
 
 Covers:
 - SkipThisTool when _enable_plan is not set
 - Missing plan_writing_path in session custom_data
-- WritePlan: overwrite and append modes, dir creation, error handling
-- ReadPlan: forward/negative offset, file not found, not a file,
+- write_plan: overwrite and append modes, dir creation, error handling
+- read_plan: forward/negative offset, file not found, not a file,
   char_offset/max_char, MAX_LINES / MAX_BYTES limits, truncation,
   line_offset validation
-- EditPlan: exact match, replace_all, fuzzy matching, strip matching,
+- edit_plan: exact match, replace_all, fuzzy matching, strip matching,
   no match suggestions, multiple edits, line ending normalization,
   _apply_edit return values, error handling
 """
@@ -25,11 +25,11 @@ from kimix.tools.note import (
     MAX_BYTES,
     MAX_LINES,
     Edit,
-    EditPlan,
+    edit_plan,
     EditPlanParams,
-    ReadPlan,
+    read_plan,
     ReadPlanParams,
-    WritePlan,
+    write_plan,
     WritePlanParams,
 )
 
@@ -61,7 +61,7 @@ def plan_path(tmp_path: Path) -> Path:
 
 
 # ============================================================================
-# WritePlan
+# write_plan
 # ============================================================================
 
 
@@ -71,13 +71,13 @@ class TestWritePlanInit:
         session = MagicMock(spec=Session)
         session.custom_data = {}
         with pytest.raises(SkipThisTool):
-            WritePlan(session=session)
+            write_plan(session=session)
         _note_module._enable_plan = True
 
 
 class TestWritePlanCall:
     async def test_missing_plan_writing_path(self, mock_session: MagicMock) -> None:
-        tool = WritePlan(session=mock_session)
+        tool = write_plan(session=mock_session)
         result = await tool(WritePlanParams(content="test"))
         assert isinstance(result, ToolError)
         assert "no plan_writing_path" in result.message
@@ -86,7 +86,7 @@ class TestWritePlanCall:
         self, mock_session: MagicMock, plan_path: Path
     ) -> None:
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = WritePlan(session=mock_session)
+        tool = write_plan(session=mock_session)
         result = await tool(WritePlanParams(content="hello world", mode="overwrite"))
         assert isinstance(result, ToolOk)
         assert plan_path.read_text(encoding="utf-8") == "hello world"
@@ -98,7 +98,7 @@ class TestWritePlanCall:
     ) -> None:
         plan_path.write_text("line1\n", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = WritePlan(session=mock_session)
+        tool = write_plan(session=mock_session)
         result = await tool(WritePlanParams(content="line2\n", mode="append"))
         assert isinstance(result, ToolOk)
         assert plan_path.read_text(encoding="utf-8") == "line1\nline2\n"
@@ -110,7 +110,7 @@ class TestWritePlanCall:
     ) -> None:
         path = tmp_path / "nested" / "dirs" / "plan.md"
         mock_session.custom_data["plan_writing_path"] = path
-        tool = WritePlan(session=mock_session)
+        tool = write_plan(session=mock_session)
         result = await tool(WritePlanParams(content="deep"))
         assert isinstance(result, ToolOk)
         assert path.read_text(encoding="utf-8") == "deep"
@@ -119,7 +119,7 @@ class TestWritePlanCall:
         self, mock_session: MagicMock, plan_path: Path
     ) -> None:
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = WritePlan(session=mock_session)
+        tool = write_plan(session=mock_session)
         with patch("anyio.open_file", side_effect=PermissionError("access denied")):
             result = await tool(WritePlanParams(content="x"))
         assert isinstance(result, ToolError)
@@ -127,7 +127,7 @@ class TestWritePlanCall:
 
 
 # ============================================================================
-# ReadPlan
+# read_plan
 # ============================================================================
 
 
@@ -137,13 +137,13 @@ class TestReadPlanInit:
         session = MagicMock(spec=Session)
         session.custom_data = {}
         with pytest.raises(SkipThisTool):
-            ReadPlan(session=session)
+            read_plan(session=session)
         _note_module._enable_plan = True
 
 
 class TestReadPlanCall:
     async def test_missing_plan_writing_path(self, mock_session: MagicMock) -> None:
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams())
         assert isinstance(result, ToolError)
         assert "no plan_writing_path" in result.message
@@ -153,7 +153,7 @@ class TestReadPlanCall:
     ) -> None:
         path = tmp_path / "missing.md"
         mock_session.custom_data["plan_writing_path"] = path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams())
         assert isinstance(result, ToolError)
         assert "does not exist" in result.message
@@ -164,7 +164,7 @@ class TestReadPlanCall:
         dir_path = tmp_path / "a_dir"
         dir_path.mkdir()
         mock_session.custom_data["plan_writing_path"] = dir_path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams())
         assert isinstance(result, ToolError)
         assert "not a file" in result.message
@@ -174,7 +174,7 @@ class TestReadPlanCall:
     ) -> None:
         plan_path.write_text("line1\nline2\nline3\n", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams(line_offset=1, n_lines=10))
         assert isinstance(result, ToolOk)
         assert "line1" in result.output
@@ -187,7 +187,7 @@ class TestReadPlanCall:
     ) -> None:
         plan_path.write_text("a\nb\nc\nd\n", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams(line_offset=2, n_lines=10))
         assert isinstance(result, ToolOk)
         assert "a" not in result.output  # line 1 skipped
@@ -199,7 +199,7 @@ class TestReadPlanCall:
     ) -> None:
         plan_path.write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams(line_offset=-2, n_lines=10))
         assert isinstance(result, ToolOk)
         assert "d" in result.output
@@ -212,7 +212,7 @@ class TestReadPlanCall:
     ) -> None:
         plan_path.write_text("", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams(line_offset=-5))
         assert isinstance(result, ToolOk)
         assert "No lines read" in result.message or result.output == ""
@@ -222,7 +222,7 @@ class TestReadPlanCall:
     ) -> None:
         plan_path.write_text("abcdefghij\n", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams(char_offset=2, max_char=5))
         assert isinstance(result, ToolOk)
         assert len(result.output) <= 5
@@ -233,7 +233,7 @@ class TestReadPlanCall:
         lines = "".join(f"line{i}\n" for i in range(MAX_LINES + 10))
         plan_path.write_text(lines, encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams(n_lines=MAX_LINES + 100))
         assert isinstance(result, ToolOk)
         assert f"Max {MAX_LINES} lines reached" in result.message
@@ -246,7 +246,7 @@ class TestReadPlanCall:
         lines = long_line * 200
         plan_path.write_text(lines, encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         result = await tool(ReadPlanParams(n_lines=MAX_LINES))
         assert isinstance(result, ToolOk)
         # Should hit bytes limit before lines limit
@@ -260,7 +260,7 @@ class TestReadPlanCall:
     ) -> None:
         plan_path.write_text("content", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = ReadPlan(session=mock_session)
+        tool = read_plan(session=mock_session)
         with patch("anyio.open_file", side_effect=OSError("disk failure")):
             result = await tool(ReadPlanParams())
         assert isinstance(result, ToolError)
@@ -268,7 +268,7 @@ class TestReadPlanCall:
 
 
 # ============================================================================
-# EditPlan
+# edit_plan
 # ============================================================================
 
 
@@ -278,58 +278,58 @@ class TestEditPlanInit:
         session = MagicMock(spec=Session)
         session.custom_data = {}
         with pytest.raises(SkipThisTool):
-            EditPlan(session=session)
+            edit_plan(session=session)
         _note_module._enable_plan = True
 
 
 class TestEditPlanNormalizeLineEndings:
     def test_converts_windows_crlf_to_lf(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         assert tool._normalize_line_endings("hello\r\nworld") == "hello\nworld"
 
     def test_preserves_unix_lf(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         assert tool._normalize_line_endings("hello\nworld") == "hello\nworld"
 
     def test_preserves_cr_only(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         assert tool._normalize_line_endings("hello\rworld") == "hello\rworld"
 
 
 class TestEditPlanFindSimilar:
     def test_returns_closest_line_above_cutoff(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         result = tool._find_similar("helo", "hello\nworld\n", cutoff=70.0)
         assert result == "hello"
 
     def test_returns_None_when_no_similar_match(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         result = tool._find_similar("zzzz", "hello\nworld\n", cutoff=90.0)
         assert result is None
 
 
 class TestEditPlanTryStripMatch:
     def test_finds_stripped_old_inside_line(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         # "  hello  " stripped → "hello" is inside "  hello world  "
         result = tool._try_strip_match("  hello world  \n", "  hello  ", "hi")
         assert result is not None
         assert "hi world" in result
 
     def test_returns_None_when_stripped_old_is_empty(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         result = tool._try_strip_match("content", "   ", "x")
         assert result is None
 
     def test_preserves_trailing_newline(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         result = tool._try_strip_match("the hello world\n", "hello", "hi")
         assert result == "the hi world\n"
 
 
 class TestEditPlanFindBestFuzzyMatch:
     def test_returns_match_above_cutoff(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         result = tool._find_best_fuzzy_match("helo", "hello\nworld\n")
         assert result is not None
         matched_text, score = result
@@ -337,26 +337,26 @@ class TestEditPlanFindBestFuzzyMatch:
         assert score >= 75.0
 
     def test_returns_None_below_cutoff(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         result = tool._find_best_fuzzy_match("zzzzz", "hello\nworld\n", cutoff=95.0)
         assert result is None
 
 
 class TestEditPlanApplyEdit:
     def test_noop_when_old_equals_new(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         content, count, suggestion = tool._apply_edit("hello", Edit(old="x", new="x"))
         assert count == 0
         assert content == "hello"
 
     def test_noop_when_old_is_empty(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         content, count, suggestion = tool._apply_edit("hello", Edit(old="", new="y"))
         assert count == 0
         assert content == "hello"
 
     def test_replace_all_multiple_occurrences(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         content, count, suggestion = tool._apply_edit(
             "foo bar foo", Edit(old="foo", new="baz", replace_all=True)
         )
@@ -364,7 +364,7 @@ class TestEditPlanApplyEdit:
         assert content == "baz bar baz"
 
     def test_replace_all_no_matches_returns_suggestion(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         content, count, suggestion = tool._apply_edit(
             "hello world", Edit(old="xyz", new="abc", replace_all=True)
         )
@@ -373,7 +373,7 @@ class TestEditPlanApplyEdit:
         # suggestion may be None or similar text
 
     def test_single_replace_exact_match(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         content, count, suggestion = tool._apply_edit(
             "hello world", Edit(old="hello", new="hi")
         )
@@ -381,7 +381,7 @@ class TestEditPlanApplyEdit:
         assert content == "hi world"
 
     def test_single_replace_falls_back_to_strip_match(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         content, count, suggestion = tool._apply_edit(
             "  hello world  \n", Edit(old="hello", new="hi")
         )
@@ -390,7 +390,7 @@ class TestEditPlanApplyEdit:
         assert "hi world" in content
 
     def test_single_replace_falls_back_to_fuzzy_match(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         # "hellp" is close enough to "hello" for fuzzy matching (80% ratio > 75% cutoff)
         content, count, suggestion = tool._apply_edit(
             "hellp\n", Edit(old="hello", new="hi")
@@ -399,7 +399,7 @@ class TestEditPlanApplyEdit:
         assert "hi" in content
 
     def test_single_replace_no_match_returns_suggestion(self) -> None:
-        tool = EditPlan(session=MagicMock(spec=Session))
+        tool = edit_plan(session=MagicMock(spec=Session))
         content, count, suggestion = tool._apply_edit(
             "hello world\n", Edit(old="zzzz_nonexistent", new="abc")
         )
@@ -409,7 +409,7 @@ class TestEditPlanApplyEdit:
 
 class TestEditPlanCall:
     async def test_missing_plan_writing_path(self, mock_session: MagicMock) -> None:
-        tool = EditPlan(session=mock_session)
+        tool = edit_plan(session=mock_session)
         result = await tool(EditPlanParams(edit=Edit(old="a", new="b")))
         assert isinstance(result, ToolError)
         assert "no plan_writing_path" in result.message
@@ -419,7 +419,7 @@ class TestEditPlanCall:
     ) -> None:
         path = tmp_path / "missing.md"
         mock_session.custom_data["plan_writing_path"] = path
-        tool = EditPlan(session=mock_session)
+        tool = edit_plan(session=mock_session)
         result = await tool(EditPlanParams(edit=Edit(old="a", new="b")))
         assert isinstance(result, ToolError)
         assert "does not exist" in result.message
@@ -429,7 +429,7 @@ class TestEditPlanCall:
     ) -> None:
         plan_path.write_text("hello world", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = EditPlan(session=mock_session)
+        tool = edit_plan(session=mock_session)
         result = await tool(EditPlanParams(edit=Edit(old="hello", new="hi")))
         assert isinstance(result, ToolOk)
         assert plan_path.read_text(encoding="utf-8") == "hi world"
@@ -439,7 +439,7 @@ class TestEditPlanCall:
     ) -> None:
         plan_path.write_text("foo bar foo", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = EditPlan(session=mock_session)
+        tool = edit_plan(session=mock_session)
         result = await tool(
             EditPlanParams(edit=Edit(old="foo", new="baz", replace_all=True))
         )
@@ -451,7 +451,7 @@ class TestEditPlanCall:
     ) -> None:
         plan_path.write_text("hello world", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = EditPlan(session=mock_session)
+        tool = edit_plan(session=mock_session)
         result = await tool(
             EditPlanParams(edit=Edit(old="zzzz_nonexistent", new="abc"))
         )
@@ -463,7 +463,7 @@ class TestEditPlanCall:
     ) -> None:
         plan_path.write_text("line1\nline2\nline3\n", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = EditPlan(session=mock_session)
+        tool = edit_plan(session=mock_session)
         result = await tool(
             EditPlanParams(
                 edit=[
@@ -483,7 +483,7 @@ class TestEditPlanCall:
     ) -> None:
         plan_path.write_text("hello\r\nworld", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = EditPlan(session=mock_session)
+        tool = edit_plan(session=mock_session)
         result = await tool(EditPlanParams(edit=Edit(old="hello", new="hi")))
         assert isinstance(result, ToolOk)
         # The file should have the replacement applied (line endings normalized)
@@ -496,7 +496,7 @@ class TestEditPlanCall:
     ) -> None:
         plan_path.write_text("content", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = EditPlan(session=mock_session)
+        tool = edit_plan(session=mock_session)
         with patch("pathlib.Path.read_text", side_effect=OSError("read failure")):
             result = await tool(EditPlanParams(edit=Edit(old="a", new="b")))
         assert isinstance(result, ToolError)
@@ -508,7 +508,7 @@ class TestEditPlanCall:
         """A JSON-encoded `edit` string is parsed into an Edit and applied."""
         plan_path.write_text("hello world", encoding="utf-8")
         mock_session.custom_data["plan_writing_path"] = plan_path
-        tool = EditPlan(session=mock_session)
+        tool = edit_plan(session=mock_session)
         result = await tool.call(
             {"edit": '{"old": "hello", "new": "hi"}'}
         )

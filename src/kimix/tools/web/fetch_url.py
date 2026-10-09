@@ -10,13 +10,13 @@ from kimix.tools.web.web_fetcher import fetch_to_markdown
 
 
 class Params(BaseModel):
-    """Parameters for fetch_url tool."""
+    """Fetch a web page as Markdown."""
     url: str = Field(
-        description="URL to fetch content from."
+        description="URL to fetch."
     )
     output_path: str | None = Field(
         default=None,
-        description="Optional file path to save the fetched markdown content."
+        description="File path to save the fetched markdown."
     )
 
 

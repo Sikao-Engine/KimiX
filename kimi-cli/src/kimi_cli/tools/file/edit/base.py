@@ -63,9 +63,8 @@ class BaseEditTool:
             return (
                 ToolError(
                     message=(
-                        f"`{raw_path}` is not an absolute path. "
-                        "You must provide an absolute path to edit a file "
-                        "outside the working directory."
+                        f"`{raw_path}` is not an absolute path and resolves outside the "
+                        "work-dir; pass an absolute path to edit files outside it."
                     ),
                     brief="Invalid path",
                 ),
@@ -177,7 +176,7 @@ class BaseEditTool:
             return ToolError(
                 message=(
                     f"Conflict markers detected in `{display_path}`; refusing to edit.\n{lines_str}\n"
-                    "Resolve the conflict first or pass allow_conflicts=true."
+                    "Resolve the conflict or pass allow_conflicts=true."
                 ),
                 brief="Conflict markers detected",
             )
@@ -189,7 +188,7 @@ class BaseEditTool:
             return ToolError(
                 message=(
                     f"`{display_path}` changed externally or was written after the last read. "
-                    "Re-read the file and re-issue the edit."
+                    "Re-read it, then re-issue the edit."
                 ),
                 brief="Stale file",
             )
@@ -214,6 +213,6 @@ class BaseEditTool:
                 self._work_dir,
             )
         return ToolError(
-            message=f"{self._out_prefix(_outside)}Failed to edit. Error: {exc} Path: {display_path}",
+            message=f"{self._out_prefix(_outside)}Failed to edit {display_path}. Error: {exc}",
             brief="Failed to edit file",
         )

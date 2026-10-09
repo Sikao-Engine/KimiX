@@ -153,12 +153,13 @@ async def test_fetch_url_invalid_url(fetch_url_tool: fetch_url) -> None:
     assert "Failed to fetch URL due to network error:" in result.message
 
 
-async def test_fetch_url_404_url(fetch_url_tool: fetch_url) -> None:
-    """Test fetching from a URL that returns 404."""
-    result = await fetch_url_tool(
-        Params(url="https://github.com/MoonshotAI/non-existing-repo/issues/1")
-    )
-
+async def test_fetch_url_404_url(
+    fetch_url_tool: fetch_url,
+    mock_http_server: MockServerFactory,
+) -> None:
+    """Test fetching from a URL that returns 404 (mock server; real URLs are flaky)."""
+    server_url = await mock_http_server("Not Found", status=404)
+    result = await fetch_url_tool(Params(url=f"{server_url}/issues/1"))
     # Should fail with HTTP error
     assert result.is_error
     assert result.message == snapshot(
