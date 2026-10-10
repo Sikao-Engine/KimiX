@@ -90,6 +90,7 @@ def _record_restart_error(
 
 if TYPE_CHECKING:
     from kimi_agent_sdk import MCPConfig
+    from kimi_agent_sdk._server_process import ServerProcess
 
 
 class ExportFormat(enum.Enum):
@@ -174,6 +175,40 @@ def _make_custom_config(config_json: dict[str, Any] | None) -> dict[str, Any]:
     return {"config_json": config_json if isinstance(config_json, dict) else {}}
 
 
+async def _start_configured_servers(
+    session: Session,
+    work_dir: KaosPath,
+    config_json: dict[str, Any] | None,
+) -> None:
+    """Start the nested sub-process servers declared under the ``server`` key.
+
+    Reads ``config_json["server"]`` (the raw ``.kimix/config.json`` value),
+    spawns each entry via :func:`kimi_agent_sdk._server_process.start_server_processes`,
+    and stores the resulting :class:`~kimi_agent_sdk._server_process.ServerProcess`
+    list on the session.  Never raises: server management must not break
+    session creation/resume.
+    """
+    try:
+        servers_cfg = (config_json or {}).get("server") if isinstance(config_json, dict) else None
+        if not servers_cfg:
+            return
+        from kimi_agent_sdk._server_process import start_server_processes
+
+        canonical = getattr(work_dir, "canonical", None)
+        wd = Path(str(canonical() if callable(canonical) else work_dir))
+        # Pass the session's own list as the live ``out`` buffer: servers are
+        # attached as they spawn, so even a cancellation mid-startup leaves
+        # every child reachable by close()/close_sync (and
+        # start_server_processes itself terminates them before re-raising).
+        live = getattr(session, "_server_processes", None)
+        if not isinstance(live, list):
+            live = []
+        session._server_processes = live
+        session._server_processes = await start_server_processes(wd, servers_cfg, out=live)
+    except Exception:
+        logger.exception("Failed to start nested sub-process servers from config")
+
+
 from kimi_cli.soul.context_records import ExportedContext  # noqa: E402, F401
 
 
@@ -193,6 +228,9 @@ class Session:
         self._tmp_data: dict[str, Any] = {}
         self._anonymous = False
         self._shutdown_cleanup: Any = None
+        # Nested sub-process servers started from the ``server`` key of
+        # ``.kimix/config.json`` (see kimi_agent_sdk._server_process).
+        self._server_processes: list = []
 
     def _register_shutdown_cleanup(self) -> None:
         """Register process-shutdown cleanup for an anonymous session.
@@ -291,6 +329,14 @@ class Session:
                     cancel_event.set()
                 except Exception:
                     pass
+            # Stop the nested sub-process servers (sync variant for the
+            # no-event-loop path); never allowed to skip the storage cleanup.
+            try:
+                from kimi_agent_sdk._server_process import stop_server_processes_sync
+
+                stop_server_processes_sync(getattr(self, "_server_processes", None))
+            except Exception:
+                logger.exception("Failed to stop server processes synchronously")
             if getattr(self, "_anonymous", False):
                 self._delete_sync_best_effort()
             else:
@@ -689,6 +735,7 @@ class Session:
             "max_retries_per_step": max_retries_per_step,
         }
         session._create_kwargs.update(custom_arguments)
+        await _start_configured_servers(session, work_dir_path, config_json)
         return session
 
     @staticmethod
@@ -798,6 +845,7 @@ class Session:
             "max_retries_per_step": max_retries_per_step,
         }
         session._create_kwargs.update(custom_arguments)
+        await _start_configured_servers(session, work_dir, config_json)
         return session
 
     @property
@@ -826,6 +874,17 @@ class Session:
         if self._cli is not None and self._cli.session is not None:
             return self._cli.session.custom_config
         return None
+
+    def get_server_processes(self) -> list[ServerProcess]:
+        """The nested sub-process servers started for this session.
+
+        Empty when the config declares no ``server`` entries.  The returned
+        list is the session's *internal live list* (not a copy): it grows
+        while startup is in progress and must not be mutated by callers.
+        Elements are :class:`kimi_agent_sdk._server_process.ServerProcess`
+        instances; check their ``ready`` flag for per-server startup status.
+        """
+        return self._server_processes
 
     async def export(
         self,
@@ -1145,6 +1204,15 @@ class Session:
         self._closed = True
         if self._cancel_event is not None:
             self._cancel_event.set()
+
+        # Stop the nested sub-process servers first (never raises; import
+        # failures are logged so they cannot mask the rest of the teardown).
+        try:
+            from kimi_agent_sdk._server_process import stop_server_processes
+
+            await stop_server_processes(self._server_processes)
+        except Exception:
+            logger.exception("Failed to stop nested sub-process servers while closing session")
 
         failure: BaseException | None = None
         for step in (self._cleanup_tools, self._close_chat_provider):
