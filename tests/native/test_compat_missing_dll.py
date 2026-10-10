@@ -29,7 +29,7 @@ def _run_with_native_disabled(code: str) -> subprocess.CompletedProcess[str]:
 def test_consumers_work_without_native():
     """filter_output/_dedup_output/parsers still produce correct Python results."""
     code = (
-        "from kimix.tools.common import _dedup_output, filter_output; "
+        "from kimi_cli.tools.common import _dedup_output, filter_output; "
         "assert filter_output('\\x1b[31mred\\x1b[0m\\r\\nline') == 'red\\nline'; "
         "assert _dedup_output('x\\nx\\nx\\nx\\nx', 3) == 'x  (5 repeats)'; "
         "from kimix.parser.c_parser import CParser; "

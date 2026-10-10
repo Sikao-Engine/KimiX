@@ -585,7 +585,7 @@ def _build_platform_redirects() -> dict[str, str]:
         "TodoList": "todo_list",
         "Todo": "todo_list",
         "Todos": "todo_list",
-        # Plan file tools (kimix.tools.note): the tools were renamed from the
+        # Plan file tools (kimi_cli.tools.note): the tools were renamed from the
         # CamelCase class names to snake_case tool names (mirroring
         # read/write/edit).  Redirect every plausible LLM spelling - the old
         # class names, snake/kebab/camel variants and common synonyms - to the
@@ -1587,8 +1587,10 @@ class KimiToolset:
                     # the wrong format (JSON-encoded, list instead of string, etc.), the raw content
                     # is saved to a temp file and a helpful error message is returned.  The next call
                     # can use ``read`` to inspect the file and retry with the correct format.
-                    # NOTE: inline import to avoid circular import (kimix → kimi_agent_sdk → kimi_cli.app → toolset)
-                    from kimix.tools.common import (  # fmt: skip
+                                                  # NOTE: inline import: kimi_cli.tools.common pulls in
+                              # kimi_cli.session at import time, so it is loaded lazily
+                              # here instead of at toolset module level.
+                    from kimi_cli.tools.common import (  # fmt: skip
                         _extract_and_save_long_param,
                         _build_long_param_retry_msg,
                     )

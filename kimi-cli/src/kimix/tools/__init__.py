@@ -1,1 +1,1 @@
-"""kimix.tools - Tool modules for the kimix extension package."""
+"""Legacy compat stub. The kimix tool modules now live under ``kimi_cli.tools``."""

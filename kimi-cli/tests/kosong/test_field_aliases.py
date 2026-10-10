@@ -5,8 +5,8 @@ These verify that:
 2. The merged ``_COMMON_FIELD_ALIASES`` contains every category.
 3. ``_repair_dict_for_model`` respects a per-tool alias dict.
 4. ``CallableTool2.call()`` uses the tool class's ``field_aliases``.
-5. Real ``Params`` types defined under ``kimi-cli/src/kimi_cli/tools/`` and
-   ``src/kimix/tools/`` can be repaired successfully.
+5. Real ``Params`` types defined under ``kimi-cli/src/kimi_cli/tools/``
+   can be repaired successfully.
 """
 
 from __future__ import annotations
@@ -423,7 +423,6 @@ def test_callable_tool2_ignores_unrelated_aliases_when_custom_set() -> None:
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 KIMI_CLI_TOOLS_DIR = REPO_ROOT / "kimi-cli" / "src" / "kimi_cli" / "tools"
-KIMIX_TOOLS_DIR = REPO_ROOT / "src" / "kimix" / "tools"
 
 
 def _discover_params_classes(base_dir: Path, package_prefix: str) -> list[type[BaseModel]]:
@@ -464,7 +463,6 @@ def _discover_params_classes(base_dir: Path, package_prefix: str) -> list[type[B
 # Cache the discovered classes so we can parametrize tests.
 _ALL_PARAMS: list[type[BaseModel]] = []
 _ALL_PARAMS += _discover_params_classes(KIMI_CLI_TOOLS_DIR, "kimi_cli.tools")
-_ALL_PARAMS += _discover_params_classes(KIMIX_TOOLS_DIR, "kimix.tools")
 
 # Deduplicate while preserving order.
 _seen_ids: set[int] = set()

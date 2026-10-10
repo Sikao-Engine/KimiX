@@ -1,10 +1,10 @@
-"""Unit tests for kimix.tools.common.filter_output."""
+"""Unit tests for kimi_cli.tools.common.filter_output."""
 
 from __future__ import annotations
 
 import pytest
 
-from kimix.tools.common import filter_output
+from kimi_cli.tools.common import filter_output
 
 
 class TestFilterOutput:

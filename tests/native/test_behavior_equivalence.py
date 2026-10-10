@@ -37,13 +37,13 @@ def _assert_equivalent(native_result, python_result, case):
 
 
 # ---------------------------------------------------------------------------
-# STREAM kernels (src/kimix/tools/common.py)
+# STREAM kernels (kimi-cli/src/kimi_cli/tools/common.py)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("text", STREAM_CORPUS)
 def test_filter_output_equivalence(text):
-    import kimix.tools.common as mod
+    import kimi_cli.tools.common as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -59,7 +59,7 @@ def test_filter_output_equivalence(text):
 
 
 def test_filter_output_typeerror_parity():
-    import kimix.tools.common as mod
+    import kimi_cli.tools.common as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -79,7 +79,7 @@ def test_filter_output_typeerror_parity():
     "output,threshold,max_block_lines", DEDUP_CORPUS
 )
 def test_dedup_output_equivalence(output, threshold, max_block_lines):
-    import kimix.tools.common as mod
+    import kimi_cli.tools.common as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -95,7 +95,7 @@ def test_dedup_output_equivalence(output, threshold, max_block_lines):
 
 
 # ---------------------------------------------------------------------------
-# TOOLS kernels (src/kimix/tools/file/find_str.py)
+# TOOLS kernels (kimi-cli/src/kimi_cli/tools/file/find_str.py)
 # ---------------------------------------------------------------------------
 
 
@@ -106,8 +106,8 @@ def test_find_in_file_equivalence(content, needle):
     import tempfile
     from pathlib import Path
 
-    from kimix.tools.file import find_str as mod
-    from kimix.tools.file.find_str import FindStr, FindStrParams
+    from kimi_cli.tools.file import find_str as mod
+    from kimi_cli.tools.file.find_str import FindStr, FindStrParams
 
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "sample.txt"
@@ -248,7 +248,7 @@ BASH_FIX_CASES = [
 
 @pytest.mark.parametrize("command", BASH_FIX_CASES)
 def test_fix_bash_command_equivalence(command):
-    from kimix.tools.file.bash import bash_fix as mod
+    from kimi_cli.tools.file.bash import bash_fix as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -284,7 +284,7 @@ def test_fix_bash_command_equivalence(command):
     ],
 )
 def test_process_unquoted_equivalence(command):
-    from kimix.tools.file.bash import bash_tool as mod
+    from kimi_cli.tools.file.bash import bash_tool as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -314,7 +314,7 @@ PWSH_FIX_CASES = [
 
 @pytest.mark.parametrize("command", PWSH_FIX_CASES)
 def test_fix_pwsh_command_equivalence(command):
-    from kimix.tools.file.bash import pwsh_fix as mod
+    from kimi_cli.tools.file.bash import pwsh_fix as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -479,7 +479,7 @@ def test_jaro_winkler_nondefault_prefix_keeps_python():
 def test_input_immutability_native_calls():
     """Native calls must not mutate caller-owned bytes/str/lists."""
     import kimi_cli.native_loader as nl
-    from kimix.tools.common import _dedup_output, filter_output
+    from kimi_cli.tools.common import _dedup_output, filter_output
 
     text = "line1\nline2\n\x1b[31mred\x1b[0m\r\nline4"
     text_copy = text
@@ -499,7 +499,7 @@ def test_thread_safety_smoke():
     import threading
 
     import kimi_cli.native_loader as nl
-    from kimix.tools.common import filter_output
+    from kimi_cli.tools.common import filter_output
 
     corpus = ["\x1b[31mred\x1b[0m line " + str(i) for i in range(200)]
     orig = nl.use_native

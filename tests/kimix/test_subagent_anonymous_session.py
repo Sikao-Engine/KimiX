@@ -1,6 +1,6 @@
 """Regression tests: sub-agent sessions must be anonymous (ephemeral).
 
-A session created by the ``subagent`` tool (``src/kimix/tools/agent/__init__.py``)
+A session created by the ``subagent`` tool (``kimi-cli/src/kimi_cli/tools/subagent/__init__.py``)
 is scratch space owned by the tool: the tool creates it, and closes it again on
 ``close_session`` (the default), on LRU eviction or on ``interrupt_agent``.  Its
 directory must therefore not survive the run — the SDK only removes
@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from kaos.path import KaosPath
 
-from kimix.tools.agent import (
+from kimi_cli.tools.subagent import (
     Agent,
     SubAgentParams,
     _children_by_parent,
@@ -55,11 +55,11 @@ def parent_session(tmp_path: Path) -> SimpleNamespace:
 def _clean_agent_registries():
     """Keep the module-level agent registries from leaking between tests.
 
-    ``kimix.tools.agent`` tracks live sub-agent sessions process-wide (that is
+    ``kimi_cli.tools.subagent`` tracks live sub-agent sessions process-wide (that is
     how a parent addresses them by id), so a test that deliberately leaves a
     child open must not be visible to the next one.
     """
-    import kimix.tools.agent as agent_module
+    import kimi_cli.tools.subagent as agent_module
 
     def _reset() -> None:
           agent_module._agent_entries.clear()
@@ -140,7 +140,7 @@ def _cache_dir(work_dir: KaosPath, session_id: str) -> Path:
 
 def test_session_dir_falls_back_to_process_cwd() -> None:
     """Without a work dir the SDK stores sessions under the process CWD."""
-    from kimix.tools.agent import _session_dir
+    from kimi_cli.tools.subagent import _session_dir
 
     session = SimpleNamespace(id="no-work-dir", custom_data={})
     assert _session_dir(session, "abc") == Path.cwd() / ".kimix_cache" / "abc"
@@ -156,10 +156,10 @@ async def test_fresh_subagent_session_is_anonymous(
 
     with (
         patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils.prompt_async", new_callable=AsyncMock),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = sub_session
         result = await Agent(parent_session)(SubAgentParams(prompt="do X", run_in_background=False))
@@ -188,10 +188,10 @@ async def test_resumed_existing_session_keeps_its_directory(
 
     with (
         patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils.prompt_async", new_callable=AsyncMock),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = sub_session
         result = await Agent(parent_session)(
@@ -223,7 +223,7 @@ async def test_subagent_session_dir_deleted_after_finish(
     # Keep the tool instance alive: ``Agent.__del__`` closes whatever is still
     # in the store, and the deletion must come from the tool's own close.
     agent = Agent(parent_session)
-    with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+    with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
         result = await agent(SubAgentParams(prompt="do X", run_in_background=False))
 
     assert not result.is_error
@@ -262,10 +262,10 @@ async def test_subagent_session_dir_removed_while_a_file_is_locked(
         threading.Timer(0.3, handle.close).start()
         return session
 
-    monkeypatch.setattr("kimix.tools.agent._create_session_async", create_and_lock)
+    monkeypatch.setattr("kimix.utils._create_session_async", create_and_lock)
 
     agent = Agent(parent_session)
-    with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+    with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
         result = await agent(SubAgentParams(prompt="do X", run_in_background=False))
 
     assert not result.is_error
@@ -284,13 +284,13 @@ async def test_subagent_session_dir_kept_while_session_is_alive(
     tmp_path: Path,
 ) -> None:
     """``close_session=False`` keeps the session (and its dir) usable."""
-    from kimix.tools.agent import _get_store
+    from kimi_cli.tools.subagent import _get_store
 
     _patch_real_session_creation(monkeypatch, tmp_path)
 
     # Hold the tool instance: ``Agent.__del__`` would close the kept session.
     agent = Agent(parent_session)
-    with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+    with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
         result = await agent(
             SubAgentParams(prompt="do X", close_session=False, run_in_background=False)
         )
@@ -326,7 +326,7 @@ async def test_resuming_a_closed_subagent_leaves_no_directory_behind(
     _patch_real_session_creation(monkeypatch, tmp_path)
 
     agent = Agent(parent_session)
-    with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+    with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
         first = await agent(SubAgentParams(prompt="do X", run_in_background=False))
         session_id = first.extras["session_id"]
         assert not _cache_dir(parent_session.work_dir, session_id).exists()
@@ -358,12 +358,12 @@ async def test_inherit_context_copy_is_anonymous(
 
     with (
         patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create,
         patch.object(Agent, "_inherit_parent_context", fake_inherit),
         patch.object(Agent, "_reset_inherited_system_prompt", new_callable=AsyncMock),
-        patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils.prompt_async", new_callable=AsyncMock),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = sub_session
         result = await Agent(parent_session)(
@@ -412,7 +412,7 @@ async def test_parent_close_deletes_all_subagent_sessions(
     work_dir = parent._cli.session.work_dir
 
     agent = Agent(parent._cli.session)
-    with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+    with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
         first = await agent(SubAgentParams(prompt="a", close_session=False, run_in_background=False))
         second = await agent(SubAgentParams(prompt="b", close_session=False, run_in_background=False))
 
@@ -442,7 +442,7 @@ async def test_parent_clear_deletes_all_subagent_sessions(
     work_dir = parent._cli.session.work_dir
 
     agent = Agent(parent._cli.session)
-    with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+    with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
         result = await agent(SubAgentParams(prompt="a", close_session=False, run_in_background=False))
     child_id = result.extras["session_id"]
     assert _cache_dir(work_dir, child_id).exists()
@@ -464,7 +464,7 @@ async def test_parent_close_keeps_a_named_child_session_dir(
     _cache_dir(work_dir, named_id).mkdir(parents=True)  # pre-existing durable dir
 
     agent = Agent(parent._cli.session)
-    with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+    with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
         result = await agent(
             SubAgentParams(prompt="continue", session_id=named_id, close_session=False, run_in_background=False)
         )
@@ -489,7 +489,7 @@ async def test_child_closed_normally_leaves_the_parent_registry(
     parent = await _real_parent_session(tmp_path, monkeypatch)
 
     agent = Agent(parent._cli.session)
-    with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+    with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
         result = await agent(SubAgentParams(prompt="a", run_in_background=False))  # close_session=True
 
     child_id = result.extras["session_id"]
@@ -513,7 +513,7 @@ def test_throwaway_agent_instance_keeps_parent_children(
     """
     import gc
 
-    from kimix.tools.agent import _get_store
+    from kimi_cli.tools.subagent import _get_store
 
     holder: dict[str, Any] = {}
 
@@ -522,7 +522,7 @@ def test_throwaway_agent_instance_keeps_parent_children(
         agent = Agent(parent._cli.session)
         holder["agent"] = agent  # the principal toolset instance stays alive
         holder["parent"] = parent
-        with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+        with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
             result = await agent(SubAgentParams(prompt="a", close_session=False, run_in_background=False))
         return result.extras["session_id"]
 
@@ -557,7 +557,7 @@ def test_shutdown_path_cascades_to_subagent_sessions(
     async def spawn() -> tuple[Any, str]:
         parent = await _real_parent_session(tmp_path, monkeypatch)
         agent = Agent(parent._cli.session)
-        with patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock):
+        with patch("kimix.utils.prompt_async", new_callable=AsyncMock):
             result = await agent(SubAgentParams(prompt="a", close_session=False, run_in_background=False))
         return parent, result.extras["session_id"]
 

@@ -21,7 +21,7 @@ Exit code: ``0`` when every hit is waived (or there are none), ``1`` otherwise.
 
 Usage::
 
-    uv run tools/gate_library_policy.py kimi-cli/src/kimi_cli/tools src/kimix/tools
+    uv run tools/gate_library_policy.py kimi-cli/src/kimi_cli/tools
     uv run tools/gate_library_policy.py <root> ... --allowlist tools/library_policy_allowlist.txt
 """
 

@@ -13,7 +13,7 @@ must cite the parity test that proves the delegator forwards exactly).
 
 Usage::
 
-    uv run tools/gate_dup.py kimi-cli/src/kimi_cli/tools src/kimix/tools
+    uv run tools/gate_dup.py kimi-cli/src/kimi_cli/tools kimi-cli/src/kimi_cli/tools
     uv run tools/gate_dup.py <roots...> --allow-dup fetch_url:parity test path
 """
 
@@ -120,8 +120,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "roots",
         nargs="*",
-        default=["kimi-cli/src/kimi_cli/tools", "src/kimix/tools"],
-        help="source roots to scan (default: both reviewed tool trees)",
+        default=["kimi-cli/src/kimi_cli/tools"],
+        help="source roots to scan (default: the reviewed tool tree)",
     )
     parser.add_argument("--allowlist", default=str(DEFAULT_ALLOWLIST))
     parser.add_argument(

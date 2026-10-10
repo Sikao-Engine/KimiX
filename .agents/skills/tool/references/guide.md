@@ -169,13 +169,13 @@ import threading
 ## File Naming
 
 Place your tool in the appropriate module:
-- `kimix.tools/py/__init__.py` - Python execution tools
-- `kimix.tools/file/run.py` - File/process tools
-- `kimix.tools/<category>/<tool_name>.py` - Organize by category
+- `kimi_cli.tools.py` (`kimi-cli/src/kimi_cli/tools/py/__init__.py`) - Python execution tools
+- `kimi_cli/tools/file/run.py` - File/process tools (moved to kimi-cli)
+- `kimi_cli.tools/<category>/<tool_name>.py` - Organize by category under `kimi-cli/src/kimi_cli/tools/`
 
 ## Background Task Tools Reference
 
-The `kimix.tools/background/` module provides tools for managing background tasks:
+The `kimi_cli/tools/background/` module provides tools for managing background tasks:
 
 ### Tool Classes
 
@@ -202,7 +202,7 @@ The `kimix.tools/background/` module provides tools for managing background task
 ### Usage Example
 
 ```python
-from kimix.tools.background.utils import (
+from kimi_cli.tools.background.utils import (
     generate_task_id, add_task, BackgroundStream
 )
 
@@ -264,7 +264,7 @@ version: 1
 agent:
   extend: default
   tools:
-    - "kimix.tools.your_module:YourTool"  # add this line
+    - "kimi_cli.tools.your_module:YourTool"  # add this line
 ```
 3. **Choose the right agent file** based on which agent profile should have the tool:
    - `agent_worker.json` — most common; the default agent
@@ -282,7 +282,10 @@ All kimix agent YAML files use `extend: default`, which resolves to `kimi-cli/sr
 
 | Prefix | Source |
 |--------|--------|
-| `kimi_cli.tools.*` | Built-in kimi-cli tools (read, write, edit, glob, grep, todo_list, etc.) |
-| `kimix.tools.*` | Kimix-extended tools (Run, fetch_url, subagent, Note, etc.) |
+| `kimi_cli.tools.*` | Built-in kimi-cli tools (read, write, edit, glob, grep, todo_list, plus the relocated `file.bash` / `file.run` / `file.find_str` / `background` / `common` / `security` / `prompt_common` infra) |
+| `kimi_cli.tools.*` | Kimix-extended tools (fetch_url, subagent, python, note, workflow, context-compact, parser) — relocated into `kimi-cli/src/kimi_cli/tools/` |
 
-Use `kimix.tools.*` for new tools created under `src/kimix/tools/`.
+Use `kimi_cli.tools.*` for new tools created under `kimi-cli/src/kimi_cli/tools/`. The shell / process / background-task
+infrastructure (bash, pwsh, Run, FindStr, job_output, plus the shared `common.py`, `security.py` and
+`prompt_common.py` helpers) was relocated to `kimi_cli.tools.*` under `kimi-cli/src/kimi_cli/tools/`, so new
+tools that need those helpers import them from `kimi_cli.tools.*`.

@@ -9,7 +9,7 @@ import pytest
 from kaos.path import KaosPath
 
 from kimix.base import MessageType
-from kimix.tools.agent import (
+from kimi_cli.tools.subagent import (
     Agent,
     AgentClose,
     AgentCloseParams,
@@ -27,7 +27,7 @@ from kimix.tools.agent import (
     _unregister_entry,
     wait_for_background_agents,
 )
-from kimix.tools.agent.store import (
+from kimi_cli.tools.subagent.store import (
     AgentSessionEntry,
     AgentSessionStore,
 )
@@ -123,7 +123,7 @@ async def test_store_lru_eviction(mock_sub_session: MagicMock) -> None:
 
     assert len(store.entries) == 4
     with patch(
-        "kimix.tools.agent.store.close_session_async", new_callable=AsyncMock
+        "kimix.utils.close_session_async", new_callable=AsyncMock
     ) as mock_close:
         await store.evict_lru_if_needed()
         assert mock_close.await_count == 2
@@ -158,7 +158,7 @@ async def test_store_notifies_when_a_session_leaves(
 
     store.MAX_SESSIONS = 3
     with patch(
-        "kimix.tools.agent.store.close_session_async", new_callable=AsyncMock
+        "kimix.utils.close_session_async", new_callable=AsyncMock
     ):
         await store.evict_lru_if_needed()
 
@@ -187,7 +187,7 @@ async def test_store_notification_failure_does_not_break_eviction(
         )
 
     with patch(
-        "kimix.tools.agent.store.close_session_async", new_callable=AsyncMock
+        "kimix.utils.close_session_async", new_callable=AsyncMock
     ):
         await store.evict_lru_if_needed()
 
@@ -255,14 +255,14 @@ async def test_agent_new_session(
     mock_session.custom_config = {"chat_provider": None}
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ) as mock_prompt:
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 result = await agent(SubAgentParams(prompt="do X", run_in_background=False))
@@ -282,14 +282,14 @@ async def test_agent_keep_alive_stores_session(
     mock_session.custom_config = {"chat_provider": None}
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ) as mock_close:
                 agent = Agent(mock_session)
                 result = await agent(SubAgentParams(prompt="do X", close_session=False, run_in_background=False))
@@ -318,10 +318,10 @@ async def test_agent_reuse_session(
     )
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             agent = Agent(mock_session)
             result = await agent(
@@ -350,14 +350,14 @@ async def test_agent_close_session_param(
     )
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ) as mock_close:
                 agent = Agent(mock_session)
                 result = await agent(
@@ -377,14 +377,14 @@ async def test_agent_return_history(
     mock_session.custom_config = {"chat_provider": None}
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 result = await agent(SubAgentParams(prompt="do X", return_history=True, run_in_background=False))
@@ -402,15 +402,15 @@ async def test_agent_error_path(
     mock_session.custom_config = {"chat_provider": None}
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ) as mock_prompt:
             mock_prompt.side_effect = RuntimeError("boom")
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ) as mock_close:
                 agent = Agent(mock_session)
                 result = await agent(SubAgentParams(prompt="do X", close_session=False, run_in_background=False))
@@ -435,18 +435,18 @@ async def test_agent_error_saves_prompt_file(
         return str(target)
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ) as mock_prompt:
             mock_prompt.side_effect = RuntimeError("boom")
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ) as mock_close:
                 with patch(
-                    "kimix.tools.agent._create_script_file",
+                    "kimi_cli.tools.subagent._create_script_file",
                     side_effect=fake_create_script_file,
                 ):
                     agent = Agent(mock_session)
@@ -476,14 +476,14 @@ async def test_agent_prompt_from_file(
     mock_session.work_dir = KaosPath(str(tmp_path))
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ) as mock_prompt:
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 result = await agent(
@@ -503,7 +503,7 @@ async def test_agent_prompt_file_missing(
     mock_session.custom_config = {"chat_provider": None}
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         agent = Agent(mock_session)
@@ -544,17 +544,17 @@ async def test_agent_long_prompt_offloads_to_temp_file(
         return str(fake_path)
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ) as mock_prompt:
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 with patch(
-                    "kimix.tools.agent._create_script_file",
+                    "kimi_cli.tools.subagent._create_script_file",
                     side_effect=fake_create_script_file,
                 ):
                     agent = Agent(mock_session)
@@ -575,14 +575,14 @@ async def test_agent_lru_eviction(
     store.MAX_SESSIONS = 2
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             with patch(
-                "kimix.tools.agent.store.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ) as mock_close:
                 agent = Agent(mock_session)
                 for i in range(3):
@@ -611,17 +611,17 @@ async def test_agent_inherit_context_copies_parent_session(
     mock_session.work_dir = KaosPath(".")
 
     with patch(
-        "kimix.tools.agent.Session.copy", new_callable=AsyncMock
+        "kimi_cli.tools.subagent.Session.copy", new_callable=AsyncMock
     ) as mock_copy:
         with patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create:
             mock_create.return_value = mock_sub_session
             with patch(
-                "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+                "kimix.utils.prompt_async", new_callable=AsyncMock
             ):
                 with patch(
-                    "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                    "kimix.utils.close_session_async", new_callable=AsyncMock
                 ):
                     agent = Agent(mock_session)
                     result = await agent(
@@ -649,17 +649,17 @@ async def test_agent_inherit_context_with_explicit_session_id(
     mock_session.work_dir = KaosPath(".")
 
     with patch(
-        "kimix.tools.agent.Session.copy", new_callable=AsyncMock
+        "kimi_cli.tools.subagent.Session.copy", new_callable=AsyncMock
     ) as mock_copy:
         with patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create:
             mock_create.return_value = mock_sub_session
             with patch(
-                "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+                "kimix.utils.prompt_async", new_callable=AsyncMock
             ):
                 with patch(
-                    "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                    "kimix.utils.close_session_async", new_callable=AsyncMock
                 ):
                     agent = Agent(mock_session)
                     result = await agent(
@@ -695,13 +695,13 @@ async def test_agent_inherit_context_ignored_on_reuse(
     )
 
     with patch(
-        "kimix.tools.agent.Session.copy", new_callable=AsyncMock
+        "kimi_cli.tools.subagent.Session.copy", new_callable=AsyncMock
     ) as mock_copy:
         with patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create:
             with patch(
-                "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+                "kimix.utils.prompt_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 result = await agent(
@@ -727,7 +727,7 @@ async def test_agent_inherit_context_without_parent_id_errors(
     mock_session._cli = None
 
     with patch(
-        "kimix.tools.agent.Session.copy", new_callable=AsyncMock
+        "kimi_cli.tools.subagent.Session.copy", new_callable=AsyncMock
     ) as mock_copy:
         agent = Agent(mock_session)
         result = await agent(SubAgentParams(prompt="do X", inherit_context=True, run_in_background=False))
@@ -872,7 +872,7 @@ async def test_agent_close(mock_session: MagicMock, mock_sub_session: MagicMock)
         )
     )
     with patch(
-        "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+        "kimix.utils.close_session_async", new_callable=AsyncMock
     ) as mock_close:
         agent_close = AgentClose(mock_session)
         result = await agent_close(AgentCloseParams(session_id="close-id"))
@@ -923,14 +923,14 @@ async def test_agent_resolve_session_registers_parent_and_child(
     mock_session.id = "parent-1"
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 result = await agent(SubAgentParams(prompt="do X", close_session=False, run_in_background=False))
@@ -961,14 +961,14 @@ async def test_agent_work_dir_inherited_by_sub_session(
     mock_session.custom_config = {"chat_provider": None}
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 await agent(SubAgentParams(prompt="do X", run_in_background=False))
@@ -993,14 +993,14 @@ async def test_agent_work_dir_sdk_wrapped_session(
     mock_session.custom_config = {"chat_provider": None}
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 await agent(SubAgentParams(prompt="do X", run_in_background=False))
@@ -1034,14 +1034,14 @@ async def test_agent_context_files_resolve_against_work_dir(
         return None
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock, side_effect=fake_prompt
+            "kimix.utils.prompt_async", new_callable=AsyncMock, side_effect=fake_prompt
         ):
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 await agent(
@@ -1061,14 +1061,14 @@ async def test_agent_work_dir_none_falls_back_to_cwd(
     mock_session.custom_config = {"chat_provider": None}
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 result = await agent(SubAgentParams(prompt="do X", run_in_background=False))
@@ -1119,12 +1119,12 @@ async def test_agent_background_returns_durable_id_immediately(
 
     with (
         patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create,
         patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ) as mock_prompt,
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = mock_sub_session
         mock_prompt.side_effect = _blocking_prompt
@@ -1165,13 +1165,13 @@ async def test_agent_background_completes_and_stays_addressable(
 
     with (
         patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create,
         patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ) as mock_prompt,
         patch(
-            "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+            "kimix.utils.close_session_async", new_callable=AsyncMock
         ) as mock_close,
     ):
         mock_create.return_value = mock_sub_session
@@ -1206,13 +1206,13 @@ async def test_agent_background_explicit_close_session_closes(
 
     with (
         patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create,
         patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ) as mock_prompt,
         patch(
-            "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+            "kimix.utils.close_session_async", new_callable=AsyncMock
         ) as mock_close,
     ):
         mock_create.return_value = mock_sub_session
@@ -1238,13 +1238,13 @@ async def test_agent_foreground_default_still_closes(
 
     with (
         patch(
-            "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+            "kimix.utils._create_session_async", new_callable=AsyncMock
         ) as mock_create,
         patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ) as mock_prompt,
         patch(
-            "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+            "kimix.utils.close_session_async", new_callable=AsyncMock
         ) as mock_close,
     ):
         mock_create.return_value = mock_sub_session
@@ -1271,12 +1271,12 @@ async def test_agent_background_notifies_parent_on_completion(
     try:
         with (
             patch(
-                "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+                "kimix.utils._create_session_async", new_callable=AsyncMock
             ) as mock_create,
             patch(
-                "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+                "kimix.utils.prompt_async", new_callable=AsyncMock
             ) as mock_prompt,
-            patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+            patch("kimix.utils.close_session_async", new_callable=AsyncMock),
             patch(
                 "kimi_cli.soul.steer.Steer.from_session", return_value=fake
             ) as mock_from,
@@ -1408,7 +1408,7 @@ async def test_store_eviction_prefers_completed_sessions(
     store.put(_entry("done-2", now - 50, "completed"))
 
     with patch(
-        "kimix.tools.agent.store.close_session_async", new_callable=AsyncMock
+        "kimix.utils.close_session_async", new_callable=AsyncMock
     ):
         await store.evict_lru_if_needed()
 

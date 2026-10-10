@@ -21,8 +21,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from kimix.tools.common import ProcessTask, _env_with_rg_bin_path  # noqa: E402
-from kimix.tools.security import scrub_child_env  # noqa: E402
+from kimi_cli.tools.common import ProcessTask, _env_with_rg_bin_path  # noqa: E402
+from kimi_cli.tools.security import scrub_child_env  # noqa: E402
 
 # NOTE: `KIMIX_*` is an explicit SAFE prefix in `security.scrub_child_env` (it is
 # the project's own config namespace), so probes must NOT use a KIMIX_-prefixed

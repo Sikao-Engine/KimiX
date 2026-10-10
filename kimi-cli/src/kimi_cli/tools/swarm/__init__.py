@@ -15,24 +15,36 @@ from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
 from pydantic import BaseModel, Field, model_validator
 
-import kimix.base as base
-import kimix.utils as utils
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.tools.agent import _AgentConversationCollector
-from kimix.ui.printing import MessageType
-from kimix.utils.system_prompt import SystemPromptType
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+
+# NOTE: ``kimi_cli`` must not import ``kimix`` at module load (``kimix`` depends
+# on ``kimi_cli``).  The SDK ``kimi_agent_sdk`` package imports ``kimi_cli.app``,
+# which would also form an import cycle, so all ``kimix.*`` and
+# ``kimi_agent_sdk``-only symbols are imported lazily inside the functions that
+# use them (``base``, ``utils``, ``SystemPromptType``, ``_AgentConversationCollector``).
+# ``MessageType`` was only ever used in parameter annotations, which are strings
+# under ``from __future__ import annotations``, so it needs no import at all.
+
+
+def _subagent_type_map() -> dict:
+    """Return the subagent-type -> ``SystemPromptType`` map, built lazily.
+
+    ``SystemPromptType`` comes from ``kimix.utils.system_prompt``, so it cannot
+    be referenced at module scope; import it here on first use.
+    """
+    from kimix.utils.system_prompt import SystemPromptType
+
+    return {
+        "coder": SystemPromptType.Worker,
+        "explore": SystemPromptType.Reader,
+        "plan": SystemPromptType.TodoMaker,
+    }
 
 _MAX_SUB_AGENTS = 128
 _DEFAULT_BURST = 5
 _DEFAULT_INTERVAL_SECONDS = 0.7
 _MAX_RETRIES = 3
 _RETRY_BASE_SECONDS = 1.0
-
-_SUBAGENT_TYPE_MAP: dict[str, SystemPromptType] = {
-    "coder": SystemPromptType.Worker,
-    "explore": SystemPromptType.Reader,
-    "plan": SystemPromptType.TodoMaker,
-}
 
 
 @dataclass
@@ -241,7 +253,9 @@ class AgentSwarm(CallableTool2):
         """Best-of-N: sample the same task N times, select, apply, report."""
         from kaos.path import KaosPath
 
-        from kimix.tools.swarm import best_of_n as bon
+        import kimix.utils as utils
+        from kimi_cli.tools.swarm import best_of_n as bon
+        from kimi_cli.tools.subagent import _AgentConversationCollector
 
         if params.prompt_template is not None:
             task_prompt = params.prompt_template.replace("{{item}}", "").strip()
@@ -423,6 +437,9 @@ def _is_rate_limit_error(exc: Exception) -> bool:
 async def _run_subagent_task(
     task: SwarmTask, subagent_type: str, parent_session: Session
 ) -> SwarmSubagentResult:
+    import kimix.utils as utils
+    from kimi_cli.tools.subagent import _AgentConversationCollector
+
     session: Session | None = None
     session_id: str | None = task.agent_id
     last_error: Exception | None = None
@@ -488,6 +505,10 @@ async def _run_subagent_task(
 async def _resolve_subagent_session(
     task: SwarmTask, subagent_type: str, parent_session: Session
 ) -> tuple[Session, str, str]:
+    import kimix.base as base
+    import kimix.utils as utils
+    from kimix.utils.system_prompt import SystemPromptType
+
     custom_config = parent_session.custom_config
     chat_provider = custom_config.get("chat_provider")
     default_sub_provider = (
@@ -496,7 +517,7 @@ async def _resolve_subagent_session(
     )
 
     session_id = task.agent_id or str(uuid.uuid4())
-    agent_type = _SUBAGENT_TYPE_MAP.get(subagent_type, SystemPromptType.Worker)
+    agent_type = _subagent_type_map().get(subagent_type, SystemPromptType.Worker)
 
     # Offload very long prompts to a temp file, matching the Agent tool pattern.
     prompt_bytes = task.prompt.encode("utf-8")

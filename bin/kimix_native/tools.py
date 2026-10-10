@@ -510,9 +510,9 @@ def scan_lines_cb(
 # Security / shell-safety kernels (plan: commit 0582e09 "Study from hermes")
 # ---------------------------------------------------------------------------
 # The _compat_* mirrors below are VERBATIM copies of the reference algorithms
-# (src/kimix/tools/security.py, src/kimix/tools/file/bash/safety.py,
-# src/kimix/tools/file/bash/output_enhance.py,
-# src/kimix/tools/background/utils.py, kimi-cli grep_local.py); only the
+# (kimi-cli/src/kimi_cli/tools/security.py, kimi-cli/src/kimi_cli/tools/file/bash/safety.py,
+# kimi-cli/src/kimi_cli/tools/file/bash/output_enhance.py,
+# kimi-cli/src/kimi_cli/tools/background/utils.py, kimi-cli grep_local.py); only the
 # names changed (_compat_ prefix).  The public functions gate on
 # use_native("TOOLS") and route non-ASCII input to the mirrors.
 

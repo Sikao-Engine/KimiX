@@ -6,9 +6,9 @@
       "kimi_cli.tools.file:read_image",
       "kimi_cli.tools.file:glob",
       "kimi_cli.tools.file:grep",
-      "kimix.tools.web.fetch_url:fetch_url",
+      "kimi_cli.tools.web.kimix_fetch:fetch_url",
       "kimi_cli.tools.web:web_search",
-      "kimix.tools.context:compact"
+      "kimi_cli.tools.context:compact"
     ]
   }
 }

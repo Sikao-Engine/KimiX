@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from kimix.tools.common import (
+from kimi_cli.tools.common import (
     _dedup_output,
     _is_known_rtk_command,
     _maybe_export_rtk_original_async,
@@ -411,7 +411,7 @@ def test_original_saved_message_empty_for_empty_string():
 
 
 def test_original_saved_message_formats_temp_path(tmp_path, monkeypatch):
-    from kimix.tools import common as common_mod
+    from kimi_cli.tools import common as common_mod
     monkeypatch.chdir(tmp_path)
     folder = Path(".kimix_cache") / "tmp_1234"
     folder.mkdir(parents=True)
@@ -513,7 +513,7 @@ def rtk_available(tmp_path):
     _rtk_binary_path.cache_clear()
     with (
         patch("kimi_cli.share.get_share_dir", return_value=tmp_path),
-        patch("kimix.tools.common._rtk_available", return_value=True),
+        patch("kimi_cli.tools.common._rtk_available", return_value=True),
     ):
         yield rtk_path
     _rtk_binary_path.cache_clear()
@@ -589,7 +589,7 @@ def test_rewrite_respects_token_kill_false(rtk_available):
 
 
 def test_rewrite_no_rtk():
-    with patch("kimix.tools.common._rtk_available", return_value=False):
+    with patch("kimi_cli.tools.common._rtk_available", return_value=False):
         rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
             "git status", token_kill=True
         )
@@ -783,7 +783,7 @@ def test_rewrite_no_binary_no_rewrite(tmp_path):
     """When the available gate is True we trust it and rewrite to bare `rtk`."""
     with (
         patch("kimi_cli.share.get_share_dir", return_value=tmp_path),
-        patch("kimix.tools.common._rtk_available", return_value=True),
+        patch("kimi_cli.tools.common._rtk_available", return_value=True),
     ):
         rewritten, changed = _maybe_rewrite_shell_command_with_rtk(
             "git status", token_kill=True

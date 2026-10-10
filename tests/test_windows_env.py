@@ -351,18 +351,18 @@ class TestRunToolCallsRefresh:
         loop = asyncio.new_event_loop()
         try:
             with (
-                patch("kimix.tools.file.run.sys.platform", "win32"),
-                patch("kimix.tools.file.run.USE_SYSTEM_PWSH_ON_WINDOWS", False),
-                patch("kimix.tools.file.run.find_bash", return_value=None),
+                patch("kimi_cli.tools.file.run.sys.platform", "win32"),
+                patch("kimi_cli.tools.file.run.USE_SYSTEM_PWSH_ON_WINDOWS", False),
+                patch("kimi_cli.tools.file.run.find_bash", return_value=None),
             ):
-                from kimix.tools.file.run import Run, RunParams
+                from kimi_cli.tools.file.run import Run, RunParams
                 tool = Run(mock_session)
 
                 with patch(
                     "kimix.utils.windows_env.refresh_env_from_registry"
                 ) as mock_refresh:
                     with patch(
-                        "kimix.tools.common.ProcessTask.start",
+                        "kimi_cli.tools.common.ProcessTask.start",
                         side_effect=OSError("simulated"),
                     ):
                         try:
@@ -390,7 +390,7 @@ class TestPowershellToolCallsRefresh:
 
         import asyncio
 
-        from kimix.tools.file.bash.pwsh_tool import Powershell, PowershellParams
+        from kimi_cli.tools.file.bash.pwsh_tool import Powershell, PowershellParams
 
         # Create the event loop BEFORE faking ``sys.platform``: asyncio picks
         # its Windows event-loop policy when ``sys.platform == "win32"``,
@@ -401,8 +401,8 @@ class TestPowershellToolCallsRefresh:
             # Keep ``sys.platform`` patched for the ``__call__`` as well: the
             # refresh inside ``Powershell.__call__`` is gated on win32 at call time.
             with (
-                patch("kimix.tools.file.bash.pwsh_tool.sys.platform", "win32"),
-                patch("kimix.tools.file.bash.pwsh_tool._bash_tool.find_bash", return_value=None),
+                patch("kimi_cli.tools.file.bash.pwsh_tool.sys.platform", "win32"),
+                patch("kimi_cli.tools.file.bash.pwsh_tool._bash_tool.find_bash", return_value=None),
                 patch.object(Powershell, "_resolve_pwsh", lambda self: None),
             ):
                 tool = Powershell(mock_session)
@@ -411,7 +411,7 @@ class TestPowershellToolCallsRefresh:
                     "kimix.utils.windows_env.refresh_env_from_registry"
                 ) as mock_refresh:
                     with patch(
-                        "kimix.tools.common.ProcessTask.start",
+                        "kimi_cli.tools.common.ProcessTask.start",
                         side_effect=OSError("simulated"),
                     ):
                         try:
@@ -430,9 +430,9 @@ class TestPowershellToolCallsRefresh:
         mock_session.custom_data = {}
 
         from kimi_cli.tools import SkipThisTool
-        with patch("kimix.tools.file.bash.pwsh_tool.sys.platform", "linux"):
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.sys.platform", "linux"):
             with pytest.raises(SkipThisTool):
-                from kimix.tools.file.bash.pwsh_tool import Powershell
+                from kimi_cli.tools.file.bash.pwsh_tool import Powershell
                 Powershell(mock_session)
 
 

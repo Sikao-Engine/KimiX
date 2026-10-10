@@ -112,9 +112,9 @@ def check_hardline_blocked(command: str) -> tuple[bool, str | None]:
     return _compat_tools()._compat_check_hardline_blocked(command)
 
 
-# ``validate_workdir`` moved to :mod:`kimix.tools.security`; re-exported
+# ``validate_workdir`` moved to :mod:`kimi_cli.tools.security`; re-exported
 # here for compatibility with existing shell-tool callers.
-from kimix.tools.security import validate_workdir as validate_workdir  # noqa: F401, E402
+from kimi_cli.tools.security import validate_workdir as validate_workdir  # noqa: F401, E402
 
 
 def foreground_background_guidance(command: str) -> str | None:

@@ -2,25 +2,25 @@
   "agent": {
     "extend": "default",
     "tools": [
-      "kimix.tools.file.bash:bash",
-      "kimix.tools.file.bash:pwsh",
-      "kimix.tools.file.run:Run",
-      "kimix.tools.py:python",
-      "kimix.tools.background:job_output",
+      "kimi_cli.tools.file.bash:bash",
+      "kimi_cli.tools.file.bash:pwsh",
+      "kimi_cli.tools.file.run:Run",
+      "kimi_cli.tools.py:python",
+      "kimi_cli.tools.background:job_output",
       "kimi_cli.tools.todo:todo_list",
       "kimi_cli.tools.file:read",
       "kimi_cli.tools.file:read_image",
       "kimi_cli.tools.file:edit",
       "kimi_cli.tools.file:write",
-      "kimix.tools.agent:subagent",
-      "kimix.tools.agent:list_agents",
-      "kimix.tools.agent:interrupt_agent",
-      "kimix.tools.swarm:workflow",
+      "kimi_cli.tools.subagent:subagent",
+      "kimi_cli.tools.subagent:list_agents",
+      "kimi_cli.tools.subagent:interrupt_agent",
+      "kimi_cli.tools.swarm:workflow",
       "kimi_cli.tools.file:glob",
       "kimi_cli.tools.file:grep",
-      "kimix.tools.web.fetch_url:fetch_url",
+      "kimi_cli.tools.web.kimix_fetch:fetch_url",
       "kimi_cli.tools.web:web_search",
-      "kimix.tools.context:compact"
+      "kimi_cli.tools.context:compact"
     ]
   }
 }

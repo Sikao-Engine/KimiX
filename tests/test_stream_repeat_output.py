@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from kimix.tools.background.utils import (
+from kimi_cli.tools.background.utils import (
     BackgroundStream,
     _pop_task_data,
 )

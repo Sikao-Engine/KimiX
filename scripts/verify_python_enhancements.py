@@ -20,8 +20,8 @@ from unittest.mock import MagicMock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from kimi_agent_sdk import ToolError  # noqa: E402
-from kimix.tools.py import Params, python  # noqa: E402
-from kimix.tools.security import scrub_child_env, validate_workdir  # noqa: E402
+from kimi_cli.tools.py import Params, python  # noqa: E402
+from kimi_cli.tools.security import scrub_child_env, validate_workdir  # noqa: E402
 
 
 def is_ok(res) -> bool:
@@ -93,7 +93,7 @@ async def main() -> int:
 
         # 5. summarize gate off -> summarizer not invoked (large compressible-ish output)
         calls = []
-        import kimix.tools.py as py_mod
+        import kimi_cli.tools.py as py_mod
         original = py_mod._summarize_long_output_async
         py_mod._summarize_long_output_async = _recording(original, calls)
         try:

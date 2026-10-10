@@ -1,7 +1,7 @@
 """Tests for OUTPUT_LIMIT (16384) and original file saving."""
 
 
-from kimix.tools.common import (
+from kimi_cli.tools.common import (
     OUTPUT_LIMIT,
     _build_session_output_block,
     _maybe_export_output_async,

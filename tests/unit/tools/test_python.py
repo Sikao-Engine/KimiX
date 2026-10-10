@@ -10,8 +10,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from kimi_agent_sdk import ToolError, ToolOk
-from kimix.tools.py import Params as PythonParams
-from kimix.tools.py import python
+from kimi_cli.tools.py import Params as PythonParams
+from kimi_cli.tools.py import python
 
 
 def _long_output() -> str:
@@ -109,7 +109,7 @@ class TestBuildEnv:
         """Patch get_share_dir to a tmp_path containing a fake bin directory."""
         share = tmp_path / "share"
         (share / "bin").mkdir(parents=True)
-        monkeypatch.setattr("kimix.tools.py.get_share_dir", lambda: share)
+        monkeypatch.setattr("kimi_cli.tools.py.get_share_dir", lambda: share)
         monkeypatch.delenv("VIRTUAL_ENV", raising=False)
         return share
 
@@ -224,7 +224,7 @@ class TestNoCwdParam:
 # WP2: ProcessTask wiring — scrub_env / redact kwargs (cwd removed)
 # ---------------------------------------------------------------------------
 def _fake_process_task(monkeypatch: pytest.MonkeyPatch, output: str = "fake output"):
-    """Patch ``kimix.tools.py.ProcessTask`` with a fake that records ctor kwargs
+    """Patch ``kimi_cli.tools.py.ProcessTask`` with a fake that records ctor kwargs
     and behaves like a successfully completed process."""
     import unittest.mock as um
 
@@ -237,7 +237,7 @@ def _fake_process_task(monkeypatch: pytest.MonkeyPatch, output: str = "fake outp
     inst.stream.success.return_value = True
     inst.stream.exit_code = 0
     mock_cls = um.Mock(return_value=inst)
-    monkeypatch.setattr("kimix.tools.py.ProcessTask", mock_cls)
+    monkeypatch.setattr("kimi_cli.tools.py.ProcessTask", mock_cls)
     return mock_cls
 
 
@@ -346,7 +346,7 @@ class TestOriginalSavedSuffix:
         assert len(long_output) > 65536
         _fake_process_task(monkeypatch, output=long_output)
         monkeypatch.setattr(
-            "kimix.tools.py._summarize_long_output_async",
+            "kimi_cli.tools.py._summarize_long_output_async",
             um.AsyncMock(return_value="[summary]"),
         )
         result = await tool(PythonParams(code="print('x')"))
@@ -371,7 +371,7 @@ class TestSyntaxPrecheck:
             constructed.append((args, kwargs))
             raise AssertionError("ProcessTask must not be constructed for broken syntax")
 
-        monkeypatch.setattr("kimix.tools.py.ProcessTask", boom)
+        monkeypatch.setattr("kimi_cli.tools.py.ProcessTask", boom)
         result = await tool(PythonParams(code="def broken(:"))
         assert isinstance(result, ToolError)
         assert result.brief == "Syntax error"
@@ -389,7 +389,7 @@ class TestSyntaxPrecheck:
             constructed.append((args, kwargs))
             raise AssertionError("ProcessTask must not be constructed")
 
-        monkeypatch.setattr("kimix.tools.py.ProcessTask", boom)
+        monkeypatch.setattr("kimi_cli.tools.py.ProcessTask", boom)
         # A real NUL byte in the source is rejected by compile() (ValueError).
         result = await tool(PythonParams(code="print('a\x00')"))
         assert isinstance(result, ToolError)
@@ -408,7 +408,7 @@ class TestSyntaxPrecheck:
             constructed.append((args, kwargs))
             raise AssertionError("ProcessTask must not be constructed")
 
-        monkeypatch.setattr("kimix.tools.py.ProcessTask", boom)
+        monkeypatch.setattr("kimi_cli.tools.py.ProcessTask", boom)
         result = await tool(PythonParams(code=str(py_file)))
         assert isinstance(result, ToolError)
         assert result.brief == "Syntax error"
@@ -448,7 +448,7 @@ class TestSyntaxPrecheck:
             constructed.append((args, kwargs))
             raise AssertionError("ProcessTask must not be constructed")
 
-        monkeypatch.setattr("kimix.tools.py.ProcessTask", boom)
+        monkeypatch.setattr("kimi_cli.tools.py.ProcessTask", boom)
         result = await tool(PythonParams(code="def broken(:", mode="interactive"))
         assert isinstance(result, ToolError)
         assert result.brief == "Syntax error"
@@ -480,7 +480,7 @@ class TestSummarizeGate:
             calls.append((session, context, output))
             return "SUMMARY"
 
-        monkeypatch.setattr("kimix.tools.py._summarize_long_output_async", fake_summarize)
+        monkeypatch.setattr("kimi_cli.tools.py._summarize_long_output_async", fake_summarize)
         tool._session.custom_config = {
             "config_json": {"python": {"summarize_long_output": False}}
         }
@@ -504,7 +504,7 @@ class TestSummarizeGate:
             calls.append((session, context, output))
             return "SUMMARY"
 
-        monkeypatch.setattr("kimix.tools.py._summarize_long_output_async", fake_summarize)
+        monkeypatch.setattr("kimi_cli.tools.py._summarize_long_output_async", fake_summarize)
         long_output = _long_output()
         _fake_process_task(monkeypatch, output=long_output)
         result = await tool(PythonParams(code="print('x')"))
@@ -523,7 +523,7 @@ class TestEnvScrubbing:
     ) -> None:
         share = tmp_path / "share"
         (share / "bin").mkdir(parents=True)
-        monkeypatch.setattr("kimix.tools.py.get_share_dir", lambda: share)
+        monkeypatch.setattr("kimi_cli.tools.py.get_share_dir", lambda: share)
         monkeypatch.setenv("PATH", "/usr/bin")
         monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIA1234567890ABCD")
         monkeypatch.setenv("VERIFY_SCRUB_TOKEN", "s3cr3t")
@@ -541,7 +541,7 @@ class TestEnvScrubbing:
     ) -> None:
         share = tmp_path / "share"
         (share / "bin").mkdir(parents=True)
-        monkeypatch.setattr("kimix.tools.py.get_share_dir", lambda: share)
+        monkeypatch.setattr("kimi_cli.tools.py.get_share_dir", lambda: share)
         monkeypatch.setenv("PATH", "/usr/bin")
         monkeypatch.setenv("VERIFY_SCRUB_TOKEN", "s3cr3t")
         env = python._build_env(sys.executable, scrub_env=False)
@@ -572,7 +572,7 @@ class TestScriptTempFolder:
     def test_inline_code_written_to_temp_folder_not_session_dir(
         self, tool: python
     ) -> None:
-        from kimix.tools import common as common_mod
+        from kimi_cli.tools import common as common_mod
 
         script_path, is_file_mode = tool._resolve_script_source(
             PythonParams(code="x = 42")
@@ -588,7 +588,7 @@ class TestScriptTempFolder:
         assert not list(Path(tool._session.dir).glob("*.py"))
 
     def test_display_path_is_short_relative(self, tool: python) -> None:
-        from kimix.tools import common as common_mod
+        from kimi_cli.tools import common as common_mod
 
         script_path, _ = tool._resolve_script_source(PythonParams(code="x = 42"))
         display = common_mod._display_temp_path(script_path)
@@ -634,7 +634,7 @@ class TestBackgroundFormatter:
 
         long_output = _long_output()
         monkeypatch.setattr(
-            "kimix.tools.py._summarize_long_output_async",
+            "kimi_cli.tools.py._summarize_long_output_async",
             um.AsyncMock(return_value="[summary]"),
         )
         params = PythonParams(code="print('x')")
@@ -729,7 +729,7 @@ class TestRunInBackground:
         import re
         import time
 
-        from kimix.tools.background import TaskOutput, TaskOutputParams
+        from kimi_cli.tools.background import TaskOutput, TaskOutputParams
 
         started_at = time.monotonic()
         result = await tool(

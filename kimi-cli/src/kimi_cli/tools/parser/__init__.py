@@ -7,54 +7,70 @@ from typing import Any
 import orjson
 from pydantic import BaseModel, Field
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.parser import (
-    BaseParser,
-    CParser,
-    HtmlParser,
-    LispParser,
-    PascalParser,
-    PythonParser,
-    ShellParser,
-    SqlParser,
-)
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 # ── Language → Parser mapping ──────────────────────────────────────────────────
+#
+# The parser classes live in ``kimix.parser``.  ``kimi_cli`` must never import
+# ``kimix`` at module load time (``kimix`` depends on ``kimi_cli``), so the
+# parser classes are imported lazily inside :func:`_get_language_map`, which
+# builds and caches the language -> parser-instance map on the first tool call.
+# (``BaseParser`` was only ever used as a type annotation here, so it is no
+# longer imported.)
 
-_LANGUAGE_MAP: dict[str, BaseParser] = {
-    # Python
-    "python": PythonParser(),
-    # C-family (C, C++, Java, JavaScript, TypeScript, Go, Rust, C#, Swift, Kotlin, PHP)
-    "c": CParser(),
-    "cpp": CParser(),
-    "java": CParser(),
-    "javascript": CParser(),
-    "typescript": CParser(),
-    "go": CParser(),
-    "rust": CParser(),
-    "csharp": CParser(),
-    "swift": CParser(),
-    "kotlin": CParser(),
-    "php": CParser(),
-    # Shell / Bash
-    "shell": ShellParser(),
-    "bash": ShellParser(),
-    # HTML / XML
-    "html": HtmlParser(),
-    "xml": HtmlParser(),
-    # Pascal / Delphi / Ada
-    "pascal": PascalParser(),
-    "delphi": PascalParser(),
-    "ada": PascalParser(),
-    # Lisp-family
-    "lisp": LispParser(),
-    "scheme": LispParser(),
-    "clojure": LispParser(),
-    # SQL
-    "sql": SqlParser(),
-    "mysql": SqlParser(),
-    "postgresql": SqlParser(),
-}
+_LANGUAGE_MAP: dict[str, Any] | None = None
+
+
+def _get_language_map() -> dict[str, Any]:
+    """Return the language -> parser map, importing ``kimix.parser`` on first use."""
+    global _LANGUAGE_MAP
+    if _LANGUAGE_MAP is not None:
+        return _LANGUAGE_MAP
+    from kimix.parser import (
+        CParser,
+        HtmlParser,
+        LispParser,
+        PascalParser,
+        PythonParser,
+        ShellParser,
+        SqlParser,
+    )
+
+    _LANGUAGE_MAP = {
+        # Python
+        "python": PythonParser(),
+        # C-family (C, C++, Java, JavaScript, TypeScript, Go, Rust, C#, Swift, Kotlin, PHP)
+        "c": CParser(),
+        "cpp": CParser(),
+        "java": CParser(),
+        "javascript": CParser(),
+        "typescript": CParser(),
+        "go": CParser(),
+        "rust": CParser(),
+        "csharp": CParser(),
+        "swift": CParser(),
+        "kotlin": CParser(),
+        "php": CParser(),
+        # Shell / Bash
+        "shell": ShellParser(),
+        "bash": ShellParser(),
+        # HTML / XML
+        "html": HtmlParser(),
+        "xml": HtmlParser(),
+        # Pascal / Delphi / Ada
+        "pascal": PascalParser(),
+        "delphi": PascalParser(),
+        "ada": PascalParser(),
+        # Lisp-family
+        "lisp": LispParser(),
+        "scheme": LispParser(),
+        "clojure": LispParser(),
+        # SQL
+        "sql": SqlParser(),
+        "mysql": SqlParser(),
+        "postgresql": SqlParser(),
+    }
+    return _LANGUAGE_MAP
 
 
 def _to_json(data: Any) -> str:
@@ -123,9 +139,10 @@ class ParserTool(CallableTool2[Params]):
 
         # ── 2. Resolve parser ─────────────────────────────────────────────────
         language_key = params.language.strip().lower()
-        parser = _LANGUAGE_MAP.get(language_key)
+        language_map = _get_language_map()
+        parser = language_map.get(language_key)
         if parser is None:
-            supported = sorted(_LANGUAGE_MAP.keys())
+            supported = sorted(language_map.keys())
             return ToolError(
                 output="",
                 message=(

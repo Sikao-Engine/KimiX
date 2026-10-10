@@ -1442,7 +1442,7 @@ class SessionManager:
 
         async def _run_plan() -> None:
             from kimix.base import _default_agent_file_dir
-            from kimix.tools.note import _set_enable_plan
+            from kimi_cli.tools.note import _set_enable_plan
             from kimix.utils.system_prompt import SystemPromptType
 
             planner_session = None

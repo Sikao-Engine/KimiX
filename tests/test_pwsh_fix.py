@@ -1,6 +1,6 @@
 """Comprehensive tests for the PowerShell quoting parser/fixer.
 
-``kimix.tools.file.bash.pwsh_fix.fix_pwsh_command`` is the PowerShell-aware
+``kimi_cli.tools.file.bash.pwsh_fix.fix_pwsh_command`` is the PowerShell-aware
 validator/repairer that rescues commands rejected by the naive double-quote
 parity check in ``pwsh_tool._validate_command_for_ps``.
 
@@ -37,10 +37,10 @@ import pytest
 from kimi_cli.session import Session
 
 from kimi_agent_sdk import ToolError, ToolOk
-from kimix.tools.background.utils import _pop_task_data
-from kimix.tools.file.bash import Powershell
-from kimix.tools.file.bash.pwsh_fix import PwshFix, fix_pwsh_command
-from kimix.tools.file.bash.pwsh_tool import _PWSH_CONSOLE_INIT, PowershellParams
+from kimi_cli.tools.background.utils import _pop_task_data
+from kimi_cli.tools.file.bash import Powershell
+from kimi_cli.tools.file.bash.pwsh_fix import PwshFix, fix_pwsh_command
+from kimi_cli.tools.file.bash.pwsh_tool import _PWSH_CONSOLE_INIT, PowershellParams
 
 PWSH = shutil.which("pwsh")
 NEEDS_PWSH = pytest.mark.skipif(PWSH is None, reason="pwsh is not installed")
@@ -73,7 +73,7 @@ def _is_parse_error(out: str) -> bool:
 def _force_pwsh_enabled() -> Any:
     """Bypass the platform gate so mocked tool tests run on any host."""
     return patch(
-        "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+        "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
         return_value=True,
     )
 
@@ -595,7 +595,7 @@ class TestPwshToolValidationFlow:
     @pytest.fixture
     def pwsh_tool(self, mock_session: MagicMock) -> Powershell:
         with patch(
-            "kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
         ):
             return Powershell(session=mock_session)
 
@@ -628,7 +628,7 @@ class TestPwshToolValidationFlow:
     async def test_naive_rejected_but_valid_command_runs_with_warning(
         self, pwsh_tool: Powershell, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             self._configure_process_task_mock(mock_pt)
             result = await pwsh_tool(PowershellParams(cmd='Write-Output \'a"b\''))
 
@@ -640,7 +640,7 @@ class TestPwshToolValidationFlow:
     async def test_unbalanced_quote_repaired_runs_with_warning(
         self, pwsh_tool: Powershell, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             self._configure_process_task_mock(mock_pt)
             result = await pwsh_tool(PowershellParams(cmd='Write-Output "hello'))
 
@@ -653,7 +653,7 @@ class TestPwshToolValidationFlow:
     async def test_unclosed_single_quote_repaired_even_though_naive_passes(
         self, pwsh_tool: Powershell, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             self._configure_process_task_mock(mock_pt)
             result = await pwsh_tool(PowershellParams(cmd="Write-Output 'hello"))
 
@@ -665,7 +665,7 @@ class TestPwshToolValidationFlow:
     async def test_trailing_comment_gets_newline_before_wrapper(
         self, pwsh_tool: Powershell, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             self._configure_process_task_mock(mock_pt)
             result = await pwsh_tool(PowershellParams(cmd="Write-Output ok # done"))
 
@@ -678,7 +678,7 @@ class TestPwshToolValidationFlow:
     async def test_unbalanced_here_string_repaired(
         self, pwsh_tool: Powershell, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             self._configure_process_task_mock(mock_pt)
             result = await pwsh_tool(PowershellParams(cmd='@"\nunclosed here-string'))
 
@@ -691,7 +691,7 @@ class TestPwshToolValidationFlow:
     async def test_irreparable_returns_error(
         self, pwsh_tool: Powershell, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             result = await pwsh_tool(PowershellParams(cmd="Write-Output `"))
             mock_pt.assert_not_called()
 
@@ -701,7 +701,7 @@ class TestPwshToolValidationFlow:
     async def test_unchanged_valid_command_no_warning(
         self, pwsh_tool: Powershell, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             self._configure_process_task_mock(mock_pt)
             result = await pwsh_tool(PowershellParams(cmd="Get-Location"))
 
@@ -713,14 +713,14 @@ class TestPwshToolValidationFlow:
     ) -> None:
         mock_session.custom_config.get.return_value = {"forbidden_commands": ["rm -rf"]}
         with _force_pwsh_enabled(), patch(
-            "kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
         ):
             pwsh_tool = Powershell(session=mock_session)
 
         # Use a config-forbidden-but-not-hardline command: `rm -rf /` itself is
         # now intercepted earlier by the hardline floor (brief "Blocked
         # (hardline)"), so this test keeps exercising the config path.
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             result = await pwsh_tool(PowershellParams(cmd="rm -rf /tmp/build"))
             mock_pt.assert_not_called()
 
@@ -732,7 +732,7 @@ class TestPwshToolValidationFlow:
     async def test_background_repaired_command_runs_with_warning(
         self, pwsh_tool: Powershell, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             instance = MagicMock()
             instance.start = MagicMock(return_value=asyncio.Future())
             instance.start.return_value.set_result("pwsh-bg-id")
@@ -750,7 +750,7 @@ class TestPwshToolValidationFlow:
     async def test_background_irreparable_returns_error(
         self, pwsh_tool: Powershell, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             result = await pwsh_tool(PowershellParams(cmd="Write-Output `", mode="send"))
             mock_pt.assert_not_called()
 

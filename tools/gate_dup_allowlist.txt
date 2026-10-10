@@ -23,7 +23,7 @@ subagent  # intentionally distinct C01 (fg default) vs K01 (bg default); contras
 #        transport: aiohttp (plus an optional configured fetch *service*)
 #        safety: web/url_safety.py SSRF checks, redirect re-validation, size caps
 #        runs on: kimi_cli agents (kimi_cli.soul.Runtime + Config)
-# K14  kimix.tools.web.fetch_url.fetch_url
+# K14  kimi_cli.tools.web.kimix_fetch.fetch_url
 #        params: url, output_path
 #        transport: Playwright -> Markdown (web_fetcher/fetcher.py::fetch_to_markdown)
 #        runs on: kimix agents (kimi_agent_sdk + Session)

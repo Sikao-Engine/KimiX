@@ -121,11 +121,11 @@ def _shell_tool_name() -> str:
 
     The agent config's ``agent.shell`` key (e.g. ``"shell": "powershell"`` in
     ``agent_worker.json``) selects the shell tool: the enablement logic in
-    ``kimix.tools.file.bash.bash_tool`` — ``_should_enable_bash`` and
+    ``kimi_cli.tools.file.bash.bash_tool`` — ``_should_enable_bash`` and
     ``_should_enable_powershell`` — is config-aware, so the prompt always
     names the shell tool that is actually loaded.
     """
-    from kimix.tools.file.bash.bash_tool import (
+    from kimi_cli.tools.file.bash.bash_tool import (
         _should_enable_bash,
         _should_enable_powershell,
     )

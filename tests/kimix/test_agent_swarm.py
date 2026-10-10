@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from kimix.base import MessageType
-from kimix.tools.swarm import (
+from kimi_cli.tools.swarm import (
     AgentSwarm,
     AgentSwarmParams,
     SwarmSubagentResult,
@@ -133,9 +133,9 @@ async def test_successful_parallel_execution(mock_session: MagicMock, monkeypatc
     async def fake_prompt_async(*, prompt_str, session, output_function, **kwargs):
         output_function(f"result for {prompt_str}", MessageType.Text)
 
-    monkeypatch.setattr("kimix.tools.swarm.utils.prompt_async", fake_prompt_async)
+    monkeypatch.setattr("kimix.utils.prompt_async", fake_prompt_async)
     monkeypatch.setattr(
-        "kimix.tools.swarm.utils.close_session_async", AsyncMock()
+        "kimix.utils.close_session_async", AsyncMock()
     )
 
     fake_sub = SimpleNamespace(id="sub-1", get_custom_config=lambda: {})
@@ -146,7 +146,7 @@ async def test_successful_parallel_execution(mock_session: MagicMock, monkeypatc
         return fake_sub
 
     monkeypatch.setattr(
-        "kimix.tools.swarm.utils._create_session_async", fake_create_session_async
+        "kimix.utils._create_session_async", fake_create_session_async
     )
 
     tool = AgentSwarm(mock_session)
@@ -170,9 +170,9 @@ async def test_failed_subagent_returned_in_order(mock_session: MagicMock, monkey
         else:
             raise RuntimeError("boom")
 
-    monkeypatch.setattr("kimix.tools.swarm.utils.prompt_async", fake_prompt_async)
+    monkeypatch.setattr("kimix.utils.prompt_async", fake_prompt_async)
     monkeypatch.setattr(
-        "kimix.tools.swarm.utils.close_session_async", AsyncMock()
+        "kimix.utils.close_session_async", AsyncMock()
     )
 
     fake_sub = SimpleNamespace(id="sub-1", get_custom_config=lambda: {})
@@ -181,7 +181,7 @@ async def test_failed_subagent_returned_in_order(mock_session: MagicMock, monkey
         return fake_sub
 
     monkeypatch.setattr(
-        "kimix.tools.swarm.utils._create_session_async", fake_create_session_async
+        "kimix.utils._create_session_async", fake_create_session_async
     )
 
     tool = AgentSwarm(mock_session)
@@ -214,9 +214,9 @@ async def test_rate_limit_retry(mock_session: MagicMock, monkeypatch):
             )
         output_function("ok after retry", MessageType.Text)
 
-    monkeypatch.setattr("kimix.tools.swarm.utils.prompt_async", fake_prompt_async)
+    monkeypatch.setattr("kimix.utils.prompt_async", fake_prompt_async)
     monkeypatch.setattr(
-        "kimix.tools.swarm.utils.close_session_async", AsyncMock()
+        "kimix.utils.close_session_async", AsyncMock()
     )
 
     fake_sub = SimpleNamespace(id="sub-1", get_custom_config=lambda: {})
@@ -225,7 +225,7 @@ async def test_rate_limit_retry(mock_session: MagicMock, monkeypatch):
         return fake_sub
 
     monkeypatch.setattr(
-        "kimix.tools.swarm.utils._create_session_async", fake_create_session_async
+        "kimix.utils._create_session_async", fake_create_session_async
     )
 
     # Patch sleep to keep tests fast.
@@ -250,9 +250,9 @@ async def test_resume_agent_ids(mock_session: MagicMock, monkeypatch):
     async def fake_prompt_async(*, prompt_str, session, output_function, **kwargs):
         output_function(f"resumed {prompt_str}", MessageType.Text)
 
-    monkeypatch.setattr("kimix.tools.swarm.utils.prompt_async", fake_prompt_async)
+    monkeypatch.setattr("kimix.utils.prompt_async", fake_prompt_async)
     monkeypatch.setattr(
-        "kimix.tools.swarm.utils.close_session_async", AsyncMock()
+        "kimix.utils.close_session_async", AsyncMock()
     )
 
     fake_sub = SimpleNamespace(id="sub-1", get_custom_config=lambda: {})
@@ -263,7 +263,7 @@ async def test_resume_agent_ids(mock_session: MagicMock, monkeypatch):
         return fake_sub
 
     monkeypatch.setattr(
-        "kimix.tools.swarm.utils._create_session_async", fake_create_session_async
+        "kimix.utils._create_session_async", fake_create_session_async
     )
 
     tool = AgentSwarm(mock_session)
@@ -295,8 +295,8 @@ async def test_swarm_subagent_inherits_parent_work_dir(
     from kaos.path import KaosPath
 
     fake_prompt = AsyncMock(side_effect=lambda *, prompt_str, session, output_function, **kwargs: output_function(f"ok {prompt_str}", MessageType.Text))
-    monkeypatch.setattr("kimix.tools.swarm.utils.prompt_async", fake_prompt)
-    monkeypatch.setattr("kimix.tools.swarm.utils.close_session_async", AsyncMock())
+    monkeypatch.setattr("kimix.utils.prompt_async", fake_prompt)
+    monkeypatch.setattr("kimix.utils.close_session_async", AsyncMock())
     fake_sub = SimpleNamespace(id="sub-wd", get_custom_config=lambda: {})
     created: list[dict[str, object]] = []
 
@@ -305,7 +305,7 @@ async def test_swarm_subagent_inherits_parent_work_dir(
         return fake_sub
 
     monkeypatch.setattr(
-        "kimix.tools.swarm.utils._create_session_async", fake_create_session_async
+        "kimix.utils._create_session_async", fake_create_session_async
     )
 
     work_dir = KaosPath(str(Path.cwd()))

@@ -16,7 +16,7 @@ Provides:
 - :func:`redact_sensitive_output` — mask credentials (JWT, PEM keys, API
   tokens, auth headers, URL userinfo, ``password=`` assignments) so secrets
   never reach the model or the export pipeline.  The implementation moved to
-  :mod:`kimix.tools.security`; this module re-exports it for compatibility.
+  :mod:`kimi_cli.tools.security`; this module re-exports it for compatibility.
 
 The pure-Python algorithm for each function lives once, in the canonical
 ``kimix_native.tools`` shim (``_compat_*`` fallbacks).  This module keeps the
@@ -107,6 +107,6 @@ def annotate_failure(output: str, command: str, exit_code: int | None) -> str | 
     return _compat_tools()._compat_annotate_failure(output, command, exit_code)
 
 
-from kimix.tools.security import (  # noqa: E402 -- deliberately a late import
+from kimi_cli.tools.security import (  # noqa: E402 -- deliberately a late import
     redact_sensitive_output as redact_sensitive_output,  # noqa: F401, E402
 )

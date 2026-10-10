@@ -1,8 +1,8 @@
-"""Tests for kimix.tools.security: env scrubbing, output redaction, workdir validation."""
+"""Tests for kimi_cli.tools.security: env scrubbing, output redaction, workdir validation."""
 
 import pytest
 
-from kimix.tools.security import (
+from kimi_cli.tools.security import (
     redact_sensitive_output,
     scrub_child_env,
     validate_workdir,
@@ -195,7 +195,7 @@ class TestRedactSensitiveOutput:
 # ============================================================================
 
 def test_output_enhance_reexports_redaction() -> None:
-    from kimix.tools.file.bash.output_enhance import (
+    from kimi_cli.tools.file.bash.output_enhance import (
         redact_sensitive_output as bash_redact,
     )
 
@@ -203,6 +203,6 @@ def test_output_enhance_reexports_redaction() -> None:
 
 
 def test_safety_reexports_validate_workdir() -> None:
-    from kimix.tools.file.bash.safety import validate_workdir as bash_validate
+    from kimi_cli.tools.file.bash.safety import validate_workdir as bash_validate
 
     assert bash_validate is validate_workdir

@@ -198,7 +198,7 @@ def _build_tools() -> dict[str, Any]:
         "todo_list": TodoList(runtime=runtime),
     }
 
-    from kimix.tools.file.bash import pwsh_tool as pt
+    from kimi_cli.tools.file.bash import pwsh_tool as pt
     with mock.patch.object(pt.sys, "platform", "win32"), mock.patch.object(
         pt._bash_tool, "_should_enable_powershell", return_value=True
     ), mock.patch.object(pt, "find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
@@ -217,15 +217,15 @@ def _build_tools() -> dict[str, Any]:
     ):
         tools["web_search"] = SearchWeb(config=cfg, runtime=runtime)
 
-    from kimix.tools.agent import Agent, AgentList, AgentClose
+    from kimi_cli.tools.subagent import Agent, AgentList, AgentClose
     tools["subagent"] = Agent(session=session)
     tools["list_agents"] = AgentList(session=session)
     tools["interrupt_agent"] = AgentClose(session=session)
 
-    from kimix.tools.background import TaskOutput
+    from kimi_cli.tools.background import TaskOutput
     tools["job_output"] = TaskOutput(session=session)
 
-    from kimix.tools.swarm import AgentSwarm
+    from kimi_cli.tools.swarm import AgentSwarm
     s2 = _FakeSession()
     s2.custom_data["is_swarm_session"] = True
     tools["workflow"] = AgentSwarm(session=s2)

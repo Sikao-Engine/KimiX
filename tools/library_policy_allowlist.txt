@@ -26,4 +26,4 @@
 # other diff library. `_render_diff`/`apply_diff_to_workspace` need a real
 # unified diff, so the stdlib call is the only correct implementation. The dead
 # `import xxhash` in the same module was removed instead.
-src/kimix/tools/swarm/best_of_n.py::difflib    # no third-party unified_diff exists; rapidfuzz has no equivalent
+kimi-cli/src/kimi_cli/tools/swarm/best_of_n.py::difflib    # no third-party unified_diff exists; rapidfuzz has no equivalent

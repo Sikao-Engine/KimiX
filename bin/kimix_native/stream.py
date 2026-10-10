@@ -2,7 +2,7 @@
 
 Native implementations live in ``runtime_py.stream`` (compiled kernels, GIL
 released). The pure-Python ``_compat`` functions below mirror the reference
-algorithms exactly (src/kimix/tools/common.py):
+algorithms exactly (kimi-cli/src/kimi_cli/tools/common.py):
 
 - ``_compat_filter_output`` — `filter_output` (ANSI regex sub + CRLF normalize)
 - ``_compat_dedup_output`` — `_dedup_output` (counter + block modes)

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from kimix.tools.background import TaskOutput, TaskOutputParams
-from kimix.tools.background.utils import (
+from kimi_cli.tools.background import TaskOutput, TaskOutputParams
+from kimi_cli.tools.background.utils import (
     BackgroundStream,
     add_task,
 )
@@ -81,7 +81,7 @@ class TestTaskOutputKillReportsSuccess:
         return stream
 
     def _register(self, mock_session: MagicMock, stream: MagicMock) -> None:
-        from kimix.tools.background.utils import TaskData
+        from kimi_cli.tools.background.utils import TaskData
 
         data = TaskData()
         data.tasks = {"bash_1": stream}
@@ -166,7 +166,7 @@ class TestTaskOutputWaitForPattern:
         return stream
 
     def _register(self, mock_session: MagicMock, stream: MagicMock) -> None:
-        from kimix.tools.background.utils import TaskData
+        from kimi_cli.tools.background.utils import TaskData
 
         data = TaskData()
         data.tasks = {"bash_1": stream}
@@ -218,7 +218,7 @@ class TestTaskOutputOriginalSavedSuffix:
         return stream
 
     def _register(self, mock_session: MagicMock, stream: MagicMock) -> None:
-        from kimix.tools.background.utils import TaskData
+        from kimi_cli.tools.background.utils import TaskData
 
         data = TaskData()
         data.tasks = {"bash_1": stream}
@@ -269,7 +269,7 @@ class TestTaskOutputFormatterCallback:
         return stream
 
     def _register(self, mock_session: MagicMock, stream: MagicMock) -> None:
-        from kimix.tools.background.utils import TaskData
+        from kimi_cli.tools.background.utils import TaskData
 
         data = TaskData()
         data.tasks = {"bash_1": stream}
@@ -454,7 +454,7 @@ class TestTaskOutputFinishedHistory:
         self, mock_session: MagicMock
     ) -> None:
         """Tasks dropped via remove_task_id (e.g. bash/python tools) stay retrievable."""
-        from kimix.tools.background.utils import remove_task_id
+        from kimi_cli.tools.background.utils import remove_task_id
 
         to = TaskOutput(session=mock_session)
         stream = BackgroundStream()

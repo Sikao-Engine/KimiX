@@ -28,8 +28,8 @@ from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.display import ShellDisplayBlock
 from pydantic import BaseModel, Field, model_validator
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.tools.common import (
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.tools.common import (
     ProcessTask,
     _append_elapsed,
     _build_session_output_block,
@@ -46,7 +46,7 @@ from kimix.tools.common import (
     _summarize_long_output_async,
     _token_filter_output,
 )
-from kimix.tools.file.bash.bash_fix import (
+from kimi_cli.tools.file.bash.bash_fix import (
     bash_compatibility_prelude,
     # Kept in the module namespace even though one-shot preparation now goes
     # through ``shell_common.prepare_bash_command``: tests patch
@@ -54,18 +54,18 @@ from kimix.tools.file.bash.bash_fix import (
     # forbidden source commands.
     fix_bash_command,  # noqa: F401
 )
-from kimix.tools.file.bash.output_enhance import (
+from kimi_cli.tools.file.bash.output_enhance import (
     annotate_failure,
     interpret_exit_code,
     is_expected_exit,
     redact_sensitive_output,
 )
-from kimix.tools.file.bash.safety import (
+from kimi_cli.tools.file.bash.safety import (
     check_hardline_blocked,
     foreground_background_guidance,
     self_kill_hint,
 )
-from kimix.tools.prompt_common import (
+from kimi_cli.tools.prompt_common import (
     accepts_alias_text,
     max_lines_field,
     mode_field,
@@ -80,7 +80,7 @@ from kimix.tools.prompt_common import (
 _NATIVE_PARSE = _native_get_module("parse")
 
 if TYPE_CHECKING:
-    from kimix.tools.background.utils import BackgroundStream
+    from kimi_cli.tools.background.utils import BackgroundStream
 
 USE_SYSTEM_SHELL = True
 
@@ -829,7 +829,7 @@ class Bash(CallableTool2[BashParams]):
                     rtk_rewritten=rtk_rewritten,
                 )
             if params.wait_for_pattern is not None and process_task.stream is not None:
-                from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+                from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
                 inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
                 output, matched, elapsed = await process_task.stream.wait_for_output(
                     timeout=params.timeout, pattern=pattern,
@@ -892,7 +892,7 @@ class Bash(CallableTool2[BashParams]):
         waited_seconds: float | None = None
         try:
             if params.wait_for_pattern is not None and process_task.stream is not None:
-                from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+                from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
                 inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
                 output, wait_matched, elapsed_seconds = await process_task.stream.wait_for_output(
                     timeout=params.timeout, pattern=pattern,
@@ -940,7 +940,7 @@ class Bash(CallableTool2[BashParams]):
             # conversation stream can continue.
             with contextlib.suppress(asyncio.CancelledError):
                 await process_task.stop()
-            from kimix.tools.background.utils import remove_task_id
+            from kimi_cli.tools.background.utils import remove_task_id
             remove_task_id(self._session, task_id)
             output = await process_task.stream.pop_output() if process_task.stream else ""
             output = await _maybe_export_output_async(output)
@@ -992,7 +992,7 @@ class Bash(CallableTool2[BashParams]):
                 f"Command timed out after {params.timeout}s",
             )
 
-        from kimix.tools.background.utils import remove_task_id
+        from kimi_cli.tools.background.utils import remove_task_id
         remove_task_id(self._session, task_id)
 
         output = await process_task.stream.pop_output() if process_task.stream else ""
@@ -1085,7 +1085,7 @@ class Bash(CallableTool2[BashParams]):
         string instead of spawning a process that is guaranteed to fail with
         a bare "command not found".
         """
-        from kimix.tools.file.bash import shell_common
+        from kimi_cli.tools.file.bash import shell_common
 
         fix = shell_common.inspect_bash_command(command)
         if fix.unsupported:
@@ -1169,7 +1169,7 @@ class Bash(CallableTool2[BashParams]):
         would otherwise linger as a never-completing zombie task.
         """
         await process_task.stop()
-        from kimix.tools.background.utils import remove_task_id
+        from kimi_cli.tools.background.utils import remove_task_id
         remove_task_id(self._session, task_id)
         output = await _maybe_export_output_async(output)
         if output:
@@ -1220,7 +1220,7 @@ class Bash(CallableTool2[BashParams]):
             )
 
         if params.wait_for_pattern is not None and process_task.stream is not None:
-            from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+            from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
             inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
             output, matched, elapsed = await process_task.stream.wait_for_output(
                 timeout=params.timeout, pattern=pattern,
@@ -1248,7 +1248,7 @@ class Bash(CallableTool2[BashParams]):
 
     async def _continue_session(self, params: BashParams) -> ToolReturnValue:
         """Send input to an existing Bash session and optionally wait for output."""
-        from kimix.tools.background.utils import get_all_tasks
+        from kimi_cli.tools.background.utils import get_all_tasks
 
         tasks = get_all_tasks(self._session)
         task_id = params.task_id.strip() if params.task_id else ""
@@ -1306,7 +1306,7 @@ class Bash(CallableTool2[BashParams]):
                 brief="Send input failed",
             )
 
-        from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+        from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
         inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
         output, matched, elapsed = await stream.wait_for_output(
             timeout=params.timeout, pattern=pattern,

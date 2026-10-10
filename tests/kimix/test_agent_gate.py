@@ -12,7 +12,7 @@ collectively covers:
 * boundary values (empty prompt, the 100 KiB offload boundary at/above);
 * hostile input (``@`` alone, ``@`` traversal escaping the work dir, missing
   absolute path, oversized payload);
-* every reachable ``ToolError`` return site of ``kimix.tools.agent``.
+* every reachable ``ToolError`` return site of ``kimi_cli.tools.subagent``.
 
 This file is part of the review deliverable (read-only review of the source;
 this is the *only* source-tree file the K01 reviewer may add).
@@ -31,10 +31,10 @@ import pytest
 from kaos.path import KaosPath
 from pydantic import ValidationError
 
-import kimix.tools.agent as agent_mod
+import kimi_cli.tools.subagent as agent_mod
 from kimi_agent_sdk._session import _sdk_sessions_dir
 from kimix.base import MessageType
-from kimix.tools.agent import (
+from kimi_cli.tools.subagent import (
     Agent,
     AgentClose,
     AgentCloseParams,
@@ -54,7 +54,7 @@ from kimix.tools.agent import (
     _take_child_sessions,
     _unregister_agent_session,
 )
-from kimix.tools.agent.store import AgentSessionEntry, ConversationTurn
+from kimi_cli.tools.subagent.store import AgentSessionEntry, ConversationTurn
 
 
 # ---------------------------------------------------------------------------
@@ -215,9 +215,9 @@ async def test_probe_at_path_resolution(monkeypatch, tmp_path: Path) -> None:
     parent = _parent(work_dir=KaosPath(str(work)))
     captured: list[str] = []
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt(captured)),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt(captured)),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = _sub_session()
         agent = Agent(parent)
@@ -241,9 +241,9 @@ async def test_probe_run_in_background_defaults_true() -> None:
 
     parent = _parent()
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock) as mock_prompt,
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", new_callable=AsyncMock) as mock_prompt,
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = _sub_session()
         result = await Agent(parent)(
@@ -266,9 +266,9 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
     # Foreground, default -> closed.
     parent_fg = _parent("fg")
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt([])),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock) as mclose,
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt([])),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mclose,
     ):
         mc.return_value = _sub_session()
         r_fg = await Agent(parent_fg)(
@@ -281,9 +281,9 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
     # Background, default -> kept open, completed, resumable.
     parent_bg = _parent("bg")
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt([])),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock) as mclose,
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt([])),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mclose,
     ):
         mc.return_value = _sub_session()
         r_bg = await Agent(parent_bg)(SubAgentParams(prompt="x"))
@@ -296,9 +296,9 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
     # Background, explicit close_session=True -> closed on completion.
     parent_bgc = _parent("bgc")
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt([])),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock) as mclose,
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt([])),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mclose,
     ):
         mc.return_value = _sub_session()
         r_bgc = await Agent(parent_bgc)(
@@ -311,9 +311,9 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
     # Foreground, explicit close_session=False -> kept open ("continued").
     parent_fgk = _parent("fgk")
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt([])),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock) as mclose,
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt([])),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mclose,
     ):
         mc.return_value = _sub_session()
         r_fgk = await Agent(parent_fgk)(
@@ -331,10 +331,10 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
 async def test_probe_inherit_context_copies_and_resumes(tmp_path: Path) -> None:
     parent = _parent(work_dir=KaosPath(str(tmp_path)))
     with (
-        patch("kimix.tools.agent.Session.copy", new_callable=AsyncMock) as mock_copy,
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt([])),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimi_cli.tools.subagent.Session.copy", new_callable=AsyncMock) as mock_copy,
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt([])),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
         patch.object(Agent, "_reset_inherited_system_prompt", new_callable=AsyncMock) as mock_reset,
     ):
         mock_create.return_value = _sub_session()
@@ -357,7 +357,7 @@ async def test_probe_inherit_context_copies_and_resumes(tmp_path: Path) -> None:
     # A parent without a resolvable id cannot donate its context.
     no_id_parent = _parent()
     no_id_parent.id = ""
-    with patch("kimix.tools.agent.Session.copy", new_callable=AsyncMock) as mock_copy2:
+    with patch("kimi_cli.tools.subagent.Session.copy", new_callable=AsyncMock) as mock_copy2:
         failed = await Agent(no_id_parent)(
             SubAgentParams(prompt="x", inherit_context=True, run_in_background=False)
         )
@@ -376,9 +376,9 @@ async def test_probe_context_files_and_context_data(tmp_path: Path) -> None:
     parent = _parent(work_dir=KaosPath(str(work)))
     captured: list[str] = []
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt(captured)),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt(captured)),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = _sub_session()
         agent = Agent(parent)
@@ -452,9 +452,9 @@ async def test_probe_return_history_all_three_formats() -> None:
         parent = _parent(f"fmt-{fmt}")
         captured: list[str] = []
         with (
-            patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mc,
-            patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt(captured)),
-            patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+            patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
+            patch("kimix.utils.prompt_async", side_effect=_capturing_prompt(captured)),
+            patch("kimix.utils.close_session_async", new_callable=AsyncMock),
         ):
             mc.return_value = _sub_session()
             result = await Agent(parent)(
@@ -589,12 +589,12 @@ async def test_probe_failed_prompt_saves_retry_file(tmp_path: Path) -> None:
     parent = _parent()
     saved = tmp_path / "saved.md"
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock) as mock_prompt,
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock) as mock_close,
-        patch("kimix.tools.agent._create_script_file", return_value=str(saved)) as mock_script,
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", new_callable=AsyncMock) as mock_prompt,
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mock_close,
+        patch("kimi_cli.tools.subagent._create_script_file", return_value=str(saved)) as mock_script,
         patch(
-            "kimix.tools.agent._display_temp_path",
+            "kimi_cli.tools.subagent._display_temp_path",
             return_value=".kimix_cache/tmp_9/0.md",
         ),
     ):
@@ -639,9 +639,9 @@ async def test_probe_session_id_determinism() -> None:
 
     # An unknown explicit id is reused verbatim (deterministic, no error).
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt([])),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt([])),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = _sub_session()
         fresh = await Agent(parent)(
@@ -653,9 +653,9 @@ async def test_probe_session_id_determinism() -> None:
 
     # An empty session id is treated as "new": a fresh uuid4 is generated.
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt([])),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt([])),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = _sub_session()
         generated = await Agent(parent)(
@@ -669,7 +669,7 @@ async def test_probe_session_id_determinism() -> None:
 # Probe 15 — interrupt race leaves no orphan session / registry entry
 # ---------------------------------------------------------------------------
 async def _prepare_bg(parent: MagicMock, sub: MagicMock, session_id: str) -> Any:
-    with patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create:
+    with patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create:
         mock_create.return_value = sub
         agent = Agent(parent)
         return await agent._prepare_run(
@@ -690,8 +690,8 @@ async def test_probe_interrupt_race_leaves_no_orphan() -> None:
 
     prepared = await _prepare_bg(parent, _sub_session(), "race-child")
     with (
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=gated),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock) as mock_close,
+        patch("kimix.utils.prompt_async", side_effect=gated),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mock_close,
     ):
         store = _get_store(parent)
         store.put(_entry(prepared.session, "race-child"))
@@ -728,10 +728,10 @@ async def test_probe_prompt_size_boundary_and_empty(tmp_path: Path) -> None:
         return str(tmp_path / f"t{len(offloaded)}.md")
 
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt(captured)),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
-        patch("kimix.tools.agent._create_script_file", side_effect=fake_script),
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt(captured)),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
+        patch("kimi_cli.tools.subagent._create_script_file", side_effect=fake_script),
     ):
         mock_create.return_value = _sub_session()
         agent = Agent(parent)
@@ -765,9 +765,9 @@ async def test_probe_hostile_at_paths(tmp_path: Path) -> None:
     parent = _parent(work_dir=KaosPath(str(work)))
     captured: list[str] = []
     with (
-        patch("kimix.tools.agent._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.tools.agent.utils.prompt_async", side_effect=_capturing_prompt(captured)),
-        patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock),
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt(captured)),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = _sub_session()
         agent = Agent(parent)
@@ -886,7 +886,7 @@ async def test_probe_background_defensive_error_and_double_close() -> None:
     assert unknown.brief == "Session not found"
 
     _get_store(lister).put(_entry(_sub_session(), "doomed"))
-    with patch("kimix.tools.agent.close_session_async", new_callable=AsyncMock) as mock_close:
+    with patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mock_close:
         first = await AgentClose(lister)(AgentCloseParams(agent_id="doomed"))
         second = await AgentClose(lister)(AgentCloseParams(agent_id="doomed"))
     assert first.is_error is False

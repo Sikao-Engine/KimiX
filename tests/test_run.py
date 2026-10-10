@@ -9,16 +9,16 @@ import pytest
 from kimi_cli.session import Session
 
 from kimi_agent_sdk import ToolError, ToolOk
-from kimix.tools.background.utils import TaskData
-from kimix.tools.file.run import Run, RunParams
+from kimi_cli.tools.background.utils import TaskData
+from kimi_cli.tools.file.run import Run, RunParams
 
 
 def _run_instance(session: Session) -> Run:
     """Create a Run instance even when the platform would normally skip it."""
     with (
-        patch("kimix.tools.file.run.USE_SYSTEM_SHELL", True),
-        patch("kimix.tools.file.run.USE_SYSTEM_PWSH_ON_WINDOWS", False),
-        patch("kimix.tools.file.run.find_bash", return_value=None),
+        patch("kimi_cli.tools.file.run.USE_SYSTEM_SHELL", True),
+        patch("kimi_cli.tools.file.run.USE_SYSTEM_PWSH_ON_WINDOWS", False),
+        patch("kimi_cli.tools.file.run.find_bash", return_value=None),
     ):
         return Run(session=session)
 
@@ -35,9 +35,9 @@ class TestRunRtkRewrite:
     async def test_run_prepends_rtk_for_known_command(self, mock_session: MagicMock) -> None:
         run = _run_instance(mock_session)
         with (
-            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
-            patch("kimix.tools.file.run._rtk_binary_path", return_value=Path("/fake/share/bin/rtk")),
-            patch("kimix.tools.file.run.shutil.which") as mock_which,
+            patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimi_cli.tools.file.run._rtk_binary_path", return_value=Path("/fake/share/bin/rtk")),
+            patch("kimi_cli.tools.file.run.shutil.which") as mock_which,
         ):
             mock_which.side_effect = lambda name: f"/fake/{name}"
             instance = MagicMock()
@@ -61,9 +61,9 @@ class TestRunRtkRewrite:
     async def test_run_does_not_prepend_rtk_for_unknown_command(self, mock_session: MagicMock) -> None:
         run = _run_instance(mock_session)
         with (
-            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
-            patch("kimix.tools.file.run._rtk_binary_path", return_value=Path("/fake/share/bin/rtk")),
-            patch("kimix.tools.file.run.shutil.which") as mock_which,
+            patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimi_cli.tools.file.run._rtk_binary_path", return_value=Path("/fake/share/bin/rtk")),
+            patch("kimi_cli.tools.file.run.shutil.which") as mock_which,
         ):
             mock_which.side_effect = lambda name: f"/fake/{name}"
             instance = MagicMock()
@@ -104,7 +104,7 @@ class TestRunShellCwdViaCd:
     command when delegating to Bash/Powershell (they no longer take ``cwd``)."""
 
     def test_cd_prefix_bash(self) -> None:
-        from kimix.tools.file.run import _cd_prefix
+        from kimi_cli.tools.file.run import _cd_prefix
 
         assert _cd_prefix(None, "bash") == ""
         assert _cd_prefix("", "bash") == ""
@@ -112,7 +112,7 @@ class TestRunShellCwdViaCd:
         assert _cd_prefix("/tmp/a b", "bash") == "cd '/tmp/a b' && "
 
     def test_cd_prefix_pwsh(self) -> None:
-        from kimix.tools.file.run import _cd_prefix
+        from kimi_cli.tools.file.run import _cd_prefix
 
         assert _cd_prefix(None, "pwsh") == ""
         assert _cd_prefix(r"C:\work", "pwsh") == r"cd 'C:\work'; "
@@ -129,10 +129,10 @@ class TestRunShellCwdViaCd:
             return ToolOk(output="", message="ok", brief="ok")
 
         with (
-            patch("kimix.tools.file.run.sys.platform", "darwin"),
-            patch("kimix.tools.file.bash.bash_tool.Bash.__call__", new=fake_bash_call),
-            patch("kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True),
-            patch("kimix.tools.file.bash.bash_tool.find_bash", return_value="/bin/bash"),
+            patch("kimi_cli.tools.file.run.sys.platform", "darwin"),
+            patch("kimi_cli.tools.file.bash.bash_tool.Bash.__call__", new=fake_bash_call),
+            patch("kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True),
+            patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value="/bin/bash"),
         ):
             result = await run(
                 RunParams(command="echo hi", shell=True, cwd="/tmp/work")
@@ -155,13 +155,13 @@ class TestRunShellCwdViaCd:
             return ToolOk(output="", message="ok", brief="ok")
 
         with (
-            patch("kimix.tools.file.run.sys.platform", "win32"),
-            patch("kimix.tools.file.bash.pwsh_tool.Powershell.__call__", new=fake_pwsh_call),
+            patch("kimi_cli.tools.file.run.sys.platform", "win32"),
+            patch("kimi_cli.tools.file.bash.pwsh_tool.Powershell.__call__", new=fake_pwsh_call),
             patch(
-                "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+                "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
                 return_value=True,
             ),
-            patch("kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"),
+            patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"),
         ):
             result = await run(
                 RunParams(command="echo hi", shell=True, cwd=r"C:\work dir")
@@ -221,9 +221,9 @@ class TestRunStartModes:
     async def test_one_shot_command_still_works(self, mock_session: MagicMock) -> None:
         run = _run_instance(mock_session)
         with (
-            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
-            patch("kimix.tools.file.run.shutil.which", return_value="/fake/python"),
-            patch("kimix.tools.file.run.Path.is_file", return_value=True),
+            patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimi_cli.tools.file.run.shutil.which", return_value="/fake/python"),
+            patch("kimi_cli.tools.file.run.Path.is_file", return_value=True),
         ):
             instance = MagicMock()
             instance.start = AsyncMock(return_value="run_test")
@@ -246,9 +246,9 @@ class TestRunStartModes:
     async def test_background_with_wait_for_pattern(self, mock_session: MagicMock) -> None:
         run = _run_instance(mock_session)
         with (
-            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
-            patch("kimix.tools.file.run.shutil.which", return_value="/fake/python"),
-            patch("kimix.tools.file.run.Path.is_file", return_value=True),
+            patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimi_cli.tools.file.run.shutil.which", return_value="/fake/python"),
+            patch("kimi_cli.tools.file.run.Path.is_file", return_value=True),
         ):
             instance = MagicMock()
             instance.start = AsyncMock(return_value="run_bg")
@@ -274,7 +274,7 @@ class TestRunStartModes:
 class TestRunSafetyWiring:
     async def test_hardline_blocked(self, mock_session: MagicMock) -> None:
         run = _run_instance(mock_session)
-        with patch("kimix.tools.file.run.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt:
             result = await run(RunParams(command="rm -rf /"))
         assert isinstance(result, ToolError)
         assert result.brief == "Blocked (hardline)"
@@ -283,7 +283,7 @@ class TestRunSafetyWiring:
 
     async def test_dangerous_cwd_returns_error(self, mock_session: MagicMock) -> None:
         run = _run_instance(mock_session)
-        with patch("kimix.tools.file.run.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt:
             result = await run(RunParams(command="python -c print(1)", cwd="a;b"))
         assert isinstance(result, ToolError)
         assert result.brief == "Invalid workdir"
@@ -293,7 +293,7 @@ class TestRunSafetyWiring:
     async def test_exactly_one_run_class(self) -> None:
         """The module exposes exactly one Run class — the real one with a
         ``params`` attribute (the dead duplicate was removed, WP6)."""
-        from kimix.tools.file.run import Run as RunImported
+        from kimi_cli.tools.file.run import Run as RunImported
 
         assert RunImported is Run
         assert getattr(Run, "params", None) is RunParams
@@ -303,9 +303,9 @@ class TestRunSafetyWiring:
     ) -> None:
         run = _run_instance(mock_session)
         with (
-            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
-            patch("kimix.tools.file.run.shutil.which", return_value="/fake/python"),
-            patch("kimix.tools.file.run.Path.is_file", return_value=True),
+            patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimi_cli.tools.file.run.shutil.which", return_value="/fake/python"),
+            patch("kimi_cli.tools.file.run.Path.is_file", return_value=True),
         ):
             instance = MagicMock()
             instance.start = AsyncMock(return_value="run_fail")
@@ -330,9 +330,9 @@ class TestRunOriginalSavedSuffix:
     ) -> None:
         run = _run_instance(mock_session)
         with (
-            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
-            patch("kimix.tools.file.run.shutil.which", return_value="/fake/python"),
-            patch("kimix.tools.file.run.Path.is_file", return_value=True),
+            patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimi_cli.tools.file.run.shutil.which", return_value="/fake/python"),
+            patch("kimi_cli.tools.file.run.Path.is_file", return_value=True),
         ):
             instance = MagicMock()
             instance.start = AsyncMock(return_value="run_dedup")
@@ -355,9 +355,9 @@ class TestRunOriginalSavedSuffix:
     ) -> None:
         run = _run_instance(mock_session)
         with (
-            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
-            patch("kimix.tools.file.run.shutil.which", return_value="/fake/python"),
-            patch("kimix.tools.file.run.Path.is_file", return_value=True),
+            patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimi_cli.tools.file.run.shutil.which", return_value="/fake/python"),
+            patch("kimi_cli.tools.file.run.Path.is_file", return_value=True),
         ):
             instance = MagicMock()
             instance.start = AsyncMock(return_value="run_trunc")
@@ -382,9 +382,9 @@ class TestRunOriginalSavedSuffix:
     ) -> None:
         run = _run_instance(mock_session)
         with (
-            patch("kimix.tools.file.run.ProcessTask") as mock_pt,
-            patch("kimix.tools.file.run.shutil.which", return_value="/fake/python"),
-            patch("kimix.tools.file.run.Path.is_file", return_value=True),
+            patch("kimi_cli.tools.file.run.ProcessTask") as mock_pt,
+            patch("kimi_cli.tools.file.run.shutil.which", return_value="/fake/python"),
+            patch("kimi_cli.tools.file.run.Path.is_file", return_value=True),
         ):
             instance = MagicMock()
             instance.start = AsyncMock(return_value="run_plain")
@@ -426,7 +426,7 @@ class TestRunLongPythonCScript:
             calls.append((content, ext))
             return script_path
 
-        monkeypatch.setattr("kimix.tools.file.run._create_script_file", fake_create)
+        monkeypatch.setattr("kimi_cli.tools.file.run._create_script_file", fake_create)
 
         instance = MagicMock()
         instance.start = AsyncMock(return_value="run_long")
@@ -438,8 +438,8 @@ class TestRunLongPythonCScript:
         instance.stream.exit_code = 0
         instance.stream.process_elapsed = None
         pt = MagicMock(return_value=instance)
-        monkeypatch.setattr("kimix.tools.file.run.ProcessTask", pt)
-        monkeypatch.setattr("kimix.tools.file.run.shutil.which", lambda name: None)
+        monkeypatch.setattr("kimi_cli.tools.file.run.ProcessTask", pt)
+        monkeypatch.setattr("kimi_cli.tools.file.run.shutil.which", lambda name: None)
 
         result = await run(RunParams(command=command))
 
@@ -471,9 +471,9 @@ class TestRunLongPythonCScript:
         instance.stream.exit_code = 0
         instance.stream.process_elapsed = None
         with (
-            patch("kimix.tools.file.run._create_script_file", side_effect=fake_create),
-            patch("kimix.tools.file.run.shutil.which", lambda name: None),
-            patch("kimix.tools.file.run.ProcessTask", return_value=instance),
+            patch("kimi_cli.tools.file.run._create_script_file", side_effect=fake_create),
+            patch("kimi_cli.tools.file.run.shutil.which", lambda name: None),
+            patch("kimi_cli.tools.file.run.ProcessTask", return_value=instance),
         ):
             result = await run(RunParams(command=command))
 

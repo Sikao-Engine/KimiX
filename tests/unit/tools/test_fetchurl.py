@@ -12,8 +12,8 @@ import httpx
 import pytest
 from kimi_agent_sdk import ToolError, ToolOk
 
-from kimix.tools.web.fetch_url import Params, fetch_url
-from kimix.tools.web.web_fetcher import fetcher
+from kimi_cli.tools.web.kimix_fetch import Params, fetch_url
+from kimi_cli.tools.web.web_fetcher import fetcher
 
 _URL = "https://example.com/page"
 

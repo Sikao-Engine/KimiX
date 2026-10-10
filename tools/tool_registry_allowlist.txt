@@ -1,6 +1,6 @@
 # G-ORPHAN allowlist — `tools/review_tool_registry.py`
 #
-# A tool class under `kimi-cli/src/kimi_cli/tools` or `src/kimix/tools` that is
+# A tool class under `kimi-cli/src/kimi_cli/tools` or `kimi-cli/src/kimi_cli/tools` that is
 # NOT referenced by an agent manifest is an ORPHAN unless it appears here with a
 # written rationale.  Syntax:  module:Class  # rationale (one per line).
 #
@@ -25,5 +25,5 @@ kimi_cli.tools.file.hash_line:HashEdit  # family export + taxonomy canonical; op
 #                  imported directly by tests/native/test_behavior_equivalence.py
 #   * ParserTool - imported directly by six call sites in tests/test_parsers.py
 # Deleting them was the alternative, but they are maintained, tested code.
-kimix.tools.file.find_str:FindStr  # tested + native-mirrored, but not registered (no new tools by owner decision)
-kimix.tools.parser:ParserTool  # tested (6 call sites), but not registered (no new tools by owner decision)
+kimi_cli.tools.file.find_str:FindStr  # tested + native-mirrored, but not registered (no new tools by owner decision)
+kimi_cli.tools.parser:ParserTool  # tested (6 call sites), but not registered (no new tools by owner decision)

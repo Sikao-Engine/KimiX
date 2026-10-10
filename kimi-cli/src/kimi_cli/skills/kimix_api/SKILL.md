@@ -1,6 +1,6 @@
 ---
 name: kimix_api
-description: Guide for using KimiX API utilities covering kimix, kimix.utils, kimix.base, kimix.dag, kimix.network, kimix.server, kimix.parser, kimix.tools, kimix.cot, kimix.retrieval, kimix.summarize, and kimi_agent_sdk.
+description: Guide for using KimiX API utilities covering kimix, kimix.utils, kimix.base, kimix.dag, kimix.network, kimix.server, kimix.parser, kimix.cot, kimix.retrieval, kimix.summarize, and kimi_agent_sdk.
 ---
 
 # Kimi API Utilities Guide
@@ -80,9 +80,11 @@ High-level guide to `kimix.utils`, `kimix.base`, the full public API of `src/kim
 
 `PythonParser/CParser/ShellParser/HtmlParser/PascalParser/LispParser/SqlParser` — `parse(source_code) -> ParseResult` (`total_comments`, `comment_lines`, `get_comments_by_kind`), `parse_file(path)`; `Comment(content, line, column, kind)`.
 
-## `kimix.tools` — Built-in Agent Tools
+## Built-in Agent Tools (`kimi_cli.tools`)
 
 `Agent` (subagent), `AgentList` (list_agents), `AgentClose` (interrupt_agent), `TaskOutput` (job_output), `BackgroundStream`, `Bash`/`Powershell`, `Run`, `FindStr`, `Mkdir`/`Rm`, `Python`, `SyntaxLint`/`MypyCheck`/`Cpplint`/`JsTsSyntaxCheck`, `Ocr`, `Docx2md`, `Pdf2md`, `ParserTool`, `write_plan`/`read_plan`/`edit_plan`, `StoreSession`/`LoadSession`/`LsSession`, `fetch_url`/`fetch_to_markdown`, `Zip`/`Unzip`.
+
+All built-in tools are imported from `kimi_cli.tools.*`: `TaskOutput`/`job_output` and `BackgroundStream` (`kimi_cli.tools.background`), `Bash`/`Powershell` (`kimi_cli.tools.file.bash`), `Run` (`kimi_cli.tools.file.run`), `FindStr` (`kimi_cli.tools.file.find_str`), plus the shared `kimi_cli.tools.common` / `kimi_cli.tools.security` / `kimi_cli.tools.prompt_common` helpers.
 
 ## `kimix.cot` — Chain-of-Thought
 
@@ -122,7 +124,7 @@ High-level guide to `kimix.utils`, `kimix.base`, the full public API of `src/kim
 | `kimix.retrieval` | BM25 retrieval engine, fuzzy search, ranking, query performance prediction |
 | `kimix.server` | Opencode-style HTTP server (FastAPI + SSE) |
 | `kimix.summarize` | Context compaction / summarization helpers |
-| `kimix.tools` | Built-in agent tools: shell, Python, file ops, OCR, PDF/DOCX, linting, planning |
+| `kimi_cli.tools` | Built-in agent tools: Python, OCR, PDF/DOCX, linting, planning, shell / Run / FindStr / background-job infra (all under `kimi-cli/src/kimi_cli/tools/`) |
 | `kimix.utils` | Session management, prompting, plan execution, error fixing, init, prompt string utilities |
 | `kimix.utils.config` | `init` and `_create_config` |
 | `kimix.utils.fix_error` | `fix_error`, `fix_error_async`, `async_prompt`, `async_fix_error` |

@@ -5,8 +5,11 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel
 
-from kimi_agent_sdk import Session
-from kimix.utils import close_session_async
+# NOTE: ``kimi_cli`` must not import ``kimix``/``kimi_agent_sdk`` at module load
+# (``kimix`` depends on ``kimi_cli``, and the SDK imports ``kimi_cli.app``).
+# ``Session`` is used only in a (string) annotation under ``from __future__
+# import annotations``, so it is not imported here; ``close_session_async`` is
+# imported lazily in ``AgentSessionStore.evict_lru_if_needed``.
 
 
 class ConversationTurn(BaseModel):
@@ -113,6 +116,8 @@ class AgentSessionStore:
         return result
 
     async def evict_lru_if_needed(self) -> None:
+        from kimix.utils import close_session_async
+
         while len(self.entries) >= self.MAX_SESSIONS:
             # Prefer evicting finished sessions: a completed background
             # subagent stays listed (list_agents) and resumable

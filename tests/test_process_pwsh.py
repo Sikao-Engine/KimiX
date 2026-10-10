@@ -8,7 +8,16 @@ from pathlib import Path
 
 
 # Import the module directly to avoid the bash_tool.py Python 3.14 issue
-_MODULE_PATH = Path(__file__).parent.parent / "src" / "kimix" / "tools" / "file" / "bash" / "process_pwsh.py"
+_MODULE_PATH = (
+    Path(__file__).parent.parent
+    / "kimi-cli"
+    / "src"
+    / "kimi_cli"
+    / "tools"
+    / "file"
+    / "bash"
+    / "process_pwsh.py"
+)
 _spec = importlib.util.spec_from_file_location("process_pwsh", str(_MODULE_PATH))
 _mod = importlib.util.module_from_spec(_spec)
 sys.modules["process_pwsh"] = _mod  # fix Python 3.14 dataclass module resolution

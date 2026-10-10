@@ -1,7 +1,7 @@
 """Tests for the shared tool-prompt helpers (plan.md Part 1).
 
 Layer-1 invariant: the four shell/python tools compose their ``description``
-and ``Params`` field descriptions from ``kimix.tools.prompt_common`` and the
+and ``Params`` field descriptions from ``kimi_cli.tools.prompt_common`` and the
 composed wire text stayed byte-identical to the pre-refactor text through
 Layer 2(a).  Layer 2(b) then hoisted the *generic* conventions (head+tail
 fold, output dedup, ``rtk``, parameter aliases, ``wait_for_pattern``,
@@ -21,7 +21,7 @@ from unittest import mock
 import pytest
 from pydantic import ValidationError
 
-from kimix.tools.prompt_common import (
+from kimi_cli.tools.prompt_common import (
     accepts_alias_text,
     normalize_mode_validator,
 )
@@ -45,13 +45,13 @@ def _build_tools() -> dict[str, Any]:
     sentences are always appended, keeping the snapshots deterministic on
     every platform.
     """
-    from kimix.tools.file import run as rt
-    from kimix.tools.file.bash import bash_tool as bt
-    from kimix.tools.file.bash import pwsh_tool as pt
-    from kimix.tools.file.bash.bash_tool import Bash
-    from kimix.tools.file.bash.pwsh_tool import Powershell
-    from kimix.tools.file.run import Run
-    from kimix.tools.py import python
+    from kimi_cli.tools.file import run as rt
+    from kimi_cli.tools.file.bash import bash_tool as bt
+    from kimi_cli.tools.file.bash import pwsh_tool as pt
+    from kimi_cli.tools.file.bash.bash_tool import Bash
+    from kimi_cli.tools.file.bash.pwsh_tool import Powershell
+    from kimi_cli.tools.file.run import Run
+    from kimi_cli.tools.py import python
 
     session = _FakeSession()
     tools: dict[str, Any] = {}
@@ -77,10 +77,10 @@ def _build_tools() -> dict[str, Any]:
 
 def test_shared_fragments_identical() -> None:
     """Shared param descriptions must be the same object text in all four tools."""
-    from kimix.tools.file.bash.bash_tool import BashParams
-    from kimix.tools.file.bash.pwsh_tool import PowershellParams
-    from kimix.tools.file.run import RunParams
-    from kimix.tools.py import Params as PyParams
+    from kimi_cli.tools.file.bash.bash_tool import BashParams
+    from kimi_cli.tools.file.bash.pwsh_tool import PowershellParams
+    from kimi_cli.tools.file.run import RunParams
+    from kimi_cli.tools.py import Params as PyParams
 
     def desc(model: type, field: str) -> str:
         return model.model_fields[field].description  # type: ignore[attr-defined]
@@ -258,9 +258,9 @@ def test_conventions_block_in_system_prompt() -> None:
 
 def test_validators_shared() -> None:
     """``_normalize_mode`` behaves identically across the three Params models."""
-    from kimix.tools.file.bash.bash_tool import BashParams
-    from kimix.tools.file.bash.pwsh_tool import PowershellParams
-    from kimix.tools.py import Params as PyParams
+    from kimi_cli.tools.file.bash.bash_tool import BashParams
+    from kimi_cli.tools.file.bash.pwsh_tool import PowershellParams
+    from kimi_cli.tools.py import Params as PyParams
 
     models = (BashParams, PowershellParams, PyParams)
     for model in models:
@@ -273,7 +273,7 @@ def test_validators_shared() -> None:
 
 def test_pwsh_legacy_timeout_ms_converts_to_seconds() -> None:
     """Legacy ``timeoutMs`` (milliseconds) converts to canonical ``timeout`` seconds."""
-    from kimix.tools.file.bash.pwsh_tool import PowershellParams
+    from kimi_cli.tools.file.bash.pwsh_tool import PowershellParams
 
     assert PowershellParams(cmd="echo hi", timeoutMs=30000).timeout == 30
     # Canonical `timeout` wins when both spellings are supplied.
@@ -284,8 +284,8 @@ def test_pwsh_legacy_timeout_ms_converts_to_seconds() -> None:
 
 def test_shell_cmd_required_validator_shared() -> None:
     """Bash/Powershell share the input-required after-validator semantics."""
-    from kimix.tools.file.bash.bash_tool import BashParams
-    from kimix.tools.file.bash.pwsh_tool import PowershellParams
+    from kimi_cli.tools.file.bash.bash_tool import BashParams
+    from kimi_cli.tools.file.bash.pwsh_tool import PowershellParams
 
     for model, field in ((BashParams, "cmd"), (PowershellParams, "command")):
         with pytest.raises(ValidationError, match=rf"{field} cannot be empty when mode='execute'"):
@@ -299,7 +299,7 @@ def test_shell_cmd_required_validator_shared() -> None:
 
 def test_python_params_still_validate_source() -> None:
     """Python keeps its own (looser) input rules; sanity-check unchanged."""
-    from kimix.tools.py import Params as PyParams
+    from kimi_cli.tools.py import Params as PyParams
 
     with pytest.raises(ValidationError, match="code"):
         PyParams.model_validate({})

@@ -433,7 +433,7 @@ def _build_rg_args(
     When ``rtk_path`` is set, the returned argv is prefixed with the absolute
     rtk path so rtk wraps rg (``[<abs rtk>, rg, ...]``) and deduplicates its
     output. rtk dispatches on the wrapped executable's stem, matching the
-    proven pattern in ``kimix.tools.file.run``.
+    proven pattern in ``kimi_cli.tools.file.run``.
     """
     args: list[str] = [rg_cmd]
 
@@ -1569,7 +1569,7 @@ class Grep(CallableTool2[Params]):
             # files), preserve the original stream so the model can page
             # through the full results.
             if rtk_meta.get("folded_files") or rtk_meta.get("skipped_files"):
-                from kimix.tools.common import _export_to_temp_file_async
+                from kimi_cli.tools.common import _export_to_temp_file_async
 
                 rtk_original_path, _ = await _export_to_temp_file_async(
                     key=None, content=output, ext=".txt"

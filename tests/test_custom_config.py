@@ -12,15 +12,15 @@ from kimi_cli.tools.file.read import ReadFile, Params as ReadFileParams
 from kimi_cli.tools.file.replace import EditFile, Params as EditFileParams
 from kimi_cli.tools.file.utils import check_path_protected
 from kimi_cli.tools.file.write import WriteFile, Params as WriteFileParams
-from kimix.tools.file.run import Run, RunParams
+from kimi_cli.tools.file.run import Run, RunParams
 from kosong.tooling import ToolError, ToolOk
 
 
 @pytest.fixture(autouse=True)
 def patch_run_flags() -> None:
-    with patch("kimix.tools.file.run.USE_SYSTEM_SHELL", False):
-        with patch("kimix.tools.file.run.USE_SYSTEM_PWSH_ON_WINDOWS", False):
-            with patch("kimix.tools.file.run.find_bash", return_value=None):
+    with patch("kimi_cli.tools.file.run.USE_SYSTEM_SHELL", False):
+        with patch("kimi_cli.tools.file.run.USE_SYSTEM_PWSH_ON_WINDOWS", False):
+            with patch("kimi_cli.tools.file.run.find_bash", return_value=None):
                 yield
 
 
@@ -260,7 +260,7 @@ def run_tool() -> Run:
 
 @pytest.fixture
 def mock_process_task() -> MagicMock:
-    with patch("kimix.tools.file.run.ProcessTask") as MockTask:
+    with patch("kimi_cli.tools.file.run.ProcessTask") as MockTask:
         mock_task = MagicMock()
         mock_task.stream = MagicMock()
         mock_task.stream.success = AsyncMock(return_value=True)

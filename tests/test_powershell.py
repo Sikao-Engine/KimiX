@@ -11,10 +11,10 @@ import pytest
 from kimi_cli.session import Session
 
 from kimi_agent_sdk import ToolError, ToolOk
-from kimix.tools.background.utils import TaskData, _pop_task_data
-from kimix.tools.common import ProcessTask, _rtk_binary_path
-from kimix.tools.file.bash import Powershell
-from kimix.tools.file.bash.pwsh_tool import _PWSH_CONSOLE_INIT, PowershellParams, find_pwsh
+from kimi_cli.tools.background.utils import TaskData, _pop_task_data
+from kimi_cli.tools.common import ProcessTask, _rtk_binary_path
+from kimi_cli.tools.file.bash import Powershell
+from kimi_cli.tools.file.bash.pwsh_tool import _PWSH_CONSOLE_INIT, PowershellParams, find_pwsh
 
 
 def _pwsh_is_available() -> bool:
@@ -49,7 +49,7 @@ def _force_pwsh_enabled() -> Any:
     so the gate can be safely bypassed.
     """
     return patch(
-        "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+        "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
         return_value=True,
     )
 
@@ -96,10 +96,10 @@ class TestPowershellArgumentBuilding:
         return session
 
     async def test_non_interactive_args(self, mock_session: MagicMock) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
             pwsh = Powershell(session=mock_session)
 
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             mock_instance = MagicMock()
             mock_instance.start = MagicMock(return_value=asyncio.Future())
             mock_instance.start.return_value.set_result("pwsh-test-id")
@@ -128,10 +128,10 @@ class TestPowershellArgumentBuilding:
             assert args.kwargs.get("append_newline", False) is False
 
     async def test_interactive_args_with_cmd(self, mock_session: MagicMock) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
             pwsh = Powershell(session=mock_session)
 
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             mock_instance = MagicMock()
             mock_instance.start = MagicMock(return_value=asyncio.Future())
             mock_instance.start.return_value.set_result("pwsh-interactive-id")
@@ -150,10 +150,10 @@ class TestPowershellArgumentBuilding:
             assert args.kwargs.get("append_newline") is True or args[0][4] is True
 
     async def test_interactive_args_without_cmd(self, mock_session: MagicMock) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
             pwsh = Powershell(session=mock_session)
 
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             mock_instance = MagicMock()
             mock_instance.start = MagicMock(return_value=asyncio.Future())
             mock_instance.start.return_value.set_result("pwsh-interactive-id")
@@ -168,10 +168,10 @@ class TestPowershellArgumentBuilding:
             assert ps_args == ["-NoP", "-Exec", "Bypass", "-NoL", "-NoExit", "-Command", _PWSH_CONSOLE_INIT]
 
     async def test_interactive_returns_immediately(self, mock_session: MagicMock) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
             pwsh = Powershell(session=mock_session)
 
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             mock_instance = MagicMock()
             mock_instance.start = MagicMock(return_value=asyncio.Future())
             mock_instance.start.return_value.set_result("task-123")
@@ -246,7 +246,7 @@ class TestPowershellSessionContinuation:
 
     @pytest.fixture
     def pwsh_instance(self, mock_session: MagicMock) -> Powershell:
-        with patch("kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
             return Powershell(session=mock_session)
 
     async def test_continue_nonexistent_task_lists_available(self, pwsh_instance: Powershell) -> None:
@@ -421,12 +421,12 @@ class TestPowershellRtkRewrite:
         self, mock_session: MagicMock
     ) -> None:
         _rtk_binary_path.cache_clear()
-        with patch("kimix.tools.common._rtk_available", return_value=True), patch(
-            "kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
+        with patch("kimi_cli.tools.common._rtk_available", return_value=True), patch(
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
         ):
             pwsh = Powershell(session=mock_session)
 
-            with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+            with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
                 mock_instance = MagicMock()
                 mock_instance.start = MagicMock(return_value=asyncio.Future())
                 mock_instance.start.return_value.set_result("pwsh-rtk-id")
@@ -461,12 +461,12 @@ class TestPowershellRtkRewrite:
         # output glues lines together and misleads the model.  The command
         # must reach pwsh unchanged.
         _rtk_binary_path.cache_clear()
-        with patch("kimix.tools.common._rtk_available", return_value=True), patch(
-            "kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
+        with patch("kimi_cli.tools.common._rtk_available", return_value=True), patch(
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
         ):
             pwsh = Powershell(session=mock_session)
 
-            with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+            with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
                 mock_instance = MagicMock()
                 mock_instance.start = MagicMock(return_value=asyncio.Future())
                 mock_instance.start.return_value.set_result("pwsh-rtk-id")
@@ -508,7 +508,7 @@ class TestPowershellSafetyWiring:
     @pytest.fixture
     def pwsh_instance(self, mock_session: MagicMock) -> Powershell:
         with patch(
-            "kimix.tools.file.bash.pwsh_tool.find_pwsh",
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh",
             return_value=r"C:\pwsh\pwsh.exe",
         ):
             return Powershell(session=mock_session)
@@ -534,7 +534,7 @@ class TestPowershellSafetyWiring:
         mock_instance.stream.exit_code = 0
         mock_instance.stream.process_elapsed = None
         with patch(
-            "kimix.tools.file.bash.pwsh_tool.ProcessTask",
+            "kimi_cli.tools.file.bash.pwsh_tool.ProcessTask",
             return_value=mock_instance,
         ) as mock_pt:
             result = await pwsh_instance(PowershellParams(cmd="Get-Location"))
@@ -544,7 +544,7 @@ class TestPowershellSafetyWiring:
     async def test_hardline_blocked_before_process_task(
         self, pwsh_instance: Powershell
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             result = await pwsh_instance(PowershellParams(cmd="rm -rf /"))
         assert isinstance(result, ToolError)
         assert result.brief == "Blocked (hardline)"
@@ -552,7 +552,7 @@ class TestPowershellSafetyWiring:
         mock_pt.assert_not_called()
 
     async def test_hardline_obfuscated_blocked(self, pwsh_instance: Powershell) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             result = await pwsh_instance(PowershellParams(cmd="Rm -Rf /"))
         assert isinstance(result, ToolError)
         assert result.brief == "Blocked (hardline)"
@@ -561,7 +561,7 @@ class TestPowershellSafetyWiring:
     async def test_self_kill_guard_blocks_own_pid(
         self, pwsh_instance: Powershell
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             result = await pwsh_instance(
                 PowershellParams(cmd=f"Stop-Process -Id {os.getpid()}")
             )
@@ -574,7 +574,7 @@ class TestPowershellSafetyWiring:
         self, pwsh_instance: Powershell
     ) -> None:
         stem = os.path.splitext(os.path.basename(sys.executable))[0]
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             result = await pwsh_instance(
                 PowershellParams(cmd=f"Stop-Process -Name {stem}")
             )
@@ -587,7 +587,7 @@ class TestPowershellSafetyWiring:
     ) -> None:
         # PID reached only through a PowerShell ``foreach`` loop variable.
         cmd = f"foreach ($pid in {os.getpid()},99999) {{ Stop-Process -Id $pid }}"
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             result = await pwsh_instance(PowershellParams(cmd=cmd))
         assert isinstance(result, ToolError)
         assert result.brief == "Blocked (self-kill guard)"
@@ -599,7 +599,7 @@ class TestPowershellSafetyWiring:
     ) -> None:
         mock_session.custom_config.get.return_value = {"shell": {"self_kill_guard": False}}
         with patch(
-            "kimix.tools.file.bash.pwsh_tool.find_pwsh",
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh",
             return_value=r"C:\pwsh\pwsh.exe",
         ):
             pwsh = Powershell(session=mock_session)
@@ -613,7 +613,7 @@ class TestPowershellSafetyWiring:
         mock_instance.stream.exit_code = 0
         mock_instance.stream.process_elapsed = None
         with patch(
-            "kimix.tools.file.bash.pwsh_tool.ProcessTask",
+            "kimi_cli.tools.file.bash.pwsh_tool.ProcessTask",
             return_value=mock_instance,
         ) as mock_pt:
             result = await pwsh(

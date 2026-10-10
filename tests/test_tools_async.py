@@ -11,16 +11,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from kimi_agent_sdk import ToolError, ToolOk
-from kimix.tools.background import TaskOutput, TaskOutputParams
-from kimix.tools.background.utils import (
+from kimi_cli.tools.background import TaskOutput, TaskOutputParams
+from kimi_cli.tools.background.utils import (
     BackgroundStream,
     add_task,
     discard_all_tasks,
     get_all_tasks,
     remove_task_id,
 )
-from kimix.tools.py import Params as PyParams
-from kimix.tools.py import python
+from kimi_cli.tools.py import Params as PyParams
+from kimi_cli.tools.py import python
 
 
 @pytest.fixture
@@ -40,7 +40,7 @@ async def cleanup_task_data(mock_session: MagicMock) -> Any:
 
 @pytest.fixture(autouse=True)
 def patch_find_bash() -> Any:
-    with patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=None):
+    with patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=None):
         yield
 
 
@@ -296,7 +296,7 @@ class TestPython:
         self, mock_session: MagicMock
     ) -> None:
         with patch(
-            "kimix.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
+            "kimi_cli.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
         ):
             tool = python(session=mock_session)
             params = PyParams(code="import time; time.sleep(120)", timeout=90)
@@ -561,7 +561,7 @@ class TestAsyncIntegration:
         assert await stream.get_queue() is None
 
     async def test_process_task_all_async_methods_awaited(self, mock_session: MagicMock) -> None:
-        from kimix.tools.common import ProcessTask
+        from kimi_cli.tools.common import ProcessTask
 
         task = ProcessTask(sys.executable, ["-c", "print('await_test')"])
         tid = await task.start(mock_session, kind="run", name="await")

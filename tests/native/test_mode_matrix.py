@@ -20,9 +20,9 @@ CORPUS = [
 
 SNIPPET = r"""
 import json
-from kimix.tools.common import filter_output, _dedup_output
-from kimix.tools.file.bash.bash_fix import fix_bash_command
-from kimix.tools.file.bash.bash_tool import _process_unquoted
+from kimi_cli.tools.common import filter_output, _dedup_output
+from kimi_cli.tools.file.bash.bash_fix import fix_bash_command
+from kimi_cli.tools.file.bash.bash_tool import _process_unquoted
 out = {"filter": [], "dedup": [], "bashfix": [], "unquoted": []}
 for t in CORPUS:
     out["filter"].append(filter_output(t))

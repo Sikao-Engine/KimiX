@@ -90,8 +90,8 @@ def check_toml_text(text: str, toml_callback: Callable[[Any], None] | None = Non
 
 
 # ---------------------------------------------------------------------------
-# File-path and legacy string variants (canonical home since P9; previously
-# duplicated in ``kimix.tools.check_fmt``, which is now a shim).
+# File-path and legacy string variants (canonical home since P9; the former
+# ``kimix`` shim module that re-exported them has been removed).
 # ---------------------------------------------------------------------------
 
 

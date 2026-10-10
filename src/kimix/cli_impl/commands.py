@@ -415,7 +415,7 @@ def _cmd_exit(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     # processes before the user sees the goodbye, so anonymous CLI runs leave
     # no trace behind.  Best-effort; never blocks the exit.
     try:
-        from kimix.tools.common import cleanup_temp_folder
+        from kimi_cli.tools.common import cleanup_temp_folder
         cleanup_temp_folder()
     except Exception:
         pass
@@ -772,11 +772,11 @@ def _builtin_tools_listing(repo_root: Path, kimix_tools_dir: Path) -> str:
     """Return the exact file path of every builtin tool, one tool per line.
 
     Derived from the worker tool manifest in ``src/kimix/agent_worker.json``
-    (``kimix.tools.*`` and ``kimi_cli.tools.*``) so it can never drift from the
+    (whose ``tools`` entries are all ``kimi_cli.tools.*``) so it can never drift from the
     actual toolset: each ``module:attr`` entry is resolved through the shared
     ``resolve_tool_class`` helper to the source file that defines the tool
     class. Paths are relative to the repo root (e.g.
-    ``src/kimix/tools/file/bash/bash_tool.py``) so the reflection agent can
+    ``kimi-cli/src/kimi_cli/tools/file/bash/bash_tool.py``) so the reflection agent can
     edit the precise source file.
     """
     manifest_path = kimix_tools_dir.parent / "agent_worker.json"
@@ -851,7 +851,7 @@ Every builtin tool and the exact file where its implementation lives:
 - Worker tool manifest: `{worker_agent_json}` — the exact tool list for the worker agent
   (`agent.extend=default`): Bash, pwsh, Run, python, job_output, todo_list,
   read, read_image, edit, write, subagent, list_agents, interrupt_agent,
-  workflow, glob, grep, fetch_url, web_search, compact (from `kimix.tools.*`
+  workflow, glob, grep, fetch_url, web_search, compact (from `kimi_cli.tools.*`
   and `kimi_cli.tools.*`).
 - Soul runtime: `{soul_dir}`
   - agent.py — Runtime + BuiltinSystemPromptArgs; loads AGENTS.md, skills, additional dirs

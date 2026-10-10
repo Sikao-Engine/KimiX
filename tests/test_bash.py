@@ -17,16 +17,16 @@ from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
 
 from kimi_agent_sdk import ToolError, ToolOk
-from kimix.tools.background import TaskOutput, TaskOutputParams
-from kimix.tools.background.utils import TaskData, _pop_task_data, get_all_tasks
-from kimix.tools.common import _env_with_rg_bin_path
-from kimix.tools.file.bash import (
+from kimi_cli.tools.background import TaskOutput, TaskOutputParams
+from kimi_cli.tools.background.utils import TaskData, _pop_task_data, get_all_tasks
+from kimi_cli.tools.common import _env_with_rg_bin_path
+from kimi_cli.tools.file.bash import (
     Bash,
     BashParams,
     Powershell,
 )
-from kimix.tools.file.bash.bash_fix import BashFix, fix_bash_command
-from kimix.tools.file.bash.bash_tool import (
+from kimi_cli.tools.file.bash.bash_fix import BashFix, fix_bash_command
+from kimi_cli.tools.file.bash.bash_tool import (
     _BASH_EXTERNAL_PROGRAM_PROBE,
     _bash_runs,
     _bash_subprocess_env,
@@ -40,7 +40,7 @@ from kimix.tools.file.bash.bash_tool import (
     _with_msystem_neutralized,
     find_bash,
 )
-from kimix.tools.file.bash.pwsh_tool import PowershellParams, find_pwsh
+from kimi_cli.tools.file.bash.pwsh_tool import PowershellParams, find_pwsh
 
 
 def _bash_is_available() -> bool:
@@ -159,20 +159,20 @@ class TestFindGitBashWindows:
     def test_honors_env_override(self, monkeypatch: Any) -> None:
         monkeypatch.setenv("KIMIX_GIT_BASH_PATH", r"C:\Custom\Git\bin\bash.exe")
         with patch(
-            "kimix.tools.file.bash.bash_tool.Path.exists",
+            "kimi_cli.tools.file.bash.bash_tool.Path.exists",
             lambda self: str(self) == r"C:\Custom\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool.shutil.which",
+            "kimi_cli.tools.file.bash.bash_tool.shutil.which",
             return_value=None,
         ), patch(
             # ``Path.resolve`` prefixes the CWD for drive-less paths on
             # POSIX hosts; keep it an identity so Windows path strings
             # round-trip unchanged on any platform.
-            "kimix.tools.file.bash.bash_tool.Path.resolve",
+            "kimi_cli.tools.file.bash.bash_tool.Path.resolve",
             lambda self: self,
         ), patch(
             # The candidate must also pass the --version smoke test.
-            "kimix.tools.file.bash.bash_tool._bash_runs",
+            "kimi_cli.tools.file.bash.bash_tool._bash_runs",
             return_value=True,
         ):
             assert _find_git_bash_windows() == r"C:\Custom\Git\bin\bash.exe"
@@ -180,25 +180,25 @@ class TestFindGitBashWindows:
     def test_env_override_missing_file_ignored(self, monkeypatch: Any) -> None:
         monkeypatch.setenv("KIMIX_GIT_BASH_PATH", r"C:\Custom\Git\bin\bash.exe")
         with patch(
-            "kimix.tools.file.bash.bash_tool.Path.exists",
+            "kimi_cli.tools.file.bash.bash_tool.Path.exists",
             lambda self: str(self) == r"C:\Program Files\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._where_git_executables",
+            "kimi_cli.tools.file.bash.bash_tool._where_git_executables",
             return_value=[r"C:\Program Files\Git\cmd\git.exe"],
         ), patch(
-            "kimix.tools.file.bash.bash_tool._git_exec_path",
+            "kimi_cli.tools.file.bash.bash_tool._git_exec_path",
             return_value=None,
         ), patch(
-            "kimix.tools.file.bash.bash_tool.shutil.which",
+            "kimi_cli.tools.file.bash.bash_tool.shutil.which",
             return_value=None,
         ), patch(
             # See test_honors_env_override: keep resolve() an identity so
             # Windows path strings round-trip unchanged on any platform.
-            "kimix.tools.file.bash.bash_tool.Path.resolve",
+            "kimi_cli.tools.file.bash.bash_tool.Path.resolve",
             lambda self: self,
         ), patch(
             # The candidate must also pass the --version smoke test.
-            "kimix.tools.file.bash.bash_tool._bash_runs",
+            "kimi_cli.tools.file.bash.bash_tool._bash_runs",
             return_value=True,
         ):
             assert _find_git_bash_windows() == r"C:\Program Files\Git\bin\bash.exe"
@@ -212,18 +212,18 @@ class TestFindGitBashWindows:
         monkeypatch.delenv("KIMIX_GIT_BASH_PATH", raising=False)
         stub = r"C:\Users\me\AppData\Local\Microsoft\WindowsApps\bash.exe"
         with patch(
-            "kimix.tools.file.bash.bash_tool._where_git_executables",
+            "kimi_cli.tools.file.bash.bash_tool._where_git_executables",
             return_value=[],
         ), patch(
-            "kimix.tools.file.bash.bash_tool.shutil.which",
+            "kimi_cli.tools.file.bash.bash_tool.shutil.which",
             return_value=stub,
         ), patch(
-            "kimix.tools.file.bash.bash_tool.Path.exists",
+            "kimi_cli.tools.file.bash.bash_tool.Path.exists",
             lambda self: False,
         ), patch(
             # See test_honors_env_override: keep resolve() an identity so
             # Windows path strings round-trip unchanged on any platform.
-            "kimix.tools.file.bash.bash_tool.Path.resolve",
+            "kimi_cli.tools.file.bash.bash_tool.Path.resolve",
             lambda self: self,
         ):
             assert _find_git_bash_windows() is None
@@ -233,22 +233,22 @@ class TestFindGitBashWindows:
         monkeypatch.delenv("KIMIX_GIT_BASH_PATH", raising=False)
         real = r"C:\msys64\usr\bin\bash.exe"
         with patch(
-            "kimix.tools.file.bash.bash_tool._where_git_executables",
+            "kimi_cli.tools.file.bash.bash_tool._where_git_executables",
             return_value=[],
         ), patch(
-            "kimix.tools.file.bash.bash_tool.shutil.which",
+            "kimi_cli.tools.file.bash.bash_tool.shutil.which",
             return_value=real,
         ), patch(
-            "kimix.tools.file.bash.bash_tool.Path.exists",
+            "kimi_cli.tools.file.bash.bash_tool.Path.exists",
             lambda self: False,
         ), patch(
             # See test_honors_env_override: keep resolve() an identity so
             # Windows path strings round-trip unchanged on any platform.
-            "kimix.tools.file.bash.bash_tool.Path.resolve",
+            "kimi_cli.tools.file.bash.bash_tool.Path.resolve",
             lambda self: self,
         ), patch(
             # The PATH candidate must also pass the --version smoke test.
-            "kimix.tools.file.bash.bash_tool._bash_runs",
+            "kimi_cli.tools.file.bash.bash_tool._bash_runs",
             return_value=True,
         ):
             assert _find_git_bash_windows() == real
@@ -262,22 +262,22 @@ class TestFindGitBashWindows:
         broken = r"C:\Program Files\Git\bin\bash.exe"
         good = r"C:\msys64\usr\bin\bash.exe"
         with patch(
-            "kimix.tools.file.bash.bash_tool._where_git_executables",
+            "kimi_cli.tools.file.bash.bash_tool._where_git_executables",
             return_value=[r"C:\Program Files\Git\cmd\git.exe"],
         ), patch(
-            "kimix.tools.file.bash.bash_tool._git_exec_path",
+            "kimi_cli.tools.file.bash.bash_tool._git_exec_path",
             return_value=None,
         ), patch(
-            "kimix.tools.file.bash.bash_tool.Path.exists",
+            "kimi_cli.tools.file.bash.bash_tool.Path.exists",
             lambda self: str(self) in (broken, good),
         ), patch(
-            "kimix.tools.file.bash.bash_tool._bash_runs",
+            "kimi_cli.tools.file.bash.bash_tool._bash_runs",
             side_effect=lambda p: p == good,
         ), patch(
-            "kimix.tools.file.bash.bash_tool.shutil.which",
+            "kimi_cli.tools.file.bash.bash_tool.shutil.which",
             return_value=good,
         ), patch(
-            "kimix.tools.file.bash.bash_tool.Path.resolve",
+            "kimi_cli.tools.file.bash.bash_tool.Path.resolve",
             lambda self: self,
         ):
             assert _find_git_bash_windows() == good
@@ -289,19 +289,19 @@ class TestFindGitBashWindows:
         PowerShell becomes the fallback shell."""
         monkeypatch.delenv("KIMIX_GIT_BASH_PATH", raising=False)
         with patch(
-            "kimix.tools.file.bash.bash_tool._where_git_executables",
+            "kimi_cli.tools.file.bash.bash_tool._where_git_executables",
             return_value=[r"C:\Program Files\Git\cmd\git.exe"],
         ), patch(
-            "kimix.tools.file.bash.bash_tool._git_exec_path",
+            "kimi_cli.tools.file.bash.bash_tool._git_exec_path",
             return_value=None,
         ), patch(
-            "kimix.tools.file.bash.bash_tool.Path.exists",
+            "kimi_cli.tools.file.bash.bash_tool.Path.exists",
             lambda self: True,
         ), patch(
-            "kimix.tools.file.bash.bash_tool._bash_runs",
+            "kimi_cli.tools.file.bash.bash_tool._bash_runs",
             return_value=False,
         ), patch(
-            "kimix.tools.file.bash.bash_tool.shutil.which",
+            "kimi_cli.tools.file.bash.bash_tool.shutil.which",
             return_value=None,
         ):
             assert _find_git_bash_windows() is None
@@ -317,7 +317,7 @@ class TestFindGitBashWindows:
             return subprocess.CompletedProcess(cmd, 0, "", "")
 
         monkeypatch.setattr(
-            "kimix.tools.file.bash.bash_tool.subprocess.run", fake_run
+            "kimi_cli.tools.file.bash.bash_tool.subprocess.run", fake_run
         )
         assert _bash_runs("bash") is True
         assert calls == [
@@ -328,7 +328,7 @@ class TestFindGitBashWindows:
             return subprocess.CompletedProcess(cmd, 1, "", "")
 
         monkeypatch.setattr(
-            "kimix.tools.file.bash.bash_tool.subprocess.run", fake_run_failing
+            "kimi_cli.tools.file.bash.bash_tool.subprocess.run", fake_run_failing
         )
         assert _bash_runs("bash") is False
         assert _bash_runs(r"C:\definitely\missing\bash.exe") is False
@@ -349,7 +349,7 @@ class TestFindGitBashWindows:
             raise subprocess.TimeoutExpired(cmd=cmd, timeout=15)
 
         monkeypatch.setattr(
-            "kimix.tools.file.bash.bash_tool.subprocess.run", fake_run
+            "kimi_cli.tools.file.bash.bash_tool.subprocess.run", fake_run
         )
         assert _bash_runs("bash") is False
 
@@ -413,14 +413,14 @@ class TestWindowsShellExclusion:
 
     def _platform_patchers(self, bash_available: bool, pwsh_preferred: bool) -> list[Any]:
         return [
-            patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"),
-            patch("kimix.tools.file.bash.bash_tool.USE_SYSTEM_PWSH_ON_WINDOWS", pwsh_preferred),
+            patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"),
+            patch("kimi_cli.tools.file.bash.bash_tool.USE_SYSTEM_PWSH_ON_WINDOWS", pwsh_preferred),
             patch(
-                "kimix.tools.file.bash.bash_tool.find_bash",
+                "kimi_cli.tools.file.bash.bash_tool.find_bash",
                 return_value=(r"C:\Git\bin\bash.exe" if bash_available else None),
             ),
             # No `agent.shell` config: exercise the legacy platform heuristics.
-            patch("kimix.tools.file.bash.bash_tool._configured_shell", return_value=None),
+            patch("kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value=None),
         ]
 
     def _with_platform(self, bash_available: bool, pwsh_preferred: bool) -> ExitStack:
@@ -458,13 +458,13 @@ class TestWindowsShellExclusion:
     ) -> None:
         """Shipped default: Git Bash is preferred on Windows; PowerShell is
         only the fallback when no bash (no git install) exists."""
-        import kimix.tools.file.bash.bash_tool as bash_tool_module
+        import kimi_cli.tools.file.bash.bash_tool as bash_tool_module
 
         assert bash_tool_module.USE_SYSTEM_PWSH_ON_WINDOWS is False
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
-            "kimix.tools.file.bash.bash_tool._configured_shell", return_value=None
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
+            "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value=None
         ), patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ):
             Bash(mock_session)  # does not raise
@@ -476,9 +476,9 @@ class TestWindowsShellExclusion:
     ) -> None:
         """Shipped default: no git install (no bash) on Windows → PowerShell
         becomes the fallback shell tool."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
-            "kimix.tools.file.bash.bash_tool._configured_shell", return_value=None
-        ), patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=None):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
+            "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value=None
+        ), patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=None):
             Powershell(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
                 Bash(mock_session)
@@ -551,9 +551,9 @@ class TestConfiguredShellSelection:
 
     def _with_platform(self, platform: str, bash_path: str | None) -> ExitStack:
         stack = ExitStack()
-        stack.enter_context(patch("kimix.tools.file.bash.bash_tool.sys.platform", platform))
+        stack.enter_context(patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", platform))
         stack.enter_context(
-            patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=bash_path)
+            patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=bash_path)
         )
         return stack
 
@@ -561,7 +561,7 @@ class TestConfiguredShellSelection:
         self, mock_session: MagicMock
     ) -> None:
         with self._with_platform("win32", r"C:\Git\bin\bash.exe"), patch(
-            "kimix.tools.file.bash.bash_tool._configured_shell", return_value="powershell"
+            "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="powershell"
         ):
             Powershell(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
@@ -571,7 +571,7 @@ class TestConfiguredShellSelection:
         self, mock_session: MagicMock
     ) -> None:
         with self._with_platform("win32", r"C:\Git\bin\bash.exe"), patch(
-            "kimix.tools.file.bash.bash_tool._configured_shell", return_value="bash"
+            "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="bash"
         ):
             Bash(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
@@ -581,9 +581,9 @@ class TestConfiguredShellSelection:
         self, mock_session: MagicMock
     ) -> None:
         with self._with_platform("win32", r"C:\Git\bin\bash.exe"), patch(
-            "kimix.tools.file.bash.bash_tool.USE_SYSTEM_PWSH_ON_WINDOWS", True
+            "kimi_cli.tools.file.bash.bash_tool.USE_SYSTEM_PWSH_ON_WINDOWS", True
         ), patch(
-            "kimix.tools.file.bash.bash_tool._configured_shell", return_value="bash"
+            "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="bash"
         ):
             Bash(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
@@ -593,7 +593,7 @@ class TestConfiguredShellSelection:
         self, mock_session: MagicMock
     ) -> None:
         with self._with_platform("linux", "/bin/bash"), patch(
-            "kimix.tools.file.bash.bash_tool._configured_shell", return_value="powershell"
+            "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="powershell"
         ):
             # Powershell is a Windows-only tool: Bash remains the fallback.
             Bash(mock_session)  # does not raise
@@ -604,7 +604,7 @@ class TestConfiguredShellSelection:
         self, mock_session: MagicMock
     ) -> None:
         with self._with_platform("linux", "/bin/bash"), patch(
-            "kimix.tools.file.bash.bash_tool._configured_shell", return_value="bash"
+            "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="bash"
         ):
             Bash(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
@@ -614,7 +614,7 @@ class TestConfiguredShellSelection:
         self, mock_session: MagicMock
     ) -> None:
         with self._with_platform("win32", None), patch(
-            "kimix.tools.file.bash.bash_tool._configured_shell", return_value="powershell"
+            "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="powershell"
         ):
             Powershell(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
@@ -626,7 +626,7 @@ class TestConfiguredShellSelection:
         # Bash is configured but not installed (e.g. no Git Bash): PowerShell
         # becomes the fallback shell tool on Windows.
         with self._with_platform("win32", None), patch(
-            "kimix.tools.file.bash.bash_tool._configured_shell", return_value="bash"
+            "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="bash"
         ):
             Powershell(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
@@ -644,7 +644,7 @@ class TestConfiguredShellSelection:
 
 
 def _fix_for_platform(command: str, platform: str) -> BashFix:
-    with patch("kimix.tools.file.bash.bash_fix.sys.platform", platform):
+    with patch("kimi_cli.tools.file.bash.bash_fix.sys.platform", platform):
         return fix_bash_command(command)
 
 
@@ -1804,18 +1804,18 @@ class TestBashToolUnsupportedCommand:
     @pytest.fixture
     def windows_tool(self, mock_session: MagicMock) -> Any:
         with (
-            patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"),
-            patch("kimix.tools.file.bash.bash_fix.sys.platform", "win32"),
+            patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"),
+            patch("kimi_cli.tools.file.bash.bash_fix.sys.platform", "win32"),
             patch(
-                "kimix.tools.file.bash.bash_tool.find_bash",
+                "kimi_cli.tools.file.bash.bash_tool.find_bash",
                 return_value=r"C:\Git\bin\bash.exe",
             ),
             patch(
-                "kimix.tools.file.bash.bash_tool._configured_shell",
+                "kimi_cli.tools.file.bash.bash_tool._configured_shell",
                 return_value=None,
             ),
             patch(
-                "kimix.tools.file.bash.bash_tool.USE_SYSTEM_PWSH_ON_WINDOWS",
+                "kimi_cli.tools.file.bash.bash_tool.USE_SYSTEM_PWSH_ON_WINDOWS",
                 False,
             ),
         ):
@@ -1848,7 +1848,7 @@ class TestBashToolUnsupportedCommand:
         self, windows_tool: Bash, mock_session: MagicMock
     ) -> None:
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask"
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask"
         ) as process_task:
             result = await windows_tool(BashParams(cmd="journalctl -u svc -f"))
         assert isinstance(result, ToolError)
@@ -2292,7 +2292,7 @@ class TestBashFixGitBashPosixPaths:
     def test_tmp_path_with_spaces_is_quoted(
         self, monkeypatch: Any
     ) -> None:
-        import kimix.tools.file.bash.bash_fix as bash_fix_module
+        import kimi_cli.tools.file.bash.bash_fix as bash_fix_module
 
         monkeypatch.setattr(
             bash_fix_module._shell,
@@ -3041,100 +3041,100 @@ class TestBashFixRealGitBash:
 
 class TestPrepareBashCmd:
     def test_noop_on_non_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "linux"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "linux"):
             assert _prepare_bash_cmd("echo hello") == "echo hello"
 
     def test_noop_on_darwin(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "darwin"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "darwin"):
             assert _prepare_bash_cmd("echo hello") == "echo hello"
 
     def test_noop_on_windows_without_backslash(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd("echo hello") == "echo hello"
 
     def test_converts_unquoted_backslashes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
-            cmd = r"cat src\kimix\tools\file\bash\bash_tool.py"
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = r"cat kimi-cli\src\kimi_cli\tools\file\bash\bash_tool.py"
             result = _prepare_bash_cmd(cmd)
-            assert result == "cat src/kimix/tools/file/bash/bash_tool.py"
+            assert result == "cat kimi-cli/src/kimi_cli/tools/file/bash/bash_tool.py"
 
     def test_preserves_single_quotes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = "echo 'hello world'"
             result = _prepare_bash_cmd(cmd)
             assert result == "echo 'hello world'"
 
     def test_preserves_backslashes_inside_single_quotes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"echo 'hello\world'"
             result = _prepare_bash_cmd(cmd)
             assert result == r"echo 'hello\world'"
 
     def test_preserves_backslashes_inside_double_quotes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "hello\world"'
             result = _prepare_bash_cmd(cmd)
             assert result == r'echo "hello\world"'
 
     def test_preserves_backslashes_inside_ansi_c_quotes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"echo $'hello\nworld'"
             result = _prepare_bash_cmd(cmd)
             assert result == r"echo $'hello\nworld'"
 
     def test_empty_command_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd("") == ""
 
     def test_pipes_and_redirects_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = "echo hello | grep h > out.txt"
             result = _prepare_bash_cmd(cmd)
             assert result == "echo hello | grep h > out.txt"
 
     def test_drive_letter_path_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"cat C:\Users\test\file.txt"
             result = _prepare_bash_cmd(cmd)
             assert result == "cat C:/Users/test/file.txt"
 
     def test_relative_paths_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"cd .\subdir") == "cd ./subdir"
             assert _prepare_bash_cmd(r"cd ..\parent") == "cd ../parent"
 
     def test_multiple_paths_in_one_command_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"diff a\b\c.py x\y\z.py"
             assert _prepare_bash_cmd(cmd) == "diff a/b/c.py x/y/z.py"
 
     def test_mixed_quoted_and_unquoted_backslashes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"cat 'src\a.py' src\b.py"
             assert _prepare_bash_cmd(cmd) == r"cat 'src\a.py' src/b.py"
 
     def test_escaped_quote_inside_double_quotes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "hello \"world\""'
             assert _prepare_bash_cmd(cmd) == r'echo "hello \"world\""'
 
     def test_unclosed_single_quote_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"echo 'hello src\file.py"
             assert _prepare_bash_cmd(cmd) == r"echo 'hello src\file.py"
 
     def test_unclosed_double_quote_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "hello src\file.py'
             assert _prepare_bash_cmd(cmd) == r'echo "hello src\file.py'
 
     def test_dollar_quote_with_escaped_single_quote_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"echo $'it\'s working'"
             assert _prepare_bash_cmd(cmd) == r"echo $'it\'s working'"
 
     def test_backslash_before_special_chars_preserved_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # Backslash escapes before bash metacharacters are preserved
             assert _prepare_bash_cmd(r"echo a\|b") == r"echo a\|b"
             assert _prepare_bash_cmd(r"echo a\;b") == r"echo a\;b"
@@ -3143,81 +3143,81 @@ class TestPrepareBashCmd:
             assert _prepare_bash_cmd(r"echo a\<b") == r"echo a\<b"
 
     def test_double_backslash_outside_quotes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # Each backslash is converted individually (\\ -> //)
             assert _prepare_bash_cmd(r"echo \\path") == "echo //path"
 
     def test_backslash_at_end_of_string_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd("echo trailing\\") == "echo trailing/"
 
     def test_pipes_and_redirects_with_paths_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"cat src\a.py | grep x > out\b.txt"
             assert _prepare_bash_cmd(cmd) == "cat src/a.py | grep x > out/b.txt"
 
     def test_preserves_quoted_path_with_spaces_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'cat "C:\Program Files\app\file.txt"'
             assert _prepare_bash_cmd(cmd) == r'cat "C:\Program Files\app\file.txt"'
 
     def test_preserves_single_quoted_path_with_spaces_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"cat 'C:\Program Files\app\file.txt'"
             assert _prepare_bash_cmd(cmd) == r"cat 'C:\Program Files\app\file.txt'"
 
     def test_command_substitution_with_backslashes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # $(...) is not a quoted region; backslashes inside are converted
             cmd = r"echo $(cat src\file.py)"
             assert _prepare_bash_cmd(cmd) == "echo $(cat src/file.py)"
 
     def test_backtick_with_backslashes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # Backticks are not a quoted region; backslashes inside are converted
             cmd = r"echo `cat src\file.py`"
             assert _prepare_bash_cmd(cmd) == "echo `cat src/file.py`"
 
     def test_find_command_with_escaped_parens_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'find build -maxdepth 4 \( -name "luisa-xir*" -o -name "luisa-spirv*" \) | head -n 20'
             expected = r'find build -maxdepth 4 \( -name "luisa-xir*" -o -name "luisa-spirv*" \) | head -n 20'
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_backslash_space_preserved_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # Backslash-escaped space must be preserved so the word remains single token
             assert _prepare_bash_cmd(r"echo hello\ world") == r"echo hello\ world"
 
     def test_backslash_dollar_preserved_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo \$HOME") == r"echo \$HOME"
 
     def test_backslash_star_preserved_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo \*") == r"echo \*"
 
     def test_backslash_backtick_preserved_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo \`cmd\`") == r"echo \`cmd\`"
 
     def test_backslash_brace_preserved_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo \{a,b\}") == r"echo \{a,b\}"
 
     def test_backslash_tilde_preserved_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo \~user") == r"echo \~user"
 
     def test_mixed_paths_and_escapes_on_windows(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"cat src\tools\file.py && find build \( -name '*.py' \)"
             expected = r"cat src/tools/file.py && find build \( -name '*.py' \)"
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_escaped_single_quote_outside_quotes_on_windows(self) -> None:
         """\' outside quotes should be preserved and NOT start a single-quoted region."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # \' → literal ', backslashes after should be converted
             cmd = r"echo \'src\kimix\'"
             expected = r"echo \'src/kimix\'"
@@ -3225,7 +3225,7 @@ class TestPrepareBashCmd:
 
     def test_escaped_double_quote_outside_quotes_on_windows(self) -> None:
         r"""\" outside quotes should be preserved and NOT start a double-quoted region."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # \" outside quotes: backslash escapes the double-quote → literal "
             # The " should NOT start a double-quoted region.
             cmd = r'echo \"src\kimix\"'
@@ -3234,7 +3234,7 @@ class TestPrepareBashCmd:
 
     def test_escaped_dollar_prevents_ansi_c_detection_on_windows(self) -> None:
         """Escaped dollar before single-quote should NOT trigger ANSI-C processing."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # \$'text' — the $ is escaped, so 'text' is a separate single-quoted string
             cmd = r"echo \$'text'"
             expected = r"echo \$'text'"
@@ -3244,7 +3244,7 @@ class TestPrepareBashCmd:
 
     def test_double_quoted_escaped_backslash_before_quote_on_windows(self) -> None:
         r"""\\" inside double quotes: \\ is escaped backslash, then " closes the region."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # Bash: "hello\\" is the quoted region, then world", then "
             cmd = r'"hello\\"world"'
             # \\ inside "..." preserved, then world is outside (no backslashes),
@@ -3254,21 +3254,21 @@ class TestPrepareBashCmd:
 
     def test_double_quoted_multiple_escaped_backslashes_on_windows(self) -> None:
         r"""Multiple \\ sequences inside double quotes."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'"a\\b\\c"'
             expected = r'"a\\b\\c"'
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_double_quoted_escaped_dollar_on_windows(self) -> None:
         r"""\$ inside double quotes should not affect region detection."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'"price is \$100"'
             expected = r'"price is \$100"'
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_double_quoted_with_dollar_ansi_c_inside_on_windows(self) -> None:
         r"""$' inside double quotes should NOT trigger ANSI-C processing."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # "abc $'def' ghi" — the $' is inside double quotes, treated literally
             cmd = r'"abc $"' + "'def' ghi\""
             # The double-quoted region captures everything from first " to last "
@@ -3277,39 +3277,39 @@ class TestPrepareBashCmd:
 
     def test_backslash_before_hash_preserved_on_windows(self) -> None:
         r"""\# should be preserved as bash comment escape."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo \# not a comment") == r"echo \# not a comment"
 
     def test_backslash_before_exclamation_preserved_on_windows(self) -> None:
         r"""\! should be preserved as history expansion escape."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo \!test") == r"echo \!test"
 
     def test_backslash_before_percent_preserved_on_windows(self) -> None:
         r"""\% should be preserved."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo \%percent") == r"echo \%percent"
 
     def test_backslash_before_equals_preserved_on_windows(self) -> None:
         r"""\= should be preserved as assignment escape."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo a\=b") == r"echo a\=b"
 
     def test_triple_backslash_outside_quotes_on_windows(self) -> None:
         r"""\\\ outside quotes: \\ → //, then \ before p → /p → ///path."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd(r"echo \\\path") == "echo ///path"
 
     def test_backslash_before_newline_preserved_on_windows(self) -> None:
         r"""\<newline> (line continuation) should be preserved."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = "echo hello\\\nworld"
             expected = "echo hello\\\nworld"
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_ansi_c_with_double_backslash_before_quote_on_windows(self) -> None:
         r"""$'...\\'' — \\ inside ANSI-C, then ' closes the region."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # $'it\\''s' → $'it\\' + 's' (the \\ produces \, then ' closes)
             cmd = r"echo $'it\\'s working'"
             expected = r"echo $'it\\'s working'"
@@ -3317,28 +3317,28 @@ class TestPrepareBashCmd:
 
     def test_ansi_c_with_hex_escape_on_windows(self) -> None:
         r"""$'...\x41...' — hex escapes are skipped correctly."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"echo $'\x41bc'"
             expected = r"echo $'\x41bc'"
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_ansi_c_with_octal_escape_on_windows(self) -> None:
         r"""$'...\033...' — octal escapes are skipped correctly."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"echo $'\033[31mred'"
             expected = r"echo $'\033[31mred'"
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_ansi_c_with_unicode_escape_on_windows(self) -> None:
         r"""$'...\u0041...' — unicode escapes."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"echo $'\u0041bc'"
             expected = r"echo $'\u0041bc'"
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_mixed_quotes_complex_on_windows(self) -> None:
         """Complex mix of quote types and backslashes."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # 'single' preserved, "double" preserved, $'ansi' preserved, src\path → src/path
             cmd = "echo 'single' \"double\" $'ansi' src\\path"
             expected = "echo 'single' \"double\" $'ansi' src/path"
@@ -3346,14 +3346,14 @@ class TestPrepareBashCmd:
 
     def test_only_backslashes_on_windows(self) -> None:
         """String with only backslashes."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd("\\\\") == "//"
             assert _prepare_bash_cmd("\\") == "/"
             assert _prepare_bash_cmd("\\\\\\") == "///"
 
     def test_backslash_before_each_metachar_on_windows(self) -> None:
         """Every metacharacter preceded by backslash is preserved."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             metachars = "()|;&<>$\"`'*?[]{}~!#=% \t\n\r"
             for ch in metachars:
                 # Build a command with \X where X is a metachar
@@ -3364,22 +3364,22 @@ class TestPrepareBashCmd:
 
     def test_double_quoted_empty_on_windows(self) -> None:
         """Empty double-quoted region."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd('echo ""') == 'echo ""'
 
     def test_ansi_c_empty_on_windows(self) -> None:
         """Empty ANSI-C quoted region."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd("echo $''") == "echo $''"
 
     def test_single_quoted_empty_on_windows(self) -> None:
         """Empty single-quoted region."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd("echo ''") == "echo ''"
 
     def test_double_quoted_escaped_backslash_at_end_on_windows(self) -> None:
         r"""Double-quoted region with \\ at the very end."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # "hello\\" — \\ inside, then " closes
             cmd = r'"hello\\"'
             expected = r'"hello\\"'
@@ -3387,7 +3387,7 @@ class TestPrepareBashCmd:
 
     def test_double_quoted_escaped_backslash_and_quote_on_windows(self) -> None:
         r"""Double-quoted with \\\" — \\ (escaped backslash) then \" (escaped quote)."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # "hello\\\"world" — \\ → \, \" → " (escaped quote, region continues)
             cmd = r'"hello\\\"world"'
             expected = r'"hello\\\"world"'
@@ -3400,7 +3400,7 @@ class TestPrepareBashCmd:
 
     def test_dq_with_command_substitution_and_backslash_path_on_windows(self) -> None:
         r"""echo "$(cat src\foo\bar)" — backslashes inside $(...) within DQ are converted."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "$(cat src\foo\bar)"'
             assert _prepare_bash_cmd(cmd) == 'echo "$(cat src/foo/bar)"'
 
@@ -3410,112 +3410,112 @@ class TestPrepareBashCmd:
         bash runs the content in a subshell, so backslashes inside are
         processed (converted to /) just like at the top level.
         """
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "`cat src\foo\bar`"'
             assert _prepare_bash_cmd(cmd) == 'echo "`cat src/foo/bar`"'
 
 
     def test_dq_with_nested_command_substitution_on_windows(self) -> None:
         r"""Nested $(...) inside DQ — both levels process backslashes."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "$(cat $(echo src\foo\bar))"'
             assert _prepare_bash_cmd(cmd) == 'echo "$(cat $(echo src/foo/bar))"'
 
     def test_dq_with_backtick_inside_command_substitution_on_windows(self) -> None:
         r"""Backticks nested inside $(...) within DQ — content is processed."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "$(cat `echo src\foo`)"'
             assert _prepare_bash_cmd(cmd) == 'echo "$(cat `echo src/foo`)"'
 
     def test_dq_with_command_substitution_inside_backticks_on_windows(self) -> None:
         r"""$(...) nested inside `...` at top level — content is processed."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo `cat $(echo src\foo\bar)`'
             assert _prepare_bash_cmd(cmd) == 'echo `cat $(echo src/foo/bar)`'
 
     def test_dq_with_quoted_path_and_command_subst_on_windows(self) -> None:
         r"""Mixed: quoted path (preserved) + $(...) substitution (converted)."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "literal src\foo" "$(cat src\bar\baz)"'
             assert _prepare_bash_cmd(cmd) == 'echo "literal src\\foo" "$(cat src/bar/baz)"'
 
     def test_dq_ansi_c_inside_command_substitution_on_windows(self) -> None:
         r"""$'...' inside $(...) within DQ — ANSI-C region is preserved literally."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "$(echo $'"'"'\n'"'"')"'
             assert _prepare_bash_cmd(cmd) == r'echo "$(echo $'"'"'\n'"'"')"'
 
     def test_dq_single_quotes_inside_command_substitution_on_windows(self) -> None:
         r"""Single-quoted path inside $(...) within DQ — backslashes preserved."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "$(cat '"'"'src\foo\bar'"'"')"'
             assert _prepare_bash_cmd(cmd) == r'echo "$(cat '"'"'src\foo\bar'"'"')"'
 
     def test_dq_escaped_dollar_paren_not_command_substitution_on_windows(self) -> None:
         r"""\$( inside DQ — the $ is escaped, so ( is NOT a command substitution."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "\$(not a sub) src\file"'
             # \$ makes $ literal; ( ) are regular; src\file is preserved by DQ.
             assert _prepare_bash_cmd(cmd) == r'echo "\$(not a sub) src\file"'
 
     def test_dq_escaped_backtick_not_substitution_on_windows(self) -> None:
         r"""\` inside DQ — the ` is escaped, so it's a literal backtick, not substitution."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "\`not a sub\` src\file"'
             # \` makes ` literal; src\file is preserved by DQ.
             assert _prepare_bash_cmd(cmd) == r'echo "\`not a sub\` src\file"'
 
     def test_dq_empty_command_substitution_on_windows(self) -> None:
         """Empty $(...) inside DQ."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd('echo "$()"') == 'echo "$()"'
 
     def test_dq_empty_backticks_on_windows(self) -> None:
         """Empty `` `` `` inside DQ."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             assert _prepare_bash_cmd('echo "``"') == 'echo "``"'
 
     def test_unterminated_dq_with_command_substitution_on_windows(self) -> None:
         r"""Unterminated DQ that contains $( — passed through to bash to error."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "$(unterminated'
             assert _prepare_bash_cmd(cmd) == r'echo "$(unterminated'
 
     def test_unterminated_command_substitution_inside_dq_on_windows(self) -> None:
         r"""$(... with no matching ) inside DQ — passed through."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "$(no close paren"'
             assert _prepare_bash_cmd(cmd) == r'echo "$(no close paren"'
 
     def test_unterminated_backticks_inside_dq_on_windows(self) -> None:
         r"""Unterminated ` inside DQ — passed through."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "`no close"'
             assert _prepare_bash_cmd(cmd) == r'echo "`no close"'
 
     def test_dq_with_dq_inside_command_substitution_on_windows(self) -> None:
         r"""DQ inside $(...) inside DQ — inner DQ preserves its backslashes."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # "$(echo "src\foo" rest)" — inner DQ preserves \, rest converted
             cmd = r'echo "$(echo "src\foo" rest\bar)"'
             assert _prepare_bash_cmd(cmd) == r'echo "$(echo "src\foo" rest/bar)"'
 
     def test_top_level_backtick_with_escaped_backtick_on_windows(self) -> None:
         r"""\` at top level — escaped backtick, literal, not substitution start."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"echo \`not_sub\`"
             assert _prepare_bash_cmd(cmd) == r"echo \`not_sub\`"
 
     def test_top_level_nested_backticks_with_path_on_windows(self) -> None:
         """`` `cmd1`cmd2` `` style — backtick region content is processed."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # Outer backtick runs `cmd src\file`, inner is just text
             cmd = r"echo `cat src\file.txt`"
             assert _prepare_bash_cmd(cmd) == "echo `cat src/file.txt`"
 
     def test_command_substitution_with_nested_parens_on_windows(self) -> None:
         r"""$(echo (nested) paren) — ) inside parens is balanced correctly."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"echo $(echo (src\foo\bar))"
             # The ) after "bar" closes the $().  The ) at the end is a stray.
             # Actually: $(echo (src\foo\bar)) — opens $(, then echo (, then
@@ -3526,28 +3526,28 @@ class TestPrepareBashCmd:
 
     def test_dq_ansi_c_immediately_before_closing_quote_on_windows(self) -> None:
         r"""$'...' right before closing " in DQ — must not skip the closing quote."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # "abc $'def'" — the ANSI-C region ends right before the closing "
             cmd = r'"abc $'"'"'def'"'"'"'
             assert _prepare_bash_cmd(cmd) == r'"abc $'"'"'def'"'"'"'
 
     def test_dq_backtick_immediately_before_closing_quote_on_windows(self) -> None:
         """Backtick region right before closing " in DQ."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # "abc `def`" — backtick region ends right before the closing "
             cmd = '"abc `def`"'
             assert _prepare_bash_cmd(cmd) == '"abc `def`"'
 
     def test_dq_command_subst_immediately_before_closing_quote_on_windows(self) -> None:
         """$(...) right before closing " in DQ."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             # "abc $(echo x)" — command substitution ends right before the closing "
             cmd = '"abc $(echo x)"'
             assert _prepare_bash_cmd(cmd) == '"abc $(echo x)"'
 
     def test_dq_with_complex_nesting_on_windows(self) -> None:
         r"""Complex nesting: $(echo "$(echo src\foo)" `echo src\bar`)."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "$(echo "$(echo src\foo)" `echo src\bar`)"'
             # Both $() levels convert paths; inner DQ preserves its \
             expected = r'echo "$(echo "$(echo src/foo)" `echo src/bar`)"'
@@ -3555,14 +3555,14 @@ class TestPrepareBashCmd:
 
     def test_unc_path_converted_on_windows(self) -> None:
         r"""UNC path \\server\share\file.txt → //server/share/file.txt."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r"cat \\server\share\file.txt"
             assert _prepare_bash_cmd(cmd) == "cat //server/share/file.txt"
 
     def test_dq_command_subst_with_backslashes_converted_on_windows(self) -> None:
         r"""$(...) nested in double quotes: its content is parsed unquoted, so
         backslash paths inside are converted."""
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             cmd = r'echo "$(cat C:\a\b.txt)"'
             assert _prepare_bash_cmd(cmd) == 'echo "$(cat C:/a/b.txt)"'
 
@@ -3592,14 +3592,14 @@ class TestBashBackslashPaths:
 
     async def test_ls_with_backslash_path(self, mock_session: MagicMock) -> None:
         bash = Bash(session=mock_session)
-        params = BashParams(cmd=r"ls src\kimix\tools\file\bash")
+        params = BashParams(cmd=r"ls kimi-cli\src\kimi_cli\tools\file\bash")
         result = await bash(params)
         assert isinstance(result, ToolOk)
         assert "bash_tool.py" in result.output
 
     async def test_cd_with_backslash_path(self, mock_session: MagicMock) -> None:
         bash = Bash(session=mock_session)
-        params = BashParams(cmd=r"cd src\kimix\tools\file\bash && pwd")
+        params = BashParams(cmd=r"cd kimi-cli\src\kimi_cli\tools\file\bash && pwd")
         result = await bash(params)
         assert isinstance(result, ToolOk)
         assert "bash" in result.output
@@ -3649,10 +3649,10 @@ class TestBashDescription:
         return session
 
     def _make_tool(self, platform: str, mock_session: MagicMock) -> Bash:
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", platform), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", platform), patch(
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
         ), patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=(r"C:\Git\bin\bash.exe" if platform == "win32" else "/bin/bash"),
         ):
             return Bash(session=mock_session)
@@ -3794,7 +3794,7 @@ class TestBashCall:
 
     async def test_bash_not_found_fallback(self, mock_session: MagicMock) -> None:
         """When bash is not found, Bash.__init__ raises SkipThisTool."""
-        with patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=None):
+        with patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=None):
             with pytest.raises(SkipThisTool):
                 Bash(session=mock_session)
 
@@ -3838,7 +3838,7 @@ class TestBashInactivityTimeout:
         self, mock_session: MagicMock
     ) -> None:
         with patch(
-            "kimix.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
+            "kimi_cli.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
         ):
             bash = Bash(session=mock_session)
             params = BashParams(cmd="sleep 120", timeout=90)
@@ -3955,7 +3955,7 @@ class TestPowershellInactivityTimeout:
         bypassed.
         """
         with patch(
-            "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
             return_value=True,
         ):
             yield
@@ -3964,7 +3964,7 @@ class TestPowershellInactivityTimeout:
         self, mock_session: MagicMock
     ) -> None:
         with patch(
-            "kimix.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
+            "kimi_cli.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
         ):
             pwsh = Powershell(session=mock_session)
             params = PowershellParams(cmd="Start-Sleep -Seconds 120", timeout=90)
@@ -3999,10 +3999,10 @@ class TestPowershellBackgroundSendWaitForPatternMocked:
     @pytest.fixture
     def pwsh_instance(self, mock_session: MagicMock) -> Powershell:
         with patch(
-            "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
             return_value=True,
         ), patch(
-            "kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
         ):
             return Powershell(session=mock_session)
 
@@ -4024,7 +4024,7 @@ class TestPowershellBackgroundSendWaitForPatternMocked:
     async def test_send_with_wait_for_pattern_blocks_and_returns_output(
         self, pwsh_instance: Powershell
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             mock_pt.return_value = self._mock_process_task()
             result = await pwsh_instance(
                 PowershellParams(
@@ -4043,7 +4043,7 @@ class TestPowershellBackgroundSendWaitForPatternMocked:
     async def test_send_without_wait_for_pattern_still_returns_immediately(
         self, pwsh_instance: Powershell
     ) -> None:
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
             mock_pt.return_value = self._mock_process_task()
             result = await pwsh_instance(
                 PowershellParams(cmd="Write-Output hi", mode="send")
@@ -4062,7 +4062,7 @@ class TestPowershellBackgroundSendWaitForPatternIntegration:
     @pytest.fixture(autouse=True)
     def _force_pwsh_enabled(self) -> Any:
         with patch(
-            "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
             return_value=True,
         ):
             yield
@@ -4102,7 +4102,7 @@ class TestComplexCommands:
         """These tests assert on raw command output; disable rtk rewriting
         (which wraps output in a metadata envelope) regardless of whether
         an rtk binary is installed on the host."""
-        with patch("kimix.tools.common._rtk_available", return_value=False):
+        with patch("kimi_cli.tools.common._rtk_available", return_value=False):
             yield
 
     @staticmethod
@@ -4638,10 +4638,10 @@ class TestBashFixToolIntegration:
     @pytest.fixture
     def bash_instance(self, mock_session: MagicMock) -> Bash:
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             return Bash(session=mock_session)
@@ -4663,10 +4663,10 @@ class TestBashFixToolIntegration:
         self, bash_instance: Bash
     ) -> None:
         process_task = self._completed_process_task()
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
             "kimix.utils.windows_env.refresh_env_from_registry"
         ), patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask",
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask",
             return_value=process_task,
         ) as process_task_class:
             result = await bash_instance(BashParams(cmd="gtimeout 2 echo ok"))
@@ -4682,8 +4682,8 @@ class TestBashFixToolIntegration:
     ) -> None:
         process_task = MagicMock()
         process_task.start = AsyncMock(return_value="bash-background-id")
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask",
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask",
             return_value=process_task,
         ) as process_task_class:
             result = await bash_instance(
@@ -4701,10 +4701,10 @@ class TestBashFixToolIntegration:
     ) -> None:
         process_task = MagicMock()
         process_task.start = AsyncMock(return_value="bash-interactive-id")
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
             "kimix.utils.windows_env.refresh_env_from_registry"
         ), patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask",
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask",
             return_value=process_task,
         ) as process_task_class:
             result = await bash_instance(BashParams(cmd="printf abc | rev", mode="interactive"))
@@ -4732,7 +4732,7 @@ class TestBashFixToolIntegration:
         data.tasks = {"bash_compat": stream}
         bash_instance._session.custom_data["background_task_data"] = data
 
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             result = await bash_instance(
                 BashParams(cmd="xdg-open README.md", task_id="bash_compat")
             )
@@ -4768,7 +4768,7 @@ class TestBashFixToolIntegration:
         data.tasks = {"bash_fragment": stream}
         bash_instance._session.custom_data["background_task_data"] = data
 
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
             result = await bash_instance(
                 BashParams(cmd=fragment, task_id="bash_fragment")
             )
@@ -4781,13 +4781,13 @@ class TestBashFixToolIntegration:
     ) -> None:
         process_task = self._completed_process_task()
         rewrite = MagicMock(side_effect=lambda command, *_args, **_kwargs: (command, False))
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
             "kimix.utils.windows_env.refresh_env_from_registry"
         ), patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask",
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask",
             return_value=process_task,
         ), patch(
-            "kimix.tools.file.bash.bash_tool._maybe_rewrite_shell_command_with_rtk",
+            "kimi_cli.tools.file.bash.bash_tool._maybe_rewrite_shell_command_with_rtk",
             rewrite,
         ):
             await bash_instance(BashParams(cmd="gtimeout 2 true"))
@@ -4800,10 +4800,10 @@ class TestBashFixToolIntegration:
         self, bash_instance: Bash
     ) -> None:
         process_task = self._completed_process_task()
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
             "kimix.utils.windows_env.refresh_env_from_registry"
         ), patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask",
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask",
             return_value=process_task,
         ) as process_task_class:
             await bash_instance(
@@ -4822,15 +4822,15 @@ class TestBashFixToolIntegration:
             "forbidden_commands": ["gtimeout"]
         }
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             bash = Bash(session=mock_session)
 
-        with patch("kimix.tools.file.bash.bash_tool.fix_bash_command") as fixer:
+        with patch("kimi_cli.tools.file.bash.bash_tool.fix_bash_command") as fixer:
             result = await bash(BashParams(cmd="gtimeout 2 true"))
 
         assert isinstance(result, ToolError)
@@ -4845,14 +4845,14 @@ class TestBashFixToolIntegration:
             "forbidden_commands": ["gtimeout"]
         }
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             bash = Bash(session=mock_session)
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as process_task:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as process_task:
             result = await bash(BashParams(cmd="gtimeout 2 true", mode=mode))
         assert isinstance(result, ToolError)
         process_task.assert_not_called()
@@ -4861,7 +4861,7 @@ class TestBashFixToolIntegration:
         self, bash_instance: Bash
     ) -> None:
         bash_instance._forbidden_keywords = ["gtimeout"]
-        with patch("kimix.tools.file.bash.bash_tool.fix_bash_command") as fixer:
+        with patch("kimi_cli.tools.file.bash.bash_tool.fix_bash_command") as fixer:
             result = await bash_instance(
                 BashParams(cmd="gtimeout 2 true", task_id="existing")
             )
@@ -4887,7 +4887,7 @@ class TestBashFixToolIntegration:
             stderr="bash: syntax error: unexpected end of file",
         )
         with patch(
-            "kimix.tools.file.bash.bash_tool.subprocess.run",
+            "kimi_cli.tools.file.bash.bash_tool.subprocess.run",
             return_value=syntax_error,
         ):
             result = await bash_instance(BashParams(cmd=fragment, task_id="existing"))
@@ -4923,7 +4923,7 @@ class TestBashFixToolIntegration:
             args=[], returncode=0, stdout="", stderr=""
         )
         with patch(
-            "kimix.tools.file.bash.bash_tool.subprocess.run",
+            "kimi_cli.tools.file.bash.bash_tool.subprocess.run",
             return_value=syntax_ok,
         ):
             result = await bash_instance(BashParams(cmd=command, task_id="existing"))
@@ -4939,9 +4939,9 @@ class TestBashFixToolIntegration:
         self, bash_instance: Bash, source: str, forbidden: str
     ) -> None:
         bash_instance._forbidden_keywords = [forbidden]
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
             "kimix.utils.windows_env.refresh_env_from_registry"
-        ), patch("kimix.tools.file.bash.bash_tool.ProcessTask") as process_task:
+        ), patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as process_task:
             result = await bash_instance(BashParams(cmd=source))
         assert isinstance(result, ToolError)
         process_task.assert_not_called()
@@ -4952,10 +4952,10 @@ class TestBashFixToolIntegration:
         bash_instance._forbidden_keywords = ["rtk"]
         process_task = self._completed_process_task()
         with patch(
-            "kimix.tools.file.bash.bash_tool._maybe_rewrite_shell_command_with_rtk",
+            "kimi_cli.tools.file.bash.bash_tool._maybe_rewrite_shell_command_with_rtk",
             return_value=("rtk git status", True),
         ), patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask",
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask",
             return_value=process_task,
         ) as process_task_class:
             result = await bash_instance(BashParams(cmd="git status"))
@@ -4985,9 +4985,9 @@ class TestBashFixToolIntegration:
             args=[], returncode=0, stdout="", stderr=""
         )
         with patch(
-            "kimix.tools.file.bash.bash_tool._maybe_rewrite_shell_command_with_rtk"
+            "kimi_cli.tools.file.bash.bash_tool._maybe_rewrite_shell_command_with_rtk"
         ) as rewrite, patch(
-            "kimix.tools.file.bash.bash_tool.subprocess.run",
+            "kimi_cli.tools.file.bash.bash_tool.subprocess.run",
             return_value=syntax_ok,
         ):
             result = await bash_instance(
@@ -5033,12 +5033,12 @@ class TestBashInteractiveArgumentBuilding:
         return session
 
     async def test_non_interactive_args(self, mock_session: MagicMock) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        with patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
         ):
             bash = Bash(session=mock_session)
 
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             mock_instance = MagicMock()
             mock_instance.start = MagicMock(return_value=asyncio.Future())
             mock_instance.start.return_value.set_result("bash-test-id")
@@ -5067,12 +5067,12 @@ class TestBashInteractiveArgumentBuilding:
             assert args[0][1] == ["-c", "set -o pipefail; echo hello"]
 
     async def test_interactive_args_with_cmd(self, mock_session: MagicMock) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        with patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
         ):
             bash = Bash(session=mock_session)
 
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             mock_instance = MagicMock()
             mock_instance.start = MagicMock(return_value=asyncio.Future())
             mock_instance.start.return_value.set_result("bash-interactive-id")
@@ -5091,12 +5091,12 @@ class TestBashInteractiveArgumentBuilding:
             assert args.kwargs.get("append_newline") is True or args[0][4] is True
 
     async def test_interactive_args_without_cmd(self, mock_session: MagicMock) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        with patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
         ):
             bash = Bash(session=mock_session)
 
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             mock_instance = MagicMock()
             mock_instance.start = MagicMock(return_value=asyncio.Future())
             mock_instance.start.return_value.set_result("bash-interactive-id")
@@ -5116,12 +5116,12 @@ class TestBashInteractiveArgumentBuilding:
             assert "export -f rev" in decoded
 
     async def test_interactive_returns_immediately(self, mock_session: MagicMock) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        with patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
         ):
             bash = Bash(session=mock_session)
 
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             mock_instance = MagicMock()
             mock_instance.start = MagicMock(return_value=asyncio.Future())
             mock_instance.start.return_value.set_result("task-456")
@@ -5153,15 +5153,15 @@ class TestBashRtkRewrite:
         self, mock_session: MagicMock
     ) -> None:
         with patch(
-            "kimix.tools.common._rtk_available", return_value=True
+            "kimi_cli.tools.common._rtk_available", return_value=True
         ), patch(
-            "kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"
+            "kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
         ):
             bash = Bash(session=mock_session)
 
-            with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+            with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
                 mock_instance = MagicMock()
                 mock_instance.start = MagicMock(return_value=asyncio.Future())
                 mock_instance.start.return_value.set_result("bash-rtk-id")
@@ -5192,14 +5192,14 @@ class TestBashRtkRewrite:
     async def test_bash_read_builtin_not_rewritten(
         self, mock_session: MagicMock
     ) -> None:
-        with patch("kimix.tools.common._rtk_available", return_value=True), patch(
-            "kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"
+        with patch("kimi_cli.tools.common._rtk_available", return_value=True), patch(
+            "kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
         ):
             bash = Bash(session=mock_session)
 
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             mock_instance = MagicMock()
             mock_instance.start = MagicMock(return_value=asyncio.Future())
             mock_instance.start.return_value.set_result("bash-read-id")
@@ -5233,8 +5233,8 @@ class TestBashRtkRewrite:
 class TestBashSessionContinuation:
     @pytest.fixture
     def bash_instance(self, mock_session: MagicMock) -> Bash:
-        with patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        with patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
         ):
             return Bash(session=mock_session)
 
@@ -5302,8 +5302,8 @@ class TestBashBackgroundSendWaitForPattern:
 
     @pytest.fixture
     def bash_instance(self, mock_session: MagicMock) -> Bash:
-        with patch("kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        with patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
         ):
             return Bash(session=mock_session)
 
@@ -5326,7 +5326,7 @@ class TestBashBackgroundSendWaitForPattern:
         self, bash_instance: Bash
     ) -> None:
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask"
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask"
         ) as mock_pt:
             mock_pt.return_value = self._mock_process_task()
             result = await bash_instance(
@@ -5347,7 +5347,7 @@ class TestBashBackgroundSendWaitForPattern:
         self, bash_instance: Bash
     ) -> None:
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask"
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask"
         ) as mock_pt:
             mock_pt.return_value = self._mock_process_task(
                 wait_result=("all done", False, 2.0), alive=False
@@ -5364,7 +5364,7 @@ class TestBashBackgroundSendWaitForPattern:
         self, bash_instance: Bash
     ) -> None:
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask"
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask"
         ) as mock_pt:
             result = await bash_instance(
                 BashParams(cmd="echo hi", mode="send", wait_for_pattern="[")
@@ -5378,7 +5378,7 @@ class TestBashBackgroundSendWaitForPattern:
         self, bash_instance: Bash
     ) -> None:
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask"
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask"
         ) as mock_pt:
             mock_pt.return_value = self._mock_process_task()
             result = await bash_instance(BashParams(cmd="echo hi", mode="send"))
@@ -5501,25 +5501,25 @@ class TestBashInteractiveIntegration:
 
 class TestIsGitBashInstall:
     def test_git_bash_inner_bash_detected(self) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.os.path.isfile", return_value=True):
+        with patch("kimi_cli.tools.file.bash.bash_tool.os.path.isfile", return_value=True):
             assert _is_git_bash_install(r"C:\Program Files\Git\usr\bin\bash.exe") is True
 
     def test_git_bash_wrapper_detected(self) -> None:
         """The ``bin/bash.exe`` launcher (the process the tool actually
         spawns) is also recognized as a Git Bash install."""
-        with patch("kimix.tools.file.bash.bash_tool.os.path.isfile", return_value=True):
+        with patch("kimi_cli.tools.file.bash.bash_tool.os.path.isfile", return_value=True):
             assert _is_git_bash_install(r"C:\Program Files\Git\bin\bash.exe") is True
 
     def test_msys2_bash_rejected(self) -> None:
         """MSYS2 also ships ``usr/bin/bash.exe`` but has no ``cmd/git.exe``
         marker, so its environment must stay untouched."""
-        with patch("kimix.tools.file.bash.bash_tool.os.path.isfile", return_value=False):
+        with patch("kimi_cli.tools.file.bash.bash_tool.os.path.isfile", return_value=False):
             assert _is_git_bash_install(r"C:\msys64\usr\bin\bash.exe") is False
 
     def test_wrapper_without_git_marker_rejected(self) -> None:
         """A ``bin/bash.exe`` that is not backed by a Git for Windows install
         (no ``cmd/git.exe`` marker) is not neutralized."""
-        with patch("kimix.tools.file.bash.bash_tool.os.path.isfile", return_value=False):
+        with patch("kimi_cli.tools.file.bash.bash_tool.os.path.isfile", return_value=False):
             assert _is_git_bash_install(r"C:\Program Files\Git\bin\bash.exe") is False
 
     def test_none_or_garbage_rejected(self) -> None:
@@ -5534,7 +5534,7 @@ class TestIsGitBashInstall:
         the marker lookup fails even for a real Git install and MSYSTEM
         neutralization is silently skipped (order-dependent test failures)."""
         with patch(
-            "kimix.tools.file.bash.bash_tool.os.path.isfile",
+            "kimi_cli.tools.file.bash.bash_tool.os.path.isfile",
             return_value=True,
         ) as isfile:
             assert _is_git_bash_install(r"C:\Program Files\Git\bin\bash.exe") is True
@@ -5547,7 +5547,7 @@ class TestMsystemNeutralizedCommand:
     def test_win32_git_bash_prepends_prefix(self, monkeypatch: Any) -> None:
         monkeypatch.setattr(sys, "platform", "win32")
         with patch(
-            "kimix.tools.file.bash.bash_tool._is_git_bash_install",
+            "kimi_cli.tools.file.bash.bash_tool._is_git_bash_install",
             return_value=True,
         ):
             cmd = _with_msystem_neutralized("echo hi", r"C:\Program Files\Git\bin\bash.exe")
@@ -5558,7 +5558,7 @@ class TestMsystemNeutralizedCommand:
         neutralized."""
         monkeypatch.setattr(sys, "platform", "win32")
         with patch(
-            "kimix.tools.file.bash.bash_tool._is_git_bash_install",
+            "kimi_cli.tools.file.bash.bash_tool._is_git_bash_install",
             return_value=False,
         ):
             cmd = _with_msystem_neutralized("echo hi", r"C:\msys64\usr\bin\bash.exe")
@@ -5606,10 +5606,10 @@ class TestShellSafetyWiring:
     @pytest.fixture
     def bash_instance(self, mock_session: MagicMock) -> Bash:
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             return Bash(session=mock_session)
@@ -5632,7 +5632,7 @@ class TestShellSafetyWiring:
     async def test_hardline_block_returns_error_before_process_task(
         self, bash_instance: Bash
     ) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             result = await bash_instance(BashParams(cmd="rm -rf /"))
         assert isinstance(result, ToolError)
         assert result.brief == "Blocked (hardline)"
@@ -5642,7 +5642,7 @@ class TestShellSafetyWiring:
     async def test_hardline_block_obfuscated_spelling(
         self, bash_instance: Bash
     ) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             result = await bash_instance(BashParams(cmd=r"r\m -rf /"))
         assert isinstance(result, ToolError)
         assert result.brief == "Blocked (hardline)"
@@ -5653,16 +5653,16 @@ class TestShellSafetyWiring:
     ) -> None:
         mock_session.custom_config.get.return_value = {"shell": {"hardline": False}}
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             bash = Bash(session=mock_session)
         process_task = self._completed_process_task()
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ) as mock_pt:
             result = await bash(BashParams(cmd="rm -rf /"))
         assert isinstance(result, ToolOk)
@@ -5673,7 +5673,7 @@ class TestShellSafetyWiring:
     async def test_self_kill_guard_blocks_own_pid(
         self, bash_instance: Bash
     ) -> None:
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             result = await bash_instance(BashParams(cmd=f"kill -9 {os.getpid()}"))
         assert isinstance(result, ToolError)
         assert result.brief == "Blocked (self-kill guard)"
@@ -5684,7 +5684,7 @@ class TestShellSafetyWiring:
         self, bash_instance: Bash
     ) -> None:
         image = Path(sys.executable).name  # e.g. python.exe hosting the agent
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             result = await bash_instance(BashParams(cmd=f"taskkill /F /IM {image}"))
         assert isinstance(result, ToolError)
         assert result.brief == "Blocked (self-kill guard)"
@@ -5696,7 +5696,7 @@ class TestShellSafetyWiring:
         # PID reached only through a shell loop variable (the shape that used
         # to slip through: ``for pid in ...; do taskkill /PID $pid ...``).
         cmd = f"for pid in {os.getpid()} 99999; do taskkill /PID $pid /T /F 2>/dev/null; done; echo done"
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as mock_pt:
             result = await bash_instance(BashParams(cmd=cmd))
         assert isinstance(result, ToolError)
         assert result.brief == "Blocked (self-kill guard)"
@@ -5709,7 +5709,7 @@ class TestShellSafetyWiring:
         process_task = self._completed_process_task()
         cmd = "for pid in 999999999 888888888; do taskkill /PID $pid /F; done"
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ) as mock_pt:
             result = await bash_instance(BashParams(cmd=cmd))
         assert isinstance(result, ToolOk)
@@ -5720,7 +5720,7 @@ class TestShellSafetyWiring:
     ) -> None:
         process_task = self._completed_process_task()
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ) as mock_pt:
             result = await bash_instance(BashParams(cmd="kill 999999999"))
         assert isinstance(result, ToolOk)
@@ -5731,16 +5731,16 @@ class TestShellSafetyWiring:
     ) -> None:
         mock_session.custom_config.get.return_value = {"shell": {"self_kill_guard": False}}
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             bash = Bash(session=mock_session)
         process_task = self._completed_process_task()
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ) as mock_pt:
             result = await bash(BashParams(cmd=f"kill -9 {os.getpid()}"))
         assert isinstance(result, ToolOk)
@@ -5757,10 +5757,10 @@ class TestShellSafetyWiring:
     async def test_process_task_runs_without_cwd(self, bash_instance: Bash) -> None:
         """No working directory is passed to the subprocess anymore."""
         process_task = self._completed_process_task()
-        with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
             "kimix.utils.windows_env.refresh_env_from_registry"
         ), patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask",
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask",
             return_value=process_task,
         ) as mock_pt:
             result = await bash_instance(BashParams(cmd="echo hi"))
@@ -5779,7 +5779,7 @@ class TestShellSafetyWiring:
         process_task.stream.success = AsyncMock(return_value=False)
         process_task.stream.exit_code = 127
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="no_such_cmd_xyz"))
         assert isinstance(result, ToolError)
@@ -5793,7 +5793,7 @@ class TestShellSafetyWiring:
     ) -> None:
         process_task = self._completed_process_task()
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="echo hi"))
         assert isinstance(result, ToolOk)
@@ -5809,7 +5809,7 @@ class TestShellSafetyWiring:
         process_task.thread_is_alive = AsyncMock(return_value=True)
         process_task.stream.pop_output = AsyncMock(return_value="")
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="npm run dev", timeout=1))
         assert isinstance(result, ToolError)
@@ -5826,7 +5826,7 @@ class TestShellSafetyWiring:
         process_task.stream.pop_output = AsyncMock(return_value="")
         process_task.stop = AsyncMock()
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="sleep 5", timeout=1))
         assert isinstance(result, ToolError)
@@ -5848,7 +5848,7 @@ class TestShellSafetyWiring:
         process_task.stream.pop_output = AsyncMock(return_value="partial output")
         process_task.stop = AsyncMock()
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="make", timeout=1))
         assert isinstance(result, ToolError)
@@ -5865,10 +5865,10 @@ class TestShellSafetyWiring:
     ) -> None:
         mock_session.custom_config.get.return_value = {"shell": {"redact_secrets": True}}
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             bash = Bash(session=mock_session)
@@ -5879,7 +5879,7 @@ class TestShellSafetyWiring:
         process_task.stream.success = AsyncMock(return_value=True)
         process_task.stream.exit_code = 0
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash(BashParams(cmd="echo token"))
         assert isinstance(result, ToolOk)
@@ -5889,10 +5889,10 @@ class TestShellSafetyWiring:
     async def test_redaction_disabled_by_config(self, mock_session: MagicMock) -> None:
         mock_session.custom_config.get.return_value = {"shell": {"redact_secrets": False}}
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             bash = Bash(session=mock_session)
@@ -5903,7 +5903,7 @@ class TestShellSafetyWiring:
         process_task.stream.success = AsyncMock(return_value=True)
         process_task.stream.exit_code = 0
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash(BashParams(cmd="echo token"))
         assert isinstance(result, ToolOk)
@@ -5919,10 +5919,10 @@ class TestBashOriginalSavedSuffix:
     @pytest.fixture
     def bash_instance(self, mock_session: MagicMock) -> Bash:
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             return Bash(session=mock_session)
@@ -5985,7 +5985,7 @@ class TestBashOriginalSavedSuffix:
     ) -> None:
         process_task = self._completed_process_task(output="ERROR\n" * 10)
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="echo hi"))
         assert isinstance(result, ToolOk)
@@ -5997,7 +5997,7 @@ class TestBashOriginalSavedSuffix:
         long_output = "\n".join(f"line_{i}" for i in range(500))
         process_task = self._completed_process_task(output=long_output)
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="echo hi", max_lines=10))
         assert isinstance(result, ToolOk)
@@ -6010,7 +6010,7 @@ class TestBashOriginalSavedSuffix:
         so no original temp file is created and no suffix is appended."""
         process_task = self._completed_process_task(output="plain output")
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="echo hi"))
         assert isinstance(result, ToolOk)
@@ -6025,7 +6025,7 @@ class TestBashOriginalSavedSuffix:
         long_output = "\n".join(f"line_{i}" for i in range(500))
         process_task = self._completed_process_task(output=long_output)
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="echo hi", max_lines=10))
         assert isinstance(result, ToolOk)
@@ -6039,7 +6039,7 @@ class TestBashOriginalSavedSuffix:
         must keep reporting output_truncated: false."""
         process_task = self._completed_process_task(output="plain output")
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="echo hi"))
         assert isinstance(result, ToolOk)
@@ -6053,7 +6053,7 @@ class TestBashOriginalSavedSuffix:
         repeated = "ERROR: timeout\n" * 10
         process_task = self._completed_process_task(output=repeated)
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="echo hi"))
         assert isinstance(result, ToolOk)
@@ -6068,9 +6068,9 @@ class TestBashOriginalSavedSuffix:
         assert len(long_output) > 65536
         process_task = self._completed_process_task(output=long_output)
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ), patch(
-            "kimix.tools.file.bash.bash_tool._summarize_long_output_async",
+            "kimi_cli.tools.file.bash.bash_tool._summarize_long_output_async",
             new=AsyncMock(return_value="[summary]"),
         ):
             result = await bash_instance(BashParams(cmd="echo hi"))
@@ -6090,7 +6090,7 @@ class TestBashOriginalSavedSuffix:
         rtk-folded must still be preserved before summarization."""
         long_output = self._random_json_lines()
         with patch(
-            "kimix.tools.file.bash.bash_tool._summarize_long_output_async",
+            "kimi_cli.tools.file.bash.bash_tool._summarize_long_output_async",
             new=AsyncMock(return_value="[summary]"),
         ):
             display, _path, truncated, original_path = (
@@ -6121,10 +6121,10 @@ class TestBashOriginalSavedSuffix:
             return original_path
 
         with patch(
-            "kimix.tools.file.bash.bash_tool._save_original_output_async",
+            "kimi_cli.tools.file.bash.bash_tool._save_original_output_async",
             new=fake_save,
         ), patch(
-            "kimix.tools.file.bash.bash_tool._summarize_long_output_async",
+            "kimi_cli.tools.file.bash.bash_tool._summarize_long_output_async",
             new=AsyncMock(return_value="[summary]"),
         ):
             display, _path, truncated, original_path = (
@@ -6154,7 +6154,7 @@ class TestPowershellOriginalSavedSuffix:
     @pytest.fixture
     def pwsh_instance(self, mock_session: MagicMock) -> Powershell:
         with patch(
-            "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
             return_value=True,
         ):
             return Powershell(session=mock_session)
@@ -6166,7 +6166,7 @@ class TestPowershellOriginalSavedSuffix:
         before the summarization branch replaces it with a summary."""
         long_output = TestBashOriginalSavedSuffix._random_json_lines()
         with patch(
-            "kimix.tools.file.bash.pwsh_tool._summarize_long_output_async",
+            "kimi_cli.tools.file.bash.pwsh_tool._summarize_long_output_async",
             new=AsyncMock(return_value="[summary]"),
         ):
             display, _path, truncated, original_path = (
@@ -6196,10 +6196,10 @@ class TestBashFailedCommandSaved:
     @pytest.fixture
     def bash_instance(self, mock_session: MagicMock) -> Bash:
         with patch(
-            "kimix.tools.file.bash.bash_tool.find_bash",
+            "kimi_cli.tools.file.bash.bash_tool.find_bash",
             return_value=r"C:\Git\bin\bash.exe",
         ), patch(
-            "kimix.tools.file.bash.bash_tool._should_enable_bash",
+            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash",
             return_value=True,
         ):
             return Bash(session=mock_session)
@@ -6224,7 +6224,7 @@ class TestBashFailedCommandSaved:
         assert len(long_cmd) > 50
         process_task = self._failed_process_task()
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd=long_cmd))
         assert isinstance(result, ToolError)
@@ -6237,7 +6237,7 @@ class TestBashFailedCommandSaved:
     async def test_short_failed_command_not_saved(self, bash_instance: Bash) -> None:
         process_task = self._failed_process_task()
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd="false"))
         assert isinstance(result, ToolError)
@@ -6256,7 +6256,7 @@ class TestBashFailedCommandSaved:
         process_task.stream.exit_code = 0
         process_task.stream.process_elapsed = None
         with patch(
-            "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
         ):
             result = await bash_instance(BashParams(cmd=long_cmd))
         assert isinstance(result, ToolOk)
@@ -6270,7 +6270,7 @@ class TestPowershellFailedCommandSaved:
     @pytest.fixture
     def pwsh_instance(self, mock_session: MagicMock) -> Powershell:
         with patch(
-            "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
             return_value=True,
         ):
             return Powershell(session=mock_session)
@@ -6295,7 +6295,7 @@ class TestPowershellFailedCommandSaved:
         assert len(long_cmd) > 50
         process_task = self._failed_process_task()
         with patch(
-            "kimix.tools.file.bash.pwsh_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.pwsh_tool.ProcessTask", return_value=process_task
         ):
             result = await pwsh_instance(PowershellParams(cmd=long_cmd))
         assert isinstance(result, ToolError)
@@ -6310,7 +6310,7 @@ class TestPowershellFailedCommandSaved:
     ) -> None:
         process_task = self._failed_process_task()
         with patch(
-            "kimix.tools.file.bash.pwsh_tool.ProcessTask", return_value=process_task
+            "kimi_cli.tools.file.bash.pwsh_tool.ProcessTask", return_value=process_task
         ):
             result = await pwsh_instance(PowershellParams(cmd="exit 1"))
         assert isinstance(result, ToolError)

@@ -7,7 +7,7 @@ from kimi_cli.soul.dynamic_injections.compact_reminder import MIN_CONTEXT_USAGE
 from kimi_cli.soul.kimisoul import KimiSoul
 from pydantic import BaseModel, Field, model_validator
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 
 class CompactParams(BaseModel):

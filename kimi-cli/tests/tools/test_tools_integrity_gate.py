@@ -64,14 +64,14 @@ def test_conflict_detect_does_not_export_the_removed_echo_trim_limit() -> None:
 
 def test_pwsh_tool_background_stream_annotation_resolves() -> None:
     """`Powershell._format_session_result` annotates `stream: 'BackgroundStream' | None`."""
-    module = importlib.import_module("kimix.tools.file.bash.pwsh_tool")
+    module = importlib.import_module("kimi_cli.tools.file.bash.pwsh_tool")
     hints = typing.get_type_hints(module.Powershell._format_session_result)
     assert "stream" in hints
     assert "BackgroundStream" in str(hints["stream"])
 
 
 def test_run_tool_background_stream_annotation_resolves() -> None:
-    module = importlib.import_module("kimix.tools.file.run")
+    module = importlib.import_module("kimi_cli.tools.file.run")
     hints = typing.get_type_hints(module.Run._format_session_result)
     assert "BackgroundStream" in str(hints["stream"])
 
@@ -81,10 +81,10 @@ def test_run_tool_background_stream_annotation_resolves() -> None:
 # --------------------------------------------------------------------------- #
 
 _TOOL_MODULES = [
-    "src/kimix/tools/file/run.py",
-    "src/kimix/tools/file/bash/pwsh_tool.py",
-    "src/kimix/tools/file/bash/bash_tool.py",
-    "src/kimix/tools/common.py",
+    "kimi-cli/src/kimi_cli/tools/file/run.py",
+    "kimi-cli/src/kimi_cli/tools/file/bash/pwsh_tool.py",
+    "kimi-cli/src/kimi_cli/tools/file/bash/bash_tool.py",
+    "kimi-cli/src/kimi_cli/tools/common.py",
     "kimi-cli/src/kimi_cli/tools/file/read_media.py",
     "kimi-cli/src/kimi_cli/tools/file/read.py",
     "kimi-cli/src/kimi_cli/tools/file/write.py",
@@ -114,7 +114,7 @@ def test_no_duplicate_top_level_imports(rel_path: str) -> None:
 
 
 def test_run_module_imports_shlex_exactly_once() -> None:
-    path = REPO_ROOT / "src/kimix/tools/file/run.py"
+    path = REPO_ROOT / "kimi-cli/src/kimi_cli/tools/file/run.py"
     names = _top_level_import_names(path)
     assert names.count("shlex") == 1
 
@@ -124,11 +124,11 @@ def test_run_module_imports_shlex_exactly_once() -> None:
 # --------------------------------------------------------------------------- #
 
 _ANNOTATION_FILES = [
-    "src/kimix/tools/common.py",
-    "src/kimix/tools/file/bash/bash_tool.py",
-    "src/kimix/tools/file/bash/pwsh_tool.py",
-    "src/kimix/tools/file/run.py",
-    "src/kimix/tools/py/__init__.py",
+    "kimi-cli/src/kimi_cli/tools/common.py",
+    "kimi-cli/src/kimi_cli/tools/file/bash/bash_tool.py",
+    "kimi-cli/src/kimi_cli/tools/file/bash/pwsh_tool.py",
+    "kimi-cli/src/kimi_cli/tools/file/run.py",
+    "kimi-cli/src/kimi_cli/tools/py/__init__.py",
     "kimi-cli/src/kimi_cli/tools/file/read_media.py",
     "kimi-cli/src/kimi_cli/tools/file/read.py",
     "kimi-cli/src/kimi_cli/tools/file/write.py",

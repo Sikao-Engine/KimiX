@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kimix.tools.background.utils import _pop_task_data
-from kimix.tools.common import (
+from kimi_cli.tools.background.utils import _pop_task_data
+from kimi_cli.tools.common import (
     ProcessTask,
     _kill_registered_process_trees,
     _process_registry,
@@ -503,7 +503,7 @@ async def test_output_buffer_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
     """A long stream is truncated to head+tail in the internal output buffer;
     _find_error_line_index still locates an error line in the retained tail."""
     monkeypatch.setattr(
-        "kimix.tools.background.utils.BACKGROUND_MAX_OUTPUT_CHARS", 5000
+        "kimi_cli.tools.background.utils.BACKGROUND_MAX_OUTPUT_CHARS", 5000
     )
     code = (
         "for i in range(2000):\n"
@@ -573,7 +573,7 @@ def _pid_runs_script(pid: int, marker: str) -> bool:
 def test_kill_child_tree_posix_graceful() -> None:
     mock_os = MagicMock()
     mock_os.name = "posix"
-    with patch("kimix.tools.common.os", mock_os):
+    with patch("kimi_cli.tools.common.os", mock_os):
         kill_child_tree(1234)
         mock_os.killpg.assert_called_once_with(1234, signal.SIGTERM)
 
@@ -581,7 +581,7 @@ def test_kill_child_tree_posix_graceful() -> None:
 def test_kill_child_tree_posix_force() -> None:
     mock_os = MagicMock()
     mock_os.name = "posix"
-    with patch("kimix.tools.common.os", mock_os):
+    with patch("kimi_cli.tools.common.os", mock_os):
         kill_child_tree(1234, force=True)
         mock_os.killpg.assert_called_once_with(1234, getattr(signal, "SIGKILL", 9))
 
@@ -590,15 +590,15 @@ def test_kill_child_tree_posix_swallows_missing_group() -> None:
     mock_os = MagicMock()
     mock_os.name = "posix"
     mock_os.killpg.side_effect = ProcessLookupError
-    with patch("kimix.tools.common.os", mock_os):
+    with patch("kimi_cli.tools.common.os", mock_os):
         # A group that already exited must not raise.
         kill_child_tree(1234)
         mock_os.killpg.assert_called_once_with(1234, signal.SIGTERM)
 
 
 def test_kill_child_tree_windows_graceful_uses_taskkill_tree() -> None:
-    with patch("kimix.tools.common.os.name", "nt"), \
-            patch("kimix.tools.common.subprocess.run") as mock_run:
+    with patch("kimi_cli.tools.common.os.name", "nt"), \
+            patch("kimi_cli.tools.common.subprocess.run") as mock_run:
         kill_child_tree(1234)
         mock_run.assert_called_once()
         args = mock_run.call_args.args[0]
@@ -606,24 +606,24 @@ def test_kill_child_tree_windows_graceful_uses_taskkill_tree() -> None:
 
 
 def test_kill_child_tree_windows_force_appends_f() -> None:
-    with patch("kimix.tools.common.os.name", "nt"), \
-            patch("kimix.tools.common.subprocess.run") as mock_run:
+    with patch("kimi_cli.tools.common.os.name", "nt"), \
+            patch("kimi_cli.tools.common.subprocess.run") as mock_run:
         kill_child_tree(1234, force=True)
         args = mock_run.call_args.args[0]
         assert args == ["taskkill", "/PID", "1234", "/T", "/F"]
 
 
 def test_kill_child_tree_windows_swallows_run_error() -> None:
-    with patch("kimix.tools.common.os.name", "nt"), \
-            patch("kimix.tools.common.subprocess.run", side_effect=OSError("no taskkill")):
+    with patch("kimi_cli.tools.common.os.name", "nt"), \
+            patch("kimi_cli.tools.common.subprocess.run", side_effect=OSError("no taskkill")):
         # Missing taskkill / permission errors must not raise.
         kill_child_tree(1234)
 
 
 def test_kill_child_tree_windows_swallows_timeout() -> None:
-    with patch("kimix.tools.common.os.name", "nt"), \
+    with patch("kimi_cli.tools.common.os.name", "nt"), \
             patch(
-                "kimix.tools.common.subprocess.run",
+                "kimi_cli.tools.common.subprocess.run",
                 side_effect=subprocess.TimeoutExpired("taskkill", 2.0),
             ):
         # A GUI child ignoring WM_CLOSE must not hang the caller forever.
@@ -648,7 +648,7 @@ def test_kill_registered_process_trees_force_kills_all() -> None:
     try:
         for pid in pids:
             _register_child_process(pid)
-        with patch("kimix.tools.common.kill_child_tree") as mock_kill:
+        with patch("kimi_cli.tools.common.kill_child_tree") as mock_kill:
             _kill_registered_process_trees()
             for pid in pids:
                 mock_kill.assert_any_call(pid, force=True)

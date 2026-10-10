@@ -2,7 +2,7 @@
 
 import pytest
 
-from kimix.tools.file.bash.output_enhance import (
+from kimi_cli.tools.file.bash.output_enhance import (
     annotate_failure,
     interpret_exit_code,
     is_expected_exit,
@@ -186,7 +186,7 @@ class TestAnnotateFailure:
         for native in (True, False):
             from unittest import mock
 
-            import kimix.tools.file.bash.output_enhance as mod
+            import kimi_cli.tools.file.bash.output_enhance as mod
 
             with mock.patch.object(mod, "_native_use_native", lambda _k, _n=native: _n):
                 hint = mod.annotate_failure("ls: cannot access 'x': No such file or directory", "ls", 2)
@@ -207,7 +207,7 @@ class TestForegroundBackgroundGuidance:
         for native in (True, False):
             from unittest import mock
 
-            import kimix.tools.file.bash.safety as mod
+            import kimi_cli.tools.file.bash.safety as mod
 
             with mock.patch.object(mod, "_native_use_native", lambda _k, _n=native: _n):
                 hint = mod.foreground_background_guidance("npm run dev")
@@ -216,7 +216,7 @@ class TestForegroundBackgroundGuidance:
             assert "TaskOutput" not in hint
 
     def test_no_hint_for_ordinary_command(self) -> None:
-        from kimix.tools.file.bash.safety import foreground_background_guidance
+        from kimi_cli.tools.file.bash.safety import foreground_background_guidance
 
         assert foreground_background_guidance("ls -la") is None
 

@@ -16,9 +16,9 @@ from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.display import ShellDisplayBlock
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.tools.background.utils import BackgroundStream
-from kimix.tools.common import (
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.tools.background.utils import BackgroundStream
+from kimi_cli.tools.common import (
     ProcessTask,
     _build_session_output_block,
     _create_script_file,
@@ -35,18 +35,18 @@ from kimix.tools.common import (
     _summarize_long_output_async,
     _token_filter_output,
 )
-from kimix.tools.file.bash.output_enhance import (
+from kimi_cli.tools.file.bash.output_enhance import (
     annotate_failure,
     interpret_exit_code,
     is_expected_exit,
     redact_sensitive_output,
 )
-from kimix.tools.file.bash.safety import (
+from kimi_cli.tools.file.bash.safety import (
     check_hardline_blocked,
     foreground_background_guidance,
     validate_workdir,
 )
-from kimix.tools.prompt_common import (
+from kimi_cli.tools.prompt_common import (
     max_lines_field,
     mode_field,
     task_id_field,
@@ -470,7 +470,7 @@ class Run(CallableTool2[RunParams]):
                         brief="Timeout",
                     )
                 # Clean up foreground task registration
-                from kimix.tools.background.utils import remove_task_id
+                from kimi_cli.tools.background.utils import remove_task_id
                 remove_task_id(self._session, task_id)
 
                 # Get output
@@ -599,7 +599,7 @@ class Run(CallableTool2[RunParams]):
         being passed as the subprocess working directory.
         """
         if sys.platform == "win32":
-            from kimix.tools.file.bash.pwsh_tool import Powershell, PowershellParams
+            from kimi_cli.tools.file.bash.pwsh_tool import Powershell, PowershellParams
             try:
                 pwsh = Powershell(self._session)
             except Exception:
@@ -617,7 +617,7 @@ class Run(CallableTool2[RunParams]):
             )
             return await pwsh.__call__(ps_params)
         else:
-            from kimix.tools.file.bash.bash_tool import Bash, BashParams
+            from kimi_cli.tools.file.bash.bash_tool import Bash, BashParams
             try:
                 bash = Bash(self._session)
             except Exception:
@@ -649,7 +649,7 @@ class Run(CallableTool2[RunParams]):
 
     async def _continue_session(self, params: RunParams) -> ToolReturnValue:
         """Send input to an existing Run session and optionally wait for output."""
-        from kimix.tools.background.utils import get_all_tasks
+        from kimi_cli.tools.background.utils import get_all_tasks
 
         tasks = get_all_tasks(self._session)
         task_id = params.task_id.strip() if params.task_id else ""

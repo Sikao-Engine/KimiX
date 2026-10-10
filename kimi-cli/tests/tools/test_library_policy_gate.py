@@ -31,7 +31,9 @@ from gate_library_policy import scan  # noqa: E402
 
 def test_gate_library_policy_has_no_unwaived_hits() -> None:
     hits, waived, unparsable = scan(
-        [str(REPO_ROOT / "kimi-cli/src/kimi_cli/tools"), str(REPO_ROOT / "src/kimix/tools")],
+        [
+            str(REPO_ROOT / "kimi-cli/src/kimi_cli/tools"),
+        ],
         REPO_ROOT / "tools" / "library_policy_allowlist.txt",
     )
     assert unparsable == 0
@@ -149,13 +151,13 @@ def test_sloppy_module_has_no_stdlib_re_import() -> None:
 
 
 def test_best_of_n_has_no_dead_xxhash_import() -> None:
-    path = REPO_ROOT / "src/kimix/tools/swarm/best_of_n.py"
+    path = REPO_ROOT / "kimi-cli/src/kimi_cli/tools/swarm/best_of_n.py"
     assert "import xxhash" not in path.read_text(encoding="utf-8")
 
 
 def test_best_of_n_still_renders_a_unified_diff(tmp_path: Path) -> None:
     """The waived `difflib` use must keep working (it is the only unified diff)."""
-    module_path = REPO_ROOT / "src/kimix/tools/swarm/best_of_n.py"
+    module_path = REPO_ROOT / "kimi-cli/src/kimi_cli/tools/swarm/best_of_n.py"
     text = module_path.read_text(encoding="utf-8")
     assert "difflib.unified_diff(" in text
 

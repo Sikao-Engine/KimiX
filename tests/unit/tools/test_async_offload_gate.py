@@ -17,8 +17,8 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FIND_STR = REPO_ROOT / "src/kimix/tools/file/find_str.py"
-BEST_OF_N = REPO_ROOT / "src/kimix/tools/swarm/best_of_n.py"
+FIND_STR = REPO_ROOT / "kimi-cli/src/kimi_cli/tools/file/find_str.py"
+BEST_OF_N = REPO_ROOT / "kimi-cli/src/kimi_cli/tools/swarm/best_of_n.py"
 
 
 def _tree(path: Path) -> ast.Module:
@@ -122,7 +122,7 @@ def test_the_offloading_happens_inside_async_functions() -> None:
 
 @pytest.mark.asyncio
 async def test_find_str_still_finds_matches(tmp_path: Path) -> None:
-    from kimix.tools.file.find_str import FindStr, FindStrParams
+    from kimi_cli.tools.file.find_str import FindStr, FindStrParams
 
     (tmp_path / "a.txt").write_text("needle here\nnothing\n", encoding="utf-8")
     (tmp_path / "b.txt").write_text("also a needle\n", encoding="utf-8")
@@ -136,7 +136,7 @@ async def test_find_str_still_finds_matches(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_find_str_case_sensitivity_still_works(tmp_path: Path) -> None:
-    from kimix.tools.file.find_str import FindStr, FindStrParams
+    from kimi_cli.tools.file.find_str import FindStr, FindStrParams
 
     (tmp_path / "a.txt").write_text("NEEDLE\n", encoding="utf-8")
 
@@ -151,7 +151,7 @@ async def test_find_str_case_sensitivity_still_works(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_find_str_handles_a_missing_path_without_raising(tmp_path: Path) -> None:
-    from kimix.tools.file.find_str import FindStr, FindStrParams
+    from kimi_cli.tools.file.find_str import FindStr, FindStrParams
 
     result = await FindStr()(FindStrParams(path=str(tmp_path / "nope"), content="x"))
     assert not result.is_error

@@ -69,13 +69,13 @@ class _FakeSession:
 
 def _build_tools() -> dict[str, object]:
     """Instantiate the four tools with Windows platform semantics."""
-    from kimix.tools.file import run as rt
-    from kimix.tools.file.bash import bash_tool as bt
-    from kimix.tools.file.bash import pwsh_tool as pt
-    from kimix.tools.file.bash.bash_tool import Bash
-    from kimix.tools.file.bash.pwsh_tool import Powershell
-    from kimix.tools.file.run import Run
-    from kimix.tools.py import python
+    from kimi_cli.tools.file import run as rt
+    from kimi_cli.tools.file.bash import bash_tool as bt
+    from kimi_cli.tools.file.bash import pwsh_tool as pt
+    from kimi_cli.tools.file.bash.bash_tool import Bash
+    from kimi_cli.tools.file.bash.pwsh_tool import Powershell
+    from kimi_cli.tools.file.run import Run
+    from kimi_cli.tools.py import python
 
     session = _FakeSession()
     tools: dict[str, object] = {}

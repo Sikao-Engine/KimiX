@@ -132,7 +132,7 @@ def shell_tool_name() -> str:
     ``USE_SYSTEM_PWSH_ON_WINDOWS`` is set); otherwise the ``bash`` tool is
     used.  Scripting the enabled name keeps the wire tests platform-neutral.
     """
-    from kimix.tools.file.bash import pwsh_tool as _pt
+    from kimi_cli.tools.file.bash import pwsh_tool as _pt
 
     return "pwsh" if _pt._bash_tool._should_enable_powershell() else "bash"
 
@@ -150,7 +150,7 @@ def write_shell_agent_file(tmp_path: Path) -> Path:
     spec = yaml.safe_load(DEFAULT_AGENT_FILE.read_text(encoding="utf-8"))
     tools = list(spec["agent"]["tools"])
     shell = shell_tool_name()
-    tools.append(f"kimix.tools.file.bash:{shell}")
+    tools.append(f"kimi_cli.tools.file.bash:{shell}")
     agent_path = tmp_path / "agent_with_shell.yaml"
     agent_path.write_text(
         yaml.safe_dump({"version": 1, "agent": {"extend": "default", "tools": tools}}),

@@ -52,7 +52,7 @@ def test_prompt_async_waits_for_background_subagents(monkeypatch: Any) -> None:
     finished: list[str] = []
 
     async def _scenario() -> None:
-        from kimix.tools.agent import _background_tasks_for
+        from kimi_cli.tools.subagent import _background_tasks_for
 
         async def _slow_subagent() -> None:
             await asyncio.sleep(0.05)
@@ -79,7 +79,7 @@ def test_prompt_async_survives_failing_background_subagent(monkeypatch: Any) -> 
     session = _FakeSession()
 
     async def _scenario() -> None:
-        from kimix.tools.agent import _background_tasks_for
+        from kimi_cli.tools.subagent import _background_tasks_for
 
         async def _boom() -> None:
             raise RuntimeError("subagent exploded")

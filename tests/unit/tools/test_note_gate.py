@@ -21,8 +21,8 @@ from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
 from pydantic import ValidationError
 
-import kimix.tools.note as note
-from kimix.tools.note import (
+import kimi_cli.tools.note as note
+from kimi_cli.tools.note import (
     MAX_LINES,
     edit_plan,
     EditPlanParams,

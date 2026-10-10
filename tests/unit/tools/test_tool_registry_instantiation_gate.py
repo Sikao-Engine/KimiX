@@ -34,7 +34,7 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from review_tool_registry import ModuleIndex, manifest_refs  # noqa: E402
 
-_SOURCES = ["kimi-cli/src/kimi_cli/tools", "src/kimix/tools"]
+_SOURCES = ["kimi-cli/src/kimi_cli/tools"]
 _INDEX = ModuleIndex(
     [p for root in _SOURCES for p in (REPO_ROOT / root).rglob("*.py") if "__pycache__" not in p.parts]
 )

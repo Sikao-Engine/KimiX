@@ -18,7 +18,7 @@ Two kinds of probe:
 Probe 5 (`test_probe05_child_env_scrubbed`) encodes the gate spec verbatim:
 "`scrub_child_env` removes `*_KEY`/`*_TOKEN`/`*_SECRET` from the child env
 (assert by running `env` through the tool)".  The bash tool does not scrub
-(`ProcessTask.scrub_env` defaults to `False` — `src/kimix/tools/common.py:1910`)
+(`ProcessTask.scrub_env` defaults to `False` — `kimi-cli/src/kimi_cli/tools/common.py:1910`)
 and none of the bash spawn sites passes it (`bash_tool.py:825`, `:882`,
 `:1217`), so the probe is **red by design** until the FP-11 fix lands.  It is
 deliberately *not* weakened to a `scrub_child_env()`-only unit assertion,
@@ -50,16 +50,16 @@ from kimi_cli.session import Session
 from pydantic import ValidationError
 
 from kimi_agent_sdk import ToolError, ToolOk
-from kimix.tools.background.utils import TaskData, _pop_task_data, get_all_tasks
-from kimix.tools.common import OUTPUT_LIMIT
-from kimix.tools.file.bash import Bash, BashParams, bash_fix, shell_common
-from kimix.tools.file.bash.bash_tool import (
+from kimi_cli.tools.background.utils import TaskData, _pop_task_data, get_all_tasks
+from kimi_cli.tools.common import OUTPUT_LIMIT
+from kimi_cli.tools.file.bash import Bash, BashParams, bash_fix, shell_common
+from kimi_cli.tools.file.bash.bash_tool import (
     _is_git_bash_install,
     _prepare_bash_cmd,
     _with_msystem_neutralized,
     find_bash,
 )
-from kimix.tools.file.bash.shell_common import PWSH_ONESHOT_FLAGS
+from kimi_cli.tools.file.bash.shell_common import PWSH_ONESHOT_FLAGS
 
 pytestmark = pytest.mark.filterwarnings("ignore::DeprecationWarning")
 
@@ -92,10 +92,10 @@ def _tool(session: MagicMock | None = None, *, real_bash: bool = False, **config
     if real_bash:
         return Bash(session=session)
     with patch(
-        "kimix.tools.file.bash.bash_tool.find_bash",
+        "kimi_cli.tools.file.bash.bash_tool.find_bash",
         return_value=r"C:\Git\bin\bash.exe",
     ), patch(
-        "kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True
+        "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
     ):
         return Bash(session=session)
 
@@ -274,7 +274,7 @@ async def test_probe02c_wait_for_pattern_task_completed_reports_completed() -> N
     tool = _tool()
     task = _process_task(output="DONE_PROBE02C", alive=False)
     task.stream.wait_for_output = AsyncMock(return_value=("DONE_PROBE02C", True, 0.5))
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=task):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=task):
         result = await tool(
             BashParams(
                 cmd="echo done",
@@ -382,7 +382,7 @@ async def test_probe04b_over_65536_output_is_summarized_and_truncated() -> None:
     tool = _tool()
     huge = _unique_block(65536 + 1)
     with patch(
-        "kimix.tools.file.bash.bash_tool._summarize_long_output_async",
+        "kimi_cli.tools.file.bash.bash_tool._summarize_long_output_async",
         new=AsyncMock(return_value="[PROBE04 SUMMARY]"),
     ) as summarize:
         display, _path, truncated, original_path = await tool._process_output(
@@ -470,7 +470,7 @@ async def test_probe06_echoed_token_is_redacted() -> None:
 
 async def test_probe07_dangerous_command_refused_with_specific_brief() -> None:
     tool = _tool()
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as process_task:
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as process_task:
         hardline = await tool(BashParams(cmd="rm -rf /"))
     assert isinstance(hardline, ToolError), hardline
     assert hardline.brief == "Blocked (hardline)"
@@ -478,7 +478,7 @@ async def test_probe07_dangerous_command_refused_with_specific_brief() -> None:
     assert hardline.output == ""
     process_task.assert_not_called()
 
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as process_task:
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as process_task:
         selfkill = await tool(BashParams(cmd=f"kill -9 {os.getpid()}"))
     assert isinstance(selfkill, ToolError), selfkill
     assert selfkill.brief == "Blocked (self-kill guard)"
@@ -488,7 +488,7 @@ async def test_probe07_dangerous_command_refused_with_specific_brief() -> None:
 
 async def test_probe07b_obfuscated_dangerous_command_still_refused() -> None:
     tool = _tool()
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as process_task:
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as process_task:
         result = await tool(BashParams(cmd=r'r\m -rf /'))
     assert isinstance(result, ToolError), result
     assert result.brief == "Blocked (hardline)"
@@ -514,8 +514,8 @@ async def test_probe08_rtk_wrapping_applied_and_find_skipped(
 ) -> None:
     tool = _tool()
     task = _process_task()
-    with patch("kimix.tools.common._rtk_available", return_value=True), patch(
-        "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=task
+    with patch("kimi_cli.tools.common._rtk_available", return_value=True), patch(
+        "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=task
     ) as process_task:
         result = await tool(BashParams(cmd=command))
     assert isinstance(result, ToolOk), result
@@ -527,8 +527,8 @@ async def test_probe08_rtk_wrapping_applied_and_find_skipped(
 async def test_probe08b_rtk_unavailable_leaves_command_untouched() -> None:
     tool = _tool()
     task = _process_task()
-    with patch("kimix.tools.common._rtk_available", return_value=False), patch(
-        "kimix.tools.file.bash.bash_tool.ProcessTask", return_value=task
+    with patch("kimi_cli.tools.common._rtk_available", return_value=False), patch(
+        "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=task
     ) as process_task:
         await tool(BashParams(cmd="git status"))
     assert process_task.call_args.args[1][1].endswith("git status")
@@ -539,7 +539,7 @@ async def test_probe08b_rtk_unavailable_leaves_command_untouched() -> None:
 # probe 9 — every documented `bash_fix` rewrite
 # ---------------------------------------------------------------------------
 
-_WIN = patch("kimix.tools.file.bash.bash_fix.sys.platform", "win32")
+_WIN = patch("kimi_cli.tools.file.bash.bash_fix.sys.platform", "win32")
 
 
 def _fix_windows(command: str) -> Any:
@@ -672,14 +672,14 @@ def test_probe11b_msystem_neutralization_is_windows_git_bash_only(
 ) -> None:
     monkeypatch.setattr(sys, "platform", "win32")
     with patch(
-        "kimix.tools.file.bash.bash_tool._is_git_bash_install", return_value=True
+        "kimi_cli.tools.file.bash.bash_tool._is_git_bash_install", return_value=True
     ):
         assert (
             _with_msystem_neutralized("echo hi", r"C:\Program Files\Git\bin\bash.exe")
             == "export MSYSTEM=; echo hi"
         )
     with patch(
-        "kimix.tools.file.bash.bash_tool._is_git_bash_install", return_value=False
+        "kimi_cli.tools.file.bash.bash_tool._is_git_bash_install", return_value=False
     ):
         assert (
             _with_msystem_neutralized("echo hi", r"C:\msys64\usr\bin\bash.exe")
@@ -698,7 +698,7 @@ def test_probe11c_prepare_bash_cmd_is_windows_only(monkeypatch: Any) -> None:
     monkeypatch.setattr(sys, "platform", "linux")
     assert _prepare_bash_cmd(r"cat src\a\b.py") == r"cat src\a\b.py"
     with patch.object(bash_fix.sys, "platform", "win32"), patch(
-        "kimix.tools.file.bash.bash_tool.os.path.isfile"
+        "kimi_cli.tools.file.bash.bash_tool.os.path.isfile"
     ) as isfile:
         isfile.return_value = True
         assert _is_git_bash_install(r"C:\Program Files\Git\usr\bin\bash.exe") is True
@@ -786,11 +786,11 @@ async def test_probe14b_short_repeat_free_line_is_untouched() -> None:
 
 
 def test_probe15_shared_launcher_arguments(monkeypatch: Any) -> None:
-    from kimix.tools.file.bash import process_pwsh, pwsh_tool
+    from kimi_cli.tools.file.bash import process_pwsh, pwsh_tool
 
     assert PWSH_ONESHOT_FLAGS == ("-NoP", "-NonI", "-Exec", "Bypass", "-NoL")
     monkeypatch.setattr(
-        "kimix.tools.file.bash.bash_tool.find_bash", lambda: "/bin/bash"
+        "kimi_cli.tools.file.bash.bash_tool.find_bash", lambda: "/bin/bash"
     )
     argv_login, env_login = shell_common.bash_argv("echo hi", login=True)
     assert argv_login == ["/bin/bash", "-l", "-c", "echo hi"]
@@ -914,7 +914,7 @@ def test_probe17c_empty_input_boundaries() -> None:
 
 async def test_probe18_error_briefs_forbidden_pattern_and_task() -> None:
     policy = _tool(_session({"forbidden_commands": ["curl secret"]}))
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask") as process_task:
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask") as process_task:
         forbidden = await policy(BashParams(cmd="curl secret"))
     assert isinstance(forbidden, ToolError), forbidden
     assert forbidden.brief == "Forbidden command"
@@ -935,7 +935,7 @@ async def test_probe18_error_briefs_forbidden_pattern_and_task() -> None:
 
 async def test_probe18b_error_briefs_unsupported_and_send_failure() -> None:
     tool = _tool()
-    with patch("kimix.tools.file.bash.bash_tool.sys.platform", "win32"):
+    with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
         unsupported = await tool(BashParams(cmd="journalctl -u x"))
     assert isinstance(unsupported, ToolError), unsupported
     assert unsupported.brief == "Unsupported command on Windows"
@@ -957,7 +957,7 @@ async def test_probe18b_error_briefs_unsupported_and_send_failure() -> None:
 async def test_probe18c_error_brief_failed_command_and_cancellation() -> None:
     tool = _tool()
     failing = _process_task(output="boom", success=False, exit_code=1)
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=failing):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=failing):
         result = await tool(BashParams(cmd="false"))
     assert isinstance(result, ToolError), result
     assert result.brief == "Command execution failed"
@@ -965,7 +965,7 @@ async def test_probe18c_error_brief_failed_command_and_cancellation() -> None:
 
     cancelling = _process_task()
     cancelling.wait_with_monitor = AsyncMock(side_effect=asyncio.CancelledError)
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=cancelling):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=cancelling):
         cancelled = await tool(BashParams(cmd="echo hi"))
     assert isinstance(cancelled, ToolError), cancelled
     assert cancelled.brief == "Command cancelled"
@@ -976,7 +976,7 @@ async def test_probe18d_expected_nonzero_exit_is_a_success() -> None:
     """grep "no matches" (exit 1) is an informative success, not a failure."""
     tool = _tool()
     grep = _process_task(output="", success=False, exit_code=1)
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=grep):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=grep):
         result = await tool(BashParams(cmd="grep missing /nonexistent"))
     assert isinstance(result, ToolOk), result
     assert "No matches found" in result.message
@@ -1000,7 +1000,7 @@ async def test_probe19_empty_command_branch_is_unreachable() -> None:
         BashParams(cmd="", mode="execute")
     thread = _process_task(output="")
     tool = _tool()
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=thread):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=thread):
         sent = await tool(BashParams(cmd="", mode="send"))
     assert isinstance(sent, ToolOk), sent
     assert sent.brief == "Background task started"
@@ -1015,7 +1015,7 @@ async def test_probe20_timeout_shapes() -> None:
     tool = _tool()
 
     guided = _process_task(output="", success=False, alive=True)
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=guided):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=guided):
         result = await tool(BashParams(cmd="npm run dev", timeout=1))
     assert isinstance(result, ToolError), result
     assert result.brief == "Timeout"
@@ -1023,7 +1023,7 @@ async def test_probe20_timeout_shapes() -> None:
     assert "Long-running command detected" in result.message
 
     silent = _process_task(output="", success=False, alive=True)
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=silent):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=silent):
         handed_off = await tool(BashParams(cmd="sleep 5", timeout=1))
     assert isinstance(handed_off, ToolError), handed_off
     assert "No output after" in handed_off.message
@@ -1031,7 +1031,7 @@ async def test_probe20_timeout_shapes() -> None:
     assert silent.stop.await_count == 0, "a silent long-running task must not be killed"
 
     stalled = _process_task(output="partial", success=False, alive=True)
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=stalled):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=stalled):
         killed = await tool(BashParams(cmd="make", timeout=1))
     assert isinstance(killed, ToolError), killed
     assert "timed out" in killed.message
@@ -1048,7 +1048,7 @@ async def test_probe20_timeout_shapes() -> None:
 async def test_probe21_timeout_is_forwarded_to_the_monitor(timeout: int) -> None:
     tool = _tool()
     task = _process_task()
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=task):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=task):
         await tool(BashParams(cmd="echo hi", timeout=timeout))
     assert task.wait_with_monitor.await_args.args[0] == timeout
 
@@ -1056,7 +1056,7 @@ async def test_probe21_timeout_is_forwarded_to_the_monitor(timeout: int) -> None
 async def test_probe21b_max_lines_is_forwarded_to_the_filter() -> None:
     tool = _tool()
     task = _process_task(output="\n".join(f"line {i}" for i in range(50)))
-    with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=task):
+    with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=task):
         result = await tool(BashParams(cmd="seq 1 50", max_lines=5))
     assert isinstance(result, ToolOk), result
     assert "lines omitted" in result.output

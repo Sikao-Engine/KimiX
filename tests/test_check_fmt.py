@@ -1,9 +1,9 @@
-"""Tests for kimix.tools.check_fmt JSON/XML validation functions."""
+"""Tests for kimi_cli.tools.file.check_fmt JSON/XML validation functions."""
 
 from pathlib import Path
 
 
-from kimix.tools.check_fmt import check_json, check_json_str
+from kimi_cli.tools.file.check_fmt import check_json, check_json_str
 
 
 # ---------------------------------------------------------------------------

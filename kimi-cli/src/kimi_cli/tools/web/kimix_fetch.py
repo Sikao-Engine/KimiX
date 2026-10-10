@@ -4,9 +4,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.tools.common import _maybe_export_output
-from kimix.tools.web.web_fetcher import fetch_to_markdown
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.tools.common import _maybe_export_output
+from kimi_cli.tools.web.web_fetcher import fetch_to_markdown
 
 
 class Params(BaseModel):

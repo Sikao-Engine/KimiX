@@ -10,8 +10,8 @@ from kimi_cli.tools.utils import truncate_line
 from pydantic import BaseModel, Field, model_validator
 from rapidfuzz import fuzz, process
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.tools.prompt_common import accepts_alias_text
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.tools.prompt_common import accepts_alias_text
 
 MAX_LINES = 1000
 MAX_LINE_LENGTH = 2000

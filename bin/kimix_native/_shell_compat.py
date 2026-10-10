@@ -1,6 +1,6 @@
 """Vendored pure-Python mirrors of the kimi-agent bash/pwsh scanners.
 
-Copied (with attribution) from the kimi-agent repo's src/kimix/tools/file/bash/
+Copied (with attribution) from the kimi-agent repo's kimi-cli/src/kimi_cli/tools/file/bash/
 so the shim has a bit-exact fallback when the reference checkout is not
 importable. Only the self-contained scanner code is vendored (no tool I/O).
 
@@ -2912,7 +2912,7 @@ def fix_bash_command(command: str) -> BashFix:
     """Rewrite selected native POSIX commands for Windows Git Bash.
 
     The Windows-platform gate lives in the app layer
-    (``kimix.tools.file.bash.bash_fix.fix_bash_command``); this scanner is
+    (``kimi_cli.tools.file.bash.bash_fix.fix_bash_command``); this scanner is
     byte-identical to the native kernel, which also does not gate on platform.
     Empty input is returned byte-for-byte unchanged.
     """

@@ -8,15 +8,15 @@ from kimi_cli.session import Session
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.tools.common import (
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.tools.common import (
     _append_elapsed,
     _elapsed_tag,
     _maybe_export_output_async,
     _maybe_export_rtk_original_async,
     _original_saved_message,
 )
-from kimix.tools.prompt_common import accepts_alias_text, wait_for_pattern_field
+from kimi_cli.tools.prompt_common import accepts_alias_text, wait_for_pattern_field
 
 from .utils import (
     MAX_FINISHED_TASKS,

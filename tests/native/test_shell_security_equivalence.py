@@ -4,11 +4,11 @@
 Runs the SAME inputs through the native path (gate forced on) and the
 pure-Python path (gate forced off) and asserts identical results:
 
-- kimix.tools.security: redact_sensitive_output, scrub_child_env
-- kimix.tools.file.bash.safety: check_hardline_blocked,
+- kimi_cli.tools.security: redact_sensitive_output, scrub_child_env
+- kimi_cli.tools.file.bash.safety: check_hardline_blocked,
   foreground_background_guidance
-- kimix.tools.file.bash.output_enhance: interpret_exit_code, annotate_failure
-- kimix.tools.background.utils: bounded_append (StringIO contract)
+- kimi_cli.tools.file.bash.output_enhance: interpret_exit_code, annotate_failure
+- kimi_cli.tools.background.utils: bounded_append (StringIO contract)
 
 Corpora are adversarial: ASCII edge cases (which run natively) + non-ASCII
 cases (which route to the Python bodies by construction) + empty inputs.
@@ -45,7 +45,7 @@ def _assert_equivalent(native_result, python_result, case):
 
 
 # ---------------------------------------------------------------------------
-# redact_sensitive_output (kimix.tools.security)
+# redact_sensitive_output (kimi_cli.tools.security)
 # ---------------------------------------------------------------------------
 
 REDACT_CORPUS = [
@@ -90,7 +90,7 @@ REDACT_CORPUS = [
 
 @pytest.mark.parametrize("text", REDACT_CORPUS)
 def test_redact_sensitive_output_equivalence(text):
-    import kimix.tools.security as mod
+    import kimi_cli.tools.security as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -106,7 +106,7 @@ def test_redact_sensitive_output_equivalence(text):
 
 
 # ---------------------------------------------------------------------------
-# scrub_child_env (kimix.tools.security)
+# scrub_child_env (kimi_cli.tools.security)
 # ---------------------------------------------------------------------------
 
 SCRUB_ENVS = [
@@ -138,7 +138,7 @@ SCRUB_ENVS = [
 
 @pytest.mark.parametrize("env", SCRUB_ENVS)
 def test_scrub_child_env_equivalence(env):
-    import kimix.tools.security as mod
+    import kimi_cli.tools.security as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -194,7 +194,7 @@ HARDLINE_CORPUS = [
 
 @pytest.mark.parametrize("command", HARDLINE_CORPUS)
 def test_check_hardline_blocked_equivalence(command):
-    import kimix.tools.file.bash.safety as mod
+    import kimi_cli.tools.file.bash.safety as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -235,7 +235,7 @@ GUIDANCE_CORPUS = [
 
 @pytest.mark.parametrize("command", GUIDANCE_CORPUS)
 def test_foreground_background_guidance_equivalence(command):
-    import kimix.tools.file.bash.safety as mod
+    import kimi_cli.tools.file.bash.safety as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -280,7 +280,7 @@ EXIT_CODE_CORPUS = [
 
 @pytest.mark.parametrize("command,code", EXIT_CODE_CORPUS)
 def test_interpret_exit_code_equivalence(command, code):
-    import kimix.tools.file.bash.output_enhance as mod
+    import kimi_cli.tools.file.bash.output_enhance as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -312,7 +312,7 @@ ANNOTATE_CORPUS = [
 
 @pytest.mark.parametrize("output,command,code", ANNOTATE_CORPUS)
 def test_annotate_failure_equivalence(output, command, code):
-    import kimix.tools.file.bash.output_enhance as mod
+    import kimi_cli.tools.file.bash.output_enhance as mod
 
     restore = _force_gate(mod, True)
     try:
@@ -347,7 +347,7 @@ BOUNDED_CORPUS = [
 
 @pytest.mark.parametrize("content,text,cap", BOUNDED_CORPUS)
 def test_bounded_append_equivalence(content, text, cap):
-    from kimix.tools.background import utils as mod
+    from kimi_cli.tools.background import utils as mod
 
     def run(native: bool) -> tuple[bool, str]:
         buf = io.StringIO()

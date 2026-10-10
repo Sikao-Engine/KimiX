@@ -18,9 +18,9 @@ from kimi_cli.tools.display import ShellDisplayBlock
 from kimi_cli.tools.utils import load_desc
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.tools.background.utils import BackgroundStream
-from kimix.tools.common import (
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.tools.background.utils import BackgroundStream
+from kimi_cli.tools.common import (
     ProcessTask,
     _append_elapsed,
     _build_session_output_block,
@@ -37,21 +37,21 @@ from kimix.tools.common import (
     _summarize_long_output_async,
     _token_filter_output,
 )
-from kimix.tools.file.bash import bash_tool as _bash_tool
-from kimix.tools.file.bash.output_enhance import (
+from kimi_cli.tools.file.bash import bash_tool as _bash_tool
+from kimi_cli.tools.file.bash.output_enhance import (
     annotate_failure,
     interpret_exit_code,
     is_expected_exit,
     redact_sensitive_output,
 )
-from kimix.tools.file.bash.process_pwsh import pwsh_transform
-from kimix.tools.file.bash.pwsh_fix import fix_pwsh_command
-from kimix.tools.file.bash.safety import (
+from kimi_cli.tools.file.bash.process_pwsh import pwsh_transform
+from kimi_cli.tools.file.bash.pwsh_fix import fix_pwsh_command
+from kimi_cli.tools.file.bash.safety import (
     check_hardline_blocked,
     foreground_background_guidance,
     self_kill_hint,
 )
-from kimix.tools.prompt_common import (
+from kimi_cli.tools.prompt_common import (
     accepts_alias_text,
     max_lines_field,
     mode_field,
@@ -401,7 +401,7 @@ class Powershell(CallableTool2[PowershellParams]):
         if self._pwsh_path is None:
             # Resolve Windows PowerShell fallback to a full path so that we
             # avoid accidentally picking up a WindowsApps stub at runtime.
-            from kimix.tools.file.bash import shell_common
+            from kimi_cli.tools.file.bash import shell_common
 
             self._pwsh_fallback_path = shell_common.pwsh_executable()
             _print_warning(
@@ -540,7 +540,7 @@ class Powershell(CallableTool2[PowershellParams]):
                     transform_warning=transform_warning,
                 )
             if params.wait_for_pattern is not None and process_task.stream is not None:
-                from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+                from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
                 inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
                 output, matched, elapsed = await process_task.stream.wait_for_output(
                     timeout=params.timeout, pattern=pattern,
@@ -576,7 +576,7 @@ class Powershell(CallableTool2[PowershellParams]):
         # 2. Append ``; exit $LASTEXITCODE`` so PowerShell preserves the real
         #    native exit code from external programs (otherwise all non-zero
         #    codes are flattened to 1).
-        from kimix.tools.file.bash import shell_common
+        from kimi_cli.tools.file.bash import shell_common
 
         # Report semantics: each call runs in a fresh pwsh process, so a
         # requested workdir is applied with Set-Location instead of relying
@@ -611,7 +611,7 @@ class Powershell(CallableTool2[PowershellParams]):
         waited_seconds: float | None = None
         try:
             if params.wait_for_pattern is not None and process_task.stream is not None:
-                from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+                from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
                 inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
                 output, wait_matched, elapsed_seconds = await process_task.stream.wait_for_output(
                     timeout=params.timeout, pattern=pattern,
@@ -659,7 +659,7 @@ class Powershell(CallableTool2[PowershellParams]):
             # conversation stream can continue.
             with contextlib.suppress(asyncio.CancelledError):
                 await process_task.stop()
-            from kimix.tools.background.utils import remove_task_id
+            from kimi_cli.tools.background.utils import remove_task_id
             remove_task_id(self._session, task_id)
             output = await process_task.stream.get_output() if process_task.stream else ""
             output = await _maybe_export_output_async(output)
@@ -709,7 +709,7 @@ class Powershell(CallableTool2[PowershellParams]):
                 f"Command timed out after {params.timeout}s" + transform_warning,
             )
 
-        from kimix.tools.background.utils import remove_task_id
+        from kimi_cli.tools.background.utils import remove_task_id
         remove_task_id(self._session, task_id)
 
         output = await process_task.stream.pop_output() if process_task.stream else ""
@@ -788,7 +788,7 @@ class Powershell(CallableTool2[PowershellParams]):
         * Unbalanced double quotes ``"`` (odd count of ``"`` outside of safe
           contexts).  This is a best-effort heuristic — it does not account
           for escaped quotes or nested strings, so ``__call__`` hands the
-          command to :func:`kimix.tools.file.bash.pwsh_fix.fix_pwsh_command`
+          command to :func:`kimi_cli.tools.file.bash.pwsh_fix.fix_pwsh_command`
           which follows PowerShell's real quoting rules and either verifies
           the command is legal, repairs it, or keeps this error.
 
@@ -855,7 +855,7 @@ class Powershell(CallableTool2[PowershellParams]):
         would otherwise linger as a never-completing zombie task.
         """
         await process_task.stop()
-        from kimix.tools.background.utils import remove_task_id
+        from kimi_cli.tools.background.utils import remove_task_id
         remove_task_id(self._session, task_id)
         output = await _maybe_export_output_async(output)
         if output:
@@ -902,7 +902,7 @@ class Powershell(CallableTool2[PowershellParams]):
             return blocked
         self._resolve_pwsh()
         executable = self._pwsh_path if self._pwsh_path else (self._pwsh_fallback_path or "powershell")
-        from kimix.tools.file.bash import shell_common
+        from kimi_cli.tools.file.bash import shell_common
 
         raw_command = shell_common.wrap_pwsh_command(cmd)
         encoded_cmd, param_name, was_encoded = self._maybe_encode_command(raw_command)
@@ -923,7 +923,7 @@ class Powershell(CallableTool2[PowershellParams]):
             )
 
         if params.wait_for_pattern is not None and process_task.stream is not None:
-            from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+            from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
             inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
             output, matched, elapsed = await process_task.stream.wait_for_output(
                 timeout=params.timeout, pattern=pattern,
@@ -946,7 +946,7 @@ class Powershell(CallableTool2[PowershellParams]):
 
     async def _continue_session(self, params: PowershellParams) -> ToolReturnValue:
         """Send input to an existing PowerShell session and optionally wait for output."""
-        from kimix.tools.background.utils import get_all_tasks
+        from kimi_cli.tools.background.utils import get_all_tasks
 
         tasks = get_all_tasks(self._session)
         task_id = params.task_id.strip() if params.task_id else ""
@@ -987,7 +987,7 @@ class Powershell(CallableTool2[PowershellParams]):
                 brief="Send input failed",
             )
 
-        from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+        from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
         inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
         output, matched, elapsed = await stream.wait_for_output(
             timeout=params.timeout, pattern=pattern,

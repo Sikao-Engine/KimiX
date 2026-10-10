@@ -1,6 +1,6 @@
 """Common utility functions for kimix tools.
 
-This module provides shared helpers used across the kimix.tools.* modules,
+This module provides shared helpers used across the kimix tool modules,
 starting with rtk (reasoning toolkit) installation support.
 """
 

@@ -1,4 +1,4 @@
-"""Tests for the long-content param extraction logic in kimix.tools.common.
+"""Tests for the long-content param extraction logic in kimi_cli.tools.common.
 
 Tests cover:
 - _looks_like_malformed_json_param: detection of malformed params
@@ -19,7 +19,7 @@ project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root / "kimi-cli" / "src"))
 sys.path.insert(0, str(project_root / "src"))
 
-from kimix.tools.common import (
+from kimi_cli.tools.common import (
     _LONG_CONTENT_PARAMS,
     _LONG_PARAM_MIN_LENGTH,
     _looks_like_malformed_json_param,

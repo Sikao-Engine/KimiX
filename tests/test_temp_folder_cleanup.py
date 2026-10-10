@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import kimix.tools.common as common
+import kimi_cli.tools.common as common
 from kimix.cli_impl import commands
 
 
@@ -190,7 +190,7 @@ def test_cmd_exit_cleans_temp_folder_before_bye(monkeypatch: pytest.MonkeyPatch,
 
     cleaned: list[str] = []
     fake_module = SimpleNamespace(cleanup_temp_folder=lambda: cleaned.append("cleaned"))
-    monkeypatch.setitem(sys.modules, "kimix.tools.common", fake_module)
+    monkeypatch.setitem(sys.modules, "kimi_cli.tools.common", fake_module)
 
     result = commands._cmd_exit(["exit"], [])
     out = capsys.readouterr().out
@@ -213,7 +213,7 @@ def test_cmd_exit_swallows_cleanup_errors(monkeypatch: pytest.MonkeyPatch, capsy
         raise RuntimeError("cleanup exploded")
 
     fake_module = SimpleNamespace(cleanup_temp_folder=boom)
-    monkeypatch.setitem(sys.modules, "kimix.tools.common", fake_module)
+    monkeypatch.setitem(sys.modules, "kimi_cli.tools.common", fake_module)
 
     result = commands._cmd_exit(["exit"], [])
     out = capsys.readouterr().out

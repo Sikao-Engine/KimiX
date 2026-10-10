@@ -25,7 +25,7 @@ from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
 
-from kimi_agent_sdk import ToolReturnValue
+from kosong.tooling import ToolReturnValue
 
 # ── Long param extraction ──────────────────────────────────────────────────
 # Mapping of tool names to their "long content" parameter names.
@@ -508,7 +508,7 @@ import contextlib  # noqa: E402
 from kimi_cli.session import Session  # noqa: E402
 
 if TYPE_CHECKING:
-    from kimix.tools.background.utils import BackgroundStream
+    from kimi_cli.tools.background.utils import BackgroundStream
 OUTPUT_LIMIT = 16384
 _temp_folder = Path('.kimix_cache') / f'tmp_{os.getpid()}'
 # Absolute form used for cleanup so removal does not depend on the process
@@ -1792,7 +1792,7 @@ def _env_with_rg_bin_path(env: dict[str, str] | None = None) -> dict[str, str]:
     # dict, so an unscrubbed snapshot would silently restore every secret.  All
     # eight shell spawn sites (bash x3, pwsh x3, Run, python) derive their env
     # from this function, so this single choke point makes the contract hold.
-    from kimix.tools.security import scrub_child_env
+    from kimi_cli.tools.security import scrub_child_env
 
     base = os.environ if env is None else env
     result = scrub_child_env(dict(base))
@@ -1949,14 +1949,14 @@ class ProcessTask:
         # function is the sub-process "spent time" reported by the bash/python/
         # pwsh tools and by ``job_output``.
         elapsed_start = time.monotonic()
-        # Lazy imports: kimix.tools.security is a light module, but importing it
-        # here (rather than at module top) keeps kimix.tools.common importable
+        # Lazy imports: kimi_cli.tools.security is a light module, but importing it
+        # here (rather than at module top) keeps kimi_cli.tools.common importable
         # even when only the process machinery is needed.  The cap is read from
         # the background.utils module namespace at call time so tests can patch
         # ``BACKGROUND_MAX_OUTPUT_CHARS``.
-        import kimix.tools.background.utils as _bg_utils
-        from kimix.tools.background.utils import bounded_append, bounded_put
-        from kimix.tools.security import redact_sensitive_output, scrub_child_env
+        import kimi_cli.tools.background.utils as _bg_utils
+        from kimi_cli.tools.background.utils import bounded_append, bounded_put
+        from kimi_cli.tools.security import redact_sensitive_output, scrub_child_env
 
         def _write_output(text: str) -> None:
             nonlocal output_buffer
@@ -2262,7 +2262,7 @@ class ProcessTask:
         Returns:
             The generated task ID.
         """
-        from kimix.tools.background.utils import BackgroundStream, add_task, generate_task_id
+        from kimi_cli.tools.background.utils import BackgroundStream, add_task, generate_task_id
         self._stream = BackgroundStream()
         # Generate a task ID based on the executable name
         self._task_id = generate_task_id(session, kind, name)
@@ -2294,7 +2294,7 @@ class ProcessTask:
             ``(completed, elapsed_seconds, inactivity_timed_out)``.
         """
         if inactivity_timeout is None:
-            from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+            from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
             inactivity_timeout = DEFAULT_INACTIVITY_TIMEOUT
         if self._stream is None:
             return True, 0.0, False

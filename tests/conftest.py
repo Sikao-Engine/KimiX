@@ -134,7 +134,7 @@ def mock_soul() -> MagicMock:
 @pytest.fixture
 def running_task(mock_session: MagicMock) -> str:
     """Register a mock running background task and return its ID."""
-    from kimix.tools.background.utils import add_task, BackgroundStream
+    from kimi_cli.tools.background.utils import add_task, BackgroundStream
 
     stream = BackgroundStream()
     stream._started = True
@@ -172,7 +172,7 @@ def temp_work_dir() -> KaosPath:
 
 @pytest.fixture
 def bash_tool(mock_session: MagicMock):
-    from kimix.tools.file.bash.bash_tool import Bash
+    from kimi_cli.tools.file.bash.bash_tool import Bash
     return Bash(session=mock_session)
 
 

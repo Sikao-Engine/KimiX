@@ -276,7 +276,7 @@ async def _process_plan(
     agent and emits standard message.part.updated events.
     """
     from pathlib import Path
-    from kimix.tools.note import _set_enable_plan
+    from kimi_cli.tools.note import _set_enable_plan
     from kimix.utils import close_session_async
 
     plan_file = Path("plan.md")

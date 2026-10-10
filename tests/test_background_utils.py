@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from kimix.tools.background.utils import (
+from kimi_cli.tools.background.utils import (
     BackgroundStream,
     FinishedTask,
     TaskData,
@@ -365,7 +365,7 @@ async def test_wait_with_inactivity_timeout_uses_module_default(
 ) -> None:
     """No explicit inactivity_timeout falls back to the module-level default."""
     monkeypatch.setattr(
-        "kimix.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
+        "kimi_cli.tools.background.utils.DEFAULT_INACTIVITY_TIMEOUT", 2.0
     )
 
     def worker(q: queue.Queue[str]) -> None:
@@ -588,7 +588,7 @@ def test_record_and_get_finished_task(mock_session: MagicMock) -> None:
 def test_finished_history_evicts_oldest(
     mock_session: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("kimix.tools.background.utils.MAX_FINISHED_TASKS", 3)
+    monkeypatch.setattr("kimi_cli.tools.background.utils.MAX_FINISHED_TASKS", 3)
     for i in range(5):
         record_finished_task(mock_session, _make_record(f"t{i}"))
     data = _get_task_data(mock_session)
@@ -601,7 +601,7 @@ def test_finished_history_evicts_oldest(
 def test_finished_history_rerecording_refreshes_recency(
     mock_session: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("kimix.tools.background.utils.MAX_FINISHED_TASKS", 3)
+    monkeypatch.setattr("kimi_cli.tools.background.utils.MAX_FINISHED_TASKS", 3)
     for i in range(3):
         record_finished_task(mock_session, _make_record(f"t{i}"))
     # Re-record t0: it becomes the most recent ([t1, t2, t0]), so t1 is the
@@ -656,7 +656,7 @@ def test_finished_history_size_never_exceeds_cap(
     mock_session: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The history is hard-capped: it can never hold more entries than allowed."""
-    monkeypatch.setattr("kimix.tools.background.utils.MAX_FINISHED_TASKS", 5)
+    monkeypatch.setattr("kimi_cli.tools.background.utils.MAX_FINISHED_TASKS", 5)
     for i in range(20):
         record_finished_task(mock_session, _make_record(f"t{i}"))
         data = _get_task_data(mock_session)
@@ -671,7 +671,7 @@ def test_finished_history_concurrent_mutation_respects_cap(
     mock_session: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Hammer the history from many threads; the cap must always hold."""
-    monkeypatch.setattr("kimix.tools.background.utils.MAX_FINISHED_TASKS", 16)
+    monkeypatch.setattr("kimi_cli.tools.background.utils.MAX_FINISHED_TASKS", 16)
     data = _get_or_add_task_data(mock_session)  # stable shared TaskData
     threads: list[threading.Thread] = []
 
@@ -817,7 +817,7 @@ async def test_get_output_bounded_with_truncation_flag(
     stream: BackgroundStream, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "kimix.tools.background.utils.BACKGROUND_MAX_OUTPUT_CHARS", 1000
+        "kimi_cli.tools.background.utils.BACKGROUND_MAX_OUTPUT_CHARS", 1000
     )
 
     def worker(q: queue.Queue[str]) -> None:
@@ -847,7 +847,7 @@ async def test_output_truncated_sticky_after_pop(
     stream: BackgroundStream, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "kimix.tools.background.utils.BACKGROUND_MAX_OUTPUT_CHARS", 1000
+        "kimi_cli.tools.background.utils.BACKGROUND_MAX_OUTPUT_CHARS", 1000
     )
 
     def worker(q: queue.Queue[str]) -> None:

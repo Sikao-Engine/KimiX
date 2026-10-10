@@ -1,6 +1,6 @@
 r"""End-to-end corpus tests: native POSIX command -> Git Bash command.
 
-The parser under test is ``kimix.tools.file.bash.bash_fix.fix_bash_command``
+The parser under test is ``kimi_cli.tools.file.bash.bash_fix.fix_bash_command``
 (whose canonical scanner lives in ``bin/kimix_native/_shell_compat.py``).
 It rewrites a native POSIX command string into its Git Bash compatible form:
 
@@ -208,7 +208,7 @@ def load_cases(path: Path) -> list[BashCase]:
 
 def _get_fixer():
     """Return ``bash_fix.fix_bash_command`` from the app layer."""
-    from kimix.tools.file.bash.bash_fix import fix_bash_command
+    from kimi_cli.tools.file.bash.bash_fix import fix_bash_command
 
     return fix_bash_command
 
@@ -218,7 +218,7 @@ def run_parser(command: str):
     fix_bash_command = _get_fixer()
     # The app-layer gate returns input unchanged off Windows; corpora encode
     # the Git Bash behavior, so the gate is forced open on every host.
-    with patch("kimix.tools.file.bash.bash_fix.sys.platform", "win32"):
+    with patch("kimi_cli.tools.file.bash.bash_fix.sys.platform", "win32"):
         return fix_bash_command(command)
 
 
@@ -411,7 +411,7 @@ def _record(raw: list[Any], cases: list[BashCase]) -> int:
     for case in cases:
         if case.index < 0:
             continue
-        with patch("kimix.tools.file.bash.bash_fix.sys.platform", "win32"):
+        with patch("kimi_cli.tools.file.bash.bash_fix.sys.platform", "win32"):
             result = fix_bash_command(expand_tokens(case.src))
         entry = raw[case.index]
         new_dest = contract_tokens(result.command)

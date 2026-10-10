@@ -536,7 +536,7 @@ class TestParserTool:
     @pytest.mark.asyncio
     async def test_extract_mode(self):
         """Test extracting comments via the tool."""
-        from kimix.tools.parser import ParserTool, Params
+        from kimi_cli.tools.parser import ParserTool, Params
 
         tool = ParserTool()
         params = Params(
@@ -553,7 +553,7 @@ class TestParserTool:
     @pytest.mark.asyncio
     async def test_strip_mode(self):
         """Test stripping comments via the tool."""
-        from kimix.tools.parser import ParserTool, Params
+        from kimi_cli.tools.parser import ParserTool, Params
 
         tool = ParserTool()
         params = Params(
@@ -569,7 +569,7 @@ class TestParserTool:
     @pytest.mark.asyncio
     async def test_both_mode(self):
         """Test 'both' mode returns comments and stripped code."""
-        from kimix.tools.parser import ParserTool, Params
+        from kimi_cli.tools.parser import ParserTool, Params
 
         tool = ParserTool()
         params = Params(
@@ -588,7 +588,7 @@ class TestParserTool:
     @pytest.mark.asyncio
     async def test_invalid_language(self):
         """Returns error for unknown language."""
-        from kimix.tools.parser import ParserTool, Params
+        from kimi_cli.tools.parser import ParserTool, Params
 
         tool = ParserTool()
         params = Params(
@@ -602,7 +602,7 @@ class TestParserTool:
     @pytest.mark.asyncio
     async def test_missing_input(self):
         """Returns error when neither source_code nor file_path is provided."""
-        from kimix.tools.parser import ParserTool, Params
+        from kimi_cli.tools.parser import ParserTool, Params
 
         tool = ParserTool()
         params = Params(language="python")
@@ -613,7 +613,7 @@ class TestParserTool:
     @pytest.mark.asyncio
     async def test_file_path(self):
         """Test parsing via file_path parameter using sample files."""
-        from kimix.tools.parser import ParserTool, Params
+        from kimi_cli.tools.parser import ParserTool, Params
 
         tool = ParserTool()
         sample = str(EXAMPLES_DIR / "sample.py")

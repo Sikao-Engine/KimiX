@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from kimix.tools.swarm.best_of_n import (
+from kimi_cli.tools.swarm.best_of_n import (
     AllCandidatesFailedError,
     VerificationRejectedError,
     best_of_n,
@@ -176,7 +176,7 @@ def test_worker_workspace_copy_mode(tmp_path: Path) -> None:
         diff = collect_diff(worker, kind, before_snapshot={})
         assert "new.txt" in diff
     finally:
-        from kimix.tools.swarm.best_of_n import cleanup_worker_workspace
+        from kimi_cli.tools.swarm.best_of_n import cleanup_worker_workspace
 
         cleanup_worker_workspace(worker, kind, tmp_path)
     assert not worker.exists()

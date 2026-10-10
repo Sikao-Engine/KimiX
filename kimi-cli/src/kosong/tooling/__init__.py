@@ -637,7 +637,7 @@ VALUE_ALIASES_STATUS: dict[str, str] = {
 }
 
 # --- Agent store state (Literal["running", "completed"]) ---
-# source: src/kimix/tools/agent/store.py
+# source: kimi-cli/src/kimi_cli/tools/subagent/store.py
 VALUE_ALIASES_AGENT_STATE: dict[str, str] = {
  # "running" synonyms
  "active": "running",
@@ -652,7 +652,7 @@ VALUE_ALIASES_AGENT_STATE: dict[str, str] = {
 }
 
 # --- Chat role (Literal["user", "assistant", "system", "tool", "error"]) ---
-# source: src/kimix/tools/agent/store.py:14
+# source: kimi-cli/src/kimi_cli/tools/subagent/store.py:14
 VALUE_ALIASES_CHAT_ROLE: dict[str, str] = {
     "human": "user",
     "ai": "assistant",
@@ -673,7 +673,7 @@ VALUE_ALIASES_CHAT_ROLE: dict[str, str] = {
 # sources:
 #   kimi_cli/tools/todo/__init__.py (mode Literal["append", "replace", "clear"] + force flag;
 #     legacy "overwrite" → "replace", "force_overwrite" → mode='replace' force=True)
-#   src/kimix/tools/note/__init__.py:36 (Literal["overwrite", "append"])
+#   kimi-cli/src/kimi_cli/tools/note/__init__.py:36 (Literal["overwrite", "append"])
 #   kimi_cli/tools/file/write.py:73 (Literal["overwrite", "append"])
 VALUE_ALIASES_OVERWRITE_MODE: dict[str, str] = {
     # overwrite synonyms
@@ -711,9 +711,9 @@ VALUE_ALIASES_MATCH_MODE: dict[str, str] = {
 
 # --- Process execution mode (Literal["execute", "send", "interactive"]) ---
 # sources:
-#   src/kimix/tools/py/__init__.py:51
-#   src/kimix/tools/file/bash/bash_tool.py:566
-#   src/kimix/tools/file/bash/pwsh_tool.py:193
+#   kimi-cli/src/kimi_cli/tools/py/__init__.py:51
+#   kimi-cli/src/kimi_cli/tools/file/bash/bash_tool.py:566
+#   kimi-cli/src/kimi_cli/tools/file/bash/pwsh_tool.py:193
 VALUE_ALIASES_EXEC_MODE: dict[str, str] = {
     # execute synonyms
     "run": "execute",
@@ -732,7 +732,7 @@ VALUE_ALIASES_EXEC_MODE: dict[str, str] = {
 }
 
 # --- Run mode (Literal["execute", "send"]) ---
-# source: src/kimix/tools/file/run.py:89
+# source: kimi-cli/src/kimi_cli/tools/file/run.py:89
 VALUE_ALIASES_RUN_MODE: dict[str, str] = {
     # execute synonyms
     "run": "execute",
@@ -746,7 +746,7 @@ VALUE_ALIASES_RUN_MODE: dict[str, str] = {
 }
 
 # --- Compact mode (str: auto/retentive/balanced/aggressive/technical) ---
-# source: src/kimix/tools/context/__init__.py:54
+# source: kimi-cli/src/kimi_cli/tools/context/__init__.py:54
 VALUE_ALIASES_COMPACT_MODE: dict[str, str] = {
     "auto": "auto",
     "automatic": "auto",
@@ -777,7 +777,7 @@ VALUE_ALIASES_COMPACT_MODE: dict[str, str] = {
 }
 
 # --- Swarm mode (Literal["fanout", "parallel_sample"]) ---
-# source: src/kimix/tools/swarm/__init__.py:70
+# source: kimi-cli/src/kimi_cli/tools/swarm/__init__.py:70
 VALUE_ALIASES_SWARM_MODE: dict[str, str] = {
     "fanout": "fanout",
     "fan": "fanout",
@@ -796,7 +796,7 @@ VALUE_ALIASES_SWARM_MODE: dict[str, str] = {
 }
 
 # --- Swarm selector (Literal["self_eval", "majority"]) ---
-# source: src/kimix/tools/swarm/__init__.py:80
+# source: kimi-cli/src/kimi_cli/tools/swarm/__init__.py:80
 VALUE_ALIASES_SWARM_SELECTOR: dict[str, str] = {
     "self_eval": "self_eval",
     "self": "self_eval",
@@ -813,7 +813,7 @@ VALUE_ALIASES_SWARM_SELECTOR: dict[str, str] = {
 }
 
 # --- history_format (Literal["json", "markdown", "summary"]) ---
-# source: src/kimix/tools/agent/__init__.py:59
+# source: kimi-cli/src/kimi_cli/tools/subagent/__init__.py:59
 VALUE_ALIASES_HISTORY_FORMAT: dict[str, str] = {
     "json": "json",
     "raw": "json",
@@ -834,7 +834,7 @@ VALUE_ALIASES_HISTORY_FORMAT: dict[str, str] = {
 }
 
 # --- job_output action (Literal["get", "list", "kill"]) ---
-# source: src/kimix/tools/background/__init__.py:23
+# source: kimi-cli/src/kimi_cli/tools/background/__init__.py:23
 VALUE_ALIASES_TASK_ACTION: dict[str, str] = {
     "get": "get",
     "fetch": "get",
@@ -1061,7 +1061,7 @@ def alias_note(*names: str, word: bool = True) -> str:
     appends \" parameter\" (used in tool descriptions); field-level param
     descriptions historically omit it (``word=False``).  This is the single
     implementation shared by every tool description (see
-    ``kimix.tools.prompt_common.accepts_alias_text``, which delegates here).
+    ``kimi_cli.tools.prompt_common.accepts_alias_text``, which delegates here).
     """
     if len(names) == 2:
         suffix = " parameter." if word else "."

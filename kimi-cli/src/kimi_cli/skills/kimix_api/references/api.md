@@ -1,6 +1,6 @@
 ---
 name: kimix_api
-description: Guide for using KimiX API utilities covering kimix, kimix.utils, kimix.base, kimix.dag, kimix.network, kimix.server, kimix.parser, kimix.tools, kimix.cot, kimix.retrieval, kimix.summarize, and kimi_agent_sdk.
+description: Guide for using KimiX API utilities covering kimix, kimix.utils, kimix.base, kimix.dag, kimix.network, kimix.server, kimix.parser, kimix.cot, kimix.retrieval, kimix.summarize, and kimi_agent_sdk.
 ---
 
 # Kimi API Utilities Guide
@@ -954,20 +954,20 @@ for c in result.comments:
 - `BaseParser` — abstract `parse(source_code) -> ParseResult`; concrete `parse_file(file_path, encoding="utf-8")`
 - Language parsers: `PythonParser`, `CParser`, `ShellParser`, `HtmlParser`, `PascalParser`, `LispParser`, `SqlParser`
 
-## `kimix.tools` — Built-in Agent Tools
+## Built-in Agent Tools (`kimi_cli.tools`)
 
-All tools are `CallableTool2` subclasses. They are organized in subpackages under `kimix.tools` (the package `__init__.py` does not re-export them); import from the relevant submodule, e.g. `from kimix.tools.agent import Agent, AgentList, AgentClose`. Key ones:
+All tools are `CallableTool2` subclasses. They are organized in subpackages under `kimi_cli.tools` (the package `__init__.py` does not re-export them); import from the relevant submodule, e.g. `from kimi_cli.tools.subagent import Agent, AgentList, AgentClose`. The shell / process / background-task infrastructure was relocated into kimi-cli and is imported from `kimi_cli.tools.*` instead: `kimi_cli.tools.file.bash` (`Bash`, `Powershell`), `kimi_cli.tools.file.run` (`Run`), `kimi_cli.tools.file.find_str` (`FindStr`), `kimi_cli.tools.background` (`job_output`, `BackgroundStream`), plus the shared helpers `kimi_cli.tools.common`, `kimi_cli.tools.security` and `kimi_cli.tools.prompt_common`. Key ones:
 
-- `subagent` — launch/resume sub-agent (class `Agent`); params: `description`, `prompt`, `run_in_background=True`, `session_id`, `close_session=True`, `return_history=False` (from `kimix.tools.agent`)
-- `list_agents` — list active sub-agent sessions (class `AgentList`); params: `scope` (from `kimix.tools.agent`)
-- `interrupt_agent` — close/interrupt a sub-agent session (class `AgentClose`); params: `agent_id` (from `kimix.tools.agent`)
-- `job_output` — get background job output (class `TaskOutput`); params: `job_id`, `wait=False`, `timeout` (seconds), `output_path`, `kill=False`
-- `BackgroundStream` — `start(function, stop_function, input_function=None)`, `wait(timeout=None)`, `stop()`, `get_output()`, `pop_output()`, `input(data)`, `success()`
-- `Bash` / `pwsh` — shell execution; params: `command`/`cmd`, `timeout` (seconds), `workdir`, `run_in_background` (class `Powershell` in `kimix.tools.file.bash.pwsh_tool`)
-- `Run` — run external executable; params: `command`, `timeout=10`, `output_path`, `cwd`, `env`, `run_in_background=False`
-- `FindStr` — search text in files; params: `content`, `path`, `case_sensitive=False`
+- `subagent` — launch/resume sub-agent (class `Agent`); params: `description`, `prompt`, `run_in_background=True`, `session_id`, `close_session=True`, `return_history=False` (from `kimi_cli.tools.subagent`)
+- `list_agents` — list active sub-agent sessions (class `AgentList`); params: `scope` (from `kimi_cli.tools.subagent`)
+- `interrupt_agent` — close/interrupt a sub-agent session (class `AgentClose`); params: `agent_id` (from `kimi_cli.tools.subagent`)
+- `job_output` — get background job output (class `TaskOutput`, from `kimi_cli.tools.background`); params: `job_id`, `wait=False`, `timeout` (seconds), `output_path`, `kill=False`
+- `BackgroundStream` (from `kimi_cli.tools.background.utils`) — `start(function, stop_function, input_function=None)`, `wait(timeout=None)`, `stop()`, `get_output()`, `pop_output()`, `input(data)`, `success()`
+- `Bash` / `pwsh` — shell execution (from `kimi_cli.tools.file.bash`); params: `command`/`cmd`, `timeout` (seconds), `workdir`, `run_in_background` (classes `Bash` in `kimi_cli.tools.file.bash.bash_tool`, `Powershell` in `kimi_cli.tools.file.bash.pwsh_tool`)
+- `Run` — run external executable (from `kimi_cli.tools.file.run`); params: `command`, `timeout=10`, `output_path`, `cwd`, `env`, `run_in_background=False`
+- `FindStr` — search text in files (from `kimi_cli.tools.file.find_str`); params: `content`, `path`, `case_sensitive=False`
 - `Mkdir` / `Rm` — create/remove directories
-- `Python` — execute Python code; params: `code`, `output_path`, `timeout=10`, `run_in_background=False` (from `kimix.tools.py`)
+- `Python` — execute Python code; params: `code`, `output_path`, `timeout=10`, `run_in_background=False` (from `kimi_cli.tools.py`)
 - `SyntaxLint` — unified syntax lint dispatcher; params: `file_path`, `project_root=".", clangd_path="clangd", verbose=False`
 - `MypyCheck` — Python type check; params: `file_path`, `project_root=".", verbose=False`
 - `Cpplint` — C++ lint via clangd; params: `file_path`, `project_root=".", clangd_path="clangd", verbose=False`
@@ -1261,7 +1261,7 @@ Each prune pass logs:
 | `kimix.retrieval` | BM25 retrieval engine, fuzzy search, ranking, and query performance prediction |
 | `kimix.server` | Opencode-style HTTP server with FastAPI + SSE (`create_app`, `KimixAsyncClient`, `SessionManager`) |
 | `kimix.summarize` | Context compaction / summarization helpers |
-| `kimix.tools` | Built-in agent tools: shell, Python, file ops, OCR, PDF/DOCX conversion, linting, planning |
+| `kimi_cli.tools` | Built-in agent tools: Python, OCR, PDF/DOCX conversion, linting, planning, sub-agents, fetch_url, plus the shell / Run / FindStr / background-job infra (all under `kimi-cli/src/kimi_cli/tools/`) |
 | `kimix.utils` | High-level session management, prompting, plan execution, error fixing, initialization, and prompt string utilities |
 | `kimix.utils._globals` | Module-level session state: `_default_session`, `_should_print_usage`, and the `_cli_sessions` cache with `_add/_remove/_refresh` accessors |
 | `kimix.utils.config` | Kimix global initialization (`init`) and `Config` construction from provider dicts (`_create_config`) |

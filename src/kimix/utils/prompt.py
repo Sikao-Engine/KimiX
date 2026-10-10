@@ -16,7 +16,7 @@ from kimi_cli.llm import LoopDetectedError, TextLoopDetector
 from kosong.message import ContentPart, TextPart, ThinkPart
 from kimix.ui.printing import Color, MessageType, Style
 from kimix.ui.stream import print_agent_json, print_agent_json_flush_text
-from kimix.tools.common import _export_to_temp_file
+from kimi_cli.tools.common import _export_to_temp_file
 from kimix.utils.session import (
     _create_default_session,
     _create_default_session_async,
@@ -749,7 +749,7 @@ async def prompt_async(
                 # closing the parent session would otherwise cascade-close
                 # (and delete) their scratch session directories mid-run.
                 try:
-                    from kimix.tools.agent import wait_for_background_agents
+                    from kimi_cli.tools.subagent import wait_for_background_agents
 
                     await wait_for_background_agents(session)
                 except Exception as exc:
@@ -851,7 +851,7 @@ def build_plan_retry_reminder(requirement: str) -> str:
 
 
 async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md") -> None:
-    import kimix.tools.note as note
+    import kimi_cli.tools.note as note
 
     plan_file = Path(plan_file)
     if plan_file.is_file():

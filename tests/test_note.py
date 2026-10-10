@@ -19,9 +19,9 @@ import pytest
 from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
 
-import kimix.tools.note as _note_module
+import kimi_cli.tools.note as _note_module
 from kimi_agent_sdk import ToolError, ToolOk
-from kimix.tools.note import (
+from kimi_cli.tools.note import (
     MAX_BYTES,
     MAX_LINES,
     Edit,

@@ -1,4 +1,4 @@
-"""Tests for the ``compact`` tool (kimix.tools.context).
+"""Tests for the ``compact`` tool (kimi_cli.tools.context).
 
 Regression target: compaction is now hard-gated on context usage. When usage
 is below the 30% floor the tool must refuse (ToolError) and never touch the
@@ -12,7 +12,7 @@ import pytest
 from kimi_agent_sdk import ToolError, ToolOk
 from kimi_cli.soul.kimisoul import KimiSoul
 
-from kimix.tools.context import MIN_CONTEXT_USAGE, CompactParams, compact
+from kimi_cli.tools.context import MIN_CONTEXT_USAGE, CompactParams, compact
 
 
 def _mock_soul(context_usage: float) -> MagicMock:
@@ -39,7 +39,7 @@ async def test_reject_below_floor(
     """Usage under 30% -> ToolError and no compaction performed."""
     soul = _mock_soul(context_usage=0.20)
     monkeypatch.setattr(
-        "kimix.tools.context.get_current_soul_or_none", lambda: soul
+        "kimi_cli.tools.context.get_current_soul_or_none", lambda: soul
     )
 
     result = await tool(CompactParams(mode="retentive"))
@@ -56,7 +56,7 @@ async def test_boundary_at_floor_allows_compaction(
     """Usage exactly at the floor (30%) is allowed and compacts."""
     soul = _mock_soul(context_usage=MIN_CONTEXT_USAGE)
     monkeypatch.setattr(
-        "kimix.tools.context.get_current_soul_or_none", lambda: soul
+        "kimi_cli.tools.context.get_current_soul_or_none", lambda: soul
     )
 
     result = await tool(CompactParams(mode="retentive"))
@@ -71,7 +71,7 @@ async def test_high_usage_compacts(
     """Normal high-usage flow returns ToolOk and updates cooldown state."""
     soul = _mock_soul(context_usage=0.80)
     monkeypatch.setattr(
-        "kimix.tools.context.get_current_soul_or_none", lambda: soul
+        "kimi_cli.tools.context.get_current_soul_or_none", lambda: soul
     )
 
     result = await tool(CompactParams(mode="balanced"))
@@ -87,7 +87,7 @@ async def test_zero_usage_rejected(
     """A fresh/empty session (0% usage) is rejected by the floor guard."""
     soul = _mock_soul(context_usage=0.0)
     monkeypatch.setattr(
-        "kimix.tools.context.get_current_soul_or_none", lambda: soul
+        "kimi_cli.tools.context.get_current_soul_or_none", lambda: soul
     )
 
     result = await tool(CompactParams(mode="retentive"))

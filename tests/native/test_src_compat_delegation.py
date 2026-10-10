@@ -58,7 +58,7 @@ def _assert_eq(monkeypatch, src_module, src_name, shim_mod, shim_name, args):
 # ---------------------------------------------------------------------------
 
 def test_security_delegation(monkeypatch):
-    import kimix.tools.security as src
+    import kimi_cli.tools.security as src
     import kimix_native.tools as sh
 
     envs = [
@@ -80,7 +80,7 @@ def test_security_delegation(monkeypatch):
 
 
 def test_output_enhance_delegation(monkeypatch):
-    import kimix.tools.file.bash.output_enhance as src
+    import kimi_cli.tools.file.bash.output_enhance as src
     import kimix_native.tools as sh
 
     cmds = ["", "grep foo", "diff a b", "test -f x", "find / -name x", "curl https://x",
@@ -95,7 +95,7 @@ def test_output_enhance_delegation(monkeypatch):
 
 
 def test_safety_delegation(monkeypatch):
-    import kimix.tools.file.bash.safety as src
+    import kimi_cli.tools.file.bash.safety as src
     import kimix_native.tools as sh
 
     cmds = ["", "  ", "rm -rf /", "echo hi", "ls -la", "git status", "npm run dev",
@@ -110,7 +110,7 @@ def test_safety_delegation(monkeypatch):
 
 
 def test_common_stream_delegation(monkeypatch):
-    import kimix.tools.common as src_common
+    import kimi_cli.tools.common as src_common
     import kimix.utils.prompt_str as src_prompt
     import kimix.ui.printing as src_printing
     import kimix_native.stream as sh_stream

@@ -14,8 +14,8 @@ from kimi_cli.session import Session
 from kimi_cli.share import get_share_dir
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.tools.common import (
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.tools.common import (
     ProcessTask,
     _append_elapsed,
     _build_session_output_block,
@@ -31,7 +31,7 @@ from kimix.tools.common import (
     _summarize_long_output_async,
     _token_filter_output,
 )
-from kimix.tools.prompt_common import (
+from kimi_cli.tools.prompt_common import (
     accepts_alias_text,
     max_lines_field,
     mode_field,
@@ -42,7 +42,7 @@ from kimix.tools.prompt_common import (
 )
 
 if TYPE_CHECKING:
-    from kimix.tools.background.utils import BackgroundStream
+    from kimi_cli.tools.background.utils import BackgroundStream
 
 
 class Params(BaseModel):
@@ -175,7 +175,7 @@ class python(CallableTool2[Params]):  # noqa: N801
         ``sys.executable`` fallback) and the shared ``bin`` directory is already
         first in PATH, preserving the zero-copy fast path.
         """
-        from kimix.tools.security import scrub_child_env
+        from kimi_cli.tools.security import scrub_child_env
 
         base_env = scrub_child_env(dict(os.environ)) if scrub_env else dict(os.environ)
         bin_dir = str(get_share_dir() / "bin")
@@ -371,7 +371,7 @@ class python(CallableTool2[Params]):  # noqa: N801
             )
 
         if params.wait_for_pattern is not None and process_task.stream is not None:
-            from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+            from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
             inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
             output, matched, elapsed = await process_task.stream.wait_for_output(
                 timeout=params.timeout, pattern=pattern,
@@ -464,7 +464,7 @@ class python(CallableTool2[Params]):  # noqa: N801
                 # expires, then return the output collected so far (mirrors
                 # the bash tool's background-wait behavior).  Without a
                 # pattern the immediate fire-and-forget return is preserved.
-                from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+                from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
                 inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
                 output, wait_matched, elapsed_seconds = await process_task.stream.wait_for_output(
                     timeout=params.timeout, pattern=pattern,
@@ -494,7 +494,7 @@ class python(CallableTool2[Params]):  # noqa: N801
         waited_seconds: float | None = None
         try:
             if params.wait_for_pattern is not None and process_task.stream is not None:
-                from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+                from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
                 inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
                 output, wait_matched, elapsed_seconds = await process_task.stream.wait_for_output(
                     timeout=params.timeout, pattern=pattern,
@@ -514,7 +514,7 @@ class python(CallableTool2[Params]):  # noqa: N801
                 )
         except asyncio.CancelledError:
             await process_task.stop()
-            from kimix.tools.background.utils import remove_task_id
+            from kimi_cli.tools.background.utils import remove_task_id
             remove_task_id(self._session, task_id)
             output = await process_task.stream.get_output() if process_task.stream else ""
             output = await _maybe_export_output_async(output)
@@ -534,7 +534,7 @@ class python(CallableTool2[Params]):  # noqa: N801
             )
 
         # Clean up foreground task registration
-        from kimix.tools.background.utils import remove_task_id
+        from kimi_cli.tools.background.utils import remove_task_id
         remove_task_id(self._session, task_id)
 
         # Get output
@@ -625,7 +625,7 @@ class python(CallableTool2[Params]):  # noqa: N801
 
     async def _continue_session(self, params: Params) -> ToolReturnValue:
         """Send input to an existing Python session and optionally wait for output."""
-        from kimix.tools.background.utils import get_all_tasks
+        from kimi_cli.tools.background.utils import get_all_tasks
 
         tasks = get_all_tasks(self._session)
         task_id = params.task_id.strip() if params.task_id else ""
@@ -664,7 +664,7 @@ class python(CallableTool2[Params]):  # noqa: N801
                 brief="Send input failed",
             )
 
-        from kimix.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
+        from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
         inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
         output, matched, elapsed = await stream.wait_for_output(
             timeout=params.timeout, pattern=pattern,

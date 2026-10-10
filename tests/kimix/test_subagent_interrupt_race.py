@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import kimix.tools.agent as agent_mod
+import kimi_cli.tools.subagent as agent_mod
 from kimix.base import MessageType
-from kimix.tools.agent import (
+from kimi_cli.tools.subagent import (
     Agent,
     AgentClose,
     AgentCloseParams,
@@ -25,7 +25,7 @@ from kimix.tools.agent import (
     _register_agent_session,
     _unregister_agent_session,
 )
-from kimix.tools.agent.store import AgentSessionEntry, AgentSessionStore
+from kimi_cli.tools.subagent.store import AgentSessionEntry, AgentSessionStore
 
 
 @pytest.fixture
@@ -84,7 +84,7 @@ async def _prepare(
 ) -> Any:
     """Build a ``_PreparedRun`` for a background run of *session_id*."""
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         agent = Agent(mock_session)
@@ -155,9 +155,9 @@ async def test_interrupted_background_run_does_not_resurrect(
     prepared = await _prepare(mock_session, mock_sub_session, "race-id")
     try:
         with patch(
-            "kimix.tools.agent.utils.prompt_async", side_effect=gated_prompt
+            "kimix.utils.prompt_async", side_effect=gated_prompt
         ), patch(
-            "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+            "kimix.utils.close_session_async", new_callable=AsyncMock
         ):
             agent = Agent(mock_session)
             # Mimic ``_launch_background``: register the running entry, then
@@ -214,14 +214,14 @@ async def test_fresh_resume_after_close_registers_normally(
     assert store.was_closed("resume-id")
 
     with patch(
-        "kimix.tools.agent._create_session_async", new_callable=AsyncMock
+        "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         with patch(
-            "kimix.tools.agent.utils.prompt_async", new_callable=AsyncMock
+            "kimix.utils.prompt_async", new_callable=AsyncMock
         ):
             with patch(
-                "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+                "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
                 result = await agent(
@@ -260,9 +260,9 @@ async def _run_to_notice(
     try:
         prepared = await _prepare(mock_session, mock_sub_session, session_id)
         with patch(
-            "kimix.tools.agent.utils.prompt_async", side_effect=prompt_impl
+            "kimix.utils.prompt_async", side_effect=prompt_impl
         ), patch(
-            "kimix.tools.agent.close_session_async", new_callable=AsyncMock
+            "kimix.utils.close_session_async", new_callable=AsyncMock
         ), patch(
             "kimi_cli.soul.steer.Steer.from_session", return_value=fake
         ):

@@ -11,8 +11,8 @@ from kimi_cli.native_loader import (
 )
 from pydantic import BaseModel, Field
 
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimix.tools.common import _maybe_export_output
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.tools.common import _maybe_export_output
 
 # Resolved once at import time (stable runtime: result never changes).
 _NATIVE_TOOLS = _native_get_module("tools")

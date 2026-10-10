@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from kimix.tools.file.bash.safety import (
+from kimi_cli.tools.file.bash.safety import (
     check_hardline_blocked,
     command_detection_variants,
     detect_self_kill,

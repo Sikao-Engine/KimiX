@@ -1,6 +1,6 @@
 """FP-02: divergence guard for the two `fetch_url` tools.
 
-`kimi_cli.tools.web.fetch.fetch_url` (C12) and `kimix.tools.web.fetch_url.fetch_url`
+`kimi_cli.tools.web.fetch.fetch_url` (C12) and `kimi_cli.tools.web.kimix_fetch.fetch_url`
 (K14) share a model-facing name but are **parallel implementations for two disjoint
 runtimes**, which is why `tools/gate_dup_allowlist.txt` waives the duplicate:
 
@@ -28,10 +28,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 from kimi_cli.tools.web.fetch import fetch_url as cli_fetch_url
-from kimix.tools.web.fetch_url import fetch_url as kimix_fetch_url
+from kimi_cli.tools.web.kimix_fetch import fetch_url as kimix_fetch_url
 
 CLI_MODULE = REPO_ROOT / "kimi-cli/src/kimi_cli/tools/web/fetch.py"
-KIMIX_MODULE = REPO_ROOT / "src/kimix/tools/web/fetch_url.py"
+KIMIX_MODULE = REPO_ROOT / "kimi-cli/src/kimi_cli/tools/web/kimix_fetch.py"
 API_REF = REPO_ROOT / "kimi-cli/src/kimi_cli/skills/kimix_api/references/api.md"
 
 
@@ -107,19 +107,49 @@ def test_cli_surface_has_no_output_path_and_kimix_has_no_http_controls() -> None
 
 def test_kimix_uses_the_playwright_fetcher() -> None:
     text = KIMIX_MODULE.read_text(encoding="utf-8")
-    assert "from kimix.tools.web.web_fetcher import fetch_to_markdown" in text
+    assert "from kimi_cli.tools.web.web_fetcher import fetch_to_markdown" in text
     assert "fetch_to_markdown(params.url)" in text
 
 
-def test_kimi_cli_has_no_playwright_dependency() -> None:
-    """If this ever fails, the delegation option becomes viable - revisit FP-02."""
+def test_c12_fetch_has_no_playwright_dependency() -> None:
+    """FP-02 (updated for the tool relocation): the two ``fetch_url`` tools stay
+    parallel implementations even though K14's Playwright fetcher now lives inside
+    kimi-cli.
+
+    * C12 (``kimi_cli.tools.web.fetch``) must remain transport-independent of
+      Playwright (aiohttp only).
+    * The relocated K14 fetcher (``kimi_cli.tools.web.web_fetcher``) is the ONLY
+      place Playwright may be referenced, and it must import it *lazily* (inside
+      a function) so Playwright never becomes a hard kimi-cli dependency.
+    """
+    c12 = (REPO_ROOT / "kimi-cli/src/kimi_cli/tools/web/fetch.py").read_text(
+        encoding="utf-8"
+    )
+    assert "playwright" not in c12.lower(), "C12 fetch must not depend on playwright"
+
     proc = subprocess.run(
-        ["git", "grep", "-l", "playwright", "--", "kimi-cli/src/kimi_cli"],
+        [
+            "git",
+            "grep",
+            "-l",
+            "-E",
+            r"^(import playwright|from playwright)|\b(sync_playwright|async_playwright|playwright\.sync_api)\b",
+            "--",
+            "kimi-cli/src/kimi_cli",
+        ],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
     )
-    assert proc.stdout.strip() == "", f"playwright appeared in kimi_cli: {proc.stdout}"
+    hits = [line for line in proc.stdout.splitlines() if line.strip()]
+    # Any Playwright reference must be confined to the relocated K14 fetcher tree.
+    assert all(
+        "/web/web_fetcher/" in h or h.endswith("/web/kimix_fetch.py") for h in hits
+    ), f"playwright leaked outside the relocated K14 fetcher: {hits}"
+
+    # Playwright must stay a lazy/optional import, never a declared kimi-cli dep.
+    pyproject = (REPO_ROOT / "kimi-cli" / "pyproject.toml").read_text(encoding="utf-8")
+    assert "playwright" not in pyproject, "playwright must not become a kimi-cli dependency"
 
 
 def test_kimix_fetch_url_is_documented_with_its_signature() -> None:
@@ -141,7 +171,7 @@ async def test_kimix_fetch_failure_returns_tool_error(
 ) -> None:
     import importlib
 
-    mod = importlib.import_module("kimix.tools.web.fetch_url")
+    mod = importlib.import_module("kimi_cli.tools.web.kimix_fetch")
 
     async def _boom(_url: str) -> str:
         raise RuntimeError("boom")
@@ -158,7 +188,7 @@ async def test_kimix_output_path_writes_the_file_and_creates_parents(
 ) -> None:
     import importlib
 
-    mod = importlib.import_module("kimix.tools.web.fetch_url")
+    mod = importlib.import_module("kimi_cli.tools.web.kimix_fetch")
 
     async def _markdown(_url: str) -> str:
         return "# Title\n\nbody\n"
@@ -178,7 +208,7 @@ async def test_kimix_write_failure_keeps_the_fetched_markdown_in_output(
 ) -> None:
     import importlib
 
-    mod = importlib.import_module("kimix.tools.web.fetch_url")
+    mod = importlib.import_module("kimi_cli.tools.web.kimix_fetch")
 
     async def _markdown(_url: str) -> str:
         return "payload\n"

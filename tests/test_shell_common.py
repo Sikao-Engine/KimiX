@@ -1,4 +1,4 @@
-"""Tests for kimix.tools.file.bash.shell_common (shared one-shot shell helpers).
+"""Tests for kimi_cli.tools.file.bash.shell_common (shared one-shot shell helpers).
 
 The bash tool, the pwsh tool and the todo tool all delegate their
 one-shot command building here; these tests pin the shared behavior (fixer
@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from kimix.tools.file.bash import shell_common
+from kimi_cli.tools.file.bash import shell_common
 
 
 def _is_powershell_name(path: str) -> bool:
@@ -24,7 +24,7 @@ class TestPrepareBashCommand:
     def test_fixers_applied_in_order(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from kimix.tools.file.bash import bash_fix, bash_tool
+        from kimi_cli.tools.file.bash import bash_fix, bash_tool
 
         seen: list[str] = []
         orig_prepare = bash_tool._prepare_bash_cmd
@@ -63,7 +63,7 @@ class TestPrepareBashCommand:
 
 class TestBashArgv:
     def test_login_argv_and_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import bash_tool
+        from kimi_cli.tools.file.bash import bash_tool
 
         monkeypatch.setattr(bash_tool, "find_bash", lambda: "/bin/bash")
         argv, env = shell_common.bash_argv("echo hi", login=True)
@@ -71,14 +71,14 @@ class TestBashArgv:
         assert isinstance(env, dict)
 
     def test_non_login_argv(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import bash_tool
+        from kimi_cli.tools.file.bash import bash_tool
 
         monkeypatch.setattr(bash_tool, "find_bash", lambda: "/bin/bash")
         argv, _env = shell_common.bash_argv("echo hi", login=False)
         assert argv == ["/bin/bash", "-c", "echo hi"]
 
     def test_fallback_to_bash_name(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import bash_tool
+        from kimi_cli.tools.file.bash import bash_tool
 
         monkeypatch.setattr(bash_tool, "find_bash", lambda: None)
         argv, env = shell_common.bash_argv("echo hi")
@@ -88,7 +88,7 @@ class TestBashArgv:
 
 class TestBashFileArgv:
     def test_argv_and_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import bash_tool
+        from kimi_cli.tools.file.bash import bash_tool
 
         monkeypatch.setattr(bash_tool, "find_bash", lambda: "/bin/bash")
         argv, env = shell_common.bash_file_argv("/tmp/run.sh")
@@ -106,7 +106,7 @@ class TestWrapPwshCommand:
 
 class TestPwshArgv:
     def test_pwsh7_argv(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import pwsh_tool
+        from kimi_cli.tools.file.bash import pwsh_tool
 
         monkeypatch.setattr(pwsh_tool, "find_pwsh", lambda: r"C:\pwsh.exe")
         argv, hint = shell_common.pwsh_argv("Write-Output hi")  # type: ignore[misc]
@@ -118,7 +118,7 @@ class TestPwshArgv:
     def test_invalid_command_returns_none(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from kimix.tools.file.bash import pwsh_fix
+        from kimi_cli.tools.file.bash import pwsh_fix
 
         monkeypatch.setattr(pwsh_fix, "fix_pwsh_command", lambda cmd: None)
         assert shell_common.pwsh_argv("whatever") is None
@@ -126,7 +126,7 @@ class TestPwshArgv:
     def test_ps51_fallback_transform(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from kimix.tools.file.bash import process_pwsh, pwsh_tool
+        from kimi_cli.tools.file.bash import process_pwsh, pwsh_tool
 
         monkeypatch.setattr(pwsh_tool, "find_pwsh", lambda: None)
         monkeypatch.setattr(
@@ -138,7 +138,7 @@ class TestPwshArgv:
         assert hint == f"PowerShell executable not found: {argv[0]}"
 
     def test_nul_redirect_rewritten(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import pwsh_tool
+        from kimi_cli.tools.file.bash import pwsh_tool
 
         monkeypatch.setattr(pwsh_tool, "find_pwsh", lambda: r"C:\pwsh.exe")
         argv, _hint = shell_common.pwsh_argv("Write-Output hi > nul")  # type: ignore[misc]
@@ -148,7 +148,7 @@ class TestPwshArgv:
 
 class TestPwshFileArgv:
     def test_pwsh7_file_argv(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import pwsh_tool
+        from kimi_cli.tools.file.bash import pwsh_tool
 
         monkeypatch.setattr(pwsh_tool, "find_pwsh", lambda: r"C:\pwsh.exe")
         argv, hint = shell_common.pwsh_file_argv(r"C:\scripts\run.ps1")
@@ -160,7 +160,7 @@ class TestPwshFileArgv:
         assert hint == r"PowerShell executable not found: C:\pwsh.exe"
 
     def test_fallback_file_argv(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import pwsh_tool
+        from kimi_cli.tools.file.bash import pwsh_tool
 
         monkeypatch.setattr(pwsh_tool, "find_pwsh", lambda: None)
         argv, _hint = shell_common.pwsh_file_argv("run.ps1")
@@ -171,13 +171,13 @@ class TestPwshFileArgv:
 
 class TestPwshExecutable:
     def test_returns_pwsh7(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import pwsh_tool
+        from kimi_cli.tools.file.bash import pwsh_tool
 
         monkeypatch.setattr(pwsh_tool, "find_pwsh", lambda: r"C:\pwsh.exe")
         assert shell_common.pwsh_executable() == r"C:\pwsh.exe"
 
     def test_returns_ps51_fallback(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from kimix.tools.file.bash import pwsh_tool
+        from kimi_cli.tools.file.bash import pwsh_tool
 
         monkeypatch.setattr(pwsh_tool, "find_pwsh", lambda: None)
         exe = shell_common.pwsh_executable()

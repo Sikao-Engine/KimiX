@@ -32,7 +32,7 @@ async def fix_error_async(
         prompt_str = f'Fix {error_keyword} from command `{command}`:\n\n{result}\n'
         if extra_prompt is not None:
             prompt_str = f'{extra_prompt}, {prompt_str}'
-        from kimix.tools.common import _maybe_export_output
+        from kimi_cli.tools.common import _maybe_export_output
         await prompt_async(_maybe_export_output(prompt_str), session, merge_wire_messages=merge_wire_messages)
     return False
 

@@ -6,11 +6,11 @@
       "kimi_cli.tools.file:read_image",
       "kimi_cli.tools.file:glob",
       "kimi_cli.tools.file:grep",
-      "kimix.tools.web.fetch_url:fetch_url",
+      "kimi_cli.tools.web.kimix_fetch:fetch_url",
       "kimi_cli.tools.web:web_search",
-        "kimix.tools.note:write_plan",
-        "kimix.tools.note:read_plan",
-        "kimix.tools.note:edit_plan"
+      "kimi_cli.tools.note:write_plan",
+      "kimi_cli.tools.note:read_plan",
+      "kimi_cli.tools.note:edit_plan"
     ]
   }
 }

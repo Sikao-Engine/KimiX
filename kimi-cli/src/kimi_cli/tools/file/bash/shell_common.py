@@ -13,7 +13,7 @@ into an ``(argv, env)`` pair ready for ``asyncio.create_subprocess_exec``:
 This module is the single home for that one-shot machinery.  ``bash_tool`` /
 ``pwsh_tool`` are imported lazily inside the functions so this module stays
 import-safe at any point of the app boot and can be imported from anywhere
-(no kimix import cycle); only the pure fixer modules are imported at top.
+  (no import cycle); only the pure fixer modules are imported at top.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
-from kimix.tools.file.bash import bash_fix, process_pwsh, pwsh_fix
+from kimi_cli.tools.file.bash import bash_fix, process_pwsh, pwsh_fix
 
 # Flags shared by every one-shot PowerShell invocation (pwsh 7 and the
 # Windows PowerShell 5.1 fallback alike).
@@ -29,15 +29,15 @@ PWSH_ONESHOT_FLAGS = ("-NoP", "-NonI", "-Exec", "Bypass", "-NoL")
 
 
 def _bash_tool() -> Any:
-    """Return the kimix Bash tool module (lazy: import-cycle-safe)."""
-    from kimix.tools.file.bash import bash_tool
+    """Return the Bash tool module (lazy: import-cycle-safe)."""
+    from kimi_cli.tools.file.bash import bash_tool
 
     return bash_tool
 
 
 def _pwsh_tool() -> Any:
-    """Return the kimix Powershell tool module (lazy: import-cycle-safe)."""
-    from kimix.tools.file.bash import pwsh_tool
+    """Return the Powershell tool module (lazy: import-cycle-safe)."""
+    from kimi_cli.tools.file.bash import pwsh_tool
 
     return pwsh_tool
 

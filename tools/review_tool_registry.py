@@ -25,7 +25,7 @@ Exit code: ``0`` when there are no unaccounted orphans, ``1`` otherwise.
 
 Usage::
 
-    uv run tools/review_tool_registry.py --sources kimi-cli/src/kimi_cli/tools src/kimix/tools
+    uv run tools/review_tool_registry.py --sources kimi-cli/src/kimi_cli/tools
 """
 
 from __future__ import annotations

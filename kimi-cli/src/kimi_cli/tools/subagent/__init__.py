@@ -13,18 +13,18 @@ from kaos.path import KaosPath
 from kimi_cli.session import Session
 from pydantic import AliasChoices, BaseModel, Field
 
-import kimix.base as base
-import kimix.utils as utils
-from kimi_agent_sdk import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimi_agent_sdk import Session as SdkSession
-from kimi_agent_sdk._session import _sdk_sessions_dir
-from kimix.tools.common import _create_script_file, _display_temp_path
-from kimix.tools.prompt_common import accepts_alias_text
-from kimix.ui.printing import MessageType
-from kimix.utils import _create_session_async, close_session_async
-from kimix.utils import _globals as _session_globals
-from kimix.utils.session import register_session_close_hook
-from kimix.utils.system_prompt import SystemPromptType
+# NOTE: ``kimi_cli`` must not import ``kimix``/``kimi_agent_sdk`` at module load
+# (``kimix`` depends on ``kimi_cli``, and the SDK imports ``kimi_cli.app``, which
+# would form a cycle).  All ``kimix.*`` symbols (``base``, ``utils``,
+# ``MessageType``, ``SystemPromptType``, ``_create_session_async``,
+# ``close_session_async``, ``_session_globals``, ``register_session_close_hook``)
+# and the ``kimi_agent_sdk`` ``Session`` / ``_sdk_sessions_dir`` helpers are
+# imported lazily inside the functions that use them.  ``SdkSession`` appears
+# only in (string) annotations under ``from __future__ import annotations``.
+
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.tools.common import _create_script_file, _display_temp_path
+from kimi_cli.tools.prompt_common import accepts_alias_text
 
 from .store import AgentSessionEntry, AgentSessionStore, ConversationTurn
 
@@ -108,6 +108,7 @@ def _register_child_session(parent_id: str, child_id: str) -> None:
     """Remember that *parent_id* spawned the still-open session *child_id*."""
     if not parent_id or not child_id:
         return
+    _ensure_close_hook_registered()
     _children_by_parent.setdefault(parent_id, set()).add(child_id)
     _child_parent[child_id] = parent_id
 
@@ -158,6 +159,8 @@ async def _destroy_child_sessions_async(parent_id: str) -> list[str]:
     child that cannot be closed is dropped anyway and its own destructor /
     shutdown callback still reclaims the directory.  Returns the child ids.
     """
+    from kimix.utils import close_session_async
+
     destroyed: list[str] = []
     for child_id in _take_child_sessions(parent_id):
         session = _release_child_session(child_id)
@@ -178,8 +181,22 @@ async def _on_parent_session_closed(session: Any) -> list[str]:
 
 # Registered once per process: every session closed through kimix (CLI exit,
 # web server, the sub-agent store, the interpreter-shutdown hook) cascades to
-# the sub-agent sessions it spawned.
-register_session_close_hook(_on_parent_session_closed)
+# the sub-agent sessions it spawned.  ``register_session_close_hook`` lives in
+# ``kimix.utils.session``, and ``kimi_cli`` must not import ``kimix`` at module
+# load (``kimix`` depends on ``kimi_cli``), so registration is deferred into
+# :func:`_ensure_close_hook_registered` and triggered the first time a child
+# session is registered — always before the parent that owns it can close.
+_close_hook_registered = False
+
+
+def _ensure_close_hook_registered() -> None:
+    global _close_hook_registered
+    if _close_hook_registered:
+        return
+    from kimix.utils.session import register_session_close_hook
+
+    register_session_close_hook(_on_parent_session_closed)
+    _close_hook_registered = True
 
 
 def _get_agent_session(session_id: str) -> SdkSession | None:
@@ -237,6 +254,8 @@ def _session_dir(session: Any, session_id: str) -> Path:
     (``<work dir>/.kimix_cache/<session id>``).  A session without a work dir
     falls back to ``KaosPath('.')``, exactly like ``_create_session_async``.
     """
+    from kimi_agent_sdk._session import _sdk_sessions_dir
+
     work_dir = _session_work_dir(session) or KaosPath(".")
     return _sdk_sessions_dir(work_dir) / session_id
 
@@ -250,6 +269,8 @@ def _sdk_session_by_id(session_id: str) -> SdkSession | None:
     """
     if not session_id:
         return None
+    from kimix.utils import _globals as _session_globals
+
     for sdk in list(_session_globals._live_sessions):
         if _cli_session_id(sdk) == session_id:
             return sdk
@@ -453,6 +474,8 @@ class _AgentConversationCollector:
             ))
 
     def consume(self, text: str, msg_type: MessageType) -> None:
+        from kimix.ui.printing import MessageType
+
         if msg_type == MessageType.Text:
             if self.last_msg_type not in (None, MessageType.Text):
                 self._finalize_previous()
@@ -707,6 +730,9 @@ class Agent(CallableTool2):
         await _push_steer_notice(parent, notice)
 
     async def _execute(self, prepared: _PreparedRun) -> ToolReturnValue:
+        import kimix.utils as utils
+        from kimix.utils import close_session_async
+
         session = prepared.session
         session_id = prepared.session_id
         params = prepared.params
@@ -833,6 +859,10 @@ class Agent(CallableTool2):
         return []
 
     async def _resolve_session(self, params: SubAgentParams) -> tuple[Any, str, bool]:
+        import kimix.base as base
+        from kimix.utils import _create_session_async
+        from kimix.utils.system_prompt import SystemPromptType
+
         store = _get_store(self._session)
 
         if params.session_id:
@@ -993,6 +1023,8 @@ class Agent(CallableTool2):
         is_reused: bool,
         turns: list[ConversationTurn],
     ) -> None:
+        from kimix.utils import close_session_async
+
         store = _get_store(self._session)
         if params.close_session:
             await close_session_async(session)
@@ -1089,6 +1121,8 @@ class AgentClose(CallableTool2):
         self._session = session
 
     async def __call__(self, params: AgentCloseParams) -> ToolReturnValue:
+        from kimix.utils import close_session_async
+
         store = _get_store(self._session)
         entry = store.get(params.agent_id)
         if entry is None:

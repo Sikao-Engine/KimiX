@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from kimi_agent_sdk import ToolError, ToolOk
 
-from kimix.tools.background import TaskOutput, TaskOutputParams
-from kimix.tools.background.utils import BackgroundStream, add_task
-from kimix.tools.common import (
+from kimi_cli.tools.background import TaskOutput, TaskOutputParams
+from kimi_cli.tools.background.utils import BackgroundStream, add_task
+from kimi_cli.tools.common import (
     ELAPSED_REPORT_MINIMUM_SECONDS,
     ProcessTask,
     _append_elapsed,
@@ -23,11 +23,11 @@ from kimix.tools.common import (
     _format_elapsed_seconds,
     _subprocess_elapsed,
 )
-from kimix.tools.file.bash import Powershell
-from kimix.tools.file.bash.bash_tool import Bash, BashParams
-from kimix.tools.file.bash.pwsh_tool import PowershellParams
-from kimix.tools.py import Params as PythonParams
-from kimix.tools.py import python
+from kimi_cli.tools.file.bash import Powershell
+from kimi_cli.tools.file.bash.bash_tool import Bash, BashParams
+from kimi_cli.tools.file.bash.pwsh_tool import PowershellParams
+from kimi_cli.tools.py import Params as PythonParams
+from kimi_cli.tools.py import python
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────
@@ -170,15 +170,15 @@ class TestProcessTaskRecordsRuntime:
 @pytest.fixture
 def bash_tool(mock_session: MagicMock) -> Bash:
     with patch(
-        "kimix.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"
-    ), patch("kimix.tools.file.bash.bash_tool._should_enable_bash", return_value=True):
+        "kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"
+    ), patch("kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True):
         return Bash(session=mock_session)
 
 
 class TestBashSpentTime:
     async def test_success_message_reports_spent_time(self, bash_tool: Bash) -> None:
         task = _fake_process_task(elapsed=2.0)
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=task):
             result = await bash_tool(BashParams(cmd="echo hi"))
 
         assert isinstance(result, ToolOk)
@@ -188,7 +188,7 @@ class TestBashSpentTime:
 
     async def test_failure_message_reports_spent_time(self, bash_tool: Bash) -> None:
         task = _fake_process_task(elapsed=3.5, success=False, exit_code=1)
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=task):
             result = await bash_tool(BashParams(cmd="exit 1"))
 
         assert isinstance(result, ToolError)
@@ -197,7 +197,7 @@ class TestBashSpentTime:
 
     async def test_fast_command_is_not_annotated(self, bash_tool: Bash) -> None:
         task = _fake_process_task(elapsed=0.35)
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=task):
             result = await bash_tool(BashParams(cmd="echo hi"))
 
         assert isinstance(result, ToolOk)
@@ -206,7 +206,7 @@ class TestBashSpentTime:
 
     async def test_unmeasured_command_is_not_annotated(self, bash_tool: Bash) -> None:
         task = _fake_process_task(elapsed=None)
-        with patch("kimix.tools.file.bash.bash_tool.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=task):
             result = await bash_tool(BashParams(cmd="echo hi"))
 
         assert isinstance(result, ToolOk)
@@ -219,16 +219,16 @@ class TestBashSpentTime:
 @pytest.fixture
 def pwsh_tool(mock_session: MagicMock) -> Powershell:
     with patch(
-        "kimix.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
+        "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
         return_value=True,
-    ), patch("kimix.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
+    ), patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
         return Powershell(session=mock_session)
 
 
 class TestPwshSpentTime:
     async def test_success_message_reports_spent_time(self, pwsh_tool: Powershell) -> None:
         task = _fake_process_task(elapsed=1.5)
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask", return_value=task):
             result = await pwsh_tool(PowershellParams(cmd="Get-Location"))
 
         assert isinstance(result, ToolOk)
@@ -238,7 +238,7 @@ class TestPwshSpentTime:
 
     async def test_failure_message_reports_spent_time(self, pwsh_tool: Powershell) -> None:
         task = _fake_process_task(elapsed=7.25, success=False, exit_code=1)
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask", return_value=task):
             result = await pwsh_tool(PowershellParams(cmd="throw 'boom'"))
 
         assert isinstance(result, ToolError)
@@ -247,7 +247,7 @@ class TestPwshSpentTime:
 
     async def test_fast_command_is_not_annotated(self, pwsh_tool: Powershell) -> None:
         task = _fake_process_task(elapsed=0.2)
-        with patch("kimix.tools.file.bash.pwsh_tool.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask", return_value=task):
             result = await pwsh_tool(PowershellParams(cmd="Get-Location"))
 
         assert isinstance(result, ToolOk)
@@ -270,7 +270,7 @@ def python_tool(tmp_path, monkeypatch: pytest.MonkeyPatch) -> python:
 class TestPythonSpentTime:
     async def test_success_message_reports_spent_time(self, python_tool: python) -> None:
         task = _fake_process_task(elapsed=2.25)
-        with patch("kimix.tools.py.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.py.ProcessTask", return_value=task):
             result = await python_tool(PythonParams(code="print(1)"))
 
         assert isinstance(result, ToolOk)
@@ -279,7 +279,7 @@ class TestPythonSpentTime:
 
     async def test_failure_message_reports_spent_time(self, python_tool: python) -> None:
         task = _fake_process_task(elapsed=4.0, success=False, exit_code=1)
-        with patch("kimix.tools.py.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.py.ProcessTask", return_value=task):
             result = await python_tool(PythonParams(code="raise SystemExit(1)"))
 
         assert isinstance(result, ToolError)
@@ -291,7 +291,7 @@ class TestPythonSpentTime:
     ) -> None:
         task = _fake_process_task(elapsed=1.75)
         out_file = tmp_path / "out.txt"
-        with patch("kimix.tools.py.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.py.ProcessTask", return_value=task):
             result = await python_tool(
                 PythonParams(code="print(1)", output_path=str(out_file))
             )
@@ -301,7 +301,7 @@ class TestPythonSpentTime:
 
     async def test_fast_code_is_not_annotated(self, python_tool: python) -> None:
         task = _fake_process_task(elapsed=0.1)
-        with patch("kimix.tools.py.ProcessTask", return_value=task):
+        with patch("kimi_cli.tools.py.ProcessTask", return_value=task):
             result = await python_tool(PythonParams(code="print(1)"))
 
         assert isinstance(result, ToolOk)
@@ -314,7 +314,7 @@ class TestPythonSpentTime:
 class TestJobOutputSpentTime:
     @staticmethod
     def _register(session: MagicMock, task_id: str, stream: MagicMock) -> None:
-        from kimix.tools.background.utils import TaskData
+        from kimi_cli.tools.background.utils import TaskData
 
         data = TaskData()
         data.tasks = {task_id: stream}
