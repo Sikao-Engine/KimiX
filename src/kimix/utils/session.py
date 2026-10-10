@@ -15,7 +15,7 @@ from kimix.ui.printing import Color, Style
 from kimix.ui.stream import percentage_and_token
 
 from . import _globals
-from .config import _create_config
+from .config import _create_config, load_config_json
 from .system_prompt import SystemPromptCallback, SystemPromptType, get_system_prompt
 
 
@@ -125,6 +125,9 @@ async def _create_session_async(
             agent_file = base._default_agent_file_dir / agent_file
     skills_dirs = _ensure_skill_dirs(
         skills_dir) if skills_dir is not None else base.get_skill_dirs()
+    # Parse .kimix/config.json once (cached inside load_config_json) and hand
+    # the resulting dict to the SDK session explicitly.
+    config_json = load_config_json(Path(str(work_dir)))
     system_prompts: Callable[[Runtime, bool], str] | None = None
     if system_prompts is None:
         system_prompts = get_system_prompt(
@@ -142,6 +145,7 @@ async def _create_session_async(
             thinking=base._default_thinking,
             config=cfg,
             agent_file=agent_file,
+            config_json=config_json,
             # custom arguments
             custom_system_prompt=system_prompts,
             chat_provider=chat_provider,
@@ -162,6 +166,7 @@ async def _create_session_async(
             thinking=base._default_thinking,
             config=cfg,
             agent_file=agent_file,
+            config_json=config_json,
             # custom arguments
             custom_system_prompt=system_prompts,
             chat_provider=chat_provider,

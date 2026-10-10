@@ -9,7 +9,6 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import orjson
 from kaos.path import KaosPath
 from kimi_cli.app import KimiCLI
 from kimi_cli.config import Config
@@ -165,18 +164,14 @@ def _sdk_sessions_dir(work_dir: KaosPath) -> Path:
     return Path(str(work_dir)) / KIMIX_CACHE_DIR_NAME
 
 
-async def _load_config_json(work_dir: KaosPath) -> dict[str, Any]:
-    """Load custom config from ``.kimix/config.json`` and wrap it under ``config_json``."""
-    config_path = work_dir / ".kimix" / "config.json"
-    config_json: dict[str, Any] = {}
-    try:
-        raw = await config_path.read_bytes()
-        loaded = orjson.loads(raw)
-        if isinstance(loaded, dict):
-            config_json = loaded
-    except (OSError, orjson.JSONDecodeError, ValueError):
-        pass
-    return {"config_json": config_json}
+def _make_custom_config(config_json: dict[str, Any] | None) -> dict[str, Any]:
+    """Build the session's ``custom_config`` from an explicitly provided dict.
+
+    The config dict is parsed by the caller (see
+    :func:`kimix.utils.config.load_config_json`) and wrapped under the
+    ``config_json`` key, matching the shape tools expect.
+    """
+    return {"config_json": config_json if isinstance(config_json, dict) else {}}
 
 
 from kimi_cli.soul.context_records import ExportedContext  # noqa: E402, F401
@@ -412,9 +407,9 @@ class Session:
                 work_dir, session_id, _sessions_dir=sessions_dir
             )
 
-        # Preserve provider_dict/chat_provider overrides if the config file
-        # does not already contain them (mirrors the logic in :meth:`rename`).
-        custom_config = await _load_config_json(work_dir)
+        # Preserve provider_dict/chat_provider overrides from the old session
+        # (mirrors the logic in :meth:`rename`).
+        custom_config = _make_custom_config(old_custom_config.get("config_json"))
         for key in ("provider_dict", "chat_provider"):
             if key in old_custom_config and key not in custom_config:
                 custom_config[key] = old_custom_config[key]
@@ -477,7 +472,7 @@ class Session:
 
         # Preserve provider_dict from old session's custom_config for sub-agent spawning
         old_custom_config = self._cli.session.custom_config
-        custom_config = await _load_config_json(work_dir)
+        custom_config = _make_custom_config(old_custom_config.get("config_json"))
         if "provider_dict" in old_custom_config and "provider_dict" not in custom_config:
             custom_config["provider_dict"] = old_custom_config["provider_dict"]
         if "chat_provider" in old_custom_config and "chat_provider" not in custom_config:
@@ -605,6 +600,8 @@ class Session:
         # Loop control
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
+        # Custom config
+        config_json: dict[str, Any] | None = None,
         **custom_arguments,  # Add by maxwell
     ) -> Session:
         """
@@ -626,6 +623,8 @@ class Session:
             skills_dirs: Multiple skills directories (KaosPath list) for newer kimi-cli.
             max_steps_per_turn: Maximum number of steps in one turn.
             max_retries_per_step: Maximum number of retries per step.
+            config_json: Parsed ``.kimix/config.json`` dict provided explicitly by
+                the caller (parsed once, e.g. via ``kimix.utils.config.load_config_json``).
 
         Returns:
             Session: A new Session instance.
@@ -648,7 +647,7 @@ class Session:
         cli_session = await CliSession.create(
             work_dir_path, session_id, _sessions_dir=_sdk_sessions_dir(work_dir_path)
         )
-        custom_config = await _load_config_json(work_dir_path)
+        custom_config = _make_custom_config(config_json)
         cli_session.custom_config = custom_config
         llm: LLM | None = None
         chat_provider: ChatProvider | None = custom_arguments.pop("chat_provider", None)
@@ -713,6 +712,8 @@ class Session:
         # Loop control
         max_steps_per_turn: int | None = None,
         max_retries_per_step: int | None = None,
+        # Custom config
+        config_json: dict[str, Any] | None = None,
         **custom_arguments,  # Add by maxwell
     ) -> Session | None:
         """
@@ -735,6 +736,8 @@ class Session:
             skills_dirs: Multiple skills directories (KaosPath list) for newer kimi-cli.
             max_steps_per_turn: Maximum number of steps in one turn.
             max_retries_per_step: Maximum number of retries per step.
+            config_json: Parsed ``.kimix/config.json`` dict provided explicitly by
+                the caller (parsed once, e.g. via ``kimix.utils.config.load_config_json``).
 
         Returns:
             Session | None: The resumed session, or None if not found.
@@ -757,7 +760,7 @@ class Session:
             cli_session = await CliSession.find(work_dir, session_id, _sessions_dir=sessions_dir)
         if cli_session is None:
             return None
-        custom_config = await _load_config_json(work_dir)
+        custom_config = _make_custom_config(config_json)
         cli_session.custom_config = custom_config
         llm: LLM | None = None
         chat_provider: ChatProvider | None = custom_arguments.pop("chat_provider", None)

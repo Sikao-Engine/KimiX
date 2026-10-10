@@ -212,11 +212,6 @@ async def test_rename_calls_chat_provider_aclose(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(session_mod.CliSession, "rename", classmethod(lambda cls, *a, **kw: fake_rename(*a, **kw)))
     monkeypatch.setattr(session_mod.CliSession, "create", classmethod(lambda cls, *a, **kw: _FakeCLISession()))
     monkeypatch.setattr(session_mod.KimiCLI, "create", classmethod(lambda cls, *a, **kw: fake_recreate(*a, **kw)))
-    async def fake_load_config(work_dir: Any) -> dict[str, Any]:
-        return {}
-
-    monkeypatch.setattr(session_mod, "_load_config_json", fake_load_config)
-
     await session.rename("new")
     assert provider.closed
     assert called

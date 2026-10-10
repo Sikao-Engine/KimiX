@@ -227,44 +227,124 @@ def _load_config_file(config_path: Path) -> dict[str, Any]:
     return {}
 
 
-# ── Skill JSON loading ─────────────────────────────────────────────────────
+# ── .kimix/config.json loading ─────────────────────────────────────────────
+
+# Cache of parsed ``.kimix/config.json`` contents, keyed by resolved path, so
+# the file is read and parsed with orjson at most once per path per process.
+_config_json_cache: dict[Path, dict[str, Any]] = {}
 
 
-def _load_skill_json() -> None:
-    """Auto-load skill directories from ``.kimix/skill.json`` in CWD."""
+def load_config_json(work_dir: str | Path | None = None) -> dict[str, Any]:
+    """Load and parse ``<work_dir>/.kimix/config.json`` with orjson (once per path).
+
+    The parsed dict is cached by resolved path, so repeated calls never touch
+    the filesystem or re-parse the JSON. Missing files, invalid JSON and
+    non-object payloads all yield an empty dict.
+
+    Args:
+        work_dir: Directory containing ``.kimix/config.json``. Defaults to CWD.
+
+    Returns:
+        The parsed config dict (possibly empty). The cached instance is
+        returned directly; callers must not mutate it.
+    """
+    root = Path(work_dir) if work_dir is not None else Path.cwd()
+    config_path = (root / ".kimix" / "config.json").resolve()
+    cached = _config_json_cache.get(config_path)
+    if cached is not None:
+        return cached
+
+    config_json: dict[str, Any] = {}
+    try:
+        raw = config_path.read_bytes()
+        loaded = orjson.loads(raw)
+        if isinstance(loaded, dict):
+            config_json = loaded
+    except (OSError, orjson.JSONDecodeError, ValueError):
+        pass
+    _config_json_cache[config_path] = config_json
+    return config_json
+
+
+def clear_config_json_cache() -> None:
+    """Drop all cached ``.kimix/config.json`` payloads (useful after edits/tests)."""
+    _config_json_cache.clear()
+
+
+# ── Skill directory auto-loading ───────────────────────────────────────────
+
+
+def _collect_skill_dirs(
+    skill_dir_cfg: Any,
+    cwd: Path,
+) -> list["KaosPath"]:
+    """Resolve a ``skill_dir`` config value (str or list) into existing dirs."""
     from kimix.ui.printing import print_debug, print_warning
     from kaos.path import KaosPath
 
-    config_json_path = Path(".kimix/skill.json")
-    if not config_json_path.exists():
-        return
+    if isinstance(skill_dir_cfg, str):
+        skill_dir_cfg = [skill_dir_cfg]
+    if not isinstance(skill_dir_cfg, list):
+        return []
 
-    print_debug(".kimix/skill.json exists.")
-    try:
-        config_json = orjson.loads(config_json_path.read_text(encoding="utf-8"))
-        skill_dir_cfg = config_json.get("skill_dir")
-        if skill_dir_cfg is not None:
-            if isinstance(skill_dir_cfg, str):
-                skill_dir_cfg = [skill_dir_cfg]
-            if isinstance(skill_dir_cfg, list):
-                skill_dirs_from_cfg = []
-                for sd in skill_dir_cfg:
-                    if not isinstance(sd, str):
-                        continue
-                    sd_path = Path(sd)
-                    if not sd_path.is_absolute():
-                        sd_path = Path.cwd() / sd_path
-                    sd_path = sd_path.resolve()
-                    if sd_path.exists() and sd_path.is_dir():
-                        skill_dirs_from_cfg.append(KaosPath(str(sd_path)))
-                        print_debug(f"Skill dir from config: {str(sd_path)}")
-                    else:
-                        print_warning(f"Skill dir from config not found: {str(sd_path)}")
-                if skill_dirs_from_cfg:
-                    existing = list(base._default_skill_dirs)
-                    base.set_default_skill_dirs(existing + skill_dirs_from_cfg)
-    except (orjson.JSONDecodeError, Exception) as e:
-        print_warning(f"Failed to read skill_dir from .kimix/skill.json: {e}")
+    resolved: list[KaosPath] = []
+    for sd in skill_dir_cfg:
+        if not isinstance(sd, str):
+            continue
+        sd_path = Path(sd)
+        if not sd_path.is_absolute():
+            sd_path = cwd / sd_path
+        sd_path = sd_path.resolve()
+        if sd_path.exists() and sd_path.is_dir():
+            resolved.append(KaosPath(str(sd_path)))
+            print_debug(f"Skill dir from config: {str(sd_path)}")
+        else:
+            print_warning(f"Skill dir from config not found: {str(sd_path)}")
+    return resolved
+
+
+def _load_skill_dirs() -> None:
+    """Auto-load skill directories from config files in CWD.
+
+    Skill dirs are sought in both ``.kimix/config.json`` (the current setting,
+    parsed once via :func:`load_config_json`) and the deprecated
+    ``.kimix/skill.json``. If ``skill.json`` exists, a deprecation warning is
+    logged for the user.
+    """
+    from kimix.ui.printing import print_debug, print_warning
+
+    cwd = Path.cwd()
+    skill_dirs_from_cfg: list[Any] = []
+
+    # 1. Current setting: skill_dir inside .kimix/config.json
+    config_json = load_config_json(cwd)
+    skill_dirs_from_cfg.extend(_collect_skill_dirs(config_json.get("skill_dir"), cwd))
+
+    # 2. Deprecated setting: .kimix/skill.json
+    skill_json_path = cwd / ".kimix" / "skill.json"
+    if skill_json_path.exists():
+        print_warning(
+            ".kimix/skill.json is deprecated; move its 'skill_dir' setting "
+            "into .kimix/config.json instead."
+        )
+        try:
+            skill_json = orjson.loads(skill_json_path.read_text(encoding="utf-8"))
+            if isinstance(skill_json, dict):
+                print_debug(".kimix/skill.json exists.")
+                skill_dirs_from_cfg.extend(
+                    _collect_skill_dirs(skill_json.get("skill_dir"), cwd)
+                )
+        except Exception as e:
+            print_warning(f"Failed to read skill_dir from .kimix/skill.json: {e}")
+
+    if skill_dirs_from_cfg:
+        existing = list(base._default_skill_dirs)
+        seen = {str(p) for p in existing}
+        for sd in skill_dirs_from_cfg:
+            if str(sd) not in seen:
+                seen.add(str(sd))
+                existing.append(sd)
+        base.set_default_skill_dirs(existing)
 
 
 # ── Load provider config dict (used by init and by default_config path) ─────
@@ -348,8 +428,8 @@ def init(
     # Reset to auto-detected defaults (empty first, then auto-load)
     base._default_skill_dirs = []
 
-    # Auto-load from .kimix/skill.json
-    _load_skill_json()
+    # Auto-load from .kimix/config.json (and deprecated .kimix/skill.json)
+    _load_skill_dirs()
 
     # Add explicit skill dirs
     if skill_dir:

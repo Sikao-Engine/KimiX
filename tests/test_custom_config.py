@@ -327,7 +327,7 @@ class TestRunForbiddenCommands:
 
 
 # ---------------------------------------------------------------------------
-# Config loading in _session.py
+# Config loading: kimix.utils.config.load_config_json + explicit passing
 # ---------------------------------------------------------------------------
 
 
@@ -369,57 +369,143 @@ def mock_cli_setup() -> MagicMock:
         yield mock_cli_session
 
 
+@pytest.fixture(autouse=True)
+def _clear_config_cache():
+    from kimix.utils.config import clear_config_json_cache
+
+    clear_config_json_cache()
+    yield
+    clear_config_json_cache()
+
+
+def _write_config(tmp_path: Path, content: str) -> Path:
+    config_dir = tmp_path / ".kimix"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_file = config_dir / "config.json"
+    config_file.write_text(content, encoding="utf-8")
+    return config_file
+
+
+class TestLoadConfigJson:
+    """``.kimix/config.json`` is parsed once with orjson, then cached."""
+
+    def test_load_config(self, tmp_path: Path) -> None:
+        from kimix.utils.config import load_config_json
+
+        _write_config(tmp_path, '{"protected_write_paths": ["secret"]}')
+        assert load_config_json(tmp_path) == {"protected_write_paths": ["secret"]}
+
+    def test_missing_config(self, tmp_path: Path) -> None:
+        from kimix.utils.config import load_config_json
+
+        assert load_config_json(tmp_path) == {}
+
+    def test_malformed_config(self, tmp_path: Path) -> None:
+        from kimix.utils.config import load_config_json
+
+        _write_config(tmp_path, "not json")
+        assert load_config_json(tmp_path) == {}
+
+    def test_non_dict_config(self, tmp_path: Path) -> None:
+        from kimix.utils.config import load_config_json
+
+        _write_config(tmp_path, "[1, 2, 3]")
+        assert load_config_json(tmp_path) == {}
+
+    def test_parsed_only_once(self, tmp_path: Path) -> None:
+        """After the first parse the file is never read again (cached dict)."""
+        from kimix.utils import config as config_mod
+
+        _write_config(tmp_path, '{"a": 1}')
+        first = config_mod.load_config_json(tmp_path)
+        # Overwrite the file; the cached value must still be returned and the
+        # file must not be re-read.
+        _write_config(tmp_path, '{"a": 2}')
+
+        read_calls = 0
+        original_read_bytes = Path.read_bytes
+
+        def counting_read_bytes(self):  # type: ignore[no-untyped-def]
+            nonlocal read_calls
+            read_calls += 1
+            return original_read_bytes(self)
+
+        with patch.object(Path, "read_bytes", counting_read_bytes):
+            second = config_mod.load_config_json(tmp_path)
+
+        assert second is first
+        assert second == {"a": 1}
+        assert read_calls == 0
+
+        config_mod.clear_config_json_cache()
+        assert config_mod.load_config_json(tmp_path) == {"a": 2}
+
+
 class TestSessionConfigLoading:
-    async def test_create_loads_config(
+    """Session.create/resume receive the config dict explicitly."""
+
+    async def test_create_uses_explicit_config_json(
         self, tmp_path: Path, mock_cli_setup: MagicMock
     ) -> None:
-        config_dir = tmp_path / ".kimix"
-        config_dir.mkdir(parents=True)
-        config_file = config_dir / "config.json"
-        config_file.write_text('{"protected_write_paths": ["secret"]}', encoding="utf-8")
+        from kimix.utils.config import load_config_json
 
-        sdk_session = await Session.create(work_dir=KaosPath(str(tmp_path)))
+        _write_config(tmp_path, '{"protected_write_paths": ["secret"]}')
+        config_json = load_config_json(tmp_path)
+
+        sdk_session = await Session.create(
+            work_dir=KaosPath(str(tmp_path)), config_json=config_json
+        )
         assert sdk_session._cli.session.custom_config == {
             "config_json": {"protected_write_paths": ["secret"]}
         }
 
-    async def test_create_missing_config(
+    async def test_create_without_config_json(
         self, tmp_path: Path, mock_cli_setup: MagicMock
     ) -> None:
         sdk_session = await Session.create(work_dir=KaosPath(str(tmp_path)))
         assert sdk_session._cli.session.custom_config == {"config_json": {}}
 
-    async def test_create_malformed_config(
+    async def test_create_does_not_read_config_file(
         self, tmp_path: Path, mock_cli_setup: MagicMock
     ) -> None:
-        config_dir = tmp_path / ".kimix"
-        config_dir.mkdir(parents=True)
-        config_file = config_dir / "config.json"
-        config_file.write_text("not json", encoding="utf-8")
+        """Even when .kimix/config.json exists, create() must not parse it."""
+        _write_config(tmp_path, '{"forbidden_commands": ["rm"]}')
 
-        sdk_session = await Session.create(work_dir=KaosPath(str(tmp_path)))
+        read_calls = 0
+        original_read_bytes = Path.read_bytes
+
+        def counting_read_bytes(self):  # type: ignore[no-untyped-def]
+            nonlocal read_calls
+            read_calls += 1
+            return original_read_bytes(self)
+
+        with patch.object(Path, "read_bytes", counting_read_bytes):
+            sdk_session = await Session.create(work_dir=KaosPath(str(tmp_path)))
+
         assert sdk_session._cli.session.custom_config == {"config_json": {}}
+        assert read_calls == 0
 
-    async def test_create_non_dict_config(
+    async def test_resume_uses_explicit_config_json(
         self, tmp_path: Path, mock_cli_setup: MagicMock
     ) -> None:
-        config_dir = tmp_path / ".kimix"
-        config_dir.mkdir(parents=True)
-        config_file = config_dir / "config.json"
-        config_file.write_text("[1, 2, 3]", encoding="utf-8")
+        from kimix.utils.config import load_config_json
 
-        sdk_session = await Session.create(work_dir=KaosPath(str(tmp_path)))
-        assert sdk_session._cli.session.custom_config == {"config_json": {}}
-
-    async def test_resume_loads_config(
-        self, tmp_path: Path, mock_cli_setup: MagicMock
-    ) -> None:
-        config_dir = tmp_path / ".kimix"
-        config_dir.mkdir(parents=True)
-        config_file = config_dir / "config.json"
-        config_file.write_text('{"forbidden_commands": ["rm"]}', encoding="utf-8")
+        _write_config(tmp_path, '{"forbidden_commands": ["rm"]}')
+        config_json = load_config_json(tmp_path)
 
         sdk_session = await Session.resume(
-            work_dir=KaosPath(str(tmp_path)), session_id="test-id"
+            work_dir=KaosPath(str(tmp_path)),
+            session_id="test-id",
+            config_json=config_json,
         )
-        assert sdk_session._cli.session.custom_config == {"config_json": {"forbidden_commands": ["rm"]}}
+        assert sdk_session._cli.session.custom_config == {
+            "config_json": {"forbidden_commands": ["rm"]}
+        }
+
+    async def test_create_rejects_non_dict_config_json(
+        self, tmp_path: Path, mock_cli_setup: MagicMock
+    ) -> None:
+        sdk_session = await Session.create(
+            work_dir=KaosPath(str(tmp_path)), config_json="not a dict"  # type: ignore[arg-type]
+        )
+        assert sdk_session._cli.session.custom_config == {"config_json": {}}
