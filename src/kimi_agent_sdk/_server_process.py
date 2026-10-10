@@ -15,12 +15,18 @@ Two modes exist per entry:
 
 Every public entry point swallows and logs exceptions: server management must
 never break the session lifecycle.
+
+Started servers are also tracked in a module-level live registry
+(:func:`get_live_server_processes`) so in-process consumers that cannot reach
+the owning ``Session`` object (notably the ``connect`` tool bridge in
+``kimi_cli``) can discover them.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from pathlib import Path
 from typing import Any, Literal
 
@@ -45,6 +51,70 @@ _CONFIG_READ_ATTEMPTS = 3
 _CONFIG_READ_RETRY_DELAY = 0.25
 
 _VALID_NETWORKS = ("tcp", "http")
+
+# ---------------------------------------------------------------------------
+# Live-server registry
+#
+# Session servers are owned by the SDK ``Session`` object, but tools run inside
+# ``kimi_cli`` and cannot see it. This module-level registry lets any in-process
+# consumer (e.g. the ``connect`` tool bridge) discover the servers that are
+# currently alive. It is guarded by a plain ``threading.Lock`` (registration
+# happens on the event-loop thread, reads may happen from anywhere) and every
+# entry point swallows exceptions: discovering servers must never break a
+# session or a tool call.
+# ---------------------------------------------------------------------------
+
+_LIVE_SERVERS: list[ServerProcess] = []
+_LIVE_LOCK = threading.Lock()
+
+
+def _register_live_server(server: ServerProcess) -> None:
+    """Add ``server`` to the live registry. Never raises."""
+    try:
+        with _LIVE_LOCK:
+            _LIVE_SERVERS.append(server)
+    except Exception:
+        logger.exception("live server registry: failed to register %s", server.spec.cmd)
+
+
+def _unregister_live_servers(servers: list[ServerProcess] | None) -> None:
+    """Remove ``servers`` from the live registry, by identity.
+
+    Entries that are not registered are ignored; never raises.
+    """
+    try:
+        targets = list(servers or [])
+        if not targets:
+            return
+        with _LIVE_LOCK:
+            _LIVE_SERVERS[:] = [s for s in _LIVE_SERVERS if not any(s is t for t in targets)]
+    except Exception:
+        logger.exception("live server registry: failed to unregister servers")
+
+
+def get_live_server_processes() -> list[ServerProcess]:
+    """Snapshot (list copy) of every live session server. Never raises.
+
+    Callers must re-check each entry before use: ``ready`` / ``process`` /
+    ``process.returncode`` / ``network`` may change at any time (the snapshot
+    itself is safe to iterate).
+    """
+    try:
+        with _LIVE_LOCK:
+            return list(_LIVE_SERVERS)
+    except Exception:
+        logger.exception("live server registry: failed to snapshot")
+        return []
+
+
+def _clear_live_registry_for_tests() -> None:
+    """Empty the live registry (test isolation helper).
+
+    Does *not* terminate anything: it only forgets the entries, so a test can
+    assert registry state without inheriting leftovers from other tests.
+    """
+    with _LIVE_LOCK:
+        _LIVE_SERVERS.clear()
 
 
 def _log_error(fmt: str, *args: Any) -> None:
@@ -319,8 +389,14 @@ async def start_server_processes(
     sees children as soon as they exist.  If this coroutine is cancelled (or
     otherwise exits via a :class:`BaseException`), the processes spawned so
     far are terminated best-effort before re-raising — no orphaned children.
+
+    Every spawned server is registered in the module-level live registry (see
+    :func:`get_live_server_processes`) at the same moment it is appended to
+    the live list, and unregistered by ``stop_server_processes`` /
+    ``stop_server_processes_sync`` (including the cancellation cleanup here).
     """
     servers: list[ServerProcess] = out if out is not None else []
+    pending: ServerProcess | None = None
     try:
         if not isinstance(server_cfg, list):
             logger.error(
@@ -336,9 +412,17 @@ async def start_server_processes(
             # Attach before start(): a cancellation *during* start() still
             # finds the (possibly already-spawned) server in the live list.
             servers.append(server)
+            _register_live_server(server)
+            pending = server
             await server.start()
+            pending = None
     except Exception:
         logger.exception("Failed to start nested sub-process servers")
+        # A server whose start() blew up must not linger in the live
+        # registry: the caller may discard ``servers`` (out=None) and then
+        # nothing would ever unregister it.
+        if pending is not None:
+            _unregister_live_servers([pending])
     except BaseException:
         # Cancellation / interpreter shutdown: do not orphan live children.
         logger.error("server startup interrupted; terminating processes spawned so far")
@@ -353,6 +437,7 @@ async def stop_server_processes(
     """Terminate every still-running child, escalating to kill() after ``timeout``.
 
     Never raises; safe to call more than once (dead processes are skipped).
+    Every server passed in is removed from the live registry, stopped or not.
     """
     try:
         for server in list(servers):
@@ -380,6 +465,8 @@ async def stop_server_processes(
                 logger.exception("server %s: failed to reap process", server.spec.cmd)
     except Exception:
         logger.exception("Failed to stop nested sub-process servers")
+    finally:
+        _unregister_live_servers(servers)
 
 
 def stop_server_processes_sync(servers: list[ServerProcess] | None) -> None:
@@ -387,7 +474,8 @@ def stop_server_processes_sync(servers: list[ServerProcess] | None) -> None:
 
     Without an event loop the children cannot be reaped here; on Windows
     ``terminate()`` maps to ``TerminateProcess`` (immediate), which is enough
-    to release the processes.  Never raises.
+    to release the processes.  Every server passed in is removed from the live
+    registry.  Never raises.
     """
     try:
         for server in list(servers or []):
@@ -400,3 +488,5 @@ def stop_server_processes_sync(servers: list[ServerProcess] | None) -> None:
                 logger.debug("server %s: sync terminate() failed", server.spec.cmd, exc_info=True)
     except Exception:
         logger.exception("Failed to stop nested sub-process servers synchronously")
+    finally:
+        _unregister_live_servers(servers)

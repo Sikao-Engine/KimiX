@@ -10,6 +10,9 @@ sub-process and asserts the exact wire shape of the responses:
 * a batch with one bad-id element yields per-item responses and stays usable.
 * ``read_file``/``write_file`` are confined to the ``--root`` directory
   (fix 7): escapes are rejected with INVALID_PARAMS, inside-root works.
+* the ``before_tool`` builtin (connect bridge): valid/minimal params echo an
+  ack message, a missing ``tool`` is INVALID_PARAMS, and notifications written
+  by it are never answered.
 
 Plus a few in-process unit tests for ``JsonRpcResponse.to_dict``,
 ``handle_message`` poison-batch handling, null results, and the TCP client's
@@ -371,3 +374,174 @@ async def test_handle_message_batch_poison_item_becomes_internal_error() -> None
     # with null echo; the notification (no id) produced no response.
     assert by_id[1]["error"]["code"] == INTERNAL_ERROR
     assert by_id[None]["error"]["code"] == INVALID_REQUEST
+
+
+# ── before_tool builtin method (connect bridge) ──────────────────────────
+
+
+async def test_raw_before_tool_ack(raw_server: dict[str, Any]) -> None:
+    """Full params: the default handler echoes tool/action/path/paths back."""
+    response = await _raw_one(
+        raw_server,
+        {
+            "jsonrpc": "2.0",
+            "method": "before_tool",
+            "params": {
+                "tool": "read",
+                "action": "read",
+                "path": "src/main.py",
+                "paths": ["a.py", "b.py"],
+                "cwd": "/work/project",
+            },
+            "id": 11,
+        },
+    )
+    assert response["jsonrpc"] == "2.0" and response["id"] == 11
+    assert "error" not in response
+    result = response["result"]
+    assert isinstance(result, dict)
+    assert set(result) == {"message", "tool", "action", "handled"}
+    assert result["tool"] == "read"
+    assert result["action"] == "read"
+    assert result["handled"] is True
+    message = result["message"]
+    assert message
+    assert "ack before_tool" in message
+    assert "tool=read" in message and "action=read" in message
+    assert "src/main.py" in message and "a.py" in message and "b.py" in message
+
+
+async def test_raw_before_tool_minimal_params_use_defaults(
+    raw_server: dict[str, Any]
+) -> None:
+    """Only ``tool`` is required; action defaults to "pre", path/paths omitted."""
+    response = await _raw_one(
+        raw_server,
+        {"jsonrpc": "2.0", "method": "before_tool", "params": {"tool": "write"}, "id": 12},
+    )
+    result = response["result"]
+    assert result["tool"] == "write"
+    assert result["action"] == "pre"
+    assert result["handled"] is True
+    assert result["message"] == "ack before_tool: tool=write action=pre"
+
+
+async def test_raw_before_tool_does_no_file_io_outside_root(raw_server: dict[str, Any]) -> None:
+    """Unlike read_file/write_file, before_tool never touches or confines paths."""
+    escape = "/tmp/somehow-outside.txt"
+    response = await _raw_one(
+        raw_server,
+        {
+            "jsonrpc": "2.0",
+            "method": "before_tool",
+            "params": {"tool": "edit", "action": "edit", "path": escape},
+            "id": 13,
+        },
+    )
+    assert "error" not in response
+    assert escape in response["result"]["message"]
+
+
+async def test_raw_before_tool_missing_tool_is_invalid_params(
+    raw_server: dict[str, Any]
+) -> None:
+    response = await _raw_one(
+        raw_server,
+        {
+            "jsonrpc": "2.0",
+            "method": "before_tool",
+            "params": {"path": "x.py", "action": "read"},
+            "id": 14,
+        },
+    )
+    assert response["id"] == 14
+    assert "result" not in response
+    assert response["error"]["code"] == INVALID_PARAMS
+    assert response["error"]["message"] == "Invalid params"
+    # the validation detail names the missing field
+    assert "tool" in str(response["error"]["data"])
+
+
+async def test_raw_before_tool_wrong_types_are_invalid_params(
+    raw_server: dict[str, Any]
+) -> None:
+    response = await _raw_one(
+        raw_server,
+        {
+            "jsonrpc": "2.0",
+            "method": "before_tool",
+            "params": {"tool": 5, "paths": "a.py"},  # tool must be str, paths list
+            "id": 15,
+        },
+    )
+    assert response["error"]["code"] == INVALID_PARAMS
+
+
+async def test_raw_before_tool_notification_writes_nothing_back(
+    raw_server: dict[str, Any]
+) -> None:
+    """A before_tool notification must not produce a response line.
+
+    The ping sent on the very same connection right after it is the probe: the
+    first line read back has to be the pong (an extra response would prove the
+    stream desynchronised).
+    """
+    reader, writer = await asyncio.open_connection(
+        str(raw_server["address"]), int(raw_server["port"]), limit=TCP_STREAM_LIMIT
+    )
+    try:
+        writer.write(
+            orjson.dumps(
+                {"jsonrpc": "2.0", "method": "before_tool", "params": {"tool": "read"}}
+            )
+            + b"\n"
+        )
+        writer.write(orjson.dumps({"jsonrpc": "2.0", "method": "ping", "id": 16}) + b"\n")
+        await asyncio.wait_for(writer.drain(), RPC_TIMEOUT)
+        line = await asyncio.wait_for(reader.readline(), RPC_TIMEOUT)
+    finally:
+        writer.close()
+        with contextlib.suppress(Exception):
+            await writer.wait_closed()
+    assert orjson.loads(line) == {"jsonrpc": "2.0", "id": 16, "result": "pong"}
+
+
+def test_before_tool_registered_on_default_registry() -> None:
+    from kimi_cli.session_server import DEFAULT_REGISTRY
+
+    assert "before_tool" in DEFAULT_REGISTRY
+    assert "before_tool" in DEFAULT_REGISTRY.names()
+
+
+async def test_before_tool_dispatch_in_process() -> None:
+    """The handler is pure sync echo logic: dispatch it without a transport."""
+    from kimi_cli.session_server import DEFAULT_REGISTRY, INVALID_PARAMS, JsonRpcError
+
+    result = await DEFAULT_REGISTRY.dispatch("before_tool", {"tool": "read_image", "paths": []})
+    assert result["action"] == "pre"
+    assert result["message"] == "ack before_tool: tool=read_image action=pre paths=[]"
+
+    with pytest.raises(JsonRpcError) as excinfo:
+        await DEFAULT_REGISTRY.dispatch("before_tool", {"action": "read"})
+    assert excinfo.value.code == INVALID_PARAMS
+async def test_tcp_client_rejects_all_stale_stream() -> None:
+    """Fix for review finding #2: when every buffered line is id-mismatched,
+    the client must raise ConnectionError instead of returning an unrelated
+    payload (a misbehaving server must not surface its stale data as a result).
+    """
+    from kimi_cli.session_server import _MAX_MISMATCHED_RESPONSES
+
+    reader = asyncio.StreamReader(limit=TCP_STREAM_LIMIT)
+    for i in range(_MAX_MISMATCHED_RESPONSES + 1):
+        reader.feed_data(
+            orjson.dumps({"jsonrpc": "2.0", "id": 9000 + i, "result": "stale"}) + b"\n"
+        )
+    reader.feed_eof()
+    client = JsonRpcClient()
+    client._reader = reader
+    client._writer = _FakeWriter()  # type: ignore[assignment]
+    try:
+        with pytest.raises(ConnectionError, match="no matching response id"):
+            await client.call("ping", timeout=5)
+    finally:
+        await client.close()

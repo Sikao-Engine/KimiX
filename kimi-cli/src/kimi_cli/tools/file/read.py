@@ -13,6 +13,7 @@ from rapidfuzz import fuzz
 from kaos.path import KaosPath
 from kimi_cli.session import Session
 from kimi_cli.soul.agent import Runtime
+from kimi_cli.tools.file.session_bridge import before_tool, merge_message
 from kimi_cli.tools.file.utils import MEDIA_SNIFF_BYTES, detect_file_type
 from kimi_cli.tools.utils import load_desc, truncate_line
 from kimi_cli.utils.logging import logger
@@ -221,6 +222,14 @@ class Params(BaseModel):
             "When True (default), extract supported documents as markdown-flavored text and convert "
             ".md/.html files to plain text. "
             "When False, use the legacy plain-text extractor."
+        ),
+    )
+    connect: bool = Field(
+        default=True,
+        description=(
+            "Query the session server (e.g. an LSP bridge sub-process) before "
+            "this operation and include its reply as extra information in the "
+            "result message. Set false to skip."
         ),
     )
 
@@ -594,6 +603,27 @@ class ReadFile(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
+        server_info: str | None = None
+        if getattr(params, "connect", False):
+            try:
+                raw = params.file_path
+                target_paths = [raw] if isinstance(raw, str) else list(raw)
+                work_dir = getattr(self, "_work_dir", None)
+                server_info = await before_tool(
+                    "read",
+                    "read",
+                    path=target_paths[0] if target_paths else None,
+                    paths=target_paths if len(target_paths) > 1 else None,
+                    cwd=str(work_dir) if work_dir is not None else None,
+                )
+            except Exception:
+                server_info = None
+        ret = await self._call_core(params)
+        if server_info:
+            ret = ret.model_copy(update={"message": merge_message(ret.message, server_info)})
+        return ret
+
+    async def _call_core(self, params: Params) -> ToolReturnValue:
         raw_paths: list[str] = (
             [params.file_path] if isinstance(params.file_path, str) else params.file_path
         )

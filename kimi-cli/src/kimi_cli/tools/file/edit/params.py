@@ -102,6 +102,15 @@ class EditParams(BaseModel):
         ),
     )
 
+    connect: bool = Field(
+        default=True,
+        description=(
+            "Query the session server (e.g. an LSP bridge sub-process) before "
+            "this operation and include its reply as extra information in the "
+            "result message. Set false to skip."
+        ),
+    )
+
     # Internal: resolved mode populated by model_validator.
     resolved_mode: EditMode | None = Field(default=None, exclude=True)
 

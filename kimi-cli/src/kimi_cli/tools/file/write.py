@@ -18,6 +18,7 @@ from kimi_cli.tools.file.check_fmt import (
     check_yaml_text,
 )
 from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
+from kimi_cli.tools.file.session_bridge import before_tool, merge_message
 from kimi_cli.utils.diff import build_diff_blocks, format_unified_diff
 from kimi_cli.utils.path import (
     is_within_directory,
@@ -137,6 +138,14 @@ class Params(BaseModel):
             "(bypasses the generated-file guard); default refuses."
         ),
     )
+    connect: bool = Field(
+        default=True,
+        description=(
+            "Query the session server (e.g. an LSP bridge sub-process) before "
+            "this operation and include its reply as extra information in the "
+            "result message. Set false to skip."
+        ),
+    )
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -204,6 +213,25 @@ class WriteFile(CallableTool2[Params]):
 
     @override
     async def __call__(self, params: Params) -> ToolReturnValue:
+        server_info: str | None = None
+        if getattr(params, "connect", False):
+            try:
+                work_dir = getattr(self, "_work_dir", None)
+                server_info = await before_tool(
+                    "write",
+                    "write",
+                    path=params.file_path,
+                    paths=None,
+                    cwd=str(work_dir) if work_dir is not None else None,
+                )
+            except Exception:
+                server_info = None
+        ret = await self._call_core(params)
+        if server_info:
+            ret = ret.model_copy(update={"message": merge_message(ret.message, server_info)})
+        return ret
+
+    async def _call_core(self, params: Params) -> ToolReturnValue:
         display_path = params.file_path.replace("\\", "/")
         # The former `TODO: checks:` block here asked for a "path may contain secrets"
         # warning.  That check is deliberately NOT implemented in the write path: refusing or

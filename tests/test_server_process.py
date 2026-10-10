@@ -2,7 +2,9 @@
 
 Covers: entry parsing/validation, conflicting-key handling with the dynamic
 ``config`` mode, real sub-process spawn + config-file handshake, the timeout
-path (with monkeypatched back-off delays), and process termination on stop.
+path (with monkeypatched back-off delays), process termination on stop, and the
+module-level live-server registry (register on start, unregister on
+stop/sync-stop/cancellation, snapshot copies, never-raising accessors).
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from kimi_agent_sdk._server_process import (
     CONFIG_WAIT_DELAYS,
     ServerProcess,
     ServerSpec,
+    get_live_server_processes,
     parse_server_entry,
     start_server_processes,
     stop_server_processes,
@@ -46,6 +49,18 @@ def _write_script(tmp_path: Path, name: str, body: str) -> str:
     script = tmp_path / name
     script.write_text(body, encoding="utf-8")
     return str(script)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_live_registry() -> Any:
+    """Keep the module-level live-server registry from leaking across tests.
+
+    start/stop already add/remove entries, but a failing assertion could leave
+    one behind; clear unconditionally around every test in this module.
+    """
+    server_process._clear_live_registry_for_tests()
+    yield None
+    server_process._clear_live_registry_for_tests()
 
 
 # ── parse_server_entry: valid entries ─────────────────────────────────────
@@ -411,3 +426,169 @@ async def test_session_accessor_and_startup_never_raises(tmp_path: Path) -> None
     assert len(session._server_processes) == 1
     assert session._server_processes[0].ready is False
     await stop_server_processes(session._server_processes)
+
+
+# ── live server registry (get_live_server_processes) ───────────────────
+
+
+def test_live_registry_is_empty_to_start() -> None:
+    assert get_live_server_processes() == []
+    assert server_process.get_live_server_processes() == []
+
+
+async def test_live_registry_start_then_stop(tmp_path: Path) -> None:
+    """A started server is registered; stopping it removes it again."""
+    script = _write_script(tmp_path, "sleeper.py", _SLEEP)
+    servers = await start_server_processes(
+        tmp_path,
+        [{"cmd": sys.executable, "args": [script, "60"], "port": 40011}],
+    )
+    assert len(servers) == 1
+    server = servers[0]
+    try:
+        live = get_live_server_processes()
+        assert any(s is server for s in live)
+        # the accessor returns a snapshot copy, not the registry itself
+        assert live is not server_process._LIVE_SERVERS
+        live.clear()
+        assert any(s is server for s in get_live_server_processes())
+    finally:
+        await stop_server_processes(servers)
+    assert not any(s is server for s in get_live_server_processes())
+    assert get_live_server_processes() == []
+
+
+async def test_live_registry_registers_via_out_list(tmp_path: Path) -> None:
+    """The caller-owned ``out`` buffer registers identically to the return list."""
+    script = _write_script(tmp_path, "sleeper.py", _SLEEP)
+    out: list[ServerProcess] = []
+    servers = await start_server_processes(
+        tmp_path,
+        [{"cmd": sys.executable, "args": [script, "60"], "port": 40012}],
+        out=out,
+    )
+    assert servers is out and len(out) == 1
+    assert any(s is out[0] for s in get_live_server_processes())
+    await stop_server_processes(out)
+    assert get_live_server_processes() == []
+
+
+async def test_live_registry_sync_stop_removes(tmp_path: Path) -> None:
+    script = _write_script(tmp_path, "sleeper.py", _SLEEP)
+    servers = await start_server_processes(
+        tmp_path,
+        [{"cmd": sys.executable, "args": [script, "60"], "port": 40013}],
+    )
+    server = servers[0]
+    assert any(s is server for s in get_live_server_processes())
+    stop_server_processes_sync(servers)
+    assert not any(s is server for s in get_live_server_processes())
+    assert get_live_server_processes() == []
+    if server.process is not None:
+        await asyncio.wait_for(server.process.wait(), 10)
+
+
+async def test_live_registry_cancellation_removes_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cancel mid-start: registered before start(), removed by the cleanup."""
+    monkeypatch.setattr(server_process, "CONFIG_WAIT_DELAYS", (30,))
+    work = tmp_path / "work"
+    work.mkdir()
+    script = _write_script(tmp_path, "sleeper.py", _SLEEP)
+    out: list[ServerProcess] = []
+    task = asyncio.create_task(
+        start_server_processes(
+            work,
+            [{"cmd": sys.executable, "args": [script, "120"], "config": ".kimix/never.json"}],
+            out=out,
+        )
+    )
+    deadline = asyncio.get_running_loop().time() + 10
+    while not out or out[0].process is None:
+        if asyncio.get_running_loop().time() > deadline:
+            pytest.fail("child process was never spawned")
+        await asyncio.sleep(0.02)
+    server = out[0]
+    # registration happens *before* start() completes: live while still polling
+    assert any(s is server for s in get_live_server_processes())
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not any(s is server for s in get_live_server_processes())
+    assert server.process is not None
+    assert await asyncio.wait_for(server.process.wait(), 15) is not None
+
+
+def test_live_registry_removal_tolerates_unregistered_servers() -> None:
+    """stop() on a never-started server must not raise and must not add entries."""
+    server = ServerProcess(ServerSpec(cmd="x", port=1), Path("."))
+    stop_server_processes_sync([server])
+    stop_server_processes_sync(None)
+    assert get_live_server_processes() == []
+
+
+class _ExplodingLock:
+    """threading.Lock stand-in whose acquisition always fails."""
+
+    def __enter__(self) -> None:
+        raise RuntimeError("lock boom")
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+
+def test_get_live_server_processes_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server_process, "_LIVE_LOCK", _ExplodingLock())
+    assert get_live_server_processes() == []
+
+
+def test_live_registry_registration_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server_process, "_LIVE_LOCK", _ExplodingLock())
+    server = ServerProcess(ServerSpec(cmd="x", port=1), Path("."))
+    server_process._register_live_server(server)
+    server_process._unregister_live_servers([server])
+async def test_live_registry_drops_server_whose_start_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fix for review finding #4: a server whose start() raises a normal
+    Exception must not linger in the live registry (the caller may discard the
+    returned list, so nothing else would ever unregister it).
+    """
+
+    async def _boom(self: Any) -> None:  # noqa: ANN401
+        raise RuntimeError("start exploded")
+
+    monkeypatch.setattr(ServerProcess, "start", _boom)
+    entry = {"cmd": sys.executable, "args": ["-c", "pass"], "port": 1}
+    servers = await start_server_processes(tmp_path, [entry])
+    assert len(servers) == 1  # the entry is still reported to the caller
+    assert get_live_server_processes() == []  # but not left in the registry
+
+
+async def test_live_registry_keeps_server_when_later_entry_start_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the server that was starting is dropped; earlier good ones stay."""
+    calls = {"n": 0}
+    real_start = ServerProcess.start
+
+    async def _second_booms(self: Any) -> None:  # noqa: ANN401
+        calls["n"] += 1
+        if calls["n"] == 1:
+            await real_start(self)
+            return
+        raise RuntimeError("start exploded")
+
+    monkeypatch.setattr(ServerProcess, "start", _second_booms)
+    entries = [
+        {"cmd": sys.executable, "args": ["-c", "pass"], "port": 1},
+        {"cmd": sys.executable, "args": ["-c", "pass"], "port": 2},
+    ]
+    servers = await start_server_processes(tmp_path, entries)
+    try:
+        assert len(servers) == 2
+        assert get_live_server_processes() == [servers[0]]
+    finally:
+        await stop_server_processes(servers)
+    assert get_live_server_processes() == []

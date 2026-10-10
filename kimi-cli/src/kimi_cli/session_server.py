@@ -658,10 +658,18 @@ class JsonRpcClient:
                 return response
             if response.get("id") == expected_id:
                 return response
-            logger.warning(
-                "skipping stale TCP response (id=%r, expected %r)",
-                response.get("id"),
-                expected_id,
+                logger.warning(
+                    "skipping stale TCP response (id=%r, expected %r)",
+                    response.get("id"),
+                    expected_id,
+                )
+        # Every line read was a stale (id-mismatched) response: a well-behaved
+        # server never does this, so refuse to hand an unrelated payload back
+        # to the caller (it would otherwise be surfaced as a valid result).
+        if single and isinstance(response, dict):
+            raise ConnectionError(
+                f"no matching response id ({expected_id!r}) after "
+                f"{_MAX_MISMATCHED_RESPONSES} stale lines"
             )
         return response
 
@@ -815,6 +823,25 @@ class AddParams(BaseModel):
     b: float
 
 
+class BeforeToolParams(BaseModel):
+    """Params of the ``before_tool`` hook (see docs/tool_connect_bridge.md)."""
+
+    tool: str
+    action: str = "pre"
+    path: str | None = None
+    paths: list[str] | None = None
+    cwd: str | None = None
+
+
+class BeforeToolResult(BaseModel):
+    """Result of ``before_tool``; the bridge appends ``message`` to the tool."""
+
+    message: str
+    tool: str
+    action: str
+    handled: bool = True
+
+
 DEFAULT_REGISTRY = MethodRegistry()
 
 
@@ -853,6 +880,22 @@ def _write_file(params: WriteFileParams) -> dict[str, Any]:
 @DEFAULT_REGISTRY.method("add", params_model=AddParams)
 def _add(params: AddParams) -> dict[str, float]:
     return {"sum": params.a + params.b}
+
+
+@DEFAULT_REGISTRY.method("before_tool", params_model=BeforeToolParams)
+def _before_tool(params: BeforeToolParams) -> BeforeToolResult:
+    """Default echo implementation of the tool pre-call hook.
+
+    It only "repeats" the call back so the round-trip is provable end to end
+    (pure sync, no file IO, no ``--root`` interaction). External servers — an
+    LSP bridge, for example — replace this method with real diagnostics.
+    """
+    message = f"ack before_tool: tool={params.tool} action={params.action}"
+    if params.path is not None:
+        message += f" path={params.path}"
+    if params.paths is not None:
+        message += f" paths={params.paths}"
+    return BeforeToolResult(message=message, tool=params.tool, action=params.action)
 
 
 # ----------------------------------------------------------------------------

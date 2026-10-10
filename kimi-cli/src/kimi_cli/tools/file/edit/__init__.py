@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from typing import override
+
 from kimi_cli.session import Session
 from kimi_cli.soul.agent import Runtime
 from kimi_cli.soul.approval import Approval
+from kimi_cli.tools.file.session_bridge import before_tool, merge_message
 from kimi_cli.vfs import VFS
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 
@@ -41,7 +44,27 @@ class EditFile(CallableTool2[EditParams]):
     def _vfs(self):
         return self._tool._vfs
 
+    @override
     async def __call__(self, params: EditParams) -> ToolReturnValue:
+        server_info: str | None = None
+        if getattr(params, "connect", False):
+            try:
+                work_dir = getattr(self, "_work_dir", None)
+                server_info = await before_tool(
+                    "edit",
+                    "edit",
+                    path=params.file_path,
+                    paths=None,
+                    cwd=str(work_dir) if work_dir is not None else None,
+                )
+            except Exception:
+                server_info = None
+        ret = await self._call_core(params)
+        if server_info:
+            ret = ret.model_copy(update={"message": merge_message(ret.message, server_info)})
+        return ret
+
+    async def _call_core(self, params: EditParams) -> ToolReturnValue:
         if params.resolved_mode is None:
             # Validation should always populate this, but repair if needed.
             params.resolved_mode = normalize_edit_mode(params.mode) or "replace"
