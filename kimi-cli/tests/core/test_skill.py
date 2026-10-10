@@ -1342,8 +1342,9 @@ async def test_resolve_skills_roots_extra_skill_dirs_symlink_stored_root_is_real
 ):
     """The stored root is the real target path, not the symlink the user typed.
 
-    Important for the system prompt's ``Path:`` field: showing the real path
-    keeps ``Path:`` lines stable across users who happen to add different
+    Important for skill resolution: the stored root feeds each skill's
+    ``SKILL.md`` path (read on demand by the ``skill`` tool), so keeping it the
+    real path stays stable across users who happen to add different
     symlinks to the same underlying directory.
     """
     import kimi_cli.skill as skill_mod

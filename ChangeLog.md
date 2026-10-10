@@ -1,5 +1,23 @@
 # ChangeLog
 
+## 2026-10-11 — Add `skill` tool; drop skill file paths from the system prompt
+
+- New tool `kimi_cli.tools.skill:skill` (`SkillTool`): takes a skill `name`,
+  resolves it against `Runtime.skills` (normalized/case-insensitive), and
+  returns the skill's `SKILL.md` markdown as the tool `output`. An unknown name
+  returns a `ToolError` whose `message` names the missing skill and lists the
+  available ones; an unreadable document also returns a `ToolError`.
+- Registered `kimi_cli.tools.skill:skill` in all five agent manifests
+  (`src/kimix/agent_{boss,planner,readonly,subagent,worker}.json`).
+- `format_skills_for_prompt` no longer emits the `- Path: <skill_md_file>` line
+  for each skill: the system prompt now lists only the skill name and
+  description, plus a single trailing hint pointing at the `skill` tool. The
+  model reads a skill's document on demand instead of by file path, keeping the
+  prompt shorter and path-agnostic.
+- Tests: new `kimi-cli/tests/tools/test_skill_tool.py`; updated
+  `test_skills_prompt.py`, `test_builtin_kimix_api_skill.py` and `test_skill.py`
+  for the path-free prompt block.
+
 ## 2026-10-11 — Relocate remaining `kimix.tools` packages into `kimi_cli.tools`
 
 Finished the tool-package migration started earlier (which had already moved

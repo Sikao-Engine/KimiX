@@ -348,19 +348,29 @@ define a skill with the same name.
 """
 
 
+_SKILL_TOOL_HINT = "Use the `skill` tool with a skill name to read its full SKILL.md document."
+
+
 def format_skills_for_prompt(skills: Iterable[Skill]) -> str:
     """Render *skills* grouped by scope for injection into the system prompt.
+
+    Only the name and description of each skill are emitted — file paths are
+    deliberately omitted. The model fetches a skill's full document on demand
+    via the ``skill`` tool, so the prompt stays short and path-agnostic.
 
     Output layout::
 
         ### Project
         - <name>
-          - Path: <skill_md_file>
           - Description: <description>
 
         ### User
         - ...
 
+        Use the `skill` tool with a skill name to read its full SKILL.md document.
+
+    A trailing hint line telling the model how to load a skill's full document
+    is appended once at the end of the whole block (never per scope).
     Empty scope groups are omitted. The model uses these headings to distinguish
     user-scope and project-scope skills when responding to prompts like
     "the skill in my project".
@@ -377,13 +387,13 @@ def format_skills_for_prompt(skills: Iterable[Skill]) -> str:
         lines = [f"### {heading}"]
         for skill in sorted(bucket, key=lambda s: s.name):
             lines.append(f"- {skill.name}")
-            lines.append(f"  - Path: {skill.skill_md_file}")
             lines.append(f"  - Description: {skill.description}")
         sections.append("\n".join(lines))
 
     if not sections:
         return "No skills found."
-    return "\n\n".join(sections)
+    return "\n\n".join(sections) + "\n\n" + _SKILL_TOOL_HINT
+
 
 class Skill(BaseModel):
     """Information about a single skill."""

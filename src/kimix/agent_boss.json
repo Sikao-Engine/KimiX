@@ -16,7 +16,8 @@
       "kimi_cli.tools.subagent:interrupt_agent",
       "kimi_cli.tools.swarm:workflow",
       "kimi_cli.tools.todo:todo_list",
-      "kimi_cli.tools.context:compact"
+      "kimi_cli.tools.context:compact",
+      "kimi_cli.tools.skill:skill"
     ]
   }
 }

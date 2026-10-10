@@ -8,7 +8,8 @@
       "kimi_cli.tools.file:grep",
       "kimi_cli.tools.web.kimix_fetch:fetch_url",
       "kimi_cli.tools.web:web_search",
-      "kimi_cli.tools.context:compact"
+      "kimi_cli.tools.context:compact",
+      "kimi_cli.tools.skill:skill"
     ]
   }
 }

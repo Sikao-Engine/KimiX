@@ -69,11 +69,14 @@ async def test_kimix_api_discovered_as_builtin_and_rendered_like_skill_creator(
     assert "### Built-in" in rendered
     assert "- kimix_api" in rendered
     assert "- skill-creator" in rendered
-    # Identical entry shape (name / Path / Description triple) for both skills.
+    # Identical entry shape (name + Description pair) for both skills —
+    # no file paths are rendered into the prompt.
     for name in BUILTIN_SKILL_NAMES:
-        assert f"- {name}\n  - Path:" in rendered
-        assert f"  - Description:" in rendered
+        assert f"- {name}\n  - Description:" in rendered
+    assert "Path:" not in rendered
     # kimix_api keeps its real frontmatter description — no generic fallback text.
     assert "Project skill `kimix_api`" not in rendered
-    # kimix_api's path points into the builtin skills root, like skill-creator's.
-    assert str(get_builtin_skills_dir()) in rendered
+    # Skill file paths are no longer exposed; the model loads documents via
+    # the `skill` tool, hinted at the end of the block.
+    assert str(get_builtin_skills_dir()) not in rendered
+    assert "Use the `skill` tool" in rendered

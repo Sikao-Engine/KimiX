@@ -72,6 +72,12 @@ def test_format_skills_for_prompt_groups_by_scope():
 
     assert "proj-a" not in _section("### User")
     assert "user-a" not in _section("### Project")
+    # The skill-tool hint is appended once at the end of the whole block,
+    # not per scope.
+    assert rendered.count("Use the `skill` tool") == 1
+    assert rendered.rstrip().endswith(
+        "Use the `skill` tool with a skill name to read its full SKILL.md document."
+    )
 
 
 def test_format_skills_for_prompt_omits_empty_groups():
@@ -95,16 +101,21 @@ def test_format_skills_for_prompt_empty_input_returns_placeholder():
     assert "No skills" in rendered or "no skills" in rendered.lower()
 
 
-def test_format_skills_for_prompt_lists_name_path_description():
-    """Each skill line carries name, path, description (preserves existing shape)."""
+def test_format_skills_for_prompt_lists_name_and_description():
+    """Each skill line carries name and description only — no file paths."""
     skills = [_skill("alpha", "user", description="Alpha does things")]
 
     rendered = format_skills_for_prompt(skills)
 
     assert "alpha" in rendered
     assert "Alpha does things" in rendered
-    # Path is included (helps model read the skill on demand)
-    assert "/tmp/user/alpha" in rendered or r"\tmp\user\alpha" in rendered
+    # Paths are no longer rendered into the system prompt: the model reads the
+    # full skill document on demand via the `skill` tool instead.
+    assert "Path:" not in rendered
+    assert "/tmp/user/alpha" not in rendered
+    # Trailing hint tells the model how to load the document.
+    assert "skill" in rendered
+    assert "Use the `skill` tool" in rendered
 
 
 def test_format_skills_for_prompt_sorts_within_scope():
@@ -245,13 +256,15 @@ async def test_end_to_end_project_override_renders_correctly(tmp_path, monkeypat
     )
     assert "foo" in project_section
 
-    # (c) Path points at the project's SKILL.md, not any other scope's.
-    assert str(proj_foo_md) in rendered
-
+    # (c) Paths are no longer rendered into the prompt (the model loads skill
+    # documents via the `skill` tool instead).
+    assert "Path:" not in rendered
+    assert str(proj_foo_md) not in rendered
     # (d) The description is the project version.
     assert "project version" in rendered
 
     # (e) None of the shadowed versions leak into the rendered prompt.
+
     assert "builtin version" not in rendered
     assert "user version" not in rendered
     assert "extra version" not in rendered

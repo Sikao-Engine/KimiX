@@ -10,7 +10,8 @@
       "kimi_cli.tools.web:web_search",
       "kimi_cli.tools.note:write_plan",
       "kimi_cli.tools.note:read_plan",
-      "kimi_cli.tools.note:edit_plan"
+      "kimi_cli.tools.note:edit_plan",
+      "kimi_cli.tools.skill:skill"
     ]
   }
 }
