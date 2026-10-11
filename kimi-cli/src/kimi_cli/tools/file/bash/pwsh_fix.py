@@ -59,12 +59,6 @@ from __future__ import annotations
 from kimi_cli.native_loader import (
     get_compat as _native_get_compat,
 )
-from kimi_cli.native_loader import (
-    get_module as _native_get_module,
-)
-from kimi_cli.native_loader import (
-    use_native as _native_use_native,
-)
 
 # The canonical pure-Python implementation (the historical body of this
 # module) lives in the kimix_native shim so there is exactly one copy of the
@@ -92,22 +86,19 @@ _W_STOP_PARSING = _shell._W_STOP_PARSING
 _W_COMMENT_ONLY = _shell._W_COMMENT_ONLY
 _W_TRAILING_CONTINUATION = _shell._W_TRAILING_CONTINUATION
 
-# Resolved once at import time (stable runtime: result never changes).
-_NATIVE_PARSE = _native_get_module("parse")
-
-
 def fix_pwsh_command(cmd: str) -> PwshFix | None:
     """Validate *cmd* with PowerShell quoting rules and repair it if possible.
 
     Returns a :class:`PwshFix` (``command`` may equal *cmd* when the command
     is already legal), or ``None`` when the command cannot be repaired.
+
+    Always pure Python: the canonical implementation lives in
+    ``bin/kimix_native/_shell_compat.py``.  The compiled ``runtime_py``
+    kernel is deliberately NOT used for shell parsing — it predates the
+    current null-device (``> nul``) rewrite rules and returns no warning
+    strings, so routing through it can mis-repair a command or drop the
+    diagnostic the tool surfaces to the model.
     """
     if not cmd or not cmd.strip():
         return None
-    # Native acceleration: kimix_native.parse.fix_pwsh_command.
-    if _native_use_native("PARSE") and _NATIVE_PARSE is not None:
-        result = _NATIVE_PARSE.fix_pwsh_command(cmd)
-        if result is None:
-            return None
-        return PwshFix(command=result.command, warning=result.warning)
     return _shell.fix_pwsh_command(cmd)

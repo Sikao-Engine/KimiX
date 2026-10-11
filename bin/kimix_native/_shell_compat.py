@@ -755,6 +755,22 @@ _WRAPPER_OPERAND_COUNTS = {"timeout": 1}
 # prefix is directly callable, so the source word is kept (no standalone
 # runner rewrite is needed or possible).
 _SAME_SHELL_WRAPPERS = frozenset({"builtin", "coproc", "time", "watch"})
+# Builtins whose *operand words* are re-parsed as shell code at runtime, so a
+# quoted operand is an inline script: ``eval`` concatenates and re-parses all
+# of its operands, ``trap`` stores its first operand and re-parses it when the
+# signal fires (the rest are signal specs — data).  Value -1 means "every
+# operand"; a positive value counts the leading operands that are scripts.
+# Scanning the operand's literal value as its own command context means the
+# null-device rewrite (``> nul``) and the other compatibility fixes reach the
+# code that actually runs.
+_REPARSE_BUILTINS = {"eval": -1, "trap": 1}
+# Command words that pass part of their argv to a *child process* for
+# execution (``find -exec``, ``xargs``), or that re-parse their operands
+# (``eval``).  Only for these is an argument-position shell word
+# (``... sh -c '<script>'``) a real inline script whose redirections run; for
+# any other command (``echo sh -c 'x > nul'``) the words are data and must
+# stay untouched.
+_EXEC_OPERAND_COMMANDS = frozenset({"find", "xargs", "eval", "ssh", "watch"})
 
 # Shell executables that agents frequently put in front of a command the Bash
 # tool is already going to run (``bash cd /c/dev/x && ...``).  Git Bash can
@@ -770,6 +786,9 @@ _SHELL_WRAPPERS = frozenset({"bash", "sh", "dash", "ash"})
 # ``-ec``/``-ce``/``-xc`` that change errexit/xtrace semantics are left for
 # bash to handle so unwrapping cannot alter the script's meaning.
 _SHELL_C_OPTIONS = re.compile(r"^-c$|^-lc$|^-cl$")
+# Option clusters whose *last* flag is ``c`` (``-c``, ``-lc``, ``-ec``,
+# ``-ilc``): the next word is the shell's inline script.
+_SHELL_C_SCRIPT_OPTION_RE = re.compile(r"^-[A-Za-z]*c$")
 _WRAPPER_OPTIONS_WITH_VALUE = {
     "env": frozenset(
         {
@@ -931,9 +950,14 @@ class BashFix:
     ``shell_wrappers`` records each redundant ``bash``/``sh``
     invocation that was unwrapped (``bash <cmd> ...`` or ``bash -c <script>``)
     so the command runs directly in the Bash tool.  ``nul_fixes`` records each
-    unquoted redirection target ``nul``/``NUL`` that was rewritten to
-    ``/dev/null`` (Git Bash treats ``nul`` as an ordinary filename, silently
-    creating an empty ``nul`` file instead of discarding output).
+    redirection target whose literal value is the bare word ``nul``/``NUL``
+    (plain, backslash-escaped ``\\nul``/``n\\ul``, ANSI-C ``$'nul'``, or
+    empty-quote-concatenated ``nul''``) that was rewritten to ``/dev/null`` —
+    including inside runtime-reparsed strings (``eval``/``trap`` operands,
+    ``watch`` and nested ``sh -c`` scripts) — because Git Bash treats ``nul``
+    as an ordinary filename, silently creating an empty ``nul`` file instead
+    of discarding output.  A whole-token quoted ``'nul'``/``"nul"`` target
+    stays untouched (documented intentional-filename policy).
     ``unsupported`` records each command name that has no faithful Windows
     Git Bash equivalent (see ``_UNSUPPORTED_BODIES`` for the reasons); the
     command text is left byte-for-byte unchanged for those.  Empty tuples
@@ -1117,7 +1141,7 @@ class _BashFixScanner:
                 while i < len(raw) and raw[i] != '"':
                     inner = raw[i]
                     if inner in "$`":
-                        return None
+                        return None  # runtime expansion: not a literal word
                     if inner == "\\" and i + 1 < len(raw):
                         escaped = raw[i + 1]
                         if escaped in '$`"\\\n':
@@ -1131,11 +1155,153 @@ class _BashFixScanner:
                     return None
                 i += 1
                 continue
+            if ch == "$" and raw.startswith("$'", i):
+                literal = _BashFixScanner._ansi_c_literal_span(raw, i)
+                if literal is None:
+                    return None
+                text, i = literal
+                value.append(text)
+                continue
+            if ch == "$" and raw.startswith('$"', i):
+                # ``$"..."`` is locale translation: on Git Bash (no message
+                # catalog) the value is the plain double-quoted body.
+                close = i + 2
+                while close < len(raw):
+                    if raw[close] == "\\" and close + 1 < len(raw):
+                        close += 2
+                        continue
+                    if raw[close] == '"':
+                        break
+                    close += 1
+                if close >= len(raw):
+                    return None
+                inner_literal = _BashFixScanner._literal_word_value(
+                    raw[i + 1 : close + 1]
+                )
+                if inner_literal is None:
+                    return None
+                value.append(inner_literal)
+                i = close + 1
+                continue
             if ch in "$`*?[{~":
                 return None
             value.append(ch)
             i += 1
         return "".join(value)
+
+    @staticmethod
+    def _ansi_c_literal_span(raw: str, i: int) -> tuple[str, int] | None:
+        """Decode the ``$'...'`` ANSI-C quote starting at *i* in *raw*.
+
+        Returns ``(value, index_after_closing_quote)``, or ``None`` when the
+        quote is unterminated or holds an unsupported escape (unicode
+        ``\\u``/``\\U`` and multibyte octal sequences are rejected rather than
+        approximated).  Supported escapes mirror bash: ``\\a \\b \\e \\E \\f
+        \\n \\r \\t \\v \\\\ \\' \\" \\? \\c<char>`` plus octal ``\\[0-7]{1,3}``
+        and hex ``\\x{1,2}`` for single-byte values.
+        """
+        if not raw.startswith("$'", i):
+            return None
+        body_start = i + 2
+        j = body_start
+        out: list[str] = []
+        while j < len(raw):
+            ch = raw[j]
+            if ch == "'":
+                return "".join(out), j + 1
+            if ch != "\\":
+                out.append(ch)
+                j += 1
+                continue
+            j += 1
+            if j >= len(raw):
+                return None
+            esc = raw[j]
+            simple = {
+                "a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f",
+                "n": "\n", "r": "\r", "t": "\t", "v": "\v", "\\": "\\",
+                "'": "'", '"': '"', "?": "?",
+            }
+            if esc in simple:
+                out.append(simple[esc])
+                j += 1
+                continue
+            if esc == "c":
+                if j + 1 >= len(raw):
+                    return None
+                ctrl = raw[j + 1]
+                out.append(chr(ord(ctrl.upper()) & 0x1F))
+                j += 2
+                continue
+            if esc in "01234567":
+                digits = ""
+                k = j
+                while k < len(raw) and len(digits) < 3 and raw[k] in "01234567":
+                    digits += raw[k]
+                    k += 1
+                code = int(digits, 8)
+                if code > 0x7F:
+                    return None  # multibyte octal: unsupported, be safe
+                out.append(chr(code))
+                j = k
+                continue
+            if esc == "x":
+                digits = ""
+                k = j + 1
+                while (
+                    k < len(raw)
+                    and len(digits) < 2
+                    and raw[k] in "0123456789abcdefABCDEF"
+                ):
+                    digits += raw[k]
+                    k += 1
+                if not digits:
+                    return None
+                code = int(digits, 16)
+                if code > 0x7F:
+                    return None
+                out.append(chr(code))
+                j = k
+                continue
+            if esc in "uU":
+                return None  # unicode escapes: not worth approximating
+            return None  # unknown escape: bash copies it, but stay conservative
+        return None  # unterminated
+
+    @classmethod
+    def _is_effective_nul_target(cls, raw: str) -> bool:
+        """Return True when redirection target word *raw* resolves to ``nul``.
+
+        True for every spelling whose literal value (after bash quote removal
+        / ANSI-C expansion) is exactly the word ``nul`` in any case: ``nul``,
+        ``\\nul``, ``n\\ul``, ``$'nul'``, ``$'\\156ul'``, ``'nul'``,
+        ``"nul"``.  All of these create an ordinary file named ``nul`` under
+        Git Bash (verified), which is essentially always an accidental
+        Windows-ism for ``/dev/null``.  Words containing runtime expansions
+        (``$(...)``, backticks, ``${...}``, ``$var``) only resolve when the
+        command runs and are rejected, as is any word whose value is a
+        different string (``nul.txt``, ``null``, ``annul``).
+        """
+        if not raw:
+            return False
+        # Runtime-resolved words: leave untouched (a ``$var``/``$(...)``
+        # target is data the scanner cannot evaluate).  ``$'...'`` and
+        # ``$\"...\"`` are literal (no runtime expansion) and are decodable.
+        if "$" in raw and not raw.startswith(("$'", '$"')):
+            return False
+        if "`" in raw:
+            return False
+        # Documented policy: a *whole-token* quoted ``'nul'``/``"nul"`` is an
+        # intentional filename and is preserved byte-for-byte.  Accidental
+        # spellings that still resolve to the word ``nul`` — ``\\nul``,
+        # ``n\\ul``, ``$'nul'``, ``''nul``, ``nul''``, ``n""ul`` — are not a
+        # deliberate choice and are rewritten.
+        if raw[:1] in ("'", '"') and raw[-1:] == raw[:1] and len(raw) >= 2:
+            inner = raw[1:-1]
+            if inner.casefold() == "nul" and "\\" not in inner:
+                return False
+        value = cls._literal_word_value(raw)
+        return value is not None and value.casefold() == "nul"
 
     @staticmethod
     def _literal_command_name(raw: str) -> str | None:
@@ -1148,6 +1314,20 @@ class _BashFixScanner:
         """Return the unsupported command name produced by Bash quote removal."""
         name = _BashFixScanner._literal_word_value(raw)
         return name if name is not None and name in _UNSUPPORTED_BODIES else None
+
+    @staticmethod
+    def _reparse_builtin_name(raw: str) -> int | None:
+        """Return the operand count when *raw* is a literal reparse builtin.
+
+        ``eval`` (``\\eval``, ``'eval'`` and ``ev""al`` all resolve to it)
+        re-parses every operand; ``trap`` re-parses only its first (the rest
+        are signal specs).  Returns ``-1`` for "all operands" or a positive
+        count, ``None`` for any other word.
+        """
+        name = _BashFixScanner._literal_word_value(raw)
+        if name is None:
+            return None
+        return _REPARSE_BUILTINS.get(name)
 
     @staticmethod
     def _shell_wrapper_name(raw: str) -> str | None:
@@ -1314,24 +1494,94 @@ class _BashFixScanner:
         # the active wrapper in place.
         return j, wrapped
 
-    def _watch_command_operand(
+    def _fix_shell_c_script_in_place(self, i: int, end: int) -> int | None:
+        """Fix the ``-c`` inline script of a shell word seen as an *operand*.
+
+        Covers shells invoked by another program (``find . -exec sh -c '...'
+        \\;``, ``xargs -I{} sh -c '...'``) and command-position forms the
+        unwrapper refuses to restructure (``bash -e -c '...'``, a script with
+        trailing argv): the nested shell really runs, so the wrapper stays and
+        only the quoted script operand is scanned and re-emitted in place —
+        the same in-place repair the wrapped ``bash -c`` path performs.
+        Returns the scan index after the script word, or ``None`` when no
+        ``-c``-style option/script pair was found (nothing was changed).
+        """
+        s = self.s
+        k = i
+        script_start = -1
+        script_end = -1
+        expect_script = False
+        while k < end:
+            while k < end and s[k] in " \t\r":
+                k += 1
+            if k >= end or s[k] in _OPERATOR_CHARS or s[k] == "#":
+                return None
+            word_end = self._read_word(k, end, scan_substitutions=False)
+            if word_end <= k:
+                return None
+            if expect_script:
+                # The word right after the ``-c`` option is the inline script.
+                script_start, script_end = k, word_end
+                break
+            raw = s[k:word_end]
+            if _SHELL_C_SCRIPT_OPTION_RE.match(raw):
+                expect_script = True
+            elif raw.startswith("-"):
+                pass  # another option (``-e``, ``-l``): keep looking
+            else:
+                # A plain operand before any ``-c`` (``sh script.sh``,
+                # ``--rcfile``'s value): not an inline-script form.
+                return None
+            k = word_end
+        if script_start < 0:
+            return None
+        script_raw = s[script_start:script_end]
+        script = self._literal_word_value(script_raw)
+        if script is None:
+            return script_end  # runtime expansions inside: leave for bash
+        try:
+            inner = _BashFixScanner(script)
+            inner._scan_range(0, len(script))
+        except RecursionError:
+            return script_end
+        if not inner.nul_fixes and not inner.path_notes:
+            # Only null-device (``> nul``) and Windows-path rewrites are
+            # applied inside a nested shell's ``-c`` script.  Fallback-command
+            # definitions are NOT: they are exported to children of *this*
+            # shell, but a genuinely nested ``bash -e -c`` process does not
+            # inherit them, and the established contract leaves such
+            # invocations byte-for-byte untouched.
+            return script_end
+        fixed = _fix_heredoc_trailing_operators(inner._build_source())
+        self.path_notes.extend(inner.path_notes)
+        self.nul_fixes.extend(inner.nul_fixes)
+        if inner.edits:
+            self.edits.append((script_start, script_end, _single_quote(fixed)))
+        return script_end
+
+    def _inline_script_operand(
         self, word_start: int, word_end: int, raw: str
     ) -> bool:
-        """Fix the inline script of a quoted ``watch`` command operand.
+        """Fix the inline script of a quoted runtime-reparsed operand.
+            Shared by the constructs whose quoted operand is re-parsed as shell
+            code at *runtime*: procps ``watch`` (executes its command line
+            through ``sh -c``; the Git Bash fallback mirrors that with
+            ``eval "$*"``), ``eval`` (concatenates its operands and re-parses
+            them), and ``trap`` (stores its first operand and re-parses it when
+            the signal fires).  A quoted operand (``watch -n1 'rev <<< abc'``,
+            ``eval 'foo > nul'``, ``trap 'foo > nul' EXIT``) is therefore an
+            inline script: its literal value is scanned as its own command
+            context and re-emitted with the inner fixes applied, so fallback
+            names, Windows paths, and ``> nul`` null-device redirections inside
+            it work.  Unquoted operands need no special handling here — they
+            flow through the normal word rules.
 
-        procps ``watch`` executes its command line through ``sh -c``, and the
-        Git Bash fallback mirrors that with ``eval "$*"`` in the current
-        shell.  A quoted operand (``watch -n1 'rev <<< abc'``) is therefore an
-        inline script: its literal value is scanned as its own command context
-        and re-emitted with the inner fixes applied, so fallback names and
-        Windows paths inside it work.  Unquoted operands need no special
-        handling here — they flow through the normal command-word rules.
-        Returns ``True`` when the word was consumed as an inline script (any
-        quoted operand): the caller must not also treat it as a command word,
-        or a script that *is* a single fallback name (``watch 'uptime'``)
-        would be recorded twice.
-        """
-        if not (raw.startswith("'") or raw.startswith('"')):
+            Returns ``True`` when the word was consumed as an inline script (any
+            quoted operand): the caller must not also treat it as a command word,
+            or a script that *is* a single fallback name (``watch 'uptime'``)
+            would be recorded twice.
+            """
+        if not raw.startswith(("'", '"', "$'", '$"')):
             return False
         script = self._literal_word_value(raw)
         if script is None:
@@ -1397,6 +1647,15 @@ class _BashFixScanner:
         # this line; a following ``bash`` wrapper must keep its shell-process
         # scoping, so it is not unwrapped (``VAR=x bash -c 'echo $VAR'``).
         assignment_prefix = False
+        # Non-zero right after a command-position reparse builtin (``eval``,
+        # ``trap``): the following argument words are inline scripts.  -1
+        # means every operand (``eval``); a positive count covers only the
+        # leading operands (``trap``'s single script operand).
+        reparse_operands = 0
+        # Literal value of the command word of the current simple command
+        # (used to decide whether argument words can be executed by the
+        # command, e.g. ``find -exec sh -c``; see _EXEC_OPERAND_COMMANDS).
+        command_word: str | None = None
 
         while i < end:
             ch = s[i]
@@ -1419,6 +1678,8 @@ class _BashFixScanner:
                 herestring_flag = False
                 wrapper = None
                 assignment_prefix = False
+                reparse_operands = 0
+                command_word = None
                 for_arith_header = False
                 for_brace_body = False
                 continue
@@ -1480,15 +1741,22 @@ class _BashFixScanner:
                     raw_word = s[i:word_end]
                     # ``> nul`` / ``2> NUL`` / ``&> nul`` / ``>> nul`` would
                     # silently create a file literally named ``nul`` in Git
-                    # Bash (Windows-style null-device redirection).  Only an
-                    # *unquoted* literal ``nul`` target is rewritten; quoted
-                    # ``'nul'``/``"nul"`` is an intentional filename, and input
-                    # redirections (``< nul``) never create a file.
+                    # Bash (Windows-style null-device redirection).  Escape
+                    # spellings whose value is exactly the word ``nul`` create
+                    # the file too (verified on Git Bash: ``> \nul``,
+                    # ``> n\ul``, ``> $'nul'`` all produce it), so they are
+                    # rewritten as well.  Quoted ``'nul'``/``"nul"`` stays an
+                    # intentional filename (documented policy), words with
+                    # expansions (``> $(echo nul)``) keep their value only at
+                    # runtime and are left untouched, and input redirections
+                    # (``< nul``) never create a file.
                     if (
                         redirect_op is not None
-                        and not redirect_op.startswith("<")
-                        and raw_word.casefold() == "nul"
-                        and not any(q in raw_word for q in "'\"\\`$")
+                        # Pure input redirections (``<``/``<<``/``<<<``/``<&``)
+                        # never create a file; ``<>`` opens its target for
+                        # reading *and writing*, so ``<> nul`` does.
+                        and redirect_op not in {"<", "<<", "<<-", "<<<", "<&"}
+                        and self._is_effective_nul_target(raw_word)
                     ):
                         self.edits.append((i, word_end, "/dev/null"))
                         self.nul_fixes.append(raw_word)
@@ -1583,6 +1851,8 @@ class _BashFixScanner:
                 heredoc_operator = None
                 wrapper = None
                 assignment_prefix = False
+                reparse_operands = 0
+                command_word = None
                 continue
 
             word_start = i
@@ -1628,6 +1898,32 @@ class _BashFixScanner:
                 continue
 
             if not command_expected:
+                if (
+                    command_word in _EXEC_OPERAND_COMMANDS
+                    and self._shell_wrapper_name(raw) is not None
+                ):
+                    # A shell invoked as an *operand* of a program that
+                    # executes its argv (``find . -exec sh -c '...' \;``,
+                    # ``xargs sh -c``): the nested shell really runs, so fix
+                    # its ``-c`` inline script in place.  Gated on the current
+                    # command word so plain data uses (``echo sh -c '...'``)
+                    # stay untouched.
+                    script_end = self._fix_shell_c_script_in_place(i, end)
+                    if script_end is not None:
+                        i = script_end
+                        continue
+                if reparse_operands and raw not in _COMMAND_END_KEYWORDS:
+                    # Argument word of a reparse builtin (``eval``/``trap``):
+                    # its literal value is re-parsed as shell code at runtime,
+                    # so scan it as its own command context (this is what
+                    # fixes ``eval 'foo > nul'``).  Unquoted words are
+                    # ordinary words in the current context (``eval foo >
+                    # nul`` — the redirection is scanned here anyway); only
+                    # quoted operands carry a whole script.
+                    if reparse_operands > 0:
+                        reparse_operands -= 1
+                    if self._inline_script_operand(word_start, word_end, raw):
+                        continue
                 if raw in {"then", "do", "else", "elif"}:
                     command_expected = True
                 elif raw == "esac" and case_stack:
@@ -1745,7 +2041,7 @@ class _BashFixScanner:
                     # unquoted operand falls through to the plain command-word
                     # rules below (``watch`` is a same-shell wrapper, so the
                     # source word resolves against the prefix functions).
-                    consumed = self._watch_command_operand(
+                    consumed = self._inline_script_operand(
                         word_start, word_end, raw
                     )
                     wrapper = None
@@ -1785,6 +2081,7 @@ class _BashFixScanner:
                     raw, operands=_WRAPPER_OPERAND_COUNTS.get(raw, 0)
                 )
                 command_expected = True
+                command_word = self._literal_word_value(raw) or raw
                 continue
 
             # Redundant shell invocation (``bash cd ...``, ``bash -c '...'``):
@@ -1810,6 +2107,33 @@ class _BashFixScanner:
                         wrapper = None
                     assignment_prefix = False
                     continue
+
+                # The unwrap was refused (semantic options such as ``-e``,
+                # trailing argv, ...): the nested shell still runs, so fix a
+                # ``-c`` inline script operand in place.
+                script_end = self._fix_shell_c_script_in_place(i, end)
+                if script_end is not None:
+                    i = script_end
+                    command_expected = False
+                    wrapper = None
+                    reparse_operands = 0
+                    continue
+
+            # Record the command word of this simple command so argument-
+            # position decisions (e.g. ``find -exec sh -c '...'``) know what
+            # program will consume the words that follow.
+            command_word = self._literal_word_value(raw) or raw
+
+            reparse_count = self._reparse_builtin_name(raw)
+            if reparse_count is not None:
+                # ``eval``/``trap``: the operand words that follow are
+                # re-parsed as shell code at runtime; scan the quoted ones as
+                # inline scripts so ``> nul`` inside them is rewritten too.
+                reparse_operands = reparse_count
+                command_expected = False
+                wrapper = None
+                assignment_prefix = False
+                continue
 
             fallback_name = self._literal_command_name(raw)
             if fallback_name is not None:
@@ -2947,6 +3271,22 @@ _DQ_ESCAPED = frozenset(('"', '\\', '$', '`'))
 # Precompiled regex for finding the next special character in unquoted mode.
 # Matches backslash, single quote, double quote, dollar, or backtick.
 _UNQUOTED_SPECIAL_RE = re.compile(r'[\\\'"$`]')
+# A word that is an escaped/interleaved spelling of the Windows null device
+# (``\nul``, ``n\ul``, ``nu\l``, any case): the backslash(s) are quote
+# removal, so the word's value is exactly ``nul``.  ``_process_unquoted``
+# preserves the escape pairs so ``fix_bash_command`` can see the effective
+# word and rewrite the whole token to ``/dev/null``; converting the
+# backslashes to ``/`` first would corrupt the word (``/nul`` is an absolute
+# path, not the null device).
+_ESCAPED_NUL_RE = re.compile(
+    # The escaped word must be a *complete* word: it starts at a word
+    # boundary and ends at one, so a real Windows path (``C:\\nul``) or a
+    # longer escaped word (``a\\nul\\b``) keeps its normal backslash
+    # conversion.
+    r"(?:(?<=^)|(?<=[\s;|&<>(){}]))"
+    r"\\?[nN]\\?[uU]\\?[lL]"
+    r"(?![A-Za-z0-9_.\\])"
+)
 
 
 def _find_ansi_c_end(cmd: str, start: int) -> int:
@@ -3090,6 +3430,13 @@ def _process_unquoted(cmd: str) -> str:
     result: list[str] = []
     i = 0
     length = len(cmd)
+    # Word spans that are escaped spellings of ``nul`` (see _ESCAPED_NUL_RE);
+    # backslashes inside them are preserved, not converted to ``/``.
+    _escaped_nul_spans = (
+        [m.span() for m in _ESCAPED_NUL_RE.finditer(cmd)]
+        if "\\" in cmd
+        else []
+    )
 
     while i < length:
         # ---- find the next special character ----
@@ -3219,6 +3566,20 @@ def _process_unquoted(cmd: str) -> str:
                 # Append atomically so the metacharacter (e.g. ' " $) is not
                 # re-processed as a quote-start or ANSI-C region on the next
                 # iteration.
+                result.append("\\")
+                result.append(cmd[i + 1])
+                i += 2
+            elif _escaped_nul_spans and any(
+                lo <= i < hi for lo, hi in _escaped_nul_spans
+            ):
+                # This backslash belongs to an escaped spelling of the null
+                # device (``\nul``, ``n\ul``, ``nu\l`` — usually a
+                # redirection target).  It must reach ``fix_bash_command``
+                # intact: converting it to ``/`` would corrupt the word
+                # (``/nul`` is an absolute path Git Bash cannot open),
+                # and the null-device rewrite would never fire.  Preserve
+                # the escape pair; the scanner rewrites the whole word to
+                # ``/dev/null``.
                 result.append("\\")
                 result.append(cmd[i + 1])
                 i += 2

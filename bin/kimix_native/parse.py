@@ -1,10 +1,15 @@
 """kimix_native.parse - comment parsers + bash/pwsh command scanners.
 
-Native implementations live in ``runtime_py.parse`` (compiled kernels, GIL
-released). The pure-Python ``_compat`` mirrors are the reference algorithms
-from the kimi-agent repo (vendored in ``_parse_compat.py`` and
-``_shell_compat.py``, with attribution), so ``use_native("PARSE") is False``
-yields bit-identical behavior.
+Native implementations for the *comment parsers* live in ``runtime_py.parse``
+(compiled kernels, GIL released). The pure-Python ``_compat`` mirrors are the
+reference algorithms from the kimi-agent repo (vendored in
+``_parse_compat.py`` and ``_shell_compat.py``, with attribution), so
+``use_native("PARSE") is False`` yields bit-identical behavior.
+
+The *shell scanners* (bash_fix / process_unquoted / pwsh_fix / pwsh_transform)
+are ALWAYS pure Python (``_shell_compat``): the compiled kernel predates the
+current shell rules and diverges from the reference scanner, so shell parsing
+never routes through ``runtime_py``.
 
 Public API (mirrors the reference consumers):
   - parse(lang, source) -> ParseResult{language, comments, code_without_comments}
@@ -22,18 +27,12 @@ Public API (mirrors the reference consumers):
 Native-path notes (documented deviations):
   - C and LISP input containing non-ASCII bytes is routed to _compat (the
     kernel's regex-literal / char-literal heuristics are ASCII-only).
-  - BASH_FIX / PWSH_FIX / PWSH_TRANSFORM with non-ASCII commands are routed
-    to _compat (reference uses Unicode isalnum/isspace there).
-  - BASH_FIX: the kernel emits fallback-command edits with the marker
-    replacement "\\x01<name>\\x01"; the shim expands it to the wrapper runner
-    and composes the fallback-definitions prefix from the vendored _FALLBACKS.
-  - PWSH_TRANSFORM native returns no warning strings (informational only);
-    the transformed code is byte-identical to the reference.
+  - The shell scanners have NO native path (see above): they always return
+    the pure-Python reference result regardless of the PARSE gate.
 """
 
 from __future__ import annotations
 
-import regex as re
 
 from . import _native, use_native
 from . import _parse_compat as _compat
@@ -46,87 +45,6 @@ from ._shell_compat import BashFix, PwshFix  # noqa: F401
 _LANG_NAMES = ("c", "python", "shell", "sql", "html", "lisp", "pascal")
 _KIND_NAMES = ("line", "block", "doc")
 
-# Fallback command names added after the native PARSE kernel was built.  The
-# kernel scanner does not know these words, so the shim routes any ASCII
-# command that likely contains one of them as an executable word to the
-# pure-Python reference implementation (``_shell_compat`` mirrors
-# ``bash_fix.py``).  This keeps behaviour bit-identical without waiting for a
-# kernel rebuild.
-_POST_KERNEL_FALLBACKS = frozenset({
-    # Fallback/unsupported names added after the compiled PARSE kernel was
-    # built: the kernel scanner does not know these words, so any ASCII
-    # command that likely contains one of them as an executable word is
-    # routed to the pure-Python reference implementation
-    # (``_shell_compat`` mirrors ``bash_fix.py``) to keep behaviour
-    # bit-identical until the kernel is rebuilt.
-    "free",
-    "htop",
-    "ip",
-    "journalctl",
-    "man",
-    "ss",
-    "sudo",
-    "systemctl",
-    "top",
-    "uptime",
-})
-_POST_KERNEL_RE = re.compile(
-    r"(?:^|[\s;|&(){}!\n])"
-    r"(?:" + "|".join(map(re.escape, _POST_KERNEL_FALLBACKS)) + r")"
-    r"(?=[\s;|&(){}<>\n]|$)"
-)
-
-# Redundant shell-wrapper repairs (``bash cd ...`` unwrapping and ``bash -c
-# '...'`` inline-script scanning) were added after the compiled PARSE kernel
-# was built.  The kernel treats ``bash``/``sh`` as ordinary command words, so
-# any command that invokes a shell at a command boundary is routed to the
-# pure-Python reference (``_shell_compat`` mirrors ``bash_fix.py``) to keep
-# behaviour bit-identical.  Matching is deliberately broad (a command-boundary
-# word plus optional quotes) — routing ``echo bash`` to the reference is a
-# harmless perf cost, never a behaviour change.
-_SHELL_WRAPPER_WORDS = "bash|sh|dash|ash"
-
-# Command-operand wrappers (``timeout``/``stdbuf``/``nice``/``xargs`` consume
-# options plus a mandatory-or-eventual COMMAND operand, and the fallback
-# wrappers ``gtimeout``/``watch`` do the same while also being fallback names)
-# were likewise added after the kernel was built: the kernel neither scans the
-# wrapped command word nor knows the ``timeout`` DURATION-operand rule, so any
-# command containing these words at a command boundary is routed to the
-# reference implementation.
-_OPERAND_WRAPPER_WORDS = "timeout|stdbuf|nice|xargs|gtimeout|watch"
-
-_WRAPPER_BOUNDARY = r"[\s;|&(){}!<>\n]"
-_WRAPPER_RE = re.compile(
-    r"(?:^|" + _WRAPPER_BOUNDARY + r")['\"]?(?:"
-    + _SHELL_WRAPPER_WORDS
-    + "|"
-    + _OPERAND_WRAPPER_WORDS
-    + r")['\"]?(?="
-    + _WRAPPER_BOUNDARY
-    + r"|$)"
-)
-# Backwards-compatible alias for the original shell-wrapper-only pattern.
-_SHELL_WRAPPER_RE = _WRAPPER_RE
-
-# Git Bash virtual POSIX absolute paths (``/tmp/x``, ``/c/x``) were added
-# after the compiled PARSE kernel was built: the kernel neither knows the
-# mount table nor resolves ``/tmp`` to the real Windows temp directory, so
-# any command containing such a path is routed to the pure-Python reference
-# (``_shell_compat`` mirrors ``bash_fix.py``) to keep behaviour
-# bit-identical.  Matching is deliberately broad (``echo /tmp`` and
-# ``--chdir=/tmp`` route too, as do paths inside quoted data) — a harmless
-# perf cost, never a behaviour change.
-_GIT_BASH_ABS_PATH_RE = re.compile(r"/(?:tmp\b|[A-Za-z]/)")
-
-# Windows-style null-device redirections (``> nul``, ``2> NUL``, ``&> nul``,
-# ``>> nul``) create an accidental empty ``nul`` file in Git Bash and
-# PowerShell.  The nul rewrite was added after the compiled PARSE kernel was
-# built, so any command that might contain such a redirection is routed to the
-# pure-Python reference (``_shell_compat`` mirrors ``bash_fix.py`` /
-# ``pwsh_fix.py``) to keep behaviour bit-identical.  Matching is deliberately
-# broad (``nul`` inside a quoted string routes too) — a harmless perf cost for
-# rare commands, never a behaviour change.
-_NUL_REDIRECT_RE = re.compile(r"[0-9]*&?>+\|?[ \t]*nul\b", re.IGNORECASE)
 
 _COMPAT_PARSERS = {
     "c": _compat.CParser,
@@ -464,118 +382,33 @@ def parse(lang: str, source: str) -> ParseResult:
         )
     return _COMPAT_PARSERS[lang]().parse(source)
 
-
 # ---------------------------------------------------------------------------
 # shell scanners (bash_fix / bash_tool / pwsh_fix / process_pwsh)
 # ---------------------------------------------------------------------------
-
-def _apply_edits(data: bytes, edits) -> bytes:
-    pieces = []
-    previous = 0
-    for start, end, replacement in sorted(edits):
-        pieces.append(data[previous:start])
-        pieces.append(replacement)
-        previous = end
-    pieces.append(data[previous:])
-    return b"".join(pieces)
-
-
-def _expand_bash_markers(edits) -> list[tuple[int, int, bytes]]:
-    """Expand "\\x01<name>\\x01" fallback markers to wrapper runners."""
-    out = []
-    for start, end, replacement in edits:
-        if replacement.startswith(b"\x01") and replacement.endswith(b"\x01") and len(replacement) > 2:
-            name = replacement[1:-1].decode("utf-8", "surrogatepass")
-            out.append((start, end, _shell._wrapper_runner(name).encode("utf-8", "surrogatepass")))
-        else:
-            out.append((start, end, replacement))
-    return out
-
-
-def _shell_native(dialect: str, cmd: str) -> bool:
-    if not use_native("PARSE") or _native is None:
-        return False
-    if not cmd.isascii():
-        return False
-    return True
+#
+# Shell parsing is ALWAYS pure Python: the canonical scanners live in
+# ``_shell_compat.py`` and are delegated to unconditionally.  The compiled
+# ``runtime_py.parse`` kernel predates the current rules (null-device ``> nul``
+# rewrites, shell-wrapper repairs, Git Bash virtual paths, post-kernel
+# fallbacks) and measurably diverges from the reference scanner (e.g. it
+# converts the null-device escape ``\nul`` inside ``"$(...)"`` where the
+# reference preserves it), so routing shell commands through it can mangle a
+# command.  The comment parsers below keep their native acceleration; only the
+# shell entry points are pinned to the reference implementation.
 
 
 def fix_bash_command(cmd: str) -> BashFix:
     """Mirror of bash_fix.fix_bash_command (Windows Git Bash rewrites)."""
     if not isinstance(cmd, str):
         raise TypeError("cmd must be a string")
-    if not _shell_native("bash_fix", cmd):
-        return _shell.fix_bash_command(cmd)
-    # Fallback commands added after the compiled kernel was built are not
-    # recognised by the native scanner.  Route commands that may contain such
-    # newer aliases through the pure-Python reference so behaviour stays
-    # bit-identical with ``bash_fix.py`` until the kernel is rebuilt.
-    if _POST_KERNEL_RE.search(cmd):
-        return _shell.fix_bash_command(cmd)
-    # Same for the shell-wrapper repairs (redundant ``bash``/``sh`` prefix and
-    # ``bash -c`` inline scripts), which the compiled kernel predates.
-    if _SHELL_WRAPPER_RE.search(cmd):
-        return _shell.fix_bash_command(cmd)
-    # Same for Git Bash virtual POSIX absolute paths (``/tmp/x``, ``/c/x``),
-    # which the compiled kernel also predates.
-    if _GIT_BASH_ABS_PATH_RE.search(cmd):
-        return _shell.fix_bash_command(cmd)
-    # Same for null-device redirections (``> nul`` etc.), which the compiled
-    # kernel also predates.
-    if _NUL_REDIRECT_RE.search(cmd):
-        return _shell.fix_bash_command(cmd)
-    data = cmd.encode("utf-8", "surrogatepass")
-    edits, names_bytes, notes_bytes = _native.parse.shell_scan("bash_fix", data)[:3]
-    names = [n.decode("utf-8", "surrogatepass") for n in names_bytes]
-    if not names and not edits:
-        source = cmd
-    else:
-        source = _apply_edits(data, _expand_bash_markers(edits)).decode("utf-8", "surrogatepass")
-    # Bash rejects a control operator on the line after a heredoc terminator;
-    # move it onto the heredoc redirection line.  The native kernel also applies
-    # this rewrite, but the shim repeats it so older kernels and the compat path
-    # behave identically.
-    source = _shell._fix_heredoc_trailing_operators(source)
-    unique_names = list(dict.fromkeys(names))
-    definitions = "\n".join(_shell._FALLBACKS[n] for n in unique_names)
-    # Mirror the reference scanner's prefix: exported fallbacks are inherited
-    # by nested bash processes (``bash -c`` operands, standalone runners).
-    # The export is conditional on the function actually being defined: a
-    # fallback whose ``command -v`` guard found a real executable on PATH
-    # (coreutils ``uptime``, Windows 11 ``sudo.exe``) installs nothing, and an
-    # unconditional ``export -f`` would pollute stderr with "not a function".
-    exports = "\n".join(
-        f"if declare -F {n} >/dev/null; then export -f {n}; fi" for n in unique_names
-    )
-    prefix = definitions + "\n" + exports + "\n" if definitions else ""
-    path_changes = tuple(n.decode("utf-8", "surrogatepass") for n in notes_bytes)
-    return BashFix(prefix + source, tuple(names), path_changes)
+    return _shell.fix_bash_command(cmd)
 
 
 def _process_unquoted(cmd: str) -> str:
     """Mirror of bash_tool._process_unquoted (backslash -> slash, unquoted)."""
     if not isinstance(cmd, str):
         raise TypeError("cmd must be a string")
-    if not use_native("PARSE") or _native is None:
-        return _shell._process_unquoted(cmd)
-    # No Unicode-sensitive decisions in this scanner: native on any input.
-    data = cmd.encode("utf-8", "surrogatepass")
-    edits, _, _ = _native.parse.shell_scan("bash_process_unquoted", data)[:3]
-    return _apply_edits(data, edits).decode("utf-8", "surrogatepass")
-
-
-_PWSH_WARNINGS = {
-    0: "",
-    1: _shell._W_UNCLOSED_DQ,
-    2: _shell._W_UNCLOSED_SQ,
-    3: _shell._W_UNCLOSED_HDQ,
-    4: _shell._W_UNCLOSED_HSQ,
-    5: _shell._W_UNCLOSED_BLOCK,
-    6: _shell._W_TRAILING_COMMENT,
-    7: _shell._W_STOP_PARSING,
-    8: _shell._W_COMMENT_ONLY,
-    9: _shell._W_TRAILING_CONTINUATION,
-}
+    return _shell._process_unquoted(cmd)
 
 
 def fix_pwsh_command(cmd: str) -> PwshFix | None:
@@ -584,33 +417,11 @@ def fix_pwsh_command(cmd: str) -> PwshFix | None:
         raise TypeError("cmd must be a string")
     if not cmd or not cmd.strip():
         return None
-    if not _shell_native("pwsh_fix", cmd):
-        return _shell.fix_pwsh_command(cmd)
-    # Same for null-device redirections (``> nul`` etc.), which the compiled
-    # kernel also predates.
-    if _NUL_REDIRECT_RE.search(cmd):
-        return _shell.fix_pwsh_command(cmd)
-    data = cmd.encode("utf-8", "surrogatepass")
-    code = _native.parse.pwsh_fix_warning(data)
-    if code == -1:
-        return None
-    fixed = _native.parse.shell_transform("pwsh_fix", data).decode("utf-8", "surrogatepass")
-    warning = _PWSH_WARNINGS.get(code & 0x0F, "")
-    if code & 0x10:
-        warning = f"{warning}\n{_shell._W_TRAILING_CONTINUATION}" if warning else _shell._W_TRAILING_CONTINUATION
-    return PwshFix(command=fixed, warning=warning)
+    return _shell.fix_pwsh_command(cmd)
 
 
 def pwsh_transform(code: str) -> tuple[str, list[str]]:
-    """Mirror of process_pwsh.pwsh_transform (PS7 -> PS5.1).
-
-    Native path returns byte-identical transformed code; the warning strings
-    are informational and empty in native mode (documented deviation).
-    """
+    """Mirror of process_pwsh.pwsh_transform (PS7 -> PS5.1)."""
     if not isinstance(code, str):
         raise TypeError("code must be a string")
-    if not _shell_native("pwsh_transform", code):
-        return _shell.pwsh_transform(code)
-    data = code.encode("utf-8", "surrogatepass")
-    out = _native.parse.shell_transform("pwsh_transform", data).decode("utf-8", "surrogatepass")
-    return out, []
+    return _shell.pwsh_transform(code)

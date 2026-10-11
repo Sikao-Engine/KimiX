@@ -17,12 +17,6 @@ import regex as re
 from kimi_cli.native_loader import (
     get_compat as _native_get_compat,
 )
-from kimi_cli.native_loader import (
-    get_module as _native_get_module,
-)
-from kimi_cli.native_loader import (
-    use_native as _native_use_native,
-)
 from kimi_cli.session import Session
 from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.display import ShellDisplayBlock
@@ -75,9 +69,6 @@ from kimi_cli.tools.prompt_common import (
     timeout_field,
     wait_for_pattern_field,
 )
-
-# Resolved once at import time (stable runtime: result never changes).
-_NATIVE_PARSE = _native_get_module("parse")
 
 if TYPE_CHECKING:
     from kimi_cli.tools.background.utils import BackgroundStream
@@ -562,10 +553,14 @@ def _process_unquoted(cmd: str) -> str:
     subshell where it is parsed unquoted — even when the substitution is
     itself nested inside ``"..."``).
 
-    Native acceleration: kimix_native.parse._process_unquoted (byte-exact).
+    Always pure Python: the canonical implementation lives in
+    ``bin/kimix_native/_shell_compat.py``.  The compiled ``runtime_py``
+    kernel is deliberately NOT used for shell parsing — it predates the
+    current rules (escaped null-device words, shell-wrapper repairs, ...)
+    and diverges from the reference scanner, so routing through it can
+    mangle a command (e.g. turning the null-device escape ``\nul`` into
+    the absolute path ``/nul``).
     """
-    if _native_use_native("PARSE") and _NATIVE_PARSE is not None:
-        return _NATIVE_PARSE._process_unquoted(cmd)
     return _shell._process_unquoted(cmd)
 
 

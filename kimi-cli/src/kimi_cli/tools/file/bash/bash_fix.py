@@ -49,6 +49,16 @@ bodies, assignments, case patterns, and ordinary arguments are data, not
 commands.  Nested command substitutions and process substitutions are scanned
 as their own command contexts.
 
+Windows-style null-device redirections are rewritten to ``/dev/null``: any
+output/redirection target whose literal value is the bare word ``nul`` —
+plain (``> nul``), backslash-escaped (``> \\nul``, ``> n\\ul``), ANSI-C
+(``> $'nul'``), or empty-quote-concatenated (``> nul''``) — would otherwise
+silently create an empty file named ``nul`` in Git Bash.  The rewrite also
+reaches strings that bash re-parses at runtime: ``eval``/``trap`` operands,
+``watch`` command operands, and ``-c`` inline scripts of nested shells
+(``find -exec sh -c '... > nul'``).  A whole-token quoted ``'nul'``/``"nul"``
+target stays untouched (intentional filename).
+
 The scanner implementation is the canonical pure-Python reference that lives
 in ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim); this
 module keeps only the public API and the Windows-platform gate, so the
