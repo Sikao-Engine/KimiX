@@ -9,7 +9,8 @@ Covers: ping / echo (pydantic params) / add (floats), the -32601 and -32602
 error paths, ordered batch results, notification-then-request on a live TCP
 connection, a read_file/write_file round-trip, graceful ``--stop-file`` exit,
 and one full lifecycle loop through the SDK side
-(``kimi_agent_sdk._server_process``: dynamic config mode, ``ready`` resolution,
+(``kimi_agent_sdk._server_process``: client-resolved port with
+``<address>``/``<port>`` placeholder substitution, ``ready`` resolution,
 connect + call, and terminate on stop).
 
 Cleanup never kills by image name: the child is asked to exit via its stop
@@ -266,18 +267,35 @@ async def test_stop_file_triggers_clean_exit(net: str, tmp_path: Path) -> None:
     assert rc == 0  # server exited on its own via the stop-file watcher
 
 
-# ── full loop through the SDK side (_server_process dynamic mode) ──────────
+# ── full loop through the SDK side (_server_process placeholder mode) ─────
 
 
-async def test_sdk_full_loop_spawn_connect_call_stop(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def _wait_until_listening(address: str, port: int, timeout: float = 20.0) -> None:
+    """Poll-connect until the freshly spawned child has bound and is listening.
+
+    The SDK manager resolves the port *before* spawn and marks the server
+    ``ready`` at spawn time, so the child's bind may lag slightly behind
+    ``ready`` (this replaces the old config-file handshake barrier).
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        try:
+            _reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(address, port), 2.0
+            )
+        except (OSError, asyncio.TimeoutError):
+            await asyncio.sleep(0.05)
+            continue
+        writer.close()
+        with contextlib.suppress(Exception):
+            await writer.wait_closed()
+        return
+    raise AssertionError(f"timed out waiting for {address}:{port} to accept connections")
+
+
+async def test_sdk_full_loop_spawn_connect_call_stop(tmp_path: Path) -> None:
     import kimi_agent_sdk._server_process as server_process
-
-    # Fast back-off so the test does not wait on the default (1,2,4,8,16)s.
-    monkeypatch.setattr(
-        server_process, "CONFIG_WAIT_DELAYS", (0.1, 0.2, 0.4, 0.8, 1.6, 3.2)
-    )
 
     entry: dict[str, Any] = {
         "cmd": sys.executable,
@@ -287,18 +305,14 @@ async def test_sdk_full_loop_spawn_connect_call_stop(
             "--network",
             "tcp",
             "--host",
-            "127.0.0.1",
+            "<address>",
             "--port",
-            "0",
-            # relative to the subprocess cwd, which cwd="." resolves to tmp_path
-            "--config-out",
-            ".kimix/network.json",
+            "<port>",
         ],
         "cwd": ".",
-        "config": ".kimix/network.json",
     }
 
-    servers = await start_server_processes(tmp_path, [entry])
+    servers = await start_server_processes(tmp_path, [entry], session_id="sdk-e2e")
     client = None
     try:
         assert len(servers) == 1
@@ -307,10 +321,9 @@ async def test_sdk_full_loop_spawn_connect_call_stop(
         assert server.error is None
         assert server.network == "tcp"
         assert server.address == "127.0.0.1"
-        assert server.port > 0  # ephemeral port resolved from the config file
-        # the handshake file really landed under the work dir
-        assert (tmp_path / ".kimix" / "network.json").exists()
+        assert server.port > 0  # ephemeral port resolved by the client pre-spawn
 
+        await _wait_until_listening(server.address, server.port)
         client = await JsonRpcClient.connect_tcp(server.address, server.port)
         assert await client.call("ping", timeout=CALL_TIMEOUT) == "pong"
         echo = await client.call("echo", {"text": "sdk loop"}, timeout=CALL_TIMEOUT)

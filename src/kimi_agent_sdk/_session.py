@@ -204,7 +204,22 @@ async def _start_configured_servers(
         if not isinstance(live, list):
             live = []
         session._server_processes = live
-        session._server_processes = await start_server_processes(wd, servers_cfg, out=live)
+        # Derive the session id for <session_id> placeholder substitution in
+        # server commands. Prefer the public property, fall back to the CLI
+        # session; any failure just means "no id" (placeholders become
+        # "default").
+        sid: Any = None
+        try:
+            sid = session.id if hasattr(session, "id") else None
+            if sid is None:
+                cli = getattr(session, "_cli", None)
+                inner = getattr(cli, "session", None)
+                sid = getattr(inner, "id", None)
+        except Exception:
+            sid = None
+        session._server_processes = await start_server_processes(
+            wd, servers_cfg, out=live, session_id=str(sid) if sid else None
+        )
     except Exception:
         logger.exception("Failed to start nested sub-process servers from config")
 

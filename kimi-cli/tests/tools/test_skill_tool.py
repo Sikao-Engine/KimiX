@@ -68,6 +68,50 @@ async def test_lookup_is_case_insensitive(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_empty_name_lists_skills_with_descriptions(tmp_path: Path):
+    md_a = _make_skill_md(tmp_path, "alpha", "a body")
+    md_b = _make_skill_md(tmp_path, "bravo", "b body")
+    tool = _tool([_skill("alpha", md_a, description="Alpha desc"),
+                  _skill("bravo", md_b, description="Bravo desc")])
+
+    result = await tool(Params(name=""))
+
+    assert isinstance(result, ToolOk)
+    assert result.is_error is False
+    # Same rendering as format_skills_for_prompt: scope heading, name, description.
+    assert "### Project" in result.output
+    assert "- alpha" in result.output
+    assert "  - Description: Alpha desc" in result.output
+    assert "- bravo" in result.output
+    assert "  - Description: Bravo desc" in result.output
+    # Sorted by name.
+    assert result.output.index("- alpha") < result.output.index("- bravo")
+    # Trailing hint line present.
+    assert "Use the `skill` tool" in result.output
+
+
+@pytest.mark.asyncio
+async def test_whitespace_only_name_lists_skills(tmp_path: Path):
+    md = _make_skill_md(tmp_path, "alpha", "a body")
+    tool = _tool([_skill("alpha", md)])
+
+    result = await tool(Params(name="   "))
+
+    assert isinstance(result, ToolOk)
+    assert "- alpha" in result.output
+
+
+@pytest.mark.asyncio
+async def test_empty_name_with_no_skills(tmp_path: Path):
+    tool = _tool([])
+
+    result = await tool(Params())
+
+    assert isinstance(result, ToolOk)
+    assert result.output == "No skills found."
+
+
+@pytest.mark.asyncio
 async def test_missing_skill_lists_available_names(tmp_path: Path):
     md_a = _make_skill_md(tmp_path, "alpha", "a body")
     md_b = _make_skill_md(tmp_path, "bravo", "b body")

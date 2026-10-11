@@ -1,7 +1,0 @@
-{
-    "_comment": "KimiX skill directory configuration. Place this file at <work_dir>/.kimix/skill.json to specify additional skill directories for this workspace.",
-    "_comment_skill_dir": "Path(s) to extra skill directories. Can be a single string or an array of strings. Relative paths are resolved against the working directory.",
-    "skill_dir": [
-        ".agents/skills"
-    ]
-}

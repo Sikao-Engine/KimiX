@@ -405,8 +405,8 @@ python -m kimi_cli.session_server [flags]
 |---|---|---|
 | `--network tcp\|http` | `tcp` | Transport to bind. |
 | `--host` | `127.0.0.1` | Bind address. |
-| `--port` | `0` | Bind port; `0` = ephemeral (the real port is reported back). |
-| `--config-out PATH` | none | Atomically write `{"network","address","port"}` to `PATH` once bound (dynamic discovery handshake, §8.2). Parent dirs are created. |
+| `--port` | `0` | Bind port; `0` = ephemeral (the real port is read back from `--config-out`). A child spawned from a `server` entry always receives a concrete, already-known port (§8.2). |
+| `--config-out PATH` | none | Atomically write `{"network","address","port"}` to `PATH` once bound, so a launcher that used `--port 0` can discover the real port. Manual / raw-protocol use only: a `server` entry no longer reads this file (§8.2). Parent dirs are created. |
 | `--stop-file PATH` | none | Exit once `PATH` appears (polled every 0.2 s). |
 | `--root PATH` | none | Confine `read_file`/`write_file` to `PATH` (§6). |
 
@@ -415,11 +415,11 @@ Startup/shutdown sequence (`_run`):
 1. Apply `--root` (if given) to the module-level root used by the file methods.
 2. Build `JsonRpcServer(DEFAULT_REGISTRY, host, port)` and start the requested
    transport; the bound `(address, port)` is returned.
-3. If `--config-out` is set, write the JSON handshake file **atomically**: a
-   temp file in the target directory, `orjson.dumps(..., OPT_INDENT_2)` +
-   `flush` + `fsync`, then `os.replace`. Watchers therefore never observe a
-   partial file. The `network` field is the requested one; `address`/`port` are
-   the bound values.
+3. If `--config-out` is set, write the JSON connection-info file
+   `{"network","address","port"}` **atomically**: a temp file in the target
+   directory, `orjson.dumps(..., OPT_INDENT_2)` + `flush` + `fsync`, then
+   `os.replace`. Readers therefore never observe a partial file. The `network`
+   field is the requested one; `address`/`port` are the bound values.
 4. Log `session_server listening on {network}://{address}:{port}` to **stderr**
    and block until stopped.
 5. If `--stop-file` was given, a watcher task polls for the file and calls
@@ -427,8 +427,9 @@ Startup/shutdown sequence (`_run`):
    clears the bound-address state; `serve_forever`/`wait_stopped` return.
 6. `KeyboardInterrupt` is suppressed, so the process exits cleanly (status 0).
 
-Note: `--config-out` is what a *dynamic* server entry points at (§8.2); without
-it the entry must be *static*.
+Note: `--config-out` is an aid for manual runs and the raw protocol tests. A
+`.kimix/config.json` `server` entry does not need it — the client allocates the
+port and substitutes it into the child's arguments before the spawn (§8.2).
 
 Programmatic use instead of the CLI: instantiate `JsonRpcServer(registry, host,
 port)` and `await server.start("tcp" | "http")`, or `start_tcp()` /
@@ -440,37 +441,70 @@ port)` and `await server.start("tcp" | "http")`, or `start_tcp()` /
 
 The session SDK reads the `server` key of the session's `.kimix/config.json`
 (`kimi_agent_sdk._server_process`) and spawns one child process per list entry.
+The **client** owns the connection info: for every entry it allocates a free TCP
+port itself and hands address, port and session id to the child through
+placeholders substituted into `cmd`/`args` (§8.2). The child does not report a
+bound port back through a handshake file any more.
 
-### 8.1 Entry schema
+### 8.0 How `config.json` is loaded (`kimix/utils/config.py`)
 
-| Key | Type | Default | Notes |
-|---|---|---|---|
-| `cmd` | `str` | — | **Required**, non-blank. Executed directly (`create_subprocess_exec`), not via a shell. |
-| `args` | `list[str]` | `[]` | Command arguments. |
-| `cwd` | `str` | `"."` | Child CWD; relative paths resolve against the session work dir. |
-| `network` | `"tcp"` \| `"http"` | `"tcp"` | Static mode only. Any other value rejects the entry. |
-| `address` | `str` | `"127.0.0.1"` | Static mode only. |
-| `port` | `int` | static: required, `> 0`; dynamic: `0` = "from the file" | Static mode requires a positive integer (a `bool` counts as invalid). |
-| `config` | `str \| null` | `null` | Path (relative to the work dir) of the JSON file the child writes. Setting it switches the entry to **dynamic** mode; `null`/empty string means static. |
+The `server` list is **not** parsed by `kimix/utils/config.py` itself — that
+module only loads and caches the raw JSON; the SDK session consumes the
+`server` key. The full chain from disk to spawned child:
 
-Static entry (the server is considered ready as soon as it is spawned):
-
-```json
-{
-  "server": [
-    {
-      "cmd": "python",
-      "args": ["-m", "kimi_cli.session_server", "--network", "tcp", "--host", "127.0.0.1", "--port", "38123"],
-      "network": "tcp",
-      "address": "127.0.0.1",
-      "port": 38123,
-      "cwd": "."
-    }
-  ]
-}
+```
+<work_dir>/.kimix/config.json
+        |  kimix.utils.config.load_config_json(work_dir) # orjson parse, cached per path
+        v
+config_json: dict # {} on missing file / bad JSON / non-object
+        |  kimix.utils.session.create_session(...) -> _create_session_async(...)
+        v
+Session.create(...) / Session.resume(..., config_json=config_json) # kimi_agent_sdk._session
+        |  _make_custom_config -> session.custom_config["config_json"] (tools see it)
+        |  _start_configured_servers(session, work_dir, config_json)
+        v
+config_json["server"]  ->  start_server_processes(work_dir, servers_cfg,
+                                                  out=live, session_id=session.id)
+        |  per entry: parse_server_entry (§8.1) -> _find_free_port (§8.2)
+        |  -> substitute <address>/<port>/<session_id> into cmd+args -> create_subprocess_exec
+        v
+one ServerProcess child per valid entry (§8.1), ready as soon as it is spawned
+(§8.2), each registered in the live registry (§9) and reachable via
+session.get_server_processes()
 ```
 
-Dynamic entry (ephemeral port, discovered through the child's own config file):
+Loader semantics (`load_config_json`, `src/kimix/utils/config.py`):
+
+* Reads exactly `<work_dir>/.kimix/config.json` (`work_dir` defaults to CWD),
+  parsed with `orjson` **once per resolved path** and cached in a module-level
+  dict — later calls never touch the filesystem. Callers must not mutate the
+  returned dict; use `clear_config_json_cache()` after editing the file (tests).
+* Fully failure-tolerant: a missing file, invalid JSON or a non-object payload
+  all yield `{}` (no exception, no warning) — the session simply gets no
+  servers.
+* The top-level JSON object mixes provider settings (consumed elsewhere) with
+  session keys; only the `server` key (plus e.g. `skill_dir`) matters here.
+
+Session-side semantics (`_start_configured_servers`, `kimi_agent_sdk._session`):
+
+* Called at the end of **both** `Session.create` and `Session.resume`, after
+  the session object exists; falsy/missing `server` (`null`, `[]`, absent key)
+  is a no-op.
+* Children are spawned with the session's canonical work dir as the base for
+  relative `cwd` paths, and appended to `session._server_processes`
+  *before* each `start()` completes (cancellation-safe, see §8.3).
+* The owning session's id is forwarded as
+  `start_server_processes(..., session_id=session.id)` — that value is what the
+  `<session_id>` placeholder expands to (§8.1 / §8.2).
+* Never raises: any failure is logged (`Failed to start nested sub-process
+  servers from config`) and session creation proceeds.
+* `session.close()` → `stop_server_processes()` terminates every child and
+  unregisters it from the live registry (§9); the sync close path uses
+  `stop_server_processes_sync()`.
+
+Full-file example — `<work_dir>/.kimix/config.json` with one `server` entry
+written in placeholder style: the child receives its connection info as ordinary
+arguments that the client fills in immediately before spawning (§8.2).
 
 ```json
 {
@@ -480,59 +514,177 @@ Dynamic entry (ephemeral port, discovered through the child's own config file):
       "args": [
         "-m", "kimi_cli.session_server",
         "--network", "tcp",
-        "--port", "0",
-        "--config-out", ".kimix/network.json",
-        "--stop-file", ".kimix/stop.flag"
-      ],
-      "config": ".kimix/network.json"
+        "--host", "<address>",
+        "--port", "<port>",
+        "--stop-file", ".kimix/stop.flag",
+        "--root", "."
+      ]
     }
   ]
 }
 ```
 
-### 8.2 Dynamic mode — discovery handshake
+The child is therefore launched as
+`python -m kimi_cli.session_server --network tcp --host 127.0.0.1 --port 38123
+--stop-file .kimix/stop.flag --root .`: it binds the address and port it was
+handed, and the parent already knows both, so there is no handshake file to
+write, nothing to poll and nothing to validate.
 
-The entry sets `config`; the child must eventually write that file, containing
-exactly the connection info:
+Substitution is a plain string replace applied to `cmd` and to every string in
+`args`: the tokens `<address>`, `<port>` and `<session_id>` may appear any
+number of times and embedded inside a longer argument (`--port=<port>` →
+`--port=38123`). The token table and the allocation rules are in §8.1 / §8.2.
+
+`kimi_cli.session_server` has **no `--session` flag**, so the entry above passes
+no session id at all: `<session_id>` is there for whatever a server wants to do
+with it — a path component (`--root .kimix/servers/<session_id>`), an extra flag
+of a custom server, or nothing.
+
+### 8.1 Entry schema
+
+| Key | Type | Default | Notes |
+|---|---|---|---|
+| `cmd` | `str` | — | **Required**, non-blank. Executed directly (`create_subprocess_exec`), not via a shell. Placeholder tokens are substituted before the spawn (§8.2). |
+| `args` | `list[str]` | `[]` | Command arguments; placeholder tokens are substituted in every string. |
+| `cwd` | `str` | `"."` | Child CWD; relative paths resolve against the session work dir. |
+| `network` | `"tcp"` \| `"http"` | `"tcp"` | Always applies — an entry resolves to one triple of connection info, there is no static/dynamic split any more. Any other value rejects the entry. |
+| `address` | `str` | `"127.0.0.1"` | Always applies: the address the free-port probe binds and the value `<address>` expands to. |
+| `port` | `int` | `0` | **Optional.** Absent or `0` = auto-assign an OS-chosen free port; a positive integer = *preferred starting port*, probed and incremented on conflict up to `MAX_PORT_ATTEMPTS` (= 100) attempts (§8.2). A `bool` or a negative value rejects the entry. |
+| `config` | — | — | **Removed** (it used to point at the dynamic-mode handshake file). Any entry containing `config` is invalid: logged as `server[i]: 'config' key is no longer supported` and skipped (§8.3). |
+
+Placeholder tokens (usable anywhere in `cmd` or in any `args` string, §8.2):
+
+| Token | Resolves to |
+|---|---|
+| `<address>` | the entry's resolved address (`ServerSpec.address`, default `127.0.0.1`) |
+| `<port>` | the free TCP port the client allocated for this entry |
+| `<session_id>` | the owning session's id string — the SDK `Session.id` (a user-given name or a uuid hex); the literal `default` when no session id is known |
+
+Minimal auto-port entry — nothing declared beyond `cmd`/`args`; `port` absent
+means the client assigns one (§8.2) and the placeholders are filled in before
+the spawn:
 
 ```json
-{"network": "tcp", "address": "127.0.0.1", "port": 38123}
+{
+  "server": [
+    {
+      "cmd": "python",
+      "args": ["-m", "kimi_cli.session_server", "--network", "tcp", "--host", "<address>", "--port", "<port>"]
+    }
+  ]
+}
 ```
 
-(`--config-out` produces this file for `kimi_cli.session_server`.)
+Preferred-port entry — `port` is where the probe starts, so the number stays
+stable while still yielding to a conflicting listener:
 
-* Polling schedule (`CONFIG_WAIT_DELAYS`, monkeypatchable and always read at
-  call time): check existence once immediately, then for each delay in
-  **1, 2, 4, 8, 16 seconds**: sleep(delay) → check existence. Worst-case wait is
-  31 s.
-* Once the file exists, reading/parsing is retried up to 3 times with 0.25 s
-  between attempts, to tolerate non-atomic writers and Windows share locks. A
-  file that stays invalid is handled exactly like a timeout. A successful load
-  clears any earlier transient error.
-* Validation: the file must be an object with `network` in `("tcp","http")`,
-  `address` a string, and `port` an `int > 0` (not a `bool`). The values are
-  applied to the running server instance.
-* Conflict rule: when `config` is set, `network` / `address` / `port` keys in
-  the *entry* are reported (`server[i]: 'config' is set; ignoring conflicting
-  keys: ...`) and dropped — the file wins, and the spec's static defaults
-  remain in effect until the file lands.
+```json
+{
+  "server": [
+    {
+      "cmd": "python",
+      "args": ["-m", "kimi_cli.session_server", "--network", "tcp", "--host", "<address>", "--port", "<port>"],
+      "network": "tcp",
+      "address": "127.0.0.1",
+      "port": 38123,
+      "cwd": "."
+    }
+  ]
+}
+```
+
+### 8.2 Port allocation and placeholder substitution
+
+The client owns the connection info. The entry point is
+`start_server_processes(work_dir, server_cfg, out=None, *, session_id=None)`:
+for each valid entry it resolves `(address, port, session_id)` *before* the
+child exists, substitutes them into the command line, and spawns. The child only
+has to bind what it was given.
+
+**Port allocation** — `_find_free_port(address, preferred)`
+(`src/kimi_agent_sdk/_server_process.py`) opens a probe socket, binds it and
+closes it again:
+
+* `preferred <= 0` (the `port` key absent or `0`): bind port `0` and take the
+  OS-assigned ephemeral port.
+* `preferred > 0`: try to bind `preferred`; if it is in use, bind
+  `preferred + 1`, then `preferred + 2`, … giving up after
+  `MAX_PORT_ATTEMPTS = 100` probes. The first port that binds wins, so `port` is
+  a starting point rather than a guarantee (the usual probe-then-bind race with
+  other processes still applies; entries are probed sequentially before their
+  spawns, which keeps same-session collisions unlikely but not impossible).
+  Probing also stops at the top of the port range (`65535`), so a preferred port
+  near it yields the short tail rather than 100 invalid numbers.
+* The probe binds without `SO_REUSEADDR`, so the result reflects what a real
+  listener would see — including Windows' administratively excluded port ranges
+  (`netsh int ipv4 show excludedportrange protocol=tcp`), which are simply
+  reported as "in use" and skipped.
+* Probe address: `""` when the entry's `address` is `0.0.0.0` or empty (that is
+  what such a listener binds anyway), otherwise the entry's `address` itself.
+* If no port frees up within the attempt budget the entry fails:
+  `ready = false`, the reason is recorded in `error`, nothing is spawned and the
+  session is unaffected (§8.3).
+
+**Placeholder substitution** — right before the spawn, the resolved values
+replace the tokens `<address>`, `<port>` and `<session_id>` in `cmd` and in each
+string of `args`:
+
+* A plain `str.replace` of the whole token: it may appear multiple times and
+  embedded in a longer argument (`"--port=<port>"` → `"--port=38123"`,
+  `"--log=.kimix/<session_id>.log"`). There is no shell, no escape syntax and no
+  other expansion, so a literal `<port>` inside an argument is always replaced.
+* `<session_id>` comes from the keyword-only `session_id` parameter
+  (`_start_configured_servers` passes `session.id`); when it is `None` or
+  otherwise unknown the literal `default` is substituted instead.
+* `ServerProcess.address` / `.port` / `.network` hold the values that were
+  substituted — which is what consumers read from the live registry (§9).
+  One normalization: a wildcard spec address (`0.0.0.0` / `""` / `::`) is
+  stored as `127.0.0.1` on the `ServerProcess`, because clients cannot
+  connect *to* a wildcard address (the child still binds the wildcard it was
+  given via `<address>`).
+* Each spawn logs the **fully resolved command line as one string**
+  (`server: <cmd> <args...>`, args with whitespace quoted) at INFO level and
+  mirrors it to the UI via `kimix.ui.printing.print_debug` — the same channel
+  as the other startup lines (`Native acceleration enabled.`, `Provider
+  model: ...`, `skill dir: ...`).
+
+**Ready condition**: `start()` marks the server `ready = true` as soon as
+`create_subprocess_exec` returned successfully. No waiting, no polling, no
+timeout — the resolved `(network, address, port)` is the connection info from
+the first moment the server exists, and a child that has not bound its listener
+yet simply refuses the connection attempt (a cold start is bounded by the
+bridge's own ~5 s per-server deadline, §10, not by the spawn path).
+
+`kimi_cli.session_server` still accepts `--config-out` (§7): the raw protocol
+tests and manual invocations use it to learn the bound port of a `--port 0`
+server. The `server` entry schema no longer reads such a file, and a configured
+child does not need to write one.
 
 ### 8.3 Failure policy
 
-* Bad entry (missing/blank `cmd`, non-dict entry, bad `port`/`network`/`config`
-  type, static entry without a positive port) → logged as `server[i]: ...`,
-  entry skipped. A non-list `server` value → logged, nothing spawned.
+* Bad entry (missing/blank `cmd`, non-dict entry, bad `port`/`network` type, or
+  an entry that still carries the removed `config` key — `'config' key is no
+  longer supported`) → logged as `server[i]: ...`, entry skipped. A non-list
+  `server` value → logged, nothing spawned.
+* No free port within `MAX_PORT_ATTEMPTS` (= 100) probes from the preferred port
+  → `ready = false`, `error` records the reason, the entry is skipped: no child
+  is spawned and the session is unaffected.
 * Spawn failure → `ready = false`, `error = "spawn failed: ..."`.
-* Dynamic timeout or persistently invalid config file → `ready = false`,
-  `error` records the reason (`timeout waiting for server config file ...` or
-  `failed to read server config file ...` / `must contain a JSON object` /
-  `must be an object with 'network' ...`), and the child is terminated and
-  reaped (2 s terminate timeout, then `kill()`).
 * Every public entry point swallows and logs exceptions: server management can
   never break or fail the session.
 * Cancellation during startup does not orphan children: servers are attached to
   the caller's live list *before* `start()` completes, and the interrupted
-  startup terminates everything spawned so far.
+  startup terminates everything spawned so far (2 s terminate timeout, then
+  `kill()`).
+* Cross-loop teardown (Ctrl+C): session close may run on a *fresh* event loop
+  (`asyncio.run()`) while the children were spawned on the interrupted one —
+  awaiting `proc.wait()` then raises `RuntimeError` ("attached to a different
+  loop"). `stop_server_processes` catches exactly that and falls back to
+  `_reap_without_loop()`: on Windows `terminate()` is `TerminateProcess`
+  (immediate, no zombie to reap); on POSIX the pid is reaped via
+  `os.waitpid(WNOHANG)` polling, with `kill()` + blocking reap after the grace
+  period. If the exit still cannot be confirmed a single `warning` is logged
+  instead of a traceback.
 
 ---
 
@@ -550,7 +702,7 @@ for srv in get_live_server_processes():
     if not (srv.ready and srv.process is not None and srv.process.returncode is None
             and srv.network in ("tcp", "http")):
         continue
-    # srv.address / srv.port are the resolved connection info
+    # srv.address / srv.port are the connection info the client assigned (§8.2)
 ```
 
 Contract:
@@ -559,8 +711,10 @@ Contract:
   registration happens while the async startup runs, reads may come from any
   thread.
 * A server is registered at the moment it is appended to the live list — i.e.
-  **before** its `await server.start()` completes, so even a server that is
-  still waiting for its dynamic config file is discoverable.
+  **before** its `await server.start()` completes, so every entry the parser
+  accepted is discoverable even while its child is still booting (and after a
+  spawn or port-allocation failure) — which is exactly why consumers must
+  re-check `ready` on every entry.
 * `stop_server_processes` (async) and `stop_server_processes_sync` remove every
   server passed to them, by identity, whether or not the child was still
   running. Removal is tolerant of entries that were never registered.
@@ -585,10 +739,12 @@ Contract:
 
 Anything that speaks the protocol above works; the easiest route is to reuse
 this module. Re-register a name to **replace** a builtin (`before_tool`
-included) — a second registration overwrites the first entry:
+included) — a second registration overwrites the first entry. For a
+fully standalone server that imports nothing from `kimi_cli`, see the worked
+example `tests/dummy_rpc_server.py` (§12).
 
 ```python
-# my_lsp_server.py — run as: python my_lsp_server.py --config-out .kimix/network.json
+# my_lsp_server.py — server entry args: python my_lsp_server.py --host <address> --port <port>
 from kimi_cli.session_server import (
     BeforeToolParams,
     BeforeToolResult,
@@ -629,6 +785,10 @@ Rules of thumb:
 * Build your own `MethodRegistry` instead of mutating `DEFAULT_REGISTRY` if you
   want the builtins gone; `JsonRpcServer(your_registry, host, port)` is all it
   takes to serve it from code.
+* Accept the connection info the parent hands you: in a `.kimix/config.json`
+  entry the client allocates a free port and substitutes `<address>` / `<port>`
+  into your arguments before the spawn (§8.2), so bind those values instead of
+  picking your own port and reporting it back through a file.
 
 ---
 
@@ -641,6 +801,71 @@ Rules of thumb:
 * `tests/test_session_server_e2e.py` — `JsonRpcClient` against real child
   processes on both transports, batch ordering, notify-then-request, file
   round-trip, graceful `--stop-file` exit, and the SDK lifecycle loop
-  (dynamic discovery → call → terminate).
-* `tests/test_server_process.py` — entry parsing, handshake, timeouts,
-  cancellation cleanup, and live-registry behaviour.
+  (client-allocated port → substituted args → call → terminate).
+tests/test_server_process.py — entry parsing (including rejection of the
+ removed config key), free-port allocation, placeholder substitution,
+ the resolved-command spawn log line, cross-loop reap fallback
+ (stop on a fresh asyncio.run loop over a child spawned on a closed one),
+ cancellation cleanup, and live-registry behaviour.
+* `tests/test_dummy_rpc_server_e2e.py` — the example dummy server (§12) as a
+  real sub-process on both transports: the example return value of every
+  builtin over the wire, error paths, notification silence, `--root`
+  confinement, `--stop-file` exit, and the full SDK lifecycle loop
+  (substituted args → live registry → call → stop).
+* `kimi-cli/tests/tools/test_session_bridge_e2e.py` — the `connect` bridge
+  against the same real sub-process: `read` / `write` / `edit` / `read_image`
+  spawned through `start_server_processes` (no bridge monkeypatching), the
+  `[server] ack before_tool: ...` round trip in each tool result,
+  `connect=False` opt-out, and live-registry cleanup on stop.
+
+---
+
+## 12. Example dummy server — `tests/dummy_rpc_server.py`
+
+A complete, standalone example server implementing this protocol with the
+**standard library only** (no `kimi_cli` import): every builtin method of
+`DEFAULT_REGISTRY` (`ping`, `echo`, `read_file`, `write_file`, `add`,
+`before_tool`) with the exact wire semantics and example return values of §5,
+both transports (newline-delimited TCP and `POST /rpc` HTTP), the §3 error
+codes, notification silence, batch handling, the atomic `--config-out`
+connection-info file (manual runs only — no longer part of `server`-entry
+discovery, §8.2), the `--stop-file` watcher and `--root` confinement of §6.
+
+```console
+$ python tests/dummy_rpc_server.py --network tcp --host 127.0.0.1 --port 38123 \
+    --stop-file stop.flag --root .
+```
+
+Its CLI contract is identical to `python -m kimi_cli.session_server`, so it
+drops into a `.kimix/config.json` `server` entry as-is: the client allocates the
+port and substitutes the connection info into the arguments (§8.2), and the
+script binds exactly what it is handed.
+
+```json
+{
+  "server": [
+    {
+      "cmd": "python",
+      "args": [
+        "tests/dummy_rpc_server.py",
+        "--network", "tcp",
+        "--host", "<address>",
+        "--port", "<port>",
+        "--stop-file", ".kimix/stop.flag",
+        "--root", "."
+      ]
+    }
+  ]
+}
+```
+
+A manual run with `--port 0` can still recover the bound port through
+`--config-out`; when the SDK spawns the entry that flag is unnecessary, because
+the port was chosen by the client before the child existed. The e2e suite
+(`tests/test_dummy_rpc_server_e2e.py`, §11) starts the same script through such
+a placeholder-style entry, so the address and port under test are the ones the
+SDK allocated.
+
+It is used as the real sub-process in the tests of §11 — proof that any process
+speaking this protocol works as a session server, including for the `connect`
+tool bridge (§5.6 / `docs/tool_connect_bridge.md`).

@@ -1,6 +1,9 @@
 {
   "_comment": "KimiX custom configuration file. Place this file at \u003cwork_dir\u003e/.kimix/config.json to customize tool behavior for your workspace.",
   "_comment_protected_write_paths": "List of directories and files that edit and write are blocked from modifying. Supports absolute paths and paths relative to the working directory. Glob patterns are NOT supported �?use exact paths or directory paths.",
+  "skill_dir": [
+    ".agents/skills"
+  ],
   "protected_write_paths": [
     "/etc/passwd",
     "/etc/shadow",

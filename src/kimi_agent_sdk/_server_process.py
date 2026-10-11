@@ -2,16 +2,20 @@
 
 Parses the ``server`` key of ``.kimix/config.json`` (see :func:`parse_server_entry`),
 spawns each configured entry as a child process, and manages its lifecycle.
-Two modes exist per entry:
 
-* **Static** — ``network``/``address``/``port`` are declared directly in the
-  entry; the process is considered ready as soon as it is spawned.
-* **Dynamic (config-file)** — the entry sets ``config`` to a JSON file path
-  (relative to the session work dir).  After spawning, the file is polled with
-  an exponential back-off (:data:`CONFIG_WAIT_DELAYS`); its contents
-  (``{"network", "address", "port"}``) become the resolved connection info.
-  On timeout or invalid content the child is terminated and the entry is
-  marked not ready — the main session must never be affected.
+The **client (main process) determines the connection address and port**:
+
+* Before spawning, a free TCP port is allocated (:func:`_find_free_port`).
+  ``port`` in an entry is optional and acts as the *preferred starting port*
+  to probe (incrementing by one on conflict, up to :data:`MAX_PORT_ATTEMPTS`
+  tries); when omitted the OS assigns an ephemeral port.
+* The resolved values are substituted into ``cmd`` and ``args`` via
+  :func:`_substitute_placeholders` using the tokens ``<address>``, ``<port>``
+  and ``<session_id>``, so the child learns where to listen from its own
+  command line (e.g. ``--port=<port>``).
+* The process is considered ready as soon as it is spawned; the legacy
+  config-file handshake (server-determined port) is no longer supported —
+  entries declaring a ``config`` key are rejected at parse time.
 
 Every public entry point swallows and logs exceptions: server management must
 never break the session lifecycle.
@@ -26,29 +30,23 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import socket
 import threading
+import time
 from pathlib import Path
 from typing import Any, Literal
 
-import orjson
 from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
-# Delays (seconds) between config-file polls in dynamic mode: check exists;
-# then for each delay { sleep(delay); check exists }. Module-level so tests can
-# monkeypatch it (read at call time, never bound as a default argument).
-CONFIG_WAIT_DELAYS: tuple[float, ...] = (1, 2, 4, 8, 16)
-
 # Timeout (seconds) for reaping a child after terminate() in failure paths.
 _TERMINATE_REAP_TIMEOUT = 2.0
 
-# Dynamic-mode config-file reads tolerate transient failures (non-atomic
-# writers mid-rewrite, Windows share locks): when a file exists but fails to
-# load, re-read it up to _CONFIG_READ_ATTEMPTS - 1 more times with
-# _CONFIG_READ_RETRY_DELAY seconds in between before declaring failure.
-_CONFIG_READ_ATTEMPTS = 3
-_CONFIG_READ_RETRY_DELAY = 0.25
+# Maximum number of consecutive ports probed by :func:`_find_free_port` when
+# the preferred starting port (and its successors) are already in use.
+MAX_PORT_ATTEMPTS = 100
 
 _VALID_NETWORKS = ("tcp", "http")
 
@@ -133,6 +131,110 @@ def _log_error(fmt: str, *args: Any) -> None:
         pass
 
 
+def _log_debug(text: str) -> None:
+    """Log ``text`` at INFO and mirror it to ``kimix.ui.printing.print_debug``.
+
+    ``kimix`` sits *above* ``kimi_agent_sdk`` in the dependency stack, so the
+    import is lazy and fully guarded: the logger is the source of truth and a
+    broken/unavailable UI layer must never affect server management.
+    """
+    logger.info("%s", text)
+    try:
+        from kimix.ui.printing import print_debug
+
+        print_debug(text)
+    except Exception:
+        pass
+
+
+def _render_command(cmd: str, args: list[str]) -> str:
+    """Render a command + args as a single shell-like string for logging.
+
+    Uses POSIX quoting only when an argument contains whitespace/quotes, so
+    the common case reads cleanly (``python -m mod --port 1234``).
+    """
+    parts = [cmd]
+    for arg in args:
+        if arg == "" or any(ch in arg for ch in " \t\"'"):
+            escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+            parts.append(f'"{escaped}"')
+        else:
+            parts.append(arg)
+    return " ".join(parts)
+
+
+def _is_port_free(address: str, port: int) -> bool:
+    """True when a TCP socket can bind address:port right now."""
+    sock: socket.socket | None = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # No SO_REUSEADDR: the bind must reflect real availability.
+        sock.bind((address, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        if sock is not None:
+            sock.close()
+
+
+def _find_free_port(address: str, preferred: int = 0) -> int:
+    """Pick a TCP port that can currently be bound on ``address``.
+
+    * ``preferred <= 0``: bind port 0 and return the OS-assigned ephemeral port.
+    * ``preferred > 0``: probe ``preferred``, then ``preferred + 1``, ... up to
+      :data:`MAX_PORT_ATTEMPTS` consecutive ports; raise :class:`RuntimeError`
+      when all of them are in use.
+
+    Addresses ``"0.0.0.0"`` and ``""`` are probed against the wildcard address
+    (INADDR_ANY). This runs synchronously before spawn and is cheap; it stays
+    sync so it is trivially testable.
+    """
+    bind_addr = "" if address in ("0.0.0.0", "") else address
+    if preferred <= 0:
+        sock: socket.socket | None = None
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind((bind_addr, 0))
+            return int(sock.getsockname()[1])
+        except OSError as exc:
+            raise RuntimeError(
+                f"cannot allocate an ephemeral port on {bind_addr or '0.0.0.0'}: {exc}"
+            ) from exc
+        finally:
+            if sock is not None:
+                sock.close()
+    port = preferred
+    attempts = 0
+    for _ in range(MAX_PORT_ATTEMPTS):
+        if port > 65535:
+            break  # ran off the top of the port range
+        attempts += 1
+        if _is_port_free(bind_addr, port):
+            return port
+        port += 1
+    raise RuntimeError(
+        f"no free port found near {preferred} "
+        f"(tried {attempts} consecutive ports: {preferred}..{port - 1})"
+    )
+
+
+def _substitute_placeholders(
+    values: list[str], address: str, port: int, session_id: str | None
+) -> list[str]:
+    """Replace ``<address>`` / ``<port>`` / ``<session_id>`` tokens in ``values``.
+
+    Each token may appear multiple times and inside larger strings (e.g.
+    ``--port=<port>``). A missing or empty ``session_id`` becomes the literal
+    string ``"default"``.
+    """
+    sid = session_id if session_id else "default"
+    return [
+        value.replace("<address>", address).replace("<port>", str(port)).replace("<session_id>", sid)
+        for value in values
+    ]
+
+
 class ServerSpec(BaseModel):
     """Validated description of one nested ``server`` entry."""
 
@@ -141,18 +243,20 @@ class ServerSpec(BaseModel):
     cwd: str = "."
     network: Literal["tcp", "http"] = "tcp"
     address: str = "127.0.0.1"
-    # Dynamic mode has no static port default; 0 means "unknown / to be read
-    # from the config file". Static entries are validated to port > 0.
+    # Optional *preferred starting port* to probe before spawn; 0 (the default)
+    # means "auto-assign" (the OS picks an ephemeral port). The finally chosen
+    # port is resolved by the client (see _find_free_port), never by the child.
     port: int = 0
-    config: str | None = None
 
 
 def parse_server_entry(entry: Any, index: int) -> ServerSpec | None:
     """Parse one ``server`` config entry into a :class:`ServerSpec`.
 
     Logs an error and returns ``None`` for invalid entries (never raises).
-    When the dynamic ``config`` key is set, conflicting ``network``/``address``
-    /``port`` keys are reported and ignored — the file wins.
+    The legacy ``config`` key (server-determined port via a config-file
+    handshake) is no longer supported: entries that still declare it are
+    rejected. ``port`` is optional; when present it must be a positive integer
+    and acts as the preferred starting port to probe.
     """
     try:
         if not isinstance(entry, dict):
@@ -165,42 +269,18 @@ def parse_server_entry(entry: Any, index: int) -> ServerSpec | None:
             logger.error("server[%d]: 'cmd' is missing or empty", index)
             return None
 
-        raw_config = entry.get("config")
-        config: str | None = None
-        if raw_config is not None:
-            if isinstance(raw_config, str) and raw_config.strip():
-                config = raw_config.strip()
-            elif isinstance(raw_config, str):
-                # Empty string means "no config" (static mode).
-                config = None
-            else:
-                logger.error("server[%d]: 'config' must be a non-empty string", index)
-                return None
+        if "config" in entry:
+            _log_error(
+                "server[%d]: 'config' key is no longer supported; ignoring entry", index
+            )
+            return None
 
         data = dict(entry)
-        if config is not None:
-            conflicting = [k for k in ("network", "address", "port") if k in data]
-            if conflicting:
-                _log_error(
-                    "server[%d]: 'config' is set; ignoring conflicting keys: %s",
-                    index,
-                    ", ".join(conflicting),
-                )
-                for k in conflicting:
-                    data.pop(k)
-            data["config"] = config
-        else:
-            data.pop("config", None)
-            port = data.get("port")
-            if (
-                not isinstance(port, int)
-                or isinstance(port, bool)
-                or port <= 0
-            ):
+        if "port" in data:
+            port = data["port"]
+            if not isinstance(port, int) or isinstance(port, bool) or port <= 0:
                 logger.error(
-                    "server[%d]: static mode requires a positive integer 'port' (got %r)",
-                    index,
-                    port,
+                    "server[%d]: 'port' must be a positive integer (got %r)", index, port
                 )
                 return None
 
@@ -223,11 +303,14 @@ def parse_server_entry(entry: Any, index: int) -> ServerSpec | None:
 class ServerProcess:
     """One nested sub-process server bound to a session."""
 
-    def __init__(self, spec: ServerSpec, work_dir: Path) -> None:
+    def __init__(self, spec: ServerSpec, work_dir: Path, session_id: str | None = None) -> None:
         self.spec = spec
         self.process: asyncio.subprocess.Process | None = None
         self.work_dir = work_dir
-        # Resolved connection info (updated from the config file in dynamic mode).
+        self.session_id = session_id
+        # Connection info: ``port`` is resolved by the client before spawn
+        # (see start()) and stays at that resolved value for the lifetime of
+        # the process.
         self.network: str = spec.network
         self.address: str = spec.address
         self.port: int = spec.port
@@ -240,23 +323,29 @@ class ServerProcess:
             cwd = self.work_dir / cwd
         return cwd
 
-    def _resolve_config_path(self) -> Path:
-        cfg = Path(self.spec.config or "")
-        if not cfg.is_absolute():
-            cfg = self.work_dir / cfg
-        return cfg
-
     async def start(self) -> None:
-        """Spawn the child; in dynamic mode wait for its config file.
+        """Allocate a free port, substitute placeholders, then spawn the child.
+
+        The port is resolved *before* spawning: ``<address>``, ``<port>`` and
+        ``<session_id>`` tokens are replaced in ``cmd`` and ``args`` so the
+        child learns its listen address from the command line.
 
         Never raises: failures mark ``ready=False`` and record ``error``.
-        On a dynamic-mode timeout/invalid file the child is terminated.
         """
         try:
             try:
+                port = _find_free_port(self.spec.address, self.spec.port)
+                self.port = port
+                cmd = _substitute_placeholders(
+                    [self.spec.cmd], self.spec.address, port, self.session_id
+                )[0]
+                args = _substitute_placeholders(
+                    self.spec.args, self.spec.address, port, self.session_id
+                )
+                _log_debug(f"server: {_render_command(cmd, args)}")
                 self.process = await asyncio.create_subprocess_exec(
-                    self.spec.cmd,
-                    *self.spec.args,
+                    cmd,
+                    *args,
                     cwd=str(self._resolve_cwd()),
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
@@ -271,86 +360,20 @@ class ServerProcess:
                 self.error = f"spawn failed: {exc}"
                 self.ready = False
                 return
-            if self.spec.config is None:
-                self.ready = True
-                return
-            if await self._wait_for_config():
-                self.ready = True
-            else:
-                await self._terminate_and_reap()
+            self.network = self.spec.network
+            # The spec address may be a wildcard bind address ("0.0.0.0"/"");
+            # clients must connect to a concrete address, so normalize it for
+            # the live connection info (the child still binds the wildcard).
+            self.address = (
+                "127.0.0.1" if self.spec.address in ("0.0.0.0", "", "::") else self.spec.address
+            )
+            self.ready = True
         except Exception:
             logger.exception("server: unexpected failure while starting %s", self.spec.cmd)
             self.ready = False
 
-    async def _wait_for_config(self) -> bool:
-        """Poll the dynamic-mode config file per :data:`CONFIG_WAIT_DELAYS`.
-
-        Returns True when a valid ``{"network", "address", "port"}`` object was
-        read (and applied to this instance). Timeout or invalid content logs an
-        error, sets ``self.error``, and returns False — the caller terminates
-        the child. Once the file appears, load failures are retried a couple of
-        times (see ``_CONFIG_READ_*``) to tolerate non-atomic writers and
-        Windows share locks; a file that stays invalid is treated exactly like
-        a timeout.
-        """
-        cfg_path = self._resolve_config_path()
-        if cfg_path.exists():
-            return await self._load_config_with_retry(cfg_path)
-        for delay in CONFIG_WAIT_DELAYS:
-            await asyncio.sleep(delay)
-            if cfg_path.exists():
-                return await self._load_config_with_retry(cfg_path)
-        self._fail(
-            f"timeout waiting for server config file {cfg_path} "
-            f"after {len(CONFIG_WAIT_DELAYS)} retries"
-        )
-        return False
-
-    async def _load_config_with_retry(self, cfg_path: Path) -> bool:
-        """``_load_config_file`` with quick re-reads for transient failures."""
-        for attempt in range(1, _CONFIG_READ_ATTEMPTS + 1):
-            if self._load_config_file(cfg_path):
-                # A failure logged by an earlier transient attempt is resolved;
-                # do not leave the stale ``error`` on a server that is ready.
-                self.error = None
-                return True
-            if attempt < _CONFIG_READ_ATTEMPTS:
-                await asyncio.sleep(_CONFIG_READ_RETRY_DELAY)
-        return False
-
-    def _load_config_file(self, cfg_path: Path) -> bool:
-        """Read and validate the config file; apply connection info on success."""
-        try:
-            data = orjson.loads(cfg_path.read_bytes())
-        except Exception as exc:
-            self._fail(f"failed to read server config file {cfg_path}: {exc}")
-            return False
-        if not isinstance(data, dict):
-            self._fail(f"server config file {cfg_path} must contain a JSON object")
-            return False
-        network = data.get("network")
-        address = data.get("address")
-        port = data.get("port")
-        if (
-            network not in _VALID_NETWORKS
-            or not isinstance(address, str)
-            or not isinstance(port, int)
-            or isinstance(port, bool)
-            or port <= 0
-        ):
-            self._fail(
-                f"server config file {cfg_path} must be an object with "
-                f"'network' ('tcp'|'http'), 'address' (str) and 'port' (int > 0); got {data!r}"
-            )
-            return False
-        self.network = network
-        self.address = address
-        self.port = port
-        return True
-
     def _fail(self, message: str) -> None:
         self.error = message
-        # Termination itself is the caller's job (start()/_wait_for_config flow).
         logger.error("server %s: %s", self.spec.cmd, message)
 
     async def _terminate_and_reap(self) -> None:
@@ -376,7 +399,11 @@ class ServerProcess:
 
 
 async def start_server_processes(
-    work_dir: Path, server_cfg: Any, out: list[ServerProcess] | None = None
+    work_dir: Path,
+    server_cfg: Any,
+    out: list[ServerProcess] | None = None,
+    *,
+    session_id: str | None = None,
 ) -> list[ServerProcess]:
     """Parse the raw ``server`` config value and start every valid entry.
 
@@ -389,6 +416,9 @@ async def start_server_processes(
     sees children as soon as they exist.  If this coroutine is cancelled (or
     otherwise exits via a :class:`BaseException`), the processes spawned so
     far are terminated best-effort before re-raising — no orphaned children.
+
+    ``session_id`` (keyword-only): forwarded to every :class:`ServerProcess`
+    and substituted into ``<session_id>`` placeholders in ``cmd``/``args``.
 
     Every spawned server is registered in the module-level live registry (see
     :func:`get_live_server_processes`) at the same moment it is appended to
@@ -408,7 +438,7 @@ async def start_server_processes(
             spec = parse_server_entry(entry, index)
             if spec is None:
                 continue
-            server = ServerProcess(spec, work_dir)
+            server = ServerProcess(spec, work_dir, session_id=session_id)
             # Attach before start(): a cancellation *during* start() still
             # finds the (possibly already-spawned) server in the live list.
             servers.append(server)
@@ -431,6 +461,52 @@ async def start_server_processes(
     return servers
 
 
+def _reap_without_loop(proc: asyncio.subprocess.Process, timeout: float) -> bool:
+    """Best-effort synchronous reap for a child bound to a *different* event loop.
+
+    Used when awaiting ``proc.wait()`` raises ``RuntimeError`` because the
+    transport's waiter future is attached to another loop — this happens after
+    Ctrl+C: session teardown runs ``asyncio.run()`` in a fresh loop while the
+    child was spawned on the interrupted one (and the spawn loop may even be
+    closed).  ``terminate()`` has already been issued; here we only make sure
+    the OS process is dead and released without needing the original loop.
+    Returns True when the exit was observed.
+    """
+    if os.name == "nt":
+        # terminate() on Windows is TerminateProcess: unconditional and
+        # immediate, and there are no zombies to reap.  ``proc.returncode``
+        # is only updated by the spawn loop's transport, which may be dead,
+        # so we cannot (and need not) observe the exit from here.
+        return True
+    # POSIX: the spawn loop's child watcher is unusable from here, so reap
+    # the pid directly.  ChildProcessError means something else (e.g. the
+    # transport on a still-running loop) already reaped it.
+    deadline = time.monotonic() + max(timeout, 0.0)
+    while True:
+        if proc.returncode is not None:
+            return True
+        try:
+            pid, _status = os.waitpid(proc.pid, os.WNOHANG)
+            if pid != 0:
+                return True
+        except (ChildProcessError, OSError):
+            return True
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.05)
+    # Still alive after the grace period: force-kill and reap blocking.
+    try:
+        proc.kill()
+        try:
+            os.waitpid(proc.pid, 0)
+            return True
+        except (ChildProcessError, OSError):
+            return True
+    except Exception:
+        logger.exception("server pid %s: cross-loop kill failed", proc.pid)
+    return False
+
+
 async def stop_server_processes(
     servers: list[ServerProcess], timeout: float = 5.0
 ) -> None:
@@ -438,6 +514,12 @@ async def stop_server_processes(
 
     Never raises; safe to call more than once (dead processes are skipped).
     Every server passed in is removed from the live registry, stopped or not.
+
+    When a child was spawned on a different (possibly interrupted/closed) event
+    loop — e.g. teardown via ``asyncio.run()`` after Ctrl+C — awaiting
+    ``proc.wait()`` raises ``RuntimeError`` ("attached to a different loop").
+    In that case the reap falls back to :func:`_reap_without_loop`, which
+    confirms the OS process is dead without the spawn loop.
     """
     try:
         for server in list(servers):
@@ -461,6 +543,23 @@ async def stop_server_processes(
                     await asyncio.wait_for(proc.wait(), timeout)
                 except Exception:
                     logger.exception("server %s: failed to kill/reap process", server.spec.cmd)
+            except RuntimeError as exc:
+                # Cross-loop teardown (Ctrl+C: asyncio.run in a fresh loop over
+                # a process spawned on the interrupted one).  Fall back to a
+                # loop-independent reap instead of logging a scary traceback.
+                if _reap_without_loop(proc, timeout):
+                    logger.debug(
+                        "server %s: reaped without its spawn loop (%s)",
+                        server.spec.cmd,
+                        exc,
+                    )
+                else:
+                    logger.warning(
+                        "server %s: terminate() issued but exit could not be "
+                        "confirmed (spawn loop unavailable); the process may "
+                        "linger until its parent exits",
+                        server.spec.cmd,
+                    )
             except Exception:
                 logger.exception("server %s: failed to reap process", server.spec.cmd)
     except Exception:
