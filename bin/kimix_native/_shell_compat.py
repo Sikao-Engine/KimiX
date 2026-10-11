@@ -888,6 +888,44 @@ _REDIRECTION_START = frozenset("<>")
 # whitespace.  A single frozenset membership test is cheaper than two.
 _WORD_END_CHARS = _OPERATOR_CHARS | frozenset(" \t\r")
 
+# Character classes for the C-accelerated skip loops.  ``str.translate`` with
+# ``None`` mappings deletes the listed characters, turning a scan for "any
+# special char present?" into a single C-level pass; the compiled regexes
+# bulk-skip runs of ordinary characters inside quote-aware loops.
+_LITERAL_SPECIAL_RE = re.compile(r'[\\\'"$`*?[{~]')
+"""Chars whose presence forces the full quote-removal walk."""
+_DQ_SPECIAL_RE = re.compile(r'[\\"`$]')
+"""Chars that are special inside bash double quotes."""
+_WORD_SPECIAL_RE = re.compile(r'[;&|()<>\n \t\r#\\\'"`$]')
+"""Chars that can end a word or open a quoted/expanded region in ``_read_word``."""
+_EXPANSION_SPECIAL_RE = re.compile(r'[\\\'"`$]')
+"""Chars that matter while scanning a data region for substitutions."""
+_HEREDOC_EXPANSION_SPECIAL_RE = re.compile(r'[\\`$]')
+"""Chars that matter inside an expanding heredoc body (quotes are literal)."""
+_CONDITIONAL_SPECIAL_RE = re.compile(r'[\\\]\'"`$]')
+"""Chars that matter inside a ``[[ ... ]]`` conditional."""
+_PARAMETER_SPECIAL_RE = re.compile(r'[\\$\'"{}]')
+"""Chars that matter inside a ``${...}`` parameter expansion."""
+_PARAMETER_LITERAL_SPECIAL_RE = re.compile(r'[\\\'"{}]')
+"""Chars that matter inside a literal ``${...}`` (no substitution scan)."""
+_ARITHMETIC_SPECIAL_RE = re.compile(r'[\\()\'"$]')
+"""Chars that matter inside a ``$((...))`` arithmetic expansion."""
+_BACKTICK_SPECIAL_RE = re.compile(r'[\\`]')
+"""Chars that matter while finding a backtick region's end."""
+_HSPACE_RE = re.compile(r'[ \t\r]+')
+"""Horizontal whitespace run (skipped in one C-level match)."""
+_CONTROL_OP_STARTS = frozenset(";&|()")
+"""Characters a bash control operator can start with."""
+_NAME_START_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+)
+"""Characters a POSIX shell name can start with."""
+_REDIRECTION_RE = re.compile(r"&>>|&>|<<<|<<-|<<|>>|<>|>\||<&|>&|<|>")
+"""One C-level match against the longest-first redirection operator table."""
+
+_UNDECODED = object()
+"""Sentinel: "the caller did not pre-decode this word's literal value"."""
+
 # Nesting deeper than this is never scanned: ``_find_matching`` and
 # ``_scan_range`` recurse once per ``$( ... )`` level, so pathological input
 # (e.g. a pasted blob with hundreds of nested substitutions) would otherwise
@@ -1084,7 +1122,7 @@ class _BashFixScanner:
             for name in unique_names
         )
         source = self._build_source()
-        source = _fix_heredoc_trailing_operators(source)
+        source = self._build_fixed_source(source)
         prefix = definitions + "\n" + exports + "\n" if definitions else ""
         return BashFix(
             prefix + source,
@@ -1095,16 +1133,42 @@ class _BashFixScanner:
             tuple(self.unsupported),
         )
 
+    def _build_fixed_source(self, source: str | None = None) -> str:
+        """Return the built source with heredoc trailing operators repaired.
+
+        When no edits were recorded the build returns ``self.s`` itself, so the
+        heredoc event positions this scan collected are still valid and are
+        reused instead of scanning the same string a second time (the common
+        case: e.g. fallback-command names alone produce no source edits).
+        """
+        if source is None:
+            source = self._build_source()
+        if source is self.s:
+            return _fix_heredoc_trailing_operators(source, self.heredoc_events)
+        return _fix_heredoc_trailing_operators(source)
+
     def _build_source(self) -> str:
-        """Return the source with all recorded edits applied."""
+        """Return the source with all recorded edits applied.
+
+        Positions recorded by an inner scanner (a nested ``bash -c``/``eval``
+        script) belong to the *inner* string and must not be interpreted as
+        offsets into ``self.s``; callers splice the inner result themselves.
+        """
         if not self.edits:
             return self.s
+        return self._apply_edits(self.s, self.edits)
+
+    @staticmethod
+    def _apply_edits(s: str, edits: list[tuple[int, int, str]]) -> str:
+        """Apply ``(start, end, replacement)`` edits to *s*."""
+        if not edits:
+            return s
         pieces: list[str] = []
         previous = 0
-        for start, end, replacement in sorted(self.edits):
-            pieces.extend((self.s[previous:start], replacement))
+        for start, end, replacement in sorted(edits):
+            pieces.extend((s[previous:start], replacement))
             previous = end
-        pieces.append(self.s[previous:])
+        pieces.append(s[previous:])
         return "".join(pieces)
 
     @staticmethod
@@ -1116,9 +1180,23 @@ class _BashFixScanner:
         accepted; parameter/command/arithmetic expansions, globbing, and
         malformed quotes return ``None`` so the caller leaves them untouched.
         """
+        # Fast path: a word with no quoting/expansion characters evaluates to
+        # itself (quote removal is the identity), so the walk below is skipped.
+        search = _LITERAL_SPECIAL_RE.search
+        m = search(raw)
+        if m is None:
+            return raw
         value: list[str] = []
         i = 0
         while i < len(raw):
+            # Bulk-append the plain run before the next special character.
+            m = search(raw, i)
+            if m is None:
+                value.append(raw[i:])
+                break
+            if m.start() > i:
+                value.append(raw[i : m.start()])
+                i = m.start()
             ch = raw[i]
             if ch == "\\":
                 if i + 1 >= len(raw):
@@ -1335,6 +1413,28 @@ class _BashFixScanner:
         name = _BashFixScanner._literal_word_value(raw)
         return name if name is not None and name in _SHELL_WRAPPERS else None
 
+    # The helpers above decode the raw word first; the ``*_value`` variants
+    # below take an already-decoded literal value so a caller that decoded the
+    # word once (the main scan loop) does not pay for the decode repeatedly.
+
+    @staticmethod
+    def _literal_command_name_value(name: str | None) -> str | None:
+        return name if name is not None and name in _FALLBACKS else None
+
+    @staticmethod
+    def _literal_unsupported_name_value(name: str | None) -> str | None:
+        return name if name is not None and name in _UNSUPPORTED_BODIES else None
+
+    @staticmethod
+    def _reparse_builtin_name_value(name: str | None) -> int | None:
+        if name is None:
+            return None
+        return _REPARSE_BUILTINS.get(name)
+
+    @staticmethod
+    def _shell_wrapper_name_value(name: str | None) -> str | None:
+        return name if name is not None and name in _SHELL_WRAPPERS else None
+
     @staticmethod
     def _plausible_script_file(raw: str) -> bool:
         """Return True when *raw* looks like a script path, not a command word.
@@ -1461,7 +1561,7 @@ class _BashFixScanner:
                 inner._scan_range(0, len(script))
             except RecursionError:
                 return None
-            fixed = _fix_heredoc_trailing_operators(inner._build_source())
+            fixed = inner._build_fixed_source()
             self.names.extend(n for n in inner.names if n not in self.names)
             self.path_notes.extend(inner.path_notes)
             self.shell_notes.extend(
@@ -1552,7 +1652,7 @@ class _BashFixScanner:
             # inherit them, and the established contract leaves such
             # invocations byte-for-byte untouched.
             return script_end
-        fixed = _fix_heredoc_trailing_operators(inner._build_source())
+        fixed = inner._build_fixed_source()
         self.path_notes.extend(inner.path_notes)
         self.nul_fixes.extend(inner.nul_fixes)
         if inner.edits:
@@ -1591,7 +1691,7 @@ class _BashFixScanner:
             inner._scan_range(0, len(script))
         except RecursionError:
             return True
-        fixed = _fix_heredoc_trailing_operators(inner._build_source())
+        fixed = inner._build_fixed_source()
         self.names.extend(n for n in inner.names if n not in self.names)
         self.path_notes.extend(inner.path_notes)
         self.shell_notes.extend(
@@ -1611,8 +1711,12 @@ class _BashFixScanner:
 
         The wrapper exists so pathological nesting (hundreds of nested
         ``$( ... )`` levels) costs O(_MAX_NESTING_DEPTH * length) instead of
-        O(depth * length); the innermost levels are left for Bash.
+        O(depth * length); the innermost levels are left for Bash.  An empty
+        range holds no commands, so it is skipped without touching the depth
+        counter.
         """
+        if start >= end:
+            return
         if self.nest_depth >= _MAX_NESTING_DEPTH:
             return
         self.nest_depth += 1
@@ -1661,7 +1765,13 @@ class _BashFixScanner:
             ch = s[i]
 
             if ch in " \t\r":
-                i += 1
+                # A whitespace *run* (indentation, aligned columns) is skipped
+                # in one C-level match; a single space just steps over.
+                if i + 1 < end and s[i + 1] in " \t\r":
+                    m = _HSPACE_RE.match(s, i, end)
+                    i = m.end() if m is not None else i + 1
+                else:
+                    i += 1
                 continue
             if ch == "\\" and i + 1 < end and s[i + 1] == "\n":
                 i += 2
@@ -1688,12 +1798,10 @@ class _BashFixScanner:
                 i = end if newline < 0 else newline
                 continue
 
-            process_substitution = ch in _REDIRECTION_START and (
-                s.startswith("<(", i) or s.startswith(">(", i)
-            )
+            process_substitution = ch in _REDIRECTION_START and s[i + 1 : i + 2] == "("
             if not process_substitution and (
                 ch in _REDIRECTION_START
-                or (ch == "&" and s.startswith("&>", i))
+                or (ch == "&" and s[i + 1 : i + 2] == ">")
                 or (ch.isdigit() and self._redirection_after_fd(i, end))
             ):
                 op_start = i
@@ -1718,7 +1826,7 @@ class _BashFixScanner:
                 i = op_start
 
             if redirect_expected:
-                if s.startswith("<(" , i) or s.startswith(">(", i):
+                if ch in _REDIRECTION_START and s[i + 1 : i + 2] == "(":
                     close = self._find_matching(i + 2, end, ")")
                     self._scan_range(i + 2, close if close < end else end)
                     word_end = close + 1 if close < end else end
@@ -1772,13 +1880,13 @@ class _BashFixScanner:
                 heredoc_operator = None
                 continue
 
-            if s.startswith("[[", i) and ch == "[":
+            if ch == "[" and s[i + 1 : i + 2] == "[":
                 function_body_expected = False
                 i = self._skip_conditional(i + 2, end)
                 command_expected = False
                 for_brace_body = False
                 continue
-            if s.startswith("((", i) and ch == "(":
+            if ch == "(" and s[i + 1 : i + 2] == "(":
                 function_body_expected = False
                 i = self._skip_arithmetic(i + 2, end)
                 # ``for ((expr))`` arithmetic header: bash 5 accepts a do-less
@@ -1790,7 +1898,7 @@ class _BashFixScanner:
                 for_brace_body = for_arith_header
                 for_arith_header = False
                 continue
-            if ch == "$" and s.startswith("$(", i) and not s.startswith("$((", i):
+            if ch == "$" and s[i + 1 : i + 2] == "(" and s[i + 2 : i + 3] != "(":
                 close = self._find_matching(i + 2, end, ")")
                 inner_end = close if close < end else end
                 self._scan_range(i + 2, inner_end)
@@ -1812,9 +1920,7 @@ class _BashFixScanner:
                     case_stack[-1] = "await-in"
                 command_expected = False
                 continue
-            if ch in _REDIRECTION_START and (
-                s.startswith("<(", i) or s.startswith(">(", i)
-            ):
+            if ch in _REDIRECTION_START and s[i + 1 : i + 2] == "(":
                 close = self._find_matching(i + 2, end, ")")
                 self._scan_range(i + 2, close if close < end else end)
                 i = close + 1 if close < end else end
@@ -1824,7 +1930,10 @@ class _BashFixScanner:
                 command_expected = False
                 continue
 
-            op, op_end = self._read_control_operator(i, end)
+            if ch in _CONTROL_OP_STARTS:
+                op, op_end = self._read_control_operator(i, end)
+            else:
+                op, op_end = "", i
             if op:
                 i = op_end
                 for_brace_body = False
@@ -1936,11 +2045,12 @@ class _BashFixScanner:
                     if replacement is not None:
                         self.edits.append((word_start, word_end, replacement))
                         self.path_notes.append(raw)
-                    if (
-                        _ASSIGNMENT_RE.match(raw)
-                        and i < end
-                        and s[i] == "("
-                    ):
+                if (
+                    "=" in raw
+                    and _ASSIGNMENT_RE.match(raw)
+                    and i < end
+                    and s[i] == "("
+                ):
                         # Array literal as a declaration-builtin argument
                         # (``declare -a arr=( ...)``): its elements are data
                         # words, scanned like the command-position form.
@@ -1976,7 +2086,7 @@ class _BashFixScanner:
                     for_arith_header = True
                 command_expected = False
                 continue
-            if _ASSIGNMENT_RE.match(raw):
+            if "=" in raw and _ASSIGNMENT_RE.match(raw):
                 if i < end and s[i] == "(":
                     close = self._find_matching(i + 1, end, ")")
                     self._scan_array_words(i + 1, close if close < end else end)
@@ -2084,11 +2194,17 @@ class _BashFixScanner:
                 command_word = self._literal_word_value(raw) or raw
                 continue
 
+            # Decode the word's literal value ONCE: the shell-wrapper, reparse
+            # builtin, fallback-name, unsupported-name and command_word checks
+            # below all need it, and each used to re-run the quote-removal
+            # walk on the same raw text.
+            literal = self._literal_word_value(raw)
+
             # Redundant shell invocation (``bash cd ...``, ``bash -c '...'``):
             # only at a plain command position — after ``command``/``env``/
             # ``sudo`` the shell word is the wrapped command itself and is
             # consumed by the wrapper logic above, so it is left untouched.
-            shell_name = self._shell_wrapper_name(raw)
+            shell_name = self._shell_wrapper_name_value(literal)
             if shell_name is not None:
                 handled = self._handle_shell_wrapper(
                     shell_name,
@@ -2122,9 +2238,9 @@ class _BashFixScanner:
             # Record the command word of this simple command so argument-
             # position decisions (e.g. ``find -exec sh -c '...'``) know what
             # program will consume the words that follow.
-            command_word = self._literal_word_value(raw) or raw
+            command_word = literal if literal is not None else raw
 
-            reparse_count = self._reparse_builtin_name(raw)
+            reparse_count = self._reparse_builtin_name_value(literal)
             if reparse_count is not None:
                 # ``eval``/``trap``: the operand words that follow are
                 # re-parsed as shell code at runtime; scan the quoted ones as
@@ -2135,14 +2251,14 @@ class _BashFixScanner:
                 assignment_prefix = False
                 continue
 
-            fallback_name = self._literal_command_name(raw)
+            fallback_name = self._literal_command_name_value(literal)
             if fallback_name is not None:
                 self.names.append(fallback_name)
                 if executable_wrapper:
                     self.edits.append(
                         (word_start, word_end, _wrapper_runner(fallback_name))
                     )
-            elif self._record_unsupported(raw):
+            elif self._record_unsupported(raw, literal):
                 pass
             else:
                 # A command word can itself be a Windows executable path
@@ -2157,16 +2273,18 @@ class _BashFixScanner:
             command_expected = False
             wrapper = None
 
-    def _record_unsupported(self, raw: str) -> bool:
+    def _record_unsupported(self, raw: str, name: object = _UNDECODED) -> bool:
         """Record a command word with no Windows Git Bash equivalent.
 
         Returns True when *raw* literal-resolved to an unsupported command
         name; the command text is left untouched so the app layer can surface
         ``_UNSUPPORTED_BODIES``' reason instead of executing a guaranteed
-        "command not found".
+        "command not found".  *name* may carry the already-decoded literal
+        value (``None`` included); the ``_UNDECODED`` sentinel decodes *raw*.
         """
-        name = self._literal_unsupported_name(raw)
-        if name is None:
+        if name is _UNDECODED:
+            name = self._literal_unsupported_name(raw)
+        if name is None or name not in _UNSUPPORTED_BODIES:
             return False
         if name not in self.unsupported:
             self.unsupported.append(name)
@@ -2177,12 +2295,22 @@ class _BashFixScanner:
     ) -> int:
         s = self.s
         i = start
+        search = _WORD_SPECIAL_RE.search
         while i < end:
+            # Bulk-skip plain word characters (C-level regex search): only the
+            # special set can end a word or open a quoted/expanded region.
+            m = search(s, i, end)
+            if m is None:
+                return end
+            i = m.start()
             ch = s[i]
             if ch in _WORD_END_CHARS:
                 break
-            if ch == "#" and i == start:
-                break
+            if ch == "#":
+                if i == start:
+                    break
+                i += 1
+                continue
             if ch == "\\":
                 i += 2 if i + 1 < end else 1
                 continue
@@ -2201,25 +2329,26 @@ class _BashFixScanner:
                     self._scan_range(i + 1, close)
                 i = close + 1 if close < end else end
                 continue
-            if ch == "$":
+            # ch == "$"
+            nxt = s[i + 1] if i + 1 < end else ""
+            if nxt == "(":
                 if s.startswith("$((", i):
                     i = self._skip_arithmetic(i + 3, end)
                     continue
-                if s.startswith("$(", i):
-                    close = self._find_matching(i + 2, end, ")")
-                    if scan_substitutions:
-                        self._scan_range(i + 2, close if close < end else end)
-                    i = close + 1 if close < end else end
-                    continue
-                if s.startswith("${", i):
-                    if scan_substitutions:
-                        i = self._skip_parameter(i + 2, end)
-                    else:
-                        i = self._skip_parameter_literal(i + 2, end)
-                    continue
-                if s.startswith("$'", i):
-                    i = self._skip_ansi_quote(i + 2, end)
-                    continue
+                close = self._find_matching(i + 2, end, ")")
+                if scan_substitutions:
+                    self._scan_range(i + 2, close if close < end else end)
+                i = close + 1 if close < end else end
+                continue
+            if nxt == "{":
+                if scan_substitutions:
+                    i = self._skip_parameter(i + 2, end)
+                else:
+                    i = self._skip_parameter_literal(i + 2, end)
+                continue
+            if nxt == "'":
+                i = self._skip_ansi_quote(i + 2, end)
+                continue
             i += 1
         return i
 
@@ -2241,20 +2370,30 @@ class _BashFixScanner:
     def _skip_double_quote(self, i: int, end: int) -> int:
         s = self.s
         while i < end:
+            # Bulk-skip plain content: only '\\', '"', '`' and '$' are special
+            # inside double quotes, so a C-level regex search jumps over runs of
+            # ordinary characters instead of testing them one at a time.
+            m = _DQ_SPECIAL_RE.search(s, i, end)
+            if m is None:
+                return end
+            i = m.start()
             ch = s[i]
-            if ch == "\\" and i + 1 < end and s[i + 1] in '$`"\\\n':
-                i += 2
+            if ch == "\\":
+                if i + 1 < end and s[i + 1] in '$`"\\\n':
+                    i += 2
+                else:
+                    i += 1
             elif ch == '"':
                 return i + 1
             elif ch == "`":
                 close = self._find_backtick_end(i + 1, end)
                 self._scan_range(i + 1, close)
                 i = close + 1 if close < end else end
-            elif ch == "$" and s.startswith("$(", i) and not s.startswith("$((", i):
+            elif s.startswith("$(", i) and not s.startswith("$((", i):
                 close = self._find_matching(i + 2, end, ")")
                 self._scan_range(i + 2, close if close < end else end)
                 i = close + 1 if close < end else end
-            elif ch == "$" and s.startswith("${", i):
+            elif s.startswith("${", i):
                 i = self._skip_parameter(i + 2, end)
             else:
                 i += 1
@@ -2297,7 +2436,12 @@ class _BashFixScanner:
     def _scan_expansions(self, i: int, end: int) -> None:
         """Scan executable substitutions in a region whose plain words are data."""
         s = self.s
+        search = _EXPANSION_SPECIAL_RE.search
         while i < end:
+            m = search(s, i, end)
+            if m is None:
+                return
+            i = m.start()
             ch = s[i]
             if ch == "\\":
                 i += 2 if i + 1 < end else 1
@@ -2329,7 +2473,12 @@ class _BashFixScanner:
         suppress the expansion introducers that Bash recognizes there.
         """
         s = self.s
+        search = _HEREDOC_EXPANSION_SPECIAL_RE.search
         while i < end:
+            m = search(s, i, end)
+            if m is None:
+                return
+            i = m.start()
             ch = s[i]
             if ch == "\\":
                 i += 2 if i + 1 < end else 1
@@ -2351,7 +2500,12 @@ class _BashFixScanner:
     def _skip_conditional(self, i: int, end: int) -> int:
         """Skip a ``[[ ... ]]`` expression while scanning its substitutions."""
         s = self.s
+        search = _CONDITIONAL_SPECIAL_RE.search
         while i < end:
+            m = search(s, i, end)
+            if m is None:
+                return end
+            i = m.start()
             ch = s[i]
             if ch == "]" and s.startswith("]]", i):
                 return i + 2
@@ -2380,7 +2534,12 @@ class _BashFixScanner:
     def _skip_parameter_literal(self, i: int, end: int) -> int:
         s = self.s
         depth = 1
+        search = _PARAMETER_LITERAL_SPECIAL_RE.search
         while i < end:
+            m = search(s, i, end)
+            if m is None:
+                return end
+            i = m.start()
             if s[i] == "\\":
                 i += 2 if i + 1 < end else 1
             elif s[i] == "'":
@@ -2402,7 +2561,12 @@ class _BashFixScanner:
     def _skip_parameter(self, i: int, end: int) -> int:
         s = self.s
         depth = 1
+        search = _PARAMETER_SPECIAL_RE.search
         while i < end:
+            m = search(s, i, end)
+            if m is None:
+                return end
+            i = m.start()
             ch = s[i]
             if ch == "\\":
                 i += 2 if i + 1 < end else 1
@@ -2429,7 +2593,12 @@ class _BashFixScanner:
     def _skip_arithmetic(self, i: int, end: int) -> int:
         s = self.s
         depth = 1
+        search = _ARITHMETIC_SPECIAL_RE.search
         while i < end:
+            m = search(s, i, end)
+            if m is None:
+                return end
+            i = m.start()
             ch = s[i]
             if ch == "$" and s.startswith("$(", i) and not s.startswith("$((", i):
                 close = self._find_matching(i + 2, end, ")")
@@ -2455,13 +2624,16 @@ class _BashFixScanner:
 
     def _find_backtick_end(self, i: int, end: int) -> int:
         s = self.s
+        search = _BACKTICK_SPECIAL_RE.search
         while i < end:
+            m = search(s, i, end)
+            if m is None:
+                return end
+            i = m.start()
             if s[i] == "\\":
                 i += 2 if i + 1 < end else 1
-            elif s[i] == "`":
-                return i
             else:
-                i += 1
+                return i
         return end
 
     def _find_matching(self, i: int, end: int, closing: str) -> int:
@@ -2470,6 +2642,8 @@ class _BashFixScanner:
         Recursion is bounded by :data:`_MAX_NESTING_DEPTH`; beyond it the
         region is treated as unmatched so the caller skips it for Bash.
         """
+        if i >= end:
+            return end
         if self.nest_depth >= _MAX_NESTING_DEPTH:
             return end
         self.nest_depth += 1
@@ -2574,16 +2748,24 @@ class _BashFixScanner:
 
     def _skip_double_quote_for_matching(self, i: int, end: int) -> int:
         s = self.s
+        search = _DQ_SPECIAL_RE.search
         while i < end:
+            m = search(s, i, end)
+            if m is None:
+                return end
+            i = m.start()
             ch = s[i]
-            if ch == "\\" and i + 1 < end and s[i + 1] in '$`"\\\n':
-                i += 2
+            if ch == "\\":
+                if i + 1 < end and s[i + 1] in '$`"\\\n':
+                    i += 2
+                else:
+                    i += 1
             elif ch == '"':
                 return i + 1
             elif ch == "`":
                 close = self._find_backtick_end(i + 1, end)
                 i = close + 1 if close < end else end
-            elif ch == "$" and s.startswith("$(", i) and not s.startswith("$((", i):
+            elif s.startswith("$(", i) and not s.startswith("$((", i):
                 close = self._find_matching(i + 2, end, ")")
                 i = close + 1 if close < end else end
             else:
@@ -2593,34 +2775,34 @@ class _BashFixScanner:
     def _read_control_operator(self, i: int, end: int) -> tuple[str, int]:
         s = self.s
         ch = s[i]
+        nxt = s[i + 1 : i + 2]
         if ch == ";":
-            if s.startswith(";;&", i):
-                return ";;&", i + 3
-            if s.startswith(";;", i):
+            if nxt == ";":
+                if s[i + 2 : i + 3] == "&":
+                    return ";;&", i + 3
                 return ";;", i + 2
-            if s.startswith(";&", i):
+            if nxt == "&":
                 return ";&", i + 2
             return ";", i + 1
         if ch == "&":
-            if s.startswith("&&", i):
+            if nxt == "&":
                 return "&&", i + 2
             return "&", i + 1
         if ch == "|":
-            if s.startswith("||", i):
+            if nxt == "|":
                 return "||", i + 2
-            if s.startswith("|&", i):
+            if nxt == "&":
                 return "|&", i + 2
             return "|", i + 1
-        if ch in "()":
+        if ch == "(" or ch == ")":
             return ch, i + 1
         return "", i
 
     def _read_redirection(self, i: int, end: int) -> tuple[str, int]:
-        s = self.s
-        for op in ("&>>", "&>", "<<<", "<<-", "<<", ">>", "<>", ">|", "<&", ">&", "<", ">"):
-            if s.startswith(op, i):
-                return op, i + len(op)
-        return "", i
+        m = _REDIRECTION_RE.match(self.s, i, end)
+        if m is None:
+            return "", i
+        return m.group(), m.end()
 
     def _redirection_after_fd(self, i: int, end: int) -> bool:
         s = self.s
@@ -2645,6 +2827,10 @@ class _BashFixScanner:
         return i + 1 if i < end and s[i] == ")" else None
 
     def _function_declaration_end(self, raw: str, i: int, end: int) -> int | None:
+        # ``_NAME_RE`` requires a leading letter/underscore; that one-char test
+        # rejects most words without running the regex.
+        if not raw or (raw[0] not in _NAME_START_CHARS):
+            return None
         if not _NAME_RE.fullmatch(raw):
             return None
         return self._empty_parentheses_end(i, end)
@@ -2988,6 +3174,10 @@ class _BashFixScanner:
         (``/tmp/x``, ``/c/x``).  Returns ``None`` when *raw* is not an
         unambiguous path word.
         """
+        # Fast reject: a word without a backslash and not starting with "/"
+        # can be neither a Windows path nor a Git Bash virtual path.
+        if not raw or ("\\" not in raw and raw[0] != "/"):
+            return None
         replacement = self._windows_path_replacement(raw)
         if replacement is not None:
             return replacement
@@ -3217,14 +3407,21 @@ def _apply_heredoc_operator_move(
     )
 
 
-def _fix_heredoc_trailing_operators(source: str) -> str:
-    """Repair heredoc commands whose trailing control operator is on the wrong line."""
-    try:
-        scanner = _BashFixScanner(source)
-        scanner._scan_range(0, scanner.n)
-    except RecursionError:
-        return source
-    events = scanner.heredoc_events
+def _fix_heredoc_trailing_operators(
+    source: str, events: list[tuple[int, int]] | None = None
+) -> str:
+    """Repair heredoc commands whose trailing control operator is on the wrong line.
+
+    *events* may carry the ``(redir_line_end, terminator_end)`` pairs already
+    collected by a scan of *source*; when omitted the source is scanned here.
+    """
+    if events is None:
+        try:
+            scanner = _BashFixScanner(source)
+            scanner._scan_range(0, scanner.n)
+        except RecursionError:
+            return source
+        events = scanner.heredoc_events
     if not events:
         return source
     for redir_line_end, terminator_end in reversed(events):
@@ -3246,8 +3443,14 @@ def fix_bash_command(command: str) -> BashFix:
     # containing it contiguously (for example ``r""ev`` or ``\rev``), so a
     # substring fast path would miss legal executable words.  The scanner is
     # linear and exits without allocating generated shell code when unchanged.
-    result = _BashFixScanner(command).fix()
-    fixed = _fix_heredoc_trailing_operators(result.command)
+    scanner = _BashFixScanner(command)
+    result = scanner.fix()
+    if result.command == command:
+        # ``fix()`` scanned the source verbatim: reuse its heredoc events
+        # instead of scanning the same string a second time.
+        fixed = _fix_heredoc_trailing_operators(command, scanner.heredoc_events)
+    else:
+        fixed = _fix_heredoc_trailing_operators(result.command)
     return BashFix(
         fixed,
         result.replacements,
@@ -3602,6 +3805,15 @@ def _process_unquoted(cmd: str) -> str:
 # ======================================================================
 
 
+_PWSH_NORMAL_RE = re.compile(r'''["'`#<@\-$]''')
+"""Chars that can open a PowerShell region in normal (unquoted) mode.
+
+Everything else in normal mode is plain code, so the tokenizer can bulk-skip
+runs of it with one C-level regex search instead of a per-character dispatch.
+``-`` is included for the ``--%`` stop-parsing marker, ``#``/``@`` for the
+token-start comment / here-string checks, and ``$`` for ``$(...)``.
+"""
+
 _NORMAL = "normal"
 _DQ = "double-quoted"
 _SQ = "single-quoted"
@@ -3899,9 +4111,26 @@ class _PwshScanner:
         saw_code = False  # any real statement code seen (not comments/whitespace)
         last_cont_target = -1  # index after the last backtick-newline continuation
         i = 0
+        search = _PWSH_NORMAL_RE.search
         while i < n:
-            ch = s[i]
             if mode == _NORMAL:
+                # Bulk-skip a run of characters that cannot open a quoted,
+                # comment, here-string, stop-parsing or sub-expression region.
+                # They are all code (set ``saw_code``); only whitespace is
+                # handled separately so it does not flip the flag.
+                m = search(s, i)
+                if m is None:
+                    tail = s[i:]
+                    if tail.strip():
+                        saw_code = True
+                    i = n
+                    continue
+                run = s[i:m.start()]
+                if run:
+                    if run.strip():
+                        saw_code = True
+                    i = m.start()
+                ch = s[i]
                 if ch == '"':
                     saw_code = True
                     mode = _DQ
@@ -3972,6 +4201,7 @@ class _PwshScanner:
                     saw_code = True
                     i += 1
             elif mode == _DQ:
+                ch = s[i]
                 if ch == "`":
                     i += 2 if i + 1 < n else 1
                 elif ch == '"':
@@ -3985,15 +4215,18 @@ class _PwshScanner:
                 else:
                     i += 1
             elif mode == _SQ:
-                if ch == "'":
-                    if i + 1 < n and s[i + 1] == "'":
-                        i += 2  # '' -> literal single quote
-                    else:
-                        mode = _NORMAL
-                        i += 1
+                # Bulk-skip: only a single quote is special inside '...'.
+                close = s.find("'", i, n)
+                if close < 0:
+                    i = n
+                    continue
+                if close + 1 < n and s[close + 1] == "'":
+                    i = close + 2  # '' -> literal single quote
                 else:
-                    i += 1
+                    mode = _NORMAL
+                    i = close + 1
             elif mode in (_HDQ, _HSQ):
+                ch = s[i]
                 if ch == "\n":
                     line_start = i + 1
                     i += 1
@@ -4008,17 +4241,21 @@ class _PwshScanner:
                 else:
                     i += 1
             elif mode == _COMMENT:
-                if ch == "\n":
-                    mode = _NORMAL
-                    i += 1
+                # Bulk-skip to the end of the line.
+                nl = s.find("\n", i, n)
+                if nl < 0:
+                    i = n
                 else:
-                    i += 1
+                    mode = _NORMAL
+                    i = nl + 1
             elif mode == _BLOCK:
-                if ch == "#" and i + 1 < n and s[i + 1] == ">":
-                    mode = _NORMAL
-                    i += 2
+                # Bulk-skip to the closing ``#>``.
+                close = s.find("#>", i, n)
+                if close < 0:
+                    i = n
                 else:
-                    i += 1
+                    mode = _NORMAL
+                    i = close + 2
 
         # -- end of input -----------------------------------------------------
         # A line-continuation backtick whose target line runs to the end of
@@ -4224,6 +4461,9 @@ def _scan_here_string(code: str, start: int) -> int:
     return i
 
 
+_REGION_START_RE = re.compile(r"[#<@'\"]")
+
+
 def _build_region_mask(code: str, *, here_strings: bool = True) -> bytearray:
     """Build a region mask for *code* in a single pass.
 
@@ -4236,7 +4476,14 @@ def _build_region_mask(code: str, *, here_strings: bool = True) -> bytearray:
     n = len(code)
     mask = bytearray(b"\x01" * n)
     i = 0
+    find = _REGION_START_RE.search
     while i < n:
+        # Bulk-jump to the next region-opening character ('#', '<', '@',
+        # quote): a C-level regex search replaces the per-character walk.
+        m = find(code, i)
+        if m is None:
+            break
+        i = m.start()
         c = code[i]
         if c == "<" and i + 1 < n and code[i + 1] == "#":
             start = i
@@ -4244,10 +4491,13 @@ def _build_region_mask(code: str, *, here_strings: bool = True) -> bytearray:
             mask[start:i] = b"\x00" * (i - start)
         elif c == "#":
             start = i
-            while i < n and code[i] != "\n":
-                i += 1
+            newline = code.find("\n", i)
+            i = n if newline < 0 else newline
             mask[start:i] = b"\x00" * (i - start)
-        elif here_strings and c == "@" and i + 1 < n and code[i + 1] in ("'", '"'):
+        elif c == "@" and i + 1 < n and code[i + 1] in ("'", '"'):
+            if not here_strings:
+                i += 1
+                continue
             # PowerShell here-strings require the closing delimiter at the
             # beginning of its own line (only whitespace may precede it).
             j = i + 2
@@ -4302,24 +4552,36 @@ def _compute_depths(line: str, mask: bytearray) -> list[int]:
 
 def _join_continuation_lines(code: str) -> str:
     """Collapse backtick line-continuations into single logical lines."""
+    if "`" not in code:
+        return code
     mask = _build_region_mask(code)
     n = len(code)
     result: list[str] = []
     i = 0
-    while i < n:
-        if code[i] == "`" and mask[i]:
-            j = i + 1
+    find = code.find
+    previous = 0
+    while True:
+        # Bulk-jump to the next backtick (C-level find) instead of testing
+        # every character; only a backtick in a code region can continue.
+        i = find("`", i)
+        while i != -1 and not mask[i]:
+            i = find("`", i + 1)
+        if i == -1:
+            break
+        j = i + 1
+        while j < n and code[j] in " \t\r":
+            j += 1
+        if j < n and code[j] == "\n":
+            j += 1
             while j < n and code[j] in " \t\r":
                 j += 1
-            if j < n and code[j] == "\n":
-                j += 1
-                while j < n and code[j] in " \t\r":
-                    j += 1
-                result.append(" ")
-                i = j
-                continue
-        result.append(code[i])
+            result.append(code[previous:i])
+            result.append(" ")
+            previous = j
+            i = j
+            continue
         i += 1
+    result.append(code[previous:])
     return "".join(result)
 
 
@@ -4542,6 +4804,8 @@ def _transform_operator(
     """
     warnings: list[str] = []
     op_len = len(op)
+    if op not in line:
+        return line, warnings
     search = 0
     while True:
         mask = _line_mask(line)
@@ -4580,6 +4844,8 @@ def _transform_nca_line(line: str) -> tuple[str, list[str]]:
     all handled correctly.
     """
     warnings: list[str] = []
+    if "??=" not in line:
+        return line, warnings
     search = 0
     while True:
         mask = _line_mask(line)
@@ -4637,6 +4903,8 @@ def _find_matching_colon(line: str, start: int, mask: bytearray,
 def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
     """Rewrite ternary ``$cond ? $true : $false`` into an ``if`` statement."""
     warnings: list[str] = []
+    if "?" not in line:
+        return line, warnings
     mask = _line_mask(line)
     depth_arr = _compute_depths(line, mask)
     pos = 0
@@ -4680,6 +4948,8 @@ def _transform_chain_line(line: str) -> tuple[str, list[str]]:
     Uses rightmost-first to maintain correct right-associative semantics.
     """
     warnings: list[str] = []
+    if "&&" not in line and "||" not in line:
+        return line, warnings
     while True:
         mask = _line_mask(line)
         and_pos = _find_next_op(line, "&&", mask, reverse=True)
@@ -4788,6 +5058,8 @@ def _transform_null_conditional_line(line: str, op: str) -> tuple[str, list[str]
     warnings: list[str] = []
     is_dot = op == "?."
     op_len = len(op)
+    if op not in line:
+        return line, warnings
     search = 0
     while True:
         mask = _line_mask(line)
