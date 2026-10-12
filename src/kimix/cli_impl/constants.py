@@ -33,7 +33,8 @@ Available commands:
   {colorful_text('/fix:<command>', fg=Color.YELLOW)}  - Run a command and fix errors if any
   {colorful_text('/txt', fg=Color.YELLOW)}            - Input multiple line text
   {colorful_text('/init', fg=Color.YELLOW)}           - Initialize default LLM config
-  {colorful_text('/compact', fg=Color.YELLOW)}        - Compact conversation context
+  {colorful_text('/compact', fg=Color.YELLOW)} - Compact conversation context
+  {colorful_text('/continue', fg=Color.YELLOW)} - Let the agent continue its unfinished work in the current session
   {colorful_text('/export:<path>', fg=Color.YELLOW)}  - Export session messages to file
   {colorful_text('/resume:<id>', fg=Color.YELLOW)}    - Close current session and resume a session by ID
   {colorful_text('/store:<id>', fg=Color.YELLOW)}   - Copy the current session to a new named session

@@ -752,6 +752,46 @@ def _context_is_non_empty(session: Any) -> bool:
     return False
 
 
+_CONTINUE_PROMPT = (
+    # Terse on purpose: this synthetic user message is appended to the
+    # session context, so keep token cost low. Mirrors the soul's built-in
+    # continuation nudge style (see _MAX_TEXT_BLOCK_CONTINUATION_ROUNDS in
+    # kimi_cli/soul/kimisoul.py).
+    '[Continue] Pick up your unfinished work where you left off; '
+    'finish the remaining steps and report only when fully done.'
+)
+
+
+def _session_is_done(session: Any) -> bool:
+    """Return True when the session is marked done.
+
+    Primary signal: the SDK session's ``_done`` flag, which is True only
+    when the last LLM stream finished normally (see
+    ``kimi_agent_sdk.Session.prompt``). Fallback: a non-empty todo list
+    whose items are all ``done`` (covers resumed sessions whose flag has
+    not been re-established yet).
+    """
+    if getattr(session, '_done', False):
+        return True
+    from kimix.utils.prompt import _get_session_todos
+
+    todos = _get_session_todos(session)
+    if not todos:
+        return False
+
+    def _all_done(items: list[Any]) -> bool:
+        for item in items:
+            status = item.get('status') if isinstance(item, dict) else getattr(item, 'status', None)
+            if status != 'done':
+                return False
+            children = item.get('children') if isinstance(item, dict) else getattr(item, 'children', None)
+            if children and not _all_done(children):
+                return False
+        return True
+
+    return _all_done(todos)
+
+
 def _reflection_context_stats(session: Any) -> str:
     """Return a short human-readable description of the session context size."""
     try:  # preferred: soul context history + token count
@@ -917,6 +957,25 @@ def _cmd_reflection(task_split: list[str], text_arr: list[str]) -> tuple[None, b
     return None, False
 
 
+def _cmd_continue(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
+    """Resume the session's unfinished work by prompting the LLM to continue."""
+    session = get_default_session()
+    if session is None:
+        print_error('No active session. Start a conversation first.')
+        return None, False
+    if not _context_is_non_empty(session):
+        print_error('Context is empty. /continue requires a non-empty context.')
+        return None, False
+    if _session_is_done(session):
+        print_info('Session is already marked as done. Nothing to continue.')
+        return None, False
+    try:
+        prompt(prompt_str=_CONTINUE_PROMPT, session=session, format_output=True)
+    except Exception as e:
+        print_error(f'Continue failed: {e}')
+    return None, False
+
+
 def _cmd_unknown(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     print_warning('Unrecognized command.')
     return None, False
@@ -933,6 +992,7 @@ _command_map = {
     'file': _cmd_file,
     'plan': _cmd_plan,
     'compact': _cmd_compact,
+    'continue': _cmd_continue,
     'export': _cmd_export,
     'resume': _cmd_resume,
     'store': _cmd_store,

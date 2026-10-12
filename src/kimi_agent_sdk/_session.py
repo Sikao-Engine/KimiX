@@ -239,6 +239,10 @@ class Session:
         self._cli = cli
         self._cancel_event: asyncio.Event | None = None
         self._closed = False
+        # True when the most recent prompt() stream finished normally (remote
+        # server completed the turn); False while a stream is running or when it
+        # was interrupted (cancel / restart / error).
+        self._done: bool = False
         self._create_kwargs: dict[str, Any] = {}
         self._tmp_data: dict[str, Any] = {}
         self._anonymous = False
@@ -376,6 +380,7 @@ class Session:
             return
         if self._cancel_event is not None:
             self._cancel_event.set()
+        self._done = False  # a cleared session has no completed work
         await self._cleanup_tools()
         await self._close_chat_provider()
         # Close the KimiSoul's context storage (aiosqlite worker thread)
@@ -1059,6 +1064,7 @@ class Session:
         while True:
             cancel_event = asyncio.Event()
             self._cancel_event = cancel_event
+            self._done = False  # stream starting — last-run state no longer valid
             try:
                 async with _prompt_semaphore:
                     async for msg in self._cli.run(
@@ -1067,6 +1073,7 @@ class Session:
                         merge_wire_messages=merge_wire_messages,
                     ):
                         yield msg
+                self._done = True  # remote server finished the stream (not interrupted)
                 break  # success — exit the restart loop
             except SessionRestartRequired as e:
                 if not _is_restartable_error(e.original_error):
