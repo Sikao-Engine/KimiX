@@ -325,6 +325,63 @@ def _install_rtk() -> tuple[bool, bool]:
         return False, False
 
 
+def _install_uv() -> bool:
+    """Ensure ``uv`` is available, installing it with pip if necessary.
+
+    Detection order:
+    1. ``uv`` already on PATH -> done.
+    2. ``<current python> -m pip install uv`` (falls back to ``pip3`` / ``pip``).
+    3. Re-check PATH after installation.
+
+    Returns True if uv is (or became) available.
+    """
+    if command_exists("uv"):
+        return True
+
+    print("⚠️  'uv' is not installed. Trying 'pip install uv' ...")
+
+    candidates: list[list[str]] = [
+        [sys.executable, "-m", "pip", "install", "uv"],
+        ["pip3", "install", "uv"],
+        ["pip", "install", "uv"],
+    ]
+
+    installed = False
+    for cmd in candidates:
+        # Skip pip executables that are not on PATH (sys.executable always exists).
+        if cmd[0] != sys.executable and shutil.which(cmd[0]) is None:
+            continue
+        print(f"▶ Running: {' '.join(cmd)}")
+        try:
+            result = subprocess.run(cmd, check=False)
+        except (OSError, ValueError) as e:
+            print(f"   Could not run it: {e}")
+            continue
+        if result.returncode == 0:
+            installed = True
+            break
+        print(f"   Command failed (exit code {result.returncode}).")
+
+    if not installed:
+        print(
+            "⚠️  Could not install uv via pip.\n"
+            "   Please install uv manually: https://docs.astral.sh/uv"
+        )
+        return False
+
+    if command_exists("uv"):
+        print("✅ uv is now installed.")
+        return True
+
+    # pip reported success but uv is not on PATH yet (e.g. user-base Scripts/bin
+    # dir is missing from PATH). Give the user a concrete hint.
+    print(
+        "⚠️  uv was installed by pip but is not on PATH yet.\n"
+        "   Try restarting your shell, or install uv manually: https://docs.astral.sh/uv"
+    )
+    return False
+
+
 # ---------------------------------------------------------------------------
 # kimix_base native runtime (download + unpack into bin/)
 # ---------------------------------------------------------------------------
@@ -789,6 +846,9 @@ def main(argv: list[str] | None = None) -> int:
             "   then re-run this script."
         )
         return 1
+
+    if not has_uv:
+        has_uv = _install_uv()
 
     if not has_uv:
         print(
