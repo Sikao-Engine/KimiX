@@ -11188,3 +11188,83 @@ switch ($obj?.Type ?? "default") {
         assert "if ($null -ne $obj)" in result
         assert "switch" in result
         assert "Type A" in result
+
+
+# ============================================================================
+# False-positive guards: valid 5.1 code must never be corrupted
+# ============================================================================
+
+
+class TestTernaryFalsePositives:
+    """``?`` is also the Where-Object alias and a filename wildcard in 5.1.
+
+    The ternary transform must only fire on a genuine ``cond ? a : b``
+    expression; anything else on a 5.1 host is a corruption of working code.
+    """
+
+    def test_where_object_alias_is_not_a_ternary(self) -> None:
+        cases = [
+            # ``?`` after a pipe is the Where-Object alias; the ``C:`` below
+            # is a drive reference, not a ternary branch separator.
+            "gci | ? {$_.Length -gt 100} | select Name; Write-Output C:\\Temp",
+            '"a" | ? {1} ; C:',
+            "gci | ? Name; Write-Output D:\\data",
+            "1..5 | ? { $_ -gt 1 } ; Write-Output ok",
+        ]
+        for code in cases:
+            result, warnings = pwsh_transform(code)
+            assert result == code, f"corrupted: {code!r} -> {result!r}"
+            assert warnings == [], f"spurious warnings for {code!r}: {warnings}"
+
+    def test_ternary_condition_must_not_be_empty(self) -> None:
+        # ``| ?`` with nothing before it on the line can never be a ternary.
+        result, warnings = pwsh_transform('"a" | ? {1} ; C:')
+        assert result == '"a" | ? {1} ; C:'
+        assert warnings == []
+
+
+class TestNullConditionalFalsePositives:
+    """``?.`` / ``??`` / ``?[`` in 5.1 are literal filename wildcard text.
+
+    Only transform when the left operand is a value expression (variable,
+    member/index chain, or parenthesized/subexpression); a bareword left
+    operand is command text with wildcard characters.
+    """
+
+    def test_wildcard_barewords_are_not_transformed(self) -> None:
+        cases = [
+            "rm f?.bak",
+            "Get-ChildItem -Path f?.txt",
+            "Write-Host a??b",
+            "ls *.?[1].log",
+            "Get-Content f??.txt",
+            "findstr pattern file?.txt",
+        ]
+        for code in cases:
+            result, warnings = pwsh_transform(code)
+            assert result == code, f"corrupted: {code!r} -> {result!r}"
+            assert warnings == [], f"spurious warnings for {code!r}: {warnings}"
+
+    def test_value_expression_bases_are_still_transformed(self) -> None:
+        result, _ = pwsh_transform('$name = $obj.Name ?? "Unknown"')
+        assert "if ($null -ne $obj.Name)" in result
+        result, _ = pwsh_transform("$a?[0]")
+        assert "if ($null -ne $a) { $a[0] }" in result
+        result, _ = pwsh_transform("$(Get-Item $p)?.Length")
+        assert "?." not in result
+        result, _ = pwsh_transform('$x = (Get-Item $p) ?? "default"')
+        assert "if ($null -ne (Get-Item $p))" in result
+
+
+class TestTernaryPipelineOperand:
+    """A ternary used as a pipeline operand must be wrapped so the ``if``
+    statement form stays a valid pipeline element in 5.1."""
+
+    def test_ternary_piped_is_wrapped_in_subexpression(self) -> None:
+        result, _ = pwsh_transform("1 ? 2 : 3 | % {$_}")
+        assert result == "$(if (1) { 2 } else { 3 })| % {$_}"
+
+    def test_ternary_chained_is_wrapped_in_subexpression(self) -> None:
+        result, _ = pwsh_transform("$ok ? 1 : 0 && Write-Output done")
+        assert result.startswith("$(")
+        assert "if ($ok) { 1 } else { 0 }" in result

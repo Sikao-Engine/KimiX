@@ -77,7 +77,9 @@ _WORKER_OPTIONAL_CLAUSES: dict[str, str] = {
      'Sub-Agent: deliver a self-contained final result — the parent sees only '
      'your result, not your transcript or reasoning.\n'
      'Report coverage: what you completed, what you only sampled/approximated, '
-     'and anything unverified, so the parent can trust or re-check.'
+     'and anything unverified, so the parent can trust or re-check.\n'
+     'Never return a long report: if a detailed report is needed, write it to a '
+     'specific file and return only a short summary with the file path.'
  ),
     'TRIVIAL': 'If you need clarification from the parent agent, make your final output the question and stop; the parent sees your result and can answer by resuming your session.',
 }

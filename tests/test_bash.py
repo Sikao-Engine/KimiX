@@ -892,11 +892,13 @@ class TestBashFixShellWrappers:
     """Redundant leading ``bash``/``sh`` invocations are unwrapped for Git Bash.
 
     Agents commonly emit ``bash cd /c/dev/x && ...`` or ``bash -c '...'`` as a
-    habit; the Bash tool already runs the whole string via bash, so keeping the
-    wrapper makes bash try to open ``cd`` (or the inline script) as a script
-    file and fail on Windows.  The scanner removes the redundant wrapper and,
-    for the ``-c`` form, scans the inline script so fallback commands and
-    Windows paths inside it are fixed too.
+    habit; the Bash tool already runs the whole string via bash, so a bare
+    ``bash cd ...`` would make bash try to open ``cd`` as a script file and
+    fail on Windows.  The scanner removes that redundant prefix and scans
+    ``-c`` inline scripts so fallback commands and Windows paths inside them
+    are fixed in place — the ``bash -c`` wrapper itself stays, because the
+    child shell's isolation (``exit``, assignments, ``cd``, traps) must be
+    preserved and the nested bash inherits the exported fallback functions.
     """
 
     @pytest.mark.parametrize(
@@ -931,34 +933,75 @@ class TestBashFixShellWrappers:
         assert "Removed redundant shell wrapper" in result.warning
 
     @pytest.mark.parametrize(
-        ("source", "expected_tail", "shell"),
+        ("source", "expected_tail", "replacements"),
         [
-            ("bash -c 'rev'", "rev", "bash -c"),
-            ("bash -c \"rev\"", "rev", "bash -c"),
-            ("bash -lc 'rev'", "rev", "bash -c"),
-            ("bash -cl 'rev'", "rev", "bash -c"),
-            ("bash -l -c 'rev'", "rev", "bash -c"),
-            ("sh -c 'rev'", "rev", "sh -c"),
-            ("dash -c 'rev'", "rev", "dash -c"),
-            ("bash -c 'rev' && echo done", "rev && echo done", "bash -c"),
-            ("echo $(bash -c 'rev')", "echo $(rev)", "bash -c"),
-            ("bash -c 'echo $HOME'", "echo $HOME", "bash -c"),
+            ("bash -c 'rev'", "bash -c 'rev'", ("rev",)),
+            ("bash -c \"rev\"", "bash -c \"rev\"", ("rev",)),
+            ("bash -lc 'rev'", "bash -lc 'rev'", ("rev",)),
+            ("bash -cl 'rev'", "bash -cl 'rev'", ("rev",)),
+            ("bash -l -c 'rev'", "bash -l -c 'rev'", ("rev",)),
+            ("sh -c 'rev'", "sh -c 'rev'", ("rev",)),
+            ("dash -c 'rev'", "dash -c 'rev'", ("rev",)),
+            ("bash -c 'rev' && echo done", "bash -c 'rev' && echo done", ("rev",)),
+            ("echo $(bash -c 'rev')", "echo $(bash -c 'rev')", ("rev",)),
+            ("bash -c 'echo $HOME'", "bash -c 'echo $HOME'", ()),
         ],
     )
-    def test_inline_script_replaces_dash_c_wrapper(
-        self, source: str, expected_tail: str, shell: str
+    def test_dash_c_wrapper_keeps_subshell_semantics(
+        self, source: str, expected_tail: str, replacements: tuple[str, ...]
     ) -> None:
+        # ``bash -c 'script'`` runs the script in a CHILD shell: ``exit``,
+        # variable assignments, ``cd`` and traps must not leak into the
+        # surrounding script.  Inlining the script (the old unwrap) broke
+        # that isolation, so the wrapper stays and only the inline script
+        # is scanned and fixed in place; the exported fallback functions
+        # are inherited by the child shell.
         result = _fix_for_windows(source)
         assert result.command.split("\n")[-1] == expected_tail
-        assert result.shell_wrappers == (shell,)
-        assert result.replacements == ("rev",) or "rev" not in source
+        assert result.shell_wrappers == ()
+        assert result.replacements == replacements
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "bash -c 'exit 3'; echo after",
+            "bash -c 'x=inner'; echo \"[$x]\"",
+            "bash -c 'cd subdir'; pwd",
+            "bash -c 'trap \"echo t\" EXIT; echo body'",
+        ],
+    )
+    def test_dash_c_subshell_isolation_not_broken(self, source: str) -> None:
+        # The wrapper must survive: these scripts rely on child-shell
+        # isolation, so the command is returned with only in-place script
+        # fixes (none needed here).
+        result = _fix_for_windows(source)
+        assert result.shell_wrappers == ()
+        assert result.command.split("\n")[-1] == source
+
+    @staticmethod
+    def _run_raw(command: str) -> tuple[int, str]:
+        bash = find_bash()
+        assert bash is not None
+        p = subprocess.run(
+            [bash, "-c", command], capture_output=True, text=True,
+            timeout=60, check=False,
+        )
+        return p.returncode, p.stdout
+
+    def test_dash_c_script_with_subshell_semantics_runs_identically(self) -> None:
+        # Differential proof: original and scanner output must behave the
+        # same in real bash (the fallback prefix must not change the
+        # exit-code/stdout behavior of the child shell).
+        source = "bash -c 'exit 3'; echo after"
+        result = _fix_for_windows(source)
+        assert self._run_raw(result.command) == self._run_raw(source)
 
     def test_inline_script_fixes_inner_windows_path_and_fallback(self) -> None:
         result = _fix_for_windows(r"bash -c 'cd C:\x && rev'")
-        assert result.command.split("\n")[-1] == r"cd C:/x && rev"
+        assert result.command.split("\n")[-1] == r"bash -c 'cd C:/x && rev'"
         assert result.replacements == ("rev",)
         assert result.path_changes == (r"C:\x",)
-        assert result.shell_wrappers == ("bash -c",)
+        assert result.shell_wrappers == ()
 
     def test_redundant_prefix_keeps_inner_fallback_rewrite(self) -> None:
         result = _fix_for_windows("bash cd /c/dev/x && rev")
@@ -2444,6 +2487,38 @@ class TestBashFixGitBashPosixPaths:
         # A quote char inside the raw word opens a quoted region whose
         # removal is part of the word's value; the rewriter cannot re-emit
         # that faithfully, so the word stays byte-for-byte untouched.
+        command = f"echo /tmp/{suffix}"
+        assert _fix_for_windows(command) == BashFix(command)
+
+    @pytest.mark.parametrize(
+        ("suffix", "emitted"),
+        [
+            ("{a,b}", "{a,b}"),  # list brace expansion keeps working
+            ("pre{a,b}post", "pre{a,b}post"),
+            ("{a..c}", "{a..c}"),  # sequence brace expansion
+            ("x{a,b}/y", "x{a,b}/y"),  # braces mid-path
+            ("a{b", "a{b"),  # unbalanced brace: literal, stays unquoted
+        ],
+    )
+    def test_virtual_path_brace_expansion_preserved(
+        self, suffix: str, emitted: str
+    ) -> None:
+        # Brace metacharacters must stay unquoted (like glob ones): quoting
+        # them would suppress brace expansion the original word performs.
+        result = _fix_for_windows(f"echo /tmp/{suffix}")
+        assert result.command == f"echo {self._tmp()}/{emitted}"
+        assert result.changed
+        assert result.path_changes == (f"/tmp/{suffix}",)
+
+    @pytest.mark.parametrize(
+        "suffix",
+        [
+            "a\\{b",  # escaped brace: re-emitting unquoted would let the
+            "a\\{b,c\\}d",  # decoded brace participate in expansion the
+            "\\}x",  # escape suppressed — leave the word untouched
+        ],
+    )
+    def test_virtual_path_escaped_braces_left_untouched(self, suffix: str) -> None:
         command = f"echo /tmp/{suffix}"
         assert _fix_for_windows(command) == BashFix(command)
 

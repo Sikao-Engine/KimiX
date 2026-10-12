@@ -135,3 +135,24 @@ class TestSubAgentCoverageReport:
         runtime = _make_runtime(tmp_path)
         prompt = prompt_func(runtime)
         assert "Report coverage" not in prompt
+
+    def test_subagent_prompt_forbids_long_reports(self, tmp_path: Path):
+        prompt_func = get_system_prompt(
+            work_dir=tmp_path,
+            agent_role=SystemPromptType.TrivialSubAgent,
+            max_system_prompt_tokens=10_000,
+        )
+        runtime = _make_runtime(tmp_path)
+        prompt = prompt_func(runtime)
+        assert "Never return a long report" in prompt
+        assert "write it to a specific file" in prompt
+
+    def test_worker_prompt_has_no_long_report_clause(self, tmp_path: Path):
+        prompt_func = get_system_prompt(
+            work_dir=tmp_path,
+            agent_role=SystemPromptType.Worker,
+            max_system_prompt_tokens=10_000,
+        )
+        runtime = _make_runtime(tmp_path)
+        prompt = prompt_func(runtime)
+        assert "Never return a long report" not in prompt

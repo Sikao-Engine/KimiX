@@ -28,10 +28,12 @@ context has already been scanned and a whole-word rewrite would clash with
 those edits.
 This makes a POSIX-style command behave the same under Git Bash and native
 POSIX bash.  A redundant leading shell
-invocation — ``bash cd /c/dev/x && ...`` or ``bash -c 'cd C:\\x && rev'`` —
-is unwrapped (and the ``-c`` inline script is scanned for fallbacks and
-paths) because the Bash tool already runs the whole string via bash, so
-``bash cd ...`` would otherwise try to open ``cd`` as a script file and fail.
+invocation — ``bash cd /c/dev/x && ...`` — is
+unwrapped (and the ``-c`` inline script is scanned for fallbacks and
+paths) because a bare ``bash cd ...`` would otherwise try to open ``cd``
+as a script file and fail; ``bash -c '...'`` keeps its wrapper since the
+child shell's isolation (``exit``, assignments, ``cd``, traps) must be
+preserved and the nested bash inherits the exported fallback functions.
 Under an active command wrapper (``env``/``nohup``/``timeout``/...) the shell
 word is an operand of that wrapper, so ``bash -c '<script>'`` keeps its shape
 and only the inline script is fixed in place.

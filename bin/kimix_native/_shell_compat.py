@@ -945,12 +945,13 @@ _PATH_SEGMENT_RE = re.compile(r"[A-Za-z0-9_.~\\-]+")
 """Decoded value of a plausible multi-segment relative path (no spaces)."""
 
 _PATH_SAFE_CHARS = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:~@%+=-#,[]*?"
+ "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./:~@%+=-#,[]*?{}"
 )
 """Characters that may appear unquoted in a normalized path word.
 
 Glob metacharacters are included on purpose so ``D:/x/*.txt`` still performs
-pathname expansion instead of being quoted into a literal name.
+pathname expansion instead of being quoted into a literal name; brace
+metacharacters too so ``/tmp/{a,b}`` still performs brace expansion.
 """
 
 _ESCAPED_LITERAL_CHARS = frozenset(" \t&;|()<>#'\"$`{}!")
@@ -1130,9 +1131,7 @@ def _decode_virtual_path_span(span: str) -> str | None:
         if nxt == "\n":
             i += 2  # line continuation: both characters drop from the value
             continue
-        if nxt in "*?":
-            return None
-        if nxt == "[":
+        if nxt in "*?[{}":
             return None
         out.append(nxt)
         i += 2
@@ -1716,24 +1715,25 @@ class _BashFixScanner:
         * ``bash <command> ...`` — the shell word is redundant because the Bash
           tool already runs the whole string via bash, so it is removed
           (``bash cd /c/dev/x && grep ...`` becomes
-          ``cd /c/dev/x && grep ...``).
-        * ``bash [-l] -c <script>`` — the inline script replaces the wrapper
-          (``bash -c 'cd C:\\x && rev'`` becomes ``cd C:/x && rev``) and is
-          scanned as its own command context so fallback commands and Windows
-          paths inside it are fixed too.  Only the ``-c``/``-lc``/``-cl`` forms
-          with the script as the final word of the segment are unwrapped;
-          trailing argv, ``-ec``-style clusters and expansions are preserved
-          for bash to handle.
+          ``cd /c/dev/x && grep ...``); a bare ``bash`` would try to open
+          ``cd`` as a script file and fail.
+        * ``bash [-l] -c <script>`` — the wrapper is NOT inlined: the child
+          shell's isolation (``exit``, assignments, ``cd``, traps) must be
+          preserved, and the nested bash is harmless (it inherits the
+          exported fallback functions).  Only the inline script is scanned
+          and re-emitted in place (``bash -c 'cd C:\\x && rev'`` becomes
+          ``bash -c 'cd C:/x && rev'``).  Only the ``-c``/``-lc``/``-cl``
+          forms with the script as the final word of the segment are
+          repaired this way; trailing argv, ``-ec``-style clusters and
+          expansions are preserved for bash to handle.
 
         Under an active command wrapper (``env``/``nohup``/``timeout``/``sudo``
         ...) the shell word is an *operand* of that wrapper, so the repair
         must not move text out of its argv (``timeout 5 bash -c 'a && b'``
-        unwrapped to ``timeout 5 a && b`` would let ``&&`` split the list):
-        the ``-c`` form keeps ``bash -c`` and only fixes the inline script in
-        place — the wrapper runs bash natively and the nested bash inherits
-        the exported fallback functions — while the prefix form only drops
-        the shell word and leaves the wrapper active so the command that
-        follows keeps its executable (standalone-runner) context.
+        rewritten to ``timeout 5 a && b`` would let ``&&`` split the list):
+        both forms keep the wrapper's executable (standalone-runner) context
+        — the ``-c`` form naturally, and the prefix form by leaving the
+        wrapper active while only dropping the shell word.
         """
         if assignment_prefix:
             # ``VAR=x bash -c 'echo $VAR'``: the assignment is scoped to the
@@ -1804,16 +1804,17 @@ class _BashFixScanner:
             self.unsupported.extend(
                 n for n in inner.unsupported if n not in self.unsupported
             )
-            if wrapped:
-                # Keep ``<wrapper> bash -c '<script>'`` and fix the script in
-                # place: the wrapper runs bash natively and the nested bash
-                # inherits the exported fallback functions.
-                if inner.edits:
-                    self.edits.append((k, script_end, _single_quote(fixed)))
-                return script_end, True
-            self.edits.append((word_start, script_end, fixed))
-            self.shell_notes.append(f"{shell_name} -c")
-            return script_end, False
+            if inner.edits:
+                self.edits.append((k, script_end, _single_quote(fixed)))
+            # The wrapper stays: ``bash -c 'script'`` runs the script in a
+            # CHILD shell whose isolation (``exit``, variable assignments,
+            # ``cd``, traps) inlining into the surrounding script would
+            # silently destroy.  The nested bash inherits the exported
+            # fallback functions, and the in-place fix above repairs the
+            # script's paths and commands.  Under an active command wrapper
+            # (``env``/``nohup``/``timeout``/...) the wrapper additionally
+            # keeps its executable context.
+            return script_end, wrapped
 
         if self._plausible_script_file(next_raw):
             return None
@@ -4951,6 +4952,55 @@ def _is_scope_colon(line: str, i: int) -> bool:
     return j >= 0 and line[j] == "$"
 
 
+def _is_drive_colon(line: str, i: int) -> bool:
+    """Return ``True`` if the colon at *i* is a drive-reference colon.
+
+    A single ASCII letter directly before the colon (itself not part of a
+    longer word or a ``$`` reference) followed by ``\\``/``/`` or the end of
+    the expression is a drive reference (``C:\\Temp``, ``C:/x``, ``C:``),
+    not the branch separator of a ternary — ``?`` is also the Where-Object
+    alias, so a line like ``gci | ? {...} ; Write-Output C:\\Temp`` must not
+    be mistaken for a ternary whose separator colon is the drive letter.
+    """
+    if i < 1 or not (line[i - 1].isascii() and line[i - 1].isalpha()):
+        return False
+    j = i - 2
+    if j >= 0 and (line[j].isalnum() or line[j] in "_$"):
+        return False
+    return i + 1 >= len(line) or line[i + 1] in "\\/ \t')},;|&"
+
+
+_VALUE_EXPR_TAIL_RE = re.compile(
+    r"(?:"
+    r"\$[A-Za-z_][\w:]*|\$\?|\$\$|\$\^|\$\{[^}]+\}"  # variable references
+    r"|@[A-Za-z_][\w:]*"  # splatting / array literals (@obj, @{...} ends with })
+    r"|[)\]}]"  # closed groups / indexers / braces
+    r"|'[^']*'|\"[^\"]*\""  # string literals
+    r"|[0-9][0-9.]*"  # numeric literals
+    r"|\[[\w.]+\]::\w+"  # static member access ([Math]::PI)
+    r")(?:\.\w+|\[[^\]]*\]|--|\+\+)*$"
+)
+"""Matches an expression that ends like a value: a variable reference, string
+or numeric literal, closed group, or static member access, with optional
+member/index chains (``$obj.Name``, ``$a[0]``, ``'x'``, ``[Math]::PI``)."""
+
+
+def _looks_like_value_expr(expr: str) -> bool:
+    """Return ``True`` when *expr* ends like a value expression.
+
+    The null-conditional (``?.``/``?[``) and null-coalescing (``??``)
+    transforms only apply to value expressions; a bareword left operand is
+    5.1 command text whose ``?`` characters are filename wildcards
+    (``rm f?.bak``, ``Write-Host a??b``) and must be left untouched.
+    """
+    expr = expr.rstrip()
+    if not expr:
+        return False
+    if expr[-1] in ")]}":
+        return True
+    return _VALUE_EXPR_TAIL_RE.search(expr) is not None
+
+
 # ===========================================================================
 # Expression boundary helpers
 # ===========================================================================
@@ -5071,12 +5121,16 @@ def _transform_operator(
     builder: Callable,
     *,
     skip_dollar_q: bool = True,
+    require_value_left: bool = False,
 ) -> tuple[str, list[str]]:
     """Generic single-operator line transformer.
 
     *op*          — the operator string to search for (e.g. ``"??"``).
     *builder*     — callable(left_expr, right_expr, right_extra) → inner_str.
     *skip_dollar_q* — when True, skip positions immediately after ``$?``.
+    *require_value_left* — when True, only transform when the left operand
+      ends like a value expression (see :func:`_looks_like_value_expr`);
+      a bareword left operand is 5.1 command text with wildcard characters.
 
     Returns ``(transformed_line, warnings)``.
     """
@@ -5100,6 +5154,9 @@ def _transform_operator(
         right_extra = None
 
         if not left_expr or not right_expr:
+            search = idx + 1
+            continue
+        if require_value_left and not _looks_like_value_expr(left_expr):
             search = idx + 1
             continue
 
@@ -5159,7 +5216,7 @@ def _transform_nc_line(line: str) -> tuple[str, list[str]]:
     def _builder(left: str, right: str, _extra: None) -> str:
         return f"if ($null -ne {left}) {{ {left} }} else {{ {right} }}"
 
-    return _transform_operator(line, "??", _builder)
+    return _transform_operator(line, "??", _builder, require_value_left=True)
 
 
 # ===========================================================================
@@ -5173,6 +5230,8 @@ def _find_matching_colon(line: str, start: int, mask: bytearray,
         if line[i] != ":" or depth_arr[i] != 0 or not mask[i]:
             continue
         if _is_double_colon(line, i) or _is_scope_colon(line, i):
+            continue
+        if _is_drive_colon(line, i):
             continue
         return i
     return -1
@@ -5192,6 +5251,15 @@ def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
             and mask[pos]
             and not _after_dollar_question(line, pos)
         ):
+            # ``?`` in command position (the Where-Object alias) is not a
+            # ternary: it follows a pipe/operator or starts the statement,
+            # so there is no condition expression to its left.
+            k = pos - 1
+            while k >= 0 and line[k] == " ":
+                k -= 1
+            if k < 0 or line[k] in "|&;,":
+                pos += 1
+                continue
             colon_pos = _find_matching_colon(line, pos + 1, mask, depth_arr)
             if colon_pos != -1:
                 cond_start, cond_end = _expr_left(line, pos, mask)
@@ -5201,12 +5269,22 @@ def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
                 false_expr = line[false_start:false_end].strip()
                 if not _match_assignment(line[:cond_start]):
                     condition, cond_start = _strip_command_prefix(condition, cond_start, check_keywords=False)
+                if not condition or not true_expr or not false_expr:
+                    # Incomplete ternary (e.g. a bare ``?`` alias invocation
+                    # that slipped past the position guard): leave it.
+                    pos += 1
+                    continue
                 inner = f"if ({condition}) {{ {true_expr} }} else {{ {false_expr} }}"
+                suffix = line[false_end:]
+                if suffix.lstrip()[:1] in ("|", "&", ">"):
+                    # A statement ``if`` cannot be piped, chained, or
+                    # redirected in 5.1: wrap it in ``$()`` so the ternary
+                    # value remains a pipeline element / redirection source.
+                    inner = f"$({inner})"
                 warnings.append(
                     f"ternary operator `{condition} ? {true_expr} : {false_expr}` "
                     f"rewritten to `{inner}`"
                 )
-                suffix = line[false_end:]
                 line = _build_replacement(line[:cond_start], inner) + suffix
                 mask = _line_mask(line)
                 depth_arr = _compute_depths(line, mask)
@@ -5348,7 +5426,9 @@ def _transform_null_conditional_line(line: str, op: str) -> tuple[str, list[str]
         expr_start, expr_end = _expr_left(line, idx, mask, "?:")
         base = line[expr_start:expr_end].strip()
         base, expr_start = _strip_command_prefix(base, expr_start)
-        if not base:
+        if not base or not _looks_like_value_expr(base):
+            # A bareword "base" is 5.1 command text whose ``?`` is a
+            # filename wildcard (``rm f?.bak``), not a null-conditional.
             search = idx + op_len
             continue
 
