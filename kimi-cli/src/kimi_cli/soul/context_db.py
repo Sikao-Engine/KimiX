@@ -79,9 +79,10 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 );
 
 CREATE TABLE IF NOT EXISTS usage_snapshots (
-    rowid       INTEGER PRIMARY KEY AUTOINCREMENT,
-    token_count INTEGER NOT NULL,
-    created_at  REAL NOT NULL DEFAULT (unixepoch())
+    rowid         INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_count   INTEGER NOT NULL,
+    message_rowid INTEGER,
+    created_at    REAL NOT NULL DEFAULT (unixepoch())
 );
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -226,6 +227,7 @@ class ContextDB:
         await self._conn.executescript(_SCHEMA_SQL)
         await self._conn.executescript(_FTS_SQL)
         await self._migrate_and_backfill_fts()
+        await self._migrate_usage_snapshots()
         await self._conn.commit()
 
     async def close(self) -> None:
@@ -390,6 +392,23 @@ class ContextDB:
     # ------------------------------------------------------------------ #
     # Full-text search (Phase B)
     # ------------------------------------------------------------------ #
+
+    async def _migrate_usage_snapshots(self) -> None:
+        """Ensure ``usage_snapshots.message_rowid`` exists on pre-mapping databases.
+
+        The column maps each usage snapshot to the newest message row it
+        covers, so ``restore_full`` can rebuild the pending token estimate
+        without double-counting messages the snapshot already accounts for.
+        """
+        conn = self._conn
+        assert conn is not None
+        cursor = await conn.execute("PRAGMA table_info(usage_snapshots)")
+        cols = {row[1] for row in await cursor.fetchall()}
+        await cursor.close()
+        if "message_rowid" not in cols:
+            await conn.execute(
+                "ALTER TABLE usage_snapshots ADD COLUMN message_rowid INTEGER"
+            )
 
     async def _migrate_and_backfill_fts(self) -> None:
         """Ensure ``messages.content_text`` exists/populated and the FTS
@@ -792,8 +811,11 @@ class ContextDB:
 
     async def record_usage(self, token_count: int) -> None:
         conn = await self._ensure_open()
+        # Capture the newest covered message row so restore can tell which
+        # messages were appended after this snapshot (pending estimate).
         await conn.execute(
-            "INSERT INTO usage_snapshots (token_count) VALUES (?)",
+            "INSERT INTO usage_snapshots (token_count, message_rowid) "
+            "VALUES (?, (SELECT MAX(rowid) FROM messages))",
             (token_count,),
         )
         await self._maybe_commit(conn)
@@ -806,6 +828,32 @@ class ContextDB:
         row = await cursor.fetchone()
         await cursor.close()
         return row["token_count"] if row else None
+
+    async def get_latest_usage_snapshot(self) -> tuple[int, int | None] | None:
+        """Return ``(token_count, message_rowid)`` of the newest usage snapshot.
+
+        ``message_rowid`` is ``None`` for snapshots recorded before the mapping
+        existed (or imported from JSONL); callers should treat those as
+        covering every stored message rather than none.
+        """
+        conn = await self._ensure_open()
+        cursor = await conn.execute(
+            "SELECT token_count, message_rowid FROM usage_snapshots "
+            "ORDER BY rowid DESC LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+        if row is None:
+            return None
+        return row["token_count"], row["message_rowid"]
+
+    async def get_max_message_rowid(self) -> int:
+        """Return the newest stored message rowid (0 when no messages)."""
+        conn = await self._ensure_open()
+        cursor = await conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM messages")
+        row = await cursor.fetchone()
+        await cursor.close()
+        return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------ #
     # Bulk operations
@@ -961,8 +1009,8 @@ class ContextDB:
         elif role == "_usage":
             token_count = line_json.get("token_count", 0)
             await conn.execute(
-                "INSERT INTO usage_snapshots (token_count) VALUES (?)",
-                (token_count,),
+                "INSERT INTO usage_snapshots (token_count, message_rowid) VALUES (?, ?)",
+                (token_count, self._last_message_rowid),
             )
         elif role == "_checkpoint":
             cpid = line_json.get("id", 0)

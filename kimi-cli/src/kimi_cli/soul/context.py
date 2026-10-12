@@ -525,22 +525,29 @@ class SqliteContextStorage:
     async def restore_full(self) -> tuple[str | None, list[Message], int | None, int, list[Message]]:
         """Full restore from SQLite.
 
-        Since SQLite stores messages and usage in separate tables, all messages
-        are considered "after the last usage" for pending token estimation.
+        The pending token estimate must contain only messages appended AFTER
+        the last usage snapshot — the snapshot's ``token_count`` already covers
+        everything stored before it. Usage snapshots record the newest message
+        row they cover; snapshots without that mapping (pre-mapping databases
+        or JSONL imports) are treated as covering every stored message, which
+        undercounts the pending estimate instead of double-counting it.
         """
         system_prompt = await self._db.get_system_prompt()
         messages = await self._db.get_messages()
-        latest_usage = await self._db.get_latest_usage()
+        snapshot = await self._db.get_latest_usage_snapshot()
+        latest_usage = snapshot[0] if snapshot is not None else None
         latest_cp = await self._db.get_latest_checkpoint_id()
         next_checkpoint_id = latest_cp + 1 if latest_cp >= 0 else 0
-        # All messages are after the last usage since usage is stored separately
-        messages_after_last_usage = list(messages)
-        if latest_usage is not None:
-            # If usage was recorded, messages that were stored before the last
-            # usage should not be counted as pending. But in SQLite we can't
-            # distinguish. For correct behavior, we return all messages.
-            # Context.restore() will handle this correctly.
-            pass
+        if snapshot is None:
+            # No usage recorded: every message is pending.
+            messages_after_last_usage = list(messages)
+        else:
+            covered_rowid = snapshot[1]
+            if covered_rowid is None:
+                # Legacy snapshot without a message mapping: assume it covers
+                # everything stored so far (pending stays an underestimate).
+                covered_rowid = await self._db.get_max_message_rowid()
+            messages_after_last_usage = await self.get_messages(after_rowid=covered_rowid)
         return system_prompt, messages, latest_usage, next_checkpoint_id, messages_after_last_usage
 
     # ---- Migration support ---- #
