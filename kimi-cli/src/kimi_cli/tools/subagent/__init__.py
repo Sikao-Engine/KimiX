@@ -867,7 +867,17 @@ class Agent(CallableTool2):
 
         if params.session_id:
             entry = store.get(params.session_id)
-            if entry is not None and entry.is_active:
+            # ``entry.is_active`` alone is not enough: an entry can still be
+            # registered while its session object is already closed (closed
+            # externally, or clobbered by a late update from an older run).
+            # Reusing a closed session makes the next prompt fail with an
+            # opaque ``SessionStateError("Session is closed")``, so fall
+            # through to a fresh session for the id instead.
+            if (
+                entry is not None
+                and entry.is_active
+                and not getattr(entry.session, "_closed", False)
+            ):
                 entry.last_accessed = time.time()
                 _register_entry(params.session_id, entry)
                 self._register_agent_sessions(entry.session, params.session_id)
@@ -1034,6 +1044,13 @@ class Agent(CallableTool2):
             _forget_child_session(session_id)
         else:
             existing = store.get(session_id)
+            if existing is not None and existing.session is not session:
+                # The id was closed (e.g. ``interrupt_agent``) and resumed
+                # while this run was still finishing: a newer run owns the
+                # store entry now.  Re-putting this (possibly closed) session
+                # would clobber the newer entry and could hand a dead session
+                # to a later resume — drop the stale update instead.
+                return
             if existing is None:
                 if store.was_closed(session_id):
                     # The session was closed externally (interrupt_agent)

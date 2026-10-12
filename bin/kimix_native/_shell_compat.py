@@ -128,10 +128,29 @@ _TASKLIST_PS = (
 )
 
 _TASKKILL_PS = (
+    # ``[System.Management.Automation.ActionPreference]`` (not the string ``'Stop'``)
+    # because the whole script lives inside a single-quoted bash ``-Command`` word
+    # that cannot carry quotes.  ``Stop`` turns cmdlet failures (unknown PID,
+    # access denied) into catchable exceptions so a failed kill exits non-zero
+    # like real ``taskkill.exe`` instead of unconditionally reporting success.
+    "$ErrorActionPreference = [System.Management.Automation.ActionPreference]::Stop; "
     "$force = $env:__KIMIX_FORCE -eq '1'; "
-    "if ($env:__KIMIX_PID) { Stop-Process -Id $env:__KIMIX_PID -Force:$force; exit 0 } "
-    "$procs = Get-Process | Where-Object { $_.Name -eq $env:__KIMIX_IM }; "
-    "if ($procs) { $procs | Stop-Process -Force:$force; exit 0 } else { exit 1 }"
+    "$ok = $true; "
+    # Process *both* operands when combined (``/IM x /PID 1``): a failing PID
+    # kill must not be masked by ``exit 0``, and ``/IM`` must not be silently
+    # dropped when ``/PID`` is also present.
+    "if ($env:__KIMIX_PID) { "
+    "try { Stop-Process -Id $env:__KIMIX_PID -Force:$force } catch { $ok = $false } "
+    "} "
+    # taskkill's /IM operand is the image name *with* its extension (``notepad.exe``),
+    # but Get-Process ``.Name`` excludes it (``notepad``); normalise so both spellings
+    # and mixed case match.  ``[IO.Path]`` avoids quotes, which the surrounding
+    # single-quoted bash ``-Command`` string cannot carry.
+    "$im = [IO.Path]::GetFileNameWithoutExtension($env:__KIMIX_IM); "
+    "$procs = Get-Process | Where-Object { $_.Name -eq $im }; "
+    "if ($procs) { try { $procs | Stop-Process -Force:$force } catch { $ok = $false } } "
+    "elseif ($env:__KIMIX_IM) { $ok = $false }; "
+    "if ($ok) { exit 0 } else { exit 1 }"
 )
 
 _SYSTEMINFO_PS = "Get-ComputerInfo | Format-List"
@@ -174,13 +193,13 @@ _FALLBACK_BODIES = {
         "local __kimix_url='' __kimix_out='' __kimix_stdout=0; "
         "local -a __kimix_args=(); "
         "while (( $# )); do case $1 in "
-        "-O|--output-document) __kimix_out=$2; shift 2;; "
+        "-O|--output-document) [[ $# -ge 2 ]] || { printf '%s\\n' \"wget: option requires an argument -- '${1//[![:alnum:]]/}'\" >&2; return 1; }; __kimix_out=$2; shift 2;; "
         "-O?*) __kimix_out=${1#-O}; shift;; "
         "--output-document=*) __kimix_out=${1#*=}; shift;; "
         "-q|--quiet) __kimix_args+=(-s); shift;; "
         "-c|--continue) __kimix_args+=(-C -); shift;; "
         "--no-check-certificate) __kimix_args+=(-k); shift;; "
-        "-T|--timeout) __kimix_args+=(--max-time \"$2\"); shift 2;; "
+        "-T|--timeout) [[ $# -ge 2 ]] || { printf '%s\\n' \"wget: option requires an argument -- '${1//[![:alnum:]]/}'\" >&2; return 1; }; __kimix_args+=(--max-time \"$2\"); shift 2;; "
         "--timeout=*) __kimix_args+=(--max-time \"${1#*=}\"); shift;; "
         "-*) printf '%s\\n' \"wget: unsupported option for curl fallback: $1\" >&2; return 1;; "
         "*) __kimix_url=$1; shift;; esac; done; "
@@ -198,7 +217,7 @@ _FALLBACK_BODIES = {
         "local __kimix_out=0; while (( $# )); do case $1 in "
         "-o|-out) __kimix_out=1; shift;; "
         "-i|-in) shift;; "
-        "-selection|-d|-display) shift 2;; "
+        "-selection|-d|-display) [[ $# -ge 2 ]] || { printf '%s\\n' \"xclip: option requires an argument -- '${1//[![:alnum:]]/}'\" >&2; return 1; }; shift 2;; "
         "-selection*|-display*) shift;; "
         "-*) printf '%s\\n' \"xclip: unsupported option for clipboard fallback: $1\" >&2; return 1;; "
         "*) shift;; esac; done; "
@@ -257,7 +276,7 @@ _FALLBACK_BODIES = {
         "-z) __kimix_z=1; shift;; "
         "-v) __kimix_v=1; shift;; "
         "-zv|-vz) __kimix_z=1; __kimix_v=1; shift;; "
-        "-w) __kimix_w=$2; shift 2;; "
+        "-w) [[ $# -ge 2 ]] || { printf '%s\\n' \"nc: option requires an argument -- 'w'\" >&2; return 1; }; __kimix_w=$2; shift 2;; "
         "-w?*) __kimix_w=${1#-w}; shift;; "
         "-*) printf '%s\\n' \"nc: unsupported option for /dev/tcp fallback: $1\" >&2; return 1;; "
         "*) if [[ -z $__kimix_host ]]; then __kimix_host=$1; "
@@ -290,6 +309,7 @@ _FALLBACK_BODIES = {
         "--) shift; break;; "
         "-*) printf '%s\\n' \"pgrep: unsupported option for Get-Process fallback: $1\" >&2; return 1;; "
         "*) __kimix_pat=$1; shift;; esac; done; "
+        "if [[ -z $__kimix_pat && $# -gt 0 ]]; then __kimix_pat=$1; fi; "
         "if [[ -z $__kimix_pat ]]; then "
         "printf '%s\\n' 'pgrep: missing pattern' >&2; return 1; fi; "
         "if (( __kimix_full )); then "
@@ -306,6 +326,7 @@ _FALLBACK_BODIES = {
         "--) shift; break;; "
         "-*) printf '%s\\n' \"pkill: unsupported option for Stop-Process fallback: $1\" >&2; return 1;; "
         "*) __kimix_pat=$1; shift;; esac; done; "
+        "if [[ -z $__kimix_pat && $# -gt 0 ]]; then __kimix_pat=$1; fi; "
         "if [[ -z $__kimix_pat ]]; then "
         "printf '%s\\n' 'pkill: missing pattern' >&2; return 1; fi; "
         "if (( __kimix_full )); then "
@@ -319,30 +340,32 @@ _FALLBACK_BODIES = {
         "local -a __kimix_args=(); "
         "while (( $# )); do case $1 in "
         "-n) __kimix_args+=(-d); shift;; "
-        "-m) __kimix_args+=(-h \"$2\"); shift 2;; "
+        "-m) [[ $# -ge 2 ]] || { printf '%s\\n' \"traceroute: option requires an argument -- 'm'\" >&2; return 1; }; __kimix_args+=(-h \"$2\"); shift 2;; "
         "-m?*) __kimix_args+=(-h \"${1#-m}\"); shift;; "
         "--max-hop=*) __kimix_args+=(-h \"${1#*=}\"); shift;; "
-        "-w) __kimix_args+=(-w \"$(( $2 * 1000 ))\"); shift 2;; "
+        "-w) [[ $# -ge 2 ]] || { printf '%s\\n' \"traceroute: option requires an argument -- 'w'\" >&2; return 1; }; __kimix_args+=(-w \"$(( $2 * 1000 ))\"); shift 2;; "
         "-w?*) __kimix_args+=(-w \"$(( ${1#-w} * 1000 ))\"); shift;; "
         "-*) printf '%s\\n' \"traceroute: unsupported option for tracert fallback: $1\" >&2; return 1;; "
         "*) __kimix_args+=(\"$1\"); shift;; esac; done; "
         "tracert \"${__kimix_args[@]}\""
     ),
     "tree": (
-        "local __kimix_depth=0 __kimix_all=0 __kimix_dirs=0 __kimix_noreport=0 "
-        "__kimix_dir=''; "
+        "local __kimix_depth=0 __kimix_all=0 __kimix_dirsonly=0 __kimix_noreport=0; "
+        "local -a __kimix_dirs=(); "
         "while (( $# )); do case $1 in "
-        "-L) __kimix_depth=$2; shift 2;; "
+        "-L) [[ $# -ge 2 ]] || { printf '%s\\n' \"tree: option requires an argument -- 'L'\" >&2; return 1; }; __kimix_depth=$2; shift 2;; "
         "-L?*) __kimix_depth=${1#-L}; shift;; "
         "-a) __kimix_all=1; shift;; "
-        "-d) __kimix_dirs=1; shift;; "
+        "-d) __kimix_dirsonly=1; shift;; "
         "--noreport) __kimix_noreport=1; shift;; "
-        "--) shift; break;; "
+        "--) shift; __kimix_dirs+=(\"$@\"); break;; "
         "-*) printf '%s\\n' \"tree: unsupported option for perl fallback: $1\" >&2; return 1;; "
-        "*) __kimix_dir=$1; shift;; esac; done; "
-        "[[ -n $__kimix_dir ]] || __kimix_dir=.; "
+        "*) __kimix_dirs+=(\"$1\"); shift;; esac; done; "
+        "[[ ${#__kimix_dirs[@]} -gt 0 ]] || __kimix_dirs=(.); "
+        "local __kimix_d; "
+        "for __kimix_d in \"${__kimix_dirs[@]}\"; do "
         + _TREE_PERL
-        + " -- \"$__kimix_depth\" \"$__kimix_all\" \"$__kimix_dirs\" \"$__kimix_noreport\" \"$__kimix_dir\""
+        + " -- \"$__kimix_depth\" \"$__kimix_all\" \"$__kimix_dirsonly\" \"$__kimix_noreport\" \"$__kimix_d\"; done"
     ),
     "say": (
         "while (( $# )); do case $1 in "
@@ -407,8 +430,8 @@ _FALLBACK_BODIES = {
         "local __kimix_force=0 __kimix_pid='' __kimix_im=''; "
         "while (( $# )); do case $1 in "
         "/F|/f) __kimix_force=1; shift;; "
-        "/IM|/im) __kimix_im=$2; shift 2;; "
-        "/PID|/pid) __kimix_pid=$2; shift 2;; "
+        "/IM|/im) [[ $# -ge 2 ]] || { printf '%s\\n' \"taskkill: option requires an argument -- '${1//[![:alnum:]]/}'\" >&2; return 1; }; __kimix_im=$2; shift 2;; "
+        "/PID|/pid) [[ $# -ge 2 ]] || { printf '%s\\n' \"taskkill: option requires an argument -- '${1//[![:alnum:]]/}'\" >&2; return 1; }; __kimix_pid=$2; shift 2;; "
         "/*) printf '%s\\n' \"taskkill: unsupported option: $1\" >&2; return 1;; "
         "*) printf '%s\\n' \"taskkill: unsupported argument: $1\" >&2; return 1;; esac; done; "
         "if [[ -n $__kimix_pid ]]; then "
@@ -426,7 +449,8 @@ _FALLBACK_BODIES = {
     "watch": (
         "local __kimix_interval=2; "
         "while (( $# )); do case $1 in "
-        "-n) __kimix_interval=$2; shift 2;; "
+        "-n|--interval) [[ $# -ge 2 ]] || { printf '%s\\n' \"watch: option requires an argument -- '${1//[![:alnum:]]/}'\" >&2; return 1; }; __kimix_interval=$2; shift 2;; "
+        "--interval=*) __kimix_interval=${1#*=}; shift;; "
         "-n?*) __kimix_interval=${1#-n}; shift;; "
         "-t|-d|--no-title|--color) shift;; "
         "--) shift; break;; "
@@ -447,7 +471,7 @@ _FALLBACK_BODIES = {
         "local __kimix_sep='DEFAULT'; "
         "while (( $# )); do case $1 in "
         "-t) shift;; "
-        "-s) __kimix_sep=$2; shift 2;; "
+        "-s) [[ $# -ge 2 ]] || { printf '%s\\n' \"column: option requires an argument -- 's'\" >&2; return 1; }; __kimix_sep=$2; shift 2;; "
         "-s?*) __kimix_sep=${1#-s}; shift;; "
         "-*) printf '%s\n' \"column: unsupported option for perl fallback: $1\" >&2; return 1;; "
         "*) break;; esac; done; "
@@ -516,9 +540,9 @@ _FALLBACK_BODIES = {
         "local __kimix_delay=3 __kimix_iters=0 __kimix_batch=0 __kimix_count=0; "
         "while (( $# )); do case $1 in "
         "-b) __kimix_batch=1; shift;; "
-        "-d) __kimix_delay=$2; shift 2;; "
+        "-d) [[ $# -ge 2 ]] || { printf '%s\\n' \"top: option requires an argument -- 'd'\" >&2; return 1; }; __kimix_delay=$2; shift 2;; "
         "-d?*) __kimix_delay=${1#-d}; shift;; "
-        "-n) __kimix_iters=$2; shift 2;; "
+        "-n) [[ $# -ge 2 ]] || { printf '%s\\n' \"top: option requires an argument -- 'n'\" >&2; return 1; }; __kimix_iters=$2; shift 2;; "
         "-n?*) __kimix_iters=${1#-n}; shift;; "
         "-h|--help) printf '%s\n' 'top: display processes (Windows approximation via Get-Process; Ctrl+C quits)'; return 0;; "
         "-*) printf '%s\n' \"${FUNCNAME[0]}: unsupported option: $1\" >&2; return 1;; "
@@ -723,6 +747,13 @@ _COMMAND_START_KEYWORDS = frozenset(
 )
 _COMMAND_END_KEYWORDS = frozenset({"fi", "done", "esac"})
 _LIST_KEYWORDS = frozenset({"for", "select", "case"})
+_SHELL_KEYWORDS = frozenset(
+    {
+        "!", "{", "}", "if", "then", "elif", "else", "while", "until",
+        "do", "fi", "done", "esac", "for", "select", "case", "time",
+        "coproc", "in", "function",
+    }
+)
 
 _COMMAND_WRAPPERS = frozenset(
     {"builtin", "command", "coproc", "env", "exec", "nohup", "sudo", "time",
@@ -771,6 +802,36 @@ _REPARSE_BUILTINS = {"eval": -1, "trap": 1}
 # any other command (``echo sh -c 'x > nul'``) the words are data and must
 # stay untouched.
 _EXEC_OPERAND_COMMANDS = frozenset({"find", "xargs", "eval", "ssh", "watch"})
+# Commands whose leading operand is PATTERN/PROGRAM DATA, not a path: an
+# unquoted drive-prefixed pattern (``grep -F C:\Users file``) has the bash
+# value ``C:Users`` and genuinely matches; rewriting it "as a path" to
+# ``C:/Users`` silently breaks the match.  The first bare operand (and the
+# value of pattern-taking options like ``grep -e``) therefore suppresses the
+# Windows-path rewrite; file-taking options (``grep -f``) and later operands
+# keep it.
+_PATTERN_PROGRAM_COMMANDS = frozenset(
+    {"grep", "fgrep", "egrep", "rg", "sed", "awk", "gawk", "mawk"}
+)
+_GREP_PATTERN_FAMILY = frozenset({"grep", "fgrep", "egrep", "rg"})
+# grep-family options whose value word is an arbitrary string (context
+# lengths, device actions, ...): neither pattern nor path, but the value
+# word must not be counted as the pattern operand.
+_GREP_VALUE_OPTIONS = frozenset(
+    {
+        "-A",
+        "-B",
+        "-C",
+        "-m",
+        "-d",
+        "-D",
+        "--after-context",
+        "--before-context",
+        "--context",
+        "--max-count",
+        "--directories",
+        "--devices",
+    }
+)
 
 # Shell executables that agents frequently put in front of a command the Bash
 # tool is already going to run (``bash cd /c/dev/x && ...``).  Git Bash can
@@ -789,6 +850,13 @@ _SHELL_C_OPTIONS = re.compile(r"^-c$|^-lc$|^-cl$")
 # Option clusters whose *last* flag is ``c`` (``-c``, ``-lc``, ``-ec``,
 # ``-ilc``): the next word is the shell's inline script.
 _SHELL_C_SCRIPT_OPTION_RE = re.compile(r"^-[A-Za-z]*c$")
+# Shell options that consume the NEXT word as their value (``bash -o pipefail
+# -c '...'``, ``sh --rcfile /dev/null -c '...'``): the value is a plain
+# operand, not a script, so the scan must skip it instead of bailing out.
+# ``+o``/``+O`` do not start with ``-`` and are listed explicitly.
+_SHELL_VALUE_OPTIONS = frozenset(
+    {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
+)
 _WRAPPER_OPTIONS_WITH_VALUE = {
     "env": frozenset(
         {
@@ -938,7 +1006,7 @@ _MAX_NESTING_DEPTH = 1024
 # paths; everything else (quotes, expansions, short ambiguous words) is left
 # byte-for-byte for Bash to handle.
 
-_PATH_DRIVE_RE = re.compile(r"[A-Za-z]:\\.*")
+_PATH_DRIVE_RE = re.compile(r"[A-Za-z]:[\\/].*")
 """Drive-absolute path such as ``D:\\foo`` or the drive root ``C:\\``."""
 
 _PATH_SEGMENT_RE = re.compile(r"[A-Za-z0-9_.~\\-]+")
@@ -954,7 +1022,18 @@ pathname expansion instead of being quoted into a literal name; brace
 metacharacters too so ``/tmp/{a,b}`` still performs brace expansion.
 """
 
-_ESCAPED_LITERAL_CHARS = frozenset(" \t&;|()<>#'\"$`{}!")
+_PATH_GLOB_CHARS = frozenset("*?[]{}")
+"""Expansion metacharacters that must stay OUTSIDE any quoting the path
+rewrite adds.
+
+A glob or brace metacharacter wrapped inside double quotes becomes a
+literal filename character, silently destroying the pathname/brace
+expansion the original unquoted word performed (``D:/x/*.txt`` must keep
+expanding).  Quoting therefore breaks its span at these characters and
+emits them verbatim.
+"""
+
+_ESCAPED_LITERAL_CHARS = frozenset(" \t&;|()<>'\"$`{}!")
 """Chars whose backslash form is a pure Bash escape, not a path separator.
 
 ``\\ `` (escaped space) is how a space inside an unquoted word is written;
@@ -1207,6 +1286,127 @@ def _split_virtual_path_expansions(text: str) -> list[tuple[bool, str]] | None:
     if literal_start < n:
         spans.append((False, text[literal_start:]))
     return spans
+
+
+def _opaque_inline_expansions(text: str) -> tuple[str, list[str]]:
+    """Copy inline-script text with every runtime expansion made opaque.
+
+    Returns ``(sanitized, substitutions)``: *sanitized* parses as the same
+    command structure (the same command words in the same positions) with
+    each ``$...``/backquote expansion replaced by a placeholder word, so it
+    can be scanned as a command context without executing or misreading the
+    expansion values; *substitutions* holds the raw body of every ``$(...)``
+    or backquote region (which run in the current shell at command time) for
+    the caller to scan separately as its own command context.
+
+    Single-quoted regions are copied verbatim (``$`` inside them is literal
+    at runtime); escaped characters are kept verbatim; a ``$`` starting no
+    expansion is a literal dollar sign.  Unterminated expansions are copied
+    verbatim so the sanitized text stays a faithful prefix of the script.
+    """
+    placeholder = "__kimix_operand__"
+    n = len(text)
+    out: list[str] = []
+    substitutions: list[str] = []
+    i = 0
+    in_squote = False
+    in_dquote = False
+    while i < n:
+        ch = text[i]
+        if in_squote:
+            out.append(ch)
+            if ch == "'":
+                in_squote = False
+            i += 1
+            continue
+        if ch == "'":
+            in_squote = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "\\":
+            # An escaped char is literal script text; keep it verbatim.
+            out.append(ch)
+            if i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+            else:
+                i += 1
+            continue
+        if ch == '"':
+            in_dquote = not in_dquote
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "`":
+            end = _find_backtick_end(text, i + 1)
+            if end < 0:
+                out.append(text[i:])
+                break
+            substitutions.append(text[i + 1 : end - 1])
+            out.append(placeholder)
+            i = end
+            continue
+        if ch != "$" or i + 1 >= n:
+            out.append(ch)
+            i += 1
+            continue
+        nxt = text[i + 1]
+        if nxt == "(":
+            if text.startswith("$((", i):
+                end = _match_arithmetic_span(text, i + 3)
+                if end is None:
+                    out.append(text[i:])
+                    break
+            else:
+                close = _find_matching_paren(text, i + 1)
+                if close < 0:
+                    out.append(text[i:])
+                    break
+                substitutions.append(text[i + 2 : close])
+                end = close + 1
+            out.append(placeholder)
+            i = end
+            continue
+        if nxt == "{":
+            end = _match_parameter_braces(text, i + 2)
+            if end is None:
+                out.append(text[i:])
+                break
+            out.append(placeholder)
+            i = end
+            continue
+        if nxt == "'":
+            end = _find_ansi_c_end(text, i + 2)
+            if end < 0:
+                out.append(text[i:])
+                break
+            out.append(placeholder)
+            i = end
+            continue
+        if nxt == '"':
+            end = _find_dq_end(text, i + 2)
+            if end < 0:
+                out.append(text[i:])
+                break
+            out.append(placeholder)
+            i = end
+            continue
+        if nxt in _VAR_NAME_START_CHARS:
+            j = i + 2
+            while j < n and text[j] in _VAR_NAME_CHARS:
+                j += 1
+            out.append(placeholder)
+            i = j
+            continue
+        if nxt in _SPECIAL_PARAM_CHARS:
+            out.append(placeholder)
+            i += 2
+            continue
+        # A ``$`` starting no expansion is a literal dollar sign.
+        out.append(ch)
+        i += 1
+    return "".join(out), substitutions
 
 
 @dataclass(frozen=True)
@@ -1515,12 +1715,18 @@ class _BashFixScanner:
         body_start = i + 2
         j = body_start
         out: list[str] = []
+        # Bash strings are C strings: the VALUE truncates at the first NUL
+        # (``$'tree\0x'`` is the 4-char word ``tree``).  The scan still runs
+        # to the closing quote so the returned index is correct, but nothing
+        # after the NUL is part of the value.
+        nul_seen = False
         while j < len(raw):
             ch = raw[j]
             if ch == "'":
                 return "".join(out), j + 1
             if ch != "\\":
-                out.append(ch)
+                if not nul_seen:
+                    out.append(ch)
                 j += 1
                 continue
             j += 1
@@ -1533,14 +1739,19 @@ class _BashFixScanner:
                 "'": "'", '"': '"', "?": "?",
             }
             if esc in simple:
-                out.append(simple[esc])
+                if not nul_seen:
+                    out.append(simple[esc])
                 j += 1
                 continue
             if esc == "c":
                 if j + 1 >= len(raw):
                     return None
                 ctrl = raw[j + 1]
-                out.append(chr(ord(ctrl.upper()) & 0x1F))
+                code = ord(ctrl.upper()) & 0x1F
+                if code == 0:
+                    nul_seen = True
+                elif not nul_seen:
+                    out.append(chr(code))
                 j += 2
                 continue
             if esc in "01234567":
@@ -1552,7 +1763,10 @@ class _BashFixScanner:
                 code = int(digits, 8)
                 if code > 0x7F:
                     return None  # multibyte octal: unsupported, be safe
-                out.append(chr(code))
+                if code == 0:
+                    nul_seen = True
+                elif not nul_seen:
+                    out.append(chr(code))
                 j = k
                 continue
             if esc == "x":
@@ -1570,7 +1784,10 @@ class _BashFixScanner:
                 code = int(digits, 16)
                 if code > 0x7F:
                     return None
-                out.append(chr(code))
+                if code == 0:
+                    nul_seen = True
+                elif not nul_seen:
+                    out.append(chr(code))
                 j = k
                 continue
             if esc in "uU":
@@ -1752,13 +1969,24 @@ class _BashFixScanner:
         if next_end <= j:
             return None
         next_raw = s[j:next_end]
+        # The option/script-file decisions below must key on the word VALUE
+        # (bash quote removal), not the raw source text: a quoted option
+        # (``bash '-c' 'echo hi'``) or quoted script file (``bash "deploy.sh"``)
+        # has a raw spelling that hides its role, and deleting the shell word
+        # in front of it leaves the option/script word as the command name
+        # (real bash: rc 0 -> 127).  A word whose value is not statically
+        # decodable (``bash "$S"``) may open a script file relative to cwd,
+        # so the unwrap is refused as well.
+        next_val = self._literal_word_value(next_raw)
+        if next_val is None:
+            return None
 
-        if next_raw.startswith("-"):
+        if next_val.startswith("-"):
             # Optional leading login flag, then the ``-c`` family.  Any other
             # option (``-e``, ``-x``, ``-i``, ``--norc``, ...) changes shell
             # behaviour and is left for bash to handle.
             opt_end = next_end
-            opt = next_raw
+            opt = next_val
             if opt in ("-l", "-L", "--login"):
                 cursor = opt_end
                 while cursor < end and s[cursor] in " \t\r":
@@ -1768,7 +1996,11 @@ class _BashFixScanner:
                 opt_end = self._read_word(cursor, end, scan_substitutions=False)
                 if opt_end <= cursor:
                     return None
-                opt = s[cursor:opt_end]
+                opt_raw = s[cursor:opt_end]
+                opt_val = self._literal_word_value(opt_raw)
+                if opt_val is None:
+                    return None
+                opt = opt_val
             if not _SHELL_C_OPTIONS.match(opt):
                 return None
             # The word after ``-c`` is the inline script.
@@ -1784,11 +2016,22 @@ class _BashFixScanner:
             while m < end and s[m] in " \t\r":
                 m += 1
             if m < end and s[m] not in _OPERATOR_CHARS and s[m] != "#":
-                return None  # trailing script argv: ``$0``/``$1`` semantics
+                # A digit run followed by a redirection operator
+                # (``bash -c 'tree' 2>/dev/null``, ``1>&2``) closes the
+                # wrapper segment exactly like ``;``/``&&``: the fd redirect
+                # applies to the wrapper itself, it is NOT script argv.
+                if not (s[m].isdigit() and self._redirection_after_fd(m, end)):
+                    return None  # trailing script argv: ``$0``/``$1`` semantics
             script_raw = s[k:script_end]
             script = self._literal_word_value(script_raw)
             if script is None:
-                return None  # expansions inside the script: leave for bash
+                # Expansions inside the script: the operand text cannot be
+                # re-emitted, but its statically visible command words (and
+                # the commands inside its substitutions, which run in this
+                # shell) still need their fallback definitions registered
+                # for the nested shell that re-parses the expanded text.
+                self._harvest_nonliteral_inline_script(script_raw)
+                return None  # leave the wrapper shape for bash to handle
             try:
                 inner = _BashFixScanner(script)
                 inner._scan_range(0, len(script))
@@ -1816,7 +2059,7 @@ class _BashFixScanner:
             # keeps its executable context.
             return script_end, wrapped
 
-        if self._plausible_script_file(next_raw):
+        if self._plausible_script_file(next_val):
             return None
         # ``bash <command> ...``: drop the redundant shell word itself.  The
         # edit covers the shell word plus the whitespace that separated it from
@@ -1858,13 +2101,35 @@ class _BashFixScanner:
                 script_start, script_end = k, word_end
                 break
             raw = s[k:word_end]
-            if _SHELL_C_SCRIPT_OPTION_RE.match(raw):
+            # Key on the word VALUE so quoted option spellings (``sh '-c'``,
+            # ``bash \-c``) reach the script scan the same way raw ones do.
+            opt = self._literal_word_value(raw)
+            if opt is None:
+                return None  # runtime expansion: not an option word we know
+            if _SHELL_C_SCRIPT_OPTION_RE.match(opt):
                 expect_script = True
-            elif raw.startswith("-"):
+            elif opt in _SHELL_VALUE_OPTIONS:
+                # Value-taking option: skip its value word and keep looking
+                # for the ``-c`` pair (``bash -o pipefail -c '...'``).
+                k = word_end
+                while k < end and s[k] in " \t\r":
+                    k += 1
+                if k >= end or s[k] in _OPERATOR_CHARS or s[k] == "#":
+                    return None
+                value_end = self._read_word(k, end, scan_substitutions=False)
+                if value_end <= k:
+                    return None
+                k = value_end
+                continue
+            elif opt == "--":
+                # End of options: the next word is a script PATH, not an
+                # inline ``-c`` script.
+                return None
+            elif opt.startswith(("-", "+")):
                 pass  # another option (``-e``, ``-l``): keep looking
             else:
-                # A plain operand before any ``-c`` (``sh script.sh``,
-                # ``--rcfile``'s value): not an inline-script form.
+                # A plain operand before any ``-c`` (``sh script.sh``): not
+                # an inline-script form.
                 return None
             k = word_end
         if script_start < 0:
@@ -1872,7 +2137,10 @@ class _BashFixScanner:
         script_raw = s[script_start:script_end]
         script = self._literal_word_value(script_raw)
         if script is None:
-            return script_end  # runtime expansions inside: leave for bash
+            # Runtime expansions inside: no re-emit, but still register the
+            # statically visible fallbacks (see _harvest_nonliteral_inline_script).
+            self._harvest_nonliteral_inline_script(script_raw)
+            return script_end
         try:
             inner = _BashFixScanner(script)
             inner._scan_range(0, len(script))
@@ -1919,7 +2187,10 @@ class _BashFixScanner:
             return False
         script = self._literal_word_value(raw)
         if script is None:
-            return True  # expansions inside the script: leave for bash
+            # Expansions inside the script: no re-emit, but still register
+            # the statically visible fallbacks (see _harvest_nonliteral_inline_script).
+            self._harvest_nonliteral_inline_script(raw)
+            return True
         try:
             inner = _BashFixScanner(script)
             inner._scan_range(0, len(script))
@@ -1938,6 +2209,42 @@ class _BashFixScanner:
         if inner.edits:
             self.edits.append((word_start, word_end, _single_quote(fixed)))
         return True
+
+    def _harvest_nonliteral_inline_script(self, raw: str) -> None:
+        """Register fallbacks from an inline-script operand that holds
+        runtime expansions.
+
+        ``bash -c "rev $HOME"`` / ``watch "rev <<< $x"`` operands cannot be
+        re-emitted (any re-quoting would change the word's runtime value), so
+        no edit is recorded — but the statically visible command words must
+        still register their fallback definitions, and so must the commands
+        inside the operand's ``$(...)`` / backtick substitutions: those run
+        in *this* shell (they build the script string), and the child shell
+        re-parses the expanded text with the exported fallback functions
+        available.  Only registrations are merged; path/nul metadata is not,
+        because the operand text stays byte-for-byte and such metadata would
+        claim a fix that was never applied.
+        """
+        inner_text = raw
+        if len(raw) >= 2 and raw[0] in "'\"" and raw[-1] == raw[0]:
+            inner_text = raw[1:-1]
+        sanitized, substitutions = _opaque_inline_expansions(inner_text)
+        sources = [sanitized, *substitutions]
+        for source in sources:
+            if not source.strip():
+                continue
+            try:
+                inner = _BashFixScanner(source)
+                inner._scan_range(0, len(source))
+            except RecursionError:
+                continue
+            self.names.extend(n for n in inner.names if n not in self.names)
+            self.shell_notes.extend(
+                n for n in inner.shell_notes if n not in self.shell_notes
+            )
+            self.unsupported.extend(
+                n for n in inner.unsupported if n not in self.unsupported
+            )
 
 
     def _scan_range(self, start: int, end: int) -> None:
@@ -1985,18 +2292,41 @@ class _BashFixScanner:
         # this line; a following ``bash`` wrapper must keep its shell-process
         # scoping, so it is not unwrapped (``VAR=x bash -c 'echo $VAR'``).
         assignment_prefix = False
-        # Non-zero right after a command-position reparse builtin (``eval``,
+        # Non-zero right after a command-position reparse builtin (``eval``/
         # ``trap``): the following argument words are inline scripts.  -1
         # means every operand (``eval``); a positive count covers only the
         # leading operands (``trap``'s single script operand).
         reparse_operands = 0
+        # True only for the FIRST operand word after a reparse builtin: bash
+        # concatenates the operands and re-parses them, so the leading word
+        # holds the command name (see the reparse branch below).
+        reparse_leading = False
         # Literal value of the command word of the current simple command
         # (used to decide whether argument words can be executed by the
         # command, e.g. ``find -exec sh -c``; see _EXEC_OPERAND_COMMANDS).
         command_word: str | None = None
+        # Pattern-consumer state for the current simple command (see
+        # _PATTERN_PROGRAM_COMMANDS): the command family, the verdict
+        # deferred to the next word by a value-taking option, and the count
+        # of bare operands seen.  Resets wherever command_word resets.
+        pattern_family: str | None = None
+        pattern_pending: str | None = None
+        pattern_bare = 0
+        # One-shot suppression of the ``#``-comment check for the character
+        # immediately after a command/process substitution's closing ``)``.
+        # That ``)`` is word-internal in Bash (a substitution expands inside
+        # a word), so a glued ``#`` continues the word and does NOT start a
+        # comment — unlike a ``#`` after a control-operator ``)`` (subshell),
+        # which genuinely comments out the rest of the line.
+        subst_just_closed = False
 
         while i < end:
             ch = s[i]
+            # Snapshot and clear the one-shot substitution-close flag: it
+            # applies ONLY to the character directly after the ``)`` (this
+            # iteration), never across whitespace or control operators.
+            suppress_hash_comment = subst_just_closed
+            subst_just_closed = False
 
             if ch in " \t\r":
                 # A whitespace *run* (indentation, aligned columns) is skipped
@@ -2024,10 +2354,17 @@ class _BashFixScanner:
                 assignment_prefix = False
                 reparse_operands = 0
                 command_word = None
+                pattern_family = None
+                pattern_pending = None
+                pattern_bare = 0
                 for_arith_header = False
                 for_brace_body = False
                 continue
-            if ch == "#" and self._comment_starts(i, start):
+            if (
+                ch == "#"
+                and self._comment_starts(i, start)
+                and not suppress_hash_comment
+            ):
                 newline = s.find("\n", i + 1, end)
                 i = end if newline < 0 else newline
                 continue
@@ -2064,6 +2401,9 @@ class _BashFixScanner:
                     close = self._find_matching(i + 2, end, ")")
                     self._scan_range(i + 2, close if close < end else end)
                     word_end = close + 1 if close < end else end
+                    # A ``#`` glued after the process-substitution ``)`` is
+                    # word-internal, not a comment (see the main-loop check).
+                    subst_just_closed = True
                 else:
                     scan_substitutions = heredoc_operator not in {"<<", "<<-"}
                     word_end = self._read_word(
@@ -2137,6 +2477,9 @@ class _BashFixScanner:
                 inner_end = close if close < end else end
                 self._scan_range(i + 2, inner_end)
                 i = close + 1 if close < end else end
+                # A ``#`` glued after the substitution's ``)`` continues the
+                # word in Bash — it must not start a comment here.
+                subst_just_closed = True
                 for_brace_body = False
                 if case_stack and case_stack[-1] == "word":
                     # A substitution can be the case subject word itself
@@ -2158,6 +2501,9 @@ class _BashFixScanner:
                 close = self._find_matching(i + 2, end, ")")
                 self._scan_range(i + 2, close if close < end else end)
                 i = close + 1 if close < end else end
+                # A ``#`` glued after the process-substitution's ``)`` is
+                # word-internal, not a comment (see the main-loop check).
+                subst_just_closed = True
                 for_brace_body = False
                 if case_stack and case_stack[-1] == "word":
                     case_stack[-1] = "await-in"
@@ -2196,6 +2542,9 @@ class _BashFixScanner:
                 assignment_prefix = False
                 reparse_operands = 0
                 command_word = None
+                pattern_family = None
+                pattern_pending = None
+                pattern_bare = 0
                 continue
 
             word_start = i
@@ -2225,6 +2574,13 @@ class _BashFixScanner:
                 if raw == "{":
                     command_expected = True
                     continue
+                # Brace-less body: a compound keyword (`f() if …`, `f() case
+                # …`, `f() while …`) or a simple command (`f() tree;`).  Fall
+                # through to the ordinary command-position handling below —
+                # it re-arms command position for test keywords and sets up
+                # the case/for state machine — instead of consuming the word
+                # as data, which dropped the body's fallback registrations.
+                command_expected = True
 
             if case_stack and case_stack[-1] == "word":
                 case_stack[-1] = "await-in"
@@ -2266,14 +2622,75 @@ class _BashFixScanner:
                     if reparse_operands > 0:
                         reparse_operands -= 1
                     if self._inline_script_operand(word_start, word_end, raw):
+                        reparse_leading = False
                         continue
+                    if reparse_leading:
+                        # Unquoted leading operand of ``eval``/``trap``: bash
+                        # concatenates and re-parses it as code in THIS shell
+                        # (the prelude's fallback functions are in scope), so
+                        # a literal command name it carries needs its fallback
+                        # registered just like a quoted script's command word
+                        # (``eval tree`` runs ``tree`` -> rc 127 without it).
+                        # Only the LEADING word is command position; later
+                        # operands are arguments (``eval echo tree``).
+                        reparse_leading = False
+                        operand = self._literal_word_value(raw)
+                        if operand:
+                            fallback_name = self._literal_command_name_value(
+                                operand
+                            )
+                            if fallback_name is not None:
+                                self.names.append(fallback_name)
+                            else:
+                                self._record_unsupported(raw, operand)
                 if raw in {"then", "do", "else", "elif"}:
                     command_expected = True
                 elif raw == "esac" and case_stack:
                     case_stack.pop()
                 elif brace_body_open:
-                    # do-less ``for ((expr)) { … }`` body opens here
+                    # do-less ``for ((expr)) { … }" body opens here
                     command_expected = True
+                elif pattern_family is not None:
+                    # Argument of a pattern-consuming command (grep/sed/awk):
+                    # the leading operand is pattern/program DATA, so a
+                    # drive-prefixed word keeps its runtime value instead of
+                    # being "repaired" into a different string (see
+                    # _PATTERN_PROGRAM_COMMANDS).
+                    value = self._literal_word_value(raw)
+                    word = value if value is not None else raw
+                    if pattern_pending is not None:
+                        pending, pattern_pending = pattern_pending, None
+                        path_ok = pending == "path"
+                    elif word.startswith("-") and word != "-":
+                        option = self._classify_pattern_option(
+                            pattern_family, word
+                        )
+                        # Option words themselves are never paths (they do
+                        # not start with a drive letter, so the rewrite
+                        # could not fire anyway); defer the verdict for
+                        # value-taking options.
+                        path_ok = False
+                        if option == "data-pending":
+                            pattern_pending = "data"
+                        elif option == "path-pending":
+                            pattern_pending = "path"
+                        elif option == "value-pending":
+                            pattern_pending = "value"
+                    elif pattern_bare == 0:
+                        # First bare operand: the pattern/program.
+                        pattern_bare += 1
+                        path_ok = False
+                    else:
+                        # Later bare operands: files.
+                        pattern_bare += 1
+                        path_ok = True
+                    if path_ok:
+                        replacement = self._path_replacement(raw)
+                        if replacement is not None:
+                            self.edits.append(
+                                (word_start, word_end, replacement)
+                            )
+                            self.path_notes.append(raw)
                 else:
                     replacement = self._path_replacement(raw)
                     if replacement is not None:
@@ -2393,17 +2810,46 @@ class _BashFixScanner:
                         command_expected = False
                         continue
 
+            # A leading-backslash word (``\sudo tree``) only suppresses
+            # alias lookup of the wrapper name; it invokes the same wrapper,
+            # so the tables are keyed on the backslash-stripped word.  Shell
+            # keywords (``time``, ``coproc``) are the exception: escaping
+            # suppresses the KEYWORD, so the external command runs — and an
+            # external command cannot invoke the registered shell functions
+            # (the raw keyword can), making wrapper registration useless.
+            unescaped = (
+                raw[1:]
+                if raw.startswith("\\") and raw[1:] not in _SHELL_KEYWORDS
+                else raw
+            )
+            # Quoted spellings of the wrapper word itself (``$'command'``,
+            # ``"env"``) decode to the same static name the tables key on;
+            # without the fallback the wrapped command's operand is never
+            # scanned (``$'command' $'tree'`` -> rc 127).  Shell keywords are
+            # excluded for the same reason as the backslash form above: a
+            # quoted/escaped keyword suppresses keyword recognition, so the
+            # external command runs and cannot invoke the shell functions.
+            literal_unescaped: str | None = None
+            if raw != unescaped or raw[:1] in {"'", '"', "$"}:
+                decoded = self._literal_word_value(raw)
+                if decoded is not None and decoded not in _SHELL_KEYWORDS:
+                    literal_unescaped = decoded
+            wrapper_key = unescaped
+            if wrapper_key not in _FALLBACK_COMMAND_WRAPPERS and (
+                wrapper_key not in _COMMAND_WRAPPERS
+            ):
+                wrapper_key = literal_unescaped if literal_unescaped else wrapper_key
             # Fallback wrappers are checked first: ``sudo`` is both a plain
             # command wrapper (operand semantics, option tables) and a
             # fallback name whose definition must be recorded for hosts
             # without ``sudo.exe``.
-            fallback_wrapper = _FALLBACK_COMMAND_WRAPPERS.get(raw)
+            fallback_wrapper = _FALLBACK_COMMAND_WRAPPERS.get(wrapper_key)
             if fallback_wrapper is not None:
                 # ``gtimeout 5 rev``/``watch -n1 rev``/``sudo rev``: the
                 # wrapper word is itself a fallback (its definition is
                 # recorded) and the command that follows its
                 # options/operands is scanned like a wrapped command word.
-                self.names.append(raw)
+                self.names.append(wrapper_key)
                 if executable_wrapper:
                     # The wrapping executable (``xargs gtimeout ...``) cannot
                     # invoke shell functions: swap the word for the standalone
@@ -2412,7 +2858,7 @@ class _BashFixScanner:
                     # recorded; the prefix exports them, which the runner's
                     # nested bash inherits.
                     self.edits.append(
-                        (word_start, word_end, _wrapper_runner(raw))
+                        (word_start, word_end, _wrapper_runner(wrapper_key))
                     )
                 wrapper = _BashWrapper(
                     fallback_wrapper,
@@ -2420,9 +2866,10 @@ class _BashFixScanner:
                 )
                 command_expected = True
                 continue
-            if raw in _COMMAND_WRAPPERS:
+            if wrapper_key in _COMMAND_WRAPPERS:
                 wrapper = _BashWrapper(
-                    raw, operands=_WRAPPER_OPERAND_COUNTS.get(raw, 0)
+                    wrapper_key,
+                    operands=_WRAPPER_OPERAND_COUNTS.get(wrapper_key, 0),
                 )
                 command_expected = True
                 command_word = self._literal_word_value(raw) or raw
@@ -2473,6 +2920,13 @@ class _BashFixScanner:
             # position decisions (e.g. ``find -exec sh -c '...'``) know what
             # program will consume the words that follow.
             command_word = literal if literal is not None else raw
+            pattern_family = (
+                command_word
+                if command_word in _PATTERN_PROGRAM_COMMANDS
+                else None
+            )
+            pattern_pending = None
+            pattern_bare = 0
 
             reparse_count = self._reparse_builtin_name_value(literal)
             if reparse_count is not None:
@@ -2480,6 +2934,7 @@ class _BashFixScanner:
                 # re-parsed as shell code at runtime; scan the quoted ones as
                 # inline scripts so ``> nul`` inside them is rewritten too.
                 reparse_operands = reparse_count
+                reparse_leading = True
                 command_expected = False
                 wrapper = None
                 assignment_prefix = False
@@ -3069,6 +3524,57 @@ class _BashFixScanner:
             return None
         return self._empty_parentheses_end(i, end)
 
+    @staticmethod
+    def _classify_pattern_option(family: str, word: str) -> str | None:
+        """Classify an option word of a pattern-consuming command.
+
+        Returns one of:
+          ``"data-pending"`` -- the NEXT word is pattern/program data
+            (``grep -e``, ``sed -e``, ``awk -F``): suppress the path rewrite;
+          ``"path-pending"`` -- the next word is a file path (``grep -f``,
+            ``sed -f``, ``awk -f``): the rewrite stays allowed;
+          ``"value-pending"`` -- the next word is an arbitrary value
+            (context lengths, ...): not a pattern operand, not a path;
+          ``"data"`` -- the option word itself carries the data (glued
+            ``--regexp=PAT``): suppress the rewrite;
+          ``None`` -- an ordinary flag: no operand consumed.
+        """
+        if family in _GREP_PATTERN_FAMILY:
+            if word in {"-e", "--regexp"}:
+                return "data-pending"
+            if word in {"-f", "--file"}:
+                return "path-pending"
+            if word.startswith("--regexp="):
+                return "data"
+            if word.startswith("--file="):
+                return "path"
+            if word.startswith(("--include", "--exclude")):
+                # Glob option (glued ``--include=GLOB`` or separate value).
+                return "data"
+            if word in _GREP_VALUE_OPTIONS:
+                return "value-pending"
+            return None
+        if family == "sed":
+            if word in {"-e", "--expression"}:
+                return "data-pending"
+            if word in {"-f", "--file"}:
+                return "path-pending"
+            if word.startswith("--expression="):
+                return "data"
+            if word.startswith("--file="):
+                return "path"
+            return None
+        # awk family.
+        if word in {"-v", "-F", "--assign"}:
+            return "data-pending"
+        if word in {"-f", "--file"}:
+            return "path-pending"
+        if word.startswith("--assign="):
+            return "data"
+        if word.startswith("--file="):
+            return "path"
+        return None
+
     def _consume_wrapper_word(self, wrapper: _BashWrapper, raw: str) -> str:
         if wrapper.skip_next:
             wrapper.skip_next = False
@@ -3077,41 +3583,48 @@ class _BashFixScanner:
             return "skip"
         if wrapper.opaque:
             return "inspect"
-        if wrapper.operands > 0 and not raw.startswith("-"):
+        # Option matching keys on the word VALUE: quoted spellings
+        # (``env $'--'``, ``timeout $'-s'``) are statically the same option
+        # the raw-text checks look for, and mistaking ``$'-s'`` for a plain
+        # operand derails the wrapper state machine.
+        word = self._literal_word_value(raw)
+        if word is None:
+            word = raw
+        if wrapper.operands > 0 and not word.startswith("-"):
             # A plain operand before the command word (GNU ``timeout`` takes
             # exactly one DURATION operand) is wrapper data, not the wrapped
             # command; consume it without ending the wrapper.
             wrapper.operands -= 1
             return "skip"
-        if wrapper.kind == "command" and raw in {"-v", "-V"}:
+        if wrapper.kind == "command" and word in {"-v", "-V"}:
             return "inspect"
         if wrapper.kind == "command" and (
-            raw == "-p"
+            word == "-p"
             or (
-                raw.startswith("-")
-                and not raw.startswith("--")
-                and "p" in raw[1:]
+                word.startswith("-")
+                and not word.startswith("--")
+                and "p" in word[1:]
             )
         ):
             wrapper.opaque = True
             return "skip"
-        if wrapper.kind == "env" and raw in {"-S", "--split-string"}:
+        if wrapper.kind == "env" and word in {"-S", "--split-string"}:
             wrapper.opaque = True
             wrapper.skip_next = True
             return "skip"
         if wrapper.kind == "env" and (
-            raw.startswith("--split-string=")
-            or (raw.startswith("-S") and raw != "-S")
+            word.startswith("--split-string=")
+            or (word.startswith("-S") and word != "-S")
         ):
             return "inspect"
-        if raw == "--":
+        if word == "--":
             return "skip"
-        if raw in _WRAPPER_OPTIONS_WITH_VALUE.get(wrapper.kind, ()):
+        if word in _WRAPPER_OPTIONS_WITH_VALUE.get(wrapper.kind, ()):
             wrapper.skip_next = True
-            if raw in _WRAPPER_PATH_OPTIONS.get(wrapper.kind, ()):
+            if word in _WRAPPER_PATH_OPTIONS.get(wrapper.kind, ()):
                 wrapper.path_value = True
             return "skip"
-        if raw.startswith("-"):
+        if word.startswith("-"):
             return "skip"
         if wrapper.kind == "env" and _ASSIGNMENT_RE.match(raw):
             return "skip"
@@ -3158,9 +3671,14 @@ class _BashFixScanner:
                 else:
                     result.append(raw[i + 1 : close])
                     i = close + 1
-            elif ch == '"':
+            elif ch == '"' or raw.startswith('$"', i):
+                # A plain ``"..."`` run and the locale form ``$"..."`` both
+                # quote the delimiter text (locale translation never changes
+                # it on Git Bash); the ``$`` of the locale form is consumed
+                # with the opener so the effective delimiter is not prefixed
+                # with a stray ``$``.
                 quoted = True
-                i += 1
+                i += 2 if ch != '"' else 1
                 while i < len(raw) and raw[i] != '"':
                     if raw[i] == "\\" and i + 1 < len(raw):
                         escaped = raw[i + 1]
@@ -3188,6 +3706,10 @@ class _BashFixScanner:
     ) -> tuple[str, int, bool]:
         result: list[str] = []
         valid = True
+        # Bash strings are C strings: the delimiter value truncates at the
+        # first NUL escape (same rule as _ansi_c_literal_span).  The scan
+        # still runs to the closing quote for the correct end index.
+        nul_seen = False
         simple = {
             "a": "\a",
             "b": "\b",
@@ -3207,19 +3729,24 @@ class _BashFixScanner:
             if raw[i] == "'":
                 return "".join(result), i + 1, valid
             if raw[i] != "\\" or i + 1 >= len(raw):
-                result.append(raw[i])
+                if not nul_seen:
+                    result.append(raw[i])
                 i += 1
                 continue
             escape = raw[i + 1]
             if escape in simple:
-                result.append(simple[escape])
+                if not nul_seen:
+                    result.append(simple[escape])
                 i += 2
                 continue
             if escape in "01234567":
                 j = i + 1
                 while j < len(raw) and j < i + 4 and raw[j] in "01234567":
                     j += 1
-                result.append(chr(int(raw[i + 1 : j], 8)))
+                if int(raw[i + 1 : j], 8) == 0:
+                    nul_seen = True
+                elif not nul_seen:
+                    result.append(chr(int(raw[i + 1 : j], 8)))
                 i = j
                 continue
             if escape in "xXuU":
@@ -3230,8 +3757,11 @@ class _BashFixScanner:
                     j += 1
                 if j > i + 2:
                     value = int(raw[i + 2 : j], 16)
-                    if value <= 0x10FFFF and not 0xD800 <= value <= 0xDFFF:
-                        result.append(chr(value))
+                    if value == 0:
+                        nul_seen = True
+                    elif value <= 0x10FFFF and not 0xD800 <= value <= 0xDFFF:
+                        if not nul_seen:
+                            result.append(chr(value))
                     else:
                         # Bash accepts byte sequences outside Python's Unicode
                         # scalar range.  Python text cannot represent the same
@@ -3241,7 +3771,8 @@ class _BashFixScanner:
                         result.append(raw[i:j])
                     i = j
                     continue
-            result.append("\\" + escape)
+            if not nul_seen:
+                result.append("\\" + escape)
             i += 2
         return "".join(result), i, valid
 
@@ -3264,7 +3795,12 @@ class _BashFixScanner:
             while i < end:
                 newline = s.find("\n", i, end)
                 line_end = end if newline < 0 else newline
-                line = s[i:line_end]
+                # A CRLF source leaves a trailing ``\r`` on every line; strip it
+                # so the terminator line matches the delimiter byte-for-byte
+                # (otherwise the closing ``EOF\r`` never ends the heredoc and
+                # the trailing-operator repair never runs).  The stored body is
+                # not mutated — this only feeds the delimiter/continuation test.
+                line = s[i:line_end].rstrip("\r")
                 compare = line.lstrip("\t") if document.strip_tabs else line
                 if not logical_line:
                     logical_start = i
@@ -3333,7 +3869,11 @@ class _BashFixScanner:
         unambiguously like a Windows path (drive letter, UNC share, root- or
         home-relative, dot-relative, or a multi-segment relative path); short
         ambiguous words such as ``a\nb`` and ``foo\bar`` are left for Bash
-        to handle.  Words spanning a backslash-newline line continuation are
+        to handle.  An anchored path with mixed separators (``D:/x\\y``,
+        ``~/x\\y``, ``./x\\y``) is still unambiguous — the anchor commits it —
+        and must be rewritten: outside quotes Bash removes a backslash before
+        any character, so a lone backslash left in place would silently
+        collapse two segments into one name.  Words spanning a backslash-newline line continuation are
         also left untouched: injecting the line break into a rewritten word
         would change the command's line structure.
         """
@@ -3356,9 +3896,17 @@ class _BashFixScanner:
             # real directory names before the rewrite happens.
             if not self._plausible_path_segments(raw):
                 return None
-        elif raw.startswith("~\\"):
+        elif raw.startswith("~\\") or raw.startswith("~/"):
+            # ``~/x\y`` (mixed separators) is just as anchored as ``~\x\y``;
+            # leaving it untouched would let Bash eat the lone backslash and
+            # collapse two path segments into one name.
             pass
-        elif raw.startswith(".\\") or raw.startswith("..\\"):
+        elif (
+            raw.startswith(".\\")
+            or raw.startswith("./")
+            or raw.startswith("..\\")
+            or raw.startswith("../")
+        ):
             pass
         elif backslashes >= 2:
             decoded = self._decode_unquoted_word(raw)
@@ -3541,13 +4089,37 @@ class _BashFixScanner:
             if rest.startswith("/"):
                 return "~/" + self._quote_path_word(rest[1:])
             return "~" + self._quote_path_word(rest)
-        escaped = (
-            normalized.replace("\\", "\\\\")
-            .replace('"', '\\"')
-            .replace("$", "\\$")
-            .replace("`", "\\`")
-        )
-        return '"' + escaped + '"'
+        # Quote only the spans that need it — and never swallow a glob or
+        # brace metacharacter into the quotes: doing so would turn the live
+        # expansion the original unquoted word performed into a fixed
+        # literal name (``ls D:\a\ b\*.txt`` must keep expanding ``*.txt``).
+        out: list[str] = []
+        buf: list[str] = []
+
+        def _flush() -> None:
+            if not buf:
+                return
+            span = "".join(buf)
+            buf.clear()
+            if all(ch in _PATH_SAFE_CHARS for ch in span):
+                out.append(span)
+                return
+            escaped = (
+                span.replace("\\", "\\\\")
+                .replace('"', '\\"')
+                .replace("$", "\\$")
+                .replace("`", "\\`")
+            )
+            out.append('"' + escaped + '"')
+
+        for ch in normalized:
+            if ch in _PATH_GLOB_CHARS:
+                _flush()
+                out.append(ch)
+            else:
+                buf.append(ch)
+        _flush()
+        return "".join(out)
 
 
 def bash_compatibility_prelude() -> str:
@@ -3669,12 +4241,147 @@ def _apply_heredoc_operator_move(
         else:
             move_end = next_line_end + 1
 
+    # A trailing backslash continues the logical command on the following
+    # physical lines; the continuation must move with its line, or the
+    # orphaned tail is left behind and read as heredoc body.
+    while move_end < n:
+        prev_nl = source.rfind("\n", move_start, move_end - 1)
+        last_line = source[prev_nl + 1 : move_end - 1]
+        if not _BashFixScanner._heredoc_line_continues(last_line):
+            break
+        next_end = source.find("\n", move_end, n)
+        move_end = n if next_end < 0 else next_end + 1
+
+    # A list may continue over SEVERAL physical operator lines (the model can
+    # write ``&& echo A`` on one line and ``&& echo B`` on the next, both after
+    # the closing delimiter).  The backslash loop above only carries a single
+    # logical line; absorb each following operator-led line as well, or it is
+    # left orphaned after the terminator and bash reports
+    # ``syntax error near unexpected token `&&'``.
+    while move_end < n:
+        j = move_end
+        while j < n:
+            cj = source[j]
+            if cj in " \t\r":
+                j += 1
+                continue
+            if cj == "\n":
+                j += 1
+                continue
+            if cj == "#":
+                nl2 = source.find("\n", j, n)
+                j = n if nl2 < 0 else nl2 + 1
+                continue
+            break
+        if j >= n:
+            break
+        op2, op2_end = _read_shell_control_operator(source, j, n)
+        if op2 not in _HEREDOC_TRAILING_OPERATORS:
+            break
+        if op2 == "&" and op2_end < n and source[op2_end] == ">":
+            break
+        cand_nl = source.find("\n", j, n)
+        move_end = n if cand_nl < 0 else cand_nl + 1
+        # carry this operator line's own backslash continuations too
+        while move_end < n:
+            pl = source.rfind("\n", j, move_end - 1)
+            ll = source[pl + 1 : move_end - 1]
+            if not _BashFixScanner._heredoc_line_continues(ll):
+                break
+            ne = source.find("\n", move_end, n)
+            move_end = n if ne < 0 else ne + 1
+
     lines = source[move_start:move_end].splitlines()
+
+    # Closing delimiters that belong to a construct opened BEFORE the
+    # redirection line (a command substitution ``$(`` or backtick, a subshell
+    # ``(``, a brace group ``{``) must NOT ride up onto the redirection line:
+    # doing so closes the construct before the heredoc body, ejects the body
+    # lines into the outer command list, and bash reports an unterminated
+    # here-document.  The excess closers — and everything after them — stay
+    # in place after the terminator (e.g. ``x=$(cat <<E | wc -l`` + body +
+    # ``E`` + ``); echo q``).  The stay suffix may sit mid-line (``| wc -l);
+    # echo q``) or after balanced groups inside the moved text (``| (a); b)``;
+    # only the closers exceeding the moved text's own openers belong outside).
+    # Guards are naive character counts; the prefix guard (an unclosed opener
+    # before the redirection line) keeps ordinary operator lines such as
+    # ``| (wc -l)`` moving whole.
+    stay = ""
+    if lines:
+        moved_text = "\n".join(lines)
+        prefix = source[:redir_line_end]
+        stay_start: int | None = None
+        paren_excess = moved_text.count(")") - moved_text.count("(")
+        if paren_excess > 0 and prefix.count("(") > prefix.count(")"):
+            # The suffix from the last excess ``)`` onward stays: it is the
+            # construct closer (any ``)`` beyond the moved text's own openers
+            # must close a prefix opener).
+            target = moved_text.count("(") + paren_excess
+            idx = -1
+            for _ in range(target):
+                idx = moved_text.find(")", idx + 1)
+            if idx >= 0 and (stay_start is None or idx < stay_start):
+                stay_start = idx
+        if moved_text.count("`") % 2 == 1 and prefix.count("`") % 2 == 1:
+            idx = moved_text.rfind("`")
+            if idx >= 0 and (stay_start is None or idx < stay_start):
+                stay_start = idx
+        brace_excess = moved_text.count("}") - moved_text.count("{")
+        if brace_excess > 0 and prefix.count("{") > prefix.count("}"):
+            target = moved_text.count("{") + brace_excess
+            idx = -1
+            for _ in range(target):
+                idx = moved_text.find("}", idx + 1)
+            if idx >= 0 and (stay_start is None or idx < stay_start):
+                stay_start = idx
+        if stay_start is not None:
+            stay = moved_text[stay_start:]
+            lines = moved_text[:stay_start].splitlines() or [""]
+            # If the first stay line is only construct closers and the next
+            # stay line starts with a control operator, joining them with a
+            # space is required: an operator-led physical line after a
+            # completed command is a bash syntax error (``cmd \n && next``).
+            stay_lines = stay.split("\n")
+            if (
+                len(stay_lines) > 1
+                and not stay_lines[0].strip(" \t\r").strip(")`}")
+                and stay_lines[1].lstrip(" \t\r")
+            ):
+                nxt = stay_lines[1]
+                lead = len(nxt) - len(nxt.lstrip(" \t\r"))
+                op2, _op2_end = _read_shell_control_operator(
+                    nxt, lead, len(nxt)
+                )
+                if op2 in _HEREDOC_TRAILING_OPERATORS and not (
+                    op2 == "&" and nxt[lead + len(op2) :].startswith(">")
+                ):
+                    stay = " ".join(
+                        [stay_lines[0].rstrip(" \t\r")]
+                        + [
+                            ln.strip(" \t\r")
+                            for ln in stay_lines[1:]
+                            if ln.strip(" \t\r")
+                        ]
+                    )
+
     parts: list[str] = []
     if lines:
         parts.append(lines[0][len(op):].strip())
         parts.extend(line.strip() for line in lines[1:])
-    joined = " ".join(part for part in parts if part and not part.startswith("#"))
+    # Re-join stripped parts, but keep a backslash line-continuation as a real
+    # newline: splicing the next line on with a space would turn ``\`` + NL
+    # into ``\ `` (an escaped space), corrupting the continued command.
+    segments: list[str] = []
+    for part in parts:
+        if not part or part.startswith("#"):
+            continue
+        if segments:
+            prev = segments[-1]
+            trailing = len(prev) - len(prev.rstrip("\\"))
+            segments.append(("\n" if trailing % 2 == 1 else " ") + part)
+        else:
+            segments.append(part)
+    joined = "".join(segments)
     moved = f"{op} {joined}\n" if joined else f"{op}\n"
 
     return (
@@ -3682,6 +4389,7 @@ def _apply_heredoc_operator_move(
         + " "
         + moved
         + source[redir_line_end + 1 : move_start]
+        + (stay + "\n" if stay else "")
         + source[move_end:]
     )
 
@@ -3847,6 +4555,14 @@ def _find_matching_paren(cmd: str, open_pos: int) -> int:
             if end == -1:
                 return -1
             i = end
+        elif c == "(":
+            # A plain parenthesis opens a subshell group: it must be balanced
+            # by its own ``)`` before the substitution can close (``$( (ls)
+            # ; cat x )``).  Without this the matcher closed the substitution
+            # at the group's ``)`` and everything after the group was dropped
+            # from the scan.
+            depth += 1
+            i += 1
         elif c == ")":
             depth -= 1
             if depth == 0:
@@ -3879,11 +4595,13 @@ def _find_dq_end(cmd: str, start: int) -> int:
                 return -1
             i = end + 1
         elif c == "$" and i + 1 < length and cmd[i + 1] == "'":
-            end = _find_ansi_c_end(cmd, i + 2)
-            if end == -1:
-                return -1
-            # _find_ansi_c_end returns the index AFTER the closing '
-            i = end
+            # Inside "..." bash does NOT start an ANSI-C quoting region at
+            # $' (ANSI-C only applies outside double quotes): both characters
+            # are ordinary literals here.  Treat the $ as ordinary so a stray
+            # or unbalanced ' cannot derail the closing-quote search (which
+            # would previously discard the whole region verbatim and lose
+            # required rewrites of a real $(...) inside it).
+            i += 1
         elif c == "`":
             end = _find_backtick_end(cmd, i + 1)
             if end == -1:
@@ -3994,14 +4712,18 @@ def _process_unquoted(cmd: str) -> str:
                     j = paren_end + 1
                     chunk_start = j
                 elif c == "$" and j + 1 < dq_end and cmd[j + 1] == "'":
-                    # $'...' ANSI-C region — skip through it (copied
-                    # verbatim as part of the next chunk).
-                    ac_end = _find_ansi_c_end(cmd, j + 2)
-                    if ac_end == -1 or ac_end > dq_end:
-                        # Unterminated or extends beyond DQ — treat rest as verbatim
-                        j = dq_end
-                        break
-                    j = ac_end
+                    # A literal ``$'`` inside double quotes: bash does NOT
+                    # start an ANSI-C quoting region there (ANSI-C only applies
+                    # outside ``"..."``), so the ``$`` and the following ``'``
+                    # are ordinary literal characters that belong to the chunk.
+                    # Advancing by one leaves both to be copied verbatim and,
+                    # crucially, keeps scanning for a *real* ``$(...)`` /
+                    # backtick substitution that may sit between the ``$'``
+                    # and the next ``'`` (such a substitution is active inside
+                    # double quotes and its content must still be walked).  A
+                    # naive ANSI-C skip would swallow it and lose the required
+                    # backslash-to-slash rewrite inside the substitution.
+                    j += 1
                 elif c == "`":
                     # Backtick command substitution — process content
                     bt_end = _find_backtick_end(cmd, j + 1)
@@ -4663,19 +5385,18 @@ def _scan_double_quoted(code: str, i: int) -> int:
 
 
 def _scan_block_comment(code: str, i: int) -> int:
-    """Skip a block comment ``<# ... #>`` starting at *i*; return index after it."""
-    depth = 1
+    """Skip a block comment ``<# ... #>`` starting at *i*; return index after it.
+
+    PowerShell block comments do NOT nest: the comment ends at the first
+    ``#>`` (matching ``_PwshScanner._skip_block`` and the real parser).  A
+    nested-looking ``<#`` inside the comment is ordinary comment text.
+    """
     i += 2
     n = len(code)
-    while i < n and depth:
-        if code[i] == "<" and i + 1 < n and code[i + 1] == "#":
-            depth += 1
-            i += 2
-        elif code[i] == "#" and i + 1 < n and code[i + 1] == ">":
-            depth -= 1
-            i += 2
-        else:
-            i += 1
+    while i < n:
+        if code[i] == "#" and i + 1 < n and code[i + 1] == ">":
+            return i + 2
+        i += 1
     return i
 
 
@@ -4746,59 +5467,125 @@ _REGION_START_RE = re.compile(r"[#<@'\"]")
 def _build_region_mask(code: str, *, here_strings: bool = True) -> bytearray:
     """Build a region mask for *code* in a single pass.
 
-    Returns a bytearray where 1 means outside regions (code) and 0 means
-    inside (strings, comments, here-strings).
+    Returns a bytearray where 1 means outside regions (code), 0 means inside
+    (strings, comments, here-strings), and 2 means live code inside a ``$(...)``
+    string interpolation (see :func:`_mask_double_quoted`).
 
     When *here_strings* is False, here-strings are not detected (used for
     line-level scanning where here-strings cannot be reliably identified).
     """
     n = len(code)
     mask = bytearray(b"\x01" * n)
-    i = 0
+    _mask_code_span(code, mask, 0, n, here_strings=here_strings)
+    return mask
+
+
+def _mask_code_span(code: str, mask: bytearray, lo: int, hi: int, *, here_strings: bool) -> None:
+    """Mask region (0) characters within the code span ``[lo, hi)``.
+
+    Byte 1 marks ordinary code, byte 2 marks interpolated code (inside a
+    ``$(...)`` within a double-quoted string), byte 0 marks strings,
+    comments and here-strings.  Scanners are clamped to *hi* so a region
+    that (pathologically) extends past the span cannot corrupt neighbours.
+    """
     find = _REGION_START_RE.search
-    while i < n:
+    i = lo
+    while i < hi:
         # Bulk-jump to the next region-opening character ('#', '<', '@',
         # quote): a C-level regex search replaces the per-character walk.
         m = find(code, i)
-        if m is None:
+        if m is None or m.start() >= hi:
             break
         i = m.start()
         c = code[i]
-        if c == "<" and i + 1 < n and code[i + 1] == "#":
+        if c == "<" and i + 1 < hi and code[i + 1] == "#":
             start = i
-            i = _scan_block_comment(code, i)
+            i = min(_scan_block_comment(code, i), hi)
             mask[start:i] = b"\x00" * (i - start)
         elif c == "#":
+            # ``#`` opens a comment only at a token boundary: PowerShell treats
+            # ``foo#c`` (a hash glued to an identifier character) as a single
+            # bareword token, not as ``foo`` followed by a comment.  Without
+            # this check the mask swallows everything after a glued ``#`` and
+            # any ``??``/``?.``/``?:`` on the rest of the line survives into the
+            # emitted PS 5.1 text (where it is a parse error).  This mirrors
+            # ``_PwshScanner._at_token_start``.
+            if i > lo and (code[i - 1].isalnum() or code[i - 1] == "_"):
+                i += 1
+                continue
             start = i
-            newline = code.find("\n", i)
-            i = n if newline < 0 else newline
+            newline = code.find("\n", i, hi)
+            i = hi if newline < 0 else newline
             mask[start:i] = b"\x00" * (i - start)
-        elif c == "@" and i + 1 < n and code[i + 1] in ("'", '"'):
+        elif c == "@" and i + 1 < hi and code[i + 1] in ("'", '"'):
             if not here_strings:
                 i += 1
                 continue
             # PowerShell here-strings require the closing delimiter at the
             # beginning of its own line (only whitespace may precede it).
             j = i + 2
-            while j < n and code[j] in " \t\r":
+            while j < hi and code[j] in " \t\r":
                 j += 1
-            if j < n and code[j] != "\n":
+            if j >= hi or code[j] != "\n":
                 i += 1  # Not a here-string: @' or @" not followed by newline
                 continue
             start = i
-            i = _scan_here_string(code, i)
+            i = min(_scan_here_string(code, i), hi)
             mask[start:i] = b"\x00" * (i - start)
         elif c == "'":
             start = i
-            i = _scan_single_quoted(code, i)
+            i = min(_scan_single_quoted(code, i), hi)
             mask[start:i] = b"\x00" * (i - start)
         elif c == '"':
-            start = i
-            i = _scan_double_quoted(code, i)
-            mask[start:i] = b"\x00" * (i - start)
+            i = _mask_double_quoted(code, mask, i, hi, here_strings=here_strings)
         else:
             i += 1
-    return mask
+
+
+def _mask_double_quoted(
+    code: str, mask: bytearray, start: int, hi: int, *, here_strings: bool
+) -> int:
+    """Mask a double-quoted string starting at *start*; return index after it.
+
+    String text is masked 0.  ``$(...)`` interpolations are *live code* in
+    PowerShell, so their contents are masked 2 ("interpolated code": truthy
+    like ordinary code for the expression transforms, but distinguishable
+    from plain code) with nested strings/comments masked 0.  Without this,
+    operators inside an interpolation such as ``"$($a ?? 'd')"`` were
+    invisible to every transform and survived into the emitted 5.1 text as
+    parse errors.
+    """
+    n = min(len(code), hi)
+    i = start + 1
+    mask[start] = 0
+    while i < n:
+        ch = code[i]
+        if ch == "`" and i + 1 < n:
+            mask[i] = 0
+            mask[i + 1] = 0
+            i += 2
+        elif ch == '"':
+            mask[i] = 0
+            return i + 1
+        elif ch == "$" and i + 1 < n and code[i + 1] == "(":
+            sub_end = min(_skip_subexpression(code, i), n)
+            mask[i] = 2  # $(
+            mask[i + 1] = 2
+            if sub_end - 1 > i + 1:
+                mask[sub_end - 1] = 2  # closing )
+                _mask_code_span(
+                    code, mask, i + 2, sub_end - 1, here_strings=here_strings
+                )
+                # Promote plain code (1) to interpolated code (2); nested
+                # strings/comments stay 0, deeper interpolations stay 2.
+                for k in range(i + 2, sub_end - 1):
+                    if mask[k] == 1:
+                        mask[k] = 2
+            i = sub_end
+        else:
+            mask[i] = 0
+            i += 1
+    return i
 
 
 def _line_mask(line: str) -> bytearray:
@@ -4830,15 +5617,37 @@ def _compute_depths(line: str, mask: bytearray) -> list[int]:
 # ===========================================================================
 
 def _join_continuation_lines(code: str) -> str:
-    """Collapse backtick line-continuations into single logical lines."""
+    """Collapse line-continuations into single logical lines.
+
+    Two flavours continue a statement past a newline in PowerShell 7: an
+    explicit backtick, and a trailing binary operator (``&&`` / ``||`` /
+    ``??`` / ``??=``) at end of line.  Both are collapsed here so the
+    per-line transforms see the whole statement.  Blank lines and comment
+    lines between the operator and the operand are skipped (PowerShell
+    ignores them while continuing).
+    """
+    has_op_cont = False
+    if "&&" in code or "||" in code or "??" in code:
+        has_op_cont = True
+    if "`" not in code and not has_op_cont:
+        return code
+    if "`" in code:
+        code = _join_backtick_continuations(code)
+    if has_op_cont:
+        code = _join_operator_continuations(code)
+    return code
+
+
+def _join_backtick_continuations(code: str) -> str:
+    """Collapse explicit backtick line-continuations into logical lines."""
     if "`" not in code:
         return code
     mask = _build_region_mask(code)
     n = len(code)
     result: list[str] = []
     i = 0
-    find = code.find
     previous = 0
+    find = code.find
     while True:
         # Bulk-jump to the next backtick (C-level find) instead of testing
         # every character; only a backtick in a code region can continue.
@@ -4859,8 +5668,70 @@ def _join_continuation_lines(code: str) -> str:
             previous = j
             i = j
             continue
+        if j == i + 1 and j < n and code[j] == "`":
+            # Escaped backtick (`` `` ``): a literal backtick character, NOT a
+            # line continuation.  Skip the pair so the second backtick is not
+            # re-examined and mistaken for a continuation when a newline
+            # follows it (real PowerShell keeps the line break).
+            i = j + 1
+            continue
         i += 1
     result.append(code[previous:])
+    return "".join(result)
+
+
+def _join_operator_continuations(code: str) -> str:
+    """Join a statement whose physical line ends with a binary operator.
+
+    PowerShell 7 continues the logical line when a binary operator
+    (``&&`` / ``||`` / ``??`` / ``??=``) is the last token of the line; the
+    per-line transforms would otherwise see an operator with no operand and
+    emit broken or wrongly-gated 5.1 code.  Only code-region tails qualify
+    (a ``&&`` inside a string or comment is data).  Blank lines and full-
+    comment lines between the operator and the operand are skipped, matching
+    PowerShell's continuation.
+    """
+    mask = _build_region_mask(code)
+    n = len(code)
+    result: list[str] = []
+    pos = 0
+    while pos < n:
+        nl = code.find("\n", pos)
+        if nl == -1:
+            result.append(code[pos:])
+            break
+        line = code[pos:nl]
+        stripped = line.rstrip(" \t\r")
+        join = False
+        if stripped:
+            tail_idx = pos + len(line) - len(stripped)
+            if stripped.endswith("??=") and mask[tail_idx + len(stripped) - 3]:
+                join = True
+            elif stripped.endswith(("&&", "||", "??")) and mask[tail_idx + len(stripped) - 2]:
+                join = True
+        if not join:
+            result.append(code[pos:nl + 1])
+            pos = nl + 1
+            continue
+        # Skip blank / comment lines to find the continuation operand.
+        j = nl + 1
+        while j < n:
+            nxt_nl = code.find("\n", j)
+            if nxt_nl == -1:
+                nxt_nl = n
+            nxt = code[j:nxt_nl].strip(" \t\r")
+            if not nxt or nxt.startswith("#"):
+                j = nxt_nl + 1 if nxt_nl < n else n
+                continue
+            break
+        if j >= n:
+            # Nothing to continue onto: leave the newline in place.
+            result.append(code[pos:nl + 1])
+            pos = nl + 1
+            continue
+        result.append(code[pos:nl].rstrip(" \t\r") + " ")
+        pos = j
+    return "".join(result)
     return "".join(result)
 
 
@@ -4869,6 +5740,20 @@ def _join_continuation_lines(code: str) -> str:
 # ===========================================================================
 
 _ASSIGN_RE = re.compile(r"(.*?)(\$\w+(?::\w+)?(?:\.\w+)*)\s*=\s*$")
+_CHAIN_ASSIGN_RE = re.compile(
+    r"^(\s*(?:\$\{[^}]+\}|\$\w+(?::\w+)?(?:\.\w+|\[[^\]]*\])*)\s*"
+    r"(\+=|-=|\*=|/=|%=|=(?![=~])))\s*(.*)$"
+)
+"""Match a variable assignment at the START of a chain's left segment.
+
+``$x = A && B`` assigns the COMBINED output of the executed segments in
+PowerShell 7, so the sequential rewrite must place the assignment outside
+the lifted value: ``$x = $(A; if ($?) { B })`` — assigning inside would
+give ``$x`` only the left segment and leak the right one to the output
+stream.  Comparison operators (``-eq`` …) never match; ``==``/``=~`` are
+excluded by the negative lookahead.  Group 1 is the assignment incl. the
+operator, group 3 the remainder of the left segment.
+"""
 _COMMAND_PREFIX_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*\s+")
 
 
@@ -4889,6 +5774,24 @@ def _build_replacement(prefix: str, inner: str) -> str:
     return f"{prefix}{inner}"
 
 
+def _emit_replacement(prefix: str, inner: str) -> str:
+    """Concatenate *prefix* with the generated *inner*, guarding keyword glue.
+
+    ``return``/``throw``/command-name prefixes stripped from an operand leave
+    the prefix ending in a word character; concatenating directly produces
+    ``return$(...)``, which 5.1 parses as a command name.  Insert a space in
+    that case (an assignment rewrite never ends in a word character, so the
+    guard cannot misfire there).
+    """
+    if (
+        prefix
+        and (prefix[-1].isalnum() or prefix[-1] == "_")
+        and _match_assignment(prefix) is None
+    ):
+        return f"{prefix} {inner}"
+    return _build_replacement(prefix, inner)
+
+
 def _strip_command_prefix(expr: str, start: int, *, check_keywords: bool = True) -> tuple[str, int]:
     """Strip a leading command name (e.g. ``Write-Output ``) from *expr*.
 
@@ -4903,6 +5806,57 @@ def _strip_command_prefix(expr: str, start: int, *, check_keywords: bool = True)
             expr_part = expr[m.end():]
             if expr_part and expr_part[0] in '$(["\'@0123456789':
                 return expr_part, start + m.end()
+    return expr, start
+
+
+_RETURN_THROW_OPERAND_RE = re.compile(r"^(return|throw)(\s+)(.*)$",
+                                      re.IGNORECASE | re.DOTALL)
+
+_REGION_PLACEHOLDER_RE = re.compile(r"__kimixrgn\d+x\d+__")
+
+
+def _lift_region_placeholders(expr: str) -> tuple[str, list[str]]:
+    """Split opaque multi-line-region placeholder words out of *expr*.
+
+    ``pwsh_transform`` splices placeholder words onto lines where a multi-line
+    string/comment/here-string region opens or closes mid-line.  A placeholder
+    stands for region text (e.g. a block comment) and must survive as a
+    standalone token — it must never be folded into a generated ``if (...)``
+    operand, or the substitution step would re-inject the region's literal
+    text (``#>``) inside the generated expression (a 5.1 parse error).
+
+    Returns ``(clean_expr, placeholders)``.  When the operand consists of
+    nothing but placeholders (e.g. a here-string literal used directly as
+    the ``??`` value) the placeholders are kept in place — the substitution
+    re-injects a valid literal — and an empty ``clean_expr`` is reported so
+    the caller does not misread the operand as missing.
+    """
+    found = _REGION_PLACEHOLDER_RE.findall(expr)
+    if not found:
+        return expr, []
+    cleaned = _REGION_PLACEHOLDER_RE.sub(" ", expr).strip()
+    if not cleaned:
+        return expr, []
+    return cleaned, found
+
+
+def _keeps_prefix(keeps: list[str]) -> str:
+    """Render lifted placeholders as a prefix segment (or "")."""
+    return (" " + " ".join(keeps) + " ") if keeps else ""
+
+
+def _strip_keyword_operand(expr: str, start: int) -> tuple[str, int]:
+    """Strip a leading ``return``/``throw`` keyword from *expr*.
+
+    The keyword remains in the prefix (``return $(if ...)``) and only its
+    operand is transformed.  Without this the keyword is folded into the
+    coalesced operand (``if ($null -ne return $a)`` — a 5.1 parse error).
+    ``return``/``throw`` are PowerShell keywords, so
+    :func:`_strip_command_prefix` deliberately leaves them in place.
+    """
+    m = _RETURN_THROW_OPERAND_RE.match(expr)
+    if m:
+        return m.group(3), start + len(m.group(1)) + len(m.group(2))
     return expr, start
 
 
@@ -5006,8 +5960,14 @@ def _looks_like_value_expr(expr: str) -> bool:
 # ===========================================================================
 
 def _is_null_conditional_qmark(line: str, i: int) -> bool:
-    """Return True if ``?`` at *i* is part of ``?.`` (null-conditional)."""
-    return i + 1 < len(line) and line[i + 1] == "."
+    """Return True if ``?`` at *i* is part of a null-conditional operator.
+
+    Both flavours count: ``?.`` (member) and ``?[`` (index).  Expression
+    scans use this guard to pass through a null-conditional instead of
+    treating its ``?`` as a stop character, so a mixed chain such as
+    ``$a?[$i]?.b`` keeps its full base (``$a?[$i]``) for the ``?.`` pass.
+    """
+    return i + 1 < len(line) and line[i + 1] in ".["
 
 
 def _is_double_colon(line: str, i: int) -> bool:
@@ -5047,9 +6007,18 @@ def _find_expr_start(line: str, end: int, mask: bytearray,
     return 0
 
 
-def _find_expr_end(line: str, start: int, mask: bytearray) -> int:
-    """Scan forwards from *start* to locate the end of the expression."""
+def _find_expr_end(line: str, start: int, mask: bytearray,
+                   extra_stop: str = "") -> int:
+    """Scan forwards from *start* to locate the end of the expression.
+
+    *extra_stop* can contain additional delimiter characters (e.g. ``"?:"``
+    so a ``??`` operand never swallows a co-located ternary's ``?``/``:``).
+    The same context guards as :func:`_find_expr_start` apply: null-conditional
+    ``?.``, the ``$?`` automatic variable, ``::`` static access and scope /
+    drive colons do not end an expression.
+    """
     depth = 0
+    stop_set = _EXPR_STOP + extra_stop if extra_stop else _EXPR_STOP
     # Track mask value at the previous position to detect region boundaries.
     prev_mask = 1 if start == 0 else mask[start - 1]
     for i in range(start, len(line)):
@@ -5069,7 +6038,19 @@ def _find_expr_end(line: str, start: int, mask: bytearray) -> int:
             depth -= 1
             if depth < 0:
                 return i
-        elif depth == 0 and c in _EXPR_STOP:
+        elif depth == 0 and c in stop_set:
+            if c == "?":
+                if _is_null_conditional_qmark(line, i):
+                    continue
+                if i > 0 and line[i - 1] == "$":
+                    continue  # the $? automatic variable
+            elif c == ":":
+                if (
+                    _is_double_colon(line, i)
+                    or _is_scope_colon(line, i)
+                    or _is_drive_colon(line, i)
+                ):
+                    continue
             return i
     return len(line)
 
@@ -5084,13 +6065,78 @@ def _expr_left(line: str, pos: int, mask: bytearray,
     return start, end
 
 
-def _expr_right(line: str, pos: int, mask: bytearray) -> tuple[int, int]:
+def _expr_right(line: str, pos: int, mask: bytearray,
+                extra_stop: str = "") -> tuple[int, int]:
     """Return (start, end) of the expression immediately right of *pos*."""
     start = pos
     while start < len(line) and line[start] == " ":
         start += 1
-    end = _find_expr_end(line, start, mask)
+    end = _find_expr_end(line, start, mask, extra_stop)
     return start, end
+
+
+def _swallow_comma_operands(line: str, end: int, mask: bytearray) -> int:
+    """Extend *end* over ``, <expr>`` continuations of a ``??`` right operand.
+
+    PowerShell's comma operator binds tighter than ``??``, so ``$a ?? $b, 3``
+    is ``$a ?? ($b, 3)`` in PowerShell 7.  Two comma flavours must NOT be
+    swallowed: commas separating COMMAND ARGUMENTS (``f($a ?? 1, $b)`` — the
+    enclosing opener belongs to a command/method call) and commas following a
+    completed group (``Write-Output ($a ?? 1), 2`` — the operand already ended
+    at the closer, so the char before the comma sits at a deeper level).
+    """
+    depth_arr = _compute_depths(line, mask)
+    j = end
+    while True:
+        p = j - 1
+        while p >= 0 and line[p] in " \t":
+            p -= 1
+        k = j
+        while k < len(line) and line[k] in " \t":
+            k += 1
+        if (
+            p < 0
+            or k >= len(line)
+            or line[k] != ","
+            or not mask[k]
+            or depth_arr[k] != depth_arr[p]
+        ):
+            return j
+        d = depth_arr[k]
+        if d > 0:
+            # Identify the enclosing opener: walk left past nested groups.
+            o = k - 1
+            nested = 0
+            opener = ""
+            opener_pos = -1
+            while o >= 0:
+                if mask[o]:
+                    ch = line[o]
+                    if ch in ")]}":
+                        nested += 1
+                    elif ch in "([{":
+                        if nested:
+                            nested -= 1
+                        elif depth_arr[o] == d - 1:
+                            opener = ch
+                            opener_pos = o
+                            break
+                o -= 1
+            # A word/member directly before the opener marks a command or
+            # method argument list: commas there separate arguments.
+            if opener and opener_pos > 0 and (
+                line[opener_pos - 1].isalnum() or line[opener_pos - 1] in "_)}]"
+            ):
+                return j
+        nstart = k + 1
+        while nstart < len(line) and line[nstart] in " \t":
+            nstart += 1
+        if nstart >= len(line):
+            return j
+        nend = _find_expr_end(line, nstart, mask)
+        if nend <= nstart:
+            return j
+        j = nend
 
 
 # ===========================================================================
@@ -5099,17 +6145,22 @@ def _expr_right(line: str, pos: int, mask: bytearray) -> tuple[int, int]:
 
 def _find_next_op(line: str, op: str, mask: bytearray,
                   skip_dollar_q: bool = False, start: int = 0,
-                  reverse: bool = False) -> int:
+                  reverse: bool = False, plain_code_only: bool = False) -> int:
     """Find the next (or rightmost when *reverse* is True) occurrence of *op*
     in *line* that is outside regions.
 
     If *skip_dollar_q* is True, skip positions immediately after ``$?``.
     *start* restricts the search to indices >= *start* (ignored when *reverse*).
+    When *plain_code_only* is True, only mask value 1 (ordinary code) matches:
+    interpolated code inside ``"$(...)"`` (mask 2) is skipped — the chain
+    transform handles interpolation operators in a dedicated second phase
+    with region edges as hard boundaries.
     """
     search = line.rfind if reverse else line.find
     idx = search(op, start if not reverse else None)
     while idx != -1:
-        if mask[idx] and (not skip_dollar_q or not _after_dollar_question(line, idx)):
+        if mask[idx] and (not plain_code_only or mask[idx] == 1) \
+                and (not skip_dollar_q or not _after_dollar_question(line, idx)):
             return idx
         idx = search(op, idx + 1) if not reverse else line.rfind(op, 0, idx)
     return -1
@@ -5122,15 +6173,26 @@ def _transform_operator(
     *,
     skip_dollar_q: bool = True,
     require_value_left: bool = False,
+    operand_extra_stop: str = "",
+    swallow_commas: bool = False,
+    deep_ternary: bool = False,
 ) -> tuple[str, list[str]]:
     """Generic single-operator line transformer.
 
-    *op*          — the operator string to search for (e.g. ``"??"``).
-    *builder*     — callable(left_expr, right_expr, right_extra) → inner_str.
+    *op* — the operator string to search for (e.g. ``"??"``).
+    *builder* — callable(left_expr, right_expr, right_extra) → inner_str.
     *skip_dollar_q* — when True, skip positions immediately after ``$?``.
     *require_value_left* — when True, only transform when the left operand
       ends like a value expression (see :func:`_looks_like_value_expr`);
       a bareword left operand is 5.1 command text with wildcard characters.
+    *operand_extra_stop* — extra delimiter characters for the operand scans
+      (e.g. ``"?:"`` so a ``??`` never swallows a co-located ternary).
+    *swallow_commas* — extend the right operand over same-depth ``, expr``
+      continuations (comma binds tighter than ``??`` in PowerShell 7).
+    *deep_ternary* — pre-transform ternaries inside the operands (a
+      parenthesized ``( $c ? 1 : 2 )`` operand would otherwise be copied
+      verbatim into the generated braces, where the ternary pass — which
+      refuses ``?`` inside ``{ }`` — can never reach it).
 
     Returns ``(transformed_line, warnings)``.
     """
@@ -5145,13 +6207,39 @@ def _transform_operator(
         if idx == -1:
             break
 
-        left_start, left_end = _expr_left(line, idx, mask)
+        left_start, left_end = _expr_left(line, idx, mask, operand_extra_stop)
         left_expr = line[left_start:left_end].strip()
         left_expr, left_start = _strip_command_prefix(left_expr, left_start)
+        left_expr, left_start = _strip_keyword_operand(left_expr, left_start)
 
-        right_start, right_end = _expr_right(line, idx + op_len, mask)
+        right_start, right_end = _expr_right(
+            line, idx + op_len, mask, operand_extra_stop
+        )
+        if swallow_commas:
+            right_end = _swallow_comma_operands(line, right_end, mask)
         right_expr = line[right_start:right_end].strip()
         right_extra = None
+
+        # Region placeholders (spliced onto mid-line region boundaries by
+        # ``pwsh_transform``) are opaque tokens: keep them out of the operands
+        # so the substitution step never re-injects region text (``#>``)
+        # inside the generated expression.
+        keeps: list[str] = []
+        left_expr, found = _lift_region_placeholders(left_expr)
+        keeps.extend(found)
+        right_expr, found = _lift_region_placeholders(right_expr)
+        keeps.extend(found)
+
+        # Parenthesized ternaries inside an operand would be copied verbatim
+        # into the generated ``{ }`` braces, where the ternary pass can never
+        # reach them (its brace guard) — pre-transform them here.
+        if deep_ternary:
+            if "?" in left_expr:
+                left_expr, wl = _transform_ternary_line(left_expr)
+                warnings.extend(wl)
+            if "?" in right_expr:
+                right_expr, wl = _transform_ternary_line(right_expr)
+                warnings.extend(wl)
 
         if not left_expr or not right_expr:
             search = idx + 1
@@ -5161,8 +6249,20 @@ def _transform_operator(
             continue
 
         inner = builder(left_expr, right_expr, right_extra)
+        # ``builder`` returns an ``if (...) {...} else {...}`` *statement*.  A
+        # bare statement is only legal at pipeline/statement position (or as a
+        # full ``$var = ...`` right-hand side); wherever the operator sits in an
+        # *expression* position — inside ``(...)``/``[...]``/``{...}``, as a
+        # command argument, or directly before a ``|``/``&&``/redirection — the
+        # statement must be lifted into a value with ``$( ... )``.  Wrapping
+        # unconditionally is semantically identical at statement position (the
+        # sub-expression still emits the branch result) and fixes every
+        # expression position, e.g. ``(if ...)`` which is a parse error.
+        inner = f"$({inner})"
         warnings.append(f"{op} operator `{left_expr} {op} {right_expr}` rewritten to `{inner}`")
-        line = _build_replacement(line[:left_start], inner) + line[right_end:]
+        line = _emit_replacement(
+            line[:left_start] + _keeps_prefix(keeps), inner
+        ) + line[right_end:]
         search = left_start
     return line, warnings
 
@@ -5196,12 +6296,43 @@ def _transform_nca_line(line: str) -> tuple[str, list[str]]:
 
         val_start, val_end = _expr_right(line, idx + 3, mask)
         value = line[val_start:val_end].strip()
-        new_inner = f"if ($null -eq {var}) {{ {var} = {value} }}"
+        # A chained coalesce in the value (``$x ??= $y ??= 3`` /
+        # ``$x ??= $y ?? 3``) is right-associative in PowerShell 7.  The
+        # plain value scan stops at the inner ``??=``'s ``=``, so extend the
+        # value over the inner assignment first.
+        while (
+            value.endswith("??")
+            and val_end < len(line)
+            and line[val_end] == "="
+        ):
+            val_end = _find_expr_end(line, val_end + 1, mask)
+            value = line[val_start:val_end].strip()
+        # Transform the inner operators and lift the result into a ``$()``
+        # value (an ``if`` statement emits nothing when assigned directly).
+        yield_suffix = ""
+        if "??" in value:
+            vmask = _line_mask(value)
+            inner_idx = _find_next_op(value, "??=", vmask, True)
+            if inner_idx != -1:
+                is_, ie_ = _expr_left(value, inner_idx, vmask)
+                yield_var = value[is_:ie_].strip()
+                value, w = _transform_nca_line(value)
+                warnings.extend(w)
+                # The chained assignment's statement emits nothing; re-yield
+                # the assigned variable so the outer ??= assigns its value.
+                yield_suffix = f"; {yield_var}"
+            value, w = _transform_nc_line(value)
+            warnings.extend(w)
+            new_inner = (
+                f"if ($null -eq {var}) {{ {var} = $({value}{yield_suffix}) }}"
+            )
+        else:
+            new_inner = f"if ($null -eq {var}) {{ {var} = {value} }}"
         warnings.append(
-            f"null-coalescing assignment `{var} ??= {value}` "
+            f"null-coalescing assignment `{var} ??= ...` "
             f"rewritten to `{new_inner}`"
         )
-        line = _build_replacement(line[:left_start].rstrip(), new_inner) + line[val_end:]
+        line = _emit_replacement(line[:left_start].rstrip(), new_inner) + line[val_end:]
         search = left_start
     return line, warnings
 
@@ -5216,7 +6347,20 @@ def _transform_nc_line(line: str) -> tuple[str, list[str]]:
     def _builder(left: str, right: str, _extra: None) -> str:
         return f"if ($null -ne {left}) {{ {left} }} else {{ {right} }}"
 
-    return _transform_operator(line, "??", _builder, require_value_left=True)
+    return _transform_operator(
+        line,
+        "??",
+        _builder,
+        require_value_left=True,
+        # ``??`` binds tighter than the ternary and the comma operator, so
+        # its operands stop at a co-located ternary's ``?``/``:`` and swallow
+        # same-level ``, expr`` continuations; parenthesized ternaries inside
+        # an operand are pre-transformed (deep_ternary) so no raw ``? :``
+        # survives inside the generated braces (a 5.1 parse error there).
+        operand_extra_stop="?:",
+        swallow_commas=True,
+        deep_ternary=True,
+    )
 
 
 # ===========================================================================
@@ -5224,10 +6368,23 @@ def _transform_nc_line(line: str) -> tuple[str, list[str]]:
 # ===========================================================================
 
 def _find_matching_colon(line: str, start: int, mask: bytearray,
-                         depth_arr: list[int]) -> int:
-    """Find the colon that separates the true/false branches of a ternary."""
+                         depth_arr: list[int], ref_depth: int = 0) -> int:
+    """Find the colon that separates the true/false branches of a ternary.
+
+    The separator colon sits at the *same* bracket-nesting level as the ternary
+    ``?`` (``ref_depth``): ``0`` for a statement-level ternary, ``> 0`` when the
+    whole ternary is wrapped in parentheses such as ``($c ? $a : $b)``.  Once the
+    depth drops below *ref_depth* the enclosing group has closed without a
+    separator colon, so there is no matching ternary and we stop.
+    """
     for i in range(start, len(line)):
-        if line[i] != ":" or depth_arr[i] != 0 or not mask[i]:
+        if not mask[i]:
+            continue
+        if depth_arr[i] < ref_depth:
+            # The ternary's own group (e.g. the wrapping parenthesis) closed
+            # before any separator colon appeared -- not a ternary.
+            break
+        if line[i] != ":" or depth_arr[i] != ref_depth:
             continue
         if _is_double_colon(line, i) or _is_scope_colon(line, i):
             continue
@@ -5237,60 +6394,167 @@ def _find_matching_colon(line: str, start: int, mask: bytearray,
     return -1
 
 
+def _brace_open_depths(line: str, mask: bytearray) -> list[int]:
+    """Number of unclosed ``{`` before each character of *line*.
+
+    A ``:`` nested inside ``{ ... }`` may belong to hashtable / switch /
+    script-block syntax rather than a ternary separator, so the caller skips
+    ternary detection when the ``?`` sits at a non-zero brace depth.  Characters
+    inside strings / comments (``mask`` == 0) never open or close a brace.
+    """
+    depths = [0] * len(line)
+    bc = 0
+    for i, ch in enumerate(line):
+        depths[i] = bc
+        if mask[i]:
+            if ch == "{":
+                bc += 1
+            elif ch == "}":
+                bc -= 1
+    return depths
+
+
 def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
     """Rewrite ternary ``$cond ? $true : $false`` into an ``if`` statement."""
     warnings: list[str] = []
     if "?" not in line:
         return line, warnings
-    mask = _line_mask(line)
-    depth_arr = _compute_depths(line, mask)
-    pos = 0
-    while pos < len(line):
-        if (
-            line[pos] == "?"
-            and mask[pos]
-            and not _after_dollar_question(line, pos)
-        ):
-            # ``?`` in command position (the Where-Object alias) is not a
-            # ternary: it follows a pipe/operator or starts the statement,
-            # so there is no condition expression to its left.
-            k = pos - 1
-            while k >= 0 and line[k] == " ":
-                k -= 1
-            if k < 0 or line[k] in "|&;,":
-                pos += 1
+    # Positions already tried and found to be incomplete ternaries (guards
+    # passed, separator colon found, but an operand came out empty).  They
+    # must not be re-selected on the next restart or the loop would spin.
+    rejected: set[int] = set()
+    while True:
+        mask = _line_mask(line)
+        depth_arr = _compute_depths(line, mask)
+        # Number of unclosed ``{`` before each character.  A ``:`` inside ``{ ... }``
+        # may belong to hashtable / switch / script-block syntax rather than a
+        # ternary, so a ternary whose ``?`` sits inside an open brace is left
+        # untouched (colons nested in parentheses are unambiguous ternary markers).
+        brace_open = _brace_open_depths(line, mask)
+        # Rewrite the RIGHTMOST eligible ternary first.  Its branch arms may
+        # contain nested ternaries; rewriting inner-to-outer keeps each nested
+        # ``? :`` out of the emitted ``{ ... }`` arm blocks, where the brace
+        # guard would leave them raw (a 5.1 parse error).  Sequential ternaries
+        # on one line are unaffected: every restart re-finds the new rightmost.
+        pos = len(line) - 1
+        colon_pos = -1
+        while pos >= 0:
+            if pos in rejected:
+                pos -= 1
                 continue
-            colon_pos = _find_matching_colon(line, pos + 1, mask, depth_arr)
-            if colon_pos != -1:
-                cond_start, cond_end = _expr_left(line, pos, mask)
-                condition = line[cond_start:cond_end].strip()
-                true_expr = line[pos + 1:colon_pos].strip()
-                false_start, false_end = _expr_right(line, colon_pos + 1, mask)
-                false_expr = line[false_start:false_end].strip()
-                if not _match_assignment(line[:cond_start]):
-                    condition, cond_start = _strip_command_prefix(condition, cond_start, check_keywords=False)
-                if not condition or not true_expr or not false_expr:
-                    # Incomplete ternary (e.g. a bare ``?`` alias invocation
-                    # that slipped past the position guard): leave it.
-                    pos += 1
+            if (
+                line[pos] == "?"
+                and mask[pos]
+                and not _after_dollar_question(line, pos)
+            ):
+                # ``?`` in command position (the Where-Object alias) is not a
+                # ternary: it follows a pipe/operator or starts the statement,
+                # so there is no condition expression to its left.
+                k = pos - 1
+                while k >= 0 and line[k] == " ":
+                    k -= 1
+                if k < 0 or line[k] in "|&;,":
+                    pos -= 1
                     continue
-                inner = f"if ({condition}) {{ {true_expr} }} else {{ {false_expr} }}"
-                suffix = line[false_end:]
-                if suffix.lstrip()[:1] in ("|", "&", ">"):
-                    # A statement ``if`` cannot be piped, chained, or
-                    # redirected in 5.1: wrap it in ``$()`` so the ternary
-                    # value remains a pipeline element / redirection source.
-                    inner = f"$({inner})"
-                warnings.append(
-                    f"ternary operator `{condition} ? {true_expr} : {false_expr}` "
-                    f"rewritten to `{inner}`"
+                # Inside an open ``{`` the colon is ambiguous (hashtable /
+                # switch / script-block): skip, matching the documented
+                # brace-depth limitation — with two unambiguous exceptions:
+                # a ternary nested inside ``(...)`` within the braces (colons
+                # in parentheses are always ternary separators), and a ternary
+                # in ``return``/``throw`` operand position (the keyword
+                # precedes the condition, so no hashtable/switch colon can
+                # be involved).
+                if brace_open[pos] > 0 and depth_arr[pos] - brace_open[pos] == 0:
+                    cs, ce = _expr_left(line, pos, mask)
+                    # ``return``/``throw`` precede the condition INSIDE the
+                    # condition text (``return $c ? 1 : 2``); a keyword-led
+                    # condition is the unambiguous operand case.
+                    if not re.match(
+                        r"(?i)^(?:return|throw)[ \t]", line[cs:ce].lstrip()
+                    ):
+                        pos -= 1
+                        continue
+                colon_pos = _find_matching_colon(
+                    line, pos + 1, mask, depth_arr, depth_arr[pos]
                 )
-                line = _build_replacement(line[:cond_start], inner) + suffix
-                mask = _line_mask(line)
-                depth_arr = _compute_depths(line, mask)
-                pos = len(line) - len(suffix)
-                continue
-        pos += 1
+                if colon_pos == -1:
+                    pos -= 1
+                    continue
+                break
+            pos -= 1
+        if pos < 0:
+            break
+        cond_start, cond_end = _expr_left(line, pos, mask)
+        condition = line[cond_start:cond_end].strip()
+        true_expr = line[pos + 1:colon_pos].strip()
+        false_start, false_end = _expr_right(line, colon_pos + 1, mask)
+        # PowerShell's comma operator binds tighter than the ternary, so the
+        # false branch swallows comma-separated values at the same nesting
+        # level: ``@($c ? 7 : 8, 5)`` is ``@($c ? 7 : (8, 5))`` in PS 7 (ONE
+        # array element when the condition is true).  _find_expr_end tracks
+        # depth relative to its own scan start, so such a comma would
+        # otherwise cut the false arm short and change the emitted semantics.
+        ref_depth = depth_arr[colon_pos]
+        j = false_end
+        while j < len(line):
+            k = j
+            while k < len(line) and line[k] in " \t":
+                k += 1
+            if not (
+                k < len(line)
+                and line[k] == ","
+                and mask[k]
+                and depth_arr[k] == ref_depth
+            ):
+                break
+            nstart = k + 1
+            while nstart < len(line) and line[nstart] in " \t":
+                nstart += 1
+            if nstart >= len(line):
+                break
+            nend = _find_expr_end(line, nstart, mask)
+            if nend <= nstart:
+                break
+            j = nend
+        false_end = j
+        false_expr = line[false_start:false_end].strip()
+        suffix = line[false_end:]
+        if not _match_assignment(line[:cond_start]):
+            condition, cond_start = _strip_command_prefix(condition, cond_start, check_keywords=False)
+        condition, cond_start = _strip_keyword_operand(condition, cond_start)
+        # Region placeholders (mid-line region boundaries spliced by
+        # ``pwsh_transform``) are opaque tokens and must not be folded into
+        # the emitted arms — re-injecting region text (``#>``) inside the
+        # generated ``if`` is a 5.1 parse error.
+        keeps: list[str] = []
+        condition, found = _lift_region_placeholders(condition)
+        keeps.extend(found)
+        true_expr, found = _lift_region_placeholders(true_expr)
+        keeps.extend(found)
+        false_expr, found = _lift_region_placeholders(false_expr)
+        keeps.extend(found)
+        if not condition or not true_expr or not false_expr:
+            # Incomplete ternary (e.g. a bare ``?`` alias invocation that
+            # slipped past the position guard): leave it and keep looking
+            # for eligible ternaries further left.
+            rejected.add(pos)
+            continue
+        inner = f"if ({condition}) {{ {true_expr} }} else {{ {false_expr} }}"
+        if depth_arr[pos] > 0 or suffix.lstrip()[:1] in ("|", "&", ">"):
+            # Either the ternary sits in an *expression* position
+            # (inside ``(...)``/``[...]``, so ``depth_arr[pos] > 0``) or
+            # its value is piped / chained / redirected.  A bare ``if``
+            # statement is illegal there: ``(if ...)`` is a parse error
+            # in 5.1.  Lift it into a value with ``$( ... )``.
+            inner = f"$({inner})"
+        warnings.append(
+            f"ternary operator `{condition} ? {true_expr} : {false_expr}` "
+            f"rewritten to `{inner}`"
+        )
+        line = _emit_replacement(
+            line[:cond_start] + _keeps_prefix(keeps), inner
+        ) + suffix
+        rejected.clear()  # positions shifted; re-evaluate everything
     return line, warnings
 
 
@@ -5298,35 +6562,297 @@ def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
 # Transform: pipeline chain operators  (&& / ||)
 # ===========================================================================
 
+def _enclosing_group_opener(
+    line: str, pos: int, mask: bytearray, depths: list[int], depth: int
+) -> str:
+    """Return the opener char of the bracket group nesting *pos* at *depth*.
+
+    Returns "" at the top level (``depth`` <= 0) or when no opener is found.
+    Used to tell expression positions (``( ... )`` / ``[ ... ]``) from
+    scriptblock bodies (``{ ... }``): a chain inside the former must be
+    lifted into ``$( ... )`` (a statement sequence is a 5.1 parse error
+    inside plain parens), while a chain inside a scriptblock is rewritten in
+    place (statements are legal there).
+    """
+    if depth <= 0:
+        return ""
+    j = pos - 1
+    nested = 0
+    while j >= 0:
+        if mask[j]:
+            ch = line[j]
+            if ch in ")]}":
+                nested += 1
+            elif ch in "([{":
+                if nested:
+                    nested -= 1
+                elif depths[j] == depth - 1:
+                    return ch
+        j -= 1
+    return ""
+
+
+def _find_interp_op(line: str, op: str, mask: bytearray) -> int:
+    """Find the next *op* inside interpolated code (mask value 2)."""
+    idx = line.find(op)
+    while idx != -1:
+        if mask[idx] == 2:
+            return idx
+        idx = line.find(op, idx + 1)
+    return -1
+
+
+def _mask0_span(line: str, mask: bytearray, k: int) -> tuple[int, int]:
+    """Return the maximal mask-0 span (start, end) containing index *k*."""
+    s = k
+    while s > 0 and not mask[s - 1]:
+        s -= 1
+    e = k + 1
+    n = len(line)
+    while e < n and not mask[e]:
+        e += 1
+    return s, e
+
+
+def _interp_edge_or_literal(line: str, mask: bytearray, k: int) -> str:
+    """Classify the mask-0 character at *k* inside an interpolated region.
+
+    The interpolation's own ``$(`` / ``)`` boundary characters are mask 2, so
+    any mask-0 hit while scanning inside one is either a nested string
+    literal (starts with ``'``/``"`` — transparent for boundary scans; the
+    operand continues past it) or a comment/region edge (a hard boundary).
+    Returns ``"literal"`` or ``"edge"``.
+    """
+    s, _e = _mask0_span(line, mask, k)
+    return "literal" if line[s] in "'\"" else "edge"
+
+
 def _transform_chain_line(line: str) -> tuple[str, list[str]]:
     """Rewrite pipeline chain operators ``&&`` and ``||``.
 
-    Uses rightmost-first to maintain correct right-associative semantics.
+    Chain operators are LEFT-associative in PowerShell 7
+    (``A || B && C`` is ``(A || B) && C``), so each operator is rewritten as
+    a *sequential* ``if ($?)`` / ``if (-not $?)`` statement — never nested
+    inside a sibling operator's block, which would wrongly drop later
+    segments when an earlier condition short-circuits.  Operands are bounded
+    by the nearest statement boundary at the operator's nesting depth: a
+    ``;`` separator, the opener/closer of the brace/paren group the operator
+    sits in, the next chain operator at the same depth, or a trailing
+    comment.  Operators inside scriptblocks (``{ ... }``) are rewritten in
+    place at their own depth, so a trailing ``&&`` can never leak into a
+    scriptblock body.
+
+    Two positions need the sequence lifted into ``$( ... )`` instead:
+    expression positions — a chain inside ``( ... )`` / ``[ ... ]`` (its
+    combined output is the group's value in PS 7, and bare statements are a
+    5.1 parse error there) — and the right-hand side of an assignment (the
+    chained segments' combined output is the assigned value).  Chains inside
+    interpolated sub-expressions (``"$( A && B )"``) are rewritten with
+    region edges as hard boundaries: the statement sequence is valid there.
     """
     warnings: list[str] = []
     if "&&" not in line and "||" not in line:
         return line, warnings
+
+    def _emit(
+        prefix: str,
+        left_seg: str,
+        right_seg: str,
+        best_op: str,
+        wrap_value: bool,
+        suffix: str,
+        assign: "re.Match[str] | None" = None,
+    ) -> str:
+        condition = "$?" if best_op == "&&" else "-not $?"
+        if prefix and not prefix[-1].isspace():
+            prefix += " "
+        if assign is not None:
+            # ``$x = A && B`` -> ``$x = $(A; if ($?) { B })``: the variable
+            # receives the combined output of the executed segments.
+            rest = assign.group(3).strip()
+            head = f"{rest}; " if rest else "; "
+            return (
+                f"{prefix}{assign.group(1)} "
+                f"$({head}if ({condition}) {{ {right_seg} }}){suffix}"
+            )
+        head = f"{left_seg}; " if left_seg else "; "
+        inner = f"{head}if ({condition}) {{ {right_seg} }}"
+        if wrap_value:
+            inner = f"$({inner})"
+        return f"{prefix}{inner}{suffix}"
+
+    def _rewrite_segments(left_seg: str, right_seg: str) -> tuple[str, str]:
+        # A segment may still contain a chain operator at a DEEPER nesting
+        # level (e.g. the ``||`` inside ``A && { B || C }``); rewrite it
+        # recursively so no raw operator survives into the 5.1 output.
+        if "&&" in left_seg or "||" in left_seg:
+            left_seg, wl = _transform_chain_line(left_seg)
+            warnings.extend(wl)
+        if "&&" in right_seg or "||" in right_seg:
+            right_seg, wl = _transform_chain_line(right_seg)
+            warnings.extend(wl)
+        return left_seg, right_seg
+
+    # Phase 1 — chains in ordinary code (mask 1).  Region characters
+    # (mask 0) are transparent for boundary scans.
     while True:
         mask = _line_mask(line)
-        and_pos = _find_next_op(line, "&&", mask, reverse=True)
-        or_pos = _find_next_op(line, "||", mask, reverse=True)
+        and_pos = _find_next_op(line, "&&", mask, plain_code_only=True)
+        or_pos = _find_next_op(line, "||", mask, plain_code_only=True)
         if and_pos == -1 and or_pos == -1:
             break
-        if and_pos > or_pos:
+        if and_pos == -1:
+            best_pos, best_op = or_pos, "||"
+        elif or_pos == -1:
+            best_pos, best_op = and_pos, "&&"
+        elif and_pos < or_pos:
             best_pos, best_op = and_pos, "&&"
         else:
             best_pos, best_op = or_pos, "||"
-        condition = "$?" if best_op == "&&" else "-not $?"
-        left = line[:best_pos].strip()
-        right_start = best_pos + 2
-        # Separate a trailing line comment from the right-hand expression
-        # so it stays outside the generated ``{ }`` block (a ``#`` inside
-        # braces would comment out the closing ``}``).
-        right_raw_end, comment = _separate_trailing_comment(line, right_start, mask)
-        right = line[right_start:right_raw_end].strip()
-        new_line = f"{left}; if ({condition}) {{ {right} }}{comment}"
+
+        depths = _compute_depths(line, mask)
+        depth = depths[best_pos]
+
+        # Left boundary: the nearest ``;`` at the operator's depth, or the
+        # opener that established this depth level (its content starts after
+        # it).  String/region characters (mask 0) are transparent.
+        lo = best_pos
+        while lo > 0:
+            k = lo - 1
+            if mask[k]:
+                if depths[k] < depth:
+                    break
+                if depths[k] == depth and line[k] == ";":
+                    break
+            lo = k
+
+        # Right boundary: scan forward at the operator's depth, stopping at
+        # a statement separator (``;``), the closer ending this depth level,
+        # the next chain operator at the same depth, or a trailing comment
+        # (which must stay OUTSIDE the generated ``{ }`` block — a ``#``
+        # inside braces would comment out the closing ``}``).
+        hi = best_pos + 2
+        prev_code = True  # the operator itself precedes the right operand
+        while hi < len(line):
+            c = line[hi]
+            cur = mask[hi]
+            if not cur:
+                if prev_code and c == "#":
+                    break
+                prev_code = False
+                hi += 1
+                continue
+            prev_code = True
+            if depths[hi] < depth:
+                break
+            if depths[hi] == depth:
+                if c == ";" or c in ")]}":
+                    break
+                if line.startswith("&&", hi) or line.startswith("||", hi):
+                    break
+            hi += 1
+
+        left_seg = line[lo:best_pos].strip()
+        right_seg = line[best_pos + 2:hi].strip()
+        left_seg, right_seg = _rewrite_segments(left_seg, right_seg)
+
+        # Expression position: a chain inside ``( ... )`` / ``[ ... ]`` must
+        # become a value (statements are a 5.1 parse error inside plain
+        # parens; the combined segment output is the group's value in PS 7).
+        # An assignment left segment (``$x = A && B``) likewise: the assigned
+        # value is the combined output of the executed segments.
+        opener = _enclosing_group_opener(line, best_pos, mask, depths, depth)
+        # NOTE: ``opener in "(["`` is not enough — "" is a substring of any
+        # string, so the empty (top-level) opener must be excluded explicitly.
+        wrap_value = bool(opener) and opener in "(["
+        assign_split = None
+        if not opener and depth == 0:
+            m = _CHAIN_ASSIGN_RE.match(left_seg)
+            if m and m.group(3).strip():
+                assign_split = m
+
+        prefix = line[:lo]
+        new_line = _emit(
+            prefix, left_seg, right_seg, best_op, wrap_value, line[hi:],
+            assign=assign_split,
+        )
         warnings.append(
-            f"pipeline chain `{left} {best_op} {right}` "
+            f"pipeline chain `{left_seg} {best_op} {right_seg}` "
+            f"rewritten to `{new_line}`"
+        )
+        line = new_line
+
+    # Phase 2 — chains inside interpolated sub-expressions ("$( ... )" code,
+    # mask 2).  The sequential-statement rewrite IS valid there (verified
+    # against 5.1), but region edges are hard boundaries: mask-0 characters
+    # end the boundary scans instead of being transparent.
+    while True:
+        mask = _line_mask(line)
+        and_pos = _find_interp_op(line, "&&", mask)
+        or_pos = _find_interp_op(line, "||", mask)
+        if and_pos == -1 and or_pos == -1:
+            break
+        if and_pos == -1:
+            best_pos, best_op = or_pos, "||"
+        elif or_pos == -1:
+            best_pos, best_op = and_pos, "&&"
+        elif and_pos < or_pos:
+            best_pos, best_op = and_pos, "&&"
+        else:
+            best_pos, best_op = or_pos, "||"
+
+        depths = _compute_depths(line, mask)
+        depth = depths[best_pos]
+
+        lo = best_pos
+        while lo > 0:
+            k = lo - 1
+            if not mask[k]:
+                # A nested string literal (``$a && 'x'``) is transparent;
+                # anything else is the region edge (the interpolation's own
+                # ``"$(`` opens here).
+                if _interp_edge_or_literal(line, mask, k) == "literal":
+                    lo = _mask0_span(line, mask, k)[0]
+                    continue
+                break
+            if depths[k] < depth:
+                break
+            if depths[k] == depth and line[k] == ";":
+                break
+            lo = k
+
+        hi = best_pos + 2
+        while hi < len(line):
+            cur = mask[hi]
+            if not cur:
+                # A nested string literal (``$a && 'x'``) extends the
+                # operand; anything else is the region edge (the
+                # interpolation's own ``)" closes here).
+                if _interp_edge_or_literal(line, mask, hi) == "literal":
+                    hi = _mask0_span(line, mask, hi)[1]
+                    continue
+                break
+            if depths[hi] < depth:
+                break
+            if depths[hi] == depth:
+                if line[hi] == ";" or line[hi] in ")]}":
+                    break
+                if line.startswith("&&", hi) or line.startswith("||", hi):
+                    break
+            hi += 1
+
+        left_seg = line[lo:best_pos].strip()
+        right_seg = line[best_pos + 2:hi].strip()
+        left_seg, right_seg = _rewrite_segments(left_seg, right_seg)
+        opener = _enclosing_group_opener(line, best_pos, mask, depths, depth)
+        wrap_value = bool(opener) and opener in "(["
+
+        prefix = line[:lo]
+        new_line = _emit(
+            prefix, left_seg, right_seg, best_op, wrap_value, line[hi:]
+        )
+        warnings.append(
+            f"pipeline chain `{left_seg} {best_op} {right_seg}` "
             f"rewritten to `{new_line}`"
         )
         line = new_line
@@ -5426,11 +6952,27 @@ def _transform_null_conditional_line(line: str, op: str) -> tuple[str, list[str]
         expr_start, expr_end = _expr_left(line, idx, mask, "?:")
         base = line[expr_start:expr_end].strip()
         base, expr_start = _strip_command_prefix(base, expr_start)
+        base, expr_start = _strip_keyword_operand(base, expr_start)
+        keeps: list[str] = []
+        base, found = _lift_region_placeholders(base)
+        keeps.extend(found)
         if not base or not _looks_like_value_expr(base):
             # A bareword "base" is 5.1 command text whose ``?`` is a
             # filename wildcard (``rm f?.bak``), not a null-conditional.
             search = idx + op_len
             continue
+
+        if is_dot and "?[" in base:
+            # Mixed chain (``$a?[$i]?.b``): the index null-conditional is
+            # part of the dot base.  Transform it here so no raw ``?[`` is
+            # left inside the generated condition, where the later bracket
+            # pass would misread its base (the scan would absorb the
+            # ``$null -ne`` operator text).
+            base, wl = _transform_null_conditional_line(base, "?[")
+            warnings.extend(wl)
+            if not base:
+                search = idx + op_len
+                continue
 
         if is_dot:
             segments: list[tuple[str, int]] = []  # (member_expr, end_pos)
@@ -5479,7 +7021,9 @@ def _transform_null_conditional_line(line: str, op: str) -> tuple[str, list[str]
             f"null-conditional {kind} `{orig_expr}` "
             f"rewritten to `{inner}`"
         )
-        line = _build_replacement(line[:expr_start], inner) + line[end_pos:]
+        line = _emit_replacement(
+            line[:expr_start] + _keeps_prefix(keeps), inner
+        ) + line[end_pos:]
         search = 0
 
 
@@ -5511,14 +7055,64 @@ def pwsh_transform(code: str) -> tuple[str, list[str]]:
     lines = code.split("\n")
     mask = _build_region_mask(code)
     multi = _find_multiline_regions(code, mask, lines)
+    # Byte offset where each line starts within *code* (for slicing the
+    # full-code mask per line).
+    line_starts: list[int] = []
+    off = 0
+    for ln in lines:
+        line_starts.append(off)
+        off += len(ln) + 1
 
     result: list[str] = []
     all_warnings: list[str] = []
 
     for i, line in enumerate(lines):
         if i in multi:
-            result.append(line)
-            continue
+            # The line is inside a multi-line string/comment/here-string
+            # region.  Such regions can open or close *mid-line*, leaving
+            # live code before/after them (e.g. a here-string closing ``"@``
+            # followed by ``; $y = $a ?? "d"``): a whole-line skip would leave
+            # operators in that code raw (5.1 parse errors).  Replace each
+            # region span with an opaque placeholder word, run the normal
+            # pipeline on the placeholder line (whose mask is then derivable
+            # per-line), and substitute the region text back afterwards.
+            base = line_starts[i]
+            nline = len(line)
+            runs: list[tuple[int, int]] = []
+            j = 0
+            while j < nline:
+                if not mask[base + j]:
+                    k = j
+                    while k < nline and not mask[base + k]:
+                        k += 1
+                    runs.append((j, k))
+                    j = k
+                else:
+                    j += 1
+            if runs == [(0, nline)]:
+                # Wholly inside the region — nothing live on this line.
+                result.append(line)
+                continue
+            if runs:
+                replacements: list[tuple[str, str]] = []
+                parts: list[str] = []
+                prev = 0
+                for ridx, (s, e) in enumerate(runs):
+                    ph = f"__kimixrgn{i}x{ridx}__"
+                    replacements.append((ph, line[s:e]))
+                    parts.append(line[prev:s])
+                    parts.append(ph)
+                    prev = e
+                parts.append(line[prev:])
+                pline = "".join(parts)
+                for xform in _TRANSFORMS:
+                    pline, w = xform(pline)
+                    if w:
+                        all_warnings.extend(f"Line {i + 1}: {msg}" for msg in w)
+                for ph, orig_text in replacements:
+                    pline = pline.replace(ph, orig_text)
+                result.append(pline)
+                continue
         for xform in _TRANSFORMS:
             line, w = xform(line)
             if w:

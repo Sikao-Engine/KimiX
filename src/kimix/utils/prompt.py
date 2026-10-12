@@ -13,6 +13,7 @@ from kaos.path import KaosPath
 from kimi_agent_sdk import Session
 from kosong.chat_provider import APIStatusError
 from kimi_cli.llm import LoopDetectedError, TextLoopDetector
+from kimi_cli.soul import RunCancelled
 from kosong.message import ContentPart, TextPart, ThinkPart
 from kimix.ui.printing import Color, MessageType, Style
 from kimix.ui.stream import print_agent_json, print_agent_json_flush_text
@@ -488,6 +489,15 @@ async def _run_prompt_attempts(
             if session:
                 session.cancel()
             raise
+        except RunCancelled:
+            # Cancellation (user interrupt, ``interrupt_agent`` closing the
+            # session, loop-detector cancel) is not a transient failure.
+            # Retrying here used to re-enter ``session.prompt()`` on the
+            # already-closed session, which raised
+            # ``SessionStateError("Session is closed")`` twice more (with a
+            # 1 s sleep between) and surfaced a confusing doubled
+            # "Session is closed" + "prompt failed." spam.  Propagate as-is.
+            raise
         except (asyncio.TimeoutError, TimeoutError) as te:
             base._stream.colorful_print_word(
                 f"Prompt timed out: {te}",
@@ -497,6 +507,11 @@ async def _run_prompt_attempts(
                 session.cancel()
             raise
         except Exception as e:
+            if getattr(session, "_closed", False):
+                # The session was closed mid-turn (e.g. ``interrupt_agent``):
+                # no retry can ever succeed on a closed session, so raise
+                # immediately instead of printing/sleeping/re-spamming.
+                raise
             base._stream.colorful_print_word(str(e), fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True)
             if session:
                 session.cancel()
@@ -548,6 +563,10 @@ async def _run_single_prompt(
         )
         return True  # success on active provider
     except KeyboardInterrupt:
+        return False
+    except RunCancelled:
+        # Cancelled mid-turn (interrupt_agent / user cancel): not a failure,
+        # so no backup-provider failover - mirror the KeyboardInterrupt path.
         return False
     except (asyncio.TimeoutError, TimeoutError) as te:
         # Timeout: if a deadline was set and we still have time, backups

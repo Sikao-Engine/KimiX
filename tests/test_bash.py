@@ -41,6 +41,11 @@ from kimi_cli.tools.file.bash.bash_tool import (
     find_bash,
 )
 from kimi_cli.tools.file.bash.pwsh_tool import PowershellParams, find_pwsh
+from kimi_cli.native_loader import get_compat as _get_compat
+
+# Round-0 review regressions target the canonical pure-Python scanner in the
+# kimix_native shim directly (same module ``bash_fix`` re-exports).
+_shell_compat = _get_compat("_shell_compat")
 
 
 def _bash_is_available() -> bool:
@@ -6865,3 +6870,2375 @@ class TestBashFixRealGitBashOperands:
 
 
 
+
+
+# ======================================================================
+# Round-0 review regressions for the Windows Git Bash compatibility
+# scanner (bin/kimix_native/_shell_compat.py, exposed through
+# ``bash_fix.fix_bash_command``).
+# ======================================================================
+
+
+def _round0_find_git_bash() -> str | None:
+    """Return an executable MSYS/MINGW bash, or None.
+
+    A bare ``bash`` resolved through the subprocess PATH can be the WSL
+    launcher (or a Store alias) that does not run Git Bash commands, so the
+    candidates are probed with ``uname`` before being trusted.
+    """
+    candidates = [
+        os.environ.get("GIT_BASH"),
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files\Git\bin\bash.exe",
+        shutil.which("bash"),
+        "/usr/bin/bash",
+    ]
+    for cand in candidates:
+        if not cand or not os.path.exists(cand):
+            continue
+        try:
+            out = subprocess.run(
+                [cand, "-c", "uname"], capture_output=True, timeout=15
+            ).stdout.decode("utf-8", "replace")
+        except Exception:
+            continue
+        if any(k in out for k in ("MINGW", "MSYS", "CYGWIN")):
+            return cand
+    return None
+
+
+_ROUND0_GIT_BASH = _round0_find_git_bash()
+
+
+def _round0_bash_env() -> dict[str, str]:
+    """Environment for the Git Bash subprocesses started by these tests.
+
+    Some earlier tests in this module mutate the process ``PATH``; prepend
+    the Git installation's ``usr\bin``/``bin`` directories so the fallback
+    bodies always find ``perl`` and the coreutils they delegate to.
+    """
+    env = os.environ.copy()
+    if _ROUND0_GIT_BASH is not None:
+        exe_dir = os.path.dirname(_ROUND0_GIT_BASH)
+        candidates = [
+            exe_dir,
+            os.path.normpath(os.path.join(exe_dir, "..", "usr", "bin")),
+        ]
+        for extra in reversed(candidates):
+            if os.path.isdir(extra):
+                env["PATH"] = extra + os.pathsep + env.get("PATH", "")
+    return env
+
+
+def _round0_run_fallback(
+    body: str, name: str, argv: list[str], timeout: int = 8
+) -> subprocess.CompletedProcess:
+    """Define ``name`` from a fallback body and call it with ``argv``.
+
+    The body is used verbatim (no native-presence guard) so the test is
+    independent of whether this host happens to ship the tool: it exercises
+    the *generated fallback code*, which is the thing under review.
+    """
+    assert _ROUND0_GIT_BASH is not None
+    script = f"{name}() {{ {body}; }}\n{name} {subprocess.list2cmdline(argv)}\n"
+    return subprocess.run(
+        [_ROUND0_GIT_BASH, "-c", script],
+        capture_output=True,
+        timeout=timeout,
+        env=_round0_bash_env(),
+    )
+
+
+class TestBashFixRound0PathGlobQuoting:
+    """Path rewrites must not quote away live glob/brace expansion.
+
+    The backslash-path branch of the scanner double-quoted the *entire*
+    normalized word as soon as any character forced quoting (an escaped
+    space, an ``&``), which pushed ``*``/``?``/``{}`` inside the quotes and
+    turned a live pathname/brace expansion into a fixed literal name.
+    """
+
+    @staticmethod
+    def _unquoted_part(command: str) -> str:
+        """Return the characters of ``command`` NOT inside double quotes."""
+        out: list[str] = []
+        in_q = False
+        i = 0
+        while i < len(command):
+            ch = command[i]
+            if in_q:
+                if ch == '"':
+                    in_q = False
+                elif ch == "\\":
+                    i += 2
+                    continue
+            elif ch == '"':
+                in_q = True
+            else:
+                out.append(ch)
+            i += 1
+        return "".join(out)
+
+    def test_glob_after_escaped_space_stays_unquoted(self) -> None:
+        result = fix_bash_command(r"ls D:\a\ b\*.txt")
+        assert "*" in self._unquoted_part(result.command), (
+            f"glob metacharacter was quoted away, expansion lost: {result.command!r}"
+        )
+
+    def test_glob_in_spaced_program_files_stays_unquoted(self) -> None:
+        result = fix_bash_command(r"ls C:\Program\ Files\*\x")
+        assert "*" in self._unquoted_part(result.command), (
+            f"glob metacharacter was quoted away, expansion lost: {result.command!r}"
+        )
+
+    def test_brace_expansion_after_escaped_space_stays_unquoted(self) -> None:
+        result = fix_bash_command(r"ls D:\a\ b\{x,y}")
+        assert "{" in self._unquoted_part(result.command), (
+            f"brace metacharacters were quoted away, expansion lost: {result.command!r}"
+        )
+
+    def test_question_glob_after_escaped_space_stays_unquoted(self) -> None:
+        result = fix_bash_command(r"cp D:\a\ b\?.txt /t")
+        assert "?" in self._unquoted_part(result.command), (
+            f"single-char glob was quoted away, expansion lost: {result.command!r}"
+        )
+
+
+@pytest.mark.skipif(
+    _ROUND0_GIT_BASH is None, reason="no MSYS/MINGW Git Bash available"
+)
+class TestBashFixRound0FallbackMissingOptionValue:
+    """A fallback option arm consuming a value must not hang when the value
+    is missing (the option is the last word on the command line).
+
+    The generated option loops used an unguarded ``shift 2``: with ``$# == 1``
+    the shift fails and does not reduce ``$#``, so ``while (( $# ))`` spun
+    forever.  Real tools print "option requires an argument" and exit
+    non-zero instead.
+    """
+
+    def test_tree_L_without_value_does_not_hang(self) -> None:
+        fixed = fix_bash_command("tree -L")
+        assert "tree" in fixed.replacements
+        body = _shell_compat._FALLBACK_BODIES["tree"]
+        try:
+            result = _round0_run_fallback(body, "tree", ["-L"])
+        except subprocess.TimeoutExpired:
+            pytest.fail(
+                "tree fallback with a missing -L value hangs forever "
+                "(`shift 2` on a single-arg loop); expected a clean "
+                "'option requires an argument' error and a quick non-zero exit"
+            )
+        assert result.returncode != 0, "expected an argument-error exit status"
+
+    @pytest.mark.parametrize("option", ["-d", "-n"])
+    def test_top_option_without_value_does_not_hang(self, option: str) -> None:
+        body = _shell_compat._FALLBACK_BODIES["top"]
+        try:
+            _round0_run_fallback(body, "top", [option])
+        except subprocess.TimeoutExpired:
+            pytest.fail(
+                f"top fallback with a missing {option} value hangs forever "
+                "(`shift 2` on a single-arg loop)"
+            )
+
+
+@pytest.mark.skipif(
+    _ROUND0_GIT_BASH is None, reason="no MSYS/MINGW Git Bash available"
+)
+class TestBashFixRound0TreeFallback:
+    """``tree dirA dirB`` must list BOTH directories (the positional arm used
+    to overwrite a scalar, silently dropping every directory but the last)."""
+
+    def test_tree_lists_all_positional_directories(self, tmp_path) -> None:
+        first = tmp_path / "AAA_first_dir"
+        second = tmp_path / "BBB_second_dir"
+        first.mkdir()
+        second.mkdir()
+        (first / "infile.txt").write_text("x")
+        (second / "other.txt").write_text("y")
+
+        body = _shell_compat._FALLBACK_BODIES["tree"]
+        script = (
+            f"tree() {{ {body}; }}\n"
+            f"tree {subprocess.list2cmdline([first.as_posix(), second.as_posix()])}\n"
+        )
+        proc = subprocess.run(
+            [_ROUND0_GIT_BASH, "-c", script],
+            capture_output=True,
+            timeout=30,
+            env=_round0_bash_env(),
+        )
+        out = proc.stdout.decode("utf-8", "replace")
+
+        assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+        assert "AAA_first_dir" in out, f"first directory dropped from output:\n{out}"
+        assert "infile.txt" in out, f"first directory's contents dropped:\n{out}"
+        assert "BBB_second_dir" in out, f"second directory dropped from output:\n{out}"
+
+
+@pytest.mark.skipif(
+    _ROUND0_GIT_BASH is None, reason="no MSYS/MINGW Git Bash available"
+)
+class TestBashFixRound0WatchInterval:
+    """``watch --interval N`` / ``--interval=N`` must be accepted: the
+    scanner's own option table lists ``--interval`` as ``-n``'s long form,
+    but the fallback body rejected it."""
+
+    def test_watch_table_advertises_interval_option(self) -> None:
+        assert "--interval" in _shell_compat._WRAPPER_OPTIONS_WITH_VALUE["watch"]
+
+    def _run_watch(self, args: list[str]) -> subprocess.CompletedProcess | None:
+        body = _shell_compat._FALLBACK_BODIES["watch"]
+        script = f"watch() {{ {body}; }}\nwatch {subprocess.list2cmdline(args)}\n"
+        try:
+            return subprocess.run(
+                [_ROUND0_GIT_BASH, "-c", script],
+                capture_output=True,
+                timeout=4,
+                env=_round0_bash_env(),
+            )
+        except subprocess.TimeoutExpired:
+            # Timed out inside the repeat loop -> the option was accepted.
+            return None
+
+    def test_watch_interval_is_not_rejected(self) -> None:
+        result = self._run_watch(["--interval", "0.05", "true"])
+        if result is None:
+            return
+        err = result.stderr.decode("utf-8", "replace")
+        assert "unsupported option" not in err, (
+            f"watch fallback rejects the documented --interval option: {err!r}"
+        )
+
+    def test_watch_interval_attached_is_not_rejected(self) -> None:
+        result = self._run_watch(["--interval=0.05", "true"])
+        if result is None:
+            return
+        err = result.stderr.decode("utf-8", "replace")
+        assert "unsupported option" not in err, (
+            f"watch fallback rejects --interval=N: {err!r}"
+        )
+
+
+class TestBashFixRound0InlineScriptHarvest:
+    """Inline-script operands that hold runtime expansions cannot be
+    re-emitted, but their statically visible command words (and the commands
+    inside their ``$(...)``/backtick substitutions, which run in the current
+    shell) must still register fallback definitions for the child shell."""
+
+    def test_single_quote_is_control(self) -> None:
+        r = fix_bash_command("bash -c 'rev $HOME'")
+        assert r.replacements == ("rev",)
+        assert r.command.split("\n")[-1] == "bash -c 'rev $HOME'"
+
+    @pytest.mark.parametrize(
+        "cmd, expected_names",
+        [
+            ('bash -c "rev $HOME"', ("rev",)),
+            ('watch "rev <<< $x"', ("watch", "rev")),
+            ('eval "rev <<< $x"', ("rev",)),
+            ('trap "rev <<< $x" EXIT', ("rev",)),
+        ],
+    )
+    def test_dq_inline_script_registers_fallback(
+        self, cmd: str, expected_names: tuple[str, ...]
+    ) -> None:
+        r = fix_bash_command(cmd)
+        assert r.replacements == expected_names
+        # The operand text needs no source edit -> command tail is
+        # byte-for-byte unchanged (the fix is the definition + export).
+        assert r.command.split("\n")[-1] == cmd
+        assert "if declare -F rev >/dev/null; then export -f rev; fi" in r.command
+
+    def test_dq_inline_registers_even_under_path_ambiguity(self) -> None:
+        r = fix_bash_command(r'eval "cd C:\x && rev <<< $y"')
+        assert "rev" in r.replacements
+        assert r.command.split("\n")[-1] == r'eval "cd C:\x && rev <<< $y"'
+
+    def test_single_quote_control_substitution(self) -> None:
+        r = fix_bash_command("bash -c 'uptime'")
+        assert r.replacements == ("uptime",)
+
+    def test_eval_path_is_consistent(self) -> None:
+        r = fix_bash_command('eval "$(rev)"')
+        assert "rev" in r.replacements
+
+    @pytest.mark.parametrize(
+        "cmd, expected_names",
+        [
+            ('bash -c "$(uptime)"', ("uptime",)),
+            ('sh -c "$(rev)"', ("rev",)),
+            ('bash -lc "$(uptime)"', ("uptime",)),
+            ('bash -c "`uptime`"', ("uptime",)),
+            ('nohup bash -c "$(rev)"', ("rev",)),
+            ('timeout 5 bash -c "$(uptime)"', ("uptime",)),
+            ('bash -c "rev $(uptime)"', ("uptime",)),
+        ],
+    )
+    def test_wrapper_scans_substitutions_in_nonliteral_operand(
+        self, cmd: str, expected_names: tuple[str, ...]
+    ) -> None:
+        r = fix_bash_command(cmd)
+        for name in expected_names:
+            assert name in r.replacements, f"{name!r} missing from {r.replacements!r}"
+        # The operand text cannot be re-emitted (it holds expansions), so the
+        # command tail stays byte-for-byte; only the definitions differ.
+        assert r.command.split("\n")[-1] == cmd
+        for name in expected_names:
+            assert f"declare -F {name}" in r.command
+
+
+@pytest.mark.skipif(
+    _ROUND0_GIT_BASH is None, reason="no MSYS/MINGW Git Bash available"
+)
+class TestBashFixRound0HeredocContinuation:
+    """The heredoc trailing-operator move must carry a backslash
+    line-continuation (and its continuation lines) with the moved command;
+    splitting the logical line corrupts the heredoc body and orphans the
+    continuation tail."""
+
+    _INPUT = (
+        "cat <<EOF\n"
+        "bodyline\n"
+        "EOF\n"
+        "&& printf 'tail: %s\\n' \\\n"
+        "  ARG\n"
+    )
+    _EXPECTED_STDOUT = b"bodyline\ntail: ARG\n"
+
+    @staticmethod
+    def _run_script(script: str) -> subprocess.CompletedProcess:
+        import tempfile
+
+        path = os.path.join(tempfile.gettempdir(), "round0_heredoc_move.sh")
+        with open(path, "w", newline="") as f:
+            f.write(script)
+        return subprocess.run(
+            [_ROUND0_GIT_BASH, path],
+            capture_output=True,
+            env=_round0_bash_env(),
+        )
+
+    @staticmethod
+    def _bash_n(script: str) -> int:
+        import tempfile
+
+        path = os.path.join(tempfile.gettempdir(), "round0_heredoc_move_n.sh")
+        with open(path, "w", newline="") as f:
+            f.write(script)
+        return subprocess.run(
+            [_ROUND0_GIT_BASH, "-n", path],
+            capture_output=True,
+            env=_round0_bash_env(),
+        ).returncode
+
+    def test_heredoc_operator_move_preserves_line_continuation(self) -> None:
+        fixed = fix_bash_command(self._INPUT).command
+
+        # The input itself is a bash syntax error (the pattern being repaired).
+        assert self._bash_n(self._INPUT) != 0
+
+        result = self._run_script(fixed)
+        assert result.returncode == 0, (
+            f"fixed command failed to run:\n{fixed!r}\nstderr={result.stderr!r}"
+        )
+        assert result.stdout.replace(b"\r\n", b"\n") == self._EXPECTED_STDOUT, (
+            f"heredoc body / continuation corrupted by operator move.\n"
+            f"fixed={fixed!r}\nstdout={result.stdout!r}"
+        )
+
+    def test_heredoc_operator_move_simple_form_still_ok(self) -> None:
+        # No line continuation: the plain repair must keep working (guard
+        # against a fix that over-corrects and breaks the simple case).
+        simple = "cat <<EOF\nbodyline\nEOF\n&& echo hi\n"
+        fixed = fix_bash_command(simple).command
+        assert self._bash_n(fixed) == 0
+        result = self._run_script(fixed)
+        assert result.returncode == 0
+        assert result.stdout.replace(b"\r\n", b"\n") == b"bodyline\nhi\n"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows Git Bash shim only")
+class TestBashFixRound0NestedParenDescent:
+    """``_process_unquoted`` must convert a Windows path inside ``$(...)``
+    even when the substitution contains a nested plain ``(`` subshell group:
+    the paren matcher must balance plain parens, not only ``$(`` opens."""
+
+    def test_nested_subshell_descend_converts_path(self) -> None:
+        cmd = r'echo "$( (true) ; cat C:\path\to )"'
+        converted = _shell_compat._process_unquoted(cmd)
+        assert "C:/path/to" in converted, (
+            "_process_unquoted failed to convert the Windows path inside the "
+            f"command substitution that contains a nested subshell group.\n"
+            f"  input : {cmd!r}\n  output: {converted!r}"
+        )
+
+    def test_control_plain_substitution_still_converts(self) -> None:
+        cmd = r'echo "$(true ; cat C:\path\to )"'
+        converted = _shell_compat._process_unquoted(cmd)
+        assert "C:/path/to" in converted, f"control regression: {converted!r}"
+
+    @pytest.mark.skipif(
+        _ROUND0_GIT_BASH is None, reason="no MSYS/MINGW Git Bash available"
+    )
+    def test_unconverted_path_is_mangled_by_real_bash(self) -> None:
+        # Prove the conversion is required: Git Bash eats the backslashes.
+        buggy = r'echo "$( (true) ; printf %s C:\path\to )"'
+        r = subprocess.run(
+            [_ROUND0_GIT_BASH, "-c", buggy],
+            capture_output=True,
+            env=_round0_bash_env(),
+        )
+        out = r.stdout.replace(b"\r\n", b"\n")
+        assert b"C:pathto" in out, (
+            f"expected bash to mangle the un-quoted backslash path; got {out!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Round-1 review regressions for ``_shell_compat.fix_bash_command`` and the
+# PowerShell transform subsystem (``pwsh_transform`` / ``fix_pwsh_command``).
+# Each class below guards one bug confirmed during the round-1 review with a
+# failing test before the fix; see the class docstrings for the details.
+# ---------------------------------------------------------------------------
+
+
+def _round1_which(*names: str) -> str | None:
+    for n in names:
+        p = shutil.which(n)
+        if p:
+            return p
+    return None
+
+
+_ROUND1_PS7 = _round1_which("pwsh", "pwsh.exe")
+_ROUND1_PS51 = _round1_which("powershell", "powershell.exe")
+
+
+def _round1_run_pwsh(script: str) -> tuple[str, str, int]:
+    p = subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return p.stdout, p.stderr, p.returncode
+
+
+def _round1_run_ps(exe: str, script: str) -> tuple[str, str, int]:
+    p = subprocess.run(
+        [exe, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+        capture_output=True,
+        text=True,
+        timeout=90,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return p.stdout, p.stderr, p.returncode
+
+
+class TestBashFixRound1PgrepDashDash:
+    """``pgrep -- PATTERN`` must select the PATTERN, not report it missing.
+
+    The ``pgrep``/``pkill`` fallback bodies parse options with a
+    ``while ... case`` loop whose ``--) shift; break;;`` arm terminates option
+    scanning.  Before the fix the bodies only ever read their operand from the
+    loop's ``*)`` arm, so a pattern placed after ``--`` never reached
+    ``__kimix_pat`` and the fallback aborted with "missing pattern".  GNU
+    semantics: ``pgrep -- PATTERN`` is exactly ``pgrep PATTERN``.
+    """
+
+    pytestmark = pytest.mark.skipif(
+        _ROUND0_GIT_BASH is None, reason="requires a real Git Bash"
+    )
+
+    def test_dashdash_pattern_is_used(self):
+        body = _shell_compat._FALLBACK_BODIES["pgrep"]
+        # svchost.exe exists on every Windows host; the test only runs on Git
+        # Bash, which implies Windows or MSYS.
+        proc = _round0_run_fallback(body, "pgrep", ["--", "svchost"], timeout=40)
+        err = proc.stderr.decode("utf-8", "replace")
+        assert "missing pattern" not in err, err
+        assert proc.returncode == 0, err
+
+    def test_option_then_dashdash_pattern_is_used(self):
+        body = _shell_compat._FALLBACK_BODIES["pgrep"]
+        proc = _round0_run_fallback(body, "pgrep", ["-l", "--", "svchost"], timeout=40)
+        err = proc.stderr.decode("utf-8", "replace")
+        assert "missing pattern" not in err, err
+        assert proc.returncode == 0, err
+
+
+class TestBashFixRound1PkillDashDash:
+    """``pkill -- PATTERN`` must forward the PATTERN to Stop-Process."""
+
+    pytestmark = pytest.mark.skipif(
+        _ROUND0_GIT_BASH is None, reason="requires a real Git Bash"
+    )
+
+    def test_dashdash_pattern_reaches_powershell(self):
+        body = _shell_compat._FALLBACK_BODIES["pkill"]
+        # A name that matches nothing: the *correct* result is a clean
+        # exit 1 from the PowerShell fallback (no match), NOT the
+        # "missing pattern" abort that proves the operand was dropped.
+        proc = _round0_run_fallback(
+            body, "pkill", ["--", "zzz_kimix_no_such_proc_xyz"], timeout=40
+        )
+        err = proc.stderr.decode("utf-8", "replace")
+        assert "missing pattern" not in err, (proc.returncode, err)
+
+
+_ROUND1_NOTEPAD = None
+for _cand in (r"C:\Windows\System32\notepad.exe", r"C:\Windows\notepad.exe"):
+    if os.path.exists(_cand):
+        _ROUND1_NOTEPAD = _cand
+        break
+del _cand
+
+
+def _round1_is_running(pid) -> bool:
+    if pid is None:
+        return False
+    r = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            f"(Get-Process -Id {pid} -ErrorAction SilentlyContinue | Measure-Object).Count",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return r.stdout.strip().startswith("1")
+
+
+class TestBashFixRound1TaskkillImExe:
+    """``taskkill /IM <name>.exe`` must actually match/kill.
+
+    ``_TASKKILL_PS`` selected victims with
+    ``Get-Process | Where-Object { $_.Name -eq $env:__KIMIX_IM }``, but
+    ``taskkill``'s documented ``/IM`` operand includes the extension
+    (``notepad.exe``) while ``Get-Process .Name`` strips it (``notepad``), and
+    ``-eq`` is case-sensitive where taskkill matching is not.  The canonical
+    invocation therefore never matched.  The fix normalises with
+    ``[IO.Path]::GetFileNameWithoutExtension`` (quotes cannot be used inside
+    the surrounding single-quoted bash ``-Command`` string).
+    """
+
+    pytestmark = pytest.mark.skipif(
+        _ROUND0_GIT_BASH is None or _ROUND1_NOTEPAD is None,
+        reason="requires Git Bash and notepad.exe",
+    )
+
+    def _launch(self):
+        proc = subprocess.Popen(
+            [_ROUND1_NOTEPAD], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if _round1_is_running(proc.pid):
+                return proc
+            time.sleep(0.2)
+        return proc
+
+    def _cleanup(self, pid) -> None:
+        if _round1_is_running(pid):
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"],
+                capture_output=True,
+                text=True,
+            )
+
+    def test_im_with_exe_suffix_kills(self):
+        body = _shell_compat._FALLBACK_BODIES["taskkill"]
+        proc = self._launch()
+        try:
+            assert _round1_is_running(proc.pid)
+            res = _round0_run_fallback(
+                body, "taskkill", ["/IM", "notepad.exe", "/F"], timeout=40
+            )
+            err = res.stderr.decode("utf-8", "replace")
+            # The canonical taskkill invocation must succeed (exit 0).
+            assert res.returncode == 0, (res.returncode, err)
+            time.sleep(0.5)
+            assert not _round1_is_running(proc.pid), (
+                "taskkill /IM notepad.exe reported success but the process "
+                f"(pid {proc.pid}) is still running"
+            )
+        finally:
+            self._cleanup(proc.pid)
+
+    def test_im_case_insensitive_no_ext(self):
+        body = _shell_compat._FALLBACK_BODIES["taskkill"]
+        proc = self._launch()
+        try:
+            assert _round1_is_running(proc.pid)
+            res = _round0_run_fallback(
+                body, "taskkill", ["/IM", "Notepad", "/F"], timeout=40
+            )
+            err = res.stderr.decode("utf-8", "replace")
+            assert res.returncode == 0, (res.returncode, err)
+            time.sleep(0.5)
+            assert not _round1_is_running(proc.pid), (
+                f"taskkill /IM Notepad (mixed case) left pid {proc.pid} running"
+            )
+        finally:
+            self._cleanup(proc.pid)
+
+
+class TestBashFixRound1ProcessUnquotedDqAnsiC:
+    """Inside double quotes ``$'`` is *literal* in bash (ANSI-C quoting does
+    not apply inside ``"..."``), yet ``$(...)`` substitution *is* active
+    there.  ``_process_unquoted``'s double-quote walker used to treat ``$'``
+    as an ANSI-C region and skip it verbatim, swallowing a genuine ``$(...)``
+    between the ``$'`` and its matching ``'`` — its unquoted backslashes were
+    never rewritten to ``/``.  Top-level ``$'...'`` remains a real ANSI-C
+    region whose escapes must NOT be converted (last test)."""
+
+    @pytest.mark.parametrize(
+        "command, expected",
+        [
+            # $(...) embedded after a literal $' inside "..." must still be walked.
+            ('"a$\'b$(c\\d)e\'f"', '"a$\'b$(c/d)e\'f"'),
+            ('"p$\'q$(echo a\\b)\'r"', '"p$\'q$(echo a/b)\'r"'),
+            # The backslash must convert even when the closing ' is the last char.
+            ('"x$\'$(echo p\\q)\'"', '"x$\'$(echo p/q)\'"'),
+        ],
+    )
+    def test_dq_literal_ansi_c_descends_into_substitution(self, command, expected):
+        assert _shell_compat._process_unquoted(command) == expected
+
+    def test_top_level_ansi_c_still_preserved(self):
+        # At the *top level* $'...' IS a real ANSI-C region: its backslashes
+        # are escapes and must NOT be converted to slashes.
+        assert (
+            _shell_compat._process_unquoted(r"printf %s $'a\tb'")
+            == r"printf %s $'a\tb'"
+        )
+
+    def test_dq_backtick_after_literal_ansi_c_descends(self):
+        # A backtick substitution after a literal $' inside "..." must also
+        # be walked (same root cause: the DQ walker must not treat $' as a
+        # region).
+        cmd = "\"a$'b`c\\d`e'f\""
+        assert _shell_compat._process_unquoted(cmd) == "\"a$'b`c/d`e'f\""
+
+
+class TestBashFixRound1CoalesceExpression:
+    """Null-coalescing (``??``) must yield a *value* expression ``$(if ...)``
+    so it stays valid inside parentheses, as a command argument, or before a
+    pipeline element — not a bare ``if`` statement wrapped in ``(...)`` which
+    is a PowerShell parse error.  The ``_transform_operator`` builder now
+    wraps the emitted statement unconditionally (semantically identical at
+    statement position)."""
+
+    def test_in_parens_is_wrapped_in_subexpression(self) -> None:
+        out = _shell_compat.pwsh_transform('Write-Output ($v ?? "def")')[0]
+        # ``$(if (`` still contains the substring ``(if (``, so the invariant
+        # to assert is the ``$(`` prefix.
+        assert "$(if ($null -ne $v)" in out, out
+        assert "??" not in out, out
+        assert "if ($null -ne $v)" in out, out
+
+    def test_command_argument_position_wrapped(self) -> None:
+        out = _shell_compat.pwsh_transform('Write-Output $v ?? "def"')[0]
+        assert "Write-Output $(" in out or "$(" in out, out
+        assert "if ($null -ne $v)" in out, out
+
+    def test_before_pipe_wrapped(self) -> None:
+        out = _shell_compat.pwsh_transform("$x = 1; $y = 2; $x ?? $y | Write-Host")[0]
+        assert "| Write-Host" in out, out
+        # the if-expression must be inside a subexpression, not directly piped
+        assert "else { $y })|" in out.replace(" ", "") or "$(" in out, out
+
+    def test_inside_bracket_expression_wrapped(self) -> None:
+        out = _shell_compat.pwsh_transform("foo ($a ?? $b)")[0]
+        assert "$(if ($null -ne $a)" in out, out
+        assert "if ($null -ne $a)" in out, out
+
+    @pytest.mark.skipif(not _ROUND1_PS7, reason="pwsh not available")
+    def test_semantics_preserved_in_parens(self) -> None:
+        for src in [
+            '$v = $null; Write-Output ($v ?? "def")',
+            '$v = 7; Write-Output ($v ?? "def")',
+            '$a = $null; $b = 2; Write-Host ($a ?? $b)',
+        ]:
+            out = _shell_compat.pwsh_transform(src)[0]
+            o = _round1_run_pwsh(src)
+            n = _round1_run_pwsh(out)
+            assert n[2] == 0, (
+                f"transformed code fails to parse: {src!r} -> {out!r}\n{n[1]}"
+            )
+            assert o[0] == n[0], (src, out, o[0], n[0])
+
+
+class TestBashFixRound1CoalesceStatement:
+    """The statement/assignment coalesce forms must keep working."""
+
+    def test_assignment_form(self) -> None:
+        out = _shell_compat.pwsh_transform('$x = $a ?? "default"')[0]
+        assert "if ($null -ne $a)" in out
+        assert "??" not in out
+
+    @pytest.mark.skipif(not _ROUND1_PS7, reason="pwsh not available")
+    def test_semantics_preserved_assignment(self) -> None:
+        for src in [
+            '$a = $null; $x = $a ?? "d"; Write-Host $x',
+            '$a = 9; $x = $a ?? "d"; Write-Host $x',
+            '$a = 1; $b = 2; $r = $a ?? $b; Write-Host $r',
+        ]:
+            out = _shell_compat.pwsh_transform(src)[0]
+            o = _round1_run_pwsh(src)
+            n = _round1_run_pwsh(out)
+            assert n[2] == 0, (
+                f"transformed code fails to parse: {src!r} -> {out!r}\n{n[1]}"
+            )
+            assert o[0] == n[0], (src, out, o[0], n[0])
+
+
+class TestBashFixRound1PwshFuzz:
+    """Robustness guard for the pwsh transform subsystem: the PS7->5.1
+    transforms are text scanners that must never raise or loop forever on
+    adversarial / malformed input (quoting soup, nested ``$( )``,
+    here-strings, backticks, ``?:``/``??`` chains, ``#`` comments, member
+    access)."""
+
+    _FRAGS = [
+        "?.", "?.Name", "?[", "]?[0]", "??", "??=", "?", ":", "::", "$a", "$b",
+        "${x}", "$?", "$$", "$obj", "$obj.Name", "C:", "C:\\x", "$env:PATH",
+        "'sq'", '"dq"', "#", "#c", "<#", "#>", "@'", '@"', "'@", '"@', "$(",
+        "(", ")", "{", "}", "[", "]", "&&", "||", "|", ";", ",", "Write-Host",
+        "if", "foreach", "=", "+", "-", " ", "\t", "\n", "`", "a#b", "f?.bak",
+        "$c ? $a : $b", "$a ?? $b", "$obj?.Name", "$arr?[0]", "$x ??= 1", "$null",
+        "..", "[Math]::PI", "?:", "???", "?..", "$()", "@(", "> ", "2>&1",
+    ]
+
+    @staticmethod
+    def _call_with_watchdog(fn, arg, timeout=5.0):
+        import threading
+        import traceback
+
+        box: dict = {}
+
+        def target():
+            try:
+                box["result"] = fn(arg)
+            except BaseException as exc:  # noqa: BLE001 - record everything
+                box["exc"] = exc
+                box["tb"] = traceback.format_exc()
+
+        t = threading.Thread(target=target, daemon=True)
+        t.start()
+        t.join(timeout)
+        if t.is_alive():
+            raise AssertionError(f"{fn.__name__} hung on {arg!r}")
+        if "exc" in box:
+            raise AssertionError(f"{fn.__name__} raised on {arg!r}:\n{box['tb']}")
+        return box.get("result")
+
+    @classmethod
+    def _corpus(cls) -> list[str]:
+        import random
+
+        rng = random.Random(20261013)
+        corpus: list[str] = [
+            "$x = @'\nhere ?? string ? : a#b\n'@\nWrite-Host ($a ?? $b)",
+            "<# block ?? ?. comment #>\ncmd && cmd2",
+            "$y = @\"\ninterp $(f?.x) # n\n\"@\n$y?.Length",
+            "foreach ($i in 1..3) { $i ?? 0 }",
+            "switch ($x) { { $_ ? 1 : 2 } { 'a' } default { $b?.c } }",
+            "$o?.a?.b?.c ?? $d?.e ?? $f",
+        ]
+        bases = ["$a", "$obj.Name", "@{k=1}['k']", "C:\\tmp", "$(gcm)", "$?", "$$"]
+        for b in bases:
+            for op in ("??", " ? ", "&&", "||"):
+                corpus.append(f"{b}{op} ($c ? $a : $b) # tail a#b")
+                corpus.append(f"$x = ({b}{op}$y)")
+                corpus.append(f"@({b}?.Name, ({b} ?? 0), {b}?[0])")
+        for _ in range(1500):
+            corpus.append("".join(rng.choice(cls._FRAGS) for _ in range(rng.randint(1, 40))))
+        return corpus
+
+    def test_fuzz_no_crash_or_hang(self) -> None:
+        corpus = self._corpus()
+        assert len(corpus) > 1500
+        for code in corpus:
+            self._call_with_watchdog(_shell_compat.pwsh_transform, code)
+            self._call_with_watchdog(_shell_compat.fix_pwsh_command, code)
+
+
+class TestBashFixRound1HashBareword:
+    """``#`` inside a bareword is NOT a comment.
+
+    PowerShell only starts a comment at a token boundary (``foo#c`` is a
+    single bareword token).  ``_PwshScanner`` respected that via
+    ``_at_token_start``, but ``_build_region_mask`` (used by ``pwsh_transform``)
+    treated *every* ``#`` as a comment opener, masking the rest of the line —
+    so any PS7 operator after a glued ``#`` (e.g. in ``file#1.txt``) survived
+    into the emitted PS 5.1 command as a hard parse error.  The mask now
+    requires a token boundary, mirroring ``_at_token_start``."""
+
+    def test_region_mask_respects_token_boundary_for_hash(self) -> None:
+        """A ``#`` glued to an identifier character is NOT a comment."""
+        mask = _shell_compat._build_region_mask("foo#c")
+        assert list(mask) == [1, 1, 1, 1, 1], f"expected no comment region, got {bytes(mask)!r}"
+        mask = _shell_compat._build_region_mask("file#1.txt ?? $x")
+        # The whole line is code: '#' is inside 'file#1.txt', not a comment.
+        assert all(mask), f"mask should be all-code, got {bytes(mask)!r}"
+        # A ' #' preceded by whitespace *is* a comment.
+        line2 = "$a ?? $b # real comment"
+        mask = _shell_compat._build_region_mask(line2)
+        hash_i = line2.index("#")
+        assert mask[hash_i] == 0
+
+    def test_glued_hash_does_not_swallow_coalescing_on_same_line(self) -> None:
+        src = "Write-Output file#1.txt ($a ?? $b)"
+        out = _shell_compat.pwsh_transform(src)[0]
+        assert "??" not in out, out
+        assert "if ($null -ne $a)" in out, out
+
+    def test_glued_hash_does_not_swallow_ternary_on_same_line(self) -> None:
+        src = "Write-Output a#b ($c ? $x : $y)"
+        out = _shell_compat.pwsh_transform(src)[0]
+        assert "$c ?" not in out, out
+        assert "$c?" not in out, out
+        assert "if ($c)" in out, out
+
+    def test_glued_hash_does_not_swallow_null_conditional_on_same_line(self) -> None:
+        src = "Write-Output a#b ($obj?.Name)"
+        out = _shell_compat.pwsh_transform(src)[0]
+        assert "?." not in out, out
+        assert "if ($null -ne $obj)" in out, out
+
+    @pytest.mark.skipif(not (_ROUND1_PS7 and _ROUND1_PS51), reason="both PowerShell versions required")
+    def test_semantics_glued_hash_coalescing(self) -> None:
+        """Cross-check: transformed output runs under PS 5.1 and equals PS 7 output."""
+        src = "$a = $null; $b = 'B'; Write-Host ($a ?? $b) file#1.txt"
+        out = _shell_compat.pwsh_transform(src)[0]
+        o_out, _, o_rc = _round1_run_ps(_ROUND1_PS7, src)
+        n_out, n_err, n_rc = _round1_run_ps(_ROUND1_PS51, out)
+        assert o_rc == 0, (src,)
+        assert n_rc == 0, (out, n_err)
+        assert o_out == n_out, (src, out, o_out, n_out)
+
+
+# A statement prologue that defines $c (truthy), $a/$b so every snippet below
+# yields a deterministic value.
+_ROUND1_TERNARY_SETUP = "$c = [bool]1; $a = 'A'; $b = 'B'; $d = 'D'"
+
+# (source, expected value) — ternaries nested at paren depth > 0.
+_ROUND1_TERNARY_CASES = [
+    ("($c ? $a : $b)", "A"),
+    ("$x = ($c ? $a : $b); $x", "A"),
+    ("Write-Output ($c ? $a : $b)", "A"),
+    ("$z = @($a, ($c ? $a : $b)); ($z -join ',')", "A,A"),
+    ("(($c ? $a : $b).Length)", "1"),
+    ("if ($c ? $a : $b) { 'ran' }", "ran"),
+]
+
+
+class TestBashFixRound1TernaryParen:
+    """A ternary (``? :``) nested inside parentheses must be transformed.
+
+    PowerShell 7 parses ``($c ? $a : $b)`` (and paren-argument /
+    array-element / ``if``-condition forms) as a normal ternary expression;
+    ``pwsh_transform`` must downgrade these to PS 5.1 syntax that itself
+    parses under Windows PowerShell 5.1.  Before the fix the scanner only
+    looked for the ternary separator colon at absolute bracket depth 0, so a
+    ternary wrapped in ``(...)`` was left completely untouched.  Colons
+    inside ``{ ... }`` braces remain intentionally *not* transformed
+    (hashtable / switch / script-block syntax), which
+    ``test_brace_ternary_still_skipped`` guards."""
+
+    @pytest.mark.parametrize("src", [c[0] for c in _ROUND1_TERNARY_CASES])
+    def test_paren_ternary_no_longer_emits_invalid_source(self, src: str) -> None:
+        out = _shell_compat.pwsh_transform(src)[0]
+        assert "? $a" not in out and "?$a" not in out, out
+        assert "$c ?" not in out, out
+        assert "$c?" not in out, out
+        # the 'if' must be lifted into a sub-expression so it is valid in an
+        # expression/paren position
+        assert "$(if" in out, out
+        assert "($null" not in out, out  # ternary, not coalescing
+
+    def test_brace_ternary_still_skipped(self) -> None:
+        """A ternary inside ``@{ ... }`` braces remains untouched (documented)."""
+        src = '$x = @{ key = $a ? "t" : "f" }'
+        out = _shell_compat.pwsh_transform(src)[0]
+        assert "?" in out  # deliberately not transformed at brace depth > 0
+
+    @pytest.mark.skipif(not _ROUND1_PS51, reason="Windows PowerShell 5.1 not available")
+    @pytest.mark.parametrize("src,expected", _ROUND1_TERNARY_CASES)
+    def test_transformed_parses_under_ps51(self, src: str, expected: str) -> None:
+        out = _shell_compat.pwsh_transform(src)[0]
+        _, err, rc = _round1_run_ps(
+            _ROUND1_PS51, f"{_ROUND1_TERNARY_SETUP}; {out}"
+        )
+        assert rc == 0, (
+            f"transformed output fails to run under PS 5.1: {src!r} -> {out!r}\n{err}"
+        )
+
+    @pytest.mark.skipif(
+        not (_ROUND1_PS7 and _ROUND1_PS51),
+        reason="both PowerShell versions required",
+    )
+    @pytest.mark.parametrize("src,expected", _ROUND1_TERNARY_CASES)
+    def test_semantics_preserved_original_vs_transformed(self, src: str, expected: str) -> None:
+        out = _shell_compat.pwsh_transform(src)[0]
+        o_out, o_err, o_rc = _round1_run_ps(_ROUND1_PS7, f"{_ROUND1_TERNARY_SETUP}; {src}")
+        n_out, n_err, n_rc = _round1_run_ps(_ROUND1_PS51, f"{_ROUND1_TERNARY_SETUP}; {out}")
+        assert o_rc == 0, f"original must run under PS7: {src!r}\n{o_err}"
+        assert n_rc == 0, f"transformed must run under PS5.1: {out!r}\n{n_err}"
+        assert o_out.strip() == n_out.strip() == expected, (
+            src,
+            out,
+            "PS7 original:",
+            o_out.strip(),
+            "PS5.1 transformed:",
+            n_out.strip(),
+        )
+
+
+class TestBashFixRound1HeredocChain:
+    """Heredoc trailing-operator move must carry a CHAIN of operator lines.
+
+    When the model writes a list across several physical lines — terminator
+    line followed by ``&& echo A`` and then, on the line after it,
+    ``&& echo B`` — every such line must move onto the redirection line(s);
+    leaving ``&& echo B`` behind re-creates the exact
+    ``syntax error near unexpected token `&&'`` the repair exists to remove."""
+
+    pytestmark = pytest.mark.skipif(
+        _ROUND0_GIT_BASH is None, reason="no MSYS/MINGW Git Bash available"
+    )
+
+    INPUT = "cat <<EOF\nbody\nEOF\n&& echo A\n&& echo B\n"
+    EXPECTED_STDOUT = b"body\nA\nB\n"
+
+    @staticmethod
+    def _write_and_bash(script: str, args: list[str]) -> subprocess.CompletedProcess:
+        import tempfile
+
+        path = os.path.join(tempfile.gettempdir(), "round1_h_heredoc_chain.sh")
+        with open(path, "w", newline="") as f:
+            f.write(script)
+        return subprocess.run(
+            [_ROUND0_GIT_BASH, *args, path],
+            capture_output=True,
+            env=_round0_bash_env(),
+        )
+
+    def test_chained_operator_lines_after_terminator_are_moved(self) -> None:
+        fixed = fix_bash_command(self.INPUT).command
+        assert self._write_and_bash(fixed, ["-n"]).returncode == 0, (
+            f"the second '&&' line after the heredoc terminator was left "
+            f"orphaned -> the repaired command is still a syntax error.\n"
+            f"fixed={fixed!r}"
+        )
+        result = self._write_and_bash(fixed, [])
+        assert result.returncode == 0, (
+            f"repaired chained command failed: {result.stderr!r}\nfixed={fixed!r}"
+        )
+        assert result.stdout.replace(b"\r\n", b"\n") == self.EXPECTED_STDOUT, (
+            f"fixed={fixed!r} stdout={result.stdout!r}"
+        )
+
+
+class TestBashFixRound1HeredocCrlf:
+    """Heredoc trailing-operator move must handle CRLF line endings.
+
+    With CRLF input the redirection line ends ``...EOF\\r\\n``; the move must
+    still trigger so the trailing ``&&`` is not left orphaned after the
+    terminator (a command whose source uses CRLF — which the Bash tool can
+    receive verbatim — was previously NOT repaired)."""
+
+    pytestmark = pytest.mark.skipif(
+        _ROUND0_GIT_BASH is None, reason="no MSYS/MINGW Git Bash available"
+    )
+
+    INPUT = "cat <<EOF\r\nbody\r\nEOF\r\n&& echo tail\r\n"
+    EXPECTED_STDOUT = b"body\ntail\n"
+
+    @staticmethod
+    def _write_and_bash(script: str, args: list[str]) -> subprocess.CompletedProcess:
+        import tempfile
+
+        path = os.path.join(tempfile.gettempdir(), "round1_h_heredoc_crlf.sh")
+        with open(path, "w", newline="") as f:
+            f.write(script)
+        return subprocess.run(
+            [_ROUND0_GIT_BASH, *args, path],
+            capture_output=True,
+            env=_round0_bash_env(),
+        )
+
+    def test_crlf_heredoc_operator_is_moved(self) -> None:
+        fixed = fix_bash_command(self.INPUT).command
+        assert self._write_and_bash(fixed, ["-n"]).returncode == 0, (
+            f"fix_bash_command left the CRLF heredoc operator orphaned; the "
+            f"repaired command is still a bash syntax error.\nfixed={fixed!r}"
+        )
+        result = self._write_and_bash(fixed, [])
+        assert result.returncode == 0, (
+            f"repaired CRLF command failed: {result.stderr!r}\nfixed={fixed!r}"
+        )
+        assert result.stdout.replace(b"\r\n", b"\n") == self.EXPECTED_STDOUT, (
+            f"fixed={fixed!r} stdout={result.stdout!r}"
+        )
+
+
+class TestBashFixRound1MissingOptionMsg:
+    """Missing-option-value messages must be getopt-style: the option name
+    WITHOUT its ``-``/``--``/``/`` delimiter.
+
+    The round-0 guards printed the full option token (``$1``) for the wget,
+    xclip, taskkill and watch arms — e.g. ``-- '-n'`` — while the nc,
+    traceroute, tree, column and top arms printed the bare letter.  getopt /
+    GNU coreutils never include the delimiter.  All arms now strip it via
+    ``${1//[![:alnum:]]/}``."""
+
+    pytestmark = pytest.mark.skipif(
+        _ROUND0_GIT_BASH is None, reason="requires a real Git Bash"
+    )
+
+    @pytest.mark.parametrize(
+        "name, argv",
+        [
+            ("watch", ["-n"]),
+            ("watch", ["--interval"]),
+            ("wget", ["-O"]),
+            ("wget", ["-T"]),
+            ("xclip", ["-selection"]),
+            ("xclip", ["-d"]),
+            ("taskkill", ["/IM"]),
+            ("taskkill", ["/PID"]),
+        ],
+    )
+    def test_missing_option_argument_message_is_getopt_style(self, name, argv):
+        import re
+
+        body = _shell_compat._FALLBACK_BODIES[name]
+        result = _round0_run_fallback(body, name, argv)
+        err = result.stderr.decode("utf-8", "replace")
+        assert result.returncode != 0, err
+        assert "option requires an argument" in err, (
+            f"{name} {argv} did not emit the expected missing-argument error: {err!r}"
+        )
+        # The message must report the option WITHOUT its delimiter.
+        m = re.search(r"option requires an argument --\s+['\"]?([^\s'\"]+)", err)
+        assert m is not None, f"could not parse option report from {err!r}"
+        reported = m.group(1)
+        assert not reported.startswith(("-", "/")), (
+            f"{name} {argv}: missing-argument message embeds the option "
+            f"delimiter (-- {reported!r}); getopt reports the option "
+            f"name/letter only.  Sibling fallbacks report the bare letter."
+        )
+
+
+class TestBashFixRound1TreeDashDash:
+    """``tree -- dirA dirB`` must list dirA and dirB, not fall back to ``.``
+
+    The ``tree`` fallback accumulates positional directories into
+    ``__kimix_dirs``, but its ``--) shift; break;;`` arm exited the loop
+    WITHOUT appending the remaining ``$@`` words, and the empty array then
+    defaulted to ``(.)`` — silently dropping every directory that followed
+    ``--``.  The arm now appends ``"$@"`` before breaking."""
+
+    pytestmark = pytest.mark.skipif(
+        _ROUND0_GIT_BASH is None, reason="requires a real Git Bash"
+    )
+
+    def test_tree_dashdash_before_directories_lists_them(self, tmp_path) -> None:
+        first = tmp_path / "AAA_first_dir"
+        second = tmp_path / "BBB_second_dir"
+        first.mkdir()
+        second.mkdir()
+        (first / "alpha.txt").write_text("x")
+        (second / "beta.txt").write_text("y")
+        # current directory gets its own marker file to detect '.' fallback.
+        cwd = tmp_path / "CCC_cwd"
+        cwd.mkdir()
+        (cwd / "zzz_cwd_marker.txt").write_text("z")
+
+        body = _shell_compat._FALLBACK_BODIES["tree"]
+        script = (
+            f"tree() {{ {body}; }}\n"
+            f"tree -- {subprocess.list2cmdline([first.as_posix(), second.as_posix()])}\n"
+        )
+        proc = subprocess.run(
+            [_ROUND0_GIT_BASH, "-c", script],
+            capture_output=True,
+            timeout=30,
+            env=_round0_bash_env(),
+            cwd=str(cwd),
+        )
+        out = proc.stdout.decode("utf-8", "replace")
+
+        assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+        assert "AAA_first_dir" in out, f"tree -- dropped the first directory: {out!r}"
+        assert "BBB_second_dir" in out, f"tree -- dropped the second directory: {out!r}"
+        assert "zzz_cwd_marker.txt" not in out, (
+            f"tree -- fell back to listing the current directory ('.') instead "
+            f"of the directories after the '--' end-of-options marker: {out!r}"
+        )
+
+
+# ===========================================================================
+# Round-2 regression tests (taskkill exit codes; pwsh interpolated/nested
+# transforms).  Bugs confirmed by tests that failed on pristine HEAD and
+# pass with the Round-2 fixes in bin/kimix_native/_shell_compat.py.
+# ===========================================================================
+
+import tempfile
+
+_ROUND2_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROUND2_SHIM_PATH = os.path.join(_ROUND2_REPO_ROOT, "bin", "kimix_native", "_shell_compat.py")
+
+
+def _round2_load_shim():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_shell_compat_r2", _ROUND2_SHIM_PATH)
+    module = importlib.util.module_from_spec(spec)
+    # Required so @dataclass can resolve the module's namespace during exec.
+    sys.modules["_shell_compat_r2"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_ROUND2_SHIM = _round2_load_shim()
+
+
+def _round2_assert_in_repo_copy():
+    assert os.path.normcase(os.path.abspath(_ROUND2_SHIM.__file__)) == os.path.normcase(
+        os.path.abspath(_ROUND2_SHIM_PATH)
+    ), f"loaded shim is not the in-repo copy: {_ROUND2_SHIM.__file__}"
+
+
+def _round2_transform(code: str) -> str:
+    out, _warnings = _ROUND2_SHIM.pwsh_transform(code)
+    return out
+
+
+def _round2_unq(code: str) -> str:
+    return _ROUND2_SHIM._process_unquoted(code)
+
+
+def _round2_run_ps(exe, script, timeout=12):
+    p = subprocess.run(
+        [exe, "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, timeout=timeout,
+    )
+    return p.returncode, p.stdout.strip(), p.stderr.strip()
+
+
+_ROUND2_PWSH7 = shutil.which("pwsh")
+_ROUND2_POWERSHELL51 = (
+    os.path.join(os.environ.get("SystemRoot", r"C:\Windows"),
+                 "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+)
+
+
+def _round2_ps51_parse_errors(script):
+    """Return the PS5.1 *parser* errors for *script* (no execution)."""
+    fd, path = tempfile.mkstemp(suffix=".ps1")
+    os.close(fd)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(script)
+    cmd = (
+        "$e=$null;"
+        " [void][System.Management.Automation.Language.Parser]"
+        "::ParseFile('%s',[ref]$null,[ref]$e);"
+        " $e | ForEach-Object { $_.Message }" % path
+    )
+    try:
+        p = subprocess.run(
+            [_ROUND2_POWERSHELL51, "-NoProfile", "-NonInteractive", "-Command", cmd],
+            capture_output=True, text=True, timeout=15,
+        )
+        return [ln for ln in p.stdout.splitlines() if ln.strip()]
+    finally:
+        os.unlink(path)
+
+
+def _round2_ps7_runs_ok(script):
+    if _ROUND2_PWSH7 is None:
+        return True  # can't disprove validity -> assume the snippet is valid PS7
+    rc, _out, err = _round2_run_ps(_ROUND2_PWSH7, script)
+    return rc == 0 and "ParserError" not in err
+
+
+_ROUND2_GIT_BASH_CANDIDATES = [
+    r"C:\Program Files\Git\usr\bin\bash.exe",
+    r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
+]
+
+
+def _round2_git_bash() -> str:
+    for c in _ROUND2_GIT_BASH_CANDIDATES:
+        if os.path.exists(c):
+            return c
+    pytest.skip("Git Bash not found at a known location")
+
+
+def _round2_shell_quote(value: str) -> str:
+    return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def _round2_run_fallback(name: str, args, bash: str, timeout=60):
+    """Invoke the fallback logic directly from its RAW body.
+
+    ``_fallback_definition`` wraps the body with a ``command -v``/native
+    delegate guard.  On a host where the native tool exists (``taskkill.exe``
+    is always on a Windows PATH) that guard short-circuits to the real
+    binary, so the fallback body never runs.  To exercise the fallback
+    deterministically we define the function from the body alone, bypassing
+    the delegate.
+    """
+    body = _ROUND2_SHIM._FALLBACK_BODIES[name]
+    argv = " ".join(_round2_shell_quote(a) for a in args)
+    script = "{name}() {{ {body}; }}\n{name} {argv}\n".format(name=name, body=body, argv=argv)
+    fd, path = tempfile.mkstemp(suffix=".sh")
+    os.close(fd)
+    try:
+        with open(path, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(script)
+        proc = subprocess.run([bash, path], capture_output=True, text=True, timeout=timeout)
+    finally:
+        os.remove(path)
+    return proc.returncode, proc.stdout, proc.stderr
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows-only fallbacks")
+class TestBashFixRound2Taskkill:
+    """taskkill fallback must report failures like taskkill.exe (exit 0 was
+    unconditional after the /PID branch, and /IM was silently dropped when
+    combined with /PID)."""
+
+    def test_nonexistent_pid_reports_failure(self):
+        """``taskkill /PID <nonexistent>`` must exit non-zero (rc=128 on real
+        taskkill.exe); the fallback body used to ``exit 0`` unconditionally."""
+        _round2_assert_in_repo_copy()
+        bash = _round2_git_bash()
+        rc, out, err = _round2_run_fallback("taskkill", ["/PID", "999999"], bash)
+        assert rc != 0, (
+            "taskkill fallback reported success for a non-existent PID "
+            f"(rc={rc}, stdout={out!r}, stderr={err!r})"
+        )
+
+    def test_combined_pid_im_does_not_swallow_im(self):
+        """``taskkill /IM <x> /PID <nonexistent>`` must surface the failure.
+
+        Real taskkill processes both operands; the fallback took the /PID
+        branch first, ignored /IM entirely, and reported success despite
+        the failed PID kill and the never-evaluated image match.
+        """
+        _round2_assert_in_repo_copy()
+        bash = _round2_git_bash()
+        rc, out, err = _round2_run_fallback("taskkill", ["/IM", "zzqqnope.exe", "/PID", "999999"], bash)
+        assert rc != 0, (
+            "taskkill fallback reported success for a combined /IM+/PID invocation "
+            f"where neither operand could succeed (rc={rc}, stderr={err!r})"
+        )
+
+
+class TestBashFixRound2Pwsh:
+    """PS7->PS5.1 transform bugs: operators inside ``"$(...)"`` string
+    interpolations, ``return``/``throw`` before ``??``, nested ternaries,
+    comma-armed ternary false branches, unbalanced ``$'`` in bash DQ, and
+    here-string closing lines carrying live code."""
+
+    def test_null_coalescing_inside_interpolated_subexpr(self):
+        orig = "$a = $null; \"$($a ?? 'd')\""
+        assert _round2_ps7_runs_ok(orig), "precondition: original must be valid PS7"
+        out = _round2_transform(orig)
+        assert "??" not in out, f"transform left '??' in: {out!r}"
+        assert _round2_ps51_parse_errors(out) == [], f"5.1 parse error on transform: {out!r}"
+
+    @pytest.mark.parametrize("kw", ["return", "throw"])
+    def test_null_coalescing_after_reserved_word(self, kw):
+        orig = f"function f {{ $a = $null; {kw} $a ?? 'd' }}; try {{ f }} catch {{ $_ | Out-Null }}"
+        assert _round2_ps7_runs_ok(orig), "precondition: original must be valid PS7"
+        out = _round2_transform(orig)
+        assert "return $a" not in out and "throw $a" not in out, \
+            f"transform folded the {kw!r} keyword into the operand: {out!r}"
+        assert _round2_ps51_parse_errors(out) == [], f"5.1 parse error on transform: {out!r}"
+
+    def test_nested_ternary_left_untransformed(self):
+        """A ternary nested inside another ternary's branch arm was left raw:
+        the outer rewrite places the inner ``? :`` inside ``{ ... }`` (brace
+        depth > 0), where the ternary scanner deliberately gives up."""
+        orig = "$c = $true; $d = $false; ($c ? ($d ? 1 : 2) : 3)"
+        assert _round2_ps7_runs_ok(orig), "precondition: original must be valid PS7"
+        out = _round2_transform(orig)
+        assert "? " not in out, f"transform left a raw ternary in: {out!r}"
+        assert _round2_ps51_parse_errors(out) == [], f"5.1 parse error on transform: {out!r}"
+
+    def test_ternary_inside_interpolated_subexpr(self):
+        orig = '$c = $true; "$($c ? "y" : "n")"'
+        assert _round2_ps7_runs_ok(orig), "precondition: original must be valid PS7"
+        out = _round2_transform(orig)
+        assert "?" not in out.replace("$?", ""), \
+            f"transform left a raw ternary inside a string subexpr: {out!r}"
+        assert _round2_ps51_parse_errors(out) == [], f"5.1 parse error on transform: {out!r}"
+
+    def test_ternary_false_arm_comma_semantics(self):
+        """``@($c ? 7 : 8, 5)`` is ONE element in PS7 (comma binds tighter than
+        the ternary); the transform used to cut the false arm at the comma,
+        emitting two elements."""
+        if _ROUND2_PWSH7 is None:
+            pytest.skip("needs pwsh 7 for ground truth")
+        orig = "$c=$true; @($c ? 7 : 8, 5) | ForEach-Object { $_ }"
+        out = _round2_transform(orig)
+        assert _round2_ps51_parse_errors(out) == [], f"sanity: 5.1 parse error: {out!r}"
+        rc7, o7, _e7 = _round2_run_ps(_ROUND2_PWSH7, orig)
+        rc5, o5, _e5 = _round2_run_ps(_ROUND2_POWERSHELL51, out)
+        assert rc7 == 0, f"ground truth PS7 failed: {_e7!r}"
+        assert o7 == o5, (
+            f"semantic divergence: PS7={o7!r} PS5.1(transformed)={o5!r}\n"
+            f"transformed: {out!r}"
+        )
+
+    def test_lone_dollar_quote_blocks_active_subexpr(self):
+        """A lone (unbalanced) ``$'`` inside ``"..."`` made ``_find_dq_end``
+        bail and copy the whole DQ region verbatim, losing the ``\\``->``/``
+        rewrite of a genuinely active ``$(...)`` after it."""
+        balanced = r'''echo "cost $'50' $(echo C:\b)"'''
+        assert "C:/b" in _round2_unq(balanced), "regression guard: balanced case already broken?"
+        lone = r'''echo "$'x $(echo C:\b)"'''
+        noquote = r'''echo "x $(echo C:\b)"'''
+        assert "C:/b" in _round2_unq(noquote), "sanity: plain active subexpr must convert"
+        out = _round2_unq(lone)
+        assert "C:/b" in out, (
+            f"lone $' suppressed the backslash rewrite of the active $(): {out!r}"
+        )
+
+    def test_herestring_close_delimiter_on_code_line(self):
+        """A here-string closing ``"@`` on a line that also carries real code:
+        the whole line was treated as inside the region and skipped, leaving
+        a ``??`` after the delimiter raw (5.1 parse error)."""
+        orig = '$a = $null\n$x = @"\ntext\n"@; $y = $a ?? "d"'
+        assert _round2_ps7_runs_ok(orig), "precondition: original must be valid PS7"
+        out = _round2_transform(orig)
+        assert "??" not in out, f"transform skipped ?? on the here-string close line: {out!r}"
+        assert _round2_ps51_parse_errors(out) == [], f"5.1 parse error on transform: {out!r}"
+
+
+# ===========================================================================
+# Round-3 regressions (adversarial re-review: structural heredoc moves,
+# pwsh chain associativity/bounds, continuation join, block comments,
+# region placeholders).  See git history / review notes for context.
+# ===========================================================================
+
+_ROUND3_SHIM = _ROUND2_SHIM
+
+
+def _round3_run_bash_script(script: str) -> subprocess.CompletedProcess[str]:
+    """Run *script* through the real Git Bash found by ``find_bash``."""
+    bash = find_bash()
+    assert bash is not None
+    fd, path = tempfile.mkstemp(suffix=".sh")
+    try:
+        with os.fdopen(fd, "w", newline="\n", encoding="utf-8") as handle:
+            handle.write(script)
+        return subprocess.run(
+            [bash, "--noprofile", "--norc", path],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=20,
+            stdin=subprocess.DEVNULL,
+        )
+    finally:
+        os.unlink(path)
+
+
+# The canonical model mistake: heredoc inside $( ... ) (or backticks) with a
+# pipeline operator carried on the closing-delimiter line.  The trailing-
+# operator repair must keep the heredoc body INSIDE the substitution: the
+# closing delimiter may not be dragged up onto the redirection line.
+_ROUND3_CMDSUB_PAREN = (
+    "x=$(cat <<ZZEND\nfoo\nbar\nZZEND\n| wc -l)\nprintf 'X=[%s]' \"$x\"\n"
+)
+_ROUND3_CMDSUB_BACKTICK = (
+    "printf 'V=%s\\n' `cat <<ZZEND\nfoo\nZZEND\n| tr a-z A-Z`\n"
+)
+
+
+class TestBashFixRound3HeredocCmdSubMove:
+    """``_apply_heredoc_operator_move`` must not eject a heredoc body from a
+    command substitution when the trailing-operator line also carries the
+    substitution's closing delimiter."""
+
+    def test_dollar_paren_body_stays_inside_substitution(self):
+        fixed = _ROUND3_SHIM.fix_bash_command(_ROUND3_CMDSUB_PAREN).command
+        closing_paren = fixed.index(")")
+        terminator = fixed.rindex("ZZEND")
+        assert closing_paren > terminator, (
+            "heredoc body was ejected outside $( ... ): "
+            f"fixed={fixed!r} closing_paren@{closing_paren} terminator@{terminator}"
+        )
+
+    def test_backtick_body_stays_inside_substitution(self):
+        fixed = _ROUND3_SHIM.fix_bash_command(_ROUND3_CMDSUB_BACKTICK).command
+        assert fixed.count("`") == 2
+        closing_backtick = fixed.rindex("`")
+        terminator = fixed.rindex("ZZEND")
+        assert closing_backtick > terminator, (
+            "heredoc body was ejected outside the backtick substitution: "
+            f"fixed={fixed!r}"
+        )
+
+
+@pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not installed")
+class TestBashFixRound3HeredocCmdSubMoveExecution:
+    """Execution ground truth for the substitution-aware operator move."""
+
+    def test_dollar_paren_fix_has_no_unterminated_heredoc(self):
+        # Correct repair keeps the body inside $( ... ): x counts the two
+        # body lines (X=[2]) and bash emits no here-document warning.
+        fixed = _ROUND3_SHIM.fix_bash_command(_ROUND3_CMDSUB_PAREN).command
+        proc = _round3_run_bash_script(fixed)
+        combined = proc.stdout + proc.stderr
+        assert "unterminated here-document" not in combined, (
+            f"fixed command is malformed: {fixed!r}\noutput={combined!r}"
+        )
+        assert proc.returncode == 0
+        assert "X=[2]" in proc.stdout
+
+    def test_backtick_fix_preserves_heredoc_value(self):
+        # Correct repair: the body 'foo' is piped through tr -> 'FOO'.  The
+        # buggy move ejects the body, so the substitution is empty and the
+        # body lines run as (missing) commands.
+        fixed = _ROUND3_SHIM.fix_bash_command(_ROUND3_CMDSUB_BACKTICK).command
+        proc = _round3_run_bash_script(fixed)
+        combined = proc.stdout + proc.stderr
+        assert "command not found" not in combined, (
+            f"heredoc body executed as commands: {fixed!r}\noutput={combined!r}"
+        )
+        assert proc.returncode == 0
+        assert "V=FOO" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# pwsh chain transform: left associativity and operand bounds
+# ---------------------------------------------------------------------------
+
+_ROUND3_PS7 = shutil.which("pwsh") or shutil.which("pwsh.exe")
+_ROUND3_PS51 = shutil.which("powershell") or shutil.which("powershell.exe")
+
+
+def _round3_ps_lines(exe, script: str) -> list[str]:
+    rc, out, _err = _round2_run_ps(exe, script, timeout=90)
+    return sorted(ln for ln in out.splitlines() if ln.strip())
+
+
+_round3_chain_skip = pytest.mark.skipif(
+    sys.platform != "win32" or not _ROUND3_PS7 or not _ROUND3_PS51,
+    reason="requires Windows + pwsh(PS7) + powershell(PS5.1)",
+)
+
+
+@_round3_chain_skip
+class TestBashFixRound3ChainLeftAssoc:
+    """``A || B && C`` is ``(A || B) && C`` in PS7 (left-associative); the
+    sequential ``if`` rewrite must not nest ``&& C`` inside the ``||`` block
+    (which silently drops C when A succeeds)."""
+
+    def test_chain_operator_is_left_associative(self):
+        src = "Write-Output A || Write-Output B && Write-Output C"
+        out = _round2_transform(src)
+        expected = _round3_ps_lines(_ROUND3_PS7, src)      # PS7: A then C
+        actual = _round3_ps_lines(_ROUND3_PS51, out)       # 5.1 of the shim
+        assert actual == expected, (
+            f"mixed chain mis-associated: PS7={expected!r} vs "
+            f"5.1({out!r})={actual!r}"
+        )
+
+
+@_round3_chain_skip
+class TestBashFixRound3ChainScriptBlock:
+    """A trailing ``&& C`` outside a ``ForEach-Object { ... }`` scriptblock
+    must stay outside: rightmost-first rewriting re-nested it inside the
+    braces, running C once per pipeline item."""
+
+    def test_chain_does_not_renest_trailing_operator_into_scriptblock(self):
+        src = "1,2 | ForEach-Object { Write-Output I && Write-Output J } && Write-Output C"
+        out = _round2_transform(src)
+        expected = _round3_ps_lines(_ROUND3_PS7, src)   # PS7: C once
+        actual = _round3_ps_lines(_ROUND3_PS51, out)    # buggy: C per item
+        assert actual == expected, (
+            f"trailing '&& C' re-nested inside ForEach scriptblock: "
+            f"PS7={expected!r} vs 5.1({out!r})={actual!r}"
+        )
+
+
+@_round3_chain_skip
+class TestBashFixRound3ChainSemicolon:
+    """``;`` is a statement separator with lower precedence than ``&&``:
+    ``A && B ; C`` runs C unconditionally.  The right operand must stop at
+    the ``;``, not swallow it into the generated ``if`` block."""
+
+    def test_chain_does_not_capture_trailing_semicolon_statement(self):
+        # A fails (native exit 1) -> B skipped, but C (after ';') must run.
+        src = "cmd /c exit 1 && Write-Output B ; Write-Output C"
+        out = _round2_transform(src)
+        expected = _round3_ps_lines(_ROUND3_PS7, src)   # PS7: ['C']
+        actual = _round3_ps_lines(_ROUND3_PS51, out)    # buggy: []
+        assert actual == expected, (
+            f"trailing ';'-statement swallowed: PS7={expected!r} vs "
+            f"5.1({out!r})={actual!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Backtick continuation join: an escaped backtick pair at EOL is NOT a
+# continuation (the first backtick escapes the second; the newline is real).
+# ---------------------------------------------------------------------------
+
+
+class TestBashFixRound3BacktickContinuation:
+    def test_escaped_backtick_at_eol_is_not_a_continuation(self):
+        src = "Write-Output a ``\nb"
+        joined = _ROUND3_SHIM._join_continuation_lines(src)
+        # The real line break must be preserved: 'b' stays a separate statement.
+        assert "\n" in joined, repr(joined)
+        assert joined.splitlines()[-1].strip() == "b", repr(joined)
+
+    def test_single_backtick_at_eol_is_a_continuation(self):
+        # control: the legitimate case still joins.
+        src = "Write-Output a `\nb"
+        joined = _ROUND3_SHIM._join_continuation_lines(src)
+        assert "\n" not in joined, repr(joined)
+
+
+# ---------------------------------------------------------------------------
+# Block comments do NOT nest: the comment ends at the first ``#>``.
+# ---------------------------------------------------------------------------
+
+
+class TestBashFixRound3BlockComment:
+    def test_nested_block_comment_leaves_no_raw_coalesce(self):
+        src = '<# a <# b #> Write-Output ($x ?? "d")'
+        out = _round2_transform(src)
+        # The '??' is live code (after the first '#>'); it MUST be downgraded.
+        assert "??" not in out, out
+
+    def test_nested_block_comment_multiline_leaves_no_raw_coalesce(self):
+        src = '<# a\n <# b #>\n Write-Output ($x ?? "d")'
+        out = _round2_transform(src)
+        assert "??" not in out, out
+
+    @pytest.mark.skipif(sys.platform != "win32" or not _ROUND3_PS51,
+                        reason="requires Windows PowerShell 5.1")
+    def test_nested_block_comment_output_parses_in_51(self):
+        src = '<# a <# b #> Write-Output ($x ?? "d")'
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 parse error for {out!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Region placeholders on mid-line region boundaries must not be folded into
+# generated operands (the substitution would re-inject '#>' into the if).
+# ---------------------------------------------------------------------------
+
+
+class TestBashFixRound3RegionPlaceholder:
+    def test_multiline_region_delimiter_not_absorbed_into_operand(self):
+        src = "<#\nline1\n#> $a ?? 1"
+        out = _round2_transform(src)
+        # The closing delimiter must never be spliced into the coalesced operand.
+        assert "$null -ne #>" not in out, out
+        assert "{ #>" not in out, out
+
+    @pytest.mark.skipif(sys.platform != "win32" or not _ROUND3_PS51,
+                        reason="requires Windows PowerShell 5.1")
+    def test_multiline_region_close_line_parses_in_51(self):
+        src = "<#\nline1\n#> $a ?? 1"
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 parse error for {out!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Round-4 review regressions
+#
+# Four independent surfaces were audited (scanner tokenization, structural
+# constructs, Windows-path decode/emission + the bash_fix wrapper, and the
+# pwsh transform gaps left after rounds 1-3).  Confirmed bugs and their fixes:
+#
+# R4-B  Brace-less compound function bodies (``f() if/while/until/case/for``)
+#       never re-armed command position (the ``function_body_expected``
+#       handler only recognised ``{``), so a bare fallback-named command in
+#       the compound's first command slot was treated as data and its
+#       fallback registration dropped -> ``command not found`` at runtime.
+#
+# R4-C  Anchored Windows paths with MIXED separators (``D:/x\y``,
+#       ``~/Desktop\file.txt``) failed every classifier (the drive regex
+#       required a backslash right after the colon; the relative-path branch
+#       required >= 2 backslashes) and were emitted byte-for-byte -- but
+#       outside quotes Bash removes a backslash before ANY character, so the
+#       lone backslash was eaten and two path segments collapsed into one
+#       name (wrong file / value corruption).
+#
+# R4-F1 ``??`` co-located with a ternary on one line: the operand scanner
+#       (``_EXPR_STOP`` lacks ``?``/``:``) swallowed the ternary tokens into
+#       its operands and re-emitted them inside generated ``{ ... }`` arms
+#       where the ternary pass' brace guard refuses to look -> raw ``? :``
+#       survived -> 5.1 parse error on valid PS7 input.
+#
+# R4-F2 ``&&``/``||`` in expression position: a chain inside ``( ... )``
+#       (``if ($a && $b)``, ``Write-Host ($a && $b)``) was rewritten to a
+#       ``;``-separated statement sequence INSIDE the parens -> 5.1 parse
+#       error; an assignment RHS chain (``$x = $true && $false``) assigned
+#       only the left segment and leaked the right one to the output stream.
+#
+# R4-F3 ``??`` right operand cut at a comma: comma binds tighter than ``??``
+#       in PS7 (``$a ?? $b, 3`` is ``$a ?? ($b, 3)`` -- ONE element when
+#       ``$a`` is non-null), but the transform emitted ``$(if ...), 3`` ->
+#       two elements -> observable wrong output.
+#
+# R4-F4 Chain operators inside an interpolated sub-expression
+#       (``"$(a && b)"``) were skipped entirely (raw ``&&`` -> 5.1 parse
+#       error).  The stated reason (a line-structural rewrite is "not valid
+#       inside an interpolation") is empirically false.
+# ---------------------------------------------------------------------------
+
+
+class TestBashFixRound4CompoundFunctionBody:
+    """Bug R4-B: brace-less compound function bodies dropped registrations."""
+
+    @pytest.mark.parametrize(
+        "source,expected",
+        [
+            # case compound body -> the body command is dropped entirely
+            ("f() case x in a) tree;; esac", ("tree",)),
+            ("f() case x in *) tree;; esac", ("tree",)),
+            ("f() case x in a) tree;; b) rev;; esac", ("tree", "rev")),
+            # if/while/until: the test command (first slot) is dropped
+            ("f() if tree; then rev; fi", ("tree", "rev")),
+            ("f() while tree; do rev; done", ("tree", "rev")),
+            ("f() until tree; do rev; done", ("tree", "rev")),
+            # function-keyword / space forms share the same defect
+            ("function f case x in a) tree;; esac", ("tree",)),
+            ("function f() case x in a) tree;; esac", ("tree",)),
+            ("f () case x in a) tree;; esac", ("tree",)),
+            # do-less for-brace body: the first command word is dropped
+            ("f() for ((i=0;i<2;i++)) { tree; rev; }", ("tree", "rev")),
+            # defect still shows when nested inside a case body
+            ("case x in a) f() while tree; do rev; done;; esac", ("tree", "rev")),
+        ],
+    )
+    def test_compound_function_body_registers_body_command(self, source, expected):
+        result = _shell_compat.fix_bash_command(source)
+        assert result.replacements == expected, (
+            f"compound function body dropped fallback registrations "
+            f"({result.replacements} != {expected})"
+        )
+        assert result.command.endswith("\n" + source)
+
+    def test_compound_case_body_nul_and_registration_consistent(self):
+        # Redirection target is fixed regardless of command position, and the
+        # *command* fallback registration must be fixed too.
+        result = _shell_compat.fix_bash_command("f() case x in a) tree > nul;; esac")
+        assert result.nul_fixes == ("nul",)
+        assert result.replacements == ("tree",)
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires Git Bash")
+    def test_compound_bodies_really_execute_their_commands(self):
+        # Each construct must actually RUN its body/test command (marker echo),
+        # so the fallback registration the scanner now emits is genuinely
+        # required.
+        bash = find_bash()
+        for script in (
+            "f() if true; then echo ran-if; fi; f",
+            "f() while read x; do echo ran-while; done <<< z; f",
+            "f() until false; do echo ran-until; break; done; f",
+            "f() case a in a) echo ran-case;; esac; f",
+        ):
+            proc = subprocess.run(
+                [bash, "-c", script], capture_output=True, text=True, timeout=30
+            )
+            assert "ran-" in proc.stdout, (script, proc.stdout, proc.stderr)
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires Git Bash")
+    def test_missing_registration_breaks_at_runtime(self):
+        # ``tree`` is absent on Git Bash; only the prelude fallback makes it
+        # run.  Top-level case registers it; the compound-body form must too.
+        bash = find_bash()
+        top = _shell_compat.fix_bash_command("case x in a) tree / ;; esac")
+        assert top.changed and top.replacements == ("tree",)
+        comp = _shell_compat.fix_bash_command(
+            "f() case x in a) tree /;; esac; x=a; f"
+        )
+        assert comp.changed and comp.replacements == ("tree",)
+        # And the emitted command actually runs (fallback defined).
+        proc = subprocess.run(
+            [bash, "-c", comp.command], capture_output=True, text=True, timeout=30
+        )
+        assert "command not found" not in proc.stderr, proc.stderr
+
+
+class TestBashFixRound4MixedSlashPaths:
+    """Bug R4-C: anchored mixed-separator paths (``D:/x\\y``) are rewritten.
+
+    Left untouched, Bash eats the lone backslash (``\X`` -> ``X`` for every
+    ``X`` outside quotes) and collapses two segments into one name.
+    """
+
+    @pytest.fixture()
+    def _scratch(self, tmp_path):
+        md = tmp_path / "md"
+        md.mkdir()
+        (md / "inner.txt").write_text("INTENDED")
+        (tmp_path / "mdx.txt").write_text("WRONG")
+        return tmp_path
+
+    def test_mixed_slash_drive_path_is_rewritten(self, _scratch):
+        cmd = f"cat {_scratch.as_posix()}/md\\inner.txt"
+        result = _shell_compat.fix_bash_command(cmd)
+        assert "\\inner" not in result.command
+        assert f"{_scratch.as_posix()}/md/inner.txt" in result.command
+        assert result.path_changes
+
+    def test_mixed_slash_preserves_word_value(self, _scratch):
+        result = _shell_compat.fix_bash_command(
+            f"echo {_scratch.as_posix()}/md\\x.txt"
+        )
+        assert result.path_changes
+        assert f"{_scratch.as_posix()}/md/x.txt" in result.command
+
+    def test_mixed_slash_home_relative(self):
+        result = _shell_compat.fix_bash_command(r"echo ~/Desktop\file.txt")
+        assert result.command == "echo ~/Desktop/file.txt"
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires Git Bash")
+    def test_mixed_slash_real_bash_reads_intended_file(self, _scratch):
+        bash = find_bash()
+        cmd = f"cat {_scratch.as_posix()}/md\\inner.txt"
+        fixed = _shell_compat.fix_bash_command(cmd).command
+        proc = subprocess.run(
+            [bash, "-c", fixed], capture_output=True, text=True, timeout=30
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.strip() == "INTENDED"
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires Git Bash")
+    def test_pure_backslash_anchor_is_fixed_control(self, _scratch):
+        # control: the same path in pure-backslash form is rewritten and works
+        cmd = f"cat {str(_scratch).replace(chr(92), '/')}\\md\\inner.txt"
+        result = _shell_compat.fix_bash_command(cmd)
+        assert result.path_changes
+        bash = find_bash()
+        proc = subprocess.run(
+            [bash, "-c", result.command], capture_output=True, text=True, timeout=30
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.strip() == "INTENDED"
+
+
+_round4_ps_skip = pytest.mark.skipif(
+    sys.platform != "win32" or not _ROUND3_PS7 or not _ROUND3_PS51,
+    reason="requires Windows + pwsh(PS7) + powershell(PS5.1)",
+)
+_round4_ps51_skip = pytest.mark.skipif(
+    sys.platform != "win32" or not _ROUND3_PS51,
+    reason="requires Windows PowerShell 5.1",
+)
+
+
+class TestBashFixRound4CoalesceTernary:
+    """Bug R4-F1: ``??`` operands must not swallow (or trap) ternary tokens."""
+
+    @pytest.mark.parametrize(
+        "src",
+        [
+            "$c=$true;$a=$null;$r = $c ? $a ?? 1 : 2",
+            "$c=$false;$a=$null;$r = $c ? 5 : $a ?? 1",
+            "$c=$true;$r = $c ? 1 : 2 ?? 3",
+            "$a=$null;$c=$true;$r = $a ?? $c ? 2 : 3",
+            "$a=$null;$c=$true;$r = $a ?? ($c ? 1 : 2)",
+            "$c=$true;$r = ($c ? 1 : 2) ?? 3",
+            "$a=$null;$c=$true;$r = $a?.b ?? $c ? 1 : 2",
+        ],
+    )
+    def test_no_raw_ternary_survives(self, src):
+        out = _round2_transform(src)
+        # any '?' left in the output must be a null-conditional remnant
+        # (none of these inputs use one) or a '$?' -- never a bare ternary
+        assert " ? " not in out, out
+        assert " : " not in out, out
+
+    @_round4_ps51_skip
+    @pytest.mark.parametrize(
+        "src",
+        [
+            "$c=$true;$a=$null;$r = $c ? $a ?? 1 : 2",
+            "$c=$false;$a=$null;$r = $c ? 5 : $a ?? 1",
+            "$c=$true;$r = $c ? 1 : 2 ?? 3",
+            "$a=$null;$c=$true;$r = $a ?? $c ? 2 : 3",
+            "$a=$null;$c=$true;$r = $a ?? ($c ? 1 : 2)",
+            "$c=$true;$r = ($c ? 1 : 2) ?? 3",
+            "$a=$null;$c=$true;$r = $a?.b ?? $c ? 1 : 2",
+        ],
+    )
+    def test_parses_in_51(self, src):
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 parse error for {out!r}"
+        )
+
+    @_round4_ps_skip
+    @pytest.mark.parametrize(
+        "src",
+        [
+            "$c=$true;$a=$null;$r = $c ? $a ?? 1 : 2",
+            "$c=$false;$a=$null;$r = $c ? 5 : $a ?? 1",
+            "$c=$true;$r = $c ? 1 : 2 ?? 3",
+            "$a=$null;$c=$true;$r = $a ?? $c ? 2 : 3",
+            "$a=$null;$c=$true;$r = $a ?? ($c ? 1 : 2)",
+            "$c=$true;$r = ($c ? 1 : 2) ?? 3",
+            "$a=$null;$c=$true;$r = $a?.b ?? $c ? 1 : 2",
+        ],
+    )
+    def test_matches_ps7_output(self, src):
+        out = _round2_transform(src)
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        actual = _round3_ps_lines(_ROUND3_PS51, out)
+        assert actual == expected, (src, out, expected, actual)
+
+
+class TestBashFixRound4ChainExpressionPosition:
+    """Bug R4-F2: chains in ``( ... )`` / assignment RHS must become values."""
+
+    @pytest.mark.parametrize(
+        "src",
+        [
+            '$a=$true;$b=$false;if ($a && $b) { "T" } else { "F" }',
+            '$a=$false;$b=$true;if ($a || $b) { "T" } else { "F" }',
+            "$a=$true;$b=$false;Write-Host ($a && $b)",
+            '$a=$true;$b=$false;$r = ($a && $b); "R=[$r]"',
+        ],
+    )
+    def test_parses_in_51(self, src):
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 parse error for {out!r}"
+        )
+
+    @_round4_ps_skip
+    @pytest.mark.parametrize(
+        "src",
+        [
+            '$a=$true;$b=$false;if ($a && $b) { "T" } else { "F" }',
+            '$a=$false;$b=$true;if ($a || $b) { "T" } else { "F" }',
+            "$a=$true;$b=$false;Write-Host ($a && $b)",
+            '$a=$true;$b=$false;$r = ($a && $b); "R=[$r]"',
+            '$x = $true && $false; "X=[$x]"',
+        ],
+    )
+    def test_matches_ps7_output(self, src):
+        out = _round2_transform(src)
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        actual = _round3_ps_lines(_ROUND3_PS51, out)
+        assert actual == expected, (src, out, expected, actual)
+
+
+class TestBashFixRound4CoalesceComma:
+    """Bug R4-F3: comma binds tighter than ``??`` in PS7."""
+
+    @_round4_ps_skip
+    def test_comma_rhs_yields_single_element_when_left_not_null(self):
+        src = '$a=9;$b=2;$r = $a ?? $b, 3; "N=@($r).Count V=$($r -join \';\')"'
+        out = _round2_transform(src)
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        actual = _round3_ps_lines(_ROUND3_PS51, out)
+        assert actual == expected, (out, expected, actual)
+
+    @_round4_ps_skip
+    def test_comma_rhs_inside_array_subexpression(self):
+        src = '$a=9;$r=@($a ?? 1, 2); "V=$r"'
+        out = _round2_transform(src)
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        actual = _round3_ps_lines(_ROUND3_PS51, out)
+        assert actual == expected, (out, expected, actual)
+
+    def test_command_argument_comma_not_swallowed(self):
+        # ``f($a ?? 1, $b)``: the comma separates command ARGUMENTS and must
+        # survive the transform.
+        out = _round2_transform("$a ?? 1, $b") if False else None  # placeholder
+        src = "Write-Output ($a ?? 1), $b"
+        out = _round2_transform(src)
+        assert "), " in out, out
+
+
+class TestBashFixRound4ChainInterpolation:
+    """Bug R4-F4: chains inside "$ ( ... )" must be rewritten, not skipped."""
+
+    @pytest.mark.parametrize(
+        "src",
+        [
+            '$s = "X$(Write-Output 1 && Write-Output 2)Y"; $s',
+            '$a = 0; $s = "V=$(Write-Output a || Write-Output b)W"; $s',
+        ],
+    )
+    def test_no_raw_chain_operator_survives(self, src):
+        out = _round2_transform(src)
+        assert "&&" not in out, out
+        assert "||" not in out, out
+
+    @_round4_ps51_skip
+    @pytest.mark.parametrize(
+        "src",
+        [
+            '$s = "X$(Write-Output 1 && Write-Output 2)Y"; $s',
+            '$a = 0; $s = "V=$(Write-Output a || Write-Output b)W"; $s',
+        ],
+    )
+    def test_parses_in_51(self, src):
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 parse error for {out!r}"
+        )
+
+    @_round4_ps_skip
+    @pytest.mark.parametrize(
+        "src",
+        [
+            '$s = "X$(Write-Output 1 && Write-Output 2)Y"; $s',
+            '$a = 0; $s = "V=$(Write-Output a || Write-Output b)W"; $s',
+        ],
+    )
+    def test_matches_ps7_output(self, src):
+        out = _round2_transform(src)
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        actual = _round3_ps_lines(_ROUND3_PS51, out)
+        assert actual == expected, (src, out, expected, actual)
+
+
+class TestBashFixRound4SubstHashNotComment:
+    """Bug R4-A: a ``#`` glued to a command/process-substitution close paren
+    is word-internal in Bash (a substitution expands inside a word), NOT a
+    comment.  The scanner's ``_comment_starts`` peeks one byte back at a
+    bare ``)`` and could not tell a substitution-close paren from a
+    control-operator (subshell) paren, so it skipped the rest of the line as
+    a comment and dropped every fallback registration / nul rewrite /
+    path rewrite in that tail."""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "$(true)#foo; rev --help",
+            "$(true)#foo; column --help",
+            "<(echo a)#x; rev --help",
+            ">(echo a)#x; rev --help",
+            "$(echo hi)#z; tree",
+            "echo a $(true)#x; findstr y",
+            "$(true)$(false)#x; rev --help",
+            "$(true)#foo | rev --help",
+            "$(true)#foo || rev --help",
+        ],
+    )
+    def test_fallback_after_subst_hash_is_registered(self, command):
+        result = _shell_compat.fix_bash_command(command)
+        fallbacks = {"rev", "column", "tree", "findstr"}
+        assert fallbacks & set(result.replacements), (
+            "fallback after a '#'-glued $(...)/<(...)/>(...) close-paren was "
+            "silently skipped as a comment; got replacements=%r for %r"
+            % (result.replacements, command)
+        )
+
+    def test_nul_rewrite_in_subst_hash_tail_is_not_missed(self):
+        # '> nul' in the tail must still be rewritten to /dev/null (Bash runs
+        # that command, creating an accidental 'nul' file otherwise).
+        result = _shell_compat.fix_bash_command(r"$(true)#x; rev > nul")
+        assert result.nul_fixes == ("nul",), result.nul_fixes
+
+    def test_path_rewrite_in_subst_hash_tail_is_not_missed(self):
+        result = _shell_compat.fix_bash_command(r"$(true)#x; cat D:\a\b")
+        assert result.path_changes == (r"D:\a\b",), result.path_changes
+
+    def test_hash_after_space_is_still_a_comment(self):
+        # Contrast: '# ' after whitespace genuinely comments out the tail;
+        # rev must NOT be registered there.
+        result = _shell_compat.fix_bash_command("$(true) #foo; rev --help")
+        assert "rev" not in result.replacements
+
+    def test_hash_after_subshell_paren_is_still_a_comment(self):
+        # Contrast: after a SUBSHELL ')' the '#' IS a control-operator comment
+        # in Bash, so the scanner must match Bash and leave rev unregistered.
+        result = _shell_compat.fix_bash_command("(true)#foo; rev --help")
+        assert "rev" not in result.replacements
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires Git Bash")
+    def test_rev_actually_runs_after_subst_hash(self):
+        # Define rev so we can observe Bash reaching it as a command word.
+        bash = find_bash()
+        p = subprocess.run(
+            [bash, "-c", "rev() { echo REV_RAN; }; $(true)#foo; rev --help"],
+            capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL,
+        )
+        assert "REV_RAN" in p.stdout, p.stdout + p.stderr
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires Git Bash")
+    def test_missing_registration_breaks_at_runtime_subst_hash(self):
+        # With 'rev' defined by the prelude fallback it really runs — the
+        # scanner must have registered it.  (Bash also tries '#foo' itself as
+        # a command word — the word '$(true)#foo' expands to it — so stderr
+        # may contain an unrelated '#foo: command not found'.)
+        bash = find_bash()
+        fixed = _shell_compat.fix_bash_command("$(true)#foo; rev --help")
+        assert "rev" in fixed.replacements
+        p = subprocess.run(
+            [bash, "-c", fixed.command], capture_output=True, text=True,
+            timeout=30, stdin=subprocess.DEVNULL,
+        )
+        assert "rev: command not found" not in p.stderr, p.stderr
+
+
+# ===========================================================================
+# Round-5 review regressions
+# ===========================================================================
+# R5-H1  Heredoc trailing-operator move with a construct closer MID-LINE: the
+# stay-guard only detached a TRAILING RUN of closers, so
+# ``x=$(cat <<EOF ... EOF\n| wc -l); echo q`` moved the whole line up, closing
+# the substitution before the heredoc body -> bash "unterminated
+# here-document".  The guard now keeps the suffix from the last excess closer
+# onward, and joins an operator-led stay tail onto the closer line.
+# R5-R1  Backslash-escaped wrapper words (``\command tree``, ``\env tree``)
+# only suppress alias lookup but invoke the same wrapper; the wrapper tables
+# were keyed on the raw token, so the wrapped command was never registered
+# (real bash: still "command not found" after fixing).
+# R5-P1  Chained null-coalescing assignment ``$x ??= $y ??= 3`` (right-assoc
+# in PS7): the value scan stopped at the inner ``??=``'s ``=`` leaving raw
+# ``??`` -> 5.1 ParserError.
+# R5-P2  Implicit operator-at-EOL line continuation (``$a ??`` NL ``$b``,
+# ``cmd &&`` NL ``next``) without a backtick: the joiner only collapsed
+# backticks, so the operator lost its operand -> 5.1 ParserError or lost
+# gating semantics.
+# R5-P3  ``&&``/``||`` inside ``"$( ... )`` with a QUOTED-LITERAL operand
+# (``"res: $($a || 'fb')"``): the interpolation phase-2 boundary scans
+# treated the nested literal as a region edge -> empty right operand, the
+# literal leaked outside the generated block -> 5.1 ParserError.
+# R5-P4  Mixed null-conditional chain ``$a?[$i]?.b``: the ``?.`` pass took
+# ``[$i]`` as its base (the ``?``-guard only recognised ``?.``), and the
+# later bracket pass misread the raw ``?[`` inside the generated condition.
+# R5-P5  Keyword glue: ``return $a ?? 3`` / ``return $c ? 1 : 2`` emitted
+# ``return$(...)`` (no space) -> 5.1 parses a command name; the ternary
+# brace-guard also left return-operand ternaries raw inside ``{ ... }``.
+
+
+class TestBashFixRound5HeredocCloserStay:
+    """R5-H1: a construct closer mid-line after a heredoc terminator stays."""
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            # ``)`` mid-line: only the closer and its tail stay after the
+            # terminator; the pipe target rides up to the redirection line.
+            (
+                "x=$(cat <<EOF\nbody\nEOF\n| wc -l); echo q >/dev/null",
+                "x=$(cat <<EOF | wc -l\nbody\nEOF\n); echo q >/dev/null\n",
+            ),
+            # Backtick substitution variant.
+            (
+                "echo `cat <<EOF\nbody\nEOF\n| wc -l` done",
+                "echo `cat <<EOF | wc -l\nbody\nEOF\n` done\n",
+            ),
+            # Two openers, two closers: each closer balances in order.
+            (
+                "x=$( (cat <<EOF\nbody\nEOF\n| wc -l) ); echo y",
+                "x=$( (cat <<EOF | wc -l)\nbody\nEOF\n); echo y\n",
+            ),
+            # Closer at end of line (the original guard case) still works.
+            (
+                "x=$(cat <<EOF\nbody\nEOF\n| wc -l)",
+                "x=$(cat <<EOF | wc -l\nbody\nEOF\n)\n",
+            ),
+            # Balanced group in the moved text: only the excess closer stays.
+            (
+                "x=$(cat <<EOF\nbody\nEOF\n| (wc -l) ); echo y",
+                "x=$(cat <<EOF | (wc -l)\nbody\nEOF\n); echo y\n",
+            ),
+            # Operator-led continuation lines after the closer are joined
+            # onto the closer line (an operator-led physical line after a
+            # completed command is a bash syntax error).
+            (
+                "x=$(cat <<EOF\nbody\nEOF\n| wc -l)\n&& echo done",
+                "x=$(cat <<EOF | wc -l\nbody\nEOF\n) && echo done\n",
+            ),
+        ],
+    )
+    def test_closer_stays_after_terminator(self, source: str, expected: str) -> None:
+        assert _fix_for_windows(source).command == expected
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # No trailing operator: nothing moves.
+            "x=$(cat <<EOF\nbody\nEOF\necho q)",
+            # A case-arm terminator line is left untouched.
+            "case $x in\na) cat <<EOF\nbody\nEOF\n;;\nesac",
+        ],
+    )
+    def test_no_stay_when_no_excess_closer(self, source: str) -> None:
+        assert _fix_for_windows(source).command == source
+
+    def test_no_construct_prefix_whole_line_moves(self) -> None:
+        # Without an unclosed opener in the prefix the whole operator line
+        # rides up (the original feature behaviour, kept whole).
+        source = "cat <<EOF\nbody\nEOF\n| wc -l"
+        assert _fix_for_windows(source).command == "cat <<EOF | wc -l\nbody\nEOF\n"
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not installed")
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "x=$(cat <<EOF\nbody\nEOF\n| wc -l); echo q >/dev/null",
+            "echo `cat <<EOF\nbody\nEOF\n| wc -l` done",
+            "x=$( (cat <<EOF\nbody\nEOF\n| wc -l) ); echo y",
+            "x=$(cat <<EOF\nbody\nEOF\n| (wc -l) ); echo y",
+            "x=$(cat <<EOF\nbody\nEOF\n| wc -l)\n&& echo done",
+        ],
+    )
+    def test_fixed_script_runs_in_real_bash(self, source: str) -> None:
+        fixed = _fix_for_windows(source).command
+        proc = subprocess.run(
+            [find_bash(), "-c", fixed],
+            capture_output=True,
+            timeout=15,
+            encoding="utf-8",
+            errors="replace",
+        )
+        assert proc.returncode == 0, (
+            f"fixed heredoc script failed in real bash:\n{fixed}\n{proc.stderr}"
+        )
+        assert "unterminated here-document" not in proc.stderr
+
+
+class TestBashFixRound5EscapedWrappers:
+    """R5-R1: backslash-escaped wrapper words register their operand."""
+
+    @pytest.mark.parametrize(
+        ("source", "expected_names"),
+        [
+            (r"\command tree", ("tree",)),
+            (r"\env tree", ("tree",)),
+            (r"\exec tree", ("tree",)),
+            (r"\xargs tree", ("tree",)),
+            (r"\sudo tree", ("sudo", "tree")),
+            (r"\watch tree", ("watch", "tree")),
+            (r"\gtimeout 5 tree", ("gtimeout", "tree")),
+            (r"\stdbuf -o0 tree", ("tree",)),
+            (r"\nice tree", ("tree",)),
+        ],
+    )
+    def test_escaped_wrapper_registers_operand(
+        self, source: str, expected_names: tuple[str, ...]
+    ) -> None:
+        result = _fix_for_windows(source)
+        assert result.replacements == expected_names, (
+            f"{source!r}: expected registrations {expected_names}, "
+            f"got {result.replacements}"
+        )
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # Shell keywords: escaping suppresses the KEYWORD, so the
+            # external command runs and wrapper registration is useless —
+            # the word must NOT be treated as a wrapper.
+            r"\time tree",
+            r"\coproc tree",
+            r"\! tree",
+        ],
+    )
+    def test_escaped_reserved_words_untouched(self, source: str) -> None:
+        result = _fix_for_windows(source)
+        assert "tree" not in result.replacements
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not installed")
+    @pytest.mark.parametrize(
+        "source",
+        [
+            r"\command tree",
+            r"\env tree",
+            r"\xargs tree",
+            r"\stdbuf -o0 tree",
+            r"\nice tree",
+        ],
+    )
+    def test_escaped_wrapper_fixed_script_runs(self, source: str) -> None:
+        fixed = _fix_for_windows(source).command
+        proc = subprocess.run(
+            [find_bash(), "-c", fixed],
+            capture_output=True,
+            timeout=15,
+            encoding="utf-8",
+            errors="replace",
+            stdin=subprocess.DEVNULL,
+        )
+        assert proc.returncode == 0, (
+            f"{source!r} -> fixed script failed in real bash:\n{fixed}\n"
+            f"{proc.stderr}"
+        )
+
+
+@_round4_ps_skip
+class TestBashFixRound5PwshChainedNca:
+    """R5-P1: chained ``??=`` (right-associative in PS7) parses and behaves."""
+
+    def test_chained_nca_parses_and_behaves(self):
+        src = '$x=$null; $y=$null; $x ??= $y ??= 3; "x=$x y=$y"'
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        assert expected == ["x=3 y=3"]
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 PARSE ERROR on transformed:\n{out!r}"
+        )
+        actual = _round3_ps_lines(_ROUND3_PS51, out)
+        assert actual == expected, (
+            f"chained ??= mismatch: PS7={expected!r} vs 5.1={actual!r}\n{out!r}"
+        )
+
+    def test_nca_with_coalesce_value(self):
+        src = '$x=$null; $y=$null; $x ??= $y ?? 3; "x=$x"'
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], f"5.1 PARSE ERROR:\n{out!r}"
+        assert _round3_ps_lines(_ROUND3_PS51, out) == expected
+
+
+@_round4_ps_skip
+class TestBashFixRound5PwshMultilineContinuation:
+    """R5-P2: an operator at end of line continues the statement (no backtick)."""
+
+    @pytest.mark.parametrize(
+        "src",
+        [
+            "$a=$null\n$b=7\n$x = $a ??\n$b\n\"x=$x\"",
+            "cmd /c exit 3 &&\nWrite-Output RUN\nWrite-Output END",
+            "cmd /c exit 0 ||\nWrite-Output RUN\nWrite-Output END",
+            "$x=$null\n$y=$null\n$x ??=\n3\n\"x=$x\"",
+        ],
+    )
+    def test_operator_eol_continuation_preserved(self, src):
+        rc, out7, _err = _round2_run_ps(_ROUND3_PS7, src)
+        assert rc == 0, f"not a clean PS7 ground truth: {src!r}"
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 PARSE ERROR on transformed:\n{out!r}"
+        )
+        rc5, out5, _ = _round2_run_ps(_ROUND3_PS51, out)
+        assert rc5 == 0 and out5 == out7.strip(), (
+            f"multiline continuation mismatch:\n{src!r}\n->\n{out!r}\n"
+            f"PS7={out7.strip()!r} vs 5.1={out5!r}"
+        )
+
+    def test_explicit_backtick_still_works(self):
+        src = "cmd /c exit 1 `\n|| Write-Output FB"
+        rc, out7, _ = _round2_run_ps(_ROUND3_PS7, src)
+        assert rc == 0
+        out = _round2_transform(src)
+        _rc5, out5, _ = _round2_run_ps(_ROUND3_PS51, out)
+        assert out5 == out7.strip()
+
+
+@_round4_ps_skip
+class TestBashFixRound5PwshInterpLiteralOperand:
+    """R5-P3: chains inside ``"$( ... )"`` with a quoted-literal operand."""
+
+    @pytest.mark.parametrize("expr", ["$a || 'fb'", "$a && 'yes'", "$a || 'fb'"])
+    def test_interp_literal_operand_parses(self, expr):
+        src = '$a="x"; "res: $(%s)"' % expr
+        rc, _out, _err = _round2_run_ps(_ROUND3_PS7, src)
+        assert rc == 0
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 PARSE ERROR on transformed:\n{out!r}"
+        )
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        assert _round3_ps_lines(_ROUND3_PS51, out) == expected
+
+
+@_round4_ps51_skip
+class TestBashFixRound5PwshNullCondBracketDot:
+    """R5-P4: mixed null-conditional ``$a?[$i]?.b`` parses under 5.1."""
+
+    def test_bracket_then_dot_parses(self):
+        src = '$a = @( @{b=42} ); $i=0; $r = $a?[$i]?.b; "r=$r"'
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 PARSE ERROR on transformed:\n{out!r}"
+        )
+
+    def test_dot_then_bracket_parses(self):
+        src = '$a = @( @{b=@{c=9}} ); $r = $a?.b?["c"]; "r=$r"'
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], (
+            f"5.1 PARSE ERROR on transformed:\n{out!r}"
+        )
+
+
+@_round4_ps_skip
+class TestBashFixRound5PwshKeywordGlue:
+    """R5-P5: ``return``/``throw`` operands get a space, not a glue."""
+
+    def test_return_coalesce_behaves(self):
+        src = "function Get-V(){ $a=$null; return $a ?? 3 }; (Get-V)"
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        assert expected == ["3"]
+        out = _round2_transform(src)
+        assert "return$(" not in out, f"keyword glued:\n{out!r}"
+        assert _round2_ps51_parse_errors(out) == [], f"5.1 PARSE:\n{out!r}"
+        assert _round3_ps_lines(_ROUND3_PS51, out) == expected
+
+    def test_return_ternary_inside_braces_behaves(self):
+        src = "function Get-V(){ $c=$null; return $c ? 10 : 20 }; (Get-V)"
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        assert expected == ["20"]
+        out = _round2_transform(src)
+        assert "return$(" not in out, f"keyword glued:\n{out!r}"
+        assert _round2_ps51_parse_errors(out) == [], f"5.1 PARSE:\n{out!r}"
+        assert _round3_ps_lines(_ROUND3_PS51, out) == expected
+
+    def test_paren_ternary_inside_braces_still_transformed(self):
+        src = "function Get-V(){ $c=$true; return ($c ? 10 : 20) }; (Get-V)"
+        expected = _round3_ps_lines(_ROUND3_PS7, src)
+        out = _round2_transform(src)
+        assert _round2_ps51_parse_errors(out) == [], f"5.1 PARSE:\n{out!r}"
+        assert _round3_ps_lines(_ROUND3_PS51, out) == expected
+
+
+@_round4_ps_skip
+@pytest.mark.parametrize(
+    "src",
+    [
+        '$x=$null; $x ??= 3; "x=$x"',                # single ??= (contrast)
+        '$a=$null\n$b=7\n$x = $a ?? $b\n"x=$x"',     # single-line ?? (contrast)
+        '$a="x"; $b="y"; "res: $($a || $b)"',        # interp variable operand
+        '$a=@(10,20); $i=0; "v=$($a[$i])"',          # plain index (contrast)
+        '$a=$null; $v = $a ?? "fb"; "v=$v"',         # ?? literal RHS statement
+        '$x=$true; @($x ? 1 : 2).Count',             # ternary in array literal
+        # (hashtable ternaries stay raw by design — pinned by
+        # TestBashFixRound1TernaryParen::test_brace_ternary_still_skipped)
+    ],
+)
+def test_round5_pwsh_contrast_ok(src):
+    """Contrast cases: the R5 fixes must not disturb previously-correct code."""
+    rc, _out, _err = _round2_run_ps(_ROUND3_PS7, src)
+    if rc != 0:
+        pytest.skip("not a clean PS7 ground truth")
+    out = _round2_transform(src)
+    assert _round2_ps51_parse_errors(out) == [], (
+        f"5.1 PARSE on contrast case:\n{src!r}\n->\n{out!r}"
+    )
