@@ -16,6 +16,16 @@ paths are rewritten to the native spellings native Windows executables can
 resolve: ``/tmp/x`` becomes the real Windows temp directory (``/tmp`` in Git
 Bash is a virtual mount, so a native tool would otherwise read it as
 ``<current-drive>:\\tmp\\x``) and ``/c/x``/``/d/x`` become ``C:/x``/``D:/x``.
+Unquoted ``$``-expansions inside such a word (``$var``, ``${...}``, ``$'...'``)
+are preserved verbatim and outside any quotes so Bash still expands them at
+runtime — quoting the ``$`` would hand the tool a path literally named
+``x_${b}``.  Backslash escapes in the word are decoded before re-quoting so
+the rewritten word keeps the original value (``/tmp/a\\ b`` carries the
+value ``a b``, not ``a\\ b``), and words whose escape or quoting cannot be
+re-emitted faithfully (escaped glob metacharacters, quoted segments,
+command substitutions) are left untouched — the substitution's inner command
+context has already been scanned and a whole-word rewrite would clash with
+those edits.
 This makes a POSIX-style command behave the same under Git Bash and native
 POSIX bash.  A redundant leading shell
 invocation — ``bash cd /c/dev/x && ...`` or ``bash -c 'cd C:\\x && rev'`` —

@@ -977,6 +977,239 @@ def _windows_temp_dir() -> str:
     return tempfile.gettempdir().replace("\\", "/")
 
 
+_VAR_NAME_START_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+)
+"""Characters that may start a ``$name`` variable expansion."""
+
+_VAR_NAME_CHARS = _VAR_NAME_START_CHARS | frozenset("0123456789")
+"""Characters that may continue a ``$name`` variable expansion."""
+
+_SPECIAL_PARAM_CHARS = frozenset("0123456789?-$!#*@")
+"""Single-character special parameters (``$$``, ``$?``, ``$@``, ...)."""
+
+
+def _match_ansi_c_quote_span(text: str, i: int) -> int | None:
+    """Return the index after the ``'`` closing a ``$'`` region opened before *i*.
+
+    Returns None when the region is unterminated.
+    """
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\":
+            i += 2
+        elif ch == "'":
+            return i + 1
+        else:
+            i += 1
+    return None
+
+
+def _match_dquote_span(text: str, i: int) -> int | None:
+    """Return the index after the ``"`` closing a double-quoted region opened before *i*.
+
+    Returns None when the region is unterminated.
+    """
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\":
+            i += 2
+        elif ch == '"':
+            return i + 1
+        else:
+            i += 1
+    return None
+
+
+def _match_parameter_braces(text: str, i: int) -> int | None:
+    """Return the index after the ``}`` closing ``${`` (opened at ``i - 2``).
+
+    Returns None when the expansion is unterminated or embeds a command
+    substitution (``$(...)`` or backquote): those inner command contexts are
+    scanned separately, and rewriting a word that contains them would clash
+    with the edits recorded there.
+    """
+    depth = 1
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\":
+            i += 2
+        elif ch == "'":
+            j = text.find("'", i + 1)
+            if j < 0:
+                return None
+            i = j + 1
+        elif ch == '"':
+            j = _match_dquote_span(text, i + 1)
+            if j is None:
+                return None
+            i = j
+        elif ch == "`" or (ch == "$" and i + 1 < n and text[i + 1] == "("):
+            return None
+        elif ch == "{":
+            depth += 1
+            i += 1
+        elif ch == "}":
+            depth -= 1
+            i += 1
+            if depth == 0:
+                return i
+        else:
+            i += 1
+    return None
+
+
+def _match_arithmetic_span(text: str, i: int) -> int | None:
+    """Return the index after the ``))`` closing ``$((`` opened at ``i - 3``.
+
+    Returns None when the expansion is unterminated or embeds a command
+    substitution (``$(...)``), whose inner command context is scanned
+    separately.
+    """
+    depth = 1
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "$" and i + 1 < n and text[i + 1] == "(":
+            return None
+        if ch == "(" and text.startswith("((", i):
+            depth += 1
+            i += 2
+        elif ch == ")" and text.startswith("))", i):
+            depth -= 1
+            i += 2
+            if depth == 0:
+                return i
+        elif ch == "\\":
+            i += 2
+        elif ch == "'":
+            j = text.find("'", i + 1)
+            if j < 0:
+                return None
+            i = j + 1
+        elif ch == '"':
+            j = _match_dquote_span(text, i + 1)
+            if j is None:
+                return None
+            i = j
+        else:
+            i += 1
+    return None
+
+
+def _decode_virtual_path_span(span: str) -> str | None:
+    """Decode Bash unquoted-word backslash escapes in a literal path span.
+
+    In the original unquoted word ``\\x`` decodes to the literal character
+    ``x`` and ``\\`` + newline is a line continuation that joins the value.
+    The virtual-path rewrite re-quotes the word, so the span must be decoded
+    first — otherwise the re-emitted ``\\`` leaks into the value (``a\\ b``
+    was rewritten to a value of ``a\\ b`` instead of ``a b``).
+
+    Returns None when the span must stay untouched: an escaped glob
+    metacharacter (``\\*``, ``\\?``, ``\\[`` — re-emitting it unquoted
+    would re-enable pathname expansion the escape suppressed) or a trailing
+    lone backslash (an unterminated line continuation Bash itself will
+    diagnose).
+    """
+    out: list[str] = []
+    i = 0
+    n = len(span)
+    while i < n:
+        ch = span[i]
+        if ch != "\\":
+            out.append(ch)
+            i += 1
+            continue
+        if i + 1 >= n:
+            return None
+        nxt = span[i + 1]
+        if nxt == "\n":
+            i += 2  # line continuation: both characters drop from the value
+            continue
+        if nxt in "*?":
+            return None
+        if nxt == "[":
+            return None
+        out.append(nxt)
+        i += 2
+    return "".join(out)
+
+
+def _split_virtual_path_expansions(text: str) -> list[tuple[bool, str]] | None:
+    """Split a rewritten virtual path into literal and expansion spans.
+
+    Returns a list of ``(is_expansion, span)`` runs in source order.
+    Expansion spans (``$var``, ``${...}``, ``$((...))``, ``$'...'``, special
+    parameters) are copied verbatim by the caller so Bash's runtime expansion
+    keeps working; literal spans between them are re-quoted only when they
+    need it.  A ``$`` that starts no expansion is literal text and stays in a
+    literal span (the re-quoting escapes it, preserving the value).
+
+    Returns None when the word embeds a command substitution (``$(...)``,
+    backquote, ``$"..."``), an unterminated expansion, or an unescaped
+    quote character (a quoted region inside the word): the substitution's
+    inner command context is scanned separately, and quoted segments cannot
+    be re-emitted faithfully, so the whole word must be left untouched to
+    keep the original word value.
+    """
+    spans: list[tuple[bool, str]] = []
+    literal_start = 0
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\" and i + 1 < n:
+            i += 2  # an escaped char stays in the literal span
+            continue
+        if ch in "'\"`":
+            # A quote char inside the raw word opens a quoted region whose
+            # quote removal is part of the word's value; the rewriter
+            # cannot re-emit that faithfully, so the word stays untouched.
+            return None
+        if ch != "$":
+            i += 1
+            continue
+        nxt = text[i + 1] if i + 1 < n else ""
+        if nxt == "(":
+            if text.startswith("$((", i):
+                end = _match_arithmetic_span(text, i + 3)
+                if end is None:
+                    return None
+            else:
+                return None
+        elif nxt == '"':
+            return None
+        elif nxt == "{":
+            end = _match_parameter_braces(text, i + 2)
+            if end is None:
+                return None
+        elif nxt == "'":
+            end = _match_ansi_c_quote_span(text, i + 2)
+            if end is None:
+                return None
+        elif nxt in _VAR_NAME_START_CHARS:
+            end = i + 2
+            while end < n and text[end] in _VAR_NAME_CHARS:
+                end += 1
+        elif nxt in _SPECIAL_PARAM_CHARS:
+            end = i + 2
+        else:
+            i += 1  # a ``$`` starting no expansion is a literal dollar sign
+            continue
+        if literal_start < i:
+            spans.append((False, text[literal_start:i]))
+        spans.append((True, text[i:end]))
+        i = end
+        literal_start = i
+    if literal_start < n:
+        spans.append((False, text[literal_start:]))
+    return spans
+
+
 @dataclass(frozen=True)
 class BashFix:
     """Result of :func:`fix_bash_command`.
@@ -3150,21 +3383,58 @@ class _BashFixScanner:
         words to their real Windows spellings makes the same command behave
         identically under Git Bash and native POSIX bash: ``/tmp`` is the
         system temp directory in both, and ``/c/...``/``/d/...`` resolve to
-        the same files whether the consumer is an MSYS tool or a native
+        same files whether the consumer is an MSYS tool or a native
         executable.  Only unquoted words are considered; quoted text is
         literal data.  A bare single-letter mount (``/c``, ``/d``) is left
         untouched so cmd.exe's ``cd /d <path>`` flag is never mistaken for a
         drive path.
+
+        Unquoted ``$``-expansions inside the word (``$var``, ``${...}``,
+        ``$((...))``, ``$'...'``, special parameters) are preserved verbatim
+        and outside any quotes by :meth:`_quote_virtual_path`: quoting or
+        escaping the ``$`` would turn Bash's runtime parameter expansion into
+        a literal ``$`` and the tool would receive a path literally named
+        ``x_${b}``.  Words embedding a command substitution (``$(...)`` or a
+        backquote) are left untouched, because the substitution's inner
+        command context has already been scanned and a whole-word rewrite
+        would clash with the edits recorded there.
         """
         if not raw:
             return None
         if raw.startswith("/tmp"):
             if raw != "/tmp" and not raw.startswith("/tmp/"):
                 return None
-            return self._quote_path_word(_windows_temp_dir() + raw[4:])
+            return self._quote_virtual_path(_windows_temp_dir() + raw[4:])
         if len(raw) >= 3 and raw[0] == "/" and raw[1].isalpha() and raw[2] == "/":
-            return self._quote_path_word(raw[1].upper() + ":" + raw[2:])
+            return self._quote_virtual_path(raw[1].upper() + ":" + raw[2:])
         return None
+
+    def _quote_virtual_path(self, normalized: str) -> str | None:
+        """Quote a rewritten virtual path without disabling shell expansions.
+
+        Literal spans are quoted only when unquoted emission would break
+        them (same policy as :meth:`_quote_path_word`); expansion spans are
+        spliced back in verbatim so the rewritten word expands at runtime
+        exactly like the original unquoted word.  Returns None when the word
+        embeds a command substitution or an unterminated expansion — the
+        caller then leaves the whole word untouched.
+        """
+        spans = _split_virtual_path_expansions(normalized)
+        if spans is None:
+            return None
+        out: list[str] = []
+        for is_expansion, span in spans:
+            if is_expansion:
+                out.append(span)
+                continue
+            decoded = _decode_virtual_path_span(span)
+            if decoded is None:
+                # Escaped glob metacharacter or unterminated continuation:
+                # leave the whole word untouched so Bash keeps the original
+                # pathname-expansion behavior.
+                return None
+            out.append(self._quote_path_word(decoded))
+        return "".join(out)
 
     def _path_replacement(self, raw: str) -> str | None:
         """Return the Git Bash spelling for a Windows path word.
@@ -3256,12 +3526,20 @@ class _BashFixScanner:
         Safe characters (including glob metacharacters, so ``D:/x/*.txt``
         keeps performing pathname expansion) pass through untouched.  A
         leading ``~`` stays outside the quotes so tilde expansion still
-        applies to it.
+        applies to it — including the slash: ``~"x"`` is a literal tilde
+        (a quote stops tilde expansion), so a home-relative path that needs
+        quoting is emitted as ``~/"x"``.
         """
         if all(ch in _PATH_SAFE_CHARS for ch in normalized):
             return normalized
         if normalized.startswith("~"):
-            return "~" + self._quote_path_word(normalized[1:])
+            # Keep the slash outside the quotes: ``~"..."`` does NOT expand
+            # (a tilde followed by a quote is a literal tilde), but
+            # ``~/"..."`` expands the home directory and concatenates.
+            rest = normalized[1:]
+            if rest.startswith("/"):
+                return "~/" + self._quote_path_word(rest[1:])
+            return "~" + self._quote_path_word(rest)
         escaped = (
             normalized.replace("\\", "\\\\")
             .replace('"', '\\"')

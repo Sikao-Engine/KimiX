@@ -2109,9 +2109,12 @@ class TestBashFixWindowsPaths:
         result = _fix_for_windows("cd D:\\a\\&b\\c")
         assert result.command == 'cd "D:/a&b/c"'
 
-    def test_tilde_with_spaces_keeps_tilde_outside_quotes(self) -> None:
+    def test_tilde_with_spaces_keeps_tilde_expanding(self) -> None:
+        # ``~"..."`` would NOT expand: a tilde followed by a quote is a
+        # literal tilde.  The slash must stay outside the quotes so the
+        # rewritten word still expands the home directory (``~/"..."``).
         result = _fix_for_windows("cd ~\\My\\ Docs\\x")
-        assert result.command == 'cd ~"/My Docs/x"'
+        assert result.command == 'cd ~/"My Docs/x"'
 
     def test_path_change_reports_warning(self) -> None:
         result = _fix_for_windows("cd D:\\x")
@@ -2309,6 +2312,152 @@ class TestBashFixGitBashPosixPaths:
         assert result.command.split("\n")[-1] == f"chdir {self._tmp()}"
         assert "chdir" in result.replacements
         assert result.path_changes == ("/tmp",)
+
+    @pytest.mark.parametrize(
+        "suffix",
+        [
+            "todns_${b}_${d}",  # braced parameter expansion
+            "x_$i",  # plain variable expansion
+            "${x:-default}",  # expansion with operator
+            "$((1 + 2))-x",  # arithmetic expansion
+            "a_$$_b",  # special parameter ($$)
+            "a_$_-b",  # special parameter ($_)
+            "x$'\t'y",  # ANSI-C quoting
+            "pre_$/post",  # a `$` that starts no expansion stays literal
+        ],
+    )
+    def test_expansions_in_virtual_path_preserved(
+        self, suffix: str
+    ) -> None:
+        # Unquoted ``$``-expansions in a virtual path must survive the
+        # rewrite verbatim and OUTSIDE quotes: quoting or escaping the
+        # ``$`` would turn Bash's runtime parameter expansion into a
+        # literal ``$`` and the tool would receive a path literally named
+        # ``x_${b}``.
+        result = _fix_for_windows(f"echo /tmp/{suffix}")
+        if suffix.startswith("pre_$/"):
+            # A literal ``$`` (no expansion) is re-emitted escaped inside
+            # quotes so the word value keeps the literal dollar sign.
+            expected = f'echo "{self._tmp()}/{suffix.replace("$", "\\$")}"'
+        else:
+            expected = f"echo {self._tmp()}/{suffix}"
+        assert result.command == expected
+        assert result.changed
+        assert result.path_changes == (f"/tmp/{suffix}",)
+
+    @pytest.mark.parametrize(
+        "suffix",
+        [
+            "x_$(rev)",  # command substitution
+            "x_`rev`",  # backquote command substitution
+            "${x:-$(rev)}",  # command substitution inside parameter expansion
+            'x_$"$(rev)"',  # locale string holding a command substitution
+        ],
+    )
+    def test_command_substitution_in_virtual_path_left_untouched(
+        self, suffix: str
+    ) -> None:
+        # The inner command context of a substitution has already been
+        # scanned (fallbacks/path fixes inside it stay active); rewriting
+        # the whole word would clash with those nested edits, so the word
+        # is left byte-for-byte untouched.
+        source = f"echo /tmp/{suffix}"
+        result = _fix_for_windows(source)
+        assert result.command.split("\n")[-1] == source
+        if "rev" in suffix:
+            assert "rev" in result.replacements
+        assert f"/tmp/{suffix}" not in result.path_changes
+
+    def test_inner_virtual_path_in_command_substitution_rewritten(self) -> None:
+        # Only the nested virtual path inside the substitution is rewritten;
+        # the outer word (which embeds the substitution) stays untouched.
+        result = _fix_for_windows("echo /tmp/x$(cat /tmp/y)")
+        assert result.command == f"echo /tmp/x$(cat {self._tmp()}/y)"
+        assert result.path_changes == ("/tmp/y",)
+
+    def test_expansion_with_spaced_tmp_dir_is_partially_quoted(
+        self, monkeypatch: Any
+    ) -> None:
+        import kimi_cli.tools.file.bash.bash_fix as bash_fix_module
+
+        monkeypatch.setattr(
+            bash_fix_module._shell,
+            "_windows_temp_dir",
+            lambda: "C:/Users/John Doe/AppData/Local/Temp",
+        )
+        result = _fix_for_windows("echo /tmp/${x}")
+        assert (
+            result.command
+            == 'echo "C:/Users/John Doe/AppData/Local/Temp/"${x}'
+        )
+
+    def test_drive_mount_expansion_preserved(self) -> None:
+        result = _fix_for_windows("echo /c/dev/$f")
+        assert result.command == "echo C:/dev/$f"
+        assert result.path_changes == ("/c/dev/$f",)
+
+    @pytest.mark.parametrize(
+        ("suffix", "emitted"),
+        [
+            # Bash unquoted-word backslash escapes decode to the escaped
+            # character; the rewritten word must carry the same VALUE.
+            ("a\\ b", "a b"),  # \\ = escaped space
+            ("a\\$b", "a\\$b"),  # \\$ = literal dollar
+            ("a\\&b", "a&b"),  # \\& = literal ampersand
+            ("a\\\\b", "a\\\\b"),  # \\\\ = one literal backslash
+            ("a\\'b", "a'b"),  # \\' = literal quote (not re-escaped)
+        ],
+    )
+    def test_virtual_path_escapes_decoded_before_quoting(
+        self, suffix: str, emitted: str
+    ) -> None:
+        result = _fix_for_windows(f"echo /tmp/{suffix}")
+        assert result.command == f'echo "{self._tmp()}/{emitted}"'
+        assert result.changed
+        assert result.path_changes == (f"/tmp/{suffix}",)
+
+    @pytest.mark.parametrize(
+        "suffix",
+        [
+            "a\\*b",  # escaped glob metachar: re-emitting unquoted would
+            "a\\?b",  # re-enable pathname expansion the escape suppressed
+            "a\\[1]b",
+            "a\\",  # trailing backslash: unterminated line continuation
+        ],
+    )
+    def test_virtual_path_unsafe_escapes_left_untouched(self, suffix: str) -> None:
+        command = f"echo /tmp/{suffix}"
+        assert _fix_for_windows(command) == BashFix(command)
+
+    @pytest.mark.parametrize(
+        "suffix",
+        [
+            'x"$y"',  # quoted expansion: quotes must not become literal chars
+            '"a b"',  # quoted segment with a space
+            "x'a'b",  # single-quoted segment
+            'x"$"',  # quoted special parameter
+        ],
+    )
+    def test_virtual_path_with_quoted_segments_left_untouched(
+        self, suffix: str
+    ) -> None:
+        # A quote char inside the raw word opens a quoted region whose
+        # removal is part of the word's value; the rewriter cannot re-emit
+        # that faithfully, so the word stays byte-for-byte untouched.
+        command = f"echo /tmp/{suffix}"
+        assert _fix_for_windows(command) == BashFix(command)
+
+    def test_virtual_path_line_continuation_decoded(self) -> None:
+        # ``\`` + newline joins the value; the rewritten single-line word
+        # carries the same value.
+        result = _fix_for_windows("echo /tmp/a\\\nb")
+        assert result.command == f"echo {self._tmp()}/ab"
+        assert result.changed
+
+    def test_drive_mount_escapes_decoded_before_quoting(self) -> None:
+        result = _fix_for_windows("echo /c/a\\ b")
+        assert result.command == 'echo "C:/a b"'
+        assert result.changed
 
     def test_non_windows_is_noop(self) -> None:
         result = _fix_for_platform("cat /tmp/x && echo /c/y", "linux")
