@@ -83,6 +83,7 @@ _transform_null_conditional_dot = _shell._transform_null_conditional_dot
 _transform_null_conditional_bracket = _shell._transform_null_conditional_bracket
 _transform_null_conditional_line = _shell._transform_null_conditional_line
 _find_multiline_regions = _shell._find_multiline_regions
+_find_multiline_region_open_lines = _shell._find_multiline_region_open_lines
 
 if __name__ == "__main__":
     import sys

@@ -126,7 +126,9 @@ class TestPipelineChainAnd:
     def test_multiple_and_chain(self) -> None:
         result = pwsh_transform("cmd1 && cmd2 && cmd3")[0]
         assert "cmd1;" in result
-        assert "if ($?) { cmd2; if ($?) { cmd3 } }" in result
+        # Chain operators are left-associative, so each segment becomes a
+        # sequential guarded step rather than a nested block.
+        assert result == "cmd1; if ($?) { cmd2 }; if ($?) { cmd3 }"
 
     def test_and_chain_with_pipeline(self) -> None:
         result = pwsh_transform("Get-Process | Where-Object CPU && Write-Output done")[0]
@@ -149,7 +151,7 @@ class TestPipelineChainOr:
     def test_multiple_or_chain(self) -> None:
         result = pwsh_transform("cmd1 || cmd2 || cmd3")[0]
         assert "cmd1;" in result
-        assert "if (-not $?) { cmd2; if (-not $?) { cmd3 } }" in result
+        assert result == "cmd1; if (-not $?) { cmd2 }; if (-not $?) { cmd3 }"
 
 # ============================================================================
 # Null-conditional  (?. and ?[])
@@ -335,11 +337,14 @@ class TestNestedTernary:
         assert 'if ($a)' in result
 
     def test_deeply_nested_ternary(self) -> None:
-        """Deeply nested ternary: only outermost ?: transformed per pass."""
+        """Deeply nested ternary: every level is downgraded to an ``if``."""
         result = pwsh_transform('$x = $a ? ($b ? ($c ? 1 : 2) : 3) : 4')[0]
         assert "if ($a)" in result
-        # inner ternaries preserved
-        assert "?" in result  # inner ? operators still present
+        assert "?" not in result  # no PS 7 ternary survives
+        assert result == (
+            '$x = if ($a) { ($(if ($b) { ($(if ($c) { 1 } else { 2 })) } '
+            'else { 3 })) } else { 4 }'
+        )
 
 # ============================================================================
 # Corner case: multiple operators on one line
@@ -1180,14 +1185,14 @@ class TestMalformedInputs:
 
 class TestMixedOperatorStress:
     def test_null_coalescing_then_ternary(self) -> None:
-        # LIMITATION: after ?? is transformed, the resulting ternary sits
-        # inside braces at depth>0, so _transform_ternary_line skips it.
+        # ``??`` binds tighter than ``?:``, so the coalesce becomes the
+        # ternary's condition.
         result = pwsh_transform('$x = $a ?? $b ? "t" : "f"')[0]
         assert "??" not in result
-        # ternary inside generated braces is NOT transformed (depth>0)
-        assert "?" in result
+        assert "?" not in result
         assert "$a" in result
         assert "$b" in result
+        assert result == '$x = if ($(if ($null -ne $a) { $a } else { $b })) { "t" } else { "f" }'
 
     def test_ternary_then_null_coalescing(self) -> None:
         result = pwsh_transform('$x = $cond ? ($a ?? $b) : $c')[0]
@@ -1251,10 +1256,9 @@ class TestExprBoundaryEdgeCases:
         assert "Write-Output" in result
 
     def test_ternary_after_command_prefix_in_parens(self) -> None:
-        # BUG: ternary inside () is at depth>0, so it is skipped.
         result = pwsh_transform('Write-Output ($cond ? "a" : "b")')[0]
-        assert "?" in result
-        assert "Write-Output ($cond ? \"a\" : \"b\")" == result
+        assert "?" not in result
+        assert result == 'Write-Output ($(if ($cond) { "a" } else { "b" }))'
 
     def test_null_conditional_after_command_prefix(self) -> None:
         # BUG: _expr_left includes the command prefix as part of the base expr.
@@ -2707,22 +2711,27 @@ class TestTernaryWithLogicalOperators:
 
 class TestNestedTernaryBothBranches:
     def test_ternary_in_both_branches(self) -> None:
-        """Outer ternary with inner ternary in both branches (one pass)."""
+        """Outer ternary with an inner ternary in both branches."""
         result = pwsh_transform('$a ? ($b ? "c" : "d") : ($e ? "f" : "g")')[0]
         assert "if ($a)" in result
-        # Inner ternaries preserved (one-pass limitation)
-        assert "?" in result
+        assert "?" not in result
         assert '"c"' in result
         assert '"g"' in result
+        assert result == (
+            'if ($a) { ($(if ($b) { "c" } else { "d" })) } '
+            'else { ($(if ($e) { "f" } else { "g" })) }'
+        )
 
     def test_ternary_chained_condition(self) -> None:
         """$a ? "a" : $b ? "b" : $c ? "c" : "d" — right-associative parsing."""
         result = pwsh_transform('$a ? "a" : $b ? "b" : $c ? "c" : "d"')[0]
-        # Only outer ?: transformed in one pass
-        assert "if ($a)" in result
-        assert '"a"' in result
-        # Inner cascading ternaries remain
-        assert "?" in result
+        # PowerShell's ternary is right-associative: the nesting happens in
+        # the false arm only, and the whole chain is downgraded in one pass.
+        assert "?" not in result
+        assert result == (
+            'if ($a) { "a" } else { if ($b) { "b" } else { '
+            'if ($c) { "c" } else { "d" } } }'
+        )
 
 
 # ============================================================================
@@ -4195,9 +4204,12 @@ class TestParamBlockDefaults:
     def test_param_with_ternary_default(self) -> None:
         code = 'param([bool]$Debug = $env:DEBUG -eq "1" ? $true : $false); Write-Output $Debug'
         result = pwsh_transform(code)[0]
-        # Ternary inside param() parens is at depth>0, NOT transformed (known limitation)
-        assert "?" in result
+        assert "?" not in result
         assert "param([bool]$Debug =" in result
+        assert result == (
+            'param([bool]$Debug = $(if ($env:DEBUG -eq "1") { $true } else { $false })); '
+            'Write-Output $Debug'
+        )
 
     def test_param_multiple_with_defaults(self) -> None:
         code = 'param([string]$a = $x ?? "a", [string]$b = $y ?? "b"); Write-Output $a $b'
@@ -4224,16 +4236,15 @@ class TestLoopConstructsWithOperators:
     def test_while_loop_with_ternary_condition(self) -> None:
         code = 'while ($running ? $true : $false) { Start-Sleep 1 }'
         result = pwsh_transform(code)[0]
-        # Ternary inside while() parens is at depth>0, NOT transformed (known limitation)
-        assert "?" in result
-        assert "while ($running ? $true : $false)" in result
+        assert "?" not in result
+        assert result == 'while ($(if ($running) { $true } else { $false })) { Start-Sleep 1 }'
 
     def test_do_while_with_coalescing(self) -> None:
         code = 'do { $val = Read-Host "value" } while ($val ?? "")'
         result = pwsh_transform(code)[0]
         assert "??" not in result
         assert "do" in result
-        assert "while (if ($null -ne $val)" in result
+        assert result == 'do { $val = Read-Host "value" } while ($(if ($null -ne $val) { $val } else { "" }))'
 
     def test_foreach_with_null_conditional(self) -> None:
         code = 'foreach ($item in $items?.ToArray()) { Write-Output $item }'
@@ -4508,9 +4519,8 @@ class TestStaticMemberMethodNullConditional:
 class TestSubexpressionWithInnerOperators:
     def test_subexpr_with_ternary_inside(self) -> None:
         result = pwsh_transform("$($a ? $b : $c)")[0]
-        # Ternary inside $() is at depth>0, NOT transformed in single pass
-        assert "?" in result
-        assert "$($a ? $b : $c)" == result
+        assert "?" not in result
+        assert result == "$($(if ($a) { $b } else { $c }))"
 
     def test_subexpr_with_coalescing_inside(self) -> None:
         result = pwsh_transform('$($a ?? $b)')[0]
@@ -4547,14 +4557,13 @@ class TestSwitchStatementWithOperators:
         code = 'switch ($val ?? "default") { "a" { 1 } "b" { 2 } }'
         result = pwsh_transform(code)[0]
         assert "??" not in result
-        assert 'switch (if ($null -ne $val)' in result
+        assert result == 'switch ($(if ($null -ne $val) { $val } else { "default" })) { "a" { 1 } "b" { 2 } }'
 
     def test_switch_condition_with_ternary(self) -> None:
         code = 'switch ($cond ? $a : $b) { 1 { "one" } 2 { "two" } }'
         result = pwsh_transform(code)[0]
-        # Ternary inside switch() parens is at depth>0, NOT transformed (known limitation)
-        assert "?" in result
-        assert "switch ($cond ? $a : $b)" in result
+        assert "?" not in result
+        assert result == 'switch ($(if ($cond) { $a } else { $b })) { 1 { "one" } 2 { "two" } }'
 
     def test_switch_with_null_conditional(self) -> None:
         code = 'switch ($obj?.Type) { "File" { 1 } "Dir" { 2 } }'
@@ -4892,7 +4901,7 @@ class TestOperatorsWithControlFlowKeywords:
     def test_throw_with_coalescing_message(self) -> None:
         result = pwsh_transform('throw ($msg ?? "error")')[0]
         assert "??" not in result
-        assert 'throw (if ($null -ne $msg)' in result
+        assert result == 'throw ($(if ($null -ne $msg) { $msg } else { "error" }))'
 
     def test_return_with_ternary(self) -> None:
         result = pwsh_transform('return $cond ? $a : $b')[0]
@@ -4935,9 +4944,9 @@ class TestOperatorsWithControlFlowKeywords:
 
     def test_return_with_chain(self) -> None:
         result = pwsh_transform('return (cmd1 && cmd2)')[0]
-        assert "&&" not in result
-        assert 'return (cmd1' in result
-        assert 'if ($?)' in result
+        assert "return (" in result
+        assert "if ($?)" in result
+        assert result == 'return ( $(cmd1; if ($?) { cmd2 }))'
 
     def test_exit_with_chain(self) -> None:
         result = pwsh_transform('exit (cmd1 || cmd2 ? 1 : 0)')[0]
@@ -5464,9 +5473,9 @@ class TestCommentsWithOperatorsExtended:
 class TestStringConcatenationWithOperators:
     def test_concatenation_with_ternary_result(self) -> None:
         result = pwsh_transform('"prefix: " + ($cond ? "yes" : "no")')[0]
-        # Ternary inside () is at depth>0, NOT transformed (known limitation)
-        assert "?" in result
+        assert "?" not in result
         assert '"prefix: " +' in result
+        assert result == '"prefix: " + ($(if ($cond) { "yes" } else { "no" }))'
 
     def test_concatenation_with_coalescing_result(self) -> None:
         result = pwsh_transform('"name: " + ($name ?? "unknown")')[0]
@@ -5482,9 +5491,9 @@ class TestStringConcatenationWithOperators:
 
     def test_format_string_with_ternary(self) -> None:
         result = pwsh_transform('"Value: {0}" -f ($cond ? $a : $b)')[0]
-        # Ternary inside () is at depth>0, NOT transformed (known limitation)
-        assert "?" in result
+        assert "?" not in result
         assert '"Value: {0}" -f' in result
+        assert result == '"Value: {0}" -f ($(if ($cond) { $a } else { $b }))'
 
     def test_format_string_with_coalescing(self) -> None:
         result = pwsh_transform('"Name: {0}" -f ($name ?? "anon")')[0]
@@ -5500,10 +5509,13 @@ class TestStringConcatenationWithOperators:
 
     def test_double_quoted_string_concat_with_ternary(self) -> None:
         result = pwsh_transform('"a=" + ($x ? "1" : "0") + ",b=" + ($y ? "1" : "0")')[0]
-        # Ternary inside () is at depth>0, NOT transformed (known limitation)
-        assert "?" in result
+        assert "?" not in result
         assert '"a="' in result
         assert '",b="' in result
+        assert result == (
+            '"a=" + ($(if ($x) { "1" } else { "0" })) '
+            '+ ",b=" + ($(if ($y) { "1" } else { "0" }))'
+        )
 
 
 # ============================================================================
@@ -5513,9 +5525,11 @@ class TestStringConcatenationWithOperators:
 class TestArrayHashtableWithOperatorsExtended:
     def test_array_literal_with_ternary_elements(self) -> None:
         result = pwsh_transform('@($cond ? $a : $b, $cond2 ? $c : $d)')[0]
-        # Ternary inside @() is at depth>0, NOT transformed (known limitation)
-        assert "?" in result
-        assert '@(' in result
+        assert "?" not in result
+        assert "@(" in result
+        # The comma binds tighter than the ternary, so the first ternary's
+        # false arm runs to the end of the array literal.
+        assert result == '@($(if ($cond) { $a } else { $b,$(if ($cond2) { $c } else { $d }) }))'
 
     def test_hashtable_literal_with_ternary_values(self) -> None:
         result = pwsh_transform('@{ a = $cond ? 1 : 0; b = $cond2 ? 2 : 3 }')[0]
@@ -5570,9 +5584,9 @@ class TestScriptblocksWithOperatorsExtended:
 
     def test_scriptblock_param_with_ternary_default(self) -> None:
         result = pwsh_transform('{ param($x = $cond ? $a : $b) $x }')[0]
-        # Ternary inside param() parens at depth>0, NOT transformed (known limitation)
-        assert "?" in result
-        assert 'param($x =' in result
+        assert "?" not in result
+        assert "param($x =" in result
+        assert result == '{ param($x = $(if ($cond) { $a } else { $b })) $x }'
 
     def test_scriptblock_with_null_conditional_return(self) -> None:
         result = pwsh_transform('{ $obj?.Name }')[0]
@@ -5615,9 +5629,9 @@ class TestClassDefinitionsWithOperators:
     def test_class_method_with_ternary(self) -> None:
         code = 'class Foo { [string]GetStatus($x) { return $x ? "ok" : "fail" } }'
         result = pwsh_transform(code)[0]
-        # Ternary inside class method body braces is at depth>0, NOT transformed
-        assert "?" in result
-        assert 'class Foo' in result
+        assert "?" not in result
+        assert "class Foo" in result
+        assert result == 'class Foo { [string]GetStatus($x) { return $(if ($x) { "ok" } else { "fail" })} }'
 
     def test_class_method_with_coalescing(self) -> None:
         code = 'class Foo { [string]GetName($x) { return $x ?? "anon" } }'
@@ -5656,24 +5670,22 @@ class TestIfElseWithOperators:
     def test_if_with_coalescing_condition(self) -> None:
         result = pwsh_transform('if ($a ?? $b) { Write-Output ok }')[0]
         assert "??" not in result
-        assert 'if (if ($null -ne $a)' in result
+        assert result == 'if ($(if ($null -ne $a) { $a } else { $b })) { Write-Output ok }'
 
     def test_if_with_ternary_condition(self) -> None:
         result = pwsh_transform('if ($cond ? $a : $b) { Write-Output ok }')[0]
-        # Ternary inside if() parens is at depth>0, NOT transformed (known limitation)
-        assert "?" in result
-        assert 'if ($cond ? $a : $b)' in result
+        assert "?" not in result
+        assert result == 'if ($(if ($cond) { $a } else { $b })) { Write-Output ok }'
 
     def test_elseif_with_coalescing_condition(self) -> None:
         result = pwsh_transform('if ($a) { 1 } elseif ($b ?? $c) { 2 }')[0]
         assert "??" not in result
-        assert 'elseif (if ($null -ne $b)' in result
+        assert result == 'if ($a) { 1 } elseif ($(if ($null -ne $b) { $b } else { $c })) { 2 }'
 
     def test_elseif_with_ternary_condition(self) -> None:
         result = pwsh_transform('if ($a) { 1 } elseif ($cond ? $x : $y) { 2 }')[0]
-        # Ternary inside elseif() parens is at depth>0, NOT transformed (known limitation)
-        assert "?" in result
-        assert 'elseif ($cond ? $x : $y)' in result
+        assert "?" not in result
+        assert result == 'if ($a) { 1 } elseif ($(if ($cond) { $x } else { $y })) { 2 }'
 
     def test_else_with_null_conditional_before(self) -> None:
         result = pwsh_transform('if ($a) { 1 } else { $obj?.Name }')[0]
@@ -6636,17 +6648,17 @@ class TestControlStructuresWithOperators:
         assert "if ($null -ne $b)" in result
 
     def test_function_default_param_ternary(self) -> None:
-        """function f($a = $cond ? 1 : 0) {} — default param with ternary.
-        Ternary inside () at depth>0 is NOT transformed (known limitation)."""
+        """function f($a = $cond ? 1 : 0) {} — default param with ternary."""
         result = pwsh_transform('function f($a = $cond ? 1 : 0) {}')[0]
-        assert "?" in result
+        assert "?" not in result
         assert "function f($a =" in result
+        assert result == 'function f($a = $(if ($cond) { 1 } else { 0 })) {}'
 
     def test_switch_with_coalescing(self) -> None:
         """switch ($a ?? 'default') {} — switch with coalescing."""
         result = pwsh_transform('switch ($a ?? "default") {}')[0]
         assert "??" not in result
-        assert "switch (if ($null -ne $a)" in result
+        assert result == 'switch ($(if ($null -ne $a) { $a } else { "default" })) {}'
 
     def test_try_catch_with_coalescing(self) -> None:
         """try { $a } catch { $_ ?? 'error' } — catch block with ??."""
@@ -6923,8 +6935,12 @@ class TestAdvancedFunctionFeaturesWithOperators:
     def test_cmdletbinding_attribute_with_ternary_default(self) -> None:
         code = 'function Test { [CmdletBinding()] param([bool]$x = $cond ? $true : $false); $x }'
         result = pwsh_transform(code)[0]
-        assert "?" in result  # inside param() parens at depth>0
+        assert "?" not in result
         assert "[CmdletBinding()]" in result
+        assert result == (
+            'function Test { [CmdletBinding()] param([bool]$x = '
+            '$(if ($cond) { $true } else { $false })); $x }'
+        )
 
     def test_parameter_attribute_with_coalescing_default(self) -> None:
         code = 'function Test { param([Parameter(Mandatory=$true)]$x = $a ?? "default"); $x }'
@@ -6943,8 +6959,9 @@ class TestAdvancedFunctionFeaturesWithOperators:
     def test_validaterange_attribute_with_ternary(self) -> None:
         code = 'function Test { param([ValidateRange(1,10)]$x = $cond ? 5 : 1); $x }'
         result = pwsh_transform(code)[0]
-        assert "?" in result  # inside param() parens at depth>0
+        assert "?" not in result
         assert "[ValidateRange(1,10)]" in result
+        assert result == 'function Test { param([ValidateRange(1,10)]$x = $(if ($cond) { 5 } else { 1 })); $x }'
 
     def test_validatepattern_attribute_with_coalescing(self) -> None:
         code = 'function Test { param([ValidatePattern("^\\w+$")]$x = $a ?? "default"); $x }'
@@ -7669,9 +7686,8 @@ class TestAdditionalOperatorEdgeCases:
 
     def test_nested_subexpr_with_ternary_at_depth0(self) -> None:
         result = pwsh_transform("$($($cond ? $a : $b))")[0]
-        # Ternary inside nested $() is at depth>0, NOT transformed
-        assert "?" in result
-        assert "$($($cond ? $a : $b))" == result
+        assert "?" not in result
+        assert result == "$($($(if ($cond) { $a } else { $b })))"
 
     def test_nested_subexpr_with_coalescing_at_depth0(self) -> None:
         result = pwsh_transform('$($($a ?? $b))')[0]
@@ -8131,14 +8147,15 @@ class TestVariableAssignmentEdgeCasesExtended:
     def test_assignment_with_chain_right(self) -> None:
         result = pwsh_transform('$a = cmd1 && cmd2')[0]
         assert "&&" not in result
-        assert "$a = cmd1" in result
         assert "if ($?)" in result
+        # The chained segments' combined output is the assigned value.
+        assert result == '$a = $(cmd1; if ($?) { cmd2 })'
 
     def test_assignment_with_or_chain_right(self) -> None:
         result = pwsh_transform('$a = cmd1 || cmd2')[0]
         assert "||" not in result
-        assert "$a = cmd1" in result
         assert "if (-not $?)" in result
+        assert result == '$a = $(cmd1; if (-not $?) { cmd2 })'
 
     def test_splatting_with_coalescing(self) -> None:
         result = pwsh_transform('@args = $a ?? @()')[0]
@@ -8468,9 +8485,8 @@ class TestAutomaticVariablesExtended:
 class TestComplexExpressionsExtended:
     def test_deeply_nested_parentheses_with_ternary(self) -> None:
         result = pwsh_transform('((((((($a)))))))) ? "deep" : "shallow"')[0]
-        # Ternary at depth>0 inside parens is NOT transformed
-        assert "?" in result
-        assert "((((((($a))))))))" in result
+        assert "?" not in result
+        assert result == 'if (((((((($a))))))))) { "deep" } else { "shallow" }'
 
     def test_deeply_nested_parentheses_with_coalescing(self) -> None:
         result = pwsh_transform('((((((($a)))))))) ?? "default"')[0]
@@ -8525,11 +8541,14 @@ class TestPipelineChainAssignmentEdgeCases:
         result = pwsh_transform('$a = cmd1 && $b = cmd2 || $c = cmd3')[0]
         assert "&&" not in result
         assert "||" not in result
-        assert "$a = cmd1" in result
+        assert "$a = $(" in result
         assert "$b = cmd2" in result
         assert "$c = cmd3" in result
         assert "if ($?)" in result
         assert "if (-not $?)" in result
+        assert result == (
+            '$a = $($(cmd1; if ($?) { $b = cmd2 }); if (-not $?) { $c = cmd3 })'
+        )
 
     def test_chain_with_increment(self) -> None:
         result = pwsh_transform('$i++; cmd1 && $i++ || $i--')[0]
@@ -8541,31 +8560,35 @@ class TestPipelineChainAssignmentEdgeCases:
 
     def test_chain_with_array_assignment(self) -> None:
         result = pwsh_transform('$arr[0] = cmd1 && $arr[1] = cmd2')[0]
-        assert "&&" not in result
-        assert "$arr[0] = cmd1" in result
+        assert "$arr[0] = $(" in result
+        assert "$arr[1] = cmd2" in result
         assert "$arr[1] = cmd2" in result
         assert "if ($?)" in result
+        assert result == '$arr[0] = $(cmd1; if ($?) { $arr[1] = cmd2 })'
 
     def test_chain_with_property_assignment(self) -> None:
         result = pwsh_transform('$obj.Name = cmd1 && $obj.Value = cmd2')[0]
-        assert "&&" not in result
-        assert "$obj.Name = cmd1" in result
+        assert "$obj.Name = $(" in result
+        assert "$obj.Value = cmd2" in result
         assert "$obj.Value = cmd2" in result
         assert "if ($?)" in result
+        assert result == '$obj.Name = $(cmd1; if ($?) { $obj.Value = cmd2 })'
 
     def test_chain_with_env_assignment(self) -> None:
         result = pwsh_transform('$env:VAR = cmd1 && $env:VAR2 = cmd2')[0]
-        assert "&&" not in result
-        assert "$env:VAR = cmd1" in result
+        assert "$env:VAR = $(" in result
+        assert "$env:VAR2 = cmd2" in result
         assert "$env:VAR2 = cmd2" in result
         assert "if ($?)" in result
+        assert result == '$env:VAR = $(cmd1; if ($?) { $env:VAR2 = cmd2 })'
 
     def test_chain_with_splat_assignment(self) -> None:
         result = pwsh_transform('$splat = @{ a = 1 } && $splat.b = 2')[0]
-        assert "&&" not in result
-        assert "$splat = @{ a = 1 }" in result
+        assert "$splat = $(" in result
+        assert "$splat.b = 2" in result
         assert "$splat.b = 2" in result
         assert "if ($?)" in result
+        assert result == '$splat = $(@{ a = 1 }; if ($?) { $splat.b = 2 })'
 
 
 # ============================================================================
@@ -8960,7 +8983,7 @@ class TestSwitchOperatorsExtended:
         code = 'switch ($val ?? "default") { "a" { 1 } "b" { 2 } }'
         result = pwsh_transform(code)[0]
         assert "??" not in result
-        assert "switch (if ($null -ne $val)" in result
+        assert result == 'switch ($(if ($null -ne $val) { $val } else { "default" })) { "a" { 1 } "b" { 2 } }'
 
     def test_switch_with_null_conditional_in_value(self) -> None:
         code = 'switch ($obj?.Type) { "File" { 1 } "Dir" { 2 } }'
@@ -9201,9 +9224,9 @@ class TestForeachOperatorsExtended:
     def test_foreach_method_with_ternary(self) -> None:
         code = '$arr.ForEach({ $cond ? "yes" : "no" })'
         result = pwsh_transform(code)[0]
-        # Ternary inside ForEach scriptblock is at depth>0, NOT transformed
-        assert "?" in result
+        assert "?" not in result
         assert ".ForEach" in result
+        assert result == '$arr.ForEach({$(if ($cond) { "yes" } else { "no" })})'
 
     def test_foreach_method_with_coalescing(self) -> None:
         code = '$arr.ForEach({ $val ?? "default" })'
@@ -9228,9 +9251,9 @@ class TestForOperatorsExtended:
     def test_for_with_ternary_in_condition(self) -> None:
         code = 'for ($i = 0; $cond ? $true : $false; $i++) { }'
         result = pwsh_transform(code)[0]
-        # Ternary inside for() parens is at depth>0, NOT transformed
-        assert "?" in result
+        assert "?" not in result
         assert "for ($i = 0;" in result
+        assert result == 'for ($i = 0;$(if ($cond) { $true } else { $false }); $i++) { }'
 
     def test_for_with_coalescing_in_condition(self) -> None:
         code = 'for ($i = 0; $val ?? $true; $i++) { }'
@@ -9249,9 +9272,9 @@ class TestForOperatorsExtended:
     def test_for_with_ternary_in_init(self) -> None:
         code = 'for ($i = $cond ? 0 : 1; $i -lt 10; $i++) { }'
         result = pwsh_transform(code)[0]
-        # Ternary inside for() parens is at depth>0, NOT transformed
-        assert "?" in result
+        assert "?" not in result
         assert "for ($i =" in result
+        assert result == 'for ($i = $(if ($cond) { 0 } else { 1 }); $i -lt 10; $i++) { }'
 
     def test_for_with_coalescing_in_init(self) -> None:
         code = 'for ($i = $val ?? 0; $i -lt 10; $i++) { }'
@@ -9276,15 +9299,14 @@ class TestWhileDoOperatorsExtended:
     def test_while_with_ternary_in_condition(self) -> None:
         code = 'while ($cond ? $true : $false) { }'
         result = pwsh_transform(code)[0]
-        # Ternary inside while() parens is at depth>0, NOT transformed
-        assert "?" in result
-        assert "while ($cond ? $true : $false)" in result
+        assert "?" not in result
+        assert result == 'while ($(if ($cond) { $true } else { $false })) { }'
 
     def test_while_with_coalescing_in_condition(self) -> None:
         code = 'while ($val ?? $true) { }'
         result = pwsh_transform(code)[0]
         assert "??" not in result
-        assert "while (if ($null -ne $val)" in result
+        assert result == 'while ($(if ($null -ne $val) { $val } else { $true })) { }'
 
     def test_while_with_null_conditional_in_condition(self) -> None:
         code = 'while ($obj?.Count -gt 0) { }'
@@ -9295,28 +9317,26 @@ class TestWhileDoOperatorsExtended:
     def test_do_while_with_ternary_in_condition(self) -> None:
         code = 'do { } while ($cond ? $true : $false)'
         result = pwsh_transform(code)[0]
-        # Ternary inside do-while parens is at depth>0, NOT transformed
-        assert "?" in result
-        assert "while ($cond ? $true : $false)" in result
+        assert "?" not in result
+        assert result == 'do { } while ($(if ($cond) { $true } else { $false }))'
 
     def test_do_while_with_coalescing_in_condition(self) -> None:
         code = 'do { } while ($val ?? $true)'
         result = pwsh_transform(code)[0]
         assert "??" not in result
-        assert "while (if ($null -ne $val)" in result
+        assert result == 'do { } while ($(if ($null -ne $val) { $val } else { $true }))'
 
     def test_do_until_with_ternary_in_condition(self) -> None:
         code = 'do { } until ($cond ? $true : $false)'
         result = pwsh_transform(code)[0]
-        # Ternary inside do-until parens is at depth>0, NOT transformed
-        assert "?" in result
-        assert "until ($cond ? $true : $false)" in result
+        assert "?" not in result
+        assert result == 'do { } until ($(if ($cond) { $true } else { $false }))'
 
     def test_do_until_with_coalescing_in_condition(self) -> None:
         code = 'do { } until ($val ?? $true)'
         result = pwsh_transform(code)[0]
         assert "??" not in result
-        assert "until (if ($null -ne $val)" in result
+        assert result == 'do { } until ($(if ($null -ne $val) { $val } else { $true }))'
 
 
 # ============================================================================
@@ -9327,15 +9347,14 @@ class TestIfElseOperatorsExtended:
     def test_if_with_ternary_in_condition(self) -> None:
         code = 'if ($cond ? $true : $false) { }'
         result = pwsh_transform(code)[0]
-        # Ternary inside if() parens is at depth>0, NOT transformed
-        assert "?" in result
-        assert "if ($cond ? $true : $false)" in result
+        assert "?" not in result
+        assert result == 'if ($(if ($cond) { $true } else { $false })) { }'
 
     def test_if_with_coalescing_in_condition(self) -> None:
         code = 'if ($val ?? $true) { }'
         result = pwsh_transform(code)[0]
         assert "??" not in result
-        assert "if (if ($null -ne $val)" in result
+        assert result == 'if ($(if ($null -ne $val) { $val } else { $true })) { }'
 
     def test_if_with_null_conditional_in_condition(self) -> None:
         code = 'if ($obj?.Count -gt 0) { }'
@@ -9346,15 +9365,14 @@ class TestIfElseOperatorsExtended:
     def test_elseif_with_ternary_in_condition(self) -> None:
         code = 'if ($a) { } elseif ($cond ? $true : $false) { }'
         result = pwsh_transform(code)[0]
-        # Ternary inside elseif() parens is at depth>0, NOT transformed
-        assert "?" in result
-        assert "elseif ($cond ? $true : $false)" in result
+        assert "?" not in result
+        assert result == 'if ($a) { } elseif ($(if ($cond) { $true } else { $false })) { }'
 
     def test_elseif_with_coalescing_in_condition(self) -> None:
         code = 'if ($a) { } elseif ($val ?? $true) { }'
         result = pwsh_transform(code)[0]
         assert "??" not in result
-        assert "elseif (if ($null -ne $val)" in result
+        assert result == 'if ($a) { } elseif ($(if ($null -ne $val) { $val } else { $true })) { }'
 
     def test_else_with_ternary_in_body(self) -> None:
         code = 'if ($a) { } else { $cond ? "yes" : "no" }'
@@ -9495,8 +9513,9 @@ class TestScriptblocksExtended:
     def test_scriptblock_with_param_and_ternary_default(self) -> None:
         code = '{ param($x = $cond ? 1 : 0) $x }'
         result = pwsh_transform(code)[0]
-        assert "?" in result  # inside param() parens at depth>0
+        assert "?" not in result
         assert "param($x =" in result
+        assert result == '{ param($x = $(if ($cond) { 1 } else { 0 })) $x }'
 
     def test_scriptblock_with_process_block(self) -> None:
         code = '{ process { $_ ?? "empty" } }'
@@ -9540,8 +9559,9 @@ class TestArrayHashtableConstructionExtended:
     def test_array_with_ternary_elements(self) -> None:
         code = '@($cond ? $a : $b, $cond2 ? $c : $d)'
         result = pwsh_transform(code)[0]
-        assert "?" in result  # inside @() at depth>0
+        assert "?" not in result
         assert "@(" in result
+        assert result == '@($(if ($cond) { $a } else { $b,$(if ($cond2) { $c } else { $d }) }))'
 
     def test_array_with_coalescing_elements(self) -> None:
         code = '@($a ?? "x", $b ?? "y", $c ?? "z")'
@@ -9621,8 +9641,9 @@ class TestStringConcatenationExtended:
 
     def test_concatenation_with_ternary(self) -> None:
         result = pwsh_transform('"status: " + ($cond ? "ok" : "fail")')[0]
-        assert "?" in result  # inside () at depth>0
+        assert "?" not in result
         assert '"status: " +' in result
+        assert result == '"status: " + ($(if ($cond) { "ok" } else { "fail" }))'
 
     def test_format_string_with_coalescing(self) -> None:
         result = pwsh_transform('"Name: {0}" -f ($name ?? "anon")')[0]
@@ -9632,20 +9653,21 @@ class TestStringConcatenationExtended:
 
     def test_format_string_with_ternary(self) -> None:
         result = pwsh_transform('"Status: {0}" -f ($cond ? "ok" : "fail")')[0]
-        assert "?" in result  # inside () at depth>0
+        assert "?" not in result
         assert '"Status: {0}" -f' in result
+        assert result == '"Status: {0}" -f ($(if ($cond) { "ok" } else { "fail" }))'
 
     def test_string_interpolation_with_coalescing(self) -> None:
         result = pwsh_transform('"Value: $($val ?? \"default\")"')[0]
-        # Coalescing inside $() inside double-quoted string is at depth>0, NOT transformed in single pass
-        assert "??" in result
+        assert "??" not in result
         assert '"Value:' in result
+        assert result == '"Value: $($(if ($null -ne $val) { $val } else { "default" }))"'
 
     def test_string_interpolation_with_ternary(self) -> None:
         result = pwsh_transform('"Status: $($cond ? \"ok\" : \"fail\")"')[0]
-        # Ternary inside $() inside double-quoted string is at depth>0, NOT transformed in single pass
-        assert "?" in result
+        assert "?" not in result
         assert '"Status:' in result
+        assert result == '"Status: $($(if ($cond) { "ok" } else { "fail" }))"'
 
 
 # ============================================================================
@@ -9668,9 +9690,10 @@ class TestControlFlowKeywordsExtended:
     def test_return_with_chain(self) -> None:
         result = pwsh_transform('return (cmd1 && cmd2)')[0]
         assert "&&" not in result
-        assert "return (cmd1" in result
+        assert "&&" not in result
+        assert "return (" in result
         assert "if ($?)" in result
-
+        assert result == 'return ( $(cmd1; if ($?) { cmd2 }))'
     def test_exit_with_coalescing(self) -> None:
         result = pwsh_transform('exit $code ?? 0')[0]
         # BUG: 'exit' is treated as command prefix, producing malformed output
@@ -9814,9 +9837,8 @@ class TestDeeplyNestedConstructsExtended:
 
     def test_deeply_nested_subexpr_with_ternary(self) -> None:
         result = pwsh_transform('$($($($($cond ? $a : $b)))))')[0]
-        # Ternary inside nested $() is at depth>0, NOT transformed
-        assert "?" in result
-        assert "$($($($($cond ? $a : $b)))))" == result
+        assert "?" not in result
+        assert result == '$($($($($(if ($cond) { $a } else { $b }))))))'
 
     def test_deeply_nested_method_chain(self) -> None:
         result = pwsh_transform('$a?.ToString()?.Trim()?.ToUpper()?.Split()?.[0]?.Length')[0]
@@ -10869,11 +10891,11 @@ class TestNullConditionalAdvanced:
         assert "if ($null -ne @{a=1})" in result
 
     def test_null_conditional_inside_string_interpolation(self) -> None:
-        """Operators inside subexpressions within double-quoted strings are not
-        transformed because the entire string region is masked out."""
+        """A null-conditional inside a string interpolation is downgraded to a
+        guard expression inside the ``$( ... )`` sub-expression."""
         result = pwsh_transform('"Value: $($obj?.Name)"')[0]
-        # Known limitation: ?. inside $() inside "..." is not transformed
-        assert "?." in result
+        assert "?." not in result
+        assert result == '"Value: $($(if ($null -ne $obj) { $obj.Name }))"'
 
     def test_null_conditional_with_type_cast_base(self) -> None:
         result = pwsh_transform('[string]$val?.Length')[0]
@@ -10972,11 +10994,12 @@ class TestTernaryAdvanced:
         assert "if ($?)" in result or "if (-not $?)" in result
 
     def test_ternary_inside_array(self) -> None:
-        """Ternary inside @() is at depth>0 so is intentionally skipped."""
+        """The comma binds tighter than ``?:`` in PS 7, so the ternary's false
+        arm runs to the end of the array literal."""
         result = pwsh_transform('@($cond ? 1 : 2, 3)')[0]
-        # Known limitation: ternary inside () at depth>0 is not transformed
-        assert "$cond ? 1 : 2" in result
+        assert "$cond ? 1 : 2" not in result
         assert "@(" in result
+        assert result == "@($(if ($cond) { 1 } else { 2, 3 }))"
 
     def test_ternary_with_method_call_condition(self) -> None:
         result = pwsh_transform('$obj.Method() ? "yes" : "no"')[0]
@@ -11021,12 +11044,10 @@ class TestCoalescingAdvanced:
         assert "if ($null -ne $obj)" in result
 
     def test_coalescing_with_ternary_right(self) -> None:
-        """Ternary inside () at depth>0 is intentionally skipped."""
         result = pwsh_transform('$a ?? ($cond ? "t" : "f")')[0]
         assert "??" not in result
         assert "if ($null -ne $a)" in result
-        # Ternary inside parens is at depth>0, so left as-is
-        assert "$cond ? \"t\" : \"f\"" in result
+        assert result == '$(if ($null -ne $a) { $a } else { ($(if ($cond) { "t" } else { "f" })) })'
 
     def test_coalescing_with_chain_right(self) -> None:
         result = pwsh_transform('$a ?? (cmd1 && cmd2)')[0]
@@ -11039,7 +11060,10 @@ class TestCoalescingAdvanced:
         result = pwsh_transform('$a ?? $b ?? $c')[0]
         assert "??" not in result
         assert "if ($null -ne $a)" in result
-        assert "if ($null -ne $b)" in result
+        assert result == (
+            '$(if ($null -ne $(if ($null -ne $a) { $a } else { $b })) '
+            '{ $(if ($null -ne $a) { $a } else { $b }) } else { $c })'
+        )
 
     def test_coalescing_with_array_access_left(self) -> None:
         result = pwsh_transform('$arr[0] ?? "fallback"')[0]
@@ -11079,10 +11103,12 @@ class TestMixedOperatorsAdvanced:
         assert "&&" not in result
         assert "if ($null -eq $a)" in result
         assert "if ($null -ne $b)" in result
-        # Ternary inside generated braces is at depth>0, one-pass limitation
-        assert "$c ? \"t\" : \"f\"" in result
         assert "if ($null -ne $x)" in result
         assert "if ($?)" in result
+        assert result == (
+            'if ($null -eq $a) { $a = $($(if ($(if ($null -ne $b) { $b } else { $c })) '
+            '{ "t" } else { "f" })) }; $(if ($null -ne $x) { $x.Y }); if ($?) { cmd }'
+        )
 
     def test_nested_null_conditional_inside_ternary(self) -> None:
         result = pwsh_transform('$cond ? $obj?.Name : $arr?[0]')[0]
@@ -11268,3 +11294,66 @@ class TestTernaryPipelineOperand:
         result, _ = pwsh_transform("$ok ? 1 : 0 && Write-Output done")
         assert result.startswith("$(")
         assert "if ($ok) { 1 } else { 0 }" in result
+
+
+# ============================================================================
+# Regression guards for the multi-line region / chained-ternary handling of
+# the PS 7 -> 5.1 downgrade.
+# ============================================================================
+
+
+class TestMultilineRegionOpenLines:
+    """``_find_multiline_region_open_lines`` drives the rule that a line which
+    *opens* a here-string (``$a ?? @'``) must not be rewritten, while a line
+    that merely *closes* one mid-line (``"@; $y = $a ?? "d"``) still can."""
+
+    def test_here_string_open_line_is_reported(self) -> None:
+        code = "$a ?? @'\ndefault\n'@"
+        mask = _mod._build_region_mask(code)
+        assert _mod._find_multiline_region_open_lines(code, mask) == {0}
+
+    def test_single_line_string_is_not_an_open_line(self) -> None:
+        code = '$y = $a ?? "d"'
+        mask = _mod._build_region_mask(code)
+        assert _mod._find_multiline_region_open_lines(code, mask) == set()
+
+    def test_here_string_close_line_is_not_an_open_line(self) -> None:
+        code = '$x = @"\ntext\n"@; $y = $a ?? "d"'
+        mask = _mod._build_region_mask(code)
+        opens = _mod._find_multiline_region_open_lines(code, mask)
+        assert opens == {0}  # only the ``@"`` opener itself
+        assert 2 not in opens  # the ``"@; ...`` close line carries live code
+
+
+class TestHereStringOperandNotSplit:
+    """Folding a here-string header into a generated construct splits the
+    region across the generated braces and emits invalid PowerShell."""
+
+    def test_coalescing_before_here_string_left_untouched(self) -> None:
+        code = "$a ?? @'\ndefault\n'@"
+        result = pwsh_transform(code)[0]
+        assert result == code
+        assert "??" in result
+
+    def test_here_string_close_line_still_transformed(self) -> None:
+        code = '$a = $null\n$x = @"\ntext\n"@; $y = $a ?? "d"'
+        result = pwsh_transform(code)[0]
+        assert "??" not in result
+        assert '$y = $(if ($null -ne $a) { $a } else { "d" })' in result
+
+
+class TestTernaryConditionBoundaries:
+    """The ternary condition scan stops at a sibling ternary's ``:`` but must
+    not cut a scope / static / drive colon."""
+
+    def test_scope_colon_condition_not_cut(self) -> None:
+        result = pwsh_transform('$env:DEBUG ? "on" : "off"')[0]
+        assert result == 'if ($env:DEBUG) { "on" } else { "off" }'
+
+    def test_static_member_condition_not_cut(self) -> None:
+        result = pwsh_transform("[Math]::Max(1,2) ? 1 : 2")[0]
+        assert result == "if ([Math]::Max(1,2)) { 1 } else { 2 }"
+
+    def test_chained_ternary_is_right_associative(self) -> None:
+        result = pwsh_transform('$a ? 1 : $b ? 2 : 3')[0]
+        assert result == "if ($a) { 1 } else { if ($b) { 2 } else { 3 } }"

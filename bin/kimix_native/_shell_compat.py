@@ -6502,7 +6502,7 @@ def _transform_ternary_line(line: str) -> tuple[str, list[str]]:
             pos -= 1
         if pos < 0:
             break
-        cond_start, cond_end = _expr_left(line, pos, mask)
+        cond_start, cond_end = _expr_left(line, pos, mask, extra_stop=":")
         condition = line[cond_start:cond_end].strip()
         true_expr = line[pos + 1:colon_pos].strip()
         false_start, false_end = _expr_right(line, colon_pos + 1, mask)
@@ -7073,6 +7073,7 @@ def pwsh_transform(code: str) -> tuple[str, list[str]]:
     lines = code.split("\n")
     mask = _build_region_mask(code)
     multi = _find_multiline_regions(code, mask, lines)
+    region_open = _find_multiline_region_open_lines(code, mask)
     # Byte offset where each line starts within *code* (for slicing the
     # full-code mask per line).
     line_starts: list[int] = []
@@ -7096,6 +7097,18 @@ def pwsh_transform(code: str) -> tuple[str, list[str]]:
             # per-line), and substitute the region text back afterwards.
             base = line_starts[i]
             nline = len(line)
+            if i in region_open:
+                # This line *opens* a multi-line region (e.g. the opening
+                # here-string header ``@'`` at the end of ``$a ?? @'``).  The
+                # region header would otherwise be folded into a generated
+                # construct as an operand — the emitted
+                # ``$(if ($null -ne $a) { $a } else { @' })`` splits the here-
+                # string across the generated braces (its body and ``'@`` stay
+                # on the following lines) and is no longer parseable.  Only
+                # regions that *close* mid-line (``"@; $y = $a ?? "d"``) carry
+                # live code that can be safely transformed.
+                result.append(line)
+                continue
             runs: list[tuple[int, int]] = []
             j = 0
             while j < nline:
@@ -7165,6 +7178,38 @@ def _find_multiline_regions(code: str, mask: bytearray, lines: list[str]) -> set
                 line_idx += 1
             i += 1
     return multi
+
+
+def _find_multiline_region_open_lines(code: str, mask: bytearray) -> set[int]:
+    """Return the line indices that *open* a multi-line region.
+
+    A line opens a region when the first character of a masked span that
+    runs past the end of the line sits on it.  Such a line may still carry
+    live code before the region header (``$a ?? @'``), but that code must
+    not be rewritten: lifting the region header into a generated construct
+    (``$(if (...) { ... } else { @' })``) tears the here-string apart across
+    the generated braces and emits invalid PowerShell.  Lines that merely
+    *close* a region mid-line (``"@; $y = $a ?? "d"``) are deliberately not
+    included — their trailing live code can be transformed safely.
+    """
+    opens: set[int] = set()
+    i = 0
+    n = len(code)
+    line_idx = 0
+    while i < n:
+        if mask[i] == 0:
+            start_line = line_idx
+            while i < n and mask[i] == 0:
+                if code[i] == "\n":
+                    line_idx += 1
+                i += 1
+            if line_idx > start_line:
+                opens.add(start_line)
+        else:
+            if code[i] == "\n":
+                line_idx += 1
+            i += 1
+    return opens
 
 
 if __name__ == "__main__":
