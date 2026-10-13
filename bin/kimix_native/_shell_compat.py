@@ -2146,19 +2146,37 @@ class _BashFixScanner:
             inner._scan_range(0, len(script))
         except RecursionError:
             return script_end
-        if not inner.nul_fixes and not inner.path_notes:
-            # Only null-device (``> nul``) and Windows-path rewrites are
-            # applied inside a nested shell's ``-c`` script.  Fallback-command
-            # definitions are NOT: they are exported to children of *this*
-            # shell, but a genuinely nested ``bash -e -c`` process does not
-            # inherit them, and the established contract leaves such
-            # invocations byte-for-byte untouched.
+        if (
+            not inner.names
+            and not inner.unsupported
+            and not inner.nul_fixes
+            and not inner.path_notes
+        ):
             return script_end
-        fixed = inner._build_fixed_source()
+        # Merge the inner script's registrations exactly like the wrapped
+        # ``bash -c`` branch above.  The fallback definitions emitted for this
+        # shell are ``export -f``-ed, and a nested bash / msys ``sh`` inherits
+        # exported functions from its environment (verified on Git Bash 5.3:
+        # ``tree() { ...; }; export -f tree; bash -e -c 'tree'`` runs the
+        # function).  Dropping ``inner.names`` here left every option-led
+        # wrapper repaired in place but still failing at runtime — the nested
+        # shell had no ``tree`` (``bash -e -c 'tree'``, ``find . -exec sh -c
+        # 'tree' \;``, ``sh -c 'rev' a b``) — while the expansion-bearing
+        # variant (``_harvest_nonliteral_inline_script``) already registered
+        # them.
+        self.names.extend(n for n in inner.names if n not in self.names)
         self.path_notes.extend(inner.path_notes)
+        self.shell_notes.extend(
+            n for n in inner.shell_notes if n not in self.shell_notes
+        )
         self.nul_fixes.extend(inner.nul_fixes)
+        self.unsupported.extend(
+            n for n in inner.unsupported if n not in self.unsupported
+        )
         if inner.edits:
-            self.edits.append((script_start, script_end, _single_quote(fixed)))
+            self.edits.append(
+                (script_start, script_end, _single_quote(inner._build_fixed_source()))
+            )
         return script_end
 
     def _inline_script_operand(

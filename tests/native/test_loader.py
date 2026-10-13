@@ -22,20 +22,37 @@ _WORKDIR_BIN = os.path.join(_REPO_ROOT, "bin")
 _NATIVE_FILE = "runtime_py.pyd" if sys.platform == "win32" else "runtime_py.so"
 
 
+def _same_path(left: str, right: str) -> bool:
+    """True when *left* and *right* name the same directory.
+
+    Path *spelling* may legitimately differ between the two sides: the loader
+    resolves the repo root from ``kimi_cli``'s import location (the editable
+    install's spelling) while ``__file__`` above carries whichever spelling
+    pytest was started with.  On Windows the workspace can also be reachable
+    through a junction (``D:\\kimix`` -> ``D:\\KimiX``) and paths are
+    case-insensitive, so both are canonicalised before comparing.
+    """
+    return os.path.normcase(os.path.realpath(left)) == os.path.normcase(
+        os.path.realpath(right)
+    )
+
+
 def test_dev_fallback_defaults_to_sibling_kimix_base(monkeypatch):
     """Without $KIMIX_BASE the dev-only fallback is the sibling kimix-base repo
     (no absolute path baked in)."""
     monkeypatch.delenv("KIMIX_BASE", raising=False)
     from kimi_cli.native_loader import _candidate_dirs, _dev_base
 
-    assert _dev_base() == os.path.join(os.path.dirname(_REPO_ROOT), "kimix-base")
+    assert _same_path(
+        _dev_base(), os.path.join(os.path.dirname(_REPO_ROOT), "kimix-base")
+    )
     dirs = _candidate_dirs()
-    assert dirs[0] == _WORKDIR_BIN  # <repo>\bin stays the default first candidate
+    assert _same_path(dirs[0], _WORKDIR_BIN)  # <repo>\bin stays the default first candidate
     for mode in ("release", "releasedbg", "debug"):
         expected = os.path.join(
             os.path.dirname(_REPO_ROOT), "kimix-base", "bin", mode
         )
-        assert expected in dirs
+        assert any(_same_path(entry, expected) for entry in dirs)
 
 
 def test_kimix_base_env_repoints_dev_fallback(monkeypatch):
@@ -46,7 +63,7 @@ def test_kimix_base_env_repoints_dev_fallback(monkeypatch):
 
     assert _dev_base() == fake
     dirs = _candidate_dirs()
-    assert dirs[0] == _WORKDIR_BIN  # default <repo>\bin remains first
+    assert _same_path(dirs[0], _WORKDIR_BIN)  # default <repo>\bin remains first
     for mode in ("release", "releasedbg", "debug"):
         assert os.path.join(fake, "bin", mode) in dirs
 
@@ -64,7 +81,7 @@ def test_default_path_is_workdir_bin():
     """Without KIMIX_NATIVE_PATH the loader resolves <repo>\\bin."""
     if not knl.NATIVE_AVAILABLE:
         pytest.skip("native runtime not staged")
-    assert knl.NATIVE_PATH == _WORKDIR_BIN
+    assert _same_path(knl.NATIVE_PATH, _WORKDIR_BIN)
 
 
 def test_version_shape():

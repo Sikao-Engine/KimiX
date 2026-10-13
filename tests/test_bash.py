@@ -80,12 +80,22 @@ PWSH_AVAILABLE = _pwsh_is_available()
 
 
 def _bash_version() -> tuple[int, ...] | None:
-    """Return the installed bash version as a tuple, or None if unknown."""
+    """Return the installed bash version as a tuple, or None if unknown.
+
+    The host's *real* bash (``find_bash()``) is queried, never the bare
+    ``bash`` name: on Windows ``CreateProcess`` resolves that name through
+    ``C:\\Windows\\System32`` before ``PATH``, so it picks up the WSL/Store
+    stub (which exits 1 and prints a UTF-16 "no distributions" banner)
+    even when Git Bash is installed and first on ``PATH``.
+    """
     if not BASH_AVAILABLE:
+        return None
+    bash = find_bash()
+    if bash is None:
         return None
     try:
         proc = subprocess.run(
-            ["bash", "-c", "echo ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"],
+            [bash, "-c", "echo ${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"],
             capture_output=True,
             timeout=15,
             encoding="utf-8",
@@ -1036,8 +1046,6 @@ class TestBashFixShellWrappers:
             "bash scripts/deploy.sh",
             "sh build.sh --release",
             "bash -c 'echo hi' arg1",
-            'bash -e -c "rev"',
-            'bash -ec "rev"',
             'bash -x "rev"',
             "bash -s",
             "bash --",
@@ -1049,6 +1057,70 @@ class TestBashFixShellWrappers:
     )
     def test_legitimate_shell_invocations_are_preserved(self, command: str) -> None:
         assert _fix_for_windows(command) == BashFix(command)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            'bash -e -c "rev"',
+            'bash -ec "rev"',
+            'sh -c "rev" a b',
+            "find . -maxdepth 0 -exec sh -c 'tree' \\;",
+        ],
+    )
+    def test_option_led_c_script_keeps_wrapper_and_registers_fallbacks(
+        self, command: str
+    ) -> None:
+        """Option-led ``-c`` wrappers register the nested script's fallbacks.
+
+        ``_fix_shell_c_script_in_place`` repairs the ``-c`` script in place and
+        the shell word stays (``bash -e -c 'rev'`` must keep running the script
+        in a child shell), but the inner fallback names have to be merged
+        exactly like the wrapped ``bash -c`` branch does: the emitted
+        definitions are ``export -f``-ed and a nested bash / msys ``sh``
+        imports exported functions, so the repaired command resolves ``rev``
+        to the fallback instead of failing with ``rev: command not found``.
+        """
+        result = _fix_for_windows(command)
+        assert result.replacements, command
+        # The wrapper (and the script operand) stay byte-for-byte: the child
+        # shell's isolation is what makes the invocation legitimate.
+        assert result.command.split("\n")[-1] == command
+        assert result.shell_wrappers == ()
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not installed")
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            ('bash -e -c "rev"', "cba"),
+            ('bash -ec "rev"', "cba"),
+            ("sh -c 'rev' a b", "cba"),
+        ],
+    )
+    def test_option_led_c_script_fallback_actually_runs(
+        self, command: str, expected: str, tmp_path: Path
+    ) -> None:
+        """Real Git Bash ground truth for the merged fallback definitions.
+
+        The repaired text is executed as a script file (not ``bash -c``) so no
+        Windows argv-quoting artefact can distort the run, and stdin carries
+        the ``rev`` input.
+        """
+        bash = find_bash()
+        assert bash is not None
+        script = tmp_path / "kmx_option_c_probe.sh"
+        script.write_text(
+            _fix_for_windows(command).command + "\n", encoding="utf-8", newline="\n"
+        )
+        proc = subprocess.run(
+            [bash, "--noprofile", "--norc", str(script)],
+            capture_output=True,
+            input="abc\n",
+            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+        )
+        assert proc.returncode == 0, (proc.returncode, proc.stdout, proc.stderr)
+        assert expected in proc.stdout, (command, proc.stdout, proc.stderr)
 
     @pytest.mark.parametrize("platform", ["linux", "darwin"])
     def test_non_windows_keeps_shell_wrapper(self, platform: str) -> None:
@@ -1503,10 +1575,16 @@ class TestBashFixHeredocTrailingOperators:
         # environment, so this integration check does not depend on an
         # interpreter being on PATH (many hosts only ship ``python3``).
         source = "cat <<'EOF'\nhello\nEOF\n&& echo next"
+        # The host's real bash is used explicitly: the bare ``bash`` name is
+        # resolved by ``CreateProcess`` through ``C:\Windows\System32`` before
+        # ``PATH`` on Windows, so it would launch the WSL/Store stub (exit 1,
+        # UTF-16 "no distributions" banner) instead of Git Bash.
+        bash = find_bash()
+        assert bash is not None
         # ``errors="replace"``: some hosts (e.g. cygwin/git-bash on non-UTF-8
         # locales) emit localized diagnostics that are not valid UTF-8.
         failed = subprocess.run(
-            ["bash", "-c", source],
+            [bash, "-c", source],
             capture_output=True,
             timeout=15,
             encoding="utf-8",
@@ -1518,7 +1596,7 @@ class TestBashFixHeredocTrailingOperators:
 
         fixed = _fix_for_windows(source).command
         passed = subprocess.run(
-            ["bash", "-c", fixed],
+            [bash, "-c", fixed],
             capture_output=True,
             timeout=15,
             encoding="utf-8",
@@ -1949,6 +2027,71 @@ class TestBashFixCommonCommandsRealGitBash:
                 time.sleep(1)
         raise AssertionError("unreachable")
 
+    #: Windows service the ``systemctl`` fallback cases target: the Windows
+    #: Time service exists on every Windows install.
+    _SYSTEMCTL_SERVICE = "w32time"
+
+    @classmethod
+    def _systemctl_state(cls) -> tuple[bool, bool]:
+        """Return ``(running, disabled)`` for :attr:`_SYSTEMCTL_SERVICE`.
+
+        Host-truth probe, read through exactly the tools the fallback body
+        reads: ``sc query`` (the ``running`` token ``is-active`` greps for) and
+        ``sc qc`` (the ``DISABLED`` start type ``is-enabled`` greps for).  The
+        service's state is host-specific — it is *Stopped/Manual* on a machine
+        whose time sync is off — so the expectations must follow it instead of
+        assuming a running service.
+        """
+        name = cls._SYSTEMCTL_SERVICE
+        state = subprocess.run(
+            ["sc.exe", "query", name],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        ).stdout.upper()
+        config = subprocess.run(
+            ["sc.exe", "qc", name],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        ).stdout.upper()
+        return "RUNNING" in state, "DISABLED" in config
+
+    @classmethod
+    def _systemctl_expectations(
+        cls, command: str, needles: tuple[str, ...]
+    ) -> tuple[tuple[str, ...], int]:
+        """Return ``(needles, returncode)`` for *command*.
+
+        ``status`` / ``is-active`` / ``is-enabled`` report the host's real
+        service state, so their parametrized needles (the values a host with a
+        *running* service sees) and exit code are replaced by the state-aware
+        ones — the fallback answers ``Running``/``active``/``enabled`` only
+        when the service really is, which is what systemctl does:
+
+        * ``status``    -> ``Running`` | ``Stopped`` (exit 0),
+        * ``is-active`` -> ``active``  (exit 0) | ``inactive`` (exit 3),
+        * ``is-enabled``-> ``enabled`` (exit 0) | ``disabled`` (exit 1).
+
+        Every other command keeps its parametrized needles and exit code 0.
+        """
+        parts = command.split()
+        subcommand = parts[1] if len(parts) > 1 else ""
+        if not parts or parts[0] != "systemctl" or subcommand not in {
+            "status",
+            "is-active",
+            "is-enabled",
+        }:
+            return needles, 0
+        running, disabled = cls._systemctl_state()
+        if subcommand == "status":
+            return ("Running" if running else "Stopped",), 0
+        if subcommand == "is-active":
+            return (("active",), 0) if running else (("inactive",), 3)
+        return (("disabled",), 1) if disabled else (("enabled",), 0)
+
     @pytest.mark.parametrize(
         ("command", "needles"),
         [
@@ -1959,6 +2102,9 @@ class TestBashFixCommonCommandsRealGitBash:
             ("ss -s", ()),
             ("man ls", ("Usage",)),
             ("man 1 grep", ("Usage",)),
+            # ``systemctl`` needles spell the *running-service* answer; the
+            # actual expectation follows this host's service state (see
+            # ``_systemctl_expectations``).
             ("systemctl status w32time", ("Running",)),
             ("systemctl is-active w32time", ("active",)),
             ("systemctl is-enabled w32time", ("enabled",)),
@@ -1973,9 +2119,10 @@ class TestBashFixCommonCommandsRealGitBash:
         name = command.split()[0]
         if self._native_tool(name):
             pytest.skip(f"native {name} on PATH; fallback guard is dormant here")
+        needles, expected_returncode = self._systemctl_expectations(command, needles)
         result = self._run(command)
         output = result.stdout + result.stderr
-        assert result.returncode == 0, output
+        assert result.returncode == expected_returncode, output
         for needle in needles:
             assert needle in output, f"{needle!r} missing from {output[:500]!r}"
 
