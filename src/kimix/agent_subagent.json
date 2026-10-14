@@ -7,7 +7,6 @@
       "kimi_cli.tools.file.run:Run",
       "kimi_cli.tools.py:python",
       "kimi_cli.tools.background:job_output",
-      "kimi_cli.tools.todo:todo_list",
       "kimi_cli.tools.file:read",
       "kimi_cli.tools.file:read_image",
       "kimi_cli.tools.file:edit",

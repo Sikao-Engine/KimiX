@@ -135,3 +135,37 @@ class TestSubAgentPrompt:
         runtime = _make_runtime(tmp_path)
         prompt = prompt_func(runtime)
         assert "self-contained final result" not in prompt
+
+    def test_subagent_prompt_forbids_todo_operations(self, tmp_path: Path):
+        prompt_func = get_system_prompt(
+            work_dir=tmp_path,
+            agent_role=SystemPromptType.TrivialSubAgent,
+            max_system_prompt_tokens=10_000,
+        )
+        runtime = _make_runtime(tmp_path)
+        prompt = prompt_func(runtime)
+        # Sub-agent must never do todo-tracking; the parent owns it.
+        assert "Track with todo_* tools." not in prompt
+        assert "Never use `todo_list`" in prompt
+
+    def test_worker_prompt_keeps_todo_tracking(self, tmp_path: Path):
+        prompt_func = get_system_prompt(
+            work_dir=tmp_path,
+            agent_role=SystemPromptType.Worker,
+            max_system_prompt_tokens=10_000,
+        )
+        runtime = _make_runtime(tmp_path)
+        prompt = prompt_func(runtime)
+        assert "Track with todo_* tools." in prompt
+        assert "Never use `todo_list`" not in prompt
+
+
+class TestSubAgentToolList:
+    """The sub-agent agent file must not expose any todo tool."""
+
+    def test_agent_subagent_json_has_no_todo_tool(self):
+        import kimix.base as base
+        agent_file = base._default_agent_file_dir / "agent_subagent.json"
+        data = json.loads(agent_file.read_text(encoding="utf-8"))
+        tools = data["agent"]["tools"]
+        assert all("todo" not in t for t in tools)

@@ -244,7 +244,7 @@ At startup, `KimiToolset.load_tools()` (in `kimi-cli/src/kimi_cli/soul/toolset.p
 |------|---------|
 | `agent_worker.json` | Default worker agent (default agent file) |
 | `agent_boss.json` | Boss agent with read/glob/grep/fetch_url/web_search/Note plans |
-| `agent_subagent.json` | Sub-agent with bash/pwsh/Run/python/job_output/todo tools/read/read_image/edit/write/glob/grep/fetch_url/web_search |
+| `agent_subagent.json` | Sub-agent with bash/pwsh/Run/python/job_output tools/read/read_image/edit/write/glob/grep/fetch_url/web_search (no todo tools) |
 
 **kimi-cli base agents** (in `kimi-cli/src/kimi_cli/agents/default/`):
 

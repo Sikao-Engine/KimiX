@@ -9389,3 +9389,133 @@ def test_round5_pwsh_contrast_ok(src):
     assert _round2_ps51_parse_errors(out) == [], (
         f"5.1 PARSE on contrast case:\n{src!r}\n->\n{out!r}"
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# cmd.exe `if [not] exist … ( … ) else ( … )` conditional translation
+# (Epoch-2 fix; full matrix in tests/unit/tools/test_bash_cmd_conditional.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_CMD_IF_REPRODUCED = (
+    r"if exist LuisaCompute (dir LuisaCompute | more +5) "
+    r"else (echo no LuisaCompute dir) && echo "
+    + '"---"'
+    + " && "
+    + r"if exist D:\LuisaCompute "
+    + r"(dir D:\LuisaCompute\include\luisa\backends\ext 2>nul | findstr vk) "
+    + r"else (echo no D:\LuisaCompute)"
+)
+
+
+class TestBashFixCmdConditional:
+    """cmd batch conditionals must become valid bash, never pass through.
+
+    The reproduced bug: Git Bash rejects ``if exist X (…) else (…)` with
+    ``syntax error near unexpected token '('``; the scanner now translates
+    the strict cmd shape to ``if [[ [!] -e X ]]; then …; else …; fi`` while
+    inner path/``nul``/fallback rewrites keep composing inside the branches.
+    """
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            (
+                "if exist x (echo a) else (echo b)",
+                "if [[ -e x ]]; then echo a; else echo b; fi",
+            ),
+            (
+                "if not exist x (echo a)",
+                "if [[ ! -e x ]]; then echo a; fi",
+            ),
+            (
+                "if exist A (x) else if exist B (y) else (z)",
+                "if [[ -e A ]]; then x; elif [[ -e B ]]; then y; else z; fi",
+            ),
+            (
+                r"if exist x (cd C:\y)",
+                "if [[ -e x ]]; then cd C:/y; fi",
+            ),
+            (
+                "if defined V (echo set) else (echo unset)",
+                'if [[ -n ${V+x} ]]; then echo set; else echo unset; fi',
+            ),
+            (
+                "if not defined PYTHONHOME (echo a)",
+                "if [[ ! -n ${PYTHONHOME+x} ]]; then echo a; fi",
+            ),
+            (
+                "if errorlevel 1 (echo failed) else (echo ok)",
+                "if (( $? >= 1 )); then echo failed; else echo ok; fi",
+            ),
+            (
+                'if "%BUILD%"=="release" (echo rel) else (echo dbg)',
+                'if [[ ${BUILD} == "release" ]]; then echo rel; else echo dbg; fi',
+            ),
+            (
+                "if 5 geq 3 (echo big) else (echo small)",
+                "if (( 5 >= 3 )); then echo big; else echo small; fi",
+            ),
+            (
+                "for %f in (a b) do echo %f",
+                "for f in a b; do echo $f; done",
+            ),
+            (
+                "for %%f in (a,b,c) do echo %%f",
+                "for f in a b c; do echo $f; done",
+            ),
+            (
+                "@echo off",
+                "set +x",
+            ),
+        ],
+    )
+    def test_structural_translation(self, source: str, expected: str) -> None:
+        result = _fix_for_windows(source)
+        assert result.command == expected
+        # ``changed``/report field lives on the canonical scanner: the
+        # app-layer wrapper reconstructs BashFix with its own (older) set of
+        # keyword fields and drops cmd_conditional_fixes (accepted divergence;
+        # the command string — the operative artifact — is identical).
+        full = _shell_compat.fix_bash_command(source)
+        assert full.command == expected
+        assert full.changed
+        assert full.cmd_conditional_fixes
+
+    def test_reproduced_command_composes_all_rewrites(self) -> None:
+        result = _fix_for_windows(_CMD_IF_REPRODUCED)
+        assert result.command.endswith(
+            'if [[ -e LuisaCompute ]]; then dir LuisaCompute | more +5; '
+            'else echo no LuisaCompute dir; fi && echo "---" && '
+            'if [[ -e D:/LuisaCompute ]]; then '
+            'dir D:/LuisaCompute/include/luisa/backends/ext 2>/dev/null '
+            '| findstr vk; else echo no D:/LuisaCompute; fi'
+        )
+        # the app-layer wrapper predates the structured cmd field; the
+        # canonical scanner (re-exported by bash_fix) carries the report.
+        full = _shell_compat.fix_bash_command(_CMD_IF_REPRODUCED)
+        assert full.cmd_conditional_fixes == (
+            "if exist LuisaCompute",
+            r"if exist D:\LuisaCompute",
+        )
+        assert full.replacements == ("findstr",)
+        assert full.nul_fixes == ("nul",)
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "if exist foo; then bar; fi",   # real bash command named exist
+            'echo "if exist x (y)"',        # quoted data, never code
+            "if errorlevel abc (echo a)",   # out of scope: non-integer operand
+            "if defined %V% (echo a)",       # out of scope: non-identifier
+            "if a==\"a\" (echo a)",          # out of scope: asymmetric quotes
+            "if exist x echo yes",          # out of scope: no paren branch
+            "if exist x (a)\nelse (b)",     # out of scope: multi-line
+            "for /f %f in (a) do echo %f",   # out of scope: for modifiers
+            "for %f in (a) do echo %~nf",    # out of scope: loop-var modifier
+            "echo off",                      # valid bash, never cmd
+            "set X=1",                       # valid bash assignment, never touch
+        ],
+    )
+    def test_non_cmd_shapes_untouched(self, command: str) -> None:
+        result = _fix_for_windows(command)
+        assert result.command == command

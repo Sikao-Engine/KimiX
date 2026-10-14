@@ -737,10 +737,39 @@ _UNSUPPORTED_BODIES = {
         "application's own log file(s), or query the Windows Event Log "
         "instead: powershell.exe Get-WinEvent -LogName Application -MaxEvents 50"
     ),
+    "goto": (
+        "cmd.exe 'goto'/':label' jumps have no bash equivalent: bash has no "
+        "label control flow and would run the jumped-over code anyway "
+        "(command not found, then continue linearly). Restructure with bash "
+        "if/else/loops/functions, or run the batch through cmd.exe "
+        "directly: cmd //c script.bat"
+    ),
+    "call :label": (
+        "cmd.exe 'call :label'/'call script.bat' subroutine or child-script "
+        "invocation has no bash equivalent: bash cannot jump to a batch "
+        "label or run a .bat inline. Define the routine as a bash function "
+        "and invoke it, or run the batch through cmd.exe directly: "
+        "cmd //c script.bat"
+    ),
+    "exit /b": (
+        "cmd.exe 'exit /b [N]' returns from a batch script with exit code N; "
+        "there is no batch here, so there is no faithful equivalent, and a "
+        "plain bash 'exit N' would close the persistent shell session "
+        "instead of just the block. Guard the remaining commands with "
+        "if/else, or return from a function, or run the batch through "
+        "cmd.exe directly: cmd //c script.bat"
+    ),
 }
 
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\+)?=")
 _NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Glued cmd label line (``:label`` as a whole command word).  ``:`` alone and
+# ``: label`` (space) are valid bash no-ops and never match this.
+_GLUED_LABEL_RE = re.compile(r"^:[A-Za-z_][A-Za-z0-9_]*$")
+# cmd batch subroutine / child-script targets recognised after ``call``.
+_CALL_BATCH_RE = re.compile(r"\.(?:bat|cmd)$", re.IGNORECASE)
+# cmd ``for`` loop token: ``%name`` (interactive) or ``%%name`` (batch).
+_FOR_LOOP_TOKEN_RE = re.compile(r"^(%%?)([A-Za-z_][A-Za-z0-9_]*)$")
 
 _COMMAND_START_KEYWORDS = frozenset(
     {"!", "{", "if", "then", "elif", "else", "while", "until", "do"}
@@ -1431,15 +1460,28 @@ class BashFix:
     ``unsupported`` records each command name that has no faithful Windows
     Git Bash equivalent (see ``_UNSUPPORTED_BODIES`` for the reasons); the
     command text is left byte-for-byte unchanged for those.  Empty tuples
-    mean the command was returned byte-for-byte unchanged.
+    Empty tuples
+    mean the command was returned byte-for-byte unchanged.  ``cmd_conditional_fixes``
+    records the original keyword region of each cmd.exe control-flow construct
+    that was translated to a bash equivalent by the scanner (see
+    ``_try_cmd_if`` / ``_try_cmd_for`` / ``_try_at_prefix``): ``if [not] exist
+    P``/``if [not] defined V``/``if [not] errorlevel N``/``if [not] X==Y``
+    (and the arithmetic ``equ``/``neq``/``lss``/``leq``/``gtr``/``geq``
+    variants, with ``/i`` case-folding) become bash ``if [[ ... ]]``/``if ((
+    ... ))`` tests, ``for [%|%]name in (list) do body`` becomes a bash
+    ``for name in list; do body; done`` loop, and ``@echo off``/``@echo on``
+    becomes ``set +x``/``set -x``.  Only fully recognised, single-line, horizontally
+    separated forms are rewritten; anything else stays byte-for-byte (and
+    untranslatable jumps -- ``goto``/``:label``/``call x.bat``/``exit /b`` --
+    ride the ``unsupported`` refusal channel instead).
     """
-
     command: str
     replacements: tuple[str, ...] = ()
     path_changes: tuple[str, ...] = ()
     shell_wrappers: tuple[str, ...] = ()
     nul_fixes: tuple[str, ...] = ()
     unsupported: tuple[str, ...] = ()
+    cmd_conditional_fixes: tuple[str, ...] = ()
 
     @property
     def changed(self) -> bool:
@@ -1449,6 +1491,7 @@ class BashFix:
             or bool(self.path_changes)
             or bool(self.shell_wrappers)
             or bool(self.nul_fixes)
+            or bool(self.cmd_conditional_fixes)
         )
 
     @property
@@ -1486,6 +1529,16 @@ class BashFix:
                 f"{words} -> `/dev/null` (an unquoted `nul` would otherwise "
                 "create an empty file named `nul`)."
             )
+        if self.cmd_conditional_fixes:
+            words = ", ".join(
+                f"`{word}`" for word in self.cmd_conditional_fixes
+            )
+            parts.append(
+                "Rewrote cmd.exe control-flow construct(s) to bash equivalents "
+                "(`if exist`/`if defined`/`if errorlevel`/`if ...==...` tests, "
+                "`for %v in (...) do` loops, `@echo off|on` -> `set +x|-x`): "
+                f"{words}."
+            )
         return " ".join(parts)
 
 
@@ -1505,10 +1558,107 @@ class _BashHereDoc:
     expands: bool
 
 
+@dataclass(frozen=True)
+class _CmdIfSegment:
+    """One validated cmd.exe ``if``/``else if`` header and its then-branch.
+
+    Spans into the scanner source: ``[header_start, op_start)`` is the
+    keyword region (``if [not] exist`` resp. ``else if [not] exist``) that
+    the H/EL edit replaces with the bash test header, ``[op_start, op_end)``
+    the path operand (kept, possibly rewritten by the path machinery), and
+    ``(open_pos, close_pos)`` the parenthesised branch body (parens deleted,
+    body scanned as a command context).
+    """
+
+    header_start: int
+    negated: bool
+    op_start: int
+    op_end: int
+    open_pos: int
+    close_pos: int
+    # cmd condition kind: ``exist`` (landed default), ``defined``,
+    # ``errorlevel``, ``compare`` (glued ``==``), ``arithmetic`` (spaced
+    # ``equ``/``neq``/``lss``/``leq``/``gtr``/``geq``).  ``exist`` segments
+    # keep the historical positional construction (defaults below), so
+    # existing callers and tests are unaffected.
+    kind: str = "exist"
+    folded: bool = False
+    # ``compare``/``arithmetic``: the already-built bash condition text that
+    # replaces the ``[op_start, op_end)`` region (``CMP`` edit).  ``None`` for
+    # the kept-verbatim ``exist``/``defined``/``errorlevel`` operands.
+    cmp_text: str | None = None
+
+
+@dataclass(frozen=True)
+class _CmdIfMatch:
+    """A fully validated cmd.exe ``if exist`` conditional.
+
+    ``segments`` holds the ``if`` header plus every ``else if`` (``elif``)
+    chain segment; ``else_open``/``else_close`` bound the optional final
+    ``else (`` branch (``None``/``None`` for the single-branch form).
+    Produced by a read-only validation pass; committing one is guaranteed
+    to succeed.
+    """
+
+    segments: tuple[_CmdIfSegment, ...]
+    else_open: int | None
+    else_close: int | None
+
+
+@dataclass(frozen=True)
+class _CmdForMatch:
+    r"""A fully validated cmd.exe ``for [%|%]name in (list) do body`` loop.
+
+    Spans into the scanner source.  ``[tok_start, tok_end)`` is the loop
+    token (``%name`` or ``%%name``) rewritten to the bare ``name``; the
+    ``(`` at ``open_pos`` and the ``)`` at ``close_pos`` bound the item list
+    (commas become spaces, Windows-path items rewritten); ``do`` ends at
+    ``do_end`` and the body is the rest of the physical line,
+    ``[do_end, body_end)``.  ``var_edits`` are the ``(word_start,
+    word_end)`` spans of every whole-word ``%name``/``%%name`` occurrence in
+    the body (each rewritten to ``$name``); ``comma_spans`` the single
+    characters to turn into spaces; ``list_path_edits`` the
+    ``(start, end, replacement)`` Windows-path rewrites already validated on
+    the list region.  Produced by a read-only pass; committing one is
+    guaranteed to succeed and every edit pair is disjoint by construction
+    (design ``.kimix_cache/cmd_control_flow_design.md` \u00a73.2`).
+    """
+
+    for_start: int
+    name: str
+    tok_start: int
+    tok_end: int
+    open_pos: int
+    close_pos: int
+    do_end: int
+    body_start: int
+    body_end: int
+    comma_spans: tuple[tuple[int, int], ...]
+    list_path_edits: tuple[tuple[int, int, str], ...]
+    var_edits: tuple[tuple[int, int], ...]
+
+
+_CMD_IF_TAIL_SAFE_CHARS = frozenset(" \t\r\n;&|()<>")
+"""Characters that may follow a conditional's closing ``)`` when the no-else
+form appends ``; fi``: control and redirection characters cannot glue onto
+``fi``; any word character could (``fi`` + ``x`` becomes the command ``fix``)."""
+
+# cmd relational *words* (spaced operands, the only form cmd accepts for
+# them -- ``5geq3`` is invalid cmd) mapped to their ``(( ))`` C operators.
+_CMD_REL_OPS = {
+    "equ": "==", "neq": "!=", "lss": "<",
+    "leq": "<=", "gtr": ">", "geq": ">=",
+}
+# ``if errorlevel`` takes a plain (non-negative) decimal integer.
+_ERRORLEVEL_RE = re.compile(r"^[0-9]{1,9}$")
+# arithmetic compare operands are optionally-signed decimal integers.
+_INT_RE = re.compile(r"^-?[0-9]+$")
+
+
 class _BashFixScanner:
     """Conservative scanner for Bash executable command positions."""
 
-    __slots__ = ("s", "n", "edits", "names", "path_notes", "shell_notes", "heredoc_events", "nest_depth", "nul_fixes", "unsupported")
+    __slots__ = ("s", "n", "edits", "names", "path_notes", "shell_notes", "heredoc_events", "nest_depth", "nul_fixes", "unsupported", "cmd_conditional_notes")
 
     def __init__(self, command: str) -> None:
         self.s = command
@@ -1521,6 +1671,7 @@ class _BashFixScanner:
         self.nest_depth = 0
         self.nul_fixes: list[str] = []
         self.unsupported: list[str] = []
+        self.cmd_conditional_notes: list[str] = []
 
     def fix(self) -> BashFix:
         try:
@@ -1535,6 +1686,7 @@ class _BashFixScanner:
             and not self.shell_notes
             and not self.nul_fixes
             and not self.unsupported
+            and not self.cmd_conditional_notes
         ):
             return BashFix(self.s)
         unique_names = list(dict.fromkeys(self.names))
@@ -1563,6 +1715,7 @@ class _BashFixScanner:
             tuple(self.shell_notes),
             tuple(self.nul_fixes),
             tuple(self.unsupported),
+            tuple(self.cmd_conditional_notes),
         )
 
     def _build_fixed_source(self, source: str | None = None) -> str:
@@ -2044,6 +2197,7 @@ class _BashFixScanner:
                 n for n in inner.shell_notes if n not in self.shell_notes
             )
             self.nul_fixes.extend(inner.nul_fixes)
+            self.cmd_conditional_notes.extend(inner.cmd_conditional_notes)
             self.unsupported.extend(
                 n for n in inner.unsupported if n not in self.unsupported
             )
@@ -2151,6 +2305,7 @@ class _BashFixScanner:
             and not inner.unsupported
             and not inner.nul_fixes
             and not inner.path_notes
+            and not inner.cmd_conditional_notes
         ):
             return script_end
         # Merge the inner script's registrations exactly like the wrapped
@@ -2170,6 +2325,7 @@ class _BashFixScanner:
             n for n in inner.shell_notes if n not in self.shell_notes
         )
         self.nul_fixes.extend(inner.nul_fixes)
+        self.cmd_conditional_notes.extend(inner.cmd_conditional_notes)
         self.unsupported.extend(
             n for n in inner.unsupported if n not in self.unsupported
         )
@@ -2221,6 +2377,7 @@ class _BashFixScanner:
             n for n in inner.shell_notes if n not in self.shell_notes
         )
         self.nul_fixes.extend(inner.nul_fixes)
+        self.cmd_conditional_notes.extend(inner.cmd_conditional_notes)
         self.unsupported.extend(
             n for n in inner.unsupported if n not in self.unsupported
         )
@@ -2264,6 +2421,812 @@ class _BashFixScanner:
                 n for n in inner.unsupported if n not in self.unsupported
             )
 
+
+    def _try_at_prefix(
+        self, word_start: int, word_end: int, end: int
+    ) -> tuple[int | None, str | None]:
+        r"""Handle a leading ``@`` at a Bash command position.
+
+        A command word starting with ``@`` is a guaranteed error on this
+        platform (no ``@*`` executable exists on the Git Bash PATH; the only
+        ``@*`` files are non-executable system toast icons), so it may be
+        rewritten.  Two forms:
+
+        ``@echo off`` / ``@echo on`` (case-sensitive ``off``/``on``, glued or
+        space-separated, ending on a statement boundary that is not a single
+        backgrounding ``&``) translate to ``set +x`` / ``set -x`` -- the cmd
+        echo-visibility switch's bash counterpart -- and the whole two-word
+        region is replaced (``mode`` ``statement``).  This is the only form
+        that reports in ``cmd_conditional_fixes``.
+
+        Everything else strips the single leading ``@`` and re-dispatches the
+        remainder as the command word (``mode`` ``strip``), so ``@if ...``,
+        ``@for ...`` compose with the control-flow hooks and ``@dir``/``@rev``
+        resolve normally.  Bails (no edit, byte-for-byte) on a bare ``@``,
+        ``@@x``, a quoted-leading ``@`` (``"@"dir``), or the cmd
+        ``@echo.<no newline>`` idiom (kept loud rather than becoming 127
+        ``echo.``).
+
+        Returns ``(index, mode)``; ``index`` is the position to continue the
+        dispatch loop at (``word_start + 1`` for a strip, or just past the
+        translated ``@echo`` region for a statement).  ``(None, None)`` when
+        the word is not a recognised ``@`` form.
+        """
+        s = self.s
+        raw = s[word_start:word_end]
+        if raw[:1] != "@":
+            return None, None
+        literal = self._literal_word_value(raw)
+        if literal is None or len(literal) < 2:
+            return None, None  # bare ``@`` or a non-decodable word
+        nxt = literal[1]
+        if nxt in "@ \t\r" or nxt in "&|<>()":
+            return None, None  # ``@@x``, ``@ x``, an operator after ``@``
+        if literal.lower().startswith("@echo."):
+            # cmd ``@echo.`` (echo a blank line): the dot idiom has no bash
+            # spelling, so keep it a loud error instead of stripping to 127
+            # ``echo.`` (design \u00a73.4 strip-bail list).
+            return None, None
+        if literal.lower() == "@echo" and raw[0] == "@":
+            qm = _HSPACE_RE.match(s, word_end, end)
+            if qm is not None:
+                off_start = qm.end()
+                off_end = self._read_word(off_start, end, scan_substitutions=False)
+                if off_end > off_start:
+                    off_lit = self._literal_word_value(s[off_start:off_end])
+                    if off_lit in ("off", "on") and self._at_boundary_ok(
+                        off_end, end
+                    ):
+                        repl = "set +x" if off_lit == "off" else "set -x"
+                        self.edits.append((word_start, off_end, repl))
+                        self.cmd_conditional_notes.append(
+                            s[word_start:off_end]
+                        )
+                        return off_end, "statement"
+            if literal.lower().startswith("@echo."):
+                return None, None  # cmd ``@echo.`` idiom: keep it loud
+        if raw[0] != "@":
+            return None, None  # quoted-leading @ bails v1 (landed doctrine)
+        self.edits.append((word_start, word_start + 1, ""))
+        return word_start + 1, "strip"
+
+    def _at_boundary_ok(self, pos: int, end: int) -> bool:
+        """Return whether the char after an ``@echo off|on`` word ends the form.
+
+        A statement boundary (newline, ``;``, ``&&``, ``|``, a redirection, or
+        EOF) lets the two-word translation stand; a single backgrounding ``&``
+        (cmd runs the tail inline per line, bash would background it) bails to
+        the generic strip, as do glued words like ``@echo offline``.
+        """
+        s = self.s
+        while pos < end and s[pos] in " \t\r":
+            pos += 1
+        if pos >= end:
+            return True
+        ch = s[pos]
+        if ch == "&":
+            return pos + 1 < end and s[pos + 1] == "&"  # ``&&`` ok, ``&`` not
+        return ch in "\n;|<>"
+
+    # ── cmd.exe ``if [not] exist`` conditional recognition ──────────────────────
+
+    def _try_cmd_if(self, if_start: int, if_end: int, end: int) -> int | None:
+        """Translate a cmd.exe ``if exist`` conditional at command position.
+
+        *if_start*/*if_end* bound the ``if`` keyword word.  A cmd conditional
+        written into a bash command line is a guaranteed Bash syntax error
+        (a command word at pipeline head is never followed by a bare ``(``),
+        so recognising the shape can never change the meaning of a command
+        Bash would have accepted.  Returns the index just past the whole
+        conditional after recording the header/paren edits and scanning each
+        branch body normally (inner path/``nul``/fallback rewrites keep
+        firing); returns ``None`` — with no edits recorded at all — unless
+        :meth:`_match_cmd_if` validates the strict single-line parenthesised
+        form, leaving the text byte-for-byte for Bash.
+        """
+        match = self._match_cmd_if(if_start, if_end, end)
+        if match is None:
+            return None
+        self.cmd_conditional_notes.append(
+            self.s[if_start : match.segments[0].op_end]
+        )
+        return self._commit_cmd_if(match)
+
+    @staticmethod
+    def _split_top_eq(raw: str) -> tuple[str, str] | None:
+        r"""Split a glued cmd ``LHS==RHS`` compare word on the first ``==``.
+
+        cmd.exe toggles a double-quoted region on every ``"``, so a ``==``
+        inside quotes is data, not the operator.  Returns ``(lhs_raw,
+        rhs_raw)`` on the first *top-level* ``==`` (empty sides allowed and
+        rejected later by the operand validator) or ``None`` when the word
+        carries no top-level ``==``.  Only the glued single-word form is
+        recognised: a spaced ``LHS == RHS`` breaks the single-word rule and
+        is a deliberate v1 bail (cmd itself treats ``== RHS`` as junk
+        arguments -- probed).
+        """
+        in_quote = False
+        i = 0
+        n = len(raw)
+        while i < n:
+            ch = raw[i]
+            if ch == '"':
+                in_quote = not in_quote
+            elif not in_quote and ch == "=" and i + 1 < n and raw[i + 1] == "=":
+                return raw[:i], raw[i + 2 :]
+            i += 1
+        return None
+
+    def _cmd_cmp_side(
+        self, raw: str, *, folded: bool, numeric: bool
+    ) -> tuple[str, bool] | None:
+        r"""Return ``(bash_operand, was_cmd_quoted)`` for one compare side.
+
+        Accepts only the forms cmd compares faithfully as a single token
+        (design \u00a73.1): an exact ``%IDENT%`` (mapped to ``${IDENT}``, or
+        ``${IDENT,,}`` under ``/i``), ``%errorlevel%`` (case-insensitive, maps
+        to ``$?``), an integer literal for ``numeric`` arithmetic, or a
+        possibly double-quoted string literal whose decoded value contains no
+        ``\ " ' % ! $ `` backtick, glob, or shell-control character.  The outer
+        quotes are reported via ``was_cmd_quoted`` so the caller can enforce
+        cmd's quote-as-data semantics (asymmetric quoting bails).  ``None``
+        bails the whole conditional.
+        """
+        quoted = False
+        core = raw
+        if (
+            len(raw) >= 2
+            and raw[0] == '"'
+            and raw[-1] == '"'
+            and '"' not in raw[1:-1]
+        ):
+            quoted = True
+            core = raw[1:-1]
+        if (
+            len(core) >= 2
+            and core[0] == "%"
+            and core[-1] == "%"
+            and core.count("%") == 2
+        ):
+            name = core[1:-1]
+            if name.lower() == "errorlevel":
+                return "$?", quoted
+            if _NAME_RE.match(name):
+                if numeric:
+                    return "${" + name + "}", quoted
+                if folded:
+                    return "${" + name + ",,}", quoted
+                return "${" + name + "}", quoted
+            return None  # %partial%, %~ni%, %%..%
+        if numeric:
+            return (core, quoted) if _INT_RE.match(core) else None
+        if core == "":
+            return None  # an empty cmd operand is not supported here
+        if any(
+            ch in core
+            for ch in "\\\"'!$`()*?[]{}~<>;%&|"  # value must be plain text
+        ):
+            return None
+        value = core.lower() if folded else core
+        return '"' + value + '"', quoted
+
+    def _build_cmd_cmp(
+        self, lhs_raw: str, rhs_raw: str, op: str, *, folded: bool, numeric: bool
+    ) -> str | None:
+        """Build the bash condition text for a cmd compare/arithmetic pair.
+
+        ``numeric`` emits the ``(( ))`` C operators from
+        :data:`_CMD_REL_OPS`; the string form emits ``[[ LHS == "RHS" ]]``
+        with the right-hand side always quoted (``[[ ]]`` treats an unquoted
+        right side as a pattern) and both sides' cmd quoting symmetric (an
+        asymmetric ``a=="a"`` is FALSE in cmd but TRUE under a naive ``==``
+        -- design \u00a73.1 -- so it bails).  ``/i`` folding applies ``,,`` to
+        expansion sides and lowercases literal sides; it is inert for
+        arithmetic (numbers compare the same either way).
+        """
+        lhs = self._cmd_cmp_side(lhs_raw, folded=folded, numeric=numeric)
+        rhs = self._cmd_cmp_side(rhs_raw, folded=folded, numeric=numeric)
+        if lhs is None or rhs is None:
+            return None
+        lhs_tok, lhs_quoted = lhs
+        rhs_tok, rhs_quoted = rhs
+        if not numeric and lhs_quoted != rhs_quoted:
+            return None  # cmd compares the quote characters themselves
+        if numeric:
+            return f"{lhs_tok} {op} {rhs_tok}"
+        rhs_str = rhs_tok if rhs_tok.startswith('"') else '"' + rhs_tok + '"'
+        return f"{lhs_tok} == {rhs_str}"
+
+    def _match_cmd_if(
+        self, if_start: int, pos: int, end: int
+    ) -> _CmdIfMatch | None:
+        """Validate the cmd conditional shape; strictly read-only.
+
+        *if_start* is the start of the command-position ``if`` word and
+        *pos* the index just past it.  The shape (design
+        ``.kimix_cache/cmd_if_exist_design.md` §2`): horizontal whitespace
+        only between every token, an optional literal ``not``, the literal
+        word ``exist``, exactly one operand decoding to a non-empty literal,
+        a mandatory ``(`` anchor (the guaranteed-error marker), a matched
+        ``)``, and an optional ``else`` tail that is either ``else (`` (final
+        branch) or ``else if`` (an ``elif`` chain segment, parsed
+        iteratively here so chain length costs no recursion depth).  A
+        newline before the ``(`` or hiding an ``else`` means a multi-line
+        cmd conditional (out of scope): bail.  A bare command after
+        ``else``, an empty branch, or a branch whose single line carries a
+        Bash comment (it would swallow the inserted ``; fi``) also bail.
+        Every word read uses ``scan_substitutions=False`` so a bail can
+        never have recorded (or duplicated) edits inside ``$(...)``/backtick
+        regions.  Returns ``None`` on any deviation.
+        """
+        s = self.s
+
+        def space(p: int) -> int:
+            m = _HSPACE_RE.match(s, p, end)
+            return m.end() if m is not None else p
+
+        def word(p: int) -> tuple[str | None, int, int]:
+            q = space(p)
+            r = self._read_word(q, end, scan_substitutions=False)
+            if r <= q:
+                return None, q, q
+            return self._literal_word_value(s[q:r]), q, r
+
+        segments: list[_CmdIfSegment] = []
+        header_start = if_start
+        while True:
+            negated = False
+            folded = False
+            # Optional ``not`` and ``/i`` flags in either order (``/i`` is
+            # only meaningful for compare/arithmetic; before exist/defined/
+            # errorlevel it is invalid cmd and bails below, same as the old
+            # single-keyword matcher).
+            kw_lit, kw_start, kw_end = word(pos)
+            for _ in range(2):
+                if kw_lit == "not":
+                    if negated:
+                        return None
+                    negated = True
+                    kw_lit, kw_start, kw_end = word(kw_end)
+                elif kw_lit == "/i":
+                    if folded:
+                        return None
+                    folded = True
+                    kw_lit, kw_start, kw_end = word(kw_end)
+                else:
+                    break
+            if kw_lit is None:
+                return None
+            kind = "exist"
+            cmp_text: str | None = None
+            if kw_lit == "exist":
+                if folded:
+                    return None  # ``if /i exist`` is invalid cmd
+                op_start = space(kw_end)
+                op_end = self._read_word(op_start, end, scan_substitutions=False)
+                if op_end <= op_start:
+                    return None
+                operand_raw = s[op_start:op_end]
+                if self._literal_word_value(operand_raw) in (None, ""):
+                    return None
+                # cmd ``if exist`` matches wildcards; ``[[ -e ]]`` tests the
+                # literal name (``[[ ]]`` performs no pathname expansion), so
+                # an operand holding ``*``/``?``/``[`` cannot be translated
+                # faithfully: leave the whole conditional byte-for-byte.
+                if any(ch in operand_raw for ch in "*?["):
+                    return None
+                # A quoted operand that still contains backslashes: quotes are
+                # meaningless to cmd.exe (every ``\`` is a path separator
+                # there) but make the word literal data for Bash, and the
+                # scanner never rewrites quoted words.  ``[[ -e "D:\My Dir" ]]``
+                # would then silently test the wrong name; better to leave the
+                # loud syntax error untouched than to take the wrong branch.
+                if "\\" in operand_raw and operand_raw[:1] in {"'", '"'}:
+                    return None
+            elif kw_lit == "defined":
+                if folded:
+                    return None
+                op_start = space(kw_end)
+                op_end = self._read_word(op_start, end, scan_substitutions=False)
+                if op_end <= op_start or not _NAME_RE.match(
+                    s[op_start:op_end]
+                ):
+                    return None  # a defined operand must be a bare identifier
+                kind = "defined"
+            elif kw_lit == "errorlevel":
+                if folded:
+                    return None
+                op_start = space(kw_end)
+                op_end = self._read_word(op_start, end, scan_substitutions=False)
+                if op_end <= op_start or not _ERRORLEVEL_RE.match(
+                    s[op_start:op_end]
+                ):
+                    return None  # an errorlevel operand must be a plain integer
+                kind = "errorlevel"
+            else:
+                # compare / arithmetic: the condition is the token(s) starting
+                # at ``kw_start``.  String compare is a glued single word
+                # ``LHS==RHS``; arithmetic uses the spaced cmd relational
+                # words ``LHS rel RHS`` (equ/neq/lss/leq/gtr/geq -- glued
+                # ``5geq3`` is invalid cmd).  Every operand restriction and
+                # bail lives in :meth:`_build_cmd_cmp`.
+                op_start = kw_start
+                cond_raw = s[kw_start:kw_end]
+                eq_split = self._split_top_eq(cond_raw)
+                if eq_split is not None:
+                    cmp_text = self._build_cmd_cmp(
+                        eq_split[0], eq_split[1], "==",
+                        folded=folded, numeric=False,
+                    )
+                    if cmp_text is None:
+                        return None
+                    op_end = kw_end
+                    kind = "compare"
+                else:
+                    rel_lit, _, rel_end = word(kw_end)
+                    cmd_op = _CMD_REL_OPS.get(rel_lit or "")
+                    if cmd_op is None:
+                        return None  # neither glued == nor a relational word
+                    rhs_lit, rhs_start, rhs_end = word(rel_end)
+                    if rhs_lit is None:
+                        return None
+                    cmp_text = self._build_cmd_cmp(
+                        cond_raw, s[rhs_start:rhs_end], cmd_op,
+                        folded=folded, numeric=True,
+                    )
+                    if cmp_text is None:
+                        return None
+                    op_end = rhs_end
+                    kind = "arithmetic"
+            open_pos = space(op_end)
+            if open_pos >= end or s[open_pos] != "(":
+                return None
+            close_pos = self._find_matching(open_pos + 1, end, ")")
+            if close_pos >= end:
+                return None
+            if not self._cmd_if_branch_ok(open_pos + 1, close_pos):
+                return None
+            segments.append(
+                _CmdIfSegment(
+                    header_start, negated, op_start, op_end,
+                    open_pos, close_pos, kind, folded, cmp_text,
+                )
+            )
+            # Optional ``else`` tail.  The next word is probed across
+            # whitespace *including* newlines: a keyword behind a newline
+            # marks a multi-line cmd conditional (out of scope, bail rather
+            # than half-translate); otherwise an ``else`` continues the
+            # chain and anything else (control operator, EOF, another word)
+            # closes the conditional in the single-branch form.
+            q = close_pos + 1
+            crossed_newline = False
+            while q < end and s[q] in " \t\r\n":
+                if s[q] == "\n":
+                    crossed_newline = True
+                q += 1
+            lit, else_start, else_end = word(q)
+            if lit != "else":
+                if close_pos + 1 < end and s[close_pos + 1] not in _CMD_IF_TAIL_SAFE_CHARS:
+                    return None  # a word glued to `)` would corrupt the `; fi`
+                return _CmdIfMatch(tuple(segments), None, None)
+            if crossed_newline:
+                return None
+            nxt = space(else_end)
+            if nxt >= end:
+                return None  # dangling ``else``
+            if s[nxt] == "(":
+                else_close = self._find_matching(nxt + 1, end, ")")
+                if else_close >= end:
+                    return None
+                if not self._cmd_if_branch_ok(nxt + 1, else_close):
+                    return None
+                if (else_close + 1 < end
+                        and s[else_close + 1] not in _CMD_IF_TAIL_SAFE_CHARS):
+                    return None
+                return _CmdIfMatch(tuple(segments), nxt, else_close)
+            lit, _, if_end2 = word(nxt)
+            if lit != "if":
+                return None  # bare command branch: extent is ambiguous
+            header_start = else_start
+            pos = if_end2
+
+    def _cmd_if_branch_ok(self, start: int, stop: int) -> bool:
+        """Return whether the cmd branch body ``[start, stop)`` is translatable.
+
+        Rejects (so the whole conditional stays byte-for-byte): bodies
+        containing a newline (multi-line cmd conditional — out of scope, and
+        a trailing comment or heredoc body would swallow the inserted
+        ``;``/``; fi`` terminator), empty bodies (Bash rejects
+        ``then ;``/``else ;``), and bodies holding a ``#`` that starts a
+        Bash comment (cmd.exe has no ``#`` comments, so a genuine cmd
+        branch never hits this; the scan tracks quotes and backslashes, and
+        errs conservative inside nested substitutions).
+        """
+        body = self.s[start:stop]
+        if "\n" in body or not body.strip():
+            return False
+        i = 0
+        n = len(body)
+        while i < n:
+            ch = body[i]
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == "'":
+                close = body.find("'", i + 1)
+                if close < 0:
+                    return False
+                i = close + 1
+                continue
+            if ch == '"':
+                i += 1
+                while i < n and body[i] != '"':
+                    if body[i] == "\\":
+                        i += 1
+                    i += 1
+                i += 1
+                continue
+            if ch == "#" and (i == 0 or body[i - 1] in " \t;&|()<>"):
+                return False
+            i += 1
+        return True
+
+    def _commit_cmd_if(self, match: _CmdIfMatch) -> int:
+        """Emit the edits for a validated cmd conditional and scan its bodies.
+
+        All edits are disjoint by construction (design §4.3): the H/EL
+        header edit stops at the operand, the operand path rewrite stops at
+        the operand end, the O edit spans operand-end..``)``-inclusive,
+        branch-inner edits live strictly inside the parentheses, and the
+        C/E close edits start at the closing ``)``.  Parens are deleted,
+        never turned into subshells: a cmd group shares the interpreter
+        context (``cd`` inside a branch persists), which plain
+        ``then``/``else`` grouping preserves.
+        """
+        s = self.s
+        last = len(match.segments) - 1
+        for index, seg in enumerate(match.segments):
+            keyword = "if" if index == 0 else "elif"
+            neg = "! " if seg.negated else ""
+            if seg.kind == "defined":
+                self.edits.append(
+                    (seg.header_start, seg.op_start, f"{keyword} [[ {neg}-n ${{")
+                )
+                self.edits.append(
+                    (seg.op_end, seg.open_pos + 1, "+x} ]]; then ")
+                )
+            elif seg.kind == "errorlevel":
+                head = "$? < " if seg.negated else "$? >= "
+                self.edits.append(
+                    (seg.header_start, seg.op_start, f"{keyword} (( {head}")
+                )
+                self.edits.append(
+                    (seg.op_end, seg.open_pos + 1, " )); then ")
+                )
+            elif seg.kind in ("compare", "arithmetic"):
+                assert seg.cmp_text is not None
+                if seg.kind == "compare":
+                    self.edits.append(
+                        (seg.header_start, seg.op_start, f"{keyword} [[ {neg}")
+                    )
+                    self.edits.append(
+                        (seg.op_end, seg.open_pos + 1, " ]]; then ")
+                    )
+                else:
+                    if seg.negated:
+                        self.edits.append(
+                            (seg.header_start, seg.op_start,
+                             f"{keyword} (( ! (")
+                        )
+                        self.edits.append(
+                            (seg.op_end, seg.open_pos + 1, " ) )); then ")
+                        )
+                    else:
+                        self.edits.append(
+                            (seg.header_start, seg.op_start, f"{keyword} (( ")
+                        )
+                        self.edits.append(
+                            (seg.op_end, seg.open_pos + 1, " )); then ")
+                        )
+                self.edits.append((seg.op_start, seg.op_end, seg.cmp_text))
+            else:  # ``exist`` (the landed default)
+                test = (
+                    f"{keyword} [[ ! -e "
+                    if seg.negated
+                    else f"{keyword} [[ -e "
+                )
+                self.edits.append((seg.header_start, seg.op_start, test))
+                operand = s[seg.op_start : seg.op_end]
+                replacement = self._path_replacement(operand)
+                if replacement is not None:
+                    self.edits.append((seg.op_start, seg.op_end, replacement))
+                    self.path_notes.append(operand)
+                self.edits.append((seg.op_end, seg.open_pos + 1, " ]]; then "))
+            self._scan_range(seg.open_pos + 1, seg.close_pos)
+            if match.else_open is None and index == last:
+                self.edits.append((seg.close_pos, seg.close_pos + 1, "; fi"))
+            else:
+                self.edits.append((seg.close_pos, seg.close_pos + 1, ";"))
+        if match.else_open is None:
+            return match.segments[last].close_pos + 1
+        else_close = match.else_close
+        assert else_close is not None
+        # Delete the final ``else (`` paren, keeping the (valid bash) ``else``
+        # keyword; glue a space in when the source had ``else(``.
+        spacer = "" if s[match.else_open - 1] in " \t\r" else " "
+        self.edits.append((match.else_open, match.else_open + 1, spacer))
+        self._scan_range(match.else_open + 1, else_close)
+        self.edits.append((else_close, else_close + 1, "; fi"))
+        return else_close + 1
+
+    def _try_cmd_for(
+        self, for_start: int, for_end: int, end: int
+    ) -> int | None:
+        r"""Translate a cmd.exe ``for [%|%]name in (list) do body`` loop.
+
+        Recognised only as a guaranteed Bash syntax error at this position
+        (a bare ``(`` never follows a command word), so the strict single-line
+        parenthesised form may be translated to
+        ``for name in list; do body; done`` while anything else falls through
+        to today's behavior byte-for-byte.  Branch/loop bodies are scanned
+        normally so inner path / ``nul`` / fallback rewrites and nested cmd
+        control-flow keep composing.  Returns the index just past the whole
+        loop after recording the structural edits, or ``None`` (no edits) when
+        :meth:`_match_cmd_for` does not fully validate.
+        """
+        match = self._match_cmd_for(for_start, for_end, end)
+        if match is None:
+            return None
+        self.cmd_conditional_notes.append(
+            self.s[for_start : match.close_pos + 1]
+        )
+        return self._commit_cmd_for(match)
+
+    def _match_cmd_for(
+        self, for_start: int, pos: int, end: int
+    ) -> _CmdForMatch | None:
+        r"""Validate the cmd ``for`` loop shape; strictly read-only.
+
+        *for_start* is the start of the command-position ``for`` word and
+        *pos* the index just past it.  Horizontal whitespace only between
+        every token (single line), a ``%name``/``%%name`` loop token, the
+        literal ``in``, a matched parenthesised list that closes before the
+        first newline, whitespace then the literal ``do``, and a one-line
+        body.  The list items must be plain data (no ``$``/backtick/``!``/``%``
+        /``^`` or quote-delimited items); bare glob items are allowed (cmd and
+        bash both expand at run time).  Every ``%`` in the body must be a
+        whole-word occurrence of the loop token (other ``%`` forms -- ``%~ni``
+        modifiers, ``%ENVVAR%``, glued ``file_%i`` -- bail the whole loop), and
+        the body must hold no unquoted single ``&`` (cmd runs ``a & b`` inline
+        per iteration where bash would background) and no ``^``.  Commas are
+        cmd item separators and become single-character space edits.  Returns
+        ``None`` on any deviation.
+        """
+        s = self.s
+
+        def space(p: int) -> int:
+            m = _HSPACE_RE.match(s, p, end)
+            return m.end() if m is not None else p
+
+        def word(p: int) -> tuple[str | None, int, int]:
+            q = space(p)
+            r = self._read_word(q, end, scan_substitutions=False)
+            if r <= q:
+                return None, q, q
+            return self._literal_word_value(s[q:r]), q, r
+
+        # 1. loop token
+        _, tok_start, tok_end = word(pos)
+        if tok_end <= tok_start:
+            return None
+        token = _FOR_LOOP_TOKEN_RE.match(s[tok_start:tok_end])
+        if token is None:
+            return None
+        name = token.group(2)
+
+        # 2. ``in``
+        lit, in_start, in_end = word(tok_end)
+        if lit != "in":
+            return None
+
+        # 3. ``(`` .. matching ``)`` closing before the first newline
+        open_pos = space(in_end)
+        if open_pos >= end or s[open_pos] != "(":
+            return None
+        close_pos = self._find_matching(open_pos + 1, end, ")")
+        if close_pos >= end:
+            return None
+        newline = s.find("\n", open_pos + 1, close_pos + 1)
+        if newline >= 0:
+            return None  # a list paren must not span lines
+
+        scanned = self._match_cmd_for_list(open_pos + 1, close_pos)
+        if scanned is None:
+            return None
+        comma_spans, list_path_edits = scanned
+
+        # 4. whitespace then ``do`` (a glued ``)do`` is cmd-legal but bails v1)
+        do_lit, do_start, do_end = word(close_pos + 1)
+        if do_lit != "do" or do_start <= close_pos + 1:
+            return None
+        # 5. body = rest of the physical line
+        line_end = s.find("\n", do_end, end)
+        if line_end < 0:
+            line_end = end
+        if line_end <= do_end:
+            return None  # empty body
+        # A parenthesised do-body ``do ( ... )`` runs the cmd group once per
+        # item; turning it into a bash subshell would drop the shared
+        # interpreter context, so it bails (design \u00a74).
+        if s[space(do_end):end][:1] == "(":
+            return None
+        if not self._cmd_if_branch_ok(do_end, line_end):
+            return None
+        var_edits = self._match_cmd_for_body(
+            do_end, line_end, name
+        )
+        if var_edits is None:
+            return None
+
+        return _CmdForMatch(
+            for_start, name, tok_start, tok_end,
+            open_pos, close_pos, do_end, do_end, line_end,
+            comma_spans, list_path_edits, var_edits,
+        )
+
+    def _match_cmd_for_list(
+        self, i: int, close: int
+    ) -> tuple[tuple[tuple[int, int], ...], tuple[tuple[int, int, str], ...]] | None:
+        r"""Validate a cmd ``for`` item list and emit its data edits.
+
+        Splits the region on whitespace and on cmd's comma item separator.
+        Each item must decode to plain data (no leading/trailing quote, and no
+        ``$``/backtick/``!``/``%``/``^``); bare glob items are allowed (cmd
+        and bash both expand at run time).  Every comma becomes a single-
+        character space edit; every comma-free item gets the ordinary Windows
+        path rewrite.  Returns ``(comma_spans, list_path_edits)`` (path edits
+        never overlap the comma spans, keeping all committed edits disjoint)
+        or ``None`` to bail the whole loop.
+        """
+        s = self.s
+        commas: list[tuple[int, int]] = []
+        paths: list[tuple[int, int, str]] = []
+        while i < close:
+            ch = s[i]
+            if ch in " \t\r":
+                i += 1
+                continue
+            word_end = self._read_word(i, close, scan_substitutions=False)
+            if word_end <= i:
+                i += 1
+                continue
+            seg_start = i
+            k = i
+            while k < word_end:
+                if s[k] == "," or k == word_end - 1:
+                    item_end = k if s[k] == "," else k + 1
+                    item = s[seg_start:item_end]
+                    if item and not self._cmd_for_item_ok(item):
+                        return None
+                    if item:
+                        repl = self._path_replacement(item)
+                        if repl is not None:
+                            paths.append((seg_start, item_end, repl))
+                    if s[k] == ",":
+                        commas.append((k, k + 1))
+                        seg_start = k + 1
+                    k += 1
+                    continue
+                k += 1
+            i = word_end
+        return tuple(commas), tuple(paths)
+
+    @staticmethod
+    def _cmd_for_item_ok(item: str) -> bool:
+        """Return whether a cmd ``for`` list item is plain translatable data.
+
+        Rejects quote-delimited items (``"a b"``, commas inside them are data
+        in cmd) and any runtime/expansion or cmd-escape character.  Glob
+        characters are explicitly allowed: cmd expands the set at run time and
+        bash's ``for`` list expands its globs at run time too.
+        """
+        if item[:1] in {"'", '"'} or item[-1:] in {"'", '"'}:
+            return False
+        return not any(ch in item for ch in "$`!%^")
+
+    def _match_cmd_for_body(
+        self, start: int, stop: int, name: str
+    ) -> tuple[tuple[int, int], ...] | None:
+        """Validate a cmd ``for`` do-body and collect its loop-var word spans.
+
+        Returns the ``(word_start, word_end)`` span of every whole-word
+        ``%name``/``%%name`` occurrence (rewritten to ``$name``), or ``None``
+        to bail: the body must contain no ``^`` and no unquoted single ``&``
+        (``&&``/``|``/``||``/redirections run per iteration faithfully in both
+        cmd and bash -- a bare ``&`` backgrounds in bash), and every ``%`` must
+        belong to a whole-word token equal to the loop variable (so ``%~ni``
+        modifiers, ``%ENVVAR%`` references and glued ``file_%name`` partials
+        bail rather than silently mis-translating).
+        """
+        s = self.s
+        body = s[start:stop]
+        if "^" in body:
+            return None
+        if self._cmd_body_has_bare_ampersand(body):
+            return None
+        var_edits: list[tuple[int, int]] = []
+        i = start
+        while i < stop:
+            word_end = self._read_word(i, stop, scan_substitutions=False)
+            if word_end <= i:
+                i += 1
+                continue
+            if "%" in s[i:word_end]:
+                if s[i:word_end] not in ("%" + name, "%%" + name):
+                    return None
+                var_edits.append((i, word_end))
+            i = word_end
+        return tuple(var_edits)
+
+    @staticmethod
+    def _cmd_body_has_bare_ampersand(body: str) -> bool:
+        """Return whether a cmd ``for`` body holds a single (backgrounding) ``&``.
+
+        A run of one ``&`` outside quotes backgrounds the preceding command in
+        bash but sequences it inline in cmd, so it bails; ``&&`` (and ``||``)
+        run faithfully per iteration and is allowed.  Quote-aware.
+        """
+        i = 0
+        n = len(body)
+        in_single = False
+        while i < n:
+            ch = body[i]
+            if ch == "\\" and not in_single:
+                i += 2
+                continue
+            if ch == "'":
+                in_single = not in_single
+                i += 1
+                continue
+            if in_single or ch != "&":
+                i += 1
+                continue
+            run = 1
+            while i + run < n and body[i + run] == "&":
+                run += 1
+            if run == 1:
+                return True
+            i += run
+        return False
+
+    def _commit_cmd_for(self, match: _CmdForMatch) -> int:
+        r"""Emit the edits for a validated cmd ``for`` loop and scan its body.
+
+        All edits are disjoint by construction (design \u00a73.2): the loop-name
+        token, the two paren deletions (``(`` -- deleted, ``)`` -- turned into
+        the ``;`` that separates the list from ``do``), the comma ``\u2192`` space
+        edits, the Windows-path rewrites on comma-free list items, the whole-word
+        loop-variable ``\u2192`` ``$name`` rewrites in the body, and the zero-width
+        ``; done`` insertion at the end of the physical line.  The body is then
+        scanned as a command context so inner ``2>nul`` / path / fallback rewrites
+        and nested cmd control-flow fire recursively; the list region was already
+        validated by the matcher (its path edits recorded here), so it is not
+        re-scanned and no edit can clash with a comma span.
+        """
+        s = self.s
+        self.edits.append((match.tok_start, match.tok_end, match.name))
+        self.edits.append((match.open_pos, match.open_pos + 1, ""))
+        self.edits.append((match.close_pos, match.close_pos + 1, ";"))
+        for a, b in match.comma_spans:
+            self.edits.append((a, b, " "))
+        for a, b, repl in match.list_path_edits:
+            self.edits.append((a, b, repl))
+            self.path_notes.append(s[a:b])
+        for a, b in match.var_edits:
+            self.edits.append((a, b, "$" + match.name))
+        self.edits.append((match.body_end, match.body_end, "; done"))
+        self._scan_range(match.body_start, match.body_end)
+        return match.body_end
 
     def _scan_range(self, start: int, end: int) -> None:
         """Scan *start..end* as a command context, bounding recursion depth.
@@ -2730,6 +3693,19 @@ class _BashFixScanner:
                         i = close + 1 if close < end else end
                 continue
 
+            if raw[:1] == "@":
+                # A leading ``@`` at a Bash command position is a guaranteed
+                # error on this platform (no ``@*`` executable on PATH), so it
+                # may be handled.  ``@echo off|on`` becomes ``set +x|-x``; any
+                # other ``@word`` is stripped and re-dispatched as a command
+                # word so ``@if``/``@for`` compose with the control-flow hooks
+                # and ``@rev`` still gets its fallback prefix (design \u00a73.4).
+                at_index, at_mode = self._try_at_prefix(word_start, word_end, end)
+                if at_index is not None:
+                    i = at_index
+                    if at_mode == "statement":
+                        command_expected = False
+                    continue
             if raw == "function":
                 function_name_expected = True
                 command_expected = True
@@ -2740,6 +3716,29 @@ class _BashFixScanner:
                 function_body_expected = True
                 command_expected = False
                 continue
+            if raw == "if":
+                # cmd.exe `if [not] exist <path> (A) else (B)` conditional:
+                # guaranteed to be a Bash syntax error at this position (a
+                # command word is never followed by a bare `(`), so a full
+                # match may be translated; anything else falls through to
+                # the keyword handling below untouched (byte-for-byte).
+                consumed = self._try_cmd_if(word_start, word_end, end)
+                if consumed is not None:
+                    i = consumed
+                    command_expected = False  # the emitted `fi` completes it
+                    continue
+            if raw == "for":
+                # cmd.exe `for [%|%]name in (list) do body` loop: also a
+                # guaranteed Bash syntax error here (a bare `(` after `in`),
+                # so a full match may be translated.  A non-matching `for`
+                # falls through to the `_LIST_KEYWORDS` arm below (today's
+                # behavior, `for_arith_header` flag consumed by the next word)
+                # with the text left byte-for-byte.
+                consumed = self._try_cmd_for(word_start, word_end, end)
+                if consumed is not None:
+                    i = consumed
+                    command_expected = False  # the emitted `done` completes it
+                    continue
             if raw in _COMMAND_START_KEYWORDS:
                 command_expected = True
                 continue
@@ -2965,6 +3964,8 @@ class _BashFixScanner:
                     self.edits.append(
                         (word_start, word_end, _wrapper_runner(fallback_name))
                     )
+            elif self._record_cmd_jump(raw, literal, word_end, end):
+                pass
             elif self._record_unsupported(raw, literal):
                 pass
             else:
@@ -2996,6 +3997,60 @@ class _BashFixScanner:
         if name not in self.unsupported:
             self.unsupported.append(name)
         return True
+
+    def _record_cmd_jump(
+        self, raw: str, literal: object, word_end: int, end: int
+    ) -> bool:
+        """Record an untranslatable cmd.exe batch jump at command position.
+
+        ``goto``, glued ``:label`` lines, ``call :label`` / ``call x.bat`` and
+        ``exit /b`` have no faithful bash equivalent (design
+        ``.kimix_cache/cmd_control_flow_design.md`` \u00a73.3): arbitrary jumps
+        would run linearly past the target, and a translated ``exit N``
+        kills the persistent session / the interactive ``exec bash -i``
+        startup.  They are refused through the existing unsupported channel
+        (``_UNSUPPORTED_BODIES`` \u2192 ``BashFix.unsupported`` \u2192 the Bash tool
+        refuses before spawning), so the command text stays byte-for-byte.
+        Returns True when a jump was recorded; ``literal`` is the already
+        decoded command-word value (``None`` allowed).
+        """
+        name = literal if isinstance(literal, str) else raw
+        if name == "goto" or _GLUED_LABEL_RE.match(name):
+            if "goto" not in self.unsupported:
+                self.unsupported.append("goto")
+            return True
+        if name == "call":
+            nxt = self._peek_literal_word(word_end, end)
+            if nxt is not None and (
+                nxt.startswith(":") or _CALL_BATCH_RE.search(nxt)
+            ):
+                if "call :label" not in self.unsupported:
+                    self.unsupported.append("call :label")
+                return True
+            return False
+        if name == "exit":
+            nxt = self._peek_literal_word(word_end, end)
+            if nxt is not None and nxt in ("/b", "/B"):
+                if "exit /b" not in self.unsupported:
+                    self.unsupported.append("exit /b")
+                return True
+            return False
+        return False
+
+    def _peek_literal_word(self, pos: int, end: int) -> str | None:
+        """Return the decoded literal of the word at ``pos`` or ``None``.
+
+        Horizontal whitespace only; read without recording substitution
+        edits (validation-only peek).  Returns ``None`` on no word or a
+        non-decodable (runtime-expansion) word.
+        """
+        s = self.s
+        m = _HSPACE_RE.match(s, pos, end)
+        q = m.end() if m is not None else pos
+        r = self._read_word(q, end, scan_substitutions=False)
+        if r <= q:
+            return None
+        return self._literal_word_value(s[q:r])
 
     def _read_word(
         self, start: int, end: int, *, scan_substitutions: bool = True
@@ -4463,6 +5518,7 @@ def fix_bash_command(command: str) -> BashFix:
         result.shell_wrappers,
         result.nul_fixes,
         result.unsupported,
+        result.cmd_conditional_fixes,
     )
 
 

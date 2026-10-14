@@ -400,6 +400,143 @@ class TestCorpusLoading:
 
 
 # ---------------------------------------------------------------------------
+# cmd.exe `if exist` conditional: end-to-end execution proof
+# ---------------------------------------------------------------------------
+class TestCmdConditionalExecution:
+    """The translated cmd conditional must *run* under real bash.
+
+    The reproduced bug: ``if exist X (…) else (…)`` reached Git Bash
+    byte-for-byte and died with ``syntax error near unexpected token '('``
+    (rc 2).  The scanner now rewrites the strict cmd shape; this test fixes
+    the reproduced command, executes it as a script, and requires a clean
+    parse and run (plus no ``nul`` file leak from the inner ``2>nul``).
+    """
+
+    REPRODUCED = (
+        r"if exist LuisaCompute (dir LuisaCompute | more +5) "
+        r"else (echo no LuisaCompute dir) && echo "
+        + '"---"'
+        + " && "
+        + r"if exist D:\LuisaCompute "
+        + r"(dir D:\LuisaCompute\include\luisa\backends\ext 2>nul | findstr vk) "
+        + r"else (echo no D:\LuisaCompute)"
+    )
+
+    def test_reproduced_cmd_if_runs_under_bash(self, tmp_path) -> None:
+        import subprocess
+
+        if pytest is None:  # pragma: no cover - standalone use
+            return
+        # The Bash tool's own Git-Bash-first resolver: a bare
+        # ``shutil.which("bash")`` can hit the WindowsApps WSL execution
+        # alias, which cannot see Windows temp paths (rc 127 noise).
+        from kimi_cli.tools.file.bash.bash_tool import find_bash
+
+        bash = find_bash()
+        if bash is None:
+            pytest.skip("no bash executable on this host")
+        result = run_parser(self.REPRODUCED)
+        assert result.command != self.REPRODUCED
+        assert result.command.endswith(
+            "if [[ -e LuisaCompute ]]; then dir LuisaCompute | more +5; "
+            'else echo no LuisaCompute dir; fi && echo "---" && '
+            "if [[ -e D:/LuisaCompute ]]; then "
+            "dir D:/LuisaCompute/include/luisa/backends/ext 2>/dev/null "
+            "| findstr vk; else echo no D:/LuisaCompute; fi"
+        )
+        script = tmp_path / "cmd_if_e2e.sh"
+        script.write_text(result.command + "\n", encoding="utf-8", newline="\n")
+        proc = subprocess.run(
+            [str(bash), "--noprofile", "--norc", str(script)],
+            capture_output=True,
+            text=True,
+            cwd=str(tmp_path),
+            timeout=60,
+        )
+        # rc == 2 is the historical bash syntax-error exit code.
+        assert proc.returncode != 2, proc.stderr
+        assert proc.returncode == 0, (proc.returncode, proc.stderr)
+        assert "syntax error" not in proc.stderr
+        assert "no LuisaCompute dir" in proc.stdout
+        assert "---" in proc.stdout
+        leftovers = [p.name.lower() for p in tmp_path.iterdir()]
+        assert "nul" not in leftovers, f"nul leak: {leftovers}"
+
+
+# ---------------------------------------------------------------------------
+# cmd.exe for-loop + control-flow: end-to-end execution proof
+# ---------------------------------------------------------------------------
+class TestCmdControlFlowExecution:
+    """Translated for-loops and control-flow constructs must run under bash."""
+
+    def _bash(self):
+        from kimi_cli.tools.file.bash.bash_tool import find_bash
+
+        bash = find_bash()
+        if bash is None:
+            pytest.skip("no bash executable on this host")
+        return str(bash)
+
+    def test_for_loop_runs_over_real_files(self, tmp_path) -> None:
+        import subprocess
+
+        (tmp_path / "one.txt").write_text("1", encoding="utf-8")
+        (tmp_path / "two.txt").write_text("2", encoding="utf-8")
+        result = run_parser("for %f in (*.txt) do echo HIT %f")
+        assert result.command.endswith("for f in *.txt; do echo HIT $f; done")
+        proc = subprocess.run(
+            [self._bash(), "--noprofile", "--norc", "-c", result.command],
+            capture_output=True, text=True, cwd=str(tmp_path), timeout=60,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "HIT one.txt" in proc.stdout
+        assert "HIT two.txt" in proc.stdout
+
+    def test_defined_branch_runs(self, tmp_path) -> None:
+        import os
+        import subprocess
+
+        result = run_parser(
+            "if defined KIMIX_E2E_SET (echo present) else (echo absent)"
+        )
+        assert result.command.endswith(
+            'if [[ -n ${KIMIX_E2E_SET+x} ]]; then echo present; '
+            'else echo absent; fi'
+        )
+        env = dict(os.environ)
+        env.pop("KIMIX_E2E_SET", None)
+        absent = subprocess.run(
+            [self._bash(), "--noprofile", "--norc", "-c", result.command],
+            capture_output=True, text=True, env=env, timeout=60,
+        )
+        assert absent.stdout.strip() == "absent"
+        env["KIMIX_E2E_SET"] = "1"
+        present = subprocess.run(
+            [self._bash(), "--noprofile", "--norc", "-c", result.command],
+            capture_output=True, text=True, env=env, timeout=60,
+        )
+        assert present.stdout.strip() == "present"
+
+    def test_goto_is_refused_not_run(self) -> None:
+        """A batch jump is flagged unsupported; the text is left untouched."""
+        result = run_parser("echo start\ngoto :end\necho end\n:end")
+        assert "goto" in result.unsupported
+        assert result.command == "echo start\ngoto :end\necho end\n:end"
+
+    def test_at_echo_off_runs_silently(self, tmp_path) -> None:
+        import subprocess
+
+        result = run_parser("@echo off; echo hi")
+        assert result.command == "set +x; echo hi"
+        proc = subprocess.run(
+            [self._bash(), "--noprofile", "--norc", "-c", result.command],
+            capture_output=True, text=True, cwd=str(tmp_path), timeout=60,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.strip() == "hi"
+
+
+# ---------------------------------------------------------------------------
 # standalone runner (no pytest needed)
 # ---------------------------------------------------------------------------
 

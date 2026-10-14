@@ -30,7 +30,6 @@ Use `python` for long commands, not `{shell_tool}`.
 On error: retry, adjust, or decompose.
 Verify with tests/checks — never declare done from reading alone.
 Compact after each milestone.
-Track with todo_* tools.
 ''',
     'sp_worker_optional': '{YOLO}\n{SUBAGENT}\n{TRIVIAL}\n',
     'sp_thinker_items': '''\
@@ -73,6 +72,17 @@ _WORKER_OPTIONAL_CLAUSES: dict[str, str] = {
      'your result, not your transcript.\n'
  ),
  'TRIVIAL': 'Need clarification? Make your final output the question and stop; the parent answers by resuming your session.',
+}
+
+# Todo-tracking clause per worker flavor: a regular worker tracks its own
+# plan, while a sub-agent must never touch todo operations (the parent owns
+# task tracking and the sub-agent toolset has no todo tool).
+_WORKER_TODO_CLAUSES: dict[str, str] = {
+    'TRACK': 'Track with todo_* tools.',
+    'NO_TODO': (
+        'Never use `todo_list` or any todo-tracking operations — the parent '
+        'agent owns task tracking.'
+    ),
 }
 
 
@@ -161,6 +171,10 @@ def get_system_prompt(
             use_skills = True
             role_doc = role
             items.extend(_load_items('sp_worker_core', shell_tool=_shell_tool_name()))
+            if is_sub_agent:
+                items.append(_WORKER_TODO_CLAUSES['NO_TODO'])
+            else:
+                items.append(_WORKER_TODO_CLAUSES['TRACK'])
             subs = {'YOLO': '', 'SUBAGENT': '', 'TRIVIAL': ''}
             if is_sub_agent:
                 subs['SUBAGENT'] = _WORKER_OPTIONAL_CLAUSES['SUBAGENT']

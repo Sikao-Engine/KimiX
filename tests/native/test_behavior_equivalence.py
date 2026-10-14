@@ -243,6 +243,22 @@ BASH_FIX_CASES = [
     "bash -c 'cat /tmp/x'",
     "cd /d/foo",
     "echo '/tmp/x'",
+    # cmd.exe `if exist` conditional translation (Epoch-2 fix): parity of the
+    # rewritten command between the gated and ungated app entry.
+    (
+        r"if exist LuisaCompute (dir LuisaCompute | more +5) "
+        r"else (echo no LuisaCompute dir) && echo "
+        + '"---"'
+        + " && "
+        + r"if exist D:\LuisaCompute "
+        + r"(dir D:\LuisaCompute\include\luisa\backends\ext 2>nul | findstr vk) "
+        + r"else (echo no D:\LuisaCompute)"
+    ),
+    # Epoch-2 control-flow: cmd-for + defined + nul + nested-if composite.
+    "for %f in (a,b) do if defined V (del %f 2>nul) else (echo no %f)",
+    'if "%BUILD%"=="release" (echo rel) else (echo dbg)',
+    "if errorlevel 1 (echo bad) else (echo ok)",
+    "@echo off & dir",
 ]
 
 
