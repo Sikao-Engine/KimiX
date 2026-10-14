@@ -331,6 +331,84 @@ def _prompt_saved_message(prompt: str, ext: str = ".md") -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Sub-agent output files.
+#
+# Every run writes its result to ``<work dir>/.kimix_cache/temp_<session id>.md``
+# and the tool hands the parent agent only that path, so a long report is read
+# on demand instead of flooding the parent's context.  One file per sub-agent
+# session: a resumed run overwrites its own file.
+# ---------------------------------------------------------------------------
+
+_OUTPUT_FILE_PREFIX = "temp_"
+_OUTPUT_FILE_SUFFIX = ".md"
+_OUTPUT_ID_MAX = 96
+# Characters kept verbatim in the file name; anything else (path separators,
+# spaces, ``:``, unicode) is flattened to ``_`` so a caller-supplied session id
+# can never escape ``.kimix_cache`` or break the write.
+_SAFE_ID_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+)
+
+
+def _output_file_name(session_id: str) -> str:
+    """``temp_<session id>.md`` with path-hostile characters flattened."""
+    safe = "".join(c if c in _SAFE_ID_CHARS else "_" for c in session_id)[:_OUTPUT_ID_MAX]
+    if not safe.strip("._"):
+        safe = "unknown"
+    return f"{_OUTPUT_FILE_PREFIX}{safe}{_OUTPUT_FILE_SUFFIX}"
+
+
+def _write_subagent_output(session: Any, session_id: str, content: str) -> str:
+    """Save a sub-agent result and return the *path* it was written to.
+
+    Primary location: ``<work dir>/.kimix_cache/temp_<session id>.md`` (next to
+    the SDK sessions, see ``_sdk_sessions_dir``).  When that write fails the
+    text is retried in the shared temp folder (``.kimix_cache/tmp_<pid>``) so a
+    result is never lost.  ``""`` is returned only when *no* write succeeded —
+    the caller then reports the failure without echoing the text.
+    """
+    from kimi_agent_sdk._session import _sdk_sessions_dir
+
+    try:
+        work_dir = _session_work_dir(session) or KaosPath(".")
+        path = _sdk_sessions_dir(work_dir) / _output_file_name(session_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    except Exception:
+        pass
+    else:
+        return _display_output_path(path)
+    try:
+        return _display_temp_path(_create_script_file(content, ext=_OUTPUT_FILE_SUFFIX))
+    except Exception:
+        return ""
+
+
+def _display_output_path(path: Path) -> str:
+    """Short forward-slashed form of *path*, relative to the process cwd.
+
+    A cwd-relative path (``.kimix_cache/temp_<session id>.md``) is what the
+    parent agent expects; a work dir outside the cwd yields the absolute path.
+    """
+    try:
+        return str(path.resolve().relative_to(Path.cwd().resolve())).replace("\\", "/")
+    except (OSError, ValueError):
+        return str(path).replace("\\", "/")
+
+
+def _output_message(session_id: str, saved: str) -> str:
+    """Tool output for the parent: the saved file path, never the result text.
+
+    The sub-agent's own words only ever reach the parent through the file, so a
+    long report never floods the parent's context (and the parent cannot
+    mistake the raw text for the tool's return value).
+    """
+    if saved:
+        return f"Output saved to {saved}\nSession ID: {session_id}"
+    return f"Output could not be saved to a file\nSession ID: {session_id}"
+
+
 class SubAgentParams(BaseModel):
     model_config = {"populate_by_name": True}
 
@@ -526,8 +604,10 @@ class Agent(CallableTool2):
         "Delegate a self-contained task to a subagent (a separate agent in its "
         "own context) to offload focused, independent work — research, a scoped "
         "implementation, an analysis — without consuming this conversation's "
-        "context. It returns its result, not its intermediate steps, and does "
-        "not see this conversation, so give it a complete standalone prompt. "
+        "context. The result is written to `.kimix_cache/temp_<session_id>.md` "
+        "and only that path is returned, so read the file for the details; the "
+        "run does not see this conversation, so give it a complete standalone "
+        "prompt. "
         "Runs in the background by default, returning a durable subagent id and "
         "keeping the child conversation resumable via "
         "subagent(session_id='<id>', ...). Set run_in_background: false only "
@@ -671,7 +751,8 @@ class Agent(CallableTool2):
             output=(
                 f"Session ID: {prepared.session_id}\n\n"
                 "Started in the background; you'll be notified when it "
-                "finishes. Use list_agents to check its state."
+                "finishes. Use list_agents to check its state. Output is "
+                "saved to `.kimix_cache/temp_<session_id>.md`."
             ),
             brief="Background subagent started",
         )
@@ -717,16 +798,16 @@ class Agent(CallableTool2):
         if parent is None:
             return
         status = "failed" if result.is_error else "completed"
-        text = _truncate_text(result.output or result.message or "(no output)", 2000)
         extras = getattr(result, "extras", None) or {}
+        saved = str(extras.get("output_file") or "")
         store = _get_store(self._session)
         if _was_closed_mid_turn(result, extras, store, session_id):
             # The run was interrupted (its session was closed mid-turn), so the
-            # output is partial — never present it as a clean completion with a
-            # bogus "(no text output)" final message.
-            notice = _interrupted_notice(session_id, text)
+            # output is partial — say so instead of reporting a clean
+            # completion.
+            notice = _interrupted_notice(session_id, saved)
         else:
-            notice = f"Background subagent '{session_id}' {status}. Final message:\n{text}"
+            notice = _finished_notice(session_id, status, saved)
         await _push_steer_notice(parent, notice)
 
     async def _execute(self, prepared: _PreparedRun) -> ToolReturnValue:
@@ -768,7 +849,11 @@ class Agent(CallableTool2):
             if not output_text:
                 output_text = "(no text output)"
 
-            output_prefix = f"Session ID: {session_id}\n\n"
+            # The result goes to a file and the parent is handed only the path
+            # (see "Sub-agent output files"), so a long report never floods the
+            # parent's context.
+            output_file = _write_subagent_output(self._session, session_id, output_text)
+            output = _output_message(session_id, output_file)
 
             if err_msg:
                 # The prompt is intentionally not echoed in the brief: it is
@@ -778,12 +863,16 @@ class Agent(CallableTool2):
                 saved_suffix = _prompt_saved_message(prepared.prompt)  # full effective prompt actually sent
                 message = f"{err_msg} {saved_suffix}".strip() if saved_suffix else err_msg
                 result = ToolError(
-                    output=output_prefix + output_text,
+                    output=output,
                     message=message,
                     brief="sub-agent task failed",
                 )
                 extras = self._build_extras(
-                    params, session_id, collector.turns, "closed"
+                    params,
+                    session_id,
+                    collector.turns,
+                    "closed",
+                    output_file=output_file,
                 )
                 if saved_suffix:
                     prompt_file = saved_suffix.split("[prompt saved to ", 1)[1].split("]", 1)[0]
@@ -801,6 +890,7 @@ class Agent(CallableTool2):
                 session_id,
                 collector.turns,
                 "closed" if params.close_session else "continued",
+                output_file=output_file,
             )
 
             await self._update_store(
@@ -808,7 +898,7 @@ class Agent(CallableTool2):
             )
 
             result = ToolOk(
-                output=output_prefix + output_text,
+                output=output,
                 brief="Sub-agent task completed",
             )
             result.extras = extras
@@ -827,14 +917,16 @@ class Agent(CallableTool2):
         session_id: str,
         turns: list[ConversationTurn],
         status: str,
+        output_file: str = "",
         **extra: Any,
     ) -> dict[str, Any]:
         """Build the shared extras dict for ``Agent`` result branches.
 
         Every branch includes ``session_id``, ``status`` and ``turn_count``;
-        ``conversation_history`` is added when ``params.return_history`` is
-        set. Branch-specific keys are passed as keyword extras (e.g.
-        ``question`` for the awaiting-response branch).
+        ``output_file`` is added when the result was saved to disk (the path
+        the parent reads for the full text) and ``conversation_history`` when
+        ``params.return_history`` is set. Branch-specific keys are passed as
+        keyword extras (e.g. ``question`` for the awaiting-response branch).
         """
         extras: dict[str, Any] = {
             "session_id": session_id,
@@ -842,6 +934,8 @@ class Agent(CallableTool2):
             "turn_count": len(turns),
             **extra,
         }
+        if output_file:
+            extras["output_file"] = output_file
         if params.return_history:
             extras["conversation_history"] = self._format_history(
                 turns, params.history_format
@@ -1211,13 +1305,6 @@ def _is_text_turn(turn: ConversationTurn) -> bool:
     return turn.metadata.get("type") == "text"
 
 
-def _truncate_text(text: str, limit: int) -> str:
-    """Return *text*, truncated with an ellipsis when longer than *limit*."""
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "..."
-
-
 def _was_closed_mid_turn(
     result: ToolReturnValue, extras: dict, store: Any, session_id: str
 ) -> bool:
@@ -1229,15 +1316,24 @@ def _was_closed_mid_turn(
     return store.get(session_id) is None and store.was_closed(session_id)
 
 
-def _interrupted_notice(session_id: str, text: str) -> str:
-    """Build the 'was interrupted' steer text, dropping the session preamble."""
-    partial = text
-    if partial.startswith("Session ID:") and "\n\n" in partial:
-        partial = partial.split("\n\n", 1)[1]
-    if partial == "(no text output)":
-        partial = "(interrupted before producing any text output)"
-    partial = _truncate_text(partial, 1500)
-    return f"Background subagent '{session_id}' was interrupted. Partial output:\n{partial}"
+def _finished_notice(session_id: str, status: str, saved: str) -> str:
+    """Steer text for a settled background run: the output file, never the text.
+
+    The sub-agent's result is only ever referenced by path, so a completed run
+    cannot inject its report into the parent's context through the notice.
+    """
+    head = f"Background subagent '{session_id}' {status}."
+    if saved:
+        return f"{head} Output: {saved}"
+    return f"{head} Output could not be saved to a file."
+
+
+def _interrupted_notice(session_id: str, saved: str) -> str:
+    """Build the 'was interrupted' steer text (path only, no partial text)."""
+    head = f"Background subagent '{session_id}' was interrupted."
+    if saved:
+        return f"{head} Partial output: {saved}"
+    return f"{head} Partial output could not be saved to a file."
 
 
 async def _push_steer_notice(parent: Any, notice: str) -> None:

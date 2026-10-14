@@ -102,7 +102,7 @@ class TestSystemPromptBudget:
         from kimi_cli.utils.tokens import count_tokens
         assert count_tokens(prompt) <= 1_000
         # AGENTS.md should be dropped to the short form
-        assert "read AGENTS.md before work" in prompt
+        assert "Read AGENTS.md before work." in prompt
 
     def test_default_budget_is_4000(self, tmp_path: Path):
         prompt_func = get_system_prompt(work_dir=tmp_path, agent_role=SystemPromptType.Worker)
@@ -112,10 +112,10 @@ class TestSystemPromptBudget:
         assert count_tokens(prompt) <= 4_000
 
 
-class TestSubAgentCoverageReport:
-    """Sub-agents must report coverage so the parent can trust or re-check."""
+class TestSubAgentPrompt:
+    """Sub-agent prompt includes the sub-agent clauses; the worker prompt does not."""
 
-    def test_trivial_subagent_prompt_requires_coverage_report(self, tmp_path: Path):
+    def test_trivial_subagent_prompt_has_subagent_clause(self, tmp_path: Path):
         prompt_func = get_system_prompt(
             work_dir=tmp_path,
             agent_role=SystemPromptType.TrivialSubAgent,
@@ -123,10 +123,10 @@ class TestSubAgentCoverageReport:
         )
         runtime = _make_runtime(tmp_path)
         prompt = prompt_func(runtime)
-        assert "Report coverage" in prompt
-        assert "sampled/approximated" in prompt
+        assert "self-contained final result" in prompt
+        assert "resuming your session" in prompt
 
-    def test_worker_prompt_has_no_coverage_clause(self, tmp_path: Path):
+    def test_worker_prompt_has_no_subagent_clause(self, tmp_path: Path):
         prompt_func = get_system_prompt(
             work_dir=tmp_path,
             agent_role=SystemPromptType.Worker,
@@ -134,25 +134,4 @@ class TestSubAgentCoverageReport:
         )
         runtime = _make_runtime(tmp_path)
         prompt = prompt_func(runtime)
-        assert "Report coverage" not in prompt
-
-    def test_subagent_prompt_forbids_long_reports(self, tmp_path: Path):
-        prompt_func = get_system_prompt(
-            work_dir=tmp_path,
-            agent_role=SystemPromptType.TrivialSubAgent,
-            max_system_prompt_tokens=10_000,
-        )
-        runtime = _make_runtime(tmp_path)
-        prompt = prompt_func(runtime)
-        assert "Never return a long report" in prompt
-        assert "write it to a specific file" in prompt
-
-    def test_worker_prompt_has_no_long_report_clause(self, tmp_path: Path):
-        prompt_func = get_system_prompt(
-            work_dir=tmp_path,
-            agent_role=SystemPromptType.Worker,
-            max_system_prompt_tokens=10_000,
-        )
-        runtime = _make_runtime(tmp_path)
-        prompt = prompt_func(runtime)
-        assert "Never return a long report" not in prompt
+        assert "self-contained final result" not in prompt

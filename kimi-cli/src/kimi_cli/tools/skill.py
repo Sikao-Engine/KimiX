@@ -19,6 +19,12 @@ from kimi_cli.soul.agent import Runtime
 from kimi_cli.skill import Skill, format_skills_for_prompt, normalize_skill_name
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
+_MAX_SKILL_MD_BYTES = 65536
+"""Skills whose SKILL.md exceeds this size are not inlined into the tool output.
+
+For oversized documents the tool only reports the file path so the model can
+read the file itself with the file tools."""
+
 
 class Params(BaseModel):
     """Parameters for the skill tool."""
@@ -64,6 +70,21 @@ class SkillTool(CallableTool2[Params]):
                 ),
                 brief="Skill not found",
             )
+        path = str(skill.skill_md_file)
+        try:
+            stat = await skill.skill_md_file.stat()
+        except OSError:
+            stat = None
+        if stat is not None and stat.st_size > _MAX_SKILL_MD_BYTES:
+            return ToolOk(
+                output=(
+                    f'The skill document is too long '
+                    f"({stat.st_size} bytes, limit {_MAX_SKILL_MD_BYTES} bytes), "
+                    f"so its content is not returned here. "
+                    f"Read the file yourself if you need it: {path}"
+                ),
+                brief=f"Skill document too long: {skill.name}",
+            )
         try:
             content = await skill.skill_md_file.read_text(
                 encoding="utf-8", errors="replace"
@@ -73,10 +94,11 @@ class SkillTool(CallableTool2[Params]):
                 output="",
                 message=(
                     f'Failed to read the SKILL.md document of skill "{skill.name}": {exc}'
+                    f" (file path: {path})"
                 ),
                 brief="Skill document unreadable",
             )
         return ToolOk(
-            output=content,
-            brief=f"Loaded skill: {skill.name}",
+            output=f"Skill file path: {path}\n\n{content}",
+            brief=f"Loaded skill: {skill.name} ({path})",
         )

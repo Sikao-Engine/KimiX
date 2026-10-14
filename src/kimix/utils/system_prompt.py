@@ -14,74 +14,65 @@ from kimi_cli.utils.tokens import count_tokens
 _TEMPLATES: dict[str, str] = {
     'sp_template': '{TOOL_CONVENTIONS}{AGENT_ROLE}:\n{NUMBERED}\n{AGENTS_MD}{SKILLS}',
     'sp_tool_conventions': '''\
-# Tool Conventions
-- **Output folding**: long outputs keep first/last N lines; middle replaced by a truncation marker.
-- **Output dedup**: repeated lines from known commands are deduplicated automatically; output is always token-filtered.
-- **`rtk`**: invoke known CLI tools as `rtk <process> <arguments...>` — deduplicates and truncates output.
-- **`wait_for_pattern`**: blocks up to `timeout` seconds until the pattern appears.
-- **`timeout`**: seconds; range/default are in each tool's parameter schema.
-- **Working directory**: `Run` takes `cwd`/`workdir`; `bash`/`pwsh`: `cd <dir> && <cmd>` / `cd <dir>; <cmd>`; `python` runs in the process cwd.
+# Tools
+- Long outputs fold: keep first/last N lines; middle truncated.
+- Outputs are deduped and token-filtered.
+- Use `rtk <tool> <args>` for known CLI tools (dedupes and truncates).
+- `wait_for_pattern` blocks up to `timeout` seconds.
+- `cwd`/`workdir` sets the working directory.
 ''',
-    'sp_base_items': '''\
-Call tools in parallel.
-OS: {KIMI_OS} WORK DIR: {KIMI_WORK_DIR}
-''',
-    'sp_windows_item': 'Windows paths use backslashes (`\\`); always `\\` instead of `/` for file paths.\n',
+    'sp_base_items': 'Parallel tool calls.\nOS: {KIMI_OS} WORK DIR: {KIMI_WORK_DIR}\n',
+    'sp_windows_item': 'Windows paths use `\\`, never `/`.\n',
     'sp_worker_core': '''\
-Read references/skills/files first; act on evidence, not knowledge.
-Persist until requirements met; one action per turn.
-For long commands, use `python` instead of `{shell_tool}`.
+Read refs/skills/files first; act on evidence.
+Persist until done; one action per turn.
+Use `python` for long commands, not `{shell_tool}`.
 On error: retry, adjust, or decompose.
-Verify: run tests/checks before declaring done — never declare done from reading alone.
-compact after each milestone.
+Verify with tests/checks — never declare done from reading alone.
+Compact after each milestone.
 Track with todo_* tools.
 ''',
     'sp_worker_optional': '{YOLO}\n{SUBAGENT}\n{TRIVIAL}\n',
     'sp_thinker_items': '''\
-Think in <thinking>...</thinking>. End with <quit/>. Concise, no text outside tags.
+Think in <thinking>...</thinking>; end with <quit/>. No text outside tags.
 Self-verify: catch errors and bad assumptions.
 ''',
     'sp_todomaker_items': '''\
-Plan only. Do not implement.
-Record a comprehensive plan with `write_plan` `edit_plan`; include file paths per phase.
-You cannot write files or run commands — reject requirements needing those abilities.
+Plan only; never implement.
+Record the plan via `write_plan`/`edit_plan`, with file paths per phase.
+No file writes or commands — reject such requirements.
 ''',
     'sp_reader_items': '''\
-Read the given content and report a concise summary: key results, errors, warnings, and next steps.
+Read the content; summarize key results, errors, warnings, next steps.
 No commands, edits, or questions.
-For large content, cover the most relevant parts and note omissions.
+For large content, cover the key parts and note omissions.
 ''',
     'sp_supervisor_items': '''\
-Before delegating: outline goals, constraints, unknowns, acceptance criteria.
-Decompose into non-overlapping tasks (Explorer/Worker/Reviewer/Verifier); serial if same output.
-Dispatch via `subagent` (background by default; resume with subagent(session_id=...) for follow-ups; `interrupt_agent` to stop).
-Never do sub-agent work yourself. Route failures through inquiry, then narrow correction.
-Track with `todo_list`; accept or inquire/reject each result, then run one overall verification.
-Final: report tasks, deliverables, verification, unresolved work, merged conclusion.
+Delegate, don't implement: outline goals, constraints, acceptance criteria.
+Decompose into non-overlapping tasks; serial if same output.
+Dispatch via `subagent` (background; resume via session_id; stop via `interrupt_agent`).
+Route failures via inquiry, then narrow correction.
+Track via `todo_list`; verify each result, then one overall verification.
+Final report: tasks, deliverables, verification, unresolved work.
 ''',
     'sp_swarm_leader_items': '''\
-The user wants parallel work across multiple homogeneous sub-agents.
-Split into independent, homogeneous sub-tasks.
-Call `workflow` with: description, subagent_type (coder/explore/plan), prompt_template containing {{item}}, and items list.
-Do not implement tasks yourself; only dispatch and summarize the aggregated result. If not parallelizable, explain why and stop.
+Split into independent homogeneous sub-tasks.
+Call `workflow` with description, subagent_type (coder/explore/plan), prompt_template containing {{item}}, items list.
+Dispatch and summarize only. If not parallelizable, explain why and stop.
 ''',
     'sp_agent_md': 'AGENTS.md:\n```\n{content}\n```\n',
-    'sp_read_agents_md': 'read AGENTS.md before work\n',
+    'sp_read_agents_md': 'Read AGENTS.md before work.\n',
     'sp_skills': 'Skills:\n{skills}\n',
 }
 
 # Optional worker clauses, substituted into ``sp_worker_optional`` per role.
 _WORKER_OPTIONAL_CLAUSES: dict[str, str] = {
-    'YOLO': 'Yolo: never ask — independently pick the best option and continue.',
+'YOLO': 'Yolo: never ask — pick the best option and continue.',
  'SUBAGENT': (
      'Sub-Agent: deliver a self-contained final result — the parent sees only '
-     'your result, not your transcript or reasoning.\n'
-     'Report coverage: what you completed, what you only sampled/approximated, '
-     'and anything unverified, so the parent can trust or re-check.\n'
-     'Never return a long report: if a detailed report is needed, write it to a '
-     'specific file and return only a short summary with the file path.'
+     'your result, not your transcript.\n'
  ),
-    'TRIVIAL': 'If you need clarification from the parent agent, make your final output the question and stop; the parent sees your result and can answer by resuming your session.',
+ 'TRIVIAL': 'Need clarification? Make your final output the question and stop; the parent answers by resuming your session.',
 }
 
 
@@ -182,30 +173,30 @@ def get_system_prompt(
 
         match agent_role:
             case SystemPromptType.Worker:
-                worker_logic("You are a helpful software engineer assistant")
+                worker_logic("Software engineer assistant")
             case SystemPromptType.TodoMaker:
                 use_agent_md = True
                 use_skills = True
-                role_doc = "You are a helpful software engineer planner"
+                role_doc = "Software engineer planner"
                 items.extend(_load_items('sp_todomaker_items'))
             case SystemPromptType.Thinker:
-                worker_logic("You are a helpful software engineer thinker")
+                worker_logic("Software engineer thinker")
                 items.extend(_load_items('sp_thinker_items'))
             case SystemPromptType.TrivialSubAgent:
-                worker_logic("You are a helpful software engineer assistant sub-agent", True)
+                worker_logic("Sub-agent of a software engineer assistant", True)
                 items.append(_WORKER_OPTIONAL_CLAUSES['TRIVIAL'])
             case SystemPromptType.Reader:
-                role_doc = "You are a helpful software engineer assistant reader"
+                role_doc = "Software engineer reader"
                 items.extend(_load_items('sp_reader_items'))
             case SystemPromptType.Supervisor:
                 use_agent_md = True
                 use_skills = True
-                role_doc = "You are a helpful software engineer assistant supervisor"
+                role_doc = "Software engineer supervisor"
                 items.extend(_load_items('sp_supervisor_items'))
             case SystemPromptType.SwarmLeader:
                 use_agent_md = True
                 use_skills = True
-                role_doc = "You are a helpful software engineer assistant swarm orchestrator"
+                role_doc = "Swarm orchestrator"
                 items.extend(_load_items('sp_swarm_leader_items'))
 
         def _build_agent_md_doc() -> str:

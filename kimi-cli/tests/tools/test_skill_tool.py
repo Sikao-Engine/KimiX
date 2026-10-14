@@ -15,7 +15,7 @@ import pytest
 from kaos.path import KaosPath
 
 from kimi_cli.skill import Skill, index_skills, normalize_skill_name
-from kimi_cli.tools.skill import Params, SkillTool
+from kimi_cli.tools.skill import _MAX_SKILL_MD_BYTES, Params, SkillTool
 from kosong.tooling import ToolError, ToolOk
 
 
@@ -53,7 +53,9 @@ async def test_existing_skill_returns_file_content(tmp_path: Path):
 
     assert isinstance(result, ToolOk)
     assert result.is_error is False
-    assert result.output == body
+    # The skill file path is always included in the output.
+    assert str(md) in result.output
+    assert result.output.endswith(body)
 
 
 @pytest.mark.asyncio
@@ -64,7 +66,8 @@ async def test_lookup_is_case_insensitive(tmp_path: Path):
     result = await tool(Params(name="bEtA"))
 
     assert isinstance(result, ToolOk)
-    assert result.output == "beta body"
+    assert str(md) in result.output
+    assert result.output.endswith("beta body")
 
 
 @pytest.mark.asyncio
@@ -153,3 +156,35 @@ async def test_unreadable_skill_file_returns_error(tmp_path: Path):
     assert isinstance(result, ToolError)
     assert result.is_error is True
     assert "gamma" in result.message
+
+
+@pytest.mark.asyncio
+async def test_oversized_skill_file_returns_path_only(tmp_path: Path):
+    # A document larger than 65536 bytes is not inlined into the output;
+    # the tool only reports the size and the original file path.
+    big_body = "x" * (_MAX_SKILL_MD_BYTES + 1)
+    md = _make_skill_md(tmp_path, "huge", big_body)
+    tool = _tool([_skill("huge", md)])
+
+    result = await tool(Params(name="huge"))
+
+    assert isinstance(result, ToolOk)
+    assert result.is_error is False
+    assert "too long" in result.output
+    assert str(md) in result.output
+    # The document content must not be returned.
+    assert "x" * 1024 not in result.output
+
+
+@pytest.mark.asyncio
+async def test_skill_file_at_size_limit_returns_content(tmp_path: Path):
+    # Exactly at the limit the document is still returned, path included.
+    body = "y" * _MAX_SKILL_MD_BYTES
+    md = _make_skill_md(tmp_path, "limit", body)
+    tool = _tool([_skill("limit", md)])
+
+    result = await tool(Params(name="limit"))
+
+    assert isinstance(result, ToolOk)
+    assert str(md) in result.output
+    assert result.output.endswith(body)
