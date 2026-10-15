@@ -29,7 +29,6 @@ Persist until done; one action per turn.
 Use `python` for long commands, not `{shell_tool}`.
 On error: retry, adjust, or decompose.
 Verify with tests/checks — never declare done from reading alone.
-Compact after each milestone.
 ''',
     'sp_worker_optional': '{YOLO}\n{SUBAGENT}\n{TRIVIAL}\n',
     'sp_thinker_items': '''\
