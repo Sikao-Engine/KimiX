@@ -1,5 +1,8 @@
 r"""Tolerant command-context parser for the lossless shell IR (plan §3.3).
 
+Part of the lossless tolerant-IR ``kimix_native.shell_compat`` implementation
+package behind the stable ``_shell_compat`` facade.
+
 Builds the :mod:`kimix_native.shell_compat.models` IR from the flat token
 stream of :mod:`kimix_native.shell_compat.lexer`.  This is deliberately NOT
 a POSIX grammar: structure is recognized only where recognition is safe —

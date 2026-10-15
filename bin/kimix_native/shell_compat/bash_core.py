@@ -1,18 +1,30 @@
-"""Bash / Git Bash compatibility scanner: ``BashFix``, ``_BashFixScanner``,
-``fix_bash_command``, the path / null-device / wrapper / heredoc handling,
-the strict cmd.exe ``@`` / ``if`` / ``for`` translations, and the
-quote/substitution boundary scanners (``_find_ansi_c_end`` /
-``_find_backtick_end`` / ``_find_matching_paren`` / ``_find_dq_end`` and the
-``_match_*`` family).  The ``_process_unquoted`` emitter itself moved to
+"""Bash/Git Bash compatibility scanner: the ``BashFix`` result type, the
+``_BashFixScanner`` engine reader and the ``fix_bash_command`` entry point, plus
+the shared Bash constants and quote/substitution boundary scanners
+(``_find_ansi_c_end`` / ``_find_backtick_end`` / ``_find_matching_paren`` /
+``_find_dq_end`` and the ``_match_*`` family).
+
+Part of the lossless tolerant-IR ``kimix_native.shell_compat`` implementation
+package behind the stable ``_shell_compat`` facade.  This module owns the SCAN
+FLOW only (Option A): every RULE decision is delegated to its own module —
+paths (path / ``nul`` / ``cd /d``), wrappers (classification / fallback /
+wrapper operand / reparse / unwrap), cmd_translator (cmd.exe ``@`` / ``if`` /
+``for`` / jumps), heredoc (trailing-operator repair) and translator (the
+``translate`` orchestration, the ``EditPlan`` render and the fallback prefix).
+Already Git Bash-compatible input is returned byte-for-byte; only verified
+compatibility cases produce an edit or a runtime-guarded fallback.
+
+The ``_process_unquoted`` emitter moved to
 ``kimix_native.shell_compat.unquoted`` (Phase 3); this module keeps the
 ``_process_unquoted`` name as a thin delegate so intra-module callers and
-the ``_shell_compat`` facade resolve unchanged.
+the facade resolve unchanged.
 
 Moved byte-for-byte from ``bin/kimix_native/_shell_compat.py`` (the
 bash_fix.py scanner section and the bash_tool.py _process_unquoted
 section, former lines 763-5878, minus the fallback data relocated to
-kimix_native.shell_compat.fallback_data).  ``kimix_native/_shell_compat.py``
-is the stable compatibility facade that re-exports this surface.
+kimix_native.shell_compat.fallback_data).  ``bin/kimix_native/_shell_compat.py``
+is the stable compatibility FACADE over this package: it holds no scanner
+implementation itself, it re-exports this surface.
 """
 
 from __future__ import annotations
@@ -31,9 +43,10 @@ except ImportError:  # pragma: no cover
     import re  # stdlib: the used patterns are all stdlib-compatible
 
 # Runtime fallback data + helpers (defined in fallback_data.py).  These are
-# read inside the scanner methods, so the import is needed for the module to
-# work standalone; the facade loads both sections into one shared namespace
-# so late-bound lookups stay compatible with the original single module.
+# read inside the scanner methods, so the import is needed for this module to
+# work.  In the original single-file implementation both sections shared one
+# module namespace; after the extraction the facade re-exports both namespaces
+# into one module object, so late-bound lookups stay compatible with it.
 from kimix_native.shell_compat.fallback_data import (
     _FALLBACKS,
     _FALLBACK_BODIES,
@@ -369,13 +382,14 @@ def _windows_temp_dir() -> str:
 
 # ``_windows_temp_dir`` is the one name the test suite monkeypatches through
 # the ``kimix_native._shell_compat`` facade handle (it patched the single
-# flat namespace of the historical module).  Split into ``bash_core`` that
-# late-bound lookup would otherwise bypass the patch, so the virtual-path
-# rewrite reads the temp dir through the facade dict when the facade is
-# loaded (honoring a monkeypatch), else this module's own definition.  The
-# result is byte-for-byte identical when nothing is patched, because the
-# facade and this module bind the SAME function object.  See the Phase 1
-# extraction notes in _shell_compat.py.
+# flat namespace of the historical single-file implementation).  Split into
+# ``bash_core`` that late-bound lookup would otherwise bypass the patch, so the
+# virtual-path rewrite reads the temp dir through the facade dict when the facade
+# is loaded (honoring a monkeypatch), else this module's own definition.  The
+# result is byte-for-byte identical when nothing is patched, because the facade
+# and this module bind the SAME function object.  The contract is locked by
+# ``test_facade_module_level_patch_reaches_scanner`` in
+# ``tests/unit/tools/test_shell_compat_facade.py``.
 def _windows_temp_dir_from_namespace() -> str:
     _facade = sys.modules.get("kimix_native._shell_compat")
     if _facade is not None:
@@ -3618,9 +3632,6 @@ def bash_compatibility_prelude() -> str:
     return definitions + "\n" + exports
 
 
-_HEREDOC_TRAILING_OPERATORS = frozenset({"&&", "||", "|", "|&", ";", "&"})
-
-
 def _read_shell_control_operator(s: str, i: int, n: int) -> tuple[str, int]:
     """Return the control operator at position *i* and the index after it."""
     if i >= n:
@@ -3647,284 +3658,68 @@ def _read_shell_control_operator(s: str, i: int, n: int) -> tuple[str, int]:
     return "", i
 
 
+# Phase 7: the heredoc trailing-operator constant lives in
+# ``kimix_native.shell_compat.heredoc`` (moved BYTE-FOR-BYTE together with the
+# two repair functions; the historical names below are thin lazy delegates kept
+# on ``bash_core`` because they are part of the 195-name ``_shell_compat``
+# facade ``__all__`` and the scanner call sites).  This import sits AFTER
+# ``_read_shell_control_operator`` is defined: the moved
+# ``_apply_heredoc_operator_move`` resolves that helper (and the scanner class
+# for the no-events legacy rescan) LAZILY from ``bash_core`` inside its body,
+# so whichever module loads first, both sides resolve at call time — the
+# Phase-3/4/5/6 lazy-delegate cycle pattern.
+from kimix_native.shell_compat.heredoc import (  # noqa: E402
+    _HEREDOC_TRAILING_OPERATORS,
+)
+
+
+# Phase 7: the heredoc trailing-operator constants and repairs live in
+# ``kimix_native.shell_compat.heredoc`` (moved BYTE-FOR-BYTE); these are thin
+# delegates that keep the historical names on ``bash_core`` — they are part of
+# the 195-name ``_shell_compat`` facade ``__all__`` and every intra-module call
+# site (the scanner's ``_build_fixed_source``, ``fix_bash_command``).  The lazy
+# function-body import keeps the load-time cycle (bash_core -> heredoc ->
+# bash_core) broken, exactly the Phase-3/4/5/6 pattern.
 def _apply_heredoc_operator_move(
     source: str, redir_line_end: int, terminator_end: int
 ) -> str:
-    """Move a control-operator line following a heredoc terminator to the redirection line.
-
-    Bash requires a control operator that continues a heredoc-delimited command
-    to appear on the same line as the ``<<`` redirection.  A common model
-    mistake is to place the operator on the line after the closing delimiter,
-    which produces ``syntax error near unexpected token `&&'``.  This helper
-    repairs that pattern while leaving the heredoc body and delimiter intact.
-    """
-    n = len(source)
-    if redir_line_end < 0 or redir_line_end >= n or source[redir_line_end] != "\n":
-        return source
-    if terminator_end < 0 or terminator_end > n:
-        return source
-
-    i = terminator_end
-    while i < n:
-        ch = source[i]
-        if ch in " \t\r":
-            i += 1
-            continue
-        if ch == "\n":
-            i += 1
-            continue
-        if ch == "#":
-            nl = source.find("\n", i, n)
-            i = n if nl < 0 else nl + 1
-            continue
-        break
-    if i >= n:
-        return source
-
-    op, op_end = _read_shell_control_operator(source, i, n)
-    if op not in _HEREDOC_TRAILING_OPERATORS:
-        return source
-    # ``&>`` / ``&>>`` are redirections, not list terminators.
-    if op == "&" and op_end < n and source[op_end] == ">":
-        return source
-
-    move_start = i
-    line_end = source.find("\n", i, n)
-    if line_end < 0:
-        line_end = n
-        move_end = n
-    else:
-        move_end = line_end + 1
-
-    rest = source[op_end:line_end].lstrip(" \t\r")
-    if not rest or rest.startswith("#"):
-        k = move_end
-        while k < n:
-            if source[k] in " \t\r":
-                k += 1
-                continue
-            if source[k] == "\n":
-                k += 1
-                continue
-            if source[k] == "#":
-                nl = source.find("\n", k, n)
-                k = n if nl < 0 else nl + 1
-                continue
-            break
-        if k >= n:
-            return source
-        next_line_end = source.find("\n", k, n)
-        if next_line_end < 0:
-            move_end = n
-        else:
-            move_end = next_line_end + 1
-
-    # A trailing backslash continues the logical command on the following
-    # physical lines; the continuation must move with its line, or the
-    # orphaned tail is left behind and read as heredoc body.
-    while move_end < n:
-        prev_nl = source.rfind("\n", move_start, move_end - 1)
-        last_line = source[prev_nl + 1 : move_end - 1]
-        if not _BashFixScanner._heredoc_line_continues(last_line):
-            break
-        next_end = source.find("\n", move_end, n)
-        move_end = n if next_end < 0 else next_end + 1
-
-    # A list may continue over SEVERAL physical operator lines (the model can
-    # write ``&& echo A`` on one line and ``&& echo B`` on the next, both after
-    # the closing delimiter).  The backslash loop above only carries a single
-    # logical line; absorb each following operator-led line as well, or it is
-    # left orphaned after the terminator and bash reports
-    # ``syntax error near unexpected token `&&'``.
-    while move_end < n:
-        j = move_end
-        while j < n:
-            cj = source[j]
-            if cj in " \t\r":
-                j += 1
-                continue
-            if cj == "\n":
-                j += 1
-                continue
-            if cj == "#":
-                nl2 = source.find("\n", j, n)
-                j = n if nl2 < 0 else nl2 + 1
-                continue
-            break
-        if j >= n:
-            break
-        op2, op2_end = _read_shell_control_operator(source, j, n)
-        if op2 not in _HEREDOC_TRAILING_OPERATORS:
-            break
-        if op2 == "&" and op2_end < n and source[op2_end] == ">":
-            break
-        cand_nl = source.find("\n", j, n)
-        move_end = n if cand_nl < 0 else cand_nl + 1
-        # carry this operator line's own backslash continuations too
-        while move_end < n:
-            pl = source.rfind("\n", j, move_end - 1)
-            ll = source[pl + 1 : move_end - 1]
-            if not _BashFixScanner._heredoc_line_continues(ll):
-                break
-            ne = source.find("\n", move_end, n)
-            move_end = n if ne < 0 else ne + 1
-
-    lines = source[move_start:move_end].splitlines()
-
-    # Closing delimiters that belong to a construct opened BEFORE the
-    # redirection line (a command substitution ``$(`` or backtick, a subshell
-    # ``(``, a brace group ``{``) must NOT ride up onto the redirection line:
-    # doing so closes the construct before the heredoc body, ejects the body
-    # lines into the outer command list, and bash reports an unterminated
-    # here-document.  The excess closers — and everything after them — stay
-    # in place after the terminator (e.g. ``x=$(cat <<E | wc -l`` + body +
-    # ``E`` + ``); echo q``).  The stay suffix may sit mid-line (``| wc -l);
-    # echo q``) or after balanced groups inside the moved text (``| (a); b)``;
-    # only the closers exceeding the moved text's own openers belong outside).
-    # Guards are naive character counts; the prefix guard (an unclosed opener
-    # before the redirection line) keeps ordinary operator lines such as
-    # ``| (wc -l)`` moving whole.
-    stay = ""
-    if lines:
-        moved_text = "\n".join(lines)
-        prefix = source[:redir_line_end]
-        stay_start: int | None = None
-        paren_excess = moved_text.count(")") - moved_text.count("(")
-        if paren_excess > 0 and prefix.count("(") > prefix.count(")"):
-            # The suffix from the last excess ``)`` onward stays: it is the
-            # construct closer (any ``)`` beyond the moved text's own openers
-            # must close a prefix opener).
-            target = moved_text.count("(") + paren_excess
-            idx = -1
-            for _ in range(target):
-                idx = moved_text.find(")", idx + 1)
-            if idx >= 0 and (stay_start is None or idx < stay_start):
-                stay_start = idx
-        if moved_text.count("`") % 2 == 1 and prefix.count("`") % 2 == 1:
-            idx = moved_text.rfind("`")
-            if idx >= 0 and (stay_start is None or idx < stay_start):
-                stay_start = idx
-        brace_excess = moved_text.count("}") - moved_text.count("{")
-        if brace_excess > 0 and prefix.count("{") > prefix.count("}"):
-            target = moved_text.count("{") + brace_excess
-            idx = -1
-            for _ in range(target):
-                idx = moved_text.find("}", idx + 1)
-            if idx >= 0 and (stay_start is None or idx < stay_start):
-                stay_start = idx
-        if stay_start is not None:
-            stay = moved_text[stay_start:]
-            lines = moved_text[:stay_start].splitlines() or [""]
-            # If the first stay line is only construct closers and the next
-            # stay line starts with a control operator, joining them with a
-            # space is required: an operator-led physical line after a
-            # completed command is a bash syntax error (``cmd \n && next``).
-            stay_lines = stay.split("\n")
-            if (
-                len(stay_lines) > 1
-                and not stay_lines[0].strip(" \t\r").strip(")`}")
-                and stay_lines[1].lstrip(" \t\r")
-            ):
-                nxt = stay_lines[1]
-                lead = len(nxt) - len(nxt.lstrip(" \t\r"))
-                op2, _op2_end = _read_shell_control_operator(
-                    nxt, lead, len(nxt)
-                )
-                if op2 in _HEREDOC_TRAILING_OPERATORS and not (
-                    op2 == "&" and nxt[lead + len(op2) :].startswith(">")
-                ):
-                    stay = " ".join(
-                        [stay_lines[0].rstrip(" \t\r")]
-                        + [
-                            ln.strip(" \t\r")
-                            for ln in stay_lines[1:]
-                            if ln.strip(" \t\r")
-                        ]
-                    )
-
-    parts: list[str] = []
-    if lines:
-        parts.append(lines[0][len(op):].strip())
-        parts.extend(line.strip() for line in lines[1:])
-    # Re-join stripped parts, but keep a backslash line-continuation as a real
-    # newline: splicing the next line on with a space would turn ``\`` + NL
-    # into ``\ `` (an escaped space), corrupting the continued command.
-    segments: list[str] = []
-    for part in parts:
-        if not part or part.startswith("#"):
-            continue
-        if segments:
-            prev = segments[-1]
-            trailing = len(prev) - len(prev.rstrip("\\"))
-            segments.append(("\n" if trailing % 2 == 1 else " ") + part)
-        else:
-            segments.append(part)
-    joined = "".join(segments)
-    moved = f"{op} {joined}\n" if joined else f"{op}\n"
-
-    return (
-        source[:redir_line_end]
-        + " "
-        + moved
-        + source[redir_line_end + 1 : move_start]
-        + (stay + "\n" if stay else "")
-        + source[move_end:]
+    """Phase 7 delegate to :func:`kimix_native.shell_compat.heredoc._apply_heredoc_operator_move`."""
+    from kimix_native.shell_compat.heredoc import (
+        _apply_heredoc_operator_move as _impl,
     )
+
+    return _impl(source, redir_line_end, terminator_end)
 
 
 def _fix_heredoc_trailing_operators(
     source: str, events: list[tuple[int, int]] | None = None
 ) -> str:
-    """Repair heredoc commands whose trailing control operator is on the wrong line.
+    """Phase 7 delegate to :func:`kimix_native.shell_compat.heredoc._fix_heredoc_trailing_operators`."""
+    from kimix_native.shell_compat.heredoc import (
+        _fix_heredoc_trailing_operators as _impl,
+    )
 
-    *events* may carry the ``(redir_line_end, terminator_end)`` pairs already
-    collected by a scan of *source*; when omitted the source is scanned here.
-    """
-    if events is None:
-        try:
-            scanner = _BashFixScanner(source)
-            scanner._scan_range(0, scanner.n)
-        except RecursionError:
-            return source
-        events = scanner.heredoc_events
-    if not events:
-        return source
-    for redir_line_end, terminator_end in reversed(events):
-        source = _apply_heredoc_operator_move(source, redir_line_end, terminator_end)
-    return source
+    return _impl(source, events)
 
 
 def fix_bash_command(command: str) -> BashFix:
     """Rewrite selected native POSIX commands for Windows Git Bash.
 
-    The Windows-platform gate lives in the app layer
-    (``kimi_cli.tools.file.bash.bash_fix.fix_bash_command``); this scanner is
-    byte-identical to the native kernel, which also does not gate on platform.
-    Empty input is returned byte-for-byte unchanged.
+    Phase 7 (Option A): the orchestration is the IR-owned :func:`translate`
+    entry (plan §3.5).  This is a thin wrapper: ``translate`` builds the engine
+    reader (the :class:`_BashFixScanner` compatibility adapter), drives the scan
+    flow whose every rule DECISION already delegates to the IR modules
+    (paths/wrappers/cmd_translator/heredoc), renders through the shared
+    ``EditPlan``/``render_splices``/``fallback_prefix`` and applies the heredoc
+    trailing-operator repair LAST via ``heredoc.py``.  Empty input returns
+    ``BashFix(command)`` byte-for-byte; malformed input and depth overflow never
+    raise.  The Windows-platform gate lives in the app layer
+    (``kimi_cli.tools.file.bash.bash_fix.fix_bash_command``), which also does not
+    gate on platform inside this kernel.
     """
-    if not command:
-        return BashFix(command)
-    # Quoting and escaping can form a literal command name without the source
-    # containing it contiguously (for example ``r""ev`` or ``\rev``), so a
-    # substring fast path would miss legal executable words.  The scanner is
-    # linear and exits without allocating generated shell code when unchanged.
-    scanner = _BashFixScanner(command)
-    result = scanner.fix()
-    if result.command == command:
-        # ``fix()`` scanned the source verbatim: reuse its heredoc events
-        # instead of scanning the same string a second time.
-        fixed = _fix_heredoc_trailing_operators(command, scanner.heredoc_events)
-    else:
-        fixed = _fix_heredoc_trailing_operators(result.command)
-    return BashFix(
-        fixed,
-        result.replacements,
-        result.path_changes,
-        result.shell_wrappers,
-        result.nul_fixes,
-        result.unsupported,
-        result.cmd_conditional_fixes,
-    )
+    from kimix_native.shell_compat.translator import translate as _translate
+
+    return _translate(command)
 
 
 # ======================================================================

@@ -1,5 +1,8 @@
 r"""Lossless, tolerant shell IR node types (plan §3.2).
 
+Part of the lossless tolerant-IR ``kimix_native.shell_compat`` implementation
+package behind the stable ``_shell_compat`` facade.
+
 Every node represents source *by reference*: a ``SourceSpan`` into the single
 source string owned by the root :class:`ScriptNode`.  Nodes never copy or
 normalize source text, so ``render_source(script)`` reproduces the input

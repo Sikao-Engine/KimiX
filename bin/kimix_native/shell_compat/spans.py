@@ -1,8 +1,10 @@
 """Spans, edits, and diagnostics — the coordinate layer of the lossless shell IR.
 
-Part of Phase 2 of the ``_shell_compat`` refactor (plan §3.2): every IR node
-references the single source string through these primitives; nothing here
-copies, normalizes, or re-encodes source text.
+Part of Phase 2 of the ``_shell_compat`` refactor (plan §3.2) and of the lossless
+tolerant-IR ``kimix_native.shell_compat`` implementation package behind the stable
+``_shell_compat`` facade: every IR node references the single source string
+through these primitives; nothing here copies, normalizes, or re-encodes
+source text.
 
 Public names:
 

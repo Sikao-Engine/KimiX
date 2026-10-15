@@ -13,10 +13,11 @@ This module performs a *source-to-source* transformation.  It operates on raw
 text rather than an AST because the target environment (5.1) cannot parse the
 new syntax in the first place.
 
-The transformer implementation is the canonical pure-Python reference that
-lives in ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim);
-this module only re-exports the public API so the transformation logic exists
-in exactly one place.
+The transformer implementation is the canonical pure-Python reference reached
+through ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim, the
+STABLE FACADE whose implementation lives in the
+``kimix_native.shell_compat`` package); this module only re-exports the public
+API so the transformation logic exists in exactly one place.
 """
 
 from __future__ import annotations
@@ -25,7 +26,9 @@ from kimi_cli.native_loader import get_compat as _native_get_compat
 
 # The canonical pure-Python implementation (the historical body of this
 # module) lives in the kimix_native shim so there is exactly one copy of the
-# transformation logic.
+# transformation logic: the shim module ``bin/kimix_native/_shell_compat.py``
+# is the stable facade and ``kimix_native.shell_compat.pwsh_transform`` is the
+# implementation.
 _shell = _native_get_compat("_shell_compat")
 if _shell is None:  # pragma: no cover - shim missing (unbundled install)
     raise ImportError(
@@ -36,7 +39,8 @@ if _shell is None:  # pragma: no cover - shim missing (unbundled install)
     )
 
 # Re-export the reference implementation's public surface (single source of
-# truth in the shim).
+# truth: the kimix_native.shell_compat implementation package behind the shim
+# facade).
 pwsh_transform = _shell.pwsh_transform
 
 # Keep the historical module namespace complete for consumers that import the

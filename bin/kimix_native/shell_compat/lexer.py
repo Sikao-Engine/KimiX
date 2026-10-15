@@ -1,10 +1,13 @@
 r"""Lossless shell lexer: one O(n)-per-slice tokenizer for the shell IR.
 
 Part of Phase 2 of the ``_shell_compat`` refactor (plan §3.3).  This module
-consolidates the quote / escape / substitution scanners that are currently
-DUPLICATED between ``fix_bash_command``'s scanner and ``_process_unquoted``
-in :mod:`kimix_native.shell_compat.bash_core`.  The legacy copies stay in
-bash_core untouched (they are retired in later phases).
+consolidates the quote / escape / substitution scanners that the original
+single-file implementation duplicated between ``fix_bash_command``'s scanner
+and the ``_process_unquoted`` walker.  The ``_find_*`` / ``_match_*`` boundary
+helpers stay canonical in :mod:`kimix_native.shell_compat.bash_core` (the
+facade re-exports them from there) and are imported, never re-implemented;
+the duplicated ``_process_unquoted`` emitter itself moved to
+:mod:`kimix_native.shell_compat.unquoted` (Phase 3).
 
 Boundary oracles (plan §3.3 / task test 8): the module-level
 :func:`find_dq_end`, :func:`find_ansi_c_end`, :func:`find_backtick_end` and

@@ -1,6 +1,9 @@
 r"""Compatibility classifier, fallback registration, wrapper, reparse and
 redundant-shell-unwrap rules (Phase 5).
 
+Part of the lossless tolerant-IR ``kimix_native.shell_compat`` implementation
+package behind the stable ``_shell_compat`` facade.
+
 Phase 5 of the ``_shell_compat`` refactor (plan §3.4 "Compatibility
 classification", Phase 5 actions 1-5).  The command classification,
 fallback-registration, wrapper-operand, runtime-reparse and shell-unwrap

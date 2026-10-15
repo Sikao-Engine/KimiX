@@ -6,8 +6,9 @@ Moved byte-for-byte from ``bin/kimix_native/_shell_compat.py`` (the
 pwsh_fix.py section, former lines 5879-6391).  ``_build_region_mask`` is
 imported from :mod:`kimix_native.shell_compat.pwsh_transform` (the two
 sections lived in one module; there is no code dependency in the
-reverse direction).  ``kimix_native/_shell_compat.py`` is the stable
-compatibility facade that re-exports this surface.
+reverse direction).  ``bin/kimix_native/_shell_compat.py`` is the stable
+compatibility FACADE over this package — the implementation lives here, in
+``kimix_native.shell_compat.pwsh_fix`` — and re-exports this surface.
 """
 
 from __future__ import annotations
@@ -20,9 +21,10 @@ except ImportError:  # pragma: no cover
     import re  # stdlib: the used patterns are all stdlib-compatible
 
 # The code-region mask is the same scanner the PS7->PS5.1 transformer uses
-# (its section lived in this module; keep the reference explicit here).
-# It is read inside _rewrite_pwsh_nul_redirections, so it is needed for the
-# module to work standalone; the facade shares one namespace across sections.
+# (in the original single-file implementation the pwsh_fix and pwsh_transform
+# sections shared one module; keep the reference explicit here).  It is read
+# inside _rewrite_pwsh_nul_redirections, so this module needs it to work
+# standalone; the facade re-exports both modules into one module namespace.
 from kimix_native.shell_compat.pwsh_transform import _build_region_mask
 
 

@@ -9,13 +9,19 @@ Reference files: bash_fix.py (the _Scanner + fallback data), bash_tool.py
 
 THIS MODULE IS A STABLE COMPATIBILITY FACADE over the
 ``kimix_native.shell_compat`` package, which now holds the
-implementation: fallback_data (guarded fallback command bodies and
-unsupported reasons), bash_core (the Bash/Git Bash scanner and
-_process_unquoted), pwsh_fix (PowerShell quoting repair) and
-pwsh_transform (PS7->PS5.1 source transforms).  This file re-exports the
-complete historical module-level surface (explicit imports, no ``*``), so
-both ``import kimix_native._shell_compat`` and loading this exact file by
-path with importlib.util.spec_from_file_location keep working unchanged.
+implementation: models / spans / lexer / parser (the lossless tolerant shell
+IR), fallback_data (guarded fallback command bodies and unsupported reasons),
+paths / wrappers / cmd_translator / heredoc (the rule modules), translator (the
+single ``translate`` orchestration), ir_command (the per-command IR decision
+engine), bash_core (the Bash/Git Bash scanner and its constants), unquoted
+(``_process_unquoted``), pwsh_fix (PowerShell quoting repair) and pwsh_transform
+(PS7->PS5.1 source transforms).  See ``shell_compat/__init__.py`` for the layout
+and the conservative pass-through policy (already Git Bash-compatible commands
+pass byte-for-byte; only verified compatibility cases produce edits or guarded
+fallbacks).  This file re-exports the complete historical module-level surface
+(explicit imports, no ``*``), so both ``import kimix_native._shell_compat`` and
+loading this exact file by path with
+importlib.util.spec_from_file_location keep working unchanged.
 """
 
 from __future__ import annotations

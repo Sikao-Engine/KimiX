@@ -1,5 +1,8 @@
 r"""``_process_unquoted``: the lexer-driven unquoted-backslash emitter.
 
+Part of the lossless tolerant-IR ``kimix_native.shell_compat`` implementation
+package behind the stable ``_shell_compat`` facade.
+
 Phase 3 of the ``_shell_compat`` refactor (plan section 3.1 / Phase 3).  The
 legacy implementation and its quote/substitution scanners lived in
 :mod:`kimix_native.shell_compat.bash_core` (duplicated from the

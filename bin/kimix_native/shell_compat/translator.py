@@ -1,13 +1,19 @@
-r"""Ordered Git Bash compatibility translator skeleton (plan §3.5).
+r"""Ordered Git Bash compatibility translator: the single ``translate`` orchestration
+entry and the shared render/prefix contracts (plan §3.5).
 
-Phase 5 wires the FALLBACK / WRAPPER / REPARSE / UNWRAP rules (ported to
+Part of the lossless tolerant-IR ``kimix_native.shell_compat`` implementation
+package behind the stable ``_shell_compat`` facade.
+
+Phase 5 wired the FALLBACK / WRAPPER / REPARSE / UNWRAP rules (ported to
 :mod:`kimix_native.shell_compat.wrappers`) behind the §3.5 source-order rule
-dispatcher skeleton; the rules not yet ported (cmd ``if``/``for``/``@`` —
-Phase 6 — and heredoc repair — Phase 7) stay in the live scanner.  The LIVE
-scanner does NOT run its orchestration through this module yet (Phase 7
-switches it); what this phase establishes is the single translation core the
-scanner's rendering/prefix builders delegate to, so there is ONE
-implementation of:
+dispatcher; Phase 6 filled the cmd ``@`` / ``if`` / ``for`` / jump slots
+(:mod:`kimix_native.shell_compat.cmd_translator`) and Phase 7 the heredoc
+repair slot (:mod:`kimix_native.shell_compat.heredoc`) and switched the
+orchestration: :func:`translate` is now the single entry
+``bash_core.fix_bash_command`` delegates to.  Under Option A the entry drives
+the engine reader (the ``_BashFixScanner`` compatibility adapter) for the scan
+FLOW, while every rule DECISION, the render, the fallback prefix and the
+heredoc repair are owned by the IR modules, so there is ONE implementation of:
 
 * the ``EditPlan`` contract of plan §3.5 — store ``(start, end, replacement)``
   in original-source coordinates, reject overlaps or descending spans
@@ -27,12 +33,13 @@ implementation of:
   (names/shell_notes/unsupported deduplicated against the OUTER list at
   merge time; path/nul/cmd notes extended verbatim), so a rendered ``BashFix``
   keeps the byte-exact tuple orderings the suites lock;
-* the source-order rule dispatcher skeleton (``RuleDispatcher``) with the
-  plan §3.5 handler-priority slots; Phase 5 registers the fallback /
-  wrapper / reparse / unwrap rules against IR command nodes (see
+* the source-order rule dispatcher (``RuleDispatcher``) with the plan §3.5
+  handler-priority slots 1-8: Phase 5 registers the fallback / wrapper /
+  reparse / unwrap rules against IR command nodes (see
   ``wrappers.classify_command_node`` / ``reparse_operand_index`` /
-  ``unwrap_decision_for_command``); Phases 6-7 fill the cmd and heredoc
-  slots and switch the orchestration.
+  ``unwrap_decision_for_command``), Phase 6 fills the cmd slots
+  (``register_cmd_rules``) and Phase 7 the slots 4-8 IR-ownership proof
+  (``ir_command.register_default_rules``).
 
 Import structure: this module imports ``wrappers`` (and through it
 ``bash_core``) at load; ``bash_core`` imports this module LAZILY inside the
@@ -164,6 +171,9 @@ class TranslationContext:
         "unsupported",
         "cmd_conditional_notes",
         "plan",
+        "pending_dispatch",
+        "consumed_end",
+        "heredoc_events",
     )
 
     def __init__(self) -> None:
@@ -174,6 +184,19 @@ class TranslationContext:
         self.unsupported: List[str] = []
         self.cmd_conditional_notes: List[str] = []
         self.plan = EditPlan()
+        self.pending_dispatch: Optional[int] = None
+        #: Index just past the outermost cmd construct whose validated match
+        #: already consumed the region (slot-2 ``if``/``for``).  The Phase-7
+        #: orchestrator skips any command node starting before this index — the
+        #: tolerant parser tiles the ``else if`` / nested-loop keyword as its own
+        #: command node, whose re-validation would re-schedule the SAME spans
+        #: the outer match already emitted (see phase6_report §5; the LIVE
+        #: scanner's consumed extent never reaches those inner words).
+        self.consumed_end: int = 0
+        #: ``(redir_line_end, terminator_end)`` pairs collected by the slot-8
+        #: heredoc handler for the final trailing-operator repair (mirrors the
+        #: LIVE scanner's ``heredoc_events``).
+        self.heredoc_events: List[Tuple[int, int]] = []
 
     # ── recording (source order preserved by construction) ────────────────
 
@@ -259,15 +282,25 @@ class RuleResult:
     them; every entry crosses the SAME overlap-validating collector);
     ``events`` are report records to append (each an ``(method_name,
     argument)`` pair against the context ``record_*`` API); ``dispatch``
-    names a re-dispatch the dispatcher must honour (``None`` normally;
-    reserved for the Phase-6/7 rule completions, e.g. the ``@``-strip
-    re-dispatch).
-    """
+    names a re-dispatch the dispatcher must honour (``None`` normally; the
+    Phase-7 ``@``-strip re-dispatch carries the source index the command
+    scan must continue at); ``heredoc_events`` (Phase 7, slot 8) carries the
+    ``(redir_line_end, terminator_end)`` pairs the rule collected for the
+    final trailing-operator repair; ``consumed_end`` (Phase 7, slot 2) is the
+    source index just past a construct the rule consumed whole (a cmd ``if``
+    /``for`` match, or a wrapper/reparse whose operand words the rule already
+    decided) — the dispatcher writes ``max(current, consumed_end)`` into the
+    context's ``consumed_end`` so the orchestrator skips any command node
+    starting before that extent (the tolerant parser tiles nested keywords as
+    their own command nodes whose re-validation would re-schedule the same
+    region). """
 
     edit: Optional[Tuple[int, int, str]] = None
     events: Tuple[Tuple[str, str], ...] = ()
-    dispatch: Optional[str] = None
+    dispatch: Optional[int] = None
     extra_edits: Tuple[Tuple[int, int, str], ...] = ()
+    heredoc_events: Tuple[Tuple[int, int], ...] = ()
+    consumed_end: Optional[int] = None
 
 
 class RuleDispatcher:
@@ -314,13 +347,23 @@ class RuleDispatcher:
         return tuple((priority, name) for priority, name, _ in self._rules)
 
     def dispatch(
-        self, command: "CommandNode", source: str, context: TranslationContext
+        self, command: "CommandNode", source: str, context: TranslationContext,
+        on_dispatch: "Optional[Callable[[int], None]]" = None,
     ) -> None:
         """Run every registered rule for *command* in priority order.
 
         A rule returning an edit (or extra edits) gets them validated into the
         plan (overlap rejection at the single collecting point); event tuples
         are applied against the context record API in rule order.
+
+        ``RuleResult.dispatch`` (Phase 7): a handler that consumed a command
+        word but left a remainder to re-dispatch (the cmd leading-``@`` strip)
+        sets the field to the source index the command scan must continue at.
+        When an ``on_dispatch`` hook is supplied the dispatcher feeds it that
+        index and stops the rule chain for this word (the orchestrator wires
+        the continuation); without a hook the index is recorded on the context
+        (``pending_dispatch``) so a single rule pass is enough.  ``None`` (the
+        default ``dispatch``) means no re-dispatch and the full chain runs.
         """
         for _priority, _name, handler in self._rules:
             result = handler(command, source, context)
@@ -332,6 +375,20 @@ class RuleDispatcher:
                 context.plan.add(*splice)
             for method, argument in result.events:
                 getattr(context, method)(argument)
+            if result.heredoc_events:
+                context.heredoc_events.extend(result.heredoc_events)
+            if result.consumed_end is not None:
+                # the rule consumed the whole construct; the orchestrator skips
+                # any command node starting before this extent (the tolerant
+                # parser tiles an ``else if`` / nested-loop keyword as its own
+                # command node whose re-validation covers the SAME region).
+                context.consumed_end = max(context.consumed_end, result.consumed_end)
+            if result.dispatch is not None:
+                if on_dispatch is not None:
+                    on_dispatch(result.dispatch)
+                else:
+                    context.pending_dispatch = result.dispatch
+                return
 
 
 def register_cmd_rules(dispatcher: RuleDispatcher) -> RuleDispatcher:
@@ -403,6 +460,94 @@ def merge_inner_events(context: TranslationContext, inner: Any) -> None:
     context.merge_inner(nested)
 
 
+# ── IR-to-live report conversion (shared by dispatch-battery tests) ─────────
+
+
+def result_to_bashfix(context: TranslationContext, source: str) -> Any:
+    """Convert a populated :class:`TranslationContext` into the LIVE ``BashFix``.
+
+    Renders the collected edits through the shared ``EditPlan``/``render_splices``
+    and the fallback prefix through the single ``wrappers.fallback_prefix``
+    generator, then applies the heredoc trailing-operator repair LAST — the exact
+    orchestration the LIVE scanner performs in ``fix()``.  Used by the Phase-7
+    dispatcher-slot 4-8 byte-equality batteries ("rendering through ONE shared
+    EditPlan equals the live output byte-for-byte"); the LIVE ``fix_bash_command``
+    path itself flows through :func:`translate` (the engine reader).
+    """
+    from kimix_native.shell_compat.bash_core import BashFix
+
+    if not context.has_activity():
+        return BashFix(source)
+    rendered = context.plan.render(source)
+    prefix = context.fallback_prefix()
+    command = prefix + rendered
+    return BashFix(
+        command,
+        tuple(context.names),
+        tuple(context.path_notes),
+        tuple(context.shell_notes),
+        tuple(context.nul_fixes),
+        tuple(context.unsupported),
+        tuple(context.cmd_conditional_notes),
+    )
+
+
+# ── §3.5 orchestration entry (Phase 7 Option A: single entry for fix) ─────────
+
+
+def translate(command: str) -> Any:
+    """The single Bash-compatibility orchestration entry (plan §3.5 / Phase 7).
+
+    ``fix_bash_command`` is a thin wrapper over this function.  The semantics are
+    byte-for-byte the historical orchestration, now owned by the IR layer:
+
+    * empty input returns ``BashFix(command)`` unchanged;
+    * the engine reader (a ``_BashFixScanner`` over the source) drives the scan
+      FLOW — the linear word/redirection walk, the nested-region recursion, the
+      depth/RecursionError pass-through and the report ordering.  Every rule
+      DECISION it makes already delegates to the IR modules (paths/wrappers/
+      cmd_translator/heredoc — Phases 3-7), so the decisions are IR-owned even
+      though the engine reader owns the flow (Option A);
+    * rendering, the fallback prefix and the report merge are the shared
+      ``EditPlan``/``render_splices``/``fallback_prefix``/``merge_inner`` core;
+    * the heredoc trailing-operator repair is applied LAST via ``heredoc.py``.
+      On the byte-identical fast path the scanner's own ``heredoc_events`` are
+      reused (the engine collected them in the same pass, at zero cost and with
+      provable equivalence to any IR derivation); when the source was edited the
+      repair re-scans (``events=None``) exactly like the current behaviour.
+
+    The engine reader is the compatibility adapter (:class:`_BashFixScanner`),
+    not a second rule implementation — its every classification/edit/prefix
+    decision resolves into the IR modules above, so there is ONE implementation
+    per rule.  Malformed input and depth overflow never raise (the reader's
+    ``fix()`` catches ``RecursionError`` and returns the source unchanged).
+    """
+    from kimix_native.shell_compat.bash_core import BashFix, _BashFixScanner
+    from kimix_native.shell_compat.heredoc import (
+        _fix_heredoc_trailing_operators,
+    )
+
+    if not command:
+        return BashFix(command)
+    scanner = _BashFixScanner(command)
+    result = scanner.fix()
+    if result.command == command:
+        # ``fix()`` scanned the source verbatim: reuse its heredoc events instead
+        # of scanning the same string a second time (the common case).
+        fixed = _fix_heredoc_trailing_operators(command, scanner.heredoc_events)
+    else:
+        fixed = _fix_heredoc_trailing_operators(result.command)
+    return BashFix(
+        fixed,
+        result.replacements,
+        result.path_changes,
+        result.shell_wrappers,
+        result.nul_fixes,
+        result.unsupported,
+        result.cmd_conditional_fixes,
+    )
+
+
 #: Re-exported so the prefix implementation has one import surface (the
 #: generator itself lives in ``wrappers.fallback_prefix`` — the scanner,
 #: the context and the tests all call the same function).
@@ -410,6 +555,8 @@ from kimix_native.shell_compat.wrappers import fallback_prefix  # noqa: E402
 
 __all__ = [
     "EditPlan",
+    "result_to_bashfix",
+    "translate",
     "OverlappingEdits",
     "PlanEdit",
     "RuleDispatcher",

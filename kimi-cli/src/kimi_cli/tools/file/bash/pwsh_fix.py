@@ -48,10 +48,11 @@ The tokenizer is used to decide:
    be repaired (empty/whitespace-only input, or a dangling line-continuation
    backtick at the very end of the command).
 
-The tokenizer implementation is the canonical pure-Python reference that lives
-in ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim); this
-module keeps only the public API and the native acceleration fast path, so the
-scanner logic exists in exactly one place.
+The tokenizer implementation is the canonical pure-Python reference reached
+through ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim, the
+STABLE FACADE whose implementation lives in the ``kimix_native.shell_compat``
+package); this module keeps only the public API and the pure-Python delegation,
+so the scanner logic exists in exactly one place.
 """
 
 from __future__ import annotations
@@ -62,7 +63,8 @@ from kimi_cli.native_loader import (
 
 # The canonical pure-Python implementation (the historical body of this
 # module) lives in the kimix_native shim so there is exactly one copy of the
-# scanner logic.
+# scanner logic: the shim module ``bin/kimix_native/_shell_compat.py`` is the
+# stable facade and ``kimix_native.shell_compat.pwsh_fix`` is the implementation.
 _shell = _native_get_compat("_shell_compat")
 if _shell is None:  # pragma: no cover - shim missing (unbundled install)
     raise ImportError(
@@ -73,7 +75,8 @@ if _shell is None:  # pragma: no cover - shim missing (unbundled install)
     )
 
 # Re-export the reference implementation's public surface (single source of
-# truth in the shim).
+# truth: the kimix_native.shell_compat implementation package behind the shim
+# facade).
 PwshFix = _shell.PwshFix
 _Scanner = _shell._PwshScanner
 _W_UNCLOSED_DQ = _shell._W_UNCLOSED_DQ
@@ -92,12 +95,13 @@ def fix_pwsh_command(cmd: str) -> PwshFix | None:
     Returns a :class:`PwshFix` (``command`` may equal *cmd* when the command
     is already legal), or ``None`` when the command cannot be repaired.
 
-    Always pure Python: the canonical implementation lives in
-    ``bin/kimix_native/_shell_compat.py``.  The compiled ``runtime_py``
-    kernel is deliberately NOT used for shell parsing — it predates the
-    current null-device (``> nul``) rewrite rules and returns no warning
-    strings, so routing through it can mis-repair a command or drop the
-    diagnostic the tool surfaces to the model.
+    Always pure Python: the canonical implementation is reached through
+    ``bin/kimix_native/_shell_compat.py`` (the stable facade; the
+    implementation lives in ``kimix_native.shell_compat.pwsh_fix``).  The
+    compiled ``runtime_py`` kernel is deliberately NOT used for shell
+    parsing — it predates the current null-device (``> nul``) rewrite rules
+    and returns no warning strings, so routing through it can mis-repair a
+    command or drop the diagnostic the tool surfaces to the model.
     """
     if not cmd or not cmd.strip():
         return None

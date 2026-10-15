@@ -6,8 +6,9 @@ Moved byte-for-byte from ``bin/kimix_native/_shell_compat.py`` (the
 fallback-data section, former lines 26-762, plus the
 ``_FALLBACK_COMMAND_WRAPPERS`` table, former lines 801-805, relocated
 because it maps fallback names to wrapper kinds and belongs with the
-fallback tables).  ``kimix_native/_shell_compat.py`` is the stable
-compatibility facade that re-exports this surface.
+fallback tables).  ``bin/kimix_native/_shell_compat.py`` is the stable
+compatibility FACADE over this package — the implementation lives here, in
+``kimix_native.shell_compat.fallback_data`` — and re-exports this surface.
 """
 
 from __future__ import annotations

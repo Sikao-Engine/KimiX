@@ -520,8 +520,10 @@ def _should_enable_powershell() -> bool:
 
 
 # The unquoted-backslash scanner (``_process_unquoted`` + helpers) is the
-# canonical pure-Python reference living in ``bin/kimix_native/_shell_compat.py``
-# (the ``kimix_native`` shim) so the scanner logic exists in exactly one place.
+# canonical pure-Python reference reached through
+# ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim, the stable
+# facade over the ``kimix_native.shell_compat`` implementation package), so the
+# scanner logic exists in exactly one place.
 _shell = _native_get_compat("_shell_compat")
 if _shell is None:  # pragma: no cover - shim missing (unbundled install)
     raise ImportError(
@@ -553,12 +555,13 @@ def _process_unquoted(cmd: str) -> str:
     subshell where it is parsed unquoted — even when the substitution is
     itself nested inside ``"..."``).
 
-    Always pure Python: the canonical implementation lives in
-    ``bin/kimix_native/_shell_compat.py``.  The compiled ``runtime_py``
-    kernel is deliberately NOT used for shell parsing — it predates the
-    current rules (escaped null-device words, shell-wrapper repairs, ...)
-    and diverges from the reference scanner, so routing through it can
-    mangle a command (e.g. turning the null-device escape ``\nul`` into
+    Always pure Python: the canonical implementation is reached through
+    ``bin/kimix_native/_shell_compat.py`` (the stable facade; the implementation
+    lives in the ``kimix_native.shell_compat`` package).  The compiled
+    ``runtime_py`` kernel is deliberately NOT used for shell parsing — it
+    predates the current rules (escaped null-device words, shell-wrapper
+    repairs, ...) and diverges from the reference scanner, so routing through
+    it can mangle a command (e.g. turning the null-device escape ``\nul`` into
     the absolute path ``/nul``).
     """
     return _shell._process_unquoted(cmd)

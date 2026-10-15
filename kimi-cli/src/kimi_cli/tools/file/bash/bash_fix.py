@@ -71,10 +71,12 @@ reaches strings that bash re-parses at runtime: ``eval``/``trap`` operands,
 (``find -exec sh -c '... > nul'``).  A whole-token quoted ``'nul'``/``"nul"``
 target stays untouched (intentional filename).
 
-The scanner implementation is the canonical pure-Python reference that lives
-in ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim); this
-module keeps only the public API and the Windows-platform gate, so the
-scanner logic exists in exactly one place.
+The scanner implementation is the canonical pure-Python reference reached
+through ``bin/kimix_native/_shell_compat.py`` (the ``kimix_native`` shim), which
+is the STABLE FACADE: the implementation itself lives in the
+``kimix_native.shell_compat`` package behind it.  This module keeps only the
+public API and the Windows-platform gate, so the scanner logic exists in
+exactly one place.
 """
 
 from __future__ import annotations
@@ -87,8 +89,10 @@ from kimi_cli.native_loader import (
 
 # The canonical pure-Python implementation (the historical body of this
 # module) lives in the kimix_native shim so there is exactly one copy of the
-# scanner logic.  The shim is importable whenever the kimix package is usable
-# (the loader puts the shim directory on ``sys.path`` in every mode).
+# scanner logic: the shim module ``bin/kimix_native/_shell_compat.py`` is the
+# stable facade and ``kimix_native.shell_compat`` is the implementation package.
+# The shim is importable whenever the kimix package is usable (the loader puts
+# the shim directory on ``sys.path`` in every mode).
 _shell = _native_get_compat("_shell_compat")
 if _shell is None:  # pragma: no cover - shim missing (unbundled install)
     raise ImportError(
@@ -98,7 +102,8 @@ if _shell is None:  # pragma: no cover - shim missing (unbundled install)
     )
 
 # Re-export the reference implementation's public surface (single source of
-# truth in the shim).
+# truth: the kimix_native.shell_compat implementation package behind the shim
+# facade).
 BashFix = _shell.BashFix
 bash_compatibility_prelude = _shell.bash_compatibility_prelude
 _fix_heredoc_trailing_operators = _shell._fix_heredoc_trailing_operators
@@ -111,8 +116,9 @@ _wrapper_runner = _shell._wrapper_runner
 _read_shell_control_operator = _shell._read_shell_control_operator
 _apply_heredoc_operator_move = _shell._apply_heredoc_operator_move
 
-# Scanner aliases: the shim renames the historical src names to avoid
-# collisions inside the single vendored module; keep the src names working.
+# Scanner aliases: when the scanner was vendored into one single shim module
+# the src names were renamed there to avoid collisions; keep the src names
+# working here (the implementation now lives in kimix_native.shell_compat).
 _Wrapper = _shell._BashWrapper
 _HereDoc = _shell._BashHereDoc
 _Scanner = _shell._BashFixScanner

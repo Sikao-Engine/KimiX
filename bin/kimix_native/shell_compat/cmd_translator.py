@@ -1,5 +1,8 @@
 r"""cmd.exe structural translation and refusal rules (Phase 6, plan §3.5).
 
+Part of the lossless tolerant-IR ``kimix_native.shell_compat`` implementation
+package behind the stable ``_shell_compat`` facade.
+
 Phase 6 of the ``_shell_compat`` refactor (plan §3.5 handler priorities 1-3:
 cmd leading ``@``, cmd ``if``/``for`` structural rules, and the unsupported
 jump refusals).  The recognition, validation and commit logic for the cmd.exe
@@ -1204,19 +1207,20 @@ def rule_cmd_at(
 def rule_cmd_control(
     command: "CommandNode", source: str, context: "TranslationContext"
 ) -> Optional["RuleResult"]:
-    """§3.5 priority-2 handler: the cmd ``if``/``for`` structural rule.
+    """Priority-2 handler: the cmd if/for structural rule (plan 3.5).
 
-    Recognises a command word that is the literal ``if`` or ``for`` keyword, runs
-    the read-only validate pass (:func:`cmd_if_node` / :func:`cmd_for_node`) and,
-    on success, returns the structural note as a report event.  The structural
-    edit splices are returned in ``extra_edits`` (a tuple of ``(start, end,
-    replacement)``) so the dispatcher feeds them all into the single overlap
-    check.  Bails (``None``) on every non-matching form, exactly like the live
-    scanner.  Branch-body recursion (path/``nul``/nested control-flow) is the
-    Phase-7 translator's child-node walk; the structural edit set this handler
-    returns is the match's own disjoint spans (see
-    :func:`cmd_if_structural_edits` / :func:`cmd_for_structural_edits`).
-    """
+    Recognises a command word that is the literal if or for keyword, runs the
+    read-only validate pass (cmd_if_node / cmd_for_node) and, on success,
+    returns the structural note as a report event (plus the exist operand's path
+    note its structural splice carries, so the IR render's path_changes matches
+    the LIVE commit_cmd_if byte-for-byte).  The structural edit splices are
+    returned in extra_edits so the dispatcher feeds them all into the single
+    overlap check.  Bails (None) on every non-matching form, exactly like the
+    live scanner.  Branch-body recursion (path/nul/nested control-flow) is the
+    Phase-7 translator's child-node walk (the orchestrator dispatches every
+    command node the tolerant parser tiles inside the body); the structural edit
+    set this handler returns is the match's own disjoint spans (see
+    cmd_if_structural_edits / cmd_for_structural_edits)."""
     from kimix_native.shell_compat.translator import RuleResult
     from kimix_native.shell_compat.bash_core import _BashFixScanner
 
@@ -1224,8 +1228,8 @@ def rule_cmd_control(
     if cw is None:
         return None
     # Key on the RAW word text, exactly like the live scanner's
-    # ``if raw == "if"`` / ``if raw == "for"`` arms: a quoted ``"if"`` word
-    # decodes to ``if`` but never triggers the cmd hook (byte-for-byte).
+    # if raw == "if" / if raw == "for" arms: a quoted "if" word decodes to if
+    # but never triggers the cmd hook (byte-for-byte).
     raw = source[cw.span.start:cw.span.end]
     if raw not in ("if", "for"):
         return None
@@ -1235,18 +1239,45 @@ def rule_cmd_control(
         node = cmd_if_node(reader, source, word_start, word_end, len(source))
         if node is None:
             return None
+        events: List[Tuple[str, str]] = (("record_cmd_conditional", node.note),)
+        seg0 = node.match.segments[0]
+        if seg0.kind == "exist":
+            from kimix_native.shell_compat.paths import path_replacement
+
+            operand = source[seg0.op_start:seg0.op_end]
+            if path_replacement(operand) is not None:
+                events = events + (("record_path", operand),)
+        # consumed_end marks only the keyword+operand region the header splice
+        # owns (up to the first operand's end): the branch-body command nodes
+        # stay the child-node walk (their path/nul edits compose), and a nested
+        # else if keyword the tolerant parser re-tiles re-schedules the SAME
+        # region the outer chain already emitted -- the orchestrator skips it
+        # via the shared overlap check (honours the consumed extent,
+        # phase6_report section 5).
         return RuleResult(
             edit=None,
-            events=(("record_cmd_conditional", node.note),),
+            events=events,
             extra_edits=tuple(cmd_if_structural_edits(source, node.match)),
+            consumed_end=seg0.op_end,
         )
     node = cmd_for_node(reader, source, word_start, word_end, len(source))
     if node is None:
         return None
+    # The for-list path rewrites are validated on the list region
+    # (cmd_for_structural_edits carries the splices); commit_cmd_for also appends
+    # the matching path notes, so emit record_path per list-path edit to keep the
+    # IR render's path_changes byte-for-byte.  A nested for keyword the tolerant
+    # parser re-tiles re-schedules the SAME region and is skipped by the
+    # orchestrator's shared overlap check (phase6_report section 5).  The loop
+    # body stays the child-node walk.
+    events2 = [("record_cmd_conditional", node.note)]
+    for _lp_a, _lp_b, _lp_r in node.match.list_path_edits:
+        events2.append(("record_path", source[_lp_a:_lp_b]))
     return RuleResult(
         edit=None,
-        events=(("record_cmd_conditional", node.note),),
+        events=tuple(events2),
         extra_edits=tuple(cmd_for_structural_edits(source, node.match)),
+        consumed_end=node.match.do_end,
     )
 
 

@@ -1,5 +1,8 @@
 r"""Path, null-device, and ``cd /d`` translation rules (Phase 4).
 
+Part of the lossless tolerant-IR ``kimix_native.shell_compat`` implementation
+package behind the stable ``_shell_compat`` facade.
+
 Phase 4 of the ``_shell_compat`` refactor (plan section 3.1 / Phase 4 / section
 3.5 rule 6 "path and ``cd /d`` normalization" and rule 7 "output-redirection
 ``nul`` normalization").  The Windows-path recognition, Git Bash virtual-path
@@ -33,7 +36,8 @@ Two shapes are exposed on purpose:
 
 Monkeypatch contract (unchanged).  ``_windows_temp_dir`` is the ONE name the
 test suite monkeypatches through the ``kimix_native._shell_compat`` facade
-dict (it patched the single flat namespace of the historical module).  The
+dict (it patched the single flat namespace of the historical single-file
+implementation).  The
 virtual-path ``/tmp`` rewrite reads the temp directory through
 ``bash_core._windows_temp_dir_from_namespace`` — the same late-binding resolver
 the live scanner uses — so a facade patch is honored regardless of where the

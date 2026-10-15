@@ -6,10 +6,11 @@ Moved byte-for-byte from ``bin/kimix_native/_shell_compat.py`` (the
 process_pwsh.py section, former lines 6394-8268, including its own
 ``regex``-with-stdlib-fallback import block).  References to
 ``_PwshScanner`` inside the comments below are documentation-only
-(the rule is mirrored there, not imported here; the pwsh_fix section
+(the rule is mirrored there, not imported here; the pwsh_fix module
 imports this module, so the reverse import would be circular).
-``kimix_native/_shell_compat.py`` is the stable compatibility facade that
-re-exports this surface.
+``bin/kimix_native/_shell_compat.py`` is the stable compatibility FACADE over
+this package — the implementation lives here, in
+``kimix_native.shell_compat.pwsh_transform`` — and re-exports this surface.
 """
 
 from __future__ import annotations

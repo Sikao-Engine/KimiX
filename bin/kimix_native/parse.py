@@ -3,13 +3,16 @@
 Native implementations for the *comment parsers* live in ``runtime_py.parse``
 (compiled kernels, GIL released). The pure-Python ``_compat`` mirrors are the
 reference algorithms from the kimi-agent repo (vendored in
-``_parse_compat.py`` and ``_shell_compat.py``, with attribution), so
+``_parse_compat.py`` and, for the shell scanners, re-exported by the
+``_shell_compat.py`` stable facade whose implementation lives in the
+``kimix_native.shell_compat`` package — all with attribution), so
 ``use_native("PARSE") is False`` yields bit-identical behavior.
 
 The *shell scanners* (bash_fix / process_unquoted / pwsh_fix / pwsh_transform)
-are ALWAYS pure Python (``_shell_compat``): the compiled kernel predates the
-current shell rules and diverges from the reference scanner, so shell parsing
-never routes through ``runtime_py``.
+are ALWAYS pure Python (delegated to the ``_shell_compat`` facade, i.e. the
+``kimix_native.shell_compat`` implementation package): the compiled kernel
+predates the current shell rules and diverges from the reference scanner, so
+shell parsing never routes through ``runtime_py``.
 
 Public API (mirrors the reference consumers):
   - parse(lang, source) -> ParseResult{language, comments, code_without_comments}
@@ -386,8 +389,9 @@ def parse(lang: str, source: str) -> ParseResult:
 # shell scanners (bash_fix / bash_tool / pwsh_fix / process_pwsh)
 # ---------------------------------------------------------------------------
 #
-# Shell parsing is ALWAYS pure Python: the canonical scanners live in
-# ``_shell_compat.py`` and are delegated to unconditionally.  The compiled
+# Shell parsing is ALWAYS pure Python: parse.py delegates unconditionally to
+# ``_shell_compat.py``, the stable compatibility facade whose implementation
+# lives in the ``kimix_native.shell_compat`` package.  The compiled
 # ``runtime_py.parse`` kernel predates the current rules (null-device ``> nul``
 # rewrites, shell-wrapper repairs, Git Bash virtual paths, post-kernel
 # fallbacks) and measurably diverges from the reference scanner (e.g. it
