@@ -58,6 +58,17 @@ Values shorter than this are not worth the overhead of saving to a temp file.
 """
 
 
+_SUBAGENT_LIST_PARAMS = frozenset({"prompt", "task"})
+"""``subagent`` params whose value may legitimately be a ``list[str]``.
+
+The ``subagent`` tool now accepts a list of prompts for multi-dispatch, so a
+list of plain strings for ``prompt``/``task`` is *valid* input that must reach
+the tool, not a "wrong format" to extract and reject. Any other shape (a list
+holding non-strings, a dict, an empty list, or a JSON-encoded string) is still
+handled by the malformed-extraction path.
+"""
+
+
 def _looks_like_malformed_json_param(value: str) -> bool:
     """Return True when *value* looks like a malformed JSON string param.
 
@@ -202,6 +213,16 @@ def _extract_and_save_long_param(
                 file_path = _create_script_file(extracted, ext=ext)
                 saved[param_name] = file_path
         elif isinstance(value, list):
+            # ``subagent`` prompt/task may be a batch of plain strings — that is
+            # valid multi-dispatch input, so let it reach the tool untouched
+            # instead of treating it as malformed and asking for a retry.
+            if (
+                tool_name == "subagent"
+                and param_name in _SUBAGENT_LIST_PARAMS
+                and value
+                and all(isinstance(item, str) for item in value)
+            ):
+                continue
             # List of strings -- save as joined content
             content = "\n".join(str(item) for item in value)
             file_path = _create_script_file(content, ext=ext)

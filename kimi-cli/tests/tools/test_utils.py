@@ -11,6 +11,13 @@ class _SampleParams(BaseModel):
     count: int | None = None
 
 
+class _UnionStrParams(BaseModel):
+    # Mirrors the subagent ``prompt`` field: a bare string is valid input and
+    # must survive untouched even when it starts with '[' or '{'.
+    prompt: str | list[str] = ""
+    payload: list[str] | None = None
+
+
 class TestRepairJsonString:
     def test_valid_array(self):
         assert repair_json_string('[{"a": "b"}]') == [{"a": "b"}]
@@ -72,3 +79,26 @@ class TestRepairToolArguments:
     def test_json_string_non_object_returns_empty(self):
         result = repair_tool_arguments(_SampleParams, '"hello"')
         assert result == {}
+
+
+class TestRepairStrUnionField:
+    def test_str_member_union_not_json_parsed(self):
+        """A string valid for a ``str | list[str]`` field must never be repaired.
+
+        The old rule only skipped plain ``str``/``Optional[str]`` fields, so a
+        widened union (subagent ``prompt``) got JSON-parsed: a legitimate prompt
+        beginning with ``[`` or ``{`` was silently turned into a list/dict.
+        """
+        for text in (
+            "[read the file] and summarize",
+            "{a: 1} fix this",
+            "[1, 2, 3]",
+        ):
+            result = repair_tool_arguments(_UnionStrParams, {"prompt": text})
+            assert result["prompt"] == text
+
+    def test_non_string_field_still_repaired(self):
+        args = {"payload": '["a", "b"]', "prompt": "do it"}
+        result = repair_tool_arguments(_UnionStrParams, args)
+        assert result["payload"] == ["a", "b"]
+        assert result["prompt"] == "do it"

@@ -39,13 +39,20 @@ def repair_json_string(value: str) -> Any | None:
         return None
 
 
-def _is_plain_string_annotation(annotation: Any) -> bool:
-    """Return True if the annotation is ``str`` or ``str | None``/``Optional[str]``."""
+def _annotation_accepts_str(annotation: Any) -> bool:
+    """Return True when a plain ``str`` value already satisfies *annotation*.
+
+    ``str``, ``Optional[str]`` and unions that list ``str`` as a member (e.g.
+    ``str | list[str]`` on the ``subagent`` ``prompt`` field) all accept a bare
+    string. Such fields must never be JSON-repaired: the string value is valid
+    input, and parsing it as JSON would corrupt legitimate text that merely
+    starts with ``[`` or ``{``. Fields that do not accept strings (pure
+    ``list[...]`` / ``dict`` params) stay repair candidates.
+    """
     if annotation is str:
         return True
-    origin = get_origin(annotation)
-    if origin is Union:
-        return all(arg is type(None) or _is_plain_string_annotation(arg) for arg in get_args(annotation))
+    if get_origin(annotation) is Union:
+        return str in get_args(annotation)
     return False
 
 
@@ -54,8 +61,10 @@ def repair_tool_arguments(
 ) -> dict[str, Any]:
     """Repair JSON-string values in tool arguments based on the params schema.
 
-    Only fields annotated as plain ``str`` (or optional str) are left untouched;
-    all other fields are candidates for JSON-string repair when the value looks
+    Only fields whose annotation *accepts* a plain ``str`` (``str``, optional
+    str, or a union listing str, e.g. the subagent's ``str | list[str]``
+    ``prompt``) are left untouched; fields that demand a non-string shape
+    (lists, dicts) are candidates for JSON-string repair when the value looks
     like JSON.
 
     Non-dict inputs are coerced to an empty dict so callers never see a raw
@@ -79,7 +88,10 @@ def repair_tool_arguments(
         field_info = fields.get(key)
         if field_info is None:
             continue
-        if _is_plain_string_annotation(field_info.annotation):
+        if _annotation_accepts_str(field_info.annotation):
+            # A plain string is already valid for this field -- never parse it
+            # as JSON: text that merely starts with '[' or '{' (a markdown
+            # checklist, a JSON-looking prompt) would be silently corrupted.
             continue
         parsed = repair_json_string(value)
         if parsed is not None:

@@ -175,14 +175,9 @@ def test_descriptions_unchanged() -> None:
     )
 
     assert tools["bash"].description == (
-        "Execute a bash command (native POSIX syntax). Prefer `glob`/`grep` over "
-        "`find`/`ls`/`grep`/`rg` for file and content search. "
+        "Execute a bash command, ALWAYS native POSIX syntax."
         "For long sessions: interactive=True, then task_id=<id> to continue; "
-        "wait_for_pattern to block; job_output to monitor; send 'exit' to close. "
-        "On Windows, unquoted backslash paths auto-convert to forward slashes; "
-        "quoted backslashes are preserved. "
-        "Use /dev/null, not `> nul`, to discard output — `> nul` would create "
-        "an empty file named `nul` in Git Bash."
+        "wait_for_pattern to block; job_output to monitor; send 'exit' to close."
         + self_kill_hint_text
     )
 

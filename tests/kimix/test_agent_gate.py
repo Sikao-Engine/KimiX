@@ -4,9 +4,9 @@ Plan §4.4 K01 requires >= 14 probes in ``tests/kimix/test_agent_gate.py``.
 Every probe asserts an *observable* outcome (never ``is not None`` alone) and
 collectively covers:
 
-* every field of ``SubAgentParams`` (``description``, ``prompt``,
+* every field of ``SubAgentParams`` (``prompt``,
   ``run_in_background``, ``session_id``, ``close_session``, ``return_history``,
-  ``history_format``, ``context_files``, ``context_data``, ``inherit_context``);
+  ``history_format``, ``inherit_context``);
 * every declared alias (``task`` -> ``prompt``; ``session`` -> ``session_id``;
   ``agent_id`` | ``session`` | ``session_id`` for ``interrupt_agent``);
 * boundary values (empty prompt, the 100 KiB offload boundary at/above);
@@ -247,7 +247,7 @@ async def test_probe_run_in_background_defaults_true() -> None:
     ):
         mock_create.return_value = _sub_session()
         result = await Agent(parent)(
-            SubAgentParams(prompt="x", description="3-5 word label")
+            SubAgentParams(prompt="x")
         )
         assert result.extras["status"] == "running"
         assert result.extras["session_id"] in result.output
@@ -367,9 +367,14 @@ async def test_probe_inherit_context_copies_and_resumes(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Probe 7 — context_files pre-read + context_data passthrough
+# Probe 7 — removed params (context_files / context_data) are ignored
 # ---------------------------------------------------------------------------
-async def test_probe_context_files_and_context_data(tmp_path: Path) -> None:
+async def test_probe_removed_context_params_are_ignored(tmp_path: Path) -> None:
+    """``context_files``/``context_data``/``description`` no longer exist.
+
+    Pydantic's default ``extra='ignore'`` drops them from validation and they
+    must never reach the prompt; the model_dump key set has no trace of them.
+    """
     work = tmp_path / "work"
     work.mkdir()
     (work / "marker.txt").write_text("hello marker", encoding="utf-8")
@@ -382,32 +387,23 @@ async def test_probe_context_files_and_context_data(tmp_path: Path) -> None:
     ):
         mock_create.return_value = _sub_session()
         agent = Agent(parent)
+        # Passing the removed kwargs is accepted (extra='ignore') but inert.
         ok = await agent(
-            SubAgentParams(
+            SubAgentParams(  # type: ignore[call-arg]
                 prompt="do X",
                 context_files=["marker.txt"],
                 context_data={"k": [1, 2]},
-                run_in_background=False,
-            )
-        )
-        # A missing context file is reported inline instead of raising.
-        soft = await agent(
-            SubAgentParams(
-                prompt="do X",
-                context_files=["nope.txt"],
+                description="ignored label",
                 run_in_background=False,
             )
         )
 
     assert ok.is_error is False
-    text = captured[0]
-    assert "<file path='marker.txt'>\nhello marker\n</file>" in text
-    assert "<data>" in text
-    assert '"k": [' in text  # orjson OPT_INDENT_2 rendering
-    assert text.startswith("<context>")
-    assert "</context>\n\ndo X" in text  # context block precedes the task
-    assert soft.is_error is False
-    assert "<file path='nope.txt' error='" in captured[1]
+    # The prompt is the raw task text: no <context> block, no file dump.
+    assert captured[0] == "do X"
+    assert "<context>" not in captured[0]
+    assert "hello marker" not in captured[0]
+    assert "marker.txt" not in captured[0]
 
 
 # ---------------------------------------------------------------------------
@@ -799,28 +795,29 @@ async def test_probe_wrong_types_and_schema_roundtrip() -> None:
     with pytest.raises(ValidationError):
         SubAgentParams(prompt="x", history_format="xml")  # type: ignore[arg-type]
     with pytest.raises(ValidationError):
-        SubAgentParams(prompt="x", context_data=["a"])  # type: ignore[arg-type]
-    with pytest.raises(ValidationError):
-        SubAgentParams(prompt="x", context_files="not-a-list")  # type: ignore[arg-type]
-    with pytest.raises(ValidationError):
         SubAgentParams(prompt="x", return_history="maybe")  # type: ignore[arg-type]
+    # Batch shape rules (added by the multi-dispatch validator).
+    with pytest.raises(ValidationError):
+        SubAgentParams(prompt=["a", "b"], session_id=["only-one"])
+    with pytest.raises(ValidationError):
+        SubAgentParams(prompt=["a", "b"], session_id="bare-string")
+    with pytest.raises(ValidationError):
+        SubAgentParams(prompt=["a", "b"], session_id=["dup", "dup"])
+    with pytest.raises(ValidationError):
+        SubAgentParams(prompt="single", session_id=["s1", None])
 
     # The lax coercions pydantic performs are asserted, not assumed.
     assert SubAgentParams(prompt="x", run_in_background="yes").run_in_background is True  # type: ignore[arg-type]
     assert SubAgentParams(prompt="x", close_session=1).close_session is True  # type: ignore[arg-type]
-    assert SubAgentParams(prompt="x", description="lbl").description == "lbl"
 
     payload = SubAgentParams(prompt="x").model_dump()
     assert set(payload) == {
-        "description",
         "prompt",
         "run_in_background",
         "session_id",
         "close_session",
         "return_history",
         "history_format",
-        "context_files",
-        "context_data",
         "inherit_context",
     }
     assert SubAgentParams.model_validate(payload) == SubAgentParams(prompt="x")

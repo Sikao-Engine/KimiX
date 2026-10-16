@@ -66,6 +66,47 @@ class TestExtractKeyArgument:
         assert result is not None
         assert "foo/bar.py" in result.replace("\\", "/")
 
+    def test_subagent_string_prompt_subtitle(self):
+        """The removed ``description`` param is replaced by a prompt-derived label."""
+        result = extract_key_argument(
+            '{"prompt": "Fix the parser bug in foo.py and run tests"}',
+            "subagent",
+            self.work_dir,
+        )
+        assert result is not None
+        assert result.startswith("Fix the parser bug")
+
+    def test_subagent_task_alias_subtitle(self):
+        result = extract_key_argument('{"task": "do thing now"}', "subagent", self.work_dir)
+        assert result == "do thing now"
+
+    def test_subagent_multiline_prompt_first_line(self):
+        result = extract_key_argument(
+            '{"prompt": "First line\\nsecond line"}', "subagent", self.work_dir
+        )
+        assert result == "First line"
+
+    def test_subagent_list_prompt_count_label(self):
+        result = extract_key_argument(
+            '{"prompt": ["a", "b", "c"]}', "subagent", self.work_dir
+        )
+        assert result == "3 tasks"
+
+    def test_subagent_absent_prompt_returns_none(self):
+        result = extract_key_argument('{"session_id": "s"}', "subagent", self.work_dir)
+        assert result is None
+
+    def test_subagent_empty_list_returns_none(self):
+        result = extract_key_argument('{"prompt": []}', "subagent", self.work_dir)
+        assert result is None
+
+    def test_subagent_long_string_truncated(self):
+        result = extract_key_argument(
+            json.dumps({"prompt": "word " * 200}), "subagent", self.work_dir
+        )
+        assert result is not None
+        assert len(result) <= 60
+
     def test_json_decode_error_returns_none(self):
         """loads_relaxed may raise stdlib json.JSONDecodeError for some malformed
         inputs; extract_key_argument must treat it like any other parse failure

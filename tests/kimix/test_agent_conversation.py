@@ -946,7 +946,7 @@ async def test_agent_resolve_session_registers_parent_and_child(
 
 
 # ---------------------------------------------------------------------------
-# Work-dir inheritance + context_files base (reflection fix)
+# Work-dir inheritance base (reflection fix)
 # ---------------------------------------------------------------------------
 
 
@@ -1008,48 +1008,6 @@ async def test_agent_work_dir_sdk_wrapped_session(
     assert mock_create.await_args is not None
     _, kwargs = mock_create.await_args
     assert kwargs.get("work_dir") == KaosPath(str(Path.cwd()))
-
-
-async def test_agent_context_files_resolve_against_work_dir(
-    mock_session: MagicMock, mock_sub_session: MagicMock, tmp_path
-) -> None:
-    """context_files must resolve against the parent's work_dir, not the
-    session cache dir (self._session.dir)."""
-    from kaos.path import KaosPath
-
-    marker = tmp_path / "marker.txt"
-    marker.write_text("hello marker", encoding="utf-8")
-    mock_session.work_dir = KaosPath(str(tmp_path))
-    mock_session.custom_config = {"chat_provider": None}
-    # Ensure the session dir differs from the work dir: a file that exists in
-    # the session dir but not the work dir must NOT be picked up.
-    session_dir = tmp_path / "session_cache"
-    session_dir.mkdir(exist_ok=True)
-    mock_session.dir = str(session_dir)
-
-    captured: list[str] = []
-
-    async def fake_prompt(prompt_str, **kwargs):
-        captured.append(prompt_str)
-        return None
-
-    with patch(
-        "kimix.utils._create_session_async", new_callable=AsyncMock
-    ) as mock_create:
-        mock_create.return_value = mock_sub_session
-        with patch(
-            "kimix.utils.prompt_async", new_callable=AsyncMock, side_effect=fake_prompt
-        ):
-            with patch(
-                "kimix.utils.close_session_async", new_callable=AsyncMock
-            ):
-                agent = Agent(mock_session)
-                await agent(
-                    SubAgentParams(prompt="do X", context_files=["marker.txt"], run_in_background=False)
-                )
-
-    assert captured, "prompt_async should have been called"
-    assert "<file path='marker.txt'>\nhello marker\n</file>" in captured[0]
 
 
 async def test_agent_work_dir_none_falls_back_to_cwd(

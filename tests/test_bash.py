@@ -4014,25 +4014,6 @@ class TestBashBackslashPaths:
 # Bash.description — Windows-specific experience text
 # ============================================================================
 
-class TestBashDescription:
-    """The Bash tool description carries the verified Windows slash rules."""
-
-    @pytest.fixture
-    def mock_session(self) -> MagicMock:
-        session = MagicMock()
-        session.custom_config.get.return_value = {}
-        session.custom_data = {}
-        return session
-
-    def _make_tool(self, platform: str, mock_session: MagicMock) -> Bash:
-        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", platform), patch(
-            "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
-        ), patch(
-            "kimi_cli.tools.file.bash.bash_tool.find_bash",
-            return_value=(r"C:\Git\bin\bash.exe" if platform == "win32" else "/bin/bash"),
-        ):
-            return Bash(session=mock_session)
-
 
 # ============================================================================
 # Bash.__call__

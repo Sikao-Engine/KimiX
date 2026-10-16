@@ -561,3 +561,46 @@ class TestIntegration:
         args = {"content": content}
         saved = _extract_and_save_long_param(args, "write")
         assert saved is None, "Normal content should not be extracted"
+
+# ── subagent batch list prompt ──────────────────────────────────────────────
+
+
+class TestSubagentBatchListPrompt:
+    """A ``subagent`` prompt may now be a list of strings (multi-dispatch).
+
+    A list of plain strings is *valid* tool input and must reach the tool
+    untouched (no extraction).  A list containing non-strings, a dict, or an
+    empty list stays malformed and is still extracted.
+    """
+
+    def test_short_string_list_not_extracted(self):
+        args = {"prompt": ["task a", "task b"]}
+        assert _extract_and_save_long_param(args, "subagent") is None
+
+    def test_long_string_list_not_extracted(self):
+        args = {"prompt": ["x" * 300, "y" * 300]}
+        assert _extract_and_save_long_param(args, "subagent") is None
+
+    def test_task_alias_string_list_not_extracted(self):
+        args = {"task": ["do this", "do that"]}
+        assert _extract_and_save_long_param(args, "subagent") is None
+
+    def test_single_element_string_list_not_extracted(self):
+        args = {"prompt": ["just one task"]}
+        assert _extract_and_save_long_param(args, "subagent") is None
+
+    def test_empty_list_still_extracted(self):
+        args = {"prompt": []}
+        saved = _extract_and_save_long_param(args, "subagent")
+        assert saved is not None and "prompt" in saved
+
+    def test_list_with_non_string_still_extracted(self):
+        args = {"prompt": [{"nested": 1}, "text " * 100]}
+        saved = _extract_and_save_long_param(args, "subagent")
+        assert saved is not None and "prompt" in saved
+
+    def test_list_extraction_still_works_for_other_tools(self):
+        # bash keeps the old list-joined behavior (no batch semantics there).
+        args = {"command": ["echo a", "echo b"]}
+        saved = _extract_and_save_long_param(args, "bash")
+        assert saved is not None and "command" in saved

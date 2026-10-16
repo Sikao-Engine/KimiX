@@ -102,7 +102,7 @@ REPORT_TOOLS: dict[str, dict[str, Any]] = {
     },
     "subagent": {
         "class": "Agent",
-        "canonical": ["description", "prompt", "run_in_background"],
+        "canonical": ["prompt", "run_in_background"],
         "aliases": {"task": "prompt"},
         "desc_lead": "Delegate a self-contained task to a subagent",
         "param_desc": {

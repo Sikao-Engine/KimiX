@@ -103,9 +103,27 @@ def extract_key_argument(
         return None
     match tool_name:
         case "subagent":
-            if not isinstance(curr_args, dict) or not curr_args.get("description"):
+            if not isinstance(curr_args, dict):
                 return None
-            key_argument = str(curr_args["description"])
+            raw_prompt = curr_args.get("prompt") or curr_args.get("task")
+            if raw_prompt is None:
+                return None
+            if isinstance(raw_prompt, list):
+                key_argument = (
+                    f"{len(raw_prompt)} tasks" if raw_prompt else None
+                )
+                if key_argument is None:
+                    return None
+            elif isinstance(raw_prompt, str):
+                first_line = raw_prompt.strip().splitlines()
+                if not first_line:
+                    return None
+                label = first_line[0].strip()
+                if not label:
+                    return None
+                key_argument = label[:60]
+            else:
+                return None
         case "todo_list":
             return None
         case "read":
