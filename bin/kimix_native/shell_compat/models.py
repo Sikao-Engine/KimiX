@@ -491,6 +491,49 @@ class ScriptNode(Node):
         return render_source(self)
 
 
+# ---------------------------------------------------------------------------
+# Frozen-field guard.  ``@dataclasses.dataclass(frozen=True)`` normally arms a
+# blanket ``__setattr__`` that raises ``FrozenInstanceError`` for *every* name,
+# which would also swallow the slot rejection for attributes the class does
+# not define.  Install a per-field guard instead: known dataclass fields stay
+# frozen, unknown names are rejected with ``TypeError`` exactly as a slotted
+# record must reject attributes it does not define.
+# ---------------------------------------------------------------------------
+def _node_setattr(self: Node, name: str, value: object) -> None:
+    if name in type(self).__dataclass_fields__:
+        raise dataclasses.FrozenInstanceError(
+            f"cannot assign to field {name!r}"
+        )
+    raise TypeError(f"{type(self).__name__!r} object has no attribute {name!r}")
+
+
+def _node_delattr(self: Node, name: str) -> None:
+    if name in type(self).__dataclass_fields__:
+        raise dataclasses.FrozenInstanceError(f"cannot delete field {name!r}")
+    raise TypeError(f"{type(self).__name__!r} object has no attribute {name!r}")
+
+
+for _node_cls in (
+    Node,
+    WordNode,
+    RedirectionNode,
+    HeredocNode,
+    ExpansionNode,
+    EmbeddedScriptNode,
+    CommandNode,
+    PipelineNode,
+    CommandListNode,
+    CompoundNode,
+    RawNode,
+    NewlineNode,
+    OperatorNode,
+    ScriptNode,
+):
+    _node_cls.__setattr__ = _node_setattr  # type: ignore[method-assign]
+    _node_cls.__delattr__ = _node_delattr  # type: ignore[method-assign]
+del _node_cls
+
+
 def render_source(node: Node, source: Optional[str] = None) -> str:
     """Render a ScriptNode's region byte-for-byte from its children.
 

@@ -31,6 +31,7 @@ out of scope for this epoch).
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -444,8 +445,11 @@ def test_translations_parse_with_bash(command: str) -> None:
 def test_reproduced_command_runs_and_leaks_no_nul(tmp_path: Path) -> None:
     """Run the fixed reproduction under real Git Bash: rc=0, no ``nul`` file.
 
-    Both operands are absent here, so both else-branches must execute — a
-    faithful cmd run of the same construct on this machine.
+    The relative operand is absent (isolated cwd), so its else-branch must
+    execute.  The absolute operand ``D:\\LuisaCompute`` comes verbatim from
+    the bug report: when the host happens to have that directory the
+    translated then-branch runs instead (its ``ls | grep vk`` output is
+    machine-dependent), so only the else output is pinned.
     """
     bash = _bash_or_skip()
     fixed = _fix(REPRODUCED).command
@@ -461,7 +465,9 @@ def test_reproduced_command_runs_and_leaks_no_nul(tmp_path: Path) -> None:
     assert proc.returncode == 0, (proc.returncode, proc.stdout, proc.stderr)
     assert "no LuisaCompute dir" in proc.stdout
     assert "---" in proc.stdout
-    assert "no D:/LuisaCompute" in proc.stdout
+    absolute_operand_exists = os.path.exists(r"D:\LuisaCompute")
+    if not absolute_operand_exists:
+        assert "no D:/LuisaCompute" in proc.stdout
     assert "syntax error" not in proc.stderr
     leftovers = [p.name.lower() for p in tmp_path.iterdir()]
     assert "nul" not in leftovers, (
