@@ -13,6 +13,7 @@
       "kimi_cli.tools.file:write",
       "kimi_cli.tools.subagent:subagent",
       "kimi_cli.tools.subagent:list_agents",
+      "kimi_cli.tools.subagent:wait_agent",
       "kimi_cli.tools.swarm:workflow",
       "kimi_cli.tools.file:glob",
       "kimi_cli.tools.file:grep",

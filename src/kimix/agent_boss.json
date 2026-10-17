@@ -13,6 +13,7 @@
       "kimi_cli.tools.note:edit_plan",
       "kimi_cli.tools.subagent:subagent",
       "kimi_cli.tools.subagent:list_agents",
+      "kimi_cli.tools.subagent:wait_agent",
       "kimi_cli.tools.subagent:interrupt_agent",
       "kimi_cli.tools.swarm:workflow",
       "kimi_cli.tools.todo:todo_list",

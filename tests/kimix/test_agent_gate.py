@@ -233,12 +233,27 @@ async def test_probe_at_path_resolution(monkeypatch, tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Probe 4 — run_in_background defaults to True (contrast with C01's False)
+# Probe 4 — run_in_background defaults to False; explicit true stays detached
 # ---------------------------------------------------------------------------
-async def test_probe_run_in_background_defaults_true() -> None:
-    assert SubAgentParams(prompt="x").run_in_background is True
-    assert SubAgentParams(prompt="x", run_in_background=False).run_in_background is False
+async def test_probe_run_in_background_defaults_false() -> None:
+    assert SubAgentParams(prompt="x").run_in_background is False
+    assert SubAgentParams(prompt="x", run_in_background=True).run_in_background is True
 
+    # Default: foreground — the child prompt is awaited before the tool returns.
+    parent_fg = _parent("fg")
+    with (
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
+        patch("kimix.utils.prompt_async", new_callable=AsyncMock) as mock_prompt,
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
+    ):
+        mock_create.return_value = _sub_session()
+        result = await Agent(parent_fg)(
+            SubAgentParams(prompt="x")
+        )
+        assert result.extras["status"] == "closed"
+        mock_prompt.assert_awaited_once()
+
+    # Explicit true: detached — returns before the child ran.
     parent = _parent()
     with (
         patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
@@ -247,7 +262,7 @@ async def test_probe_run_in_background_defaults_true() -> None:
     ):
         mock_create.return_value = _sub_session()
         result = await Agent(parent)(
-            SubAgentParams(prompt="x")
+            SubAgentParams(prompt="x", run_in_background=True)
         )
         assert result.extras["status"] == "running"
         assert result.extras["session_id"] in result.output
@@ -278,7 +293,7 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
     assert mclose.await_count == 1
     assert _get_store(parent_fg).get(r_fg.extras["session_id"]) is None
 
-    # Background, default -> kept open, completed, resumable.
+    # Background (run_in_background=true) -> kept open, completed, resumable.
     parent_bg = _parent("bg")
     with (
         patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
@@ -286,7 +301,9 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
         patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mclose,
     ):
         mc.return_value = _sub_session()
-        r_bg = await Agent(parent_bg)(SubAgentParams(prompt="x"))
+        r_bg = await Agent(parent_bg)(
+            SubAgentParams(prompt="x", run_in_background=True)
+        )
         assert r_bg.extras["status"] == "running"
         await _pump()
     assert mclose.await_count == 0
@@ -302,7 +319,7 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
     ):
         mc.return_value = _sub_session()
         r_bgc = await Agent(parent_bgc)(
-            SubAgentParams(prompt="x", close_session=True)
+            SubAgentParams(prompt="x", close_session=True, run_in_background=True)
         )
         await _pump()
     assert mclose.await_count == 1

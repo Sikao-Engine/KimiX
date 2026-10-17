@@ -1038,7 +1038,7 @@ async def test_agent_work_dir_none_falls_back_to_cwd(
 
 
 # ---------------------------------------------------------------------------
-# Background subagent lifecycle (run_in_background=true, the default)
+# Background subagent lifecycle (run_in_background=true)
 # ---------------------------------------------------------------------------
 
 
@@ -1087,8 +1087,7 @@ async def test_agent_background_returns_durable_id_immediately(
         mock_create.return_value = mock_sub_session
         mock_prompt.side_effect = _blocking_prompt
         agent = Agent(mock_session)
-        result = await agent(SubAgentParams(prompt="do X"))
-
+        result = await agent(SubAgentParams(prompt="do X", run_in_background=True))
     assert not result.is_error
     assert result.extras is not None
     assert result.extras["status"] == "running"
@@ -1135,7 +1134,7 @@ async def test_agent_background_completes_and_stays_addressable(
         mock_create.return_value = mock_sub_session
         mock_prompt.side_effect = _capturing_prompt(captured, "answer")
         agent = Agent(mock_session)
-        result = await agent(SubAgentParams(prompt="do X"))
+        result = await agent(SubAgentParams(prompt="do X", run_in_background=True))
         session_id = result.extras["session_id"]
         await _pump_background()
 
@@ -1177,7 +1176,9 @@ async def test_agent_background_explicit_close_session_closes(
         mock_prompt.side_effect = _capturing_prompt([], "answer")
         agent = Agent(mock_session)
         result = await agent(
-            SubAgentParams(prompt="do X", close_session=True)
+            SubAgentParams(
+                prompt="do X", close_session=True, run_in_background=True
+            )
         )
         session_id = result.extras["session_id"]
         await _pump_background()
@@ -1242,7 +1243,7 @@ async def test_agent_background_notifies_parent_on_completion(
             mock_create.return_value = mock_sub_session
             mock_prompt.side_effect = _capturing_prompt([], "all done")
             agent = Agent(mock_session)
-            result = await agent(SubAgentParams(prompt="do X"))
+            result = await agent(SubAgentParams(prompt="do X", run_in_background=True))
             session_id = result.extras["session_id"]
             await _pump_background()
     finally:

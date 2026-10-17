@@ -188,7 +188,9 @@ async def test_batch_background_returns_ids_and_launches_tasks() -> None:
         patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mc.side_effect = lambda **kw: _sub_session(kw["session_id"])
-        result = await Agent(parent)(SubAgentParams(prompt=["a", "b", "c"]))
+        result = await Agent(parent)(
+            SubAgentParams(prompt=["a", "b", "c"], run_in_background=True)
+        )
         session_ids = result.extras["session_ids"]
         assert result.is_error is False
         assert len(session_ids) == 3
@@ -359,7 +361,9 @@ async def test_single_string_extras_unchanged() -> None:
         patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mc.return_value = _sub_session()
-        result = await Agent(parent)(SubAgentParams(prompt="solo"))
+        result = await Agent(parent)(
+            SubAgentParams(prompt="solo", run_in_background=True)
+        )
     assert result.is_error is False
     # Singular ``session_id`` key retained; ``session_ids`` NOT present.
     assert "session_id" in result.extras
