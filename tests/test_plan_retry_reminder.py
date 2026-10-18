@@ -90,6 +90,11 @@ def patched(monkeypatch, tmp_path):
     close_mock = AsyncMock()
     monkeypatch.setattr(prompt_mod, "close_session_async", close_mock)
 
+    # Execution phase (reached once the review loop was removed) must not
+    # create real sessions or prompt real agents.
+    monkeypatch.setattr(prompt_mod, "_create_default_session_async", AsyncMock(return_value=MagicMock()))
+    monkeypatch.setattr(prompt_mod, "prompt_async", AsyncMock())
+
     return SimpleHandles(stream=stream, close_mock=close_mock)
 
 
@@ -149,7 +154,7 @@ class TestPromptPlanAsyncRetry:
         await _drive(
             monkeypatch, patched, prompts,
             write_on_attempt=2, plan_file=plan_file,
-            inputs=["n", "/quit"],  # review loop: not yet, then give up
+            inputs=[],  # review loop was removed; no user input is consumed
         )
 
         assert len(prompts) == 2, prompts
@@ -164,7 +169,7 @@ class TestPromptPlanAsyncRetry:
 
         # The run must not have swallowed any exception on the way.
         assert not any("prompt_plan failed" in t for t in patched.printed_texts())
-        # Review loop quit -> plan not executed, planner session closed.
+        # Plan flows straight to implementation; planner session closed.
         patched.close_mock.assert_awaited_once()
 
     async def test_all_retries_labeled_when_plan_never_written(self, monkeypatch, patched, tmp_path):

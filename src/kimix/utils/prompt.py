@@ -1003,59 +1003,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
         )
         _open_plan_file(plan_file)
 
-        # Review loop: let the user approve or request revisions
-        execute_plan = True
-        while True:
-            user_input = await asyncio.to_thread(
-                input, "Do you want to implement the plan? (y/n): "
-            )
-            if user_input.strip().lower() == "y":
-                break
-
-            # User wants to revise the plan — get feedback and loop back to planner
-            feedback = await asyncio.to_thread(
-                input, "Please describe the changes you want (/quit to give up): "
-            )
-            feedback = feedback.strip()
-            if not feedback:
-                continue
-            if feedback.lower() == '/quit':
-                execute_plan = False
-                break
-            revision_reminder = (
-                "The user reviewed the plan and wants the following changes:\n\n"
-                f"{feedback.strip()}\n\n"
-                "Please update the plan file accordingly using the write_plan or edit_plan tools. "
-            )
-            try:
-                base._stream.colorful_print_word(
-                    "Revising plan...\n",
-                    fg=Color.BRIGHT_CYAN,
-                    require_new_line=True,
-                )
-                async for message in planner_session.prompt(revision_reminder):
-                    await print_agent_json(message, planner_session, None, True)
-                base._stream.print_word("\n", require_new_line=True)
-
-                # Re-open the updated plan file for review
-                if plan_file.exists():
-                    _open_plan_file(plan_file)
-            except KeyboardInterrupt:
-                if planner_session:
-                    planner_session.cancel()
-                return
-            except Exception as exc:
-                base._stream.colorful_print_word(
-                    f"Revision failed: {exc}",
-                    fg=Color.BRIGHT_RED,
-                    styles=[Style.BOLD],
-                    require_new_line=True,
-                )
-                # Continue the loop so the user can try again
-
         note._enable_plan = False
-        if not execute_plan:
-            return
 
         if not plan_file.exists():
             base._stream.colorful_print_word(
