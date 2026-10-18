@@ -9,10 +9,13 @@ reference algorithms from the kimi-agent repo (vendored in
 ``use_native("PARSE") is False`` yields bit-identical behavior.
 
 The *shell scanners* (bash_fix / process_unquoted / pwsh_fix / pwsh_transform)
-are ALWAYS pure Python (delegated to the ``_shell_compat`` facade, i.e. the
-``kimix_native.shell_compat`` implementation package): the compiled kernel
-predates the current shell rules and diverges from the reference scanner, so
-shell parsing never routes through ``runtime_py``.
+are delegated to the ``_shell_compat`` facade, i.e. the
+``kimix_native.shell_compat`` implementation package.  This module never routes
+them through the legacy ``runtime_py.parse`` shell kernel (it predates the
+current shell rules and diverges from the reference scanner).  The bash/Git Bash
+scanner does have its own native kernel — ``runtime_py.bash_fix``, the C++ port
+of exactly these rules — which the facade uses instead when it is loaded; see
+``_shell_compat.py``.
 
 Public API (mirrors the reference consumers):
   - parse(lang, source) -> ParseResult{language, comments, code_without_comments}
@@ -389,16 +392,18 @@ def parse(lang: str, source: str) -> ParseResult:
 # shell scanners (bash_fix / bash_tool / pwsh_fix / process_pwsh)
 # ---------------------------------------------------------------------------
 #
-# Shell parsing is ALWAYS pure Python: parse.py delegates unconditionally to
-# ``_shell_compat.py``, the stable compatibility facade whose implementation
-# lives in the ``kimix_native.shell_compat`` package.  The compiled
-# ``runtime_py.parse`` kernel predates the current rules (null-device ``> nul``
-# rewrites, shell-wrapper repairs, Git Bash virtual paths, post-kernel
+# Shell parsing is delegated to ``_shell_compat.py``, the stable compatibility
+# facade whose implementation lives in the ``kimix_native.shell_compat`` package.
+# The compiled ``runtime_py.parse`` kernel predates the current rules (null-device
+# ``> nul`` rewrites, shell-wrapper repairs, Git Bash virtual paths, post-kernel
 # fallbacks) and measurably diverges from the reference scanner (e.g. it
 # converts the null-device escape ``\nul`` inside ``"$(...)"`` where the
 # reference preserves it), so routing shell commands through it can mangle a
-# command.  The comment parsers below keep their native acceleration; only the
-# shell entry points are pinned to the reference implementation.
+# command.  The current rules DO have their own native kernel —
+# ``runtime_py.bash_fix`` (the C++ port of ``kimix_native.shell_compat``) — which
+# the facade uses when it is loaded; this module never reaches it directly.  The
+# comment parsers below keep their native acceleration; only the shell entry
+# points go through the facade.
 
 
 def fix_bash_command(cmd: str) -> BashFix:

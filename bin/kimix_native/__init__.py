@@ -16,7 +16,10 @@ disables the native implementation for one kernel while keeping the rest
 native. This implements the report's ``--native`` / ``--python`` conformance
 strategy: every kernel must have a bit-identical Python fallback (mirrored in
 ``_compat`` modules) so ``use_native(kernel) is False`` yields identical
-behavior.
+behavior. Kernel names: ``TEXT``, ``INDEX``, ``SEARCH``, ``PARSE``, ``TOOLS``,
+``STREAM``, ``CODEC``, ``DIFF``, ``GLOB``, ``GREP`` and ``BASH_FIX`` (the
+Windows Git Bash scanner, ``runtime_py.bash_fix``, used by
+``kimix_native._shell_compat``).
 
 The ``GREP`` kernel (``kimix_native.grep``) is special: its native engine is
 the optional ``runtime_py.grep`` submodule, so the gate additionally requires

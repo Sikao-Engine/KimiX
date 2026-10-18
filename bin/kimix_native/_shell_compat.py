@@ -296,6 +296,145 @@ from kimix_native.shell_compat.pwsh_transform import (  # noqa: F401
     pwsh_transform,
 )
 
+# ======================================================================
+# Native acceleration: runtime_py.bash_fix
+# ======================================================================
+#
+# The Git Bash scanner exists twice now: this pure-Python reference (the
+# fallback) and the compiled ``runtime_py.bash_fix`` kernel — the C++ port of
+# exactly this algorithm in the kimix native repo (src/llm/bash_parser),
+# locked byte-for-byte against the reference by its differential golden
+# battery.  When the native runtime is loaded, the three public entry points
+# below delegate to it:
+#
+#   fix_bash_command            -> bash_fix.fix_bash_command
+#   bash_compatibility_prelude  -> bash_fix.bash_compatibility_prelude
+#   _process_unquoted           -> bash_fix.process_unquoted
+#
+# The gate is the shim's standard one, so pure Python stays the reference and
+# the whole algorithm stays reachable: ``KIMIX_NATIVE=0`` (or
+# ``KIMIX_NATIVE_BASH_FIX=0``) forces this file's implementation, a stale
+# ``runtime_py`` build without the ``bash_fix`` submodule is ignored, and a
+# version-mismatched extension never loads ``_native`` in the first place.
+# The result object is always the reference
+# ``shell_compat.bash_core.BashFix`` frozen dataclass, rebuilt here from the
+# native tuple, so object shape/equality/warning semantics are unchanged.
+import sys as _sys
+
+# Reference implementations, captured before the wrappers below shadow them
+# (the KIMIX_NATIVE=0 fallback and the parity oracle of the C++ kernel).
+_py_fix_bash_command = fix_bash_command
+_py_bash_compatibility_prelude = bash_compatibility_prelude
+_py_process_unquoted = _process_unquoted
+
+_NATIVE_BASH_FIX = None
+_NATIVE_BASH_FIX_CHECKED = False
+
+
+def _native_bash_fix():
+    """The compiled ``runtime_py.bash_fix`` submodule, or None when inactive.
+
+    Resolved once, lazily, and never raising: this facade is also loaded
+    standalone by file path (``importlib.util.spec_from_file_location`` in the
+    kimi-agent test suite) where the ``kimix_native`` package may be missing.
+    """
+    global _NATIVE_BASH_FIX, _NATIVE_BASH_FIX_CHECKED
+    if _NATIVE_BASH_FIX_CHECKED:
+        return _NATIVE_BASH_FIX
+    _NATIVE_BASH_FIX_CHECKED = True
+    _NATIVE_BASH_FIX = None
+    pkg = _sys.modules.get("kimix_native")
+    if pkg is None:
+        try:
+            import kimix_native as pkg  # noqa: F401  (self-registers)
+        except ImportError:  # pragma: no cover - standalone/old-wheel load
+            return None
+    native = getattr(pkg, "_native", None)
+    use_native = getattr(pkg, "use_native", None)
+    if native is None or use_native is None or not use_native("BASH_FIX"):
+        return None
+    module = getattr(native, "bash_fix", None)
+    if module is None:  # pragma: no cover - stale runtime_py build
+        return None
+    _NATIVE_BASH_FIX = module
+    return _NATIVE_BASH_FIX
+
+
+def _native_temp_dir() -> str:
+    """The reference ``_windows_temp_dir()`` value, for the native kernel.
+
+    The compiled kernel cannot call ``tempfile.gettempdir()`` in the Python
+    host, so the facade passes the spelling explicitly on every call.  That is
+    what keeps ``/tmp`` mapping identical on every host (POSIX ``/tmp`` is the
+    identity) and keeps ``monkeypatch.setattr(_shell, "_windows_temp_dir", ...)``
+    working — the lookup is a plain module-global read, exactly like the
+    reference ``_windows_temp_dir_from_namespace`` late binding.
+    """
+    return str(_windows_temp_dir()).replace("\\", "/")
+
+
+def fix_bash_command(command: str) -> BashFix:
+    """Rewrite selected native POSIX commands for Windows Git Bash.
+
+    Native (``runtime_py.bash_fix``) when available, else the pure-Python
+    reference; both return the same ``BashFix`` value.
+    """
+    if not isinstance(command, str):
+        raise TypeError("command must be a string")
+    native = _native_bash_fix()
+    if native is None:
+        return _py_fix_bash_command(command)
+    (
+        fixed,
+        replacements,
+        path_changes,
+        shell_wrappers,
+        nul_fixes,
+        unsupported,
+        cmd_conditional_fixes,
+    ) = native.fix_bash_command(command, _native_temp_dir())
+    return BashFix(
+        command=fixed,
+        replacements=tuple(replacements),
+        path_changes=tuple(path_changes),
+        shell_wrappers=tuple(shell_wrappers),
+        nul_fixes=tuple(nul_fixes),
+        unsupported=tuple(unsupported),
+        cmd_conditional_fixes=tuple(cmd_conditional_fixes),
+    )
+
+
+def bash_compatibility_prelude() -> str:
+    """Exported fallback definitions for a persistent Git Bash shell.
+
+    The reference ``sys.platform == "win32"`` gate stays in Python: the
+    compiled kernel reports its BUILD platform instead, so the facade decides.
+    """
+    if _sys.platform != "win32":
+        return ""
+    native = _native_bash_fix()
+    if native is None:
+        return _py_bash_compatibility_prelude()
+    return native.bash_compatibility_prelude()
+
+
+def _process_unquoted(cmd: str) -> str:
+    """Convert unquoted backslashes to forward slashes (native when active)."""
+    if not isinstance(cmd, str):
+        raise TypeError("cmd must be a string")
+    native = _native_bash_fix()
+    if native is None:
+        return _py_process_unquoted(cmd)
+    return native.process_unquoted(cmd)
+
+
+# NOTE: the reference kernel in ``shell_compat.bash_core`` is deliberately left
+# untouched.  Re-binding these three names there would make every
+# native-vs-reference comparison in the test suite compare the native kernel
+# with itself; ``_py_*`` above is the pure-Python oracle, and the facade wrappers
+# are what consumers (``parse.py``, ``bash_fix.py``, ``bash_tool.py``) call.
+
+
 __all__ = [
     "BashFix",
     "PwshFix",

@@ -264,8 +264,22 @@ def test_package_modules_exist_and_are_the_source() -> None:
         "kimix_native.shell_compat.pwsh_transform"
     )
 
-    # a symbol that lives only in bash_core is reachable through the facade
-    assert _shell_compat.fix_bash_command is bash_core.fix_bash_command
+    # a symbol that lives only in bash_core is reachable through the facade.
+    #
+    # Native acceleration: ``fix_bash_command`` / ``_process_unquoted`` /
+    # ``bash_compatibility_prelude`` are the three scanner entry points the
+    # facade WRAPS (they delegate to the compiled ``runtime_py.bash_fix``
+    # kernel when the native runtime is loaded and to the pure-Python
+    # reference otherwise -- see the native-acceleration section of
+    # _shell_compat.py), so the facade name is a delegator while the reference
+    # kernel stays the ``_py_*`` capture from bash_core.  bash_core itself is
+    # never re-bound: the reference must stay reachable as the parity oracle.
+    assert _shell_compat._py_fix_bash_command is bash_core.fix_bash_command
+    assert _shell_compat._py_process_unquoted is bash_core._process_unquoted
+    assert (
+        _shell_compat._py_bash_compatibility_prelude
+        is bash_core.bash_compatibility_prelude
+    )
     assert _shell_compat.BashFix is bash_core.BashFix
     # a symbol that lives in fallback_data
     assert _shell_compat._FALLBACK_BODIES is fallback_data._FALLBACK_BODIES
