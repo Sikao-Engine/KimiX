@@ -239,9 +239,6 @@ class fetch_url(CallableTool2[Params]):  # noqa: N801
     async def _fetch_with_service(self, params: Params) -> ToolReturnValue:
         assert self._service_config is not None
 
-        tool_call = get_current_tool_call_or_none()
-        assert tool_call is not None, "Tool call is expected to be set"
-
         builder = ToolResultBuilder(max_line_length=None)
         block_msg, normalized_url = await _check_url_safety(params.url)
         if block_msg:
@@ -254,6 +251,17 @@ class fetch_url(CallableTool2[Params]):  # noqa: N801
                 "Fetch service is not configured. You may want to try other methods to fetch.",
                 brief="Fetch service not configured",
             )
+
+        # Lazy import keeps the (heavy, aiohttp-backed) providers module off the
+        # module-load path and avoids an import cycle.
+        from kimi_cli.tools.web.providers import service_type
+
+        if service_type(self._service_config) == "deepseek":
+            return await self._fetch_with_deepseek(params, builder, normalized_url, api_key)
+
+        tool_call = get_current_tool_call_or_none()
+        assert tool_call is not None, "Tool call is expected to be set"
+
         headers = {
             "User-Agent": USER_AGENT,
             "Authorization": f"Bearer {api_key}",
@@ -331,3 +339,104 @@ class fetch_url(CallableTool2[Params]):  # noqa: N801
                 ),
                 brief="Network error when calling fetch service",
             )
+
+    async def _fetch_with_deepseek(
+        self,
+        params: Params,
+        builder: ToolResultBuilder,
+        normalized_url: str,
+        api_key: str,
+    ) -> ToolReturnValue:
+        """Fetch via the DeepSeek ``/v1/tools/fetch`` JSON API.
+
+        The request is ``{"url": ...}`` and the response is
+        ``{"title": str, "content": markdown}``; the title is written as a
+        heading line followed by the markdown body. Non-200 responses surface an
+        error (the caller then falls back to a local HTTP GET in ``__call__``).
+        """
+        from kimi_cli.tools.web.providers import deepseek_endpoint_url
+
+        tool_call = get_current_tool_call_or_none()
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            **self._runtime.oauth.common_headers(),
+            **(self._service_config.custom_headers or {}),
+        }
+        if tool_call is not None:
+            headers["X-Msh-Tool-Call-Id"] = tool_call.id
+
+        import aiohttp
+
+        from kimi_cli.utils.aiohttp import new_client_session
+
+        url = deepseek_endpoint_url(self._service_config.base_url, "fetch")
+        try:
+            async with (
+                new_client_session() as session,
+                session.post(url, headers=headers, json={"url": normalized_url}) as response,
+            ):
+                if response.status != 200:
+                    try:
+                        excerpt = (await response.text())[:200]
+                    except Exception:  # noqa: BLE001 — body may be unreadable
+                        excerpt = ""
+                    logger.warning(
+                        "fetch_url deepseek service HTTP error: status={status}, url={url}",
+                        status=response.status,
+                        url=normalized_url,
+                    )
+                    return builder.error(
+                        (
+                            f"Failed to fetch URL via DeepSeek service. "
+                            f"Status: {response.status}. Response: {excerpt}"
+                        ),
+                        brief="Failed to fetch URL via fetch service",
+                    )
+                try:
+                    data = await response.json()
+                except Exception as e:  # noqa: BLE001 — non-JSON body
+                    logger.warning(
+                        "fetch_url deepseek service parse error: {error}, url={url}",
+                        error=e,
+                        url=normalized_url,
+                    )
+                    return builder.error(
+                        f"Failed to parse DeepSeek fetch response: {e}.",
+                        brief="Invalid fetch service response",
+                    )
+        except TimeoutError:
+            logger.warning("fetch_url deepseek service timed out: url={url}", url=normalized_url)
+            return builder.error(
+                "Failed to fetch URL via service: request timed out.",
+                brief="Service request timed out",
+            )
+        except aiohttp.ClientError as e:
+            logger.warning(
+                "fetch_url deepseek service network error: {error}, url={url}",
+                error=e,
+                url=normalized_url,
+            )
+            return builder.error(
+                (
+                    f"Failed to fetch URL via service due to network error: {e}. "
+                    "This may indicate the service is unreachable."
+                ),
+                brief="Network error when calling fetch service",
+            )
+
+        if not isinstance(data, dict):
+            return builder.error(
+                "Failed to parse DeepSeek fetch response: expected a JSON object.",
+                brief="Invalid fetch service response",
+            )
+
+        title = (data.get("title") or "").strip()
+        content = data.get("content") or ""
+        if title:
+            builder.write(f"# {title}\n\n")
+        builder.write(content)
+        return builder.ok(
+            "The returned content is the main content extracted from the page."
+        )

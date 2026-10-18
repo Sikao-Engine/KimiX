@@ -69,9 +69,14 @@ class SearchWeb(CallableTool2[Params]):
         # providers; register the Kimi service provider only when a search
         # service is configured.
         if config.services.search is not None:
-            providers.register_provider(
-                providers.KimiServiceProvider(config, runtime)
-            )
+            if providers.service_type(config.services.search) == "deepseek":
+                providers.register_provider(
+                    providers.DeepseekServiceProvider(config, runtime)
+                )
+            else:
+                providers.register_provider(
+                    providers.KimiServiceProvider(config, runtime)
+                )
         if providers.get_active_search_provider(config) is None:
             raise SkipThisTool()
         self._config = config

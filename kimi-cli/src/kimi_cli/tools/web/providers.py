@@ -29,6 +29,7 @@ import abc
 import os
 import threading
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import orjson
 import regex as re
@@ -50,6 +51,9 @@ __all__ = (
     "get_active_search_provider",
     "get_active_extract_provider",
     "KimiServiceProvider",
+    "DeepseekServiceProvider",
+    "service_type",
+    "deepseek_endpoint_url",
     "DDGSProvider",
     "LocalTrafilaturaProvider",
     "TavilyProvider",
@@ -284,6 +288,7 @@ def _reset_for_tests() -> None:
 # ---------------------------------------------------------------------------
 
 _SEARCH_LEGACY_PREFERENCE = (
+    "deepseek",
     "kimi",
     "firecrawl",
     "parallel",
@@ -394,6 +399,61 @@ def get_active_extract_provider(config: Config | None = None) -> WebSearchProvid
     """Resolve the currently-active web extract provider."""
     explicit = _explicit_config_name(config, capability="extract")
     return _resolve(explicit, capability="extract")
+
+
+# ---------------------------------------------------------------------------
+# Service-flavour helpers (Kimi vs DeepSeek)
+# ---------------------------------------------------------------------------
+
+
+def service_type(config_obj: Any) -> str:
+    """Return the web service flavour: ``"kimi"`` or ``"deepseek"``.
+
+    Resolution order:
+
+    1. An explicitly-set ``type`` field wins (``model_fields_set`` is used so
+       the ``"kimi"`` *default* does not mask hostname inference — an explicit
+       ``type="kimi"`` still forces the legacy behaviour).
+    2. Otherwise infer ``"deepseek"`` when the ``base_url`` hostname contains
+       ``"deepseek"`` (case-insensitive); fall back to ``"kimi"``.
+
+    Works for both ``SearchConfig`` and ``FetchConfig`` (and any object exposing
+    the same ``type`` / ``base_url`` attributes).
+    """
+    explicit = getattr(config_obj, "type", None)
+    fields_set = getattr(config_obj, "model_fields_set", None)
+    if fields_set is not None:
+        if "type" in fields_set and explicit:
+            return str(explicit)
+    elif explicit:
+        # Non-pydantic object: trust the attribute value directly.
+        return str(explicit)
+
+    base_url = getattr(config_obj, "base_url", "") or ""
+    try:
+        hostname = urlparse(base_url).hostname or ""
+    except Exception:  # noqa: BLE001 — malformed URL falls back to the default
+        hostname = ""
+    if "deepseek" in hostname.lower():
+        return "deepseek"
+    return "kimi"
+
+
+def deepseek_endpoint_url(base_url: str, resource: str) -> str:
+    """Normalize *base_url* to exactly one ``/v1/tools/<resource>`` suffix.
+
+    Handles the documented DeepSeek base-URL styles robustly so both
+    ``https://api.deepseek.com`` and ``https://api.deepseek.com/v1`` (and a
+    fully-qualified ``https://api.deepseek.com/v1/tools/search``) map onto the
+    canonical endpoint. ``resource`` is ``"search"`` or ``"fetch"``.
+    """
+    base = (base_url or "").strip().rstrip("/")
+    tail = f"/v1/tools/{resource}"
+    if base.endswith(tail):
+        return base
+    if base.endswith("/v1"):
+        return f"{base}{tail[len('/v1'):]}"
+    return f"{base}{tail}"
 
 
 # ---------------------------------------------------------------------------
@@ -610,6 +670,193 @@ class KimiServiceProvider(WebSearchProvider):
                 ]
             },
         }
+
+
+class DeepseekServiceProvider(WebSearchProvider):
+    """Search via the DeepSeek web-search service (``/v1/tools/search``).
+
+    Mirrors :class:`KimiServiceProvider`'s transport/auth pattern but speaks the
+    DeepSeek request/response contract and maps the result into the same Hermes
+    shape so the ``SearchWeb`` renderer works unchanged. Unlike the Kimi
+    provider it does not require a tool-call context; the ``X-Msh-Tool-Call-Id``
+    header is attached only when one is available.
+    """
+
+    def __init__(self, config: Config, runtime: Runtime):
+        self._config = config
+        self._runtime = runtime
+        self._service_config = config.services.search
+
+    @property
+    def name(self) -> str:
+        return "deepseek"
+
+    @property
+    def display_name(self) -> str:
+        return "DeepSeek Search Service"
+
+    def is_available(self) -> bool:
+        svc = self._service_config
+        return bool(
+            svc is not None and svc.base_url and svc.api_key.get_secret_value()
+        )
+
+    def supports_search(self) -> bool:
+        return True
+
+    def supports_extract(self) -> bool:
+        return False
+
+    async def search(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        query: str,
+        limit: int = 5,
+        *,
+        include_content: bool = False,
+    ) -> dict[str, Any]:
+        """Execute a DeepSeek ``/v1/tools/search`` call and return Hermes shape.
+
+        ``new_client_session`` and the logger are resolved lazily (same as the
+        Kimi provider) so existing test patches keep intercepting.
+        """
+        import aiohttp
+
+        new_client_session = _resolve_new_client_session()
+        log = _resolve_logger()
+
+        svc = self._service_config
+        if svc is None:
+            return {
+                "success": False,
+                "error": (
+                    "Search service is not configured. You may want to try other "
+                    "methods to search."
+                ),
+            }
+
+        api_key = self._runtime.oauth.resolve_api_key(svc.api_key, svc.oauth)
+        if not svc.base_url or not api_key:
+            return {
+                "success": False,
+                "error": (
+                    "Search service is not configured. You may want to try other "
+                    "methods to search."
+                ),
+            }
+
+        headers: dict[str, str] = {
+            "User-Agent": USER_AGENT,
+            "Authorization": f"Bearer {api_key}",
+            **self._runtime.oauth.common_headers(),
+            **(svc.custom_headers or {}),
+        }
+        tool_call = get_current_tool_call_or_none()
+        if tool_call is not None:
+            headers["X-Msh-Tool-Call-Id"] = tool_call.id
+
+        payload: dict[str, Any] = {
+            "query": query,
+            "count": max(1, min(50, int(limit))),
+            "ori_question": query,
+            "need_content": bool(include_content),
+        }
+        url = deepseek_endpoint_url(svc.base_url, "search")
+
+        try:
+            search_timeout = aiohttp.ClientTimeout(total=120, sock_read=90, sock_connect=15)
+            async with (
+                new_client_session(timeout=search_timeout) as session,
+                session.post(url, headers=headers, json=payload) as response,
+            ):
+                if response.status != 200:
+                    try:
+                        excerpt = (await response.text())[:200]
+                    except Exception:  # noqa: BLE001 — body may be unreadable
+                        excerpt = ""
+                    log.warning(
+                        "deepseek web_search HTTP error: status={status}, query={query}",
+                        status=response.status,
+                        query=query,
+                    )
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Failed to search via DeepSeek. Status: {response.status}. "
+                            f"Response: {excerpt}"
+                        ),
+                    }
+                try:
+                    data: Any = await response.json()
+                except Exception as e:  # noqa: BLE001 — non-JSON / schema error
+                    log.warning(
+                        "deepseek web_search response parse error: {error}, query={query}",
+                        error=e,
+                        query=query,
+                    )
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Failed to parse search results. Error: {e}. "
+                            "This may indicate that the search service is "
+                            "currently unavailable."
+                        ),
+                    }
+        except TimeoutError:
+            log.warning("deepseek web_search request timed out: query={query}", query=query)
+            return {
+                "success": False,
+                "error": (
+                    "Search request timed out. The search service may be slow "
+                    "or unavailable."
+                ),
+            }
+        except aiohttp.ClientError as e:
+            log.warning(
+                "deepseek web_search network error: {error}, query={query}",
+                error=e,
+                query=query,
+            )
+            return {
+                "success": False,
+                "error": (
+                    f"Search request failed: {e}. The search service may be "
+                    "unavailable."
+                ),
+            }
+
+        if not isinstance(data, dict):
+            return {
+                "success": False,
+                "error": (
+                    "Failed to parse search results. The DeepSeek search service "
+                    "returned a non-object response."
+                ),
+            }
+
+        web: list[dict[str, Any]] = []
+        for i, r in enumerate(data.get("results") or []):
+            if not isinstance(r, dict):
+                continue
+            summary = r.get("summary") or ""
+            snippet = r.get("snippet") or ""
+            web.append(
+                {
+                    "title": r.get("title") or "",
+                    "url": r.get("url") or "",
+                    "description": summary or snippet,
+                    "snippet": snippet,
+                    "position": i + 1,
+                    "content": r.get("content") or "",
+                    "date": r.get("date") or "",
+                    "site_name": r.get("site_name") or "",
+                    "icon": r.get("site_icon") or "",
+                    "mime": "text/markdown",
+                    "rerank_score": r.get("rerank_score"),
+                    "authority": r.get("authority"),
+                }
+            )
+
+        return {"success": True, "data": {"web": web}}
 
 
 class DDGSProvider(WebSearchProvider):

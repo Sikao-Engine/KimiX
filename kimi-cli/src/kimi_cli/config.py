@@ -593,6 +593,12 @@ class SearchConfig(BaseModel):
 
     base_url: str
     """Base URL for the search service."""
+    # Service flavour. ``"kimi"`` (the default) keeps the legacy Kimi search
+    # HTTP call; ``"deepseek"`` targets the DeepSeek ``/v1/tools/search`` API.
+    # When left unset, ``service_type`` also infers ``"deepseek"`` if the
+    # ``base_url`` hostname contains ``deepseek``.
+    type: Literal["kimi", "deepseek"] = "kimi"
+    """Service flavour/provider type (defaults to the legacy ``kimi``)."""
     api_key: SecretStr
     """API key for the search service."""
     custom_headers: dict[str, str] | None = None
@@ -610,6 +616,13 @@ class FetchConfig(BaseModel):
 
     base_url: str
     """Base URL for the fetch service."""
+    # Service flavour. ``"kimi"`` (the default) keeps the legacy Kimi fetch
+    # HTTP call (raw markdown body); ``"deepseek"`` targets the DeepSeek
+    # ``/v1/tools/fetch`` API (JSON ``{"title", "content"}``). When left unset,
+    # ``service_type`` also infers ``"deepseek"`` if the ``base_url`` hostname
+    # contains ``deepseek``.
+    type: Literal["kimi", "deepseek"] = "kimi"
+    """Service flavour/provider type (defaults to the legacy ``kimi``)."""
     api_key: SecretStr
     """API key for the fetch service."""
     custom_headers: dict[str, str] | None = None
