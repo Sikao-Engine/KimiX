@@ -832,14 +832,14 @@ def test_probe16_params_fields_and_aliases() -> None:
     filled = BashParams(
         command="echo alias",
         mode="send",
-        timeout=900,
+        timeout=1200,
         task_id=None,
         wait_for_pattern="ready",
         max_lines=3,
     )
     assert filled.cmd == "echo alias"
     assert filled.mode == "send"
-    assert filled.timeout == 900
+    assert filled.timeout == 1200
     assert filled.task_id is None
     assert filled.wait_for_pattern == "ready"
     assert filled.max_lines == 3
@@ -865,7 +865,7 @@ def test_probe16b_json_schema_round_trip() -> None:
     assert schema["properties"]["mode"]["enum"] == ["execute", "send", "interactive"]
     assert schema["properties"]["timeout"]["default"] == 30
     assert schema["properties"]["timeout"]["minimum"] == 1
-    assert schema["properties"]["timeout"]["maximum"] == 900
+    assert schema["properties"]["timeout"]["maximum"] == 1200
     assert {"type": "integer", "minimum": 3} in schema["properties"]["max_lines"]["anyOf"]
     assert {"type": "null"} in schema["properties"]["max_lines"]["anyOf"]
     # Round-trip through the schema's own alias.
@@ -880,9 +880,9 @@ def test_probe16b_json_schema_round_trip() -> None:
 
 def test_probe17_timeout_boundaries() -> None:
     assert BashParams(cmd="x", timeout=1).timeout == 1
-    assert BashParams(cmd="x", timeout=900).timeout == 900
+    assert BashParams(cmd="x", timeout=1200).timeout == 1200
     assert BashParams(cmd="x").timeout == 30
-    for bad in (0, -1, 901, 1000):
+    for bad in (0, -1, 1201, 5000):
         with pytest.raises(ValidationError):
             BashParams(cmd="x", timeout=bad)
 

@@ -93,7 +93,7 @@ edit —— 精准替换
 ### 二、代码执行与进程管理
 
 #### `Run` —— 执行程序或命令
-- **功能**：直接运行指定的可执行文件（如 `git status`、`python setup.py`、`make`）。可指定工作目录（`cwd`）、环境变量（`env`）、捕获输出到文件（`output_path`），支持超时控制（`timeout`，默认 **30 秒**，范围 **1–900 秒**）。
+- **功能**：直接运行指定的可执行文件（如 `git status`、`python setup.py`、`make`）。可指定工作目录（`cwd`）、环境变量（`env`）、捕获输出到文件（`output_path`），支持超时控制（`timeout`，默认 **30 秒**，范围 **1–1200 秒**）。
 - **Shell 模式**：默认**不经过 shell 解释器**，直接创建进程，因此不接受管道、重定向、`&&`、变量等 shell 语法；需要 shell 特性时请设置 `shell=True`（Linux/macOS 使用 bash，Windows 使用 powershell）。
 - **后台运行**：显式设置 `run_in_background=True` 可将命令放入后台立即返回 `task_id`；也可用 `mode='send'` + `task_id` 向已有进程的 stdin 发送输入，并配合 `wait_for_pattern` 阻塞等待指定输出。
 - **超时与保活**：等待期间按总超时 + 输出不活跃超时双条件控制；超时不会自动转后台，需要后台请显式指定 `run_in_background=True`。
@@ -117,7 +117,7 @@ edit —— 精准替换
   - `task_id`：已有会话 ID，传入后 `code` 会被写入该进程的 stdin 用于继续交互
   - `wait_for_pattern`：可选的输出匹配正则，阻塞等待其出现
   - `output_path`（可选）：输出文件路径，若指定则将执行输出写入该文件
-  - `timeout`（可选）：超时秒数，默认 **30 秒**，范围 **1–900 秒**
+  - `timeout`（可选）：超时秒数，默认 **30 秒**，范围 **1–1200 秒**
   - `max_lines` / `deduplicate_output`：输出折叠与去重控制
 - **执行方式**：内联代码会**始终**先写入会话目录下的临时 `.py` 文件再执行（不受长度限制），避免命令行长度问题；解析器会自动选择项目 `.venv` 解释器。
 - **并发控制**：内置信号量限制，最多同时运行 8 个 Python 进程

@@ -16,7 +16,11 @@ from kimi_cli.tools.common import (
     _maybe_export_rtk_original_async,
     _original_saved_message,
 )
-from kimi_cli.tools.prompt_common import accepts_alias_text, wait_for_pattern_field
+from kimi_cli.tools.prompt_common import (
+    MAX_TIMEOUT_SECONDS,
+    accepts_alias_text,
+    wait_for_pattern_field,
+)
 
 from .utils import (
     MAX_FINISHED_TASKS,
@@ -68,10 +72,10 @@ class TaskOutputParams(BaseModel):
         default=60,
         validation_alias=AliasChoices("timeout", "timeout_ms"),
         ge=1,
-        le=7200,
+        le=MAX_TIMEOUT_SECONDS,
         description=(
             "Max wait in seconds (only meaningful with wait: true). "
-            "Defaults to the configured wait timeout; capped by the configured "
+            "Defaults to the configured wait timeout; capped at the schema "
             "maximum. "
             + accepts_alias_text("timeout", "timeout_ms", word=False)
         ),

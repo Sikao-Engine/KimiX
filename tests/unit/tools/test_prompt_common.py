@@ -19,7 +19,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from kimi_cli.tools.prompt_common import (
     accepts_alias_text,
@@ -303,6 +303,51 @@ def test_python_params_still_validate_source() -> None:
     assert ok.mode == "interactive"
     with pytest.raises(ValidationError, match="code cannot be empty when continuing"):
         PyParams.model_validate({"mode": "send", "task_id": "abc"})
+
+
+def test_timeout_cap_shared_by_all_long_running_tools() -> None:
+    """bash / pwsh / python / Run / job_output advertise one cap (1200s).
+
+    ``MAX_TIMEOUT_SECONDS`` in ``prompt_common`` is the single source of truth:
+    ``timeout_field()`` (bash, python, Run) and the hand-written ``Field``s of
+    ``pwsh`` and ``job_output`` all bind their ``le=`` to it, so the schema
+    maximum cannot drift per tool.
+    """
+    from kimi_cli.tools.background import TaskOutputParams
+    from kimi_cli.tools.file.bash.bash_tool import BashParams
+    from kimi_cli.tools.file.bash.pwsh_tool import PowershellParams
+    from kimi_cli.tools.file.run import RunParams
+    from kimi_cli.tools.prompt_common import MAX_TIMEOUT_SECONDS, timeout_field
+    from kimi_cli.tools.py import Params as PyParams
+
+    assert MAX_TIMEOUT_SECONDS == 1200
+
+    # The shared factory itself carries the cap.
+    class _TimeoutProbe(BaseModel):
+        timeout: int = timeout_field()
+
+    probe = _TimeoutProbe.model_json_schema()["properties"]["timeout"]
+    assert probe["default"] == 30
+    assert (probe["minimum"], probe["maximum"]) == (1, MAX_TIMEOUT_SECONDS)
+
+    models = (BashParams, PowershellParams, PyParams, RunParams, TaskOutputParams)
+    for model in models:
+        prop = model.model_json_schema()["properties"]["timeout"]
+        assert prop["minimum"] == 1, model.__name__
+        assert prop["maximum"] == MAX_TIMEOUT_SECONDS, model.__name__
+
+    # Boundary behaviour matches the advertised range for every tool.
+    payloads: list[tuple[type, dict[str, Any]]] = [
+        (BashParams, {"cmd": "x"}),
+        (PowershellParams, {"cmd": "x"}),
+        (PyParams, {"code": "x"}),
+        (RunParams, {"command": "x"}),
+        (TaskOutputParams, {}),
+    ]
+    for model, payload in payloads:
+        assert model.model_validate({**payload, "timeout": 1200}).timeout == 1200
+        with pytest.raises(ValidationError):
+            model.model_validate({**payload, "timeout": 1201})
 
 
 if __name__ == "__main__":

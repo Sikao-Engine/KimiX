@@ -16,7 +16,7 @@ from kimi_cli.tools.background.utils import (
 def test_legacy_timeout_ms_converts_to_seconds() -> None:
     """Legacy ``timeout_ms`` (milliseconds) converts to canonical ``timeout`` seconds."""
     assert TaskOutputParams(timeout_ms=60000).timeout == 60
-    assert TaskOutputParams(timeout_ms=7200000).timeout == 7200
+    assert TaskOutputParams(timeout_ms=1200000).timeout == 1200
     # Canonical `timeout` wins when both spellings are supplied.
     assert TaskOutputParams(timeout=5, timeout_ms=60000).timeout == 5
     # Sub-second legacy values floor to the 1s minimum.
@@ -29,7 +29,7 @@ def test_canonical_timeout_is_in_seconds() -> None:
     assert "timeout" in props
     assert "timeout_ms" not in props
     assert "Max wait in seconds" in props["timeout"]["description"]
-    assert props["timeout"]["maximum"] == 7200
+    assert props["timeout"]["maximum"] == 1200
     assert TaskOutputParams(timeout=60).timeout == 60
 
 

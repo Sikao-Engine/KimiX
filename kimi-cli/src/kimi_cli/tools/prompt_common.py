@@ -18,6 +18,7 @@ from pydantic import Field, model_validator
 
 __all__ = [
     "accepts_alias_text",
+    "MAX_TIMEOUT_SECONDS",
     "timeout_field",
     "max_lines_field",
     "wait_for_pattern_field",
@@ -45,9 +46,25 @@ def accepts_alias_text(*names: str, word: bool = True) -> str:
 
 # ── param field factories (return pydantic Field) ────────────────────────
 
+#: Single cap (seconds) for every ``timeout`` parameter of the long-running
+#: tools — ``bash`` / ``pwsh`` / ``python`` / ``Run`` (via ``timeout_field``)
+#: and ``job_output`` (which imports it for its ``le=`` bound).  Keeping one
+#: constant means the schema maximum can never drift between the tools.
+MAX_TIMEOUT_SECONDS = 1200
+
+
 def timeout_field() -> Field:
-    """``timeout``: seconds, default 30 (range is serialized in the schema)."""
-    return Field(default=30, ge=1, le=900, description="Timeout in seconds.")
+    """``timeout``: seconds, default 30, capped at ``MAX_TIMEOUT_SECONDS``.
+
+    The concrete range is serialized in the schema (``ge=1`` /
+    ``le=MAX_TIMEOUT_SECONDS``), so the description stays unit-only.
+    """
+    return Field(
+        default=30,
+        ge=1,
+        le=MAX_TIMEOUT_SECONDS,
+        description="Timeout in seconds.",
+    )
 
 
 def max_lines_field() -> Field:

@@ -52,6 +52,7 @@ from kimi_cli.tools.file.bash.safety import (
     self_kill_hint,
 )
 from kimi_cli.tools.prompt_common import (
+    MAX_TIMEOUT_SECONDS,
     accepts_alias_text,
     max_lines_field,
     mode_field,
@@ -234,7 +235,7 @@ class PowershellParams(BaseModel):
         default=30,
         validation_alias=AliasChoices("timeout", "timeoutMs"),
         ge=1,
-        le=900,
+        le=MAX_TIMEOUT_SECONDS,
         description=(
             "Timeout in seconds; kills the command on expiry. "
             + accepts_alias_text("timeout", "timeoutMs", word=False)
