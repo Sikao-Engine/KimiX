@@ -271,8 +271,20 @@ async def test_google_genai_message_conversion():
                                 },
                             ],
                             "role": "model",
-                        },
-                    ],
+                        }, {
+    "parts": [
+        {
+            "functionResponse": {
+                "parts": [],
+                "name": "add",
+                "response": {
+                    "output": "[Tool result missing: the call to 'add' was interrupted before its result was recorded. Treat the call as failed.]"
+                },
+            }
+        }
+    ],
+    "role": "user",
+}],
                     "systemInstruction": {"parts": [{"text": ""}], "role": "user"},
                 },
             }
@@ -469,8 +481,20 @@ async def test_google_genai_vertexai_message_conversion():
                                 },
                             ],
                             "role": "model",
-                        },
-                    ],
+                        }, {
+    "parts": [
+        {
+            "functionResponse": {
+                "parts": [],
+                "name": "add",
+                "response": {
+                    "output": "[Tool result missing: the call to 'add' was interrupted before its result was recorded. Treat the call as failed.]"
+                },
+            }
+        }
+    ],
+    "role": "user",
+}],
                     "systemInstruction": {"parts": [{"text": ""}], "role": "user"},
                 },
             }
@@ -597,7 +621,9 @@ async def test_google_genai_malformed_tool_call_arguments_in_request(
         body = await capture_request(mock, provider, "", [], history)
 
     contents = body["contents"]
-    assert len(contents) == 1
+    # The dangling functionCall gets a synthesized functionResponse (pairing repair).
+    assert len(contents) == 2
+    assert contents[1]["parts"][0]["functionResponse"]["name"] == "add"
     parts = contents[0]["parts"]
     assert parts[0]["text"] == "I'll call a tool."
     if not expected_error_substring:
@@ -635,7 +661,9 @@ async def test_google_genai_empty_tool_call_arguments_in_request():
         body = await capture_request(mock, provider, "", [], history)
 
     contents = body["contents"]
-    assert len(contents) == 1
+    # The dangling functionCall gets a synthesized functionResponse (pairing repair).
+    assert len(contents) == 2
+    assert contents[1]["parts"][0]["functionResponse"]["name"] == "add"
     parts = contents[0]["parts"]
     assert len(parts) == 2
     assert parts[0]["text"] == "I'll call a tool."

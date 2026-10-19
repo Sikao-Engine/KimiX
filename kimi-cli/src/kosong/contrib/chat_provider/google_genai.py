@@ -50,6 +50,7 @@ from kosong.chat_provider.openai_common import (
 )
 from kosong.contrib.chat_provider.common import (
     get_stream_iteration_timeout,
+    repair_tool_message_pairing,
     validate_tool_call_arguments,
     with_stream_timeout,
 )
@@ -154,7 +155,7 @@ class GoogleGenAI:
         tools: Sequence[KosongTool],
         history: Sequence[Message],
     ) -> GoogleGenAIStreamedMessage:
-        contents = messages_to_google_genai_contents(history)
+        contents = messages_to_google_genai_contents(repair_tool_message_pairing(history))
 
         # Google GenAI only accepts ``max_output_tokens``.  Strip other token-limit
         # keys that may leak in from callers (e.g. the soul retry logic in

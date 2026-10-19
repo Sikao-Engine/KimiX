@@ -42,6 +42,7 @@ from kosong.message import (
     ThinkPart,
     VideoURLPart,
 )
+from kosong.contrib.chat_provider.common import repair_tool_message_pairing
 from kosong.tooling import Tool
 from kosong.utils.jsonschema import JsonDict, deref_json_schema, ensure_property_types
 
@@ -182,7 +183,7 @@ class Kimi(OpenAICompatibleProviderMixin):
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(
             _convert_message(message, preserved_thinking_enabled=preserved_thinking_enabled)
-            for message in _normalize_tool_call_ids(history)
+            for message in _normalize_tool_call_ids(repair_tool_message_pairing(history))
         )
 
         try:

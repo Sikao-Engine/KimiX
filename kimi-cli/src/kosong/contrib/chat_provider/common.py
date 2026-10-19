@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Literal, TypeVar
 import regex as re
 
 from kosong.chat_provider import APITimeoutError, StreamedMessagePart, TokenUsage
+from kosong.history import repair_tool_message_pairing
 from kosong.message import Message
 
 if TYPE_CHECKING:
@@ -174,6 +175,17 @@ def normalize_tool_call_ids(history: Sequence[Message]) -> Sequence[Message]:
                 )
             )
     return normalized_messages
+
+
+def normalize_history(history: Sequence[Message]) -> Sequence[Message]:
+    """Full request-time history sanitation: pairing repair + id normalization.
+
+    Composes :func:`repair_tool_message_pairing` (fixes tool_call/tool-result
+    ordering and missing results left by interrupted steps) with
+    :func:`normalize_tool_call_ids` (rewrites backend-rejected ids).  Every
+    provider should run its persisted history through this before conversion.
+    """
+    return normalize_tool_call_ids(repair_tool_message_pairing(history))
 
 
 T = TypeVar("T")

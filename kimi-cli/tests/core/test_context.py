@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from kosong.message import Message, Role
+from kosong.message import Message, Role, ToolCall
 from kosong.utils.jsonx import loads_relaxed
 
 from kimi_cli.soul.context import Context
@@ -585,3 +585,143 @@ async def test_replace_history_does_not_raise_token_count(tmp_path: Path) -> Non
 
     assert ctx.token_count == 0
     assert ctx.token_count_with_pending == 0
+
+
+# --- restore-time tool-call pairing repair tests ---
+
+
+def _assistant_tool_call_dict(call_id: str, name: str = "wait_agent") -> dict:
+    """Serialized assistant message carrying a single tool call."""
+    return json.loads(
+        Message(
+            role="assistant",
+            content=[],
+            tool_calls=[
+                ToolCall(
+                    id=call_id,
+                    function=ToolCall.FunctionBody(name=name, arguments="{}"),
+                )
+            ],
+        ).model_dump_json(exclude_none=True)
+    )
+
+
+def _tool_result_dict(call_id: str, text: str = "done") -> dict:
+    """Serialized tool-result message."""
+    return json.loads(
+        Message(role="tool", content=text, tool_call_id=call_id).model_dump_json(
+            exclude_none=True
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_restore_repairs_interleaved_tool_pairing(tmp_path: Path) -> None:
+    """assistant(tool_calls) -> user -> tool must become assistant -> tool -> user."""
+    path = tmp_path / "context.jsonl"
+    _write_lines(
+        path,
+        [
+            _message_dict("user", "run the checks"),
+            _assistant_tool_call_dict("c1"),
+            _message_dict("user", "Background subagent 'x' completed."),
+            _tool_result_dict("c1"),
+        ],
+    )
+
+    ctx = Context(file_backend=path)
+    await ctx.restore()
+
+    assert [m.role for m in ctx.history] == ["user", "assistant", "tool", "user"]
+    assert ctx.history[2].tool_call_id == "c1"
+    assert ctx.history[3].extract_text() == "Background subagent 'x' completed."
+
+
+@pytest.mark.asyncio
+async def test_restore_synthesizes_missing_tool_result(tmp_path: Path) -> None:
+    """A trailing assistant tool call with no result gets a placeholder."""
+    path = tmp_path / "context.jsonl"
+    _write_lines(
+        path,
+        [
+            _message_dict("user", "hi"),
+            _assistant_tool_call_dict("c1", name="bash"),
+        ],
+    )
+
+    ctx = Context(file_backend=path)
+    await ctx.restore()
+
+    assert [m.role for m in ctx.history] == ["user", "assistant", "tool"]
+    assert ctx.history[2].tool_call_id == "c1"
+    assert "interrupted" in ctx.history[2].extract_text()
+
+
+@pytest.mark.asyncio
+async def test_restore_drops_orphan_tool_result(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    _write_lines(
+        path,
+        [
+            _tool_result_dict("ghost"),
+            _message_dict("user", "hi"),
+        ],
+    )
+
+    ctx = Context(file_backend=path)
+    await ctx.restore()
+
+    assert [m.role for m in ctx.history] == ["user"]
+
+
+@pytest.mark.asyncio
+async def test_restore_leaves_valid_history_untouched(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    _write_lines(
+        path,
+        [
+            _message_dict("user", "hi"),
+            _assistant_tool_call_dict("c1"),
+            _tool_result_dict("c1", "result text"),
+            _message_dict("assistant", "all done"),
+        ],
+    )
+
+    ctx = Context(file_backend=path)
+    await ctx.restore()
+
+    assert [m.role for m in ctx.history] == ["user", "assistant", "tool", "assistant"]
+    assert ctx.history[2].extract_text() == "result text"
+
+
+@pytest.mark.asyncio
+async def test_restore_repairs_tool_pairing_sqlite(tmp_path: Path) -> None:
+    """The SQLite backend (context.db) self-heals the same way on restore."""
+    path = tmp_path / "context.db"
+    writer = Context(file_backend=path)
+    await writer.append_message(Message(role="user", content="run the checks"))
+    await writer.append_message(
+        Message(
+            role="assistant",
+            content=[],
+            tool_calls=[
+                ToolCall(
+                    id="c1",
+                    function=ToolCall.FunctionBody(name="wait_agent", arguments="{}"),
+                )
+            ],
+        )
+    )
+    # The corrupting interleave: a steer user message before the tool result.
+    await writer.append_message(
+        Message(role="user", content="Background subagent 'x' completed.")
+    )
+    await writer.append_message(Message(role="tool", content="done", tool_call_id="c1"))
+    await writer.close()
+
+    ctx = Context(file_backend=path)
+    await ctx.restore()
+
+    assert [m.role for m in ctx.history] == ["user", "assistant", "tool", "user"]
+    assert ctx.history[2].tool_call_id == "c1"
+    await ctx.close()

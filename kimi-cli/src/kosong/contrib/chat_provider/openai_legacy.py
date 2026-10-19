@@ -36,7 +36,7 @@ from kosong.chat_provider.openai_common import (
 from kosong.contrib.chat_provider.common import (
     ToolMessageConversion,
     check_tool_call_id,
-    normalize_tool_call_ids,
+    normalize_history,
     validate_tool_call_arguments,
 )
 from kosong.message import Message, TextPart, ThinkPart
@@ -212,7 +212,7 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
         # ids >64 chars). Shared with the other providers so cross-provider
         # session histories replay anywhere; input messages are never mutated.
         messages.extend(
-            self._convert_message(message) for message in normalize_tool_call_ids(history)
+            self._convert_message(message) for message in normalize_history(history)
         )
 
         if self._reasoning_key is not None:

@@ -36,7 +36,7 @@ from kosong.chat_provider.openai_common import (
     reasoning_effort_to_thinking_effort,
     tool_to_openai,
 )
-from kosong.contrib.chat_provider.common import normalize_tool_call_ids
+from kosong.contrib.chat_provider.common import normalize_history
 from kosong.contrib.chat_provider.openai_legacy import OpenAILegacy, OpenAILegacyStreamedMessage
 from kosong.message import ImageURLPart, Message, TextPart
 from kosong.tooling import Tool
@@ -134,7 +134,7 @@ class ThinkingControlledOpenAIProvider(CompatibleOpenAIProvider):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.extend(
-            self._convert_message(message) for message in normalize_tool_call_ids(history)
+            self._convert_message(message) for message in normalize_history(history)
         )
 
         try:

@@ -723,9 +723,34 @@ class Context:
         from kimi_cli.soul.message import strip_system_reminders
 
         strip_system_reminders(self._history)
+        self._repair_tool_pairing_inplace()
 
         self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage, model=self._model_name)
         return len(self._history) > 0 or self._system_prompt is not None
+
+    def _repair_tool_pairing_inplace(self) -> None:
+        """Repair tool_call/tool-result pairing corruption in restored history.
+
+        A step interrupted mid context-growth (steer injection, session
+        restart) can persist ``assistant(tool_calls) -> user -> tool``
+        orderings or drop a tool result entirely; strict backends then reject
+        every subsequent request with a 400.  Repair the in-memory history on
+        load so every consumer (LLM requests, compaction, pruning, export)
+        sees a valid sequence.  The storage file itself is left untouched —
+        checkpoints and the FTS index are keyed by message rowid, and the
+        repair re-applies deterministically on the next restore.
+        """
+        from kosong.history import repair_tool_message_pairing
+
+        repaired = repair_tool_message_pairing(self._history)
+        if repaired is not self._history:
+            logger.warning(
+                "Repaired tool-call pairing in restored context "
+                "({before} -> {after} messages)",
+                before=len(self._history),
+                after=len(repaired),
+            )
+            self._history = list(repaired)
 
     # ------------------------------------------------------------------ #
     # System prompt
@@ -823,6 +848,8 @@ class Context:
 
         if next_checkpoint_id > 0:
             self._next_checkpoint_id = next_checkpoint_id
+
+        self._repair_tool_pairing_inplace()
 
         self._pending_token_estimate = estimate_text_tokens(messages_after_last_usage, model=self._model_name)
 

@@ -90,7 +90,7 @@ from kosong.contrib.chat_provider.common import (
     BaseStreamedMessage,
     ToolMessageConversion,
     check_tool_call_id,
-    normalize_tool_call_ids,
+    normalize_history,
     validate_tool_call_arguments,
 )
 from kosong.message import (
@@ -379,7 +379,7 @@ class Anthropic:
         # tool_calls and their matching tool messages are rewritten
         # consistently; the caller's history objects are never mutated.
         messages: list[MessageParam] = []
-        for message in normalize_tool_call_ids(history):
+        for message in normalize_history(history):
             converted = self._convert_message(message)
             # Per Anthropic spec, tool_result blocks for the same assistant turn
             # must live in a single user message. Internal Messages model one

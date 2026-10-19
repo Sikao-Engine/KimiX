@@ -1164,7 +1164,11 @@ async def test_anthropic_malformed_tool_call_arguments_in_request(
         body = await capture_request(mock, provider, "", [], history)
 
     messages = body["messages"]
-    assert len(messages) == 1
+    # The dangling tool_use gets a synthesized tool_result (pairing repair).
+    assert len(messages) == 2
+    assert messages[1]["content"][0]["type"] == "tool_result"
+    assert messages[1]["content"][0]["tool_use_id"] == "call_bad"
+    assert "interrupted" in messages[1]["content"][0]["content"][0]["text"]
     content = messages[0]["content"]
     assert content[0]["type"] == "text"
     assert content[0]["text"] == "I'll call a tool."
@@ -1212,7 +1216,10 @@ async def test_anthropic_empty_tool_call_arguments_in_request():
         body = await capture_request(mock, provider, "", [], history)
 
     messages = body["messages"]
-    assert len(messages) == 1
+    # The dangling tool_use gets a synthesized tool_result (pairing repair).
+    assert len(messages) == 2
+    assert messages[1]["content"][0]["type"] == "tool_result"
+    assert messages[1]["content"][0]["tool_use_id"] == "call_empty"
     content = messages[0]["content"]
     assert len(content) == 2
     assert content[0]["type"] == "text"

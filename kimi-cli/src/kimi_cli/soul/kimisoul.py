@@ -1931,8 +1931,22 @@ class KimiSoul:
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.7. CONTEXT GROWTH
         # ═══════════════════════════════════════════════════════════════════════
-        # shield the context manipulation from interruption
-        await asyncio.shield(self._grow_context(result, results))
+        # Shield the context manipulation from interruption — and on the
+        # steer-interrupt path, still wait for the shielded growth to finish
+        # before propagating the cancellation.  Otherwise the agent loop's
+        # ``_consume_pending_steers`` can inject its user message between the
+        # assistant message and its tool-result messages, persisting a
+        # ``assistant(tool_calls) -> user -> tool`` ordering that strict
+        # backends reject with a 400 on the next request.
+        grow_task = asyncio.ensure_future(self._grow_context(result, results))
+        try:
+            await asyncio.shield(grow_task)
+        except asyncio.CancelledError:
+            # grow_task is shielded, so it is still running; let it finish
+            # appending the assistant + tool messages before the cancellation
+            # path consumes steers.
+            await grow_task
+            raise
 
         # ── 2e.7.5 Reasoning-aware loop counting ─────────────────────────────
         # A step that emitted a thinking block is progress: reset the toolset's

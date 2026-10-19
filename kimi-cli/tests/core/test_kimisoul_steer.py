@@ -5,8 +5,11 @@ from pathlib import Path
 
 import pytest
 from kosong import StepResult
-from kosong.message import ContentPart, Message
+from kosong.chat_provider import TokenUsage
+from kosong.message import ContentPart, Message, ToolCall
+from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
 from kosong.tooling.empty import EmptyToolset
+from pydantic import BaseModel
 
 import kimi_cli.soul.kimisoul as kimisoul_module
 from kimi_cli.llm import LLM, ModelCapability
@@ -17,6 +20,7 @@ from kimi_cli.soul.context import Context
 from kimi_cli.soul.dynamic_injection import DynamicInjection
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import is_system_reminder_message, system_reminder
+from kimi_cli.soul.toolset import KimiToolset
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.wire import Wire
 from kimi_cli.wire.types import ImageURLPart, SteerInput, StepBegin, TextPart, TurnBegin, TurnEnd
@@ -541,3 +545,141 @@ def test_is_system_reminder_message_rejects_regular_user_message() -> None:
     assert (
         is_system_reminder_message(Message(role="user", content=[TextPart(text="hello")])) is False
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression: a steer interrupting a step mid context-growth must not split
+# the assistant tool_call / tool-result pairing in the persisted history
+# (strict backends 400 on "an assistant message with 'tool_calls' must be
+# followed by tool messages responding to each 'tool_call_id'").
+# ---------------------------------------------------------------------------
+
+
+class _SteerRaceParams(BaseModel):
+    value: str = ""
+
+
+class _SteerRaceTool(CallableTool2[_SteerRaceParams]):
+    name = "SteerTool"
+    description = "Dummy tool; the steer is fired separately mid context-growth."
+    params = _SteerRaceParams
+
+    async def __call__(self, params: _SteerRaceParams) -> ToolReturnValue:
+        return ToolOk(output="tool done")
+
+
+class _SteerRaceStream:
+    def __init__(self, parts: list, usage: TokenUsage | None = None) -> None:
+        self._iter = self._to_stream(parts)
+        self._usage = usage
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        return await self._iter.__anext__()
+
+    async def _to_stream(self, parts: list):
+        for part in parts:
+            yield part
+
+    @property
+    def id(self) -> str:
+        return "steer-race"
+
+    @property
+    def usage(self) -> TokenUsage | None:
+        return self._usage
+
+
+class _SteerRaceChatProvider:
+    """Step 1 calls SteerTool (with usage, so _grow_context updates the token
+    count); later steps answer with plain text."""
+
+    name = "steer-race"
+
+    def __init__(self) -> None:
+        self._n = 0
+
+    @property
+    def model_name(self) -> str:
+        return "steer-race"
+
+    @property
+    def thinking_effort(self):
+        return None
+
+    async def generate(self, system_prompt, tools, history):
+        self._n += 1
+        if self._n == 1:
+            tool_call = ToolCall(
+                id="tc-1",
+                function=ToolCall.FunctionBody(name="SteerTool", arguments="{}"),
+            )
+            return _SteerRaceStream(
+                [tool_call],
+                usage=TokenUsage(
+                    input_other=1, output=1, input_cache_read=0, input_cache_creation=0
+                ),
+            )
+        return _SteerRaceStream([TextPart(text="done")])
+
+    def with_thinking(self, effort):
+        return self
+
+
+@pytest.mark.asyncio
+async def test_steer_interrupt_during_context_growth_keeps_tool_pairing_intact(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Steer wake cancels the step task while the shielded ``_grow_context``
+    sits between the assistant-message append and the tool-result append.
+    The step must wait for the shielded growth to finish before the
+    cancellation path consumes steers, so the persisted history never becomes
+    ``assistant(tool_calls) -> user -> tool``.
+    """
+    toolset = KimiToolset()
+    toolset.add(_SteerRaceTool())
+    llm = LLM(
+        chat_provider=_SteerRaceChatProvider(),
+        max_context_size=100_000,
+        capabilities=set(),
+    )
+    agent = Agent(
+        name="Steer Race Agent",
+        system_prompt="Test prompt.",
+        toolset=toolset,
+        runtime=_runtime_with_llm(runtime, llm),
+    )
+    soul = KimiSoul(agent, context=Context(file_backend=tmp_path / "history.jsonl"))
+
+    update_calls = 0
+    original_update = soul._context.update_token_count
+
+    async def _update_then_steer(token_count: int) -> None:
+        nonlocal update_calls
+        update_calls += 1
+        await original_update(token_count)
+        if update_calls == 2:
+            # Second update happens inside the shielded _grow_context, after
+            # the assistant message was appended but before the tool-result
+            # messages.  Fire the steer wake now and hold the window open so
+            # the step cancellation lands exactly here.
+            soul._steer_queue.put_nowait("background subagent finished")
+            soul._steer_wake_event.set()
+            await asyncio.sleep(0.1)
+
+    monkeypatch.setattr(soul._context, "update_token_count", _update_then_steer)
+    monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
+
+    await soul.run("go")
+
+    history = soul.context.history
+    assert [m.role for m in history] == ["user", "assistant", "tool", "user", "assistant"]
+    assistant_message = history[1]
+    assert assistant_message.tool_calls is not None
+    assert [tc.id for tc in assistant_message.tool_calls] == ["tc-1"]
+    assert history[2].tool_call_id == "tc-1"
+    assert history[3].extract_text() == "background subagent finished"

@@ -54,7 +54,7 @@ from kosong.contrib.chat_provider.common import (
     BaseStreamedMessage,
     ToolMessageConversion,
     check_tool_call_id,
-    normalize_tool_call_ids,
+    normalize_history,
     validate_tool_call_arguments,
 )
 from kosong.message import (
@@ -201,7 +201,7 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
         # anthropic/kimi providers) so sessions persisted under other providers
         # replay cleanly: ids like ``Read:9`` or >64 chars would 400 on strict
         # OpenAI-compatible backends. Input messages are never mutated.
-        for message in normalize_tool_call_ids(history):
+        for message in normalize_history(history):
             inputs.extend(self._convert_message(message))
 
         generation_kwargs: dict[str, Any] = {}
