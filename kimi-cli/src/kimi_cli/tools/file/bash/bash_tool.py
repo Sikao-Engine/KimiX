@@ -466,14 +466,12 @@ def _should_enable_bash() -> bool:
     The ``agent.shell`` config key (e.g. ``"shell": "bash"`` in
     ``agent_worker.json``) takes precedence over the platform heuristics:
     ``"bash"`` enables Bash wherever it is installed; ``"powershell"``
-    disables Bash on Windows (on non-Windows platforms the Powershell tool is
-    unavailable, so Bash remains the fallback).
+    disables Bash on Windows.
 
     With no explicit config on Windows, Git Bash is preferred: Bash is enabled
-    whenever a real bash (typically shipped with Git for Windows) is found,
-    and PowerShell is used only as the fallback when no bash exists (no git
-    install).  Set ``USE_SYSTEM_PWSH_ON_WINDOWS`` to True to always prefer
-    PowerShell on Windows instead.
+    whenever a real bash (typically shipped with Git for Windows) is found.
+    Set ``USE_SYSTEM_PWSH_ON_WINDOWS`` to True to always prefer PowerShell on
+    Windows instead.
     """
     if not USE_SYSTEM_SHELL:
         return False
@@ -489,34 +487,6 @@ def _should_enable_bash() -> bool:
     if platform == "win32" and USE_SYSTEM_PWSH_ON_WINDOWS:
         return False
     return find_bash() is not None
-
-
-def _should_enable_powershell() -> bool:
-    """Return True when the Powershell tool should be enabled on this platform.
-
-    The ``agent.shell`` config key (e.g. ``"shell": "bash"`` in
-    ``agent_worker.json``) takes precedence over the platform heuristics:
-    ``"bash"`` disables the tool unless Bash is unavailable (e.g. Windows
-    without Git Bash), in which case PowerShell is the fallback shell;
-    ``"powershell"`` forces the tool on Windows.
-
-    With no explicit config on Windows, PowerShell is the fallback shell: it
-    is enabled only when no bash (no git install) is available.  Set
-    ``USE_SYSTEM_PWSH_ON_WINDOWS`` to True to always enable the tool on
-    Windows regardless of Bash.
-    """
-    if sys.platform != "win32":
-        return False
-    configured = _configured_shell()
-    if configured == "bash":
-        # Bash is preferred but not installed here — fall back to PowerShell.
-        return find_bash() is None
-    if configured == "powershell":
-        return True
-    # No explicit config: legacy platform-based behavior.
-    if USE_SYSTEM_PWSH_ON_WINDOWS:
-        return True
-    return find_bash() is None
 
 
 # The unquoted-backslash scanner (``_process_unquoted`` + helpers) is the

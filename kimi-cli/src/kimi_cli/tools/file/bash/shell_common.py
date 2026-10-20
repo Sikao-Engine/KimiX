@@ -109,6 +109,17 @@ def wrap_pwsh_command(command: str) -> str:
     )
 
 
+def find_powershell_fallback() -> str | None:
+    """Return the Windows PowerShell 5.1 executable path, or ``None``.
+
+    Unlike :func:`pwsh_executable` (which falls back to the bare name
+    ``"powershell"`` so an argv can always be built), this returns ``None``
+    when no PowerShell executable exists, so callers can decide to skip
+    (e.g. the Powershell tool raising ``SkipThisTool``).
+    """
+    return shutil.which("powershell.exe") or shutil.which("powershell")
+
+
 def pwsh_executable() -> str:
     """Return the PowerShell executable to use (pwsh 7 or the PS 5.1 fallback)."""
     pwsh = _pwsh_tool().find_pwsh()

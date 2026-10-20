@@ -37,7 +37,6 @@ from kimi_cli.tools.common import (
     _summarize_long_output_async,
     _token_filter_output,
 )
-from kimi_cli.tools.file.bash import bash_tool as _bash_tool
 from kimi_cli.tools.file.bash.output_enhance import (
     annotate_failure,
     interpret_exit_code,
@@ -306,19 +305,28 @@ class Powershell(CallableTool2[PowershellParams]):
         super().__init__(description=desc)
         self.description += " " + _interactive_scope_text(is_shell=True)
         self._session = session
-        if not _bash_tool._should_enable_powershell():
-            raise SkipThisTool()
+
+        # The tool is enabled whenever a PowerShell executable actually exists
+        # on this platform: PowerShell 7+ (``pwsh``) is preferred, with Windows
+        # PowerShell 5.1 (``powershell``) as the fallback.  When neither is
+        # available the tool is skipped entirely.
+        self._pwsh_path: str | None = find_pwsh()
+        self._pwsh_fallback_path: str | None = None
+        if self._pwsh_path is None:
+            from kimi_cli.tools.file.bash import shell_common
+
+            self._pwsh_fallback_path = shell_common.find_powershell_fallback()
+            if self._pwsh_fallback_path is None:
+                raise SkipThisTool()
+            _print_warning(
+                "PowerShell 7.x not found on this system; falling back to Windows PowerShell 5.1. "
+                "PowerShell 7 syntax will be downgraded automatically, which may change command behavior."
+            )
 
         if sys.platform == "win32":
             self.description += (
                 " Windows paths must use backslashes (`\\`) instead of forward slashes (`/`)."
             )
-
-        # PowerShell resolution (which may spawn version-probe subprocesses)
-        # is deferred to first use so tool loading stays fast at startup.
-        self._pwsh_path: str | None = None
-        self._pwsh_fallback_path: str | None = None
-        self._pwsh_resolved = False
 
         # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
         # PowerShell is case-insensitive; normalize to lowercase.
@@ -393,23 +401,6 @@ class Powershell(CallableTool2[PowershellParams]):
             brief="Blocked (self-kill guard)",
         )
 
-    def _resolve_pwsh(self) -> None:
-        """Resolve the PowerShell executable paths on first use."""
-        if self._pwsh_resolved:
-            return
-        self._pwsh_resolved = True
-        self._pwsh_path = find_pwsh()
-        if self._pwsh_path is None:
-            # Resolve Windows PowerShell fallback to a full path so that we
-            # avoid accidentally picking up a WindowsApps stub at runtime.
-            from kimi_cli.tools.file.bash import shell_common
-
-            self._pwsh_fallback_path = shell_common.pwsh_executable()
-            _print_warning(
-                "PowerShell 7.x not found on this system; falling back to Windows PowerShell 5.1. "
-                "PowerShell 7 syntax will be downgraded automatically, which may change command behavior."
-            )
-
     async def __call__(self, params: PowershellParams) -> ToolReturnValue:
         """Execute the PowerShell command via the system PowerShell executable.
 
@@ -446,7 +437,6 @@ class Powershell(CallableTool2[PowershellParams]):
         rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
             params.command, True, pwsh=True
         )
-        self._resolve_pwsh()
         if self._pwsh_path is not None:
             # PowerShell 7 is available: run the command as-is without syntax transforms.
             cmd = rtk_cmd
@@ -901,7 +891,6 @@ class Powershell(CallableTool2[PowershellParams]):
         blocked = self._self_kill_blocked(cmd)
         if blocked is not None:
             return blocked
-        self._resolve_pwsh()
         executable = self._pwsh_path if self._pwsh_path else (self._pwsh_fallback_path or "powershell")
         from kimi_cli.tools.file.bash import shell_common
 

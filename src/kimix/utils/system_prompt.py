@@ -26,7 +26,7 @@ _TEMPLATES: dict[str, str] = {
     'sp_worker_core': '''\
 Read refs/skills/files first; act on evidence.
 Persist until done; one action per turn.
-Use `python` for long commands, not `{shell_tool}`.
+Use `python` for long commands.
 On error: retry, adjust, or decompose.
 Verify with tests/checks — never declare done from reading alone.
 ''',
@@ -117,28 +117,6 @@ class SystemPromptCallback:
     # called in role
     role_callback: Callable[[SystemPromptType, list[str]], None] | None = None
 
-
-def _shell_tool_name() -> str:
-    """Return the shell tool name active for this agent.
-
-    The agent config's ``agent.shell`` key (e.g. ``"shell": "powershell"`` in
-    ``agent_worker.json``) selects the shell tool: the enablement logic in
-    ``kimi_cli.tools.file.bash.bash_tool`` — ``_should_enable_bash`` and
-    ``_should_enable_powershell`` — is config-aware, so the prompt always
-    names the shell tool that is actually loaded.
-    """
-    from kimi_cli.tools.file.bash.bash_tool import (
-        _should_enable_bash,
-        _should_enable_powershell,
-    )
-
-    if _should_enable_powershell():
-        return 'pwsh'
-    if _should_enable_bash():
-        return 'bash'
-    return 'Run'
-
-
 def get_system_prompt(
         yolo: bool | None = None,
         work_dir: Optional[KaosPath] = None,
@@ -169,7 +147,7 @@ def get_system_prompt(
             use_agent_md = True
             use_skills = True
             role_doc = role
-            items.extend(_load_items('sp_worker_core', shell_tool=_shell_tool_name()))
+            items.extend(_load_items('sp_worker_core'))
             if is_sub_agent:
                 items.append(_WORKER_TODO_CLAUSES['NO_TODO'])
             else:
