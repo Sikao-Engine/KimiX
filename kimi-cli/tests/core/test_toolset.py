@@ -509,12 +509,17 @@ async def test_same_step_dedup_canonicalizes_argument_key_order():
     result_2 = ts.handle(tool_call_2)
     assert isinstance(result_1, asyncio.Task)
     assert isinstance(result_2, asyncio.Task)
-
     tr_1 = await result_1
     tr_2 = await result_2
-
-    assert tr_1.return_value.output == "a"
-    assert tr_2.return_value.output == "a"
+    # `a`/`b` are not ToolA params, so both results carry the unsupported-args
+    # warning; the same-step duplicate copies the already-decorated original.
+    for tr in (tr_1, tr_2):
+        output = tr.return_value.output
+        assert isinstance(output, str)
+        assert output.startswith("a")
+        assert "<system-warning>" in output
+    assert tr_1.tool_call_id == "tc-canonical-1"
+    assert tr_2.tool_call_id == "tc-canonical-2"
     assert ts.end_step() == [("ToolA", '{"a":1,"b":2}'), ("ToolA", '{"a":1,"b":2}')]
 
 

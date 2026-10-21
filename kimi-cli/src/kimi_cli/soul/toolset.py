@@ -13,9 +13,13 @@ import typing
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
+from functools import lru_cache
 from pathlib import Path
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Callable, Literal, overload
+
+from pydantic import AliasChoices, BaseModel
+from rapidfuzz import fuzz, process
 
 from kosong.tooling import (
     CallableTool,
@@ -1043,6 +1047,191 @@ def _append_reminder_to_return_value(
     return return_value.model_copy(update={"output": new_output})
 
 
+# ── Unsupported tool-call argument detection ────────────────────────────────
+# When a tool call carries argument keys the called tool does not support,
+# pydantic already ignores them (extra="ignore") or kosong's argument repair
+# strips them (extra="forbid") — the call succeeds and the key silently
+# vanishes. The helpers below *detect* such keys so handle() can append a
+# <system-warning> naming them to the tool result and log a server-side
+# warning. Detection NEVER mutates the arguments dict: several params models
+# consume undeclared top-level keys in mode="before" validators (every such
+# key known today is listed in _LEGACY_ARGUMENT_KEYS below), and plugin models
+# may declare their own shadow keys via the ``accepted_extra_arguments`` class
+# attribute. A false negative (a legacy key sent to an unrelated tool ⇒ no
+# warning) is harmless; false positives are what the allowlist exists to
+# prevent.
+#
+# To declare shadow keys on a plugin params model without editing the toolset:
+#     class MyParams(BaseModel):
+#         model_config = ConfigDict(extra="ignore")
+#         accepted_extra_arguments: ClassVar[tuple[str, ...]] = ("shadow_key",)
+_UNSUPPORTED_ARGS_MAX_LISTED = 5
+
+# Documented legacy-shape argument keys consumed by mode="before" validators
+# or by the toolset's todo argument repair, but NOT declared as pydantic fields
+# or aliases. Each entry names its consumer so the list stays auditable.
+_LEGACY_ARGUMENT_KEYS: frozenset[str] = frozenset(
+    {
+        # normalize_mode_validator (tools/prompt_common.py) — BashParams,
+        # PowershellParams, py.Params: ``interactive=True`` -> mode="interactive".
+        "interactive",
+        # PowershellParams._normalize_mode — legacy millisecond timeout and
+        # legacy background flag (py.Params declares run_in_background).
+        "timeoutMs",
+        "run_in_background",
+        # TaskOutputParams._normalize_legacy_timeout (also a declared alias).
+        "timeout_ms",
+        # EditParams._normalize_single_edit — single-edit shorthand.
+        "old_string",
+        "new_string",
+        "replace_all",
+        # todo Params._translate_legacy_shape — retired single-item edit keys
+        # (_TITLE_KEYS / _EDIT_FIELD_KEYS; "parent" is a declared scope alias).
+        "title",
+        "content",
+        "task",
+        "todo",
+        "item",
+        "name",
+        "status",
+        "notes",
+        "rename_to",
+        "complete",
+        # _repair_todo_list_arguments — retired batch-list keys not already
+        # covered by the todos field's declared AliasChoices.
+        "entries",
+        "modifications",
+        "batch",
+    }
+)
+
+
+def _declared_extra_argument_keys(params_model: Any) -> set[str]:
+    """Shadow keys a model opts into via ``accepted_extra_arguments`` (never raises)."""
+    try:
+        declared = getattr(params_model, "accepted_extra_arguments", ())
+    except Exception:
+        return set()
+    if isinstance(declared, str):
+        return {declared}
+    try:
+        return {key for key in declared if isinstance(key, str)}
+    except Exception:
+        return set()
+
+
+def _field_alias_keys(field_info: Any) -> set[str]:
+    """The alias / validation_alias names (incl. AliasChoices members) of one field."""
+    keys: set[str] = set()
+    for attr in ("alias", "validation_alias"):
+        value = getattr(field_info, attr, None)
+        if isinstance(value, str):
+            keys.add(value)
+        elif isinstance(value, AliasChoices):
+            keys.update(choice for choice in value.choices if isinstance(choice, str))
+    return keys
+
+
+def _extra_mode_is_allow(params_model: Any) -> bool:
+    """True when the model opts into extras (extra="allow") — fully exempt."""
+    try:
+        config = getattr(params_model, "model_config", None)
+        if not isinstance(config, dict):
+            return False
+        # cast keeps the narrowed ``dict[Unknown, Unknown]`` from tripping
+        # strict-mode unknown-type reports on ``.get``.
+        return typing.cast(Any, config).get("extra") == "allow"
+    except Exception:
+        return False
+
+
+@lru_cache(maxsize=256)
+def _supported_argument_keys(params_model: type[BaseModel]) -> frozenset[str]:
+    """Every accepted top-level argument key: field names + declared aliases
+    + the legacy-shape allowlist + model-declared ``accepted_extra_arguments``.
+
+    Cached per model class (same pattern as kosong's cached schema helpers);
+    params models are static classes.
+    """
+    try:
+        fields: dict[str, Any] = dict(params_model.model_fields)
+        supported: set[str] = set(fields.keys())
+        for field_info in fields.values():
+            supported.update(_field_alias_keys(field_info))
+        supported.update(_LEGACY_ARGUMENT_KEYS)
+        supported.update(_declared_extra_argument_keys(params_model))
+        return frozenset(supported)
+    except Exception:
+        return frozenset(_LEGACY_ARGUMENT_KEYS)
+
+
+def _unsupported_argument_keys(params_model: Any, arguments: Any) -> list[str]:
+    """Argument keys the model does not support, sorted; [] when exempt.
+
+    Pure detection over the already-parsed dict — no re-validation, no repair
+    re-run, no copies, O(#keys) set lookups. Fully defensive so it can never
+    raise out of handle() (the Toolset contract forbids non-CancelledError).
+    """
+    try:
+        if not isinstance(params_model, type) or not issubclass(params_model, BaseModel):
+            return []
+        if not isinstance(arguments, dict) or not arguments:
+            return []
+        # cast keeps the narrowed ``dict[Unknown, Unknown]`` from tripping
+        # strict-mode unknown-type reports on iteration.
+        arguments_map = typing.cast(dict[Any, Any], arguments)
+        if _extra_mode_is_allow(params_model):
+            return []
+        supported = _supported_argument_keys(params_model)
+        return sorted(key for key in arguments_map if isinstance(key, str) and key not in supported)
+    except Exception:
+        return []
+
+
+_UNSUPPORTED_ARG_SUGGEST_CUTOFF = 75
+
+
+def _suggest_argument_key(unsupported_key: str, supported_keys: Iterable[str]) -> str | None:
+    """Fuzzy ``did you mean`` hint for a single unsupported key (rapidfuzz).
+
+    Suggests only from the model's real fields/aliases, never from the legacy
+    allowlist, so a hint always names a key the tool actually accepts.
+    """
+    candidates = sorted(key for key in supported_keys if key not in _LEGACY_ARGUMENT_KEYS)
+    if not candidates:
+        return None
+    best = process.extractOne(unsupported_key, candidates, scorer=fuzz.ratio)
+    if best and best[1] >= _UNSUPPORTED_ARG_SUGGEST_CUTOFF:
+        return best[0]
+    return None
+
+
+def _make_unsupported_args_warning(
+    tool_name: str, params_model: Any, unsupported_keys: list[str]
+) -> str:
+    """The <system-warning> text naming the ignored argument keys and the
+    accepted parameters, with a fuzzy did-you-mean hint for a single key."""
+    listed = unsupported_keys[:_UNSUPPORTED_ARGS_MAX_LISTED]
+    names = ", ".join(f"`{key}`" for key in listed)
+    if len(unsupported_keys) > _UNSUPPORTED_ARGS_MAX_LISTED:
+        names += f", … and {len(unsupported_keys) - _UNSUPPORTED_ARGS_MAX_LISTED} more"
+    accepted = sorted(_supported_argument_keys(params_model) - _LEGACY_ARGUMENT_KEYS)
+    accepted_text = ", ".join(f"`{key}`" for key in accepted)
+    verb = "was" if len(unsupported_keys) == 1 else "were"
+    suggestion = ""
+    if len(unsupported_keys) == 1:
+        hit = _suggest_argument_key(unsupported_keys[0], accepted)
+        if hit is not None:
+            suggestion = f" did you mean `{hit}`?"
+    return (
+        f"\n\n<system-warning>\n"
+        f"Ignored unsupported argument(s) for tool `{tool_name}`: {names}.\n"
+        f"Unsupported argument(s) {verb} ignored; accepted parameters: {accepted_text}."
+        f"{suggestion}\n"
+        f"</system-warning>"
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class PendingMCPDiscovery:
     """A verbatim MCP ``tools/list`` discovery parked until a wire is available."""
@@ -1529,6 +1718,25 @@ class KimiToolset:
 
             tool = self._tool_dict[tool_name]
 
+            # Detect argument keys the tool does not support. Never mutates
+            # the arguments; the warning is appended to the tool result below.
+            unsupported_args_text: str | None = None
+            if isinstance(tool, CallableTool2):
+                # ``arguments`` is always a dict here (coerced at the top of
+                # handle()); detection never mutates it.
+                unsupported_keys = _unsupported_argument_keys(tool.params, arguments)
+                if unsupported_keys:
+                    logger.warning(
+                        "Ignoring unsupported argument(s) for tool {tool_name} "
+                        "(call_id={call_id}): {keys}",
+                        tool_name=tool_name,
+                        call_id=tool_call.id,
+                        keys=unsupported_keys,
+                    )
+                    unsupported_args_text = _make_unsupported_args_warning(
+                        tool_name, tool.params, unsupported_keys
+                    )
+
             # --- Read-only mode guard ---
             if (
                 self._runtime is not None
@@ -1794,10 +2002,12 @@ class KimiToolset:
 
             task = asyncio.create_task(_call())
 
-            # Combine warning (auto-correct) and reminder (dedup) texts
+            # Combine warning (auto-correct), unsupported-args warning and reminder (dedup) texts
             append_text = ""
             if warning_text is not None:
                 append_text += warning_text
+            if unsupported_args_text is not None:
+                append_text += unsupported_args_text
             if reminder_text is not None:
                 append_text += reminder_text
 

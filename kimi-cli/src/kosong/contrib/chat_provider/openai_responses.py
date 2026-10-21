@@ -201,7 +201,14 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
         # anthropic/kimi providers) so sessions persisted under other providers
         # replay cleanly: ids like ``Read:9`` or >64 chars would 400 on strict
         # OpenAI-compatible backends. Input messages are never mutated.
-        for message in normalize_history(history):
+        normalized_history = normalize_history(history)
+        if self._is_deepseek_backend():
+            # DeepSeek merges ``function_call``/``message`` items into the
+            # adjacent assistant message; two assistant turns back to back
+            # are rejected in thinking mode. Fold consecutive assistant
+            # messages into a single wire turn.
+            normalized_history = _merge_consecutive_assistant_messages(normalized_history)
+        for message in normalized_history:
             inputs.extend(self._convert_message(message))
 
         generation_kwargs: dict[str, Any] = {}
@@ -361,6 +368,31 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
 
         result: list[ResponseInputItemParam] = []
 
+        # DeepSeek thinking-mode contract: every assistant turn (text or
+        # tool call) must carry its chain-of-thought back in the request —
+        # reasoning items are merged into the adjacent assistant message
+        # server-side, and a turn left without reasoning is rejected with
+        # "The `reasoning_text` in the thinking mode must be passed back to
+        # the API" (400) once the backend validates the conversation.
+        # ``deepseek-flash`` frequently emits turns with no reasoning at all;
+        # an empty reasoning text is treated as absent, so send a whitespace
+        # placeholder which their validator accepts.
+        if (
+            role == "assistant"
+            and (message.content or message.tool_calls)
+            and self._is_deepseek_backend()
+            and not any(isinstance(part, ThinkPart) for part in (message.content or []))
+        ):
+            result.append(
+                cast(
+                    ResponseReasoningItemParam,
+                    {
+                        "type": "reasoning",
+                        "content": [{"type": "reasoning_text", "text": " "}],
+                    },
+                )
+            )
+
         # user/system/assistant → message input item
         if len(message.content) > 0:
             # Split into two kinds of blocks: contiguous non-ThinkPart message blocks, and
@@ -449,6 +481,41 @@ class OpenAIResponses(OpenAICompatibleProviderMixin):
             )
 
         return result
+
+
+def _merge_consecutive_assistant_messages(
+    history: Sequence[Message],
+) -> Sequence[Message]:
+    """Fold consecutive assistant messages into a single message.
+
+    DeepSeek's Responses backend merges ``function_call`` and ``message``
+    input items into the adjacent assistant message and rejects back-to-back
+    assistant turns in thinking mode (e.g. a synthesized follow-up text
+    message appended right after the model's final answer). Tool results
+    always sit between an assistant message and the next one, so merging only
+    truly adjacent pairs never separates a tool call from its results.
+    Input messages are never mutated.
+    """
+    merged: list[Message] = []
+    for message in history:
+        if (
+            merged
+            and message.role == "assistant"
+            and merged[-1].role == "assistant"
+        ):
+            previous = merged[-1]
+            merged[-1] = previous.model_copy(
+                update={
+                    "content": [*(previous.content or []), *(message.content or [])],
+                    "tool_calls": [
+                        *(previous.tool_calls or []),
+                        *(message.tool_calls or []),
+                    ],
+                }
+            )
+        else:
+            merged.append(message)
+    return merged
 
 
 _INVALID_ENCRYPTED_CONTENT_MESSAGE_RE = re.compile(r"encrypted[ _]content", re.IGNORECASE)

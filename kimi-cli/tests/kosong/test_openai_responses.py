@@ -722,3 +722,199 @@ def test_third_party_deepseek_gateway_round_trip_uses_summary() -> None:
     assert "content" not in item
     assert "encrypted_content" not in item
     assert item["summary"] == [{"type": "summary_text", "text": "hidden reasoning"}]
+
+
+# ---------------------------------------------------------------------------
+# DeepSeek thinking-mode "reasoning_text must be passed back" 400
+# ---------------------------------------------------------------------------
+#
+# The native DeepSeek Responses API (api.deepseek.com) merges each ``reasoning``
+# input item into the adjacent assistant message server-side. In thinking mode
+# EVERY assistant turn — prose answers as well as tool-call turns — must carry
+# its chain-of-thought back in the request. ``deepseek-flash`` frequently
+# emits turns with no reasoning at all; when the client omits the reasoning
+# item for such turns, the backend rejects the whole request with:
+#
+#     400 The `reasoning_text` in the thinking mode must be passed back to the API.
+#
+# An empty reasoning text is treated as absent, so the provider must emit a
+# whitespace placeholder. Back-to-back assistant turns are rejected too, so
+# ``generate`` folds consecutive assistant messages into one wire turn.
+
+
+def _make_deepseek_provider(**kwargs: Any) -> OpenAIResponses:
+    return OpenAIResponses(
+        model="deepseek-v4-flash",
+        api_key="test-key",
+        base_url="https://api.deepseek.com",
+        **kwargs,
+    )
+
+
+class TestDeepSeekMissingReasoningPlaceholder:
+    def test_prose_turn_without_think_gets_placeholder_reasoning(self) -> None:
+        provider = _make_deepseek_provider()
+        message = Message(role="assistant", content=[TextPart(text="Done.")])
+        items = provider._convert_message(message)
+        reasoning = _reasoning_items(items)
+        assert len(reasoning) == 1
+        # Non-empty placeholder: the backend treats an empty text as absent.
+        assert reasoning[0]["content"] == [{"type": "reasoning_text", "text": " "}]
+        # The visible text is still emitted after the reasoning item.
+        assert items[-1]["type"] == "message"
+
+    def test_tool_call_turn_without_think_gets_placeholder_reasoning(self) -> None:
+        """Assistant turn carrying tool_calls but no ThinkPart — the exact
+        shape ``deepseek-flash`` produces when it skips thinking."""
+        provider = _make_deepseek_provider()
+        message = Message(
+            role="assistant",
+            content=[],
+            tool_calls=[
+                ToolCall(
+                    id="call_1",
+                    function=ToolCall.FunctionBody(name="get_weather", arguments="{}"),
+                )
+            ],
+        )
+        items = provider._convert_message(message)
+        reasoning = _reasoning_items(items)
+        assert len(reasoning) == 1
+        assert reasoning[0]["content"] == [{"type": "reasoning_text", "text": " "}]
+        assert [i["type"] for i in items] == ["reasoning", "function_call"]
+
+    def test_turn_with_think_gets_no_placeholder(self) -> None:
+        provider = _make_deepseek_provider()
+        message = Message(
+            role="assistant",
+            content=[ThinkPart(think="real reasoning"), TextPart(text="Done.")],
+        )
+        items = provider._convert_message(message)
+        reasoning = _reasoning_items(items)
+        assert len(reasoning) == 1
+        assert reasoning[0]["content"] == [{"type": "reasoning_text", "text": "real reasoning"}]
+
+    def test_empty_assistant_message_gets_no_placeholder(self) -> None:
+        provider = _make_deepseek_provider()
+        message = Message(role="assistant", content=[])
+        items = provider._convert_message(message)
+        assert items == []
+
+    def test_non_deepseek_backend_gets_no_placeholder(self) -> None:
+        provider = _make_provider()
+        message = Message(role="assistant", content=[TextPart(text="Done.")])
+        items = provider._convert_message(message)
+        assert _reasoning_items(items) == []
+
+    def test_user_message_gets_no_placeholder(self) -> None:
+        provider = _make_deepseek_provider()
+        message = Message(role="user", content=[TextPart(text="hi")])
+        items = provider._convert_message(message)
+        assert _reasoning_items(items) == []
+
+
+class TestMergeConsecutiveAssistantMessages:
+    def test_merges_adjacent_assistant_messages(self) -> None:
+        from kosong.contrib.chat_provider.openai_responses import (
+            _merge_consecutive_assistant_messages,
+        )
+
+        first = Message(role="assistant", content=[ThinkPart(think="t"), TextPart(text="a")])
+        second = Message(
+            role="assistant",
+            content=[TextPart(text="b")],
+            tool_calls=[
+                ToolCall(
+                    id="call_1",
+                    function=ToolCall.FunctionBody(name="f", arguments="{}"),
+                )
+            ],
+        )
+        merged = _merge_consecutive_assistant_messages([first, second])
+        assert len(merged) == 1
+        assert [type(p).__name__ for p in merged[0].content or []] == [
+            "ThinkPart",
+            "TextPart",
+            "TextPart",
+        ]
+        assert [tc.id for tc in merged[0].tool_calls or []] == ["call_1"]
+        # Inputs are never mutated.
+        assert len(first.content or []) == 2
+        assert not (first.tool_calls or [])
+        assert len(second.content or []) == 1
+
+    def test_does_not_merge_across_tool_results(self) -> None:
+        from kosong.contrib.chat_provider.openai_responses import (
+            _merge_consecutive_assistant_messages,
+        )
+
+        history = [
+            Message(role="assistant", content=[TextPart(text="calling")]),
+            Message(role="tool", tool_call_id="call_1", content="result"),
+            Message(role="assistant", content=[TextPart(text="after")]),
+        ]
+        merged = _merge_consecutive_assistant_messages(history)
+        assert len(merged) == 3
+        assert all(m is not None for m in merged)
+
+    def test_non_assistant_messages_pass_through(self) -> None:
+        from kosong.contrib.chat_provider.openai_responses import (
+            _merge_consecutive_assistant_messages,
+        )
+
+        history = [
+            Message(role="user", content=[TextPart(text="hi")]),
+            Message(role="assistant", content=[TextPart(text="a")]),
+        ]
+        merged = _merge_consecutive_assistant_messages(history)
+        assert len(merged) == 2
+        assert merged[0] is history[0]
+        assert merged[1] is history[1]
+
+
+@pytest.mark.asyncio
+async def test_generate_merges_consecutive_assistant_messages_on_deepseek() -> None:
+    """End-to-end through ``generate``: a synthesized follow-up assistant
+    message appended right after the model's answer must be folded into a
+    single wire turn for the DeepSeek backend (back-to-back assistant turns
+    are rejected there), while other backends are left untouched."""
+    provider = _make_deepseek_provider(stream=False)
+    captured_inputs: list[list[dict[str, Any]]] = []
+
+    async def fake_create(**kwargs: Any) -> Any:
+        import copy
+        from unittest.mock import MagicMock
+
+        from openai.types.responses import Response
+
+        captured_inputs.append(copy.deepcopy(kwargs["input"]))
+        # Minimal non-stream tool-call response so generate() completes.
+        response = MagicMock(spec=Response)
+        response.output = [
+            SimpleNamespace(
+                type="function_call",
+                call_id="call_9",
+                name="get_weather",
+                arguments='{"city": "Paris"}',
+            )
+        ]
+        response.usage = None
+        response.id = "resp_1"
+        return response
+
+    provider.client.responses.create = fake_create  # type: ignore[method-assign]
+    history = [
+        Message(role="user", content=[TextPart(text="weather?")]),
+        # Model answer immediately followed by a synthesized assistant note —
+        # the shape the soul produces when loop-recovery appends fallback text.
+        Message(role="assistant", content=[TextPart(text="answer")]),
+        Message(role="assistant", content=[TextPart(text="[Recovering...]")]),
+    ]
+    await kosong.generate(provider, "sys", [_WEATHER_TOOL], history)
+    (sent_input,) = captured_inputs
+    assistant_msgs = [
+        i for i in sent_input if isinstance(i, dict) and i.get("role") == "assistant"
+    ]
+    assert len(assistant_msgs) == 1
+    texts = [p["text"] for p in assistant_msgs[0]["content"] if p.get("type") == "output_text"]
+    assert texts == ["answer", "[Recovering...]"]
