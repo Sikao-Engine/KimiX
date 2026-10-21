@@ -128,13 +128,15 @@ def write_scripted_config(
 def shell_tool_name() -> str:
     """Shell tool name the spawned CLI enables on this machine.
 
-    On Windows the CLI enables ``pwsh`` only when no Bash is available (or
-    ``USE_SYSTEM_PWSH_ON_WINDOWS`` is set); otherwise the ``bash`` tool is
-    used.  Scripting the enabled name keeps the wire tests platform-neutral.
+    Both shell tools are now gated on real executables rather than on the
+    platform: ``bash`` when a bash is found, ``pwsh`` when a PowerShell
+    executable exists.  Prefer ``pwsh`` only when Bash is unavailable, which
+    keeps the wire tests on the same shell the CLI would pick by default.
     """
+    from kimi_cli.tools.file.bash import bash_tool as _bt
     from kimi_cli.tools.file.bash import pwsh_tool as _pt
 
-    return "pwsh" if _pt._bash_tool._should_enable_powershell() else "bash"
+    return "pwsh" if _bt.find_bash() is None and _pt.find_pwsh() is not None else "bash"
 
 
 def write_shell_agent_file(tmp_path: Path) -> Path:

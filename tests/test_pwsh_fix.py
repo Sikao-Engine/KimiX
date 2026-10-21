@@ -70,12 +70,18 @@ def _is_parse_error(out: str) -> bool:
     )
 
 
+FAKE_PWSH = "C:/pwsh/pwsh.exe"
+
+
 def _force_pwsh_enabled() -> Any:
-    """Bypass the platform gate so mocked tool tests run on any host."""
-    return patch(
-        "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
-        return_value=True,
-    )
+    """Make the mocked tool tests constructible on any host.
+
+    ``Powershell.__init__`` now raises ``SkipThisTool`` unless a real
+    PowerShell executable exists (``find_pwsh`` for PowerShell 7, else the
+    Windows PowerShell 5.1 fallback), so point ``find_pwsh`` at a fake path.
+    The tests below mock every real interaction (``ProcessTask``).
+    """
+    return patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=FAKE_PWSH)
 
 
 @pytest.fixture
@@ -766,13 +772,8 @@ class TestPwshToolValidationFlow:
 class TestPwshToolEndToEnd:
     """Real pwsh: the tool must succeed where the old validator failed."""
 
-    @pytest.fixture(autouse=True)
-    def _pwsh_enabled(self) -> Any:
-        # The shipped agent_worker.json selects `bash`, so the Powershell
-        # enable gate is off whenever Git Bash is installed; these tests run
-        # against a real pwsh, so the gate is bypassed.
-        with _force_pwsh_enabled():
-            yield
+    # No enablement patch: the tool enables itself when a real pwsh exists,
+    # and this class only runs on hosts that have PowerShell 7 (`NEEDS_PWSH`).
 
     @pytest.fixture
     def real_tool(self, mock_session: MagicMock) -> Powershell:

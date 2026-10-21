@@ -31,16 +31,22 @@ See `src/kimix/utils/prompt.py` and `src/kimix/cli_impl/commands.py`.
 
 #### Phase 2: Review & Revision
 
-After the plan is generated, it is opened with the system default application and execution begins immediately (no review stage).
+After the plan is generated, a review loop begins:
 
-#### Phase 3: Execution & Review
+- Prompt: `Do you want to implement the plan? (y/n)`
+  - Input `y`: enter the execution phase.
+  - Input `n` or anything else: enter the revision flow.
+- Revision prompt: `Please describe the changes you want (/quit to give up):`
+  - Input `/quit`: abandon execution (no Worker session is created, the flow ends).
+  - Input specific feedback: the Planner updates the plan file using the `write_plan` or `edit_plan` tools based on the feedback, then reopens it for review. The loop repeats until confirmed or abandoned.
 
-1. Close Planner session: The Planner session is closed.
-2. **Create Worker session**: A regular session is created with the default Worker Agent.
-3. **Send implementation prompt**:
+#### Phase 3: Execution
+
+1. **Create Worker session**: A regular session is created with the default Worker Agent.
+2. **Send implementation prompt**:
    - If the plan file is smaller than **100 KB**, the plan content is embedded directly in the prompt;
    - If the plan file is larger than **100 KB**, the Agent is prompted to read and execute the plan file.
-4. **Append review prompt**: After implementation, an additional review prompt is sent asking the Agent to check whether the plan was fully completed.
+3. **Finalization**: the Planner session is closed only at the end of the whole flow (`finally`) — after the user confirms, execution begins while the Planner session stays open; if the user chooses `/quit`, no Worker session is created.
 
 ### Specifying the Plan Output File
 

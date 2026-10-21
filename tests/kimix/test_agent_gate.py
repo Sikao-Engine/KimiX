@@ -73,6 +73,9 @@ def _parent(session_id: str = "parent-1", work_dir: Any = None) -> MagicMock:
 def _sub_session(session_id: str = "sub-123") -> MagicMock:
     session = MagicMock()
     session.id = session_id
+    # Live session: store entries must be reusable (the tool refuses sessions
+    # flagged ``_closed``).
+    session._closed = False
     session.get_custom_config.return_value = {}
     session.close = AsyncMock()
     return session

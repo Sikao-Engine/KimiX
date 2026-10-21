@@ -84,10 +84,8 @@ def _build_tools() -> dict[str, object]:
     ), mock.patch.object(bt, "find_bash", return_value=r"C:\Git\bin\bash.exe"):
         tools["bash"] = Bash(session)
     with mock.patch.object(pt.sys, "platform", "win32"), mock.patch.object(
-        pt._bash_tool, "_should_enable_powershell", return_value=True
-    ), mock.patch.object(pt, "find_pwsh", return_value=r"C:\pwsh\pwsh.exe"), mock.patch.object(
-        pt, "load_desc", return_value="<PWSH_MD>"
-    ):
+        pt, "find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
+    ), mock.patch.object(pt, "load_desc", return_value="<PWSH_MD>"):
         tools["Powershell"] = Powershell(session)
     tools["python"] = python(session)
     with mock.patch.object(rt, "USE_SYSTEM_SHELL", True), mock.patch.object(

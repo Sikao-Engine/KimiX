@@ -322,7 +322,9 @@ async def test_notice_interrupted_run_not_reported_as_completed(
     notice = fake.pushed[0]
     assert "was interrupted" in notice
     assert "Partial output:" in notice
-    assert "partial work" in notice
+    # Path only: the partial text is never inlined into the parent context.
+    assert "partial work" not in notice
+    assert notice.rstrip().endswith(".md")
     assert "completed" not in notice
     assert "(no text output)" not in notice
     assert len(notice) < 2000
@@ -343,6 +345,9 @@ async def test_notice_normal_completion_unchanged(
 
     assert len(fake.pushed) == 1
     notice = fake.pushed[0]
-    assert "'notice-ok-id' completed. Final message:" in notice
-    assert "all done" in notice
+    # The settled-notice contract: status + output file path, never the text.
+    assert "'notice-ok-id' completed." in notice
+    assert "Output:" in notice
+    assert notice.rstrip().endswith(".md")
+    assert "all done" not in notice
     assert "was interrupted" not in notice

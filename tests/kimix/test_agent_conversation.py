@@ -48,6 +48,9 @@ def mock_session() -> MagicMock:
 def mock_sub_session() -> MagicMock:
     session = MagicMock()
     session.id = "sub-123"
+    # A live session: the tool refuses to reuse a session flagged ``_closed``,
+    # so store entries built from this fixture must not look closed.
+    session._closed = False
     session.get_custom_config.return_value = {}
     session.close = AsyncMock()
     return session
@@ -458,11 +461,14 @@ async def test_agent_error_saves_prompt_file(
     assert "boom" in result.message
     assert "[prompt saved to" in result.message
     assert "prompt=@" in result.message
-    expected_display = str(tmp_path / "saved_0.md").replace("\\", "/")
-    assert result.extras["prompt_file"] == expected_display
+    # The run output file is saved first, so the prompt file is not
+    # ``saved_0.md``; take the path the result reports and check its content.
+    prompt_file = Path(str(result.extras["prompt_file"]))
+    assert prompt_file in saved_files
+    assert prompt_file != saved_files[0]
     # The saved file contains the exact prompt string sent to prompt_async.
     sent_prompt = mock_prompt.await_args.kwargs["prompt_str"]
-    assert saved_files[0].read_text(encoding="utf-8") == sent_prompt
+    assert prompt_file.read_text(encoding="utf-8") == sent_prompt
     mock_close.assert_awaited_once()
 
 
@@ -561,7 +567,9 @@ async def test_agent_long_prompt_offloads_to_temp_file(
                     result = await agent(SubAgentParams(prompt=prompt_text, run_in_background=False))
 
     assert not result.is_error
-    assert calls == [(prompt_text, ".md")]
+    # The prompt is offloaded before the session is created; the run's own
+    # output file is saved afterwards.
+    assert calls[0] == (prompt_text, ".md")
     prompt_str = mock_prompt.await_args.kwargs["prompt_str"]
     assert "Please read the task from `" in prompt_str
     assert "` and execute it." in prompt_str
@@ -1251,8 +1259,13 @@ async def test_agent_background_notifies_parent_on_completion(
 
     assert mock_from.call_count == 1
     assert len(fake.pushed) == 1
-    assert session_id in fake.pushed[0]
-    assert "all done" in fake.pushed[0]
+    notice = fake.pushed[0]
+    assert session_id in notice
+    assert "completed" in notice
+    # The notice only points at the output file: the sub-agent's report must
+    # never be injected into the parent context.
+    assert "Output:" in notice
+    assert "all done" not in notice
 
 
 async def test_wait_for_background_agents_waits_until_settled(
@@ -1317,6 +1330,7 @@ async def test_agent_resume_while_running_rejected(
     mock_session.custom_config = {"chat_provider": None}
     busy = MagicMock()
     busy.id = "busy-1"
+    busy._closed = False  # live session, currently owned by a prompt
     busy.get_custom_config.return_value = {}
     busy._cancel_event = asyncio.Event()  # truthy while a prompt owns it
     store = _get_store(mock_session)

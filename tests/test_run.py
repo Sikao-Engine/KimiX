@@ -158,10 +158,8 @@ class TestRunShellCwdViaCd:
             patch("kimi_cli.tools.file.run.sys.platform", "win32"),
             patch("kimi_cli.tools.file.bash.pwsh_tool.Powershell.__call__", new=fake_pwsh_call),
             patch(
-                "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
-                return_value=True,
+                "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
             ),
-            patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"),
         ):
             result = await run(
                 RunParams(command="echo hi", shell=True, cwd=r"C:\work dir")

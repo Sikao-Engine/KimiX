@@ -419,6 +419,14 @@ class TestBashSubprocessEnv:
 # ============================================================================
 
 class TestWindowsShellExclusion:
+    """Shell-tool gating on Windows.
+
+    The Bash gate is config- and platform-aware (``agent.shell`` config, then
+    the Git-Bash-first heuristic).  The Powershell gate is *not*: since the
+    enablement refactor the tool loads whenever a PowerShell executable exists
+    (pwsh 7+ or the Windows PowerShell 5.1 fallback), on any platform.
+    """
+
     @pytest.fixture
     def mock_session(self) -> MagicMock:
         session = MagicMock()
@@ -444,10 +452,36 @@ class TestWindowsShellExclusion:
             stack.enter_context(cm)
         return stack
 
-    def test_bash_enabled_powershell_disabled_when_git_bash_available(
+    def test_bash_enabled_when_git_bash_available(
         self, mock_session: MagicMock
     ) -> None:
         with self._with_platform(bash_available=True, pwsh_preferred=False):
+            Bash(mock_session)  # does not raise
+
+    def test_powershell_gate_is_independent_of_bash(
+        self, mock_session: MagicMock
+    ) -> None:
+        """Both shell tools load when both executables exist.
+
+        Git Bash being present no longer disables the Powershell tool: the
+        gate now only checks for a PowerShell executable.
+        """
+        with self._with_platform(bash_available=True, pwsh_preferred=False), patch(
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh",
+            return_value=r"C:\pwsh\pwsh.exe",
+        ):
+            Bash(mock_session)  # does not raise
+            Powershell(mock_session)  # does not raise
+
+    def test_powershell_skipped_when_no_powershell_exists(
+        self, mock_session: MagicMock
+    ) -> None:
+        with self._with_platform(bash_available=True, pwsh_preferred=False), patch(
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=None
+        ), patch(
+            "kimi_cli.tools.file.bash.shell_common.find_powershell_fallback",
+            return_value=None,
+        ):
             Bash(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
                 Powershell(mock_session)
@@ -455,7 +489,10 @@ class TestWindowsShellExclusion:
     def test_powershell_enabled_bash_disabled_when_git_bash_missing(
         self, mock_session: MagicMock
     ) -> None:
-        with self._with_platform(bash_available=False, pwsh_preferred=False):
+        with self._with_platform(bash_available=False, pwsh_preferred=False), patch(
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh",
+            return_value=r"C:\pwsh\pwsh.exe",
+        ):
             Powershell(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
                 Bash(mock_session)
@@ -463,7 +500,10 @@ class TestWindowsShellExclusion:
     def test_powershell_enabled_bash_disabled_when_pwsh_preferred(
         self, mock_session: MagicMock
     ) -> None:
-        with self._with_platform(bash_available=True, pwsh_preferred=True):
+        with self._with_platform(bash_available=True, pwsh_preferred=True), patch(
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh",
+            return_value=r"C:\pwsh\pwsh.exe",
+        ):
             Powershell(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
                 Bash(mock_session)
@@ -471,8 +511,8 @@ class TestWindowsShellExclusion:
     def test_default_flag_prefers_bash_on_windows(
         self, mock_session: MagicMock
     ) -> None:
-        """Shipped default: Git Bash is preferred on Windows; PowerShell is
-        only the fallback when no bash (no git install) exists."""
+        """Shipped default: Git Bash is preferred on Windows for the *bash*
+        tool; the Powershell tool stays loadable but is not auto-selected."""
         import kimi_cli.tools.file.bash.bash_tool as bash_tool_module
 
         assert bash_tool_module.USE_SYSTEM_PWSH_ON_WINDOWS is False
@@ -483,8 +523,6 @@ class TestWindowsShellExclusion:
             return_value=r"C:\Git\bin\bash.exe",
         ):
             Bash(mock_session)  # does not raise
-            with pytest.raises(SkipThisTool):
-                Powershell(mock_session)
 
     def test_default_flag_falls_back_to_powershell_without_bash(
         self, mock_session: MagicMock
@@ -493,7 +531,10 @@ class TestWindowsShellExclusion:
         becomes the fallback shell tool."""
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"), patch(
             "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value=None
-        ), patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=None):
+        ), patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=None), patch(
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh",
+            return_value=r"C:\pwsh\pwsh.exe",
+        ):
             Powershell(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
                 Bash(mock_session)
@@ -570,6 +611,13 @@ class TestConfiguredShellSelection:
         stack.enter_context(
             patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=bash_path)
         )
+        # Deterministic Powershell gate: a PowerShell executable is available.
+        stack.enter_context(
+            patch(
+                "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh",
+                return_value=r"C:\pwsh\pwsh.exe",
+            )
+        )
         return stack
 
     def test_windows_config_powershell_enables_pwsh_disables_bash(
@@ -582,15 +630,13 @@ class TestConfiguredShellSelection:
             with pytest.raises(SkipThisTool):
                 Bash(mock_session)
 
-    def test_windows_config_bash_enables_bash_disables_pwsh(
+    def test_windows_config_bash_enables_bash(
         self, mock_session: MagicMock
     ) -> None:
         with self._with_platform("win32", r"C:\Git\bin\bash.exe"), patch(
             "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="bash"
         ):
             Bash(mock_session)  # does not raise
-            with pytest.raises(SkipThisTool):
-                Powershell(mock_session)
 
     def test_windows_config_bash_overrides_pwsh_preferred_flag(
         self, mock_session: MagicMock
@@ -601,19 +647,20 @@ class TestConfiguredShellSelection:
             "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="bash"
         ):
             Bash(mock_session)  # does not raise
-            with pytest.raises(SkipThisTool):
-                Powershell(mock_session)
 
-    def test_non_windows_config_powershell_falls_back_to_bash(
+    def test_non_windows_config_powershell_keeps_bash_enabled(
         self, mock_session: MagicMock
     ) -> None:
+        """``agent.shell = "powershell"`` does not disable Bash off Windows.
+
+        The Powershell tool is no longer platform-gated either: it loads
+        wherever a PowerShell executable exists.
+        """
         with self._with_platform("linux", "/bin/bash"), patch(
             "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="powershell"
         ):
-            # Powershell is a Windows-only tool: Bash remains the fallback.
             Bash(mock_session)  # does not raise
-            with pytest.raises(SkipThisTool):
-                Powershell(mock_session)
+            Powershell(mock_session)  # does not raise
 
     def test_non_windows_config_bash_enables_bash(
         self, mock_session: MagicMock
@@ -622,8 +669,6 @@ class TestConfiguredShellSelection:
             "kimi_cli.tools.file.bash.bash_tool._configured_shell", return_value="bash"
         ):
             Bash(mock_session)  # does not raise
-            with pytest.raises(SkipThisTool):
-                Powershell(mock_session)
 
     def test_windows_config_powershell_without_bash_installed(
         self, mock_session: MagicMock
@@ -646,7 +691,6 @@ class TestConfiguredShellSelection:
             Powershell(mock_session)  # does not raise
             with pytest.raises(SkipThisTool):
                 Bash(mock_session)
-
 
 # ============================================================================
 # BashParams
@@ -4302,20 +4346,8 @@ class TestBashFinishedJobHistory:
     reason="PowerShell tool is not available on this platform",
 )
 class TestPowershellInactivityTimeout:
-    @pytest.fixture(autouse=True)
-    def _force_pwsh_enabled(self) -> Any:
-        """Force-enable the Powershell tool for these integration tests.
-
-        With the default Git-Bash-first policy on Windows, the gate
-        ``_should_enable_powershell()`` is False whenever Git Bash is
-        installed; these tests execute real pwsh commands, so the gate is
-        bypassed.
-        """
-        with patch(
-            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
-            return_value=True,
-        ):
-            yield
+    # No gate bypass: the Powershell tool enables itself whenever a real
+    # PowerShell executable (pwsh 7 or the 5.1 fallback) exists on the host.
 
     async def test_pwsh_inactivity_timeout_keeps_background_task(
         self, mock_session: MagicMock
@@ -4356,9 +4388,6 @@ class TestPowershellBackgroundSendWaitForPatternMocked:
     @pytest.fixture
     def pwsh_instance(self, mock_session: MagicMock) -> Powershell:
         with patch(
-            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
-            return_value=True,
-        ), patch(
             "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
         ):
             return Powershell(session=mock_session)
@@ -4416,13 +4445,7 @@ class TestPowershellBackgroundSendWaitForPatternMocked:
     reason="PowerShell tool is not available on this platform",
 )
 class TestPowershellBackgroundSendWaitForPatternIntegration:
-    @pytest.fixture(autouse=True)
-    def _force_pwsh_enabled(self) -> Any:
-        with patch(
-            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
-            return_value=True,
-        ):
-            yield
+    # No gate bypass: the tool enables itself when a real pwsh exists.
 
     async def test_pwsh_send_wait_for_pattern_blocks_until_pattern(
         self, mock_session: MagicMock
@@ -6511,8 +6534,7 @@ class TestPowershellOriginalSavedSuffix:
     @pytest.fixture
     def pwsh_instance(self, mock_session: MagicMock) -> Powershell:
         with patch(
-            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
-            return_value=True,
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
         ):
             return Powershell(session=mock_session)
 
@@ -6627,8 +6649,7 @@ class TestPowershellFailedCommandSaved:
     @pytest.fixture
     def pwsh_instance(self, mock_session: MagicMock) -> Powershell:
         with patch(
-            "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
-            return_value=True,
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
         ):
             return Powershell(session=mock_session)
 

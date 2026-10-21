@@ -394,16 +394,18 @@ class TestPowershellToolCallsRefresh:
 
         # Create the event loop BEFORE faking ``sys.platform``: asyncio picks
         # its Windows event-loop policy when ``sys.platform == "win32"``,
-        # which cannot be imported on other platforms.  Also stub out
-        # ``_resolve_pwsh`` so no real PowerShell probe runs on this host.
+        # which cannot be imported on other platforms.  ``find_pwsh`` is
+        # stubbed so the tool is constructible without probing the host.
         loop = asyncio.new_event_loop()
         try:
             # Keep ``sys.platform`` patched for the ``__call__`` as well: the
             # refresh inside ``Powershell.__call__`` is gated on win32 at call time.
             with (
                 patch("kimi_cli.tools.file.bash.pwsh_tool.sys.platform", "win32"),
-                patch("kimi_cli.tools.file.bash.pwsh_tool._bash_tool.find_bash", return_value=None),
-                patch.object(Powershell, "_resolve_pwsh", lambda self: None),
+                patch(
+                    "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh",
+                    return_value=r"C:\pwsh\pwsh.exe",
+                ),
             ):
                 tool = Powershell(mock_session)
 
@@ -424,13 +426,24 @@ class TestPowershellToolCallsRefresh:
         finally:
             loop.close()
 
-    def test_pwsh_skips_refresh_on_linux(self) -> None:
+    def test_pwsh_skipped_when_no_powershell_available(self) -> None:
+        """The tool is skipped when neither pwsh 7 nor the 5.1 fallback exists.
+
+        The tool is no longer platform-gated: it is enabled on any platform
+        that actually has a PowerShell executable.
+        """
         mock_session = MagicMock()
         mock_session.custom_config.get.return_value = {}
         mock_session.custom_data = {}
 
         from kimi_cli.tools import SkipThisTool
-        with patch("kimi_cli.tools.file.bash.pwsh_tool.sys.platform", "linux"):
+        with (
+            patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=None),
+            patch(
+                "kimi_cli.tools.file.bash.shell_common.find_powershell_fallback",
+                return_value=None,
+            ),
+        ):
             with pytest.raises(SkipThisTool):
                 from kimi_cli.tools.file.bash.pwsh_tool import Powershell
                 Powershell(mock_session)

@@ -666,9 +666,13 @@ def test_prompt_plan_async_prompts_execution_agent(tmp_path: Path, monkeypatch: 
     ]
     assert len(planner_export_calls) == 0
 
-    # Execution prompts should implement and review the plan.
+    # Execution prompts should implement the plan — and nothing else: the
+    # machine-sent "review the plan" follow-up prompt was removed on purpose.
     assert any("implement the plan" in p for p in execution_session.prompts)
-    assert any("Review this plan" in p for p in execution_session.prompts)
+    assert not any("Review this plan" in p for p in execution_session.prompts)
+    assert not any("Review the plan in" in p for p in execution_session.prompts)
+    execution_prompts = [p for p in execution_session.prompts if p]
+    assert len(execution_prompts) == 1, execution_prompts
 
 
 def test_prompt_plan_async_falls_back_to_main_provider_without_sub_providers(tmp_path: Path, monkeypatch: Any) -> None:

@@ -90,18 +90,26 @@ def patched(monkeypatch, tmp_path):
     close_mock = AsyncMock()
     monkeypatch.setattr(prompt_mod, "close_session_async", close_mock)
 
-    # Execution phase (reached once the review loop was removed) must not
-    # create real sessions or prompt real agents.
-    monkeypatch.setattr(prompt_mod, "_create_default_session_async", AsyncMock(return_value=MagicMock()))
-    monkeypatch.setattr(prompt_mod, "prompt_async", AsyncMock())
+    # Execution phase must not create real sessions or prompt real agents.
+    create_default_mock = AsyncMock(return_value=MagicMock())
+    prompt_async_mock = AsyncMock()
+    monkeypatch.setattr(prompt_mod, "_create_default_session_async", create_default_mock)
+    monkeypatch.setattr(prompt_mod, "prompt_async", prompt_async_mock)
 
-    return SimpleHandles(stream=stream, close_mock=close_mock)
+    return SimpleHandles(
+        stream=stream,
+        close_mock=close_mock,
+        create_default_mock=create_default_mock,
+        prompt_async_mock=prompt_async_mock,
+    )
 
 
 class SimpleHandles:
-    def __init__(self, stream, close_mock):
+    def __init__(self, stream, close_mock, create_default_mock=None, prompt_async_mock=None):
         self.stream = stream
         self.close_mock = close_mock
+        self.create_default_mock = create_default_mock
+        self.prompt_async_mock = prompt_async_mock
 
     def printed_texts(self) -> list[str]:
         texts = []
@@ -154,7 +162,7 @@ class TestPromptPlanAsyncRetry:
         await _drive(
             monkeypatch, patched, prompts,
             write_on_attempt=2, plan_file=plan_file,
-            inputs=[],  # review loop was removed; no user input is consumed
+            inputs=["y"],  # approve the plan in the review loop
         )
 
         assert len(prompts) == 2, prompts
@@ -169,7 +177,7 @@ class TestPromptPlanAsyncRetry:
 
         # The run must not have swallowed any exception on the way.
         assert not any("prompt_plan failed" in t for t in patched.printed_texts())
-        # Plan flows straight to implementation; planner session closed.
+        # Approved plan flows to implementation; planner session closed.
         patched.close_mock.assert_awaited_once()
 
     async def test_all_retries_labeled_when_plan_never_written(self, monkeypatch, patched, tmp_path):
@@ -189,6 +197,77 @@ class TestPromptPlanAsyncRetry:
         assert any("Plan generation failed" in t for t in patched.printed_texts())
         assert not any("prompt_plan failed" in t for t in patched.printed_texts())
         patched.close_mock.assert_awaited_once()
+
+
+class TestReviewLoopRestored:
+    """The human review/revision loop must exist; the auto review prompt must not.
+
+    Commit e903488 removed the wrong half of ``prompt_plan_async``: it dropped
+    the interactive review/revision loop while keeping the machine-sent
+    "review the plan" prompt. These tests pin the correct shape.
+    """
+
+    async def test_impl_prompt_sent_once_and_no_review_prompt(
+        self, monkeypatch, patched, tmp_path
+    ):
+        prompts: list[str] = []
+        plan_file = tmp_path / "plan.md"
+        await _drive(
+            monkeypatch, patched, prompts,
+            write_on_attempt=1, plan_file=plan_file,
+            inputs=["y"],  # approve immediately
+        )
+
+        # Planner was prompted exactly once (no revision turn).
+        assert len(prompts) == 1, prompts
+
+        # Only the implementation prompt is sent to the worker session.
+        assert patched.create_default_mock.await_count == 1
+        assert patched.prompt_async_mock.await_count == 1, "review prompt must be gone"
+        sent = patched.prompt_async_mock.await_args.args[0]
+        assert sent.startswith("Read this plan")
+        assert "Review this plan" not in sent
+        assert "Review the plan" not in sent
+        patched.close_mock.assert_awaited_once()
+
+    async def test_quit_in_review_loop_skips_implementation(
+        self, monkeypatch, patched, tmp_path
+    ):
+        prompts: list[str] = []
+        plan_file = tmp_path / "plan.md"
+        await _drive(
+            monkeypatch, patched, prompts,
+            write_on_attempt=1, plan_file=plan_file,
+            inputs=["n", "/quit"],  # not yet -> give up
+        )
+
+        assert len(prompts) == 1, prompts
+        # No Worker session, no implementation prompt, no review prompt.
+        patched.create_default_mock.assert_not_awaited()
+        patched.prompt_async_mock.assert_not_awaited()
+        # Planner session still closed via finally.
+        patched.close_mock.assert_awaited_once()
+
+    async def test_revision_feedback_resumes_planner_then_approves(
+        self, monkeypatch, patched, tmp_path
+    ):
+        prompts: list[str] = []
+        plan_file = tmp_path / "plan.md"
+        await _drive(
+            monkeypatch, patched, prompts,
+            write_on_attempt=1, plan_file=plan_file,
+            inputs=["n", "add a rollback step", "y"],
+        )
+
+        # Generation turn + one revision turn.
+        assert len(prompts) == 2, prompts
+        assert prompts[1].startswith("The user reviewed the plan")
+        assert "add a rollback step" in prompts[1]
+
+        # After approval the implementation prompt runs exactly once.
+        assert patched.prompt_async_mock.await_count == 1
+        sent = patched.prompt_async_mock.await_args.args[0]
+        assert "Review this plan" not in sent
 
 
 class TestCallSiteDriftGuard:

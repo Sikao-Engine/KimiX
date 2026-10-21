@@ -40,18 +40,19 @@ def _pwsh_is_available() -> bool:
 PWSH_AVAILABLE = _pwsh_is_available()
 
 
-def _force_pwsh_enabled() -> Any:
-    """Patch the platform gate so mocked Powershell unit tests run anywhere.
+FAKE_PWSH = r"C:\pwsh\pwsh.exe"
 
-    ``Powershell.__init__`` raises ``SkipThisTool`` when
-    ``_should_enable_powershell()`` is False (non-Windows hosts).  The unit
-    tests below mock every real interaction (``find_pwsh``, ``ProcessTask``),
-    so the gate can be safely bypassed.
+
+def _force_pwsh_enabled() -> Any:
+    """Make the Powershell tool constructible on any host, mocked tests only.
+
+    ``Powershell.__init__`` raises ``SkipThisTool`` unless a real PowerShell
+    executable is found (``find_pwsh`` for PowerShell 7, else the Windows
+    PowerShell 5.1 fallback).  The unit tests below mock every real
+    interaction (``ProcessTask``, subprocesses), so pointing ``find_pwsh`` at a
+    fake path is enough to instantiate the tool deterministically.
     """
-    return patch(
-        "kimi_cli.tools.file.bash.pwsh_tool._bash_tool._should_enable_powershell",
-        return_value=True,
-    )
+    return patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=FAKE_PWSH)
 
 
 @pytest.fixture
@@ -302,16 +303,8 @@ class TestPowershellSessionContinuation:
     reason="PowerShell tool is not available on this platform",
 )
 class TestPowershellInteractiveIntegration:
-    @pytest.fixture(autouse=True)
-    def _force_pwsh_enabled(self) -> Any:
-        """Bypass the shell-selection gate for these real-pwsh integration tests.
-
-        With the default Git-Bash-first policy on Windows the Powershell tool
-        is disabled whenever Git Bash is installed; the gate only decides
-        which shell tool is offered, so it is bypassed here.
-        """
-        with _force_pwsh_enabled():
-            yield
+    # No gate bypass is needed: the tool enables itself whenever a real
+    # PowerShell executable (pwsh 7 or the 5.1 fallback) exists on the host.
 
     async def test_interactive_read_host(self, mock_session: MagicMock) -> None:
         pwsh = Powershell(session=mock_session)

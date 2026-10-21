@@ -200,8 +200,8 @@ def _build_tools() -> dict[str, Any]:
 
     from kimi_cli.tools.file.bash import pwsh_tool as pt
     with mock.patch.object(pt.sys, "platform", "win32"), mock.patch.object(
-        pt._bash_tool, "_should_enable_powershell", return_value=True
-    ), mock.patch.object(pt, "find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
+        pt, "find_pwsh", return_value=r"C:\pwsh\pwsh.exe"
+    ):
         tools["pwsh"] = pt.Powershell(session=session)
 
     from kimi_cli.tools.web.search import SearchWeb
