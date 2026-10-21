@@ -1,0 +1,24 @@
+{
+    "model": "kimi-k2.6",
+    "max_context_size": 200000,
+    "capabilities": [
+        "thinking"
+    ],
+    "url": "https://api.moonshot.cn/v1/chat/completions",
+    "type": "kimi",
+    "api_key": "sk-xxx",
+    "temperature": 0.7,
+    "sub_providers": [
+        {
+            "role": "planner",
+            "model": "deepseek-v4-pro",
+            "max_context_size": 1000000,
+            "capabilities": [
+                "thinking"
+            ],
+            "url": "https://api.deepseek.com/anthropic",
+            "type": "anthropic",
+            "api_key": "sk-xxx"
+        }
+    ]
+}

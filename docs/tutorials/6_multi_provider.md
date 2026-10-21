@@ -62,6 +62,45 @@ Kimix 现在支持将不同 Agent 角色路由到不同的 LLM Provider。你不
 
 ---
 
+## 引用其他 JSON 配置文件
+
+`sub_providers` 里的条目除了直接内联 Provider 字段，还可以用 `json` 字段指向另一个 JSON 配置文件，把该文件读取为子 Provider：
+
+```json
+{
+    "sub_providers": [
+        {
+            "role": "sub_agent",
+            "json": "subagent.json"
+        }
+    ]
+}
+```
+
+### 查找规则
+
+`subagent.json` 的查找从**声明该链接的 JSON 文件所在目录**开始，逐级向上遍历父目录，直到文件系统根目录；最先找到的文件生效（就近优先）。绝对路径直接使用，不做向上查找。
+
+```
+workspace/
+├── subagent.json            # 共享的子代理配置
+└── project/
+    └── configs/
+        └── main.json        # 其中的 "json": "subagent.json" 会向上查到 workspace/subagent.json
+```
+
+### 注册规则
+
+- 被引用文件的**根级字段**会作为一个子 Provider 条目注册；`role` 取自链接条目，链接条目省略时沿用被引用文件的 `role`，再省略则默认 `sub_agent`。
+- 链接条目上除 `json` / `role` 之外的其他字段会**覆盖**被引用文件的同名字段（例如临时替换 `model` 或 `api_key`）。
+- 被引用文件自身声明的 `sub_provider` / `sub_providers` 也会被展开并追加注册，因此链接可以嵌套；嵌套链接从声明它的那个文件所在目录开始查找。
+- 文件不存在、JSON 非法或 `json` 值不是字符串时，只有该条目会被忽略并打印警告，其余条目不受影响。
+- 循环引用（A 引用 B、B 又引用 A）与自引用会被自动检测并忽略，同时限制最大嵌套层数。
+
+`docs/sub_provider_link.json`（主配置）与 `docs/subagent.json`（被引用配置）是可直接复制使用的完整示例。
+
+---
+
 ## 备份 Provider 故障转移
 
 当主 Provider 在提示过程中耗尽重试次数时，kimix 会自动尝试在 `sub_providers` 中声明的 **backup**（备份）Provider（按声明顺序逐个尝试）。一个配置可以声明 **多个** 备份 Provider。

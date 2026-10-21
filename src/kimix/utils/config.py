@@ -26,6 +26,15 @@ _SUB_PROVIDER_PICK_PRIORITY: tuple[str | None, ...] = (None, "sub_agent", "plann
 _SUB_PROVIDER_NO_INHERIT_KEYS: frozenset[str] = frozenset({"model", "model_name", "name", "role"})
 
 
+# Key marking a sub-provider entry as a link to another JSON config file, e.g.
+# ``{"role": "sub_agent", "json": "subagent.json"}``.
+_SUB_PROVIDER_LINK_KEY: str = "json"
+
+
+# Maximum nesting depth when following sub-provider JSON links (cycle guard).
+_MAX_SUB_PROVIDER_LINK_DEPTH: int = 16
+
+
 # ── Sub-provider normalization ─────────────────────────────────────────────
 
 
@@ -164,11 +173,182 @@ def _pick_main_from_sub_providers(
         )
 
 
+# ── Sub-provider JSON links ────────────────────────────────────────────────
+#
+# A sub-provider entry may point at another JSON config file instead of
+# inlining the provider fields::
+#
+#     "sub_providers": [
+#         {"role": "sub_agent", "json": "subagent.json"}
+#     ]
+#
+# ``subagent.json`` is looked up in the directory holding the JSON file that
+# declares the link, then in each of its parent directories up to the
+# filesystem root (``subagent.json`` next to the declaring file always wins).
+# The referenced file's own root-level fields are registered as one
+# sub-provider entry, and its ``sub_provider`` / ``sub_providers`` entries are
+# expanded and appended after it -- so links may nest, and nested links are
+# searched starting from the directory of the file that declares them.
+# Extra keys on the link entry (everything but ``json``/``role``) override the
+# linked file's root fields; ``role`` overrides the linked file's ``role``.
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    """Read *path* and return its JSON object payload (empty dict on failure)."""
+    from kimix.ui.printing import print_warning
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = orjson.loads(f.read())
+    except orjson.JSONDecodeError as e:
+        print_warning(f"Invalid JSON in config file: {str(path)} ({e})")
+        return {}
+    except Exception as e:
+        print_warning(f"Failed to load config file: {str(path)} ({e})")
+        return {}
+    if not isinstance(data, dict):
+        print_warning(f"Config file must contain a JSON object: {str(path)}")
+        return {}
+    return data
+
+
+def _resolve_linked_config(name: str, origin_dir: Path) -> Path | None:
+    """Locate linked config *name* starting at *origin_dir*, walking up to root.
+
+    Absolute paths are used as-is. Returns the resolved file path, or ``None``
+    when the file exists in no ancestor directory of *origin_dir*.
+    """
+    candidate = Path(name)
+    if candidate.is_absolute():
+        return candidate.resolve() if candidate.is_file() else None
+
+    try:
+        origin_dir = origin_dir.resolve()
+    except OSError:
+        pass
+    for directory in (origin_dir, *origin_dir.parents):
+        found = directory / name
+        if found.is_file():
+            return found.resolve()
+    return None
+
+
+def _expand_sub_provider_links(
+    entries: list[Any],
+    origin_dir: Path,
+    seen: frozenset[str] = frozenset(),
+    depth: int = 0,
+) -> list[Any]:
+    """Return *entries* with every ``{"json": ...}`` link replaced by its config.
+
+    Non-link entries are passed through untouched so inline sub-providers keep
+    working. ``seen`` holds the resolved paths already followed (cycle guard)
+    and ``depth`` bounds the nesting of chained links.
+    """
+    from kimix.ui.printing import print_debug, print_warning
+
+    expanded: list[Any] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or _SUB_PROVIDER_LINK_KEY not in entry:
+            expanded.append(entry)
+            continue
+
+        target = entry.get(_SUB_PROVIDER_LINK_KEY)
+        if not isinstance(target, str) or not target.strip():
+            print_warning(
+                f"Ignoring sub_provider link with invalid "
+                f"'{_SUB_PROVIDER_LINK_KEY}' value: {target!r}"
+            )
+            continue
+
+        resolved = _resolve_linked_config(target, origin_dir)
+        if resolved is None:
+            print_warning(
+                f"Sub_provider config file not found: {target} "
+                f"(searched upward from {str(origin_dir)})"
+            )
+            continue
+
+        key = str(resolved)
+        if key in seen:
+            print_warning(f"Circular sub_provider config link ignored: {key}")
+            continue
+        if depth >= _MAX_SUB_PROVIDER_LINK_DEPTH:
+            print_warning(
+                f"Sub_provider config link nested too deep "
+                f"(limit {_MAX_SUB_PROVIDER_LINK_DEPTH}): {key}"
+            )
+            continue
+
+        linked = _read_json_file(resolved)
+        if not linked:
+            continue
+
+        print_debug(f"Sub_provider config link resolved: {target} -> {key}")
+        expanded.extend(
+            _linked_config_to_entries(linked, entry, resolved.parent, seen | {key}, depth + 1)
+        )
+    return expanded
+
+
+def _linked_config_to_entries(
+    linked: dict[str, Any],
+    link_entry: dict[str, Any],
+    origin_dir: Path,
+    seen: frozenset[str],
+    depth: int,
+) -> list[Any]:
+    """Turn a linked JSON config into the sub-provider entries it declares.
+
+    The linked file's root-level fields (minus ``sub_provider`` /
+    ``sub_providers``) become one entry. The file's own nested sub-providers are
+    expanded -- resolving their links relative to *origin_dir*, the linked
+    file's directory -- and appended after that entry.
+    """
+    entry = {
+        key: value for key, value in linked.items() if key not in ("sub_provider", "sub_providers")
+    }
+    for key, value in link_entry.items():
+        if key not in (_SUB_PROVIDER_LINK_KEY, "role"):
+            entry[key] = value
+    role = link_entry.get("role")
+    if role:
+        entry["role"] = role
+
+    nested: list[Any] = []
+    for key in ("sub_provider", "sub_providers"):
+        src = linked.get(key)
+        if isinstance(src, dict):
+            nested.append(src)
+        elif isinstance(src, list):
+            nested.extend(src)
+
+    return [entry, *_expand_sub_provider_links(nested, origin_dir, seen, depth)]
+
+
+def _expand_config_sub_provider_links(config_data: dict[str, Any], origin_dir: Path) -> None:
+    """Rewrite ``sub_provider``/``sub_providers`` in *config_data* in place.
+
+    Every ``{"json": ...}`` entry is replaced by the entries of the referenced
+    config file (see :func:`_expand_sub_provider_links`), so downstream
+    normalization only ever sees fully materialized provider dicts.
+    """
+    for key in ("sub_provider", "sub_providers"):
+        src = config_data.get(key)
+        if isinstance(src, dict):
+            entries: list[Any] = [src]
+        elif isinstance(src, list):
+            entries = src
+        else:
+            continue
+        config_data[key] = _expand_sub_provider_links(entries, origin_dir)
+
+
 # ── Config file loading ────────────────────────────────────────────────────
 
 
-def _load_config_file(config_path: Path) -> dict[str, Any]:
-    """Search for and load a JSON config file.
+def _resolve_config_file(config_path: Path) -> Path | None:
+    """Search for a JSON config file, returning its resolved path or ``None``.
 
     Searches in order:
       1. Direct path (``config_path`` itself)
@@ -176,55 +356,44 @@ def _load_config_file(config_path: Path) -> dict[str, Any]:
       3. Parent directories of this file (``config.py``)
       4. ``PATH`` environment variable directories
     """
-    from kimix.ui.printing import print_error
-
-    found = False
     path = config_path
 
     if path.exists() and path.is_file():
-        found = True
-    else:
-        cwd = Path.cwd()
-        for parent in [cwd, *cwd.parents]:
-            candidate = parent / path.name
-            if candidate.exists() and candidate.is_file():
-                path = candidate
-                found = True
-                break
-        if not found:
-            file_dir = Path(__file__).resolve().parent
-            for parent in [file_dir, *file_dir.parents]:
-                candidate = parent / path.name
-                if candidate.exists() and candidate.is_file():
-                    path = candidate
-                    found = True
-                    break
-        if not found:
-            for path_dir in os.environ.get("PATH", "").split(os.pathsep):
-                path_dir = path_dir.strip()
-                if not path_dir:
-                    continue
-                candidate = Path(path_dir) / path.name
-                if candidate.exists() and candidate.is_file():
-                    path = candidate
-                    found = True
-                    break
+        return path.resolve()
 
-    if not found:
+    cwd = Path.cwd()
+    for parent in [cwd, *cwd.parents]:
+        candidate = parent / path.name
+        if candidate.exists() and candidate.is_file():
+            return candidate.resolve()
+
+    file_dir = Path(__file__).resolve().parent
+    for parent in [file_dir, *file_dir.parents]:
+        candidate = parent / path.name
+        if candidate.exists() and candidate.is_file():
+            return candidate.resolve()
+
+    for path_dir in os.environ.get("PATH", "").split(os.pathsep):
+        path_dir = path_dir.strip()
+        if not path_dir:
+            continue
+        candidate = Path(path_dir) / path.name
+        if candidate.exists() and candidate.is_file():
+            return candidate.resolve()
+
+    return None
+
+
+def _load_config_file(config_path: Path) -> dict[str, Any]:
+    """Search for and load a JSON config file (see :func:`_resolve_config_file`)."""
+    from kimix.ui.printing import print_error
+
+    path = _resolve_config_file(config_path)
+    if path is None:
         print_error(f"Config file not found: {str(config_path)}")
         sys.exit(1)
 
-    path = path.resolve()
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return orjson.loads(f.read())
-    except orjson.JSONDecodeError as e:
-        from kimix.ui.printing import print_warning
-        print_warning(f"Invalid JSON in config file: {str(path)} ({e})")
-    except Exception as e:
-        from kimix.ui.printing import print_warning
-        print_warning(f"Failed to load config file: {str(path)} ({e})")
-    return {}
+    return _read_json_file(path)
 
 
 # ── .kimix/config.json loading ─────────────────────────────────────────────
@@ -350,12 +519,27 @@ def _load_skill_dirs() -> None:
 # ── Load provider config dict (used by init and by default_config path) ─────
 
 
-def _load_and_set_provider(config_data: dict[str, Any]) -> None:
+def _load_and_set_provider(
+    config_data: dict[str, Any],
+    config_path: str | Path | None = None,
+) -> None:
     """Extract sub_provider info, normalize, and set on base globals.
 
-    Mutates ``config_data`` in place (pops ``sub_provider``/``sub_providers``).
+    ``config_path`` is the JSON file ``config_data`` came from, when known. It
+    anchors relative ``{"json": ...}`` sub-provider links and their upward
+    search (see :func:`_expand_config_sub_provider_links`); when unknown -- e.g.
+    inline ``config_json`` -- the current working directory is used.
+
+    Mutates ``config_data`` in place (expands and pops
+    ``sub_provider``/``sub_providers``).
     """
     from kimix.ui.printing import print_debug
+
+    if config_path is not None:
+        origin_dir = Path(config_path).resolve().parent
+    else:
+        origin_dir = Path.cwd()
+    _expand_config_sub_provider_links(config_data, origin_dir)
 
     sub_provider = config_data.pop("sub_provider", None)
     sub_providers = config_data.pop("sub_providers", None)
@@ -401,7 +585,7 @@ def init(
     #   so we import session internals only inside this function body.
     from kimix.utils.session import close_session
     from kimix.cli_impl import constants
-    from kimix.ui.printing import print_debug, print_warning
+    from kimix.ui.printing import print_debug, print_error, print_warning
     from kaos.path import KaosPath
 
     # 1. Dispose existing default session (if any)
@@ -448,33 +632,34 @@ def init(
 
     # 5. Load provider config
     if config_path is not None:
-        config_data = _load_config_file(Path(config_path))
+        resolved_config = _resolve_config_file(Path(config_path))
+        if resolved_config is None:
+            print_error(f"Config file not found: {str(config_path)}")
+            sys.exit(1)
+        config_data = _read_json_file(resolved_config)
         if config_data:
-            _load_and_set_provider(config_data)
+            # Anchor relative `{"json": ...}` sub-provider links on this file.
+            _load_and_set_provider(config_data, resolved_config)
     elif config_json is not None:
         try:
             config_data = orjson.loads(config_json)
             if not isinstance(config_data, dict):
                 raise ValueError("config_json must parse to a JSON object")
-            _load_and_set_provider(config_data)
+            # No backing file: resolve sub-provider links from the CWD upward.
+            _load_and_set_provider(config_data, None)
         except orjson.JSONDecodeError as e:
-            from kimix.ui.printing import print_error
             print_error(f"Invalid config JSON: {e}")
             sys.exit(1)
         except ValueError as e:
-            from kimix.ui.printing import print_error
             print_error(str(e))
             sys.exit(1)
     else:
         # Fallback to default_config.json
         default_config_path = Path(__file__).parent.parent / "default_config.json"
         if default_config_path.exists():
-            try:
-                config_data = orjson.loads(default_config_path.read_text(encoding="utf-8"))
-                if isinstance(config_data, dict):
-                    _load_and_set_provider(config_data)
-            except (orjson.JSONDecodeError, Exception):
-                pass
+            config_data = _read_json_file(default_config_path)
+            if config_data:
+                _load_and_set_provider(config_data, default_config_path)
 
 
 # ── Generic config construction from a provider dict ───────────────────────

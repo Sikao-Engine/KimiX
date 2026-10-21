@@ -139,5 +139,7 @@ The `todo_list` tool tracks multi-step plans — one tool, one item shape:
 | File | Description |
 |------|-------------|
 | [`docs/config.json`](docs/config.json) | Sample model config with `model`, `url`, `api_key`, `capabilities`, etc. |
+| [`docs/sub_provider_link.json`](docs/sub_provider_link.json) | Sample config that registers a sub-provider from another JSON file via `{"role": "sub_agent", "json": "subagent.json"}` (searched up the parent directories). |
+| [`docs/subagent.json`](docs/subagent.json) | Linked sub-provider config referenced by `docs/sub_provider_link.json`. |
 | [`.kimix/config.json`](.kimix/config.json) | Workspace behavior config: `protected_write_paths`, `protected_read_paths`, `forbidden_commands`, etc. |
 | [`.kimix/skill.json`](.kimix/skill.json) | Workspace skill directory config: `skill_dir` field (string or array) for extra skill directories, resolved relative to workspace. |

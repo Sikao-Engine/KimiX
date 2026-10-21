@@ -1,0 +1,27 @@
+{
+    "model": "kimi-k2.6",
+    "max_context_size": 200000,
+    "capabilities": [
+        "thinking"
+    ],
+    "url": "https://api.moonshot.cn/v1/chat/completions",
+    "type": "kimi",
+    "api_key": "sk-xxx",
+    "sub_providers": [
+        {
+            "role": "sub_agent",
+            "json": "subagent.json"
+        },
+        {
+            "role": "backup",
+            "model": "kimi-k2.6",
+            "max_context_size": 200000,
+            "capabilities": [
+                "thinking"
+            ],
+            "url": "https://api.moonshot.cn/v1/chat/completions",
+            "type": "kimi",
+            "api_key": "sk-xxx"
+        }
+    ]
+}

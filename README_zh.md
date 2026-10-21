@@ -141,6 +141,8 @@ Kimi-CLI-X 在 `KimiSoul` 核心循环中内建了一套**自动上下文记忆�
 | 文件 | 简介 |
 |------|------|
 | [`docs/config.json`](docs/config.json) | 模型配置示例文件，包含 `model`、`url`、`api_key`、`capabilities` 等字段，可供编写自定义配置时参考。 |
+| [`docs/sub_provider_link.json`](docs/sub_provider_link.json) | 通过 `{"role": "sub_agent", "json": "subagent.json"}` 从其他 JSON 文件引入子 Provider 的示例配置（会向上逐级查找父目录）。 |
+| [`docs/subagent.json`](docs/subagent.json) | 被 `docs/sub_provider_link.json` 引用的子 Provider 配置文件。 |
 | [`.kimix/config.json`](.kimix/config.json) | 工作区行为配置文件，包含 `protected_write_paths`、`protected_read_paths`、`forbidden_commands` 等字段，可限制当前工作目录下 Agent 的读写与执行权限。 |
 | [`.kimix/skill.json`](.kimix/skill.json) | 工作区 Skill 目录配置文件，通过 `skill_dir` 字段（字符串或字符串数组）为当前工作目录指定额外的 Skill 目录，相对路径基于工作目录解析。 |
 

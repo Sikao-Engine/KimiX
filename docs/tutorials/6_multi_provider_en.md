@@ -62,6 +62,45 @@ If `role` is omitted, it defaults to `sub_agent`.
 
 ---
 
+## Linking Another JSON Config File
+
+A `sub_providers` entry can point at another JSON config file with a `json` field instead of inlining the provider fields:
+
+```json
+{
+    "sub_providers": [
+        {
+            "role": "sub_agent",
+            "json": "subagent.json"
+        }
+    ]
+}
+```
+
+### Lookup rule
+
+`subagent.json` is looked up starting from the directory of the JSON file that declares the link, then in each parent directory up to the filesystem root; the nearest match wins. Absolute paths are used as-is (no upward search).
+
+```
+workspace/
+├── subagent.json            # shared sub-agent config
+└── project/
+    └── configs/
+        └── main.json        # its "json": "subagent.json" resolves to workspace/subagent.json
+```
+
+### Registration rules
+
+- The referenced file's **root-level fields** are registered as one sub-provider entry. `role` comes from the link entry; when the link omits it, the referenced file's `role` is used, and finally it defaults to `sub_agent`.
+- Any other key on the link entry (everything except `json` / `role`) **overrides** the referenced file's field of the same name (e.g. swap `model` or `api_key` on the fly).
+- The referenced file's own `sub_provider` / `sub_providers` entries are expanded and appended as well, so links may nest; a nested link is resolved from the directory of the file that declares it.
+- A missing file, invalid JSON, or a non-string `json` value drops only that entry with a warning; other entries are unaffected.
+- Cycles (A links B, B links A) and self-links are detected and ignored, and the nesting depth is capped.
+
+`docs/sub_provider_link.json` (main config) and `docs/subagent.json` (linked config) are ready-to-copy examples.
+
+---
+
 ## Backup Provider Failover
 
 When the primary provider exhausts its retries during a prompt, kimix automatically tries **backup** providers declared in `sub_providers` (in declaration order). One config can declare **multiple** backup providers.
