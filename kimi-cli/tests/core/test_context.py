@@ -590,7 +590,7 @@ async def test_replace_history_does_not_raise_token_count(tmp_path: Path) -> Non
 # --- restore-time tool-call pairing repair tests ---
 
 
-def _assistant_tool_call_dict(call_id: str, name: str = "wait_agent") -> dict:
+def _assistant_tool_call_dict(call_id: str, name: str = "some_tool") -> dict:
     """Serialized assistant message carrying a single tool call."""
     return json.loads(
         Message(
@@ -707,7 +707,7 @@ async def test_restore_repairs_tool_pairing_sqlite(tmp_path: Path) -> None:
             tool_calls=[
                 ToolCall(
                     id="c1",
-                    function=ToolCall.FunctionBody(name="wait_agent", arguments="{}"),
+                    function=ToolCall.FunctionBody(name="some_tool", arguments="{}"),
                 )
             ],
         )

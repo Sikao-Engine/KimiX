@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 import orjson
+from pydantic import AliasChoices, BaseModel, Field, model_validator
+
 from kaos.path import KaosPath
 from kimi_cli.session import Session
-from pydantic import AliasChoices, BaseModel, Field, model_validator
+from kimi_cli.tools.common import _create_script_file, _display_temp_path
+from kimi_cli.tools.prompt_common import accepts_alias_text
 
 # NOTE: ``kimi_cli`` must not import ``kimix``/``kimi_agent_sdk`` at module load
 # (``kimix`` depends on ``kimi_cli``, and the SDK imports ``kimi_cli.app``, which
@@ -21,10 +24,7 @@ from pydantic import AliasChoices, BaseModel, Field, model_validator
 # and the ``kimi_agent_sdk`` ``Session`` / ``_sdk_sessions_dir`` helpers are
 # imported lazily inside the functions that use them.  ``SdkSession`` appears
 # only in (string) annotations under ``from __future__ import annotations``.
-
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
-from kimi_cli.tools.common import _create_script_file, _display_temp_path
-from kimi_cli.tools.prompt_common import accepts_alias_text
 
 from .store import AgentSessionEntry, AgentSessionStore, ConversationTurn
 
@@ -66,7 +66,7 @@ def _background_tasks_for(session: Any) -> set[asyncio.Task]:
 
 
 # Sub-agent session id -> its detached background run task.  Populated by
-# ``Agent._start_background_task`` so the ``wait_agent`` tool can block on one
+# ``Agent._start_background_task`` so ``job_output`` can block on one
 # specific run instead of the whole owning-session set above; a done callback
 # discards the mapping when the run settles.  Concurrent runs never share a
 # session id (``_prepare_run`` rejects resuming a running session), so a plain
@@ -437,7 +437,7 @@ class SubAgentParams(BaseModel):
             "Whether to run in the background and return a durable subagent id "
             "immediately. Defaults to false (block for the result); set true "
             "to run detached — you are notified when it finishes and can "
-            "block on it with wait_agent(session_id=...)."
+            "block on it with job_output(job_id='<id>', wait: true)."
         ),
     )
     session_id: str | list[str | None] | None = Field(
@@ -485,7 +485,7 @@ class SubAgentParams(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _check_batch_shape(self) -> "SubAgentParams":
+    def _check_batch_shape(self) -> SubAgentParams:
         """Enforce the single-vs-batch ``prompt`` / ``session_id`` contract.
 
         A string ``prompt`` is a single run (``session_id`` is a string or None).
@@ -529,7 +529,7 @@ class SubAgentParams(BaseModel):
                 seen.add(sid)
         return self
 
-    def _split_params(self) -> list["SubAgentParams"]:
+    def _split_params(self) -> list[SubAgentParams]:
         """Normalize into N single-run param objects.
 
         A string ``prompt`` yields a one-element list (the single-run path). A
@@ -555,7 +555,7 @@ class SubAgentParams(BaseModel):
         )
         return [
             SubAgentParams(prompt=p, session_id=s, **shared)
-            for p, s in zip(self.prompt, session_ids)
+            for p, s in zip(self.prompt, session_ids, strict=False)
         ]
 
 
@@ -696,7 +696,7 @@ class Agent(CallableTool2):
         "written to `.kimix_cache/temp_<session_id>.md` and returning that "
         "path. Set run_in_background: true to return a durable subagent id "
         "immediately instead — you are notified when it finishes, you can "
-        "block on it with wait_agent(session_id='<id>'), and the child "
+        "block on it with job_output(job_id='<id>', wait: true), and the child "
         "conversation stays resumable via subagent(session_id='<id>', ...). "
         "Sub-agents belong to the "
         "session that spawned them: closing or clearing that session closes "
@@ -844,8 +844,8 @@ class Agent(CallableTool2):
         return (
             f"{ids_block}\n\n"
             "Started in the background; you'll be notified when each finishes. "
-            "Use wait_agent(session_id=...) to block on one, or list_agents "
-            "to check their state. Output is saved to "
+            "Use job_output(job_id='<id>', wait: true) to block on one, or "
+            "list_agents to check their state. Output is saved to "
             "`.kimix_cache/temp_<session_id>.md` per session."
         )
 
@@ -864,7 +864,7 @@ class Agent(CallableTool2):
         histories: list[Any] = []
         turn_count = 0
         failures: list[dict[str, Any]] = []
-        for index, (run, result) in enumerate(zip(prepared, results)):
+        for index, (run, result) in enumerate(zip(prepared, results, strict=False)):
             extras = getattr(result, "extras", None) or {}
             session_ids.append(run.session_id)
             saved = str(extras.get("output_file") or "")
@@ -1023,8 +1023,8 @@ class Agent(CallableTool2):
             output=(
                 f"Session ID: {prepared.session_id}\n\n"
                 "Started in the background; you'll be notified when it "
-                "finishes. Use wait_agent(session_id=...) to block until it "
-                "is done, or list_agents to check its state. Output is "
+                "finishes. Use job_output(job_id='<id>', wait: true) to block "
+                "until it is done, or list_agents to check its state. Output is "
                 "saved to `.kimix_cache/temp_<session_id>.md`."
             ),
             brief="Background subagent started",
@@ -1461,8 +1461,8 @@ class AgentList(CallableTool2):
         "created_at, last_accessed, total_turns, state, is_active; sessions "
         "closed via interrupt_agent are removed. A listed child stays resumable: "
         "subagent(session_id=..., ...) starts a new turn on the same "
-        "conversation. Use wait_agent(session_id=...) to block until a "
-        "running one finishes."
+        "conversation. Use job_output(job_id='<id>', wait: true) to block "
+        "until a running one finishes."
     )
     params: type[BaseModel] = AgentListParams
 
@@ -1526,19 +1526,6 @@ class AgentClose(CallableTool2):
         )
 
 
-class AgentWaitParams(BaseModel):
-    model_config = {"populate_by_name": True}
-
-    agent_id: str = Field(
-        validation_alias=AliasChoices("agent_id", "session", "session_id"),
-        description=(
-            "The session id of the background subagent to wait for, as "
-            "returned by the subagent tool. "
-            + accepts_alias_text("agent_id", "session", "session_id", word=False)
-        ),
-    )
-
-
 def _existing_output_path(session: Any, session_id: str) -> str:
     """Best-effort display path of a finished run's output file, when it exists.
 
@@ -1553,70 +1540,6 @@ def _existing_output_path(session: Any, session_id: str) -> str:
     except Exception:
         return ""
     return _display_output_path(path) if path.exists() else ""
-
-
-class AgentWait(CallableTool2):
-    name: str = "wait_agent"
-    description: str = (
-        "Block until a background subagent run finishes. Pass the session id "
-        "returned by subagent(run_in_background=true). Returns as soon as the "
-        "run settles (completed, failed, or interrupted); when it already "
-        "settled it returns immediately. Only subagents of your own session "
-        "can be waited on. The result text is never included — read the "
-        "output file (`.kimix_cache/temp_<session_id>.md`) or resume the "
-        "session with subagent(session_id=...) for the details."
-    )
-    params: type[BaseModel] = AgentWaitParams
-
-    def __init__(self, session: Session):
-        super().__init__()
-        self._session = session
-
-    async def __call__(self, params: AgentWaitParams) -> ToolReturnValue:
-        store = _get_store(self._session)
-        entry = store.get(params.agent_id)
-        if entry is None:
-            return ToolError(
-                output="",
-                message="Session not found",
-                brief="Session not found",
-            )
-        task = _background_run_tasks.get(params.agent_id)
-        if task is not None and not task.done():
-            # ``_run_background`` never raises (it converts its own errors),
-            # but suppress defensively so a wait can never fail the turn.
-            with contextlib.suppress(Exception):
-                await task
-            # The run settled: re-read the store entry it left behind.  An
-            # interrupt mid-run closes the entry, which then reads as "closed".
-            entry = store.get(params.agent_id)
-        if entry is None:
-            status = "closed"
-        elif task is None and entry.state == "running":
-            # A running entry without a tracked task should not happen (every
-            # background run registers one); report it instead of pretending
-            # the run finished.
-            return ToolOk(
-                output=(
-                    f"Subagent '{params.agent_id}' is still running, but no "
-                    "waitable background task was found for it. Check its "
-                    "state with list_agents."
-                ),
-                brief="Subagent still running",
-            )
-        else:
-            status = entry.state
-        output = f"Subagent '{params.agent_id}' finished (status: {status})."
-        output_file = _existing_output_path(self._session, params.agent_id)
-        if output_file:
-            output += f" Output: {output_file}"
-        result = ToolOk(output=output, brief="Subagent finished")
-        result.extras = {
-            "session_id": params.agent_id,
-            "status": status,
-            "output_file": output_file,
-        }
-        return result
 
 
 # ---------------------------------------------------------------------------

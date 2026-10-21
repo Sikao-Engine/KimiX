@@ -1,20 +1,22 @@
-"""Blocking-wait tests for the ``wait_agent`` tool (``AgentWait``).
+"""Tests for ``job_output`` waiting on a background subagent session.
 
-``wait_agent(session_id=...)`` blocks the calling turn until the background
-subagent run owning that session id settles.  These probes cover:
+Passing a subagent session id as ``job_id`` makes ``job_output`` block
+(with ``wait: true``) until the background run owning that session
+settles.  These probes cover:
 
-* unknown session id -> ``ToolError`` (mirrors ``interrupt_agent``);
+* a subagent session id that never existed -> the regular not-found error;
 * an already-settled run -> returns immediately with the recorded state;
-* a running background run -> the call blocks until the run finishes, then
-  reports ``completed`` and leaves the session resumable;
 * a running store entry without a tracked task -> reports "still running"
   instead of hanging or pretending the run finished;
+* a non-blocking read of a running run -> reports "still running";
+* a running background run with ``wait: true`` -> the call blocks until the
+  run finishes, then reports ``completed`` and leaves the session resumable;
+* a timed-out wait -> returns ``[status: running]`` and leaves the run alive;
 * an interrupt arriving *during* the wait -> the wait ends with ``closed``;
-* the session-id -> task registry is cleaned up when the run settles;
-* ``session`` / ``session_id`` aliases resolve to ``agent_id``.
+* the session-id -> task registry is cleaned up when the run settles.
 
 Style mirrors ``test_subagent_batch.py``: patch ``kimix.utils`` session
-primitives and drive ``Agent`` / ``AgentWait`` directly.
+primitives and drive ``Agent`` / ``TaskOutput`` directly.
 """
 from __future__ import annotations
 
@@ -23,19 +25,18 @@ import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 import kimi_cli.tools.subagent as agent_mod
-from kimix.base import MessageType
+import pytest
+from kimi_cli.tools.background import TaskOutput, TaskOutputParams
 from kimi_cli.tools.subagent import (
     Agent,
-    AgentWait,
-    AgentWaitParams,
     SubAgentParams,
     _background_run_tasks,
     _get_store,
 )
 from kimi_cli.tools.subagent.store import AgentSessionEntry
+
+from kimix.base import MessageType
 
 
 def _parent(session_id: str = "parent-1") -> MagicMock:
@@ -101,29 +102,29 @@ def _gated_prompt(started: asyncio.Event, release: asyncio.Event, text: str = "a
 # ---------------------------------------------------------------------------
 # Errors and param shape
 # ---------------------------------------------------------------------------
-async def test_wait_agent_unknown_session_errors() -> None:
+async def test_job_output_unknown_session_errors() -> None:
     parent = _parent()
-    result = await AgentWait(parent)(AgentWaitParams(agent_id="never-seen"))
+    result = await TaskOutput(parent)(TaskOutputParams(job_id="never-seen"))
     assert result.is_error is True
-    assert result.message == "Session not found"
-    assert result.brief == "Session not found"
 
 
-def test_wait_agent_params_aliases() -> None:
-    assert AgentWaitParams(**{"session": "s-1"}).agent_id == "s-1"
-    assert AgentWaitParams(**{"session_id": "s-2"}).agent_id == "s-2"
-    assert AgentWaitParams(agent_id="s-3").agent_id == "s-3"
+def test_job_output_params_aliases() -> None:
+    assert TaskOutputParams(**{"task_id": "t-1"}).job_id == "t-1"
+    assert TaskOutputParams(job_id="t-2").job_id == "t-2"
+    assert TaskOutputParams(**{"block": True}).wait is True
 
 
 # ---------------------------------------------------------------------------
 # Settled / edge states
 # ---------------------------------------------------------------------------
-async def test_wait_agent_settled_run_returns_immediately() -> None:
+async def test_job_output_settled_run_returns_immediately() -> None:
     parent = _parent()
     store = _get_store(parent)
     store.put(_entry(_sub_session(), "done-1", state="completed"))
 
-    result = await AgentWait(parent)(AgentWaitParams(agent_id="done-1"))
+    result = await TaskOutput(parent)(
+        TaskOutputParams(job_id="done-1", wait=True)
+    )
 
     assert result.is_error is False
     assert result.extras is not None
@@ -132,12 +133,14 @@ async def test_wait_agent_settled_run_returns_immediately() -> None:
     assert "done-1" in result.output
 
 
-async def test_wait_agent_running_entry_without_task_reports_running() -> None:
+async def test_job_output_running_entry_without_task_reports_running() -> None:
     """A running entry with no tracked task must not hang or fake completion."""
     parent = _parent()
     _get_store(parent).put(_entry(_sub_session(), "orphan-1", state="running"))
 
-    result = await AgentWait(parent)(AgentWaitParams(agent_id="orphan-1"))
+    result = await TaskOutput(parent)(
+        TaskOutputParams(job_id="orphan-1", wait=True)
+    )
 
     assert result.is_error is False
     assert result.brief == "Subagent still running"
@@ -147,7 +150,32 @@ async def test_wait_agent_running_entry_without_task_reports_running() -> None:
 # ---------------------------------------------------------------------------
 # Blocking behaviour on a live background run
 # ---------------------------------------------------------------------------
-async def test_wait_agent_blocks_until_background_run_finishes() -> None:
+async def test_job_output_nonblocking_read_of_running_subagent() -> None:
+    """Without ``wait`` a running subagent read reports "still running"."""
+    parent = _parent()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    with (
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
+        patch("kimix.utils.prompt_async", side_effect=_gated_prompt(started, release)),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
+    ):
+        mc.return_value = _sub_session()
+        result = await Agent(parent)(
+            SubAgentParams(prompt="do X", run_in_background=True)
+        )
+        session_id = result.extras["session_id"]
+        await asyncio.wait_for(started.wait(), timeout=5)
+
+        read_result = await TaskOutput(parent)(TaskOutputParams(job_id=session_id))
+
+    assert read_result.is_error is False
+    assert read_result.brief == "Subagent still running"
+    assert "still running" in read_result.output
+    release.set()
+
+
+async def test_job_output_blocks_until_background_run_finishes() -> None:
     parent = _parent()
     started = asyncio.Event()
     release = asyncio.Event()
@@ -166,7 +194,7 @@ async def test_wait_agent_blocks_until_background_run_finishes() -> None:
         await asyncio.wait_for(started.wait(), timeout=5)
 
         wait_task = asyncio.create_task(
-            AgentWait(parent)(AgentWaitParams(agent_id=session_id))
+            TaskOutput(parent)(TaskOutputParams(job_id=session_id, wait=True))
         )
         await _pump()
         # The wait call blocks: the run has not been released yet.
@@ -187,7 +215,43 @@ async def test_wait_agent_blocks_until_background_run_finishes() -> None:
     assert session_id not in _background_run_tasks
 
 
-async def test_wait_agent_interrupted_mid_wait_reports_closed() -> None:
+async def test_job_output_timed_out_wait_leaves_run_alive() -> None:
+    """A wait shorter than the run returns [status: running] without killing it."""
+    parent = _parent()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    with (
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
+        patch("kimix.utils.prompt_async", side_effect=_gated_prompt(started, release)),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
+    ):
+        mc.return_value = _sub_session()
+        result = await Agent(parent)(
+            SubAgentParams(prompt="do X", run_in_background=True)
+        )
+        session_id = result.extras["session_id"]
+        await asyncio.wait_for(started.wait(), timeout=5)
+
+        timed = await TaskOutput(parent)(
+            TaskOutputParams(job_id=session_id, wait=True, timeout=1)
+        )
+        assert timed.is_error is False
+        assert "[status: running]" in timed.output
+        # The run is untouched and still tracked.
+        assert session_id in _background_run_tasks
+
+        release.set()
+        final = await asyncio.wait_for(
+            TaskOutput(parent)(TaskOutputParams(job_id=session_id, wait=True)),
+            timeout=5,
+        )
+
+    assert final.is_error is False
+    assert final.extras is not None
+    assert final.extras["status"] == "completed"
+
+
+async def test_job_output_interrupted_mid_wait_reports_closed() -> None:
     """An interrupt arriving during the wait ends it with status ``closed``."""
     from kimi_cli.tools.subagent import AgentClose, AgentCloseParams
 
@@ -207,7 +271,7 @@ async def test_wait_agent_interrupted_mid_wait_reports_closed() -> None:
         await asyncio.wait_for(started.wait(), timeout=5)
 
         wait_task = asyncio.create_task(
-            AgentWait(parent)(AgentWaitParams(agent_id=session_id))
+            TaskOutput(parent)(TaskOutputParams(job_id=session_id, wait=True))
         )
         await _pump()
         assert not wait_task.done()

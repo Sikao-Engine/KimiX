@@ -1,14 +1,13 @@
 """Background task management tools."""
 import asyncio
+import contextlib
 import sys
 from typing import Literal
 
 import regex as re
-from kimi_cli.session import Session
-from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 from pydantic import AliasChoices, BaseModel, Field, model_validator
 
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kimi_cli.session import Session
 from kimi_cli.tools.common import (
     _append_elapsed,
     _elapsed_tag,
@@ -16,11 +15,13 @@ from kimi_cli.tools.common import (
     _maybe_export_rtk_original_async,
     _original_saved_message,
 )
+from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 from kimi_cli.tools.prompt_common import (
     MAX_TIMEOUT_SECONDS,
     accepts_alias_text,
     wait_for_pattern_field,
 )
+from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 from .utils import (
     MAX_FINISHED_TASKS,
@@ -45,6 +46,8 @@ class TaskOutputParams(BaseModel):
         validation_alias=AliasChoices("job_id", "task_id"),
         description=(
             "Job id returned by the tool that started the background work. "
+            "Also accepts a background subagent session id (from "
+            "subagent(run_in_background=true)) to wait on it. "
             "When None, lists all tasks. "
             + accepts_alias_text("job_id", "task_id", word=False)
         ),
@@ -99,7 +102,7 @@ class TaskOutputParams(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def _normalize_kill(self) -> "TaskOutputParams":
+    def _normalize_kill(self) -> TaskOutputParams:
         """Convert deprecated kill=True to action='kill'."""
         if self.kill:
             object.__setattr__(self, 'action', 'kill')
@@ -113,9 +116,10 @@ class TaskOutput(CallableTool2):
         "Read a background job. Stream jobs return only output since the "
         "previous read; final-output jobs return their result after settlement. "
         "Every response ends with `[status: ...]`. Reads are non-blocking "
-        "unless `wait: true`, which waits up to the configured cap. "
-        f"Jobs that already finished stay retrievable from a history of the "
-        f"last {MAX_FINISHED_TASKS} completed jobs."
+        "unless `wait: true`, which waits up to the configured cap and can "
+        "block on a background subagent session id until it settles. "
+        f"Jobs that already finished stay retrievable from a history of "
+        f"the last {MAX_FINISHED_TASKS} completed jobs."
     )
     params: type[BaseModel] = TaskOutputParams
 
@@ -344,6 +348,80 @@ class TaskOutput(CallableTool2):
             display_block=display_block,
         )
 
+    async def _get_subagent_output(
+        self, session_id: str, params: TaskOutputParams
+    ) -> ToolReturnValue | None:
+        """Wait for a background subagent session, if *session_id* is one.
+
+        Blocks until the run settles (bounded by ``params.timeout`` when
+        ``wait`` is set), then reports the recorded state and the output file
+        path.  Returns ``None`` when the id belongs to no subagent of this
+        session so the caller falls through to the regular not-found error.
+        """
+        from kimi_cli.tools.subagent import (
+            _background_run_tasks,
+            _existing_output_path,
+            _get_store,
+        )
+
+        store = _get_store(self._session)
+        entry = store.get(session_id)
+        if entry is None:
+            return None
+        task = _background_run_tasks.get(session_id)
+        if task is not None and not task.done():
+            if not params.wait:
+                return ToolOk(
+                    output=(
+                        f"Subagent '{session_id}' is still running. "
+                        "Call `job_output` with wait: true to block until it "
+                        "finishes."
+                    ),
+                    brief="Subagent still running",
+                )
+            # ``asyncio.wait`` never cancels the run; on timeout it is left
+            # alive and the caller sees [status: running].
+            done, _pending = await asyncio.wait({task}, timeout=params.timeout)
+            if not done:
+                return ToolOk(
+                    output=f"Subagent '{session_id}' [status: running]",
+                    brief="Subagent still running",
+                )
+            # ``_run_background`` never raises (it converts its own errors),
+            # but suppress defensively so a wait can never fail the turn.
+            with contextlib.suppress(Exception):
+                await task
+            # The run settled: re-read the store entry it left behind.  An
+            # interrupt mid-run closes the entry, which then reads as "closed".
+            entry = store.get(session_id)
+        if entry is None:
+            status = "closed"
+        elif task is None and entry.state == "running":
+            # A running entry without a tracked task should not happen (every
+            # background run registers one); report it instead of pretending
+            # the run finished.
+            return ToolOk(
+                output=(
+                    f"Subagent '{session_id}' is still running, but no "
+                    "waitable background task was found for it. Check its "
+                    "state with list_agents."
+                ),
+                brief="Subagent still running",
+            )
+        else:
+            status = entry.state
+        output = f"Subagent '{session_id}' finished (status: {status})."
+        output_file = _existing_output_path(self._session, session_id)
+        if output_file:
+            output += f" Output: {output_file}"
+        result = ToolOk(output=output, brief="Subagent finished")
+        result.extras = {
+            "session_id": session_id,
+            "status": status,
+            "output_file": output_file,
+        }
+        return result
+
     async def _get_output(self, tasks: dict, params: TaskOutputParams) -> ToolReturnValue:
         """Get output from a specific task."""
         job_id = params.job_id.strip()
@@ -354,6 +432,11 @@ class TaskOutput(CallableTool2):
                 # Already finished (and already removed from the active
                 # registry): serve the saved result instead of a dead-end.
                 return await self._get_history_output(record, params)
+            # Fallback: the id may be a background subagent session started
+            # by the ``subagent`` tool; wait for that run and report its state.
+            subagent_result = await self._get_subagent_output(job_id, params)
+            if subagent_result is not None:
+                return subagent_result
             started = [tid for tid, s in tasks.items() if await s.is_started()]
             if not started:
                 return ToolError(
