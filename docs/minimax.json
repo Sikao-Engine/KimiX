@@ -1,0 +1,29 @@
+{
+    "model": "minimax-m2.7",
+    "max_context_size": 204800,
+    "capabilities": [
+        "thinking"
+    ],
+    "url": "https://api.minimaxi.com/anthropic",
+    "type": "anthropic",
+    "api_key": "sk-xxx",
+    "max_tokens": 128000,
+    "thinking_effort": "max",
+    "loop_control": {
+        "max_steps_per_turn": 5000,
+        "max_retries_per_step": 3,
+        "reserved_context_size": 50000,
+        "compaction_trigger_ratio": 0.85
+    },
+    "sub_providers": [
+        {
+            "role": "sub_agent",
+            "model": "minimax-m2.7",
+            "max_context_size": 204800,
+            "capabilities": ["thinking"],
+            "url": "https://api.minimaxi.com/anthropic",
+            "type": "anthropic",
+            "api_key": "sk-xxx"
+        }
+    ]
+}

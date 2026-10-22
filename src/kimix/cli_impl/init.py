@@ -9,13 +9,16 @@ from typing import Any
 import orjson
 
 from kimix.ui.printing import print_info, print_success, print_warning
+
+# NOTE: keep the provider templates below in sync with the matching example
+# configs under ``docs/`` (kimi.json, deepseek.json, minimax.json).
 deepseek_default_config = '''
 {
-    "model": "deepseek-v4-pro",
-    "max_context_size": 1048576,
+    "model": "deepseek-v4-flash",
+    "max_context_size": 1000000,
     "capabilities": ["thinking"],
-    "url": "https://api.deepseek.com/",
-    "type": "openai_legacy",
+    "url": "https://api.deepseek.com/anthropic",
+    "type": "anthropic",
     "max_tokens": 384000,
     "thinking_effort": "max"
 }
@@ -54,8 +57,14 @@ _CONTEXT_SIZE_OPTIONS: dict[str, int] = {
     "128k": 128000,
     "256k": 256000,
     "512k": 512000,
-    "1M": 1000000,
+    # 1 MiB (1048576), matching the shipped ``default_config.json``; plain
+    # 1000000 is also accepted below and mapped back to this option.
+    "1M": 1048576,
 }
+
+# Extra values that should select the "1M" preset when reverse-looking-up an
+# existing config.
+_CONTEXT_SIZE_ALIASES: dict[int, str] = {1000000: "1M"}
 
 _VALID_TYPES = (
     "kimi",
@@ -70,6 +79,8 @@ _VALID_TYPES = (
 _VALID_THINKING_EFFORTS = ('off', 'low', 'medium', 'high', 'xhigh', 'max')
 
 _VALID_CAPABILITIES = ("thinking", "always_thinking", "image_in", "video_in")
+
+_VALID_SUB_ROLES = ("sub_agent", "planner", "backup")
 
 
 
@@ -147,6 +158,10 @@ def _ask_context_size(config: dict[str, Any] | None = None) -> int:
                 if v == max_ctx:
                     default = k
                     break
+            else:
+                alias = _CONTEXT_SIZE_ALIASES.get(max_ctx)
+                if alias is not None:
+                    default = alias
     options_str = ", ".join(_CONTEXT_SIZE_OPTIONS.keys())
     while True:
         value = _ask(f"Enter model context size ({options_str} or a number)", default)
@@ -160,7 +175,6 @@ def _ask_context_size(config: dict[str, Any] | None = None) -> int:
         if num <= 1:
             print_warning(f"Context size must be larger than 1, got {num}")
             continue
-        num = max(num, 1.)
         return num
 
 
@@ -205,12 +219,21 @@ def _ask_max_token(context_size: int, reserved: int, default: int) -> int:
         try:
             num = int(value)
         except ValueError:
-            print_warning(f"Invalid number '{value}', using default {default}")
-            return default
+            print_warning(f"Invalid number '{value}', please enter a positive integer")
+            continue
         if num <= 0 or num > max_allowed:
-            print_warning(f"Value {num} out of range, using default {default}")
-            return default
+            print_warning(f"Value {num} out of range (1..{max_allowed}), please try again")
+            continue
         return num
+
+
+def _ask_sub_role(default: str = "sub_agent") -> str:
+    options_str = ", ".join(_VALID_SUB_ROLES)
+    while True:
+        value = _ask(f"Enter sub-provider role ({options_str})", default)
+        if value in _VALID_SUB_ROLES:
+            return value
+        print_warning(f"Invalid role '{value}', please choose from: {options_str}")
 
 
 def _ask_sub_provider(defaults: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -228,6 +251,9 @@ def _ask_sub_provider(defaults: dict[str, Any] | None = None) -> dict[str, Any] 
 
     print_info("--- Sub-provider configuration ---")
     sub: dict[str, Any] = {}
+
+    role = _ask_sub_role(_default("role", "sub_agent"))
+    sub["role"] = role
 
     model = _ask_model_name(_default("model", "kimi-for-coding"))
     sub["model"] = model
@@ -263,6 +289,21 @@ def _ask_sub_provider(defaults: dict[str, Any] | None = None) -> dict[str, Any] 
 
     print_success("Sub-provider configuration complete.")
     return sub
+
+
+def _first_sub_provider(config: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the first sub-provider entry from ``config`` for use as prompt defaults.
+
+    Reads the current ``sub_providers`` list first, then the legacy singular
+    ``sub_provider`` dict.
+    """
+    sub_providers = config.get("sub_providers")
+    if isinstance(sub_providers, list) and sub_providers and isinstance(sub_providers[0], dict):
+        return sub_providers[0]
+    legacy = config.get("sub_provider")
+    if isinstance(legacy, dict):
+        return legacy
+    return None
 
 
 def init(initialize: bool = True) -> None:
@@ -314,11 +355,14 @@ def init(initialize: bool = True) -> None:
             url = _ask_url(config.get("url", "https://api.kimi.com/coding/v1"))
             config["url"] = url
 
-            sub_provider = _ask_sub_provider(config.get("sub_provider"))
+            sub_defaults = _first_sub_provider(config)
+            sub_provider = _ask_sub_provider(sub_defaults)
             if sub_provider is not None:
-                config["sub_provider"] = sub_provider
-            elif "sub_provider" in config:
-                del config["sub_provider"]
+                config["sub_providers"] = [sub_provider]
+                config.pop("sub_provider", None)
+            else:
+                config.pop("sub_providers", None)
+                config.pop("sub_provider", None)
     except KeyboardInterrupt:
         print_warning('keyboard interruped.')
         return

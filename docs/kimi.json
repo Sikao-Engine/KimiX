@@ -1,10 +1,11 @@
 {
-    "model": "kimi-k2.6",
-    "max_context_size": 200000,
+    "model": "kimi-for-coding",
+    "max_context_size": 1048576,
     "capabilities": [
-        "thinking"
+        "thinking",
+        "image_in"
     ],
-    "url": "https://api.moonshot.cn/v1/chat/completions",
+    "url": "https://api.kimi.com/coding/v1",
     "type": "kimi",
     "api_key": "sk-xxx",
     "custom_headers": {},
@@ -15,15 +16,15 @@
     "env": {},
     "services": {
         "search": {
-            "base_url": "https://api.moonshot.cn/v1/search",
+            "base_url": "https://api.kimi.com/v1/search",
             "api_key": "sk-xxx"
         },
         "fetch": {
-            "base_url": "https://api.moonshot.cn/v1/fetch",
+            "base_url": "https://api.kimi.com/v1/fetch",
             "api_key": "sk-xxx"
         }
     },
-    "max_tokens": 65536,
+    "max_tokens": 131072,
     "thinking_effort": "max",
     "show_thinking_stream": true,
     "temperature": 0.7,
@@ -47,10 +48,10 @@
     "sub_providers": [
         {
             "role": "sub_agent",
-            "model": "kimi-k2.6",
-            "max_context_size": 200000,
-            "capabilities": ["thinking"],
-            "url": "https://api.moonshot.cn/v1/chat/completions",
+            "model": "kimi-for-coding",
+            "max_context_size": 1048576,
+            "capabilities": ["thinking", "image_in"],
+            "url": "https://api.kimi.com/coding/v1",
             "type": "kimi",
             "api_key": "sk-xxx"
         }
