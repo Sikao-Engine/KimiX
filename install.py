@@ -817,6 +817,249 @@ def _install_kimix_native(bin_dir: Path | None = None, force: bool = False) -> b
     return True
 
 
+# ---------------------------------------------------------------------------
+# PATH registration for the uv tool bin dir (``~/.local/bin``)
+# ---------------------------------------------------------------------------
+
+# ``uv tool install`` drops the ``kimix`` console script into uv's *tool bin
+# directory*, which is ``<home>/.local/bin`` on every platform
+# (``%USERPROFILE%\.local\bin`` on Windows).  When that directory is missing
+# from the persistent ``Path`` environment variable, ``kimix`` only runs from
+# inside the checkout — ``_ensure_tool_bin_on_path`` fixes that on Windows by
+# registering the directory in the per-user environment (no admin rights),
+# then notifying running processes so new shells pick it up right away.
+_USER_PATH_REG_KEY = "Environment"
+_SYSTEM_PATH_REG_KEY = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+# ctypes/ctypes.windll constants used by _broadcast_environment_change().
+_HWND_BROADCAST = 0xFFFF
+_WM_SETTINGCHANGE = 0x001A
+_SMTO_ABORTIFHUNG = 0x0002
+# Legacy tooling (and Windows versions before 10 1703) truncate the per-user
+# ``Path`` value at 2047 characters — warn before silently making it longer.
+_LEGACY_PATH_LIMIT = 2047
+
+
+def _uv_tool_bin_dir() -> Path:
+    """Return the directory ``uv tool install`` puts executables into.
+
+    ``UV_TOOL_BIN_DIR`` wins (that is what uv itself honours), then uv's own
+    answer (``uv tool dir --bin``, so customised uv config is respected), then
+    the platform default: ``%USERPROFILE%\\.local\\bin`` on Windows and
+    ``~/.local/bin`` / ``$XDG_BIN_HOME`` / ``$XDG_DATA_HOME/../bin`` elsewhere.
+    """
+    if override := os.getenv("UV_TOOL_BIN_DIR"):
+        return Path(override).expanduser()
+
+    uv = shutil.which("uv")
+    if uv:
+        try:
+            result = subprocess.run(
+                [uv, "tool", "dir", "--bin"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+            if result.returncode == 0 and lines:
+                return Path(lines[-1]).expanduser()
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass  # fall back to the documented default below
+
+    if sys.platform == "win32":
+        # uv always uses ``%USERPROFILE%\.local\bin`` on Windows.
+        return Path.home() / ".local" / "bin"
+    if xdg_bin := os.getenv("XDG_BIN_HOME"):
+        return Path(xdg_bin).expanduser()
+    if xdg_data := os.getenv("XDG_DATA_HOME"):
+        return Path(xdg_data).expanduser().parent / "bin"
+    return Path.home() / ".local" / "bin"
+
+
+def _path_entry_matches(entry: str, target: Path) -> bool:
+    """Return True when the PATH *entry* points at *target*.
+
+    Surrounding quotes, ``~``/``%VAR%`` references and redundant separators are
+    tolerated; the comparison is case-insensitive on Windows (via
+    :func:`os.path.normcase`).
+    """
+    entry = entry.strip().strip('"').strip()
+    if not entry:
+        return False
+    try:
+        candidate = Path(os.path.expandvars(entry)).expanduser()
+        resolved_candidate = os.path.normpath(os.path.abspath(candidate))
+        resolved_target = os.path.normpath(os.path.abspath(target))
+    except (OSError, ValueError):
+        return False
+    return os.path.normcase(resolved_candidate) == os.path.normcase(resolved_target)
+
+
+def _path_value_contains(path_value: str | None, target: Path) -> bool:
+    """Return True when the ``;``/``:`` separated *path_value* lists *target*."""
+    return any(_path_entry_matches(entry, target) for entry in (path_value or "").split(os.pathsep))
+
+
+def _read_registry_path(hive: str, sub_key: str) -> tuple[str | None, int]:
+    """Read the ``Path`` value of a registry environment key.
+
+    *hive* is ``"user"`` (``HKCU``) or ``"system"`` (``HKLM``); importing
+    :mod:`winreg` happens here so callers (and tests) never need it.  Returns
+    ``(value, value_type)`` where the value is ``None`` when the key/value is
+    missing or unreadable.  The value is returned *unexpanded* so
+    ``%VAR%``-style references survive a read/modify/write cycle.
+    """
+    import winreg
+
+    hive_handle = winreg.HKEY_CURRENT_USER if hive == "user" else winreg.HKEY_LOCAL_MACHINE
+    try:
+        with winreg.OpenKey(hive_handle, sub_key, 0, winreg.KEY_READ) as key:
+            value, value_type = winreg.QueryValueEx(key, "Path")
+    except OSError:
+        return None, winreg.REG_EXPAND_SZ
+    if not isinstance(value, str):
+        return None, winreg.REG_EXPAND_SZ
+    return value, int(value_type)
+
+
+def _append_to_user_path(bin_dir: Path) -> bool:
+    """Append *bin_dir* to the persistent per-user ``Path`` registry value.
+
+    The existing value (and its registry type, ``REG_SZ`` vs ``REG_EXPAND_SZ``)
+    is preserved verbatim — only the new entry is appended, so hand-crafted
+    ``%USERPROFILE%`` references keep working.  Returns True on success.
+    """
+    import winreg
+
+    current, current_type = _read_registry_path("user", _USER_PATH_REG_KEY)
+    current = current or ""
+    separator = "" if not current or current.endswith(os.pathsep) else os.pathsep
+    new_value = f"{current}{separator}{bin_dir}"
+    if len(new_value) > _LEGACY_PATH_LIMIT:
+        print(
+            f"⚠️  Your user PATH would grow to {len(new_value)} characters; legacy tools "
+            f"truncate it at {_LEGACY_PATH_LIMIT}. Consider pruning unused entries."
+        )
+    value_type = current_type if current else winreg.REG_EXPAND_SZ
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, _USER_PATH_REG_KEY, 0, winreg.KEY_SET_VALUE
+        ) as key:
+            winreg.SetValueEx(key, "Path", 0, value_type, new_value)
+    except OSError as exc:
+        print(f"⚠️  Could not write the user PATH registry value: {exc}")
+        return False
+    return True
+
+
+def _broadcast_environment_change() -> bool:
+    """Tell running processes (Explorer, terminals) that the environment changed.
+
+    Best-effort: shells that are already running only re-read the environment
+    when they receive ``WM_SETTINGCHANGE``.  Returns True when the broadcast was
+    delivered; Windows-only and never raises.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+
+        send_message_timeout = ctypes.windll.user32.SendMessageTimeoutW
+        send_message_timeout.restype = ctypes.c_void_p
+        send_message_timeout.argtypes = [
+            ctypes.c_void_p,  # HWND
+            ctypes.c_uint,  # UINT msg
+            ctypes.c_size_t,  # WPARAM
+            ctypes.c_wchar_p,  # LPARAM
+            ctypes.c_uint,  # UINT fuFlags
+            ctypes.c_uint,  # UINT uTimeout
+            ctypes.POINTER(ctypes.c_size_t),  # PDWORD_PTR lpdwResult
+        ]
+        result = ctypes.c_size_t()
+        delivered = send_message_timeout(
+            _HWND_BROADCAST,
+            _WM_SETTINGCHANGE,
+            0,
+            "Environment",
+            _SMTO_ABORTIFHUNG,
+            5000,
+            ctypes.byref(result),
+        )
+        return bool(delivered)
+    except Exception:
+        # Locked-down ctypes / missing user32: the registry entry is still in
+        # place, only already-running shells will need a manual restart.
+        return False
+
+
+def _register_tool_bin_on_windows_path(bin_dir: Path) -> bool:
+    """Make sure *bin_dir* is on the persistent Windows ``Path``.
+
+    Both the per-user and the machine-wide ``Path`` are inspected (a shell
+    inherits their merged value); the directory is added to the per-user value
+    because that needs no administrator rights.  Returns True when *bin_dir* is
+    (now) on PATH.
+    """
+    if not bin_dir.is_dir():
+        print(f"⏭️  {bin_dir} does not exist, skipping PATH registration.")
+        return False
+
+    user_path, _ = _read_registry_path("user", _USER_PATH_REG_KEY)
+    if _path_value_contains(user_path, bin_dir):
+        print(f"✅ {bin_dir} is already registered in your user PATH, skipping.")
+        return True
+
+    system_path, _ = _read_registry_path("system", _SYSTEM_PATH_REG_KEY)
+    if _path_value_contains(system_path, bin_dir):
+        print(f"✅ {bin_dir} is already provided by the system PATH, skipping.")
+        return True
+
+    print(f"\n▶ Registering {bin_dir} in your user PATH so 'kimix' works from any directory ...")
+    if not _append_to_user_path(bin_dir):
+        print(
+            "⚠️  Could not update the user PATH automatically.\n"
+            f'   Add it manually: setx PATH "%PATH%;{bin_dir}"\n'
+            "   or via System Properties → Environment Variables, then reopen your terminal."
+        )
+        return False
+
+    _broadcast_environment_change()
+    # Let the remainder of this process (and any tool it spawns) use it too.
+    current = os.environ.get("PATH", "")
+    if not _path_value_contains(current, bin_dir):
+        os.environ["PATH"] = f"{current}{os.pathsep if current else ''}{bin_dir}"
+    print(f"✅ Registered {bin_dir} in the user PATH environment variable.")
+    print("   Open a new terminal (or restart your shell) for it to take effect.")
+    return True
+
+
+def _report_tool_bin_not_on_path(bin_dir: Path) -> bool:
+    """POSIX fallback: only warn, never edit the user's shell rc files."""
+    if _path_value_contains(os.environ.get("PATH"), bin_dir):
+        print(f"✅ {bin_dir} is already on your PATH.")
+        return True
+    print(
+        f"⚠️  {bin_dir} is not on your PATH, so 'kimix' will not run from other directories.\n"
+        f'   Add it to your shell profile: export PATH="{bin_dir}:$PATH"'
+    )
+    return False
+
+
+def _ensure_tool_bin_on_path(bin_dir: Path | None = None) -> bool:
+    """Ensure the uv tool bin dir (holding the ``kimix`` executable) is on PATH.
+
+    On Windows the directory is registered in the persistent user ``Path``
+    environment variable automatically; on other platforms a hint is printed.
+    Passing *bin_dir* is only used by tests.  Returns True when the directory is
+    reachable without a manual change.
+    """
+    if bin_dir is None:
+        bin_dir = _uv_tool_bin_dir()
+    if sys.platform == "win32":
+        return _register_tool_bin_on_windows_path(bin_dir)
+    return _report_tool_bin_not_on_path(bin_dir)
+
+
 def main(argv: list[str] | None = None) -> int:
     global _ASSUME_YES
 
@@ -903,7 +1146,18 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print("⏭️  Skipping uv tool install. The tool may not be available on PATH.")
 
+    # 7. Make the ``kimix`` entry point reachable from any directory.  On
+    #    Windows the uv tool bin dir (~/.local/bin) is registered in the
+    #    persistent user PATH when it is missing, so ``kimix`` works in a new
+    #    terminal without a manual environment-variable change.
+    path_registered = _ensure_tool_bin_on_path()
+
     print("\n🎉 All done! The project has been installed successfully.")
+    if path_registered:
+        print(
+            "💡 If 'kimix' is not recognised yet, open a new terminal so the "
+            "updated PATH is loaded."
+        )
     return 0
 
 
