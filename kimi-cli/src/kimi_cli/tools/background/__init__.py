@@ -357,6 +357,13 @@ class TaskOutput(CallableTool2):
         ``wait`` is set), then reports the recorded state and the output file
         path.  Returns ``None`` when the id belongs to no subagent of this
         session so the caller falls through to the regular not-found error.
+
+        A subagent whose session was already closed (``interrupt_agent``, or a
+        parent-close cascade) is still one of *this* session's subagents: its
+        tombstone in the store means the run was interrupted, so it reports
+        ``status: closed`` instead of the misleading "no running task" error.
+        The parent is told the run was interrupted by a steer, so it may well
+        call ``job_output`` on that id straight afterwards.
         """
         from kimi_cli.tools.subagent import (
             _background_run_tasks,
@@ -367,7 +374,12 @@ class TaskOutput(CallableTool2):
         store = _get_store(self._session)
         entry = store.get(session_id)
         if entry is None:
-            return None
+            # No live entry: either the id was never a subagent of this
+            # session (fall through to not-found), or its session was closed
+            # after the run started (report the interruption, don't lose it).
+            if not store.was_closed(session_id):
+                return None
+            return self._closed_subagent_output(session_id)
         task = _background_run_tasks.get(session_id)
         if task is not None and not task.done():
             if not params.wait:
@@ -422,6 +434,31 @@ class TaskOutput(CallableTool2):
         }
         return result
 
+    def _closed_subagent_output(self, session_id: str) -> ToolReturnValue:
+        """Report an interrupted (tombstoned) subagent run as ``closed``.
+
+        The store forgot the entry when the session was closed, so the recorded
+        state is gone — but "closed" is the truthful answer either way (the run
+        was interrupted, or it finished and was then closed explicitly), and an
+        id this session closed is never a "task not found" error.
+        """
+        from kimi_cli.tools.subagent import _existing_output_path
+
+        output_file = _existing_output_path(self._session, session_id)
+        output = f"Subagent '{session_id}' finished (status: closed)."
+        if output_file:
+            output += f" Output: {output_file}"
+        result = ToolOk(
+            output=output,
+            brief="Subagent closed",
+        )
+        result.extras = {
+            "session_id": session_id,
+            "status": "closed",
+            "output_file": output_file,
+        }
+        return result
+
     async def _get_output(self, tasks: dict, params: TaskOutputParams) -> ToolReturnValue:
         """Get output from a specific task."""
         job_id = params.job_id.strip()
@@ -439,10 +476,19 @@ class TaskOutput(CallableTool2):
                 return subagent_result
             started = [tid for tid, s in tasks.items() if await s.is_started()]
             if not started:
+                # Neither a live/finished shell job nor a subagent of this
+                # session: name the id, so a typo — or a *different* session's
+                # subagent id — is obviously the problem instead of a bare
+                # "No running task", which reads as "nothing is running
+                # anywhere" and hides both mistakes.
                 return ToolError(
-                    message="No running task",
+                    message=(
+                        f"Job '{job_id}' not found: no background task or "
+                        "subagent of this session has that id. Use action='list' "
+                        "for running jobs, or list_agents for live subagents."
+                    ),
                     output="",
-                    brief="No running task"
+                    brief=f"Job '{job_id}' not found"
                 )
             task_list = ", ".join(started)
             return ToolError(

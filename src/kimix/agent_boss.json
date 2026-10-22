@@ -17,7 +17,8 @@
       "kimi_cli.tools.swarm:workflow",
       "kimi_cli.tools.todo:todo_list",
       "kimi_cli.tools.context:compact",
-      "kimi_cli.tools.skill:skill"
+      "kimi_cli.tools.skill:skill",
+      "kimi_cli.tools.background:job_output"
     ]
   }
 }

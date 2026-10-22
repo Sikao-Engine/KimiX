@@ -418,6 +418,34 @@ def _output_message(session_id: str, saved: str) -> str:
     return f"Output could not be saved to a file\nSession ID: {session_id}"
 
 
+def _background_dispatch_output(session_ids: list[str]) -> str:
+    """Tool output for a detached dispatch: the ids plus how to wait on them.
+
+    ``job_output`` (``kimi_cli.tools.background``) is the only way to block on a
+    detached run, so it is named here explicitly — and so is its cap: ``wait:
+    true`` is bounded by ``timeout`` (default 60 s, max 1200 s) and returns
+    ``[status: running]`` when that elapses, leaving the run alive.  A
+    multi-minute subagent would otherwise look stalled, or lost, after one
+    short wait, so the hint says to raise ``timeout`` or call again.
+
+    Shared by the single and batch background paths so both promise exactly the
+    same thing.
+    """
+    ids_block = "\n".join(f"Session ID: {session_id}" for session_id in session_ids)
+    return (
+        f"{ids_block}\n\n"
+        "Started in the background; you'll be notified when each finishes. "
+        "To wait for one instead, call "
+        "job_output(job_id='<session id>', wait: true, timeout=<seconds>): it "
+        "returns as soon as that run settles (with its status and output file) "
+        "or with [status: running] once `timeout` elapses — default 60 s, max "
+        "1200 s — leaving the run alive, so pass a larger timeout or call it "
+        "again for a long run. list_agents lists live subagents; "
+        "interrupt_agent stops one. Output is saved to "
+        "`.kimix_cache/temp_<session id>.md`."
+    )
+
+
 class SubAgentParams(BaseModel):
     model_config = {"populate_by_name": True}
 
@@ -437,7 +465,9 @@ class SubAgentParams(BaseModel):
             "Whether to run in the background and return a durable subagent id "
             "immediately. Defaults to false (block for the result); set true "
             "to run detached — you are notified when it finishes and can "
-            "block on it with job_output(job_id='<id>', wait: true)."
+            "block on it with job_output(job_id='<id>', wait: true, "
+            "timeout=<seconds>); a wait that hits its timeout returns "
+            "[status: running] and leaves the run alive."
         ),
     )
     session_id: str | list[str | None] | None = Field(
@@ -696,7 +726,9 @@ class Agent(CallableTool2):
         "written to `.kimix_cache/temp_<session_id>.md` and returning that "
         "path. Set run_in_background: true to return a durable subagent id "
         "immediately instead — you are notified when it finishes, you can "
-        "block on it with job_output(job_id='<id>', wait: true), and the child "
+        "block on it with job_output(job_id='<id>', wait: true, "
+        "timeout=<seconds>) (a timeout leaves the run alive and returns "
+        "[status: running]), and the child "
         "conversation stays resumable via subagent(session_id='<id>', ...). "
         "Sub-agents belong to the "
         "session that spawned them: closing or clearing that session closes "
@@ -840,14 +872,7 @@ class Agent(CallableTool2):
         return result
 
     def _batch_background_output(self, session_ids: list[str]) -> str:
-        ids_block = "\n".join(f"Session ID: {sid}" for sid in session_ids)
-        return (
-            f"{ids_block}\n\n"
-            "Started in the background; you'll be notified when each finishes. "
-            "Use job_output(job_id='<id>', wait: true) to block on one, or "
-            "list_agents to check their state. Output is saved to "
-            "`.kimix_cache/temp_<session_id>.md` per session."
-        )
+        return _background_dispatch_output(session_ids)
 
     async def _dispatch_batch_foreground(
         self, params: SubAgentParams, prepared: list[_PreparedRun]
@@ -1020,13 +1045,7 @@ class Agent(CallableTool2):
         entry = await self._start_background_task(prepared)
 
         result = ToolOk(
-            output=(
-                f"Session ID: {prepared.session_id}\n\n"
-                "Started in the background; you'll be notified when it "
-                "finishes. Use job_output(job_id='<id>', wait: true) to block "
-                "until it is done, or list_agents to check its state. Output is "
-                "saved to `.kimix_cache/temp_<session_id>.md`."
-            ),
+            output=_background_dispatch_output([prepared.session_id]),
             brief="Background subagent started",
         )
         extras: dict[str, Any] = {
