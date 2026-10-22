@@ -16,6 +16,7 @@ from kimix.ui.stream import percentage_and_token
 
 from . import _globals
 from .config import _create_config, load_config_json
+from .event_loop import run_on_event_loop
 from .system_prompt import SystemPromptCallback, SystemPromptType, get_system_prompt
 
 
@@ -199,7 +200,7 @@ def create_session(
     anonymous: bool = False,
     custom_data: dict[str, Any] | None = None,
 ) -> Session:
-    return asyncio.run(_create_session_async(
+    return run_on_event_loop(_create_session_async(
         session_id=session_id,
         work_dir=work_dir,
         skills_dir=skills_dir,
@@ -290,10 +291,13 @@ def close_session(session: Session) -> None:
         return
     _globals._untrack_session(session)
     try:
-        asyncio.run(_close_session_with_hooks(session))
+        # Same event loop as ``prompt``: closing a throw-away ``asyncio.run``
+        # loop here would leave the session's loop-bound state dangling for the
+        # next conversation.
+        run_on_event_loop(_close_session_with_hooks(session))
     except KeyboardInterrupt:
-        # Ctrl+C can land inside asyncio.run() while it is creating the
-        # event loop (e.g. ProactorEventLoop's socketpair() on Windows),
+        # Ctrl+C can land while the event loop is being driven (e.g.
+        # ProactorEventLoop's socketpair() on Windows),
         # especially when a background tool (like a glob) was running.
         # The session is being torn down anyway; the OS reclaims the
         # sockets and the aiosqlite worker thread is a daemon-less thread
@@ -332,7 +336,7 @@ async def compact_context_async(session: Session | None = None) -> None:
 
 def compact_context(session: Session | None = None) -> None:
     """Compact the context of a session (sync wrapper)."""
-    asyncio.run(compact_context_async(session))
+    run_on_event_loop(compact_context_async(session))
 
 
 async def clear_session_async(session: Session | None = None) -> None:
@@ -358,7 +362,7 @@ async def clear_context_async(session: Session | None = None) -> None:
 
 def clear_context(session: Session | None = None) -> None:
     """Clear the context of a session (sync wrapper)."""
-    asyncio.run(clear_context_async(session))
+    run_on_event_loop(clear_context_async(session))
 
 
 def get_cancel_event(session: Session | None = None) -> asyncio.Event | None:
@@ -401,7 +405,7 @@ async def _create_default_session_async(resume: bool = True) -> Session:
 
 
 def _create_default_session(resume: bool = True) -> Session:
-    return asyncio.run(_create_default_session_async(resume))
+    return run_on_event_loop(_create_default_session_async(resume))
 
 
 def _print_usage(session: Session, time_seconds: float | None = None) -> None:
@@ -436,7 +440,7 @@ def compact_default_context() -> None:
         import time
         start_time = time.time()
         old_usage = percentage_and_token(_globals._default_session)
-        asyncio.run(_globals._default_session.compact())
+        run_on_event_loop(_globals._default_session.compact())
         new_usage = percentage_and_token(_globals._default_session)
         end_time = time.time()
         time_seconds = end_time - start_time
@@ -460,7 +464,7 @@ def clear_default_context(force_create: bool = False, resume: bool = False, prin
             if print_info:
                 _print_usage(_globals._default_session)
             return
-        asyncio.run(clear_session_async(_globals._default_session))
+        run_on_event_loop(clear_session_async(_globals._default_session))
         session = _globals._default_session
     else:
         session = _create_default_session(resume)

@@ -2,9 +2,9 @@ from typing import Optional, Any, Callable
 from kimi_agent_sdk import Session
 from kimix.base import run_process_with_error_async, run_thread
 from kimix.ui.printing import MessageType, print_success
+from .event_loop import run_on_event_loop
 from .prompt import prompt, prompt_async
 from .session import _create_default_session
-import asyncio
 
 
 async def fix_error_async(
@@ -46,7 +46,9 @@ def fix_error(
         max_loop: int = 4,
         merge_wire_messages: bool = False,
         ) -> bool:
-    return asyncio.run(fix_error_async(
+    # ``run_on_event_loop``: the session this prompts is shared with the REPL and
+    # must keep running on the same event loop (see ``kimix.utils.event_loop``).
+    return run_on_event_loop(fix_error_async(
         command, extra_prompt, skip_success, keycode, session, max_loop, merge_wire_messages
     ))
 

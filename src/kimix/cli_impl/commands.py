@@ -31,7 +31,6 @@ def _read_multi_line(text_arr: list[str], *, allow_cancel: bool = True) -> tuple
         lines.append(s)
     return lines, False
 
-import asyncio
 
 import kimix.utils._globals as _globals
 from kimix.base import sync_all
@@ -58,6 +57,7 @@ from kimix.utils import (
     prompt,
     prompt_plan,
 )
+from kimix.utils.event_loop import run_on_event_loop
 
 from .init import init
 
@@ -79,7 +79,6 @@ def _cmd_compact(task_split: list[str], text_arr: list[str]) -> tuple[None, bool
     return None, False
 
 def _cmd_export(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
-    import asyncio
     session = get_default_session()
     if session is None:
         print_error('No active session to export.')
@@ -89,7 +88,7 @@ def _cmd_export(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]
         return None, False
     output_path = ':'.join(task_split[1:]) if len(task_split) > 1 else None
     try:
-        output, count = asyncio.run(session.export(output_path=output_path))
+        output, count = run_on_event_loop(session.export(output_path=output_path))
         print_success(f'Exported {count} messages to {output}')
     except Exception as e:
         print_error(f'Export failed: {e}')
@@ -170,7 +169,7 @@ def _cmd_store(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         return await CliSession.copy(work_dir, source_id, target_id)
 
     try:
-        target = asyncio.run(_do_copy())
+                    target = run_on_event_loop(_do_copy())
     except Exception as e:
         import traceback
         print_error(f'Store failed: {e}')
@@ -273,7 +272,7 @@ def _cmd_load(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
         return new_id
 
     try:
-        new_id = asyncio.run(_do_copy())
+                    new_id = run_on_event_loop(_do_copy())
     except Exception as e:
         import traceback
         print_error(f'Load failed: {e}')

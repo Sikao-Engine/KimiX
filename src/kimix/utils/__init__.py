@@ -7,6 +7,11 @@ from ._globals import (
     _refresh_cli_sessions,
 )
 from .config import _create_config, init
+from .event_loop import (
+    close_process_event_loop,
+    get_process_event_loop,
+    run_on_event_loop,
+)
 from .system_prompt import _SYSTEM_PROMP, get_system_prompt, SystemPromptType
 from .windows_env import refresh_env_from_registry
 from .session import (
@@ -52,6 +57,9 @@ __all__ = [
     "_refresh_cli_sessions",
     "init",
     "_create_config",
+    "close_process_event_loop",
+    "get_process_event_loop",
+    "run_on_event_loop",
     "_SYSTEM_PROMP",
     "get_system_prompt",
     "context_path",

@@ -18,6 +18,7 @@ from kosong.message import ContentPart, TextPart, ThinkPart
 from kimix.ui.printing import Color, MessageType, Style
 from kimix.ui.stream import print_agent_json, print_agent_json_flush_text
 from kimi_cli.tools.common import _export_to_temp_file
+from kimix.utils.event_loop import run_on_event_loop
 from kimix.utils.session import (
     _create_default_session,
     _create_default_session_async,
@@ -798,7 +799,11 @@ def prompt(
     format_output: bool = False,
     timeout: float | None = None,
 ) -> None:
-    asyncio.run(
+    # Run on the process event loop instead of a throw-away ``asyncio.run`` loop:
+    # the session keeps living across conversations, so closing the loop after
+    # each one left its loop-bound state dangling and the *next* conversation
+    # failed with ``RuntimeError: Event loop is closed``.
+    run_on_event_loop(
         prompt_async(
             prompt_str,
             session,
@@ -1093,4 +1098,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
 
 
 def prompt_plan(requirement: str, plan_file: str | Path = "plan.md") -> None:
-    asyncio.run(prompt_plan_async(requirement, plan_file))
+    # Same event loop as ``prompt``: the planner session is prompted repeatedly
+    # (plan generation, revisions, implementation) and must keep its loop-bound
+    # state across those conversations.
+    run_on_event_loop(prompt_plan_async(requirement, plan_file))
