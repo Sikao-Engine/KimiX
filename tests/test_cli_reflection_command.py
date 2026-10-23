@@ -80,9 +80,6 @@ def test_build_reflection_prompt_includes_architecture_map():
 
     # Dynamic injectors (reminders).
     for injector in (
-        "budget_reminder.py",
-        "compact_reminder.py",
-        "target_churn.py",
         "todo_reminder.py",
     ):
         assert injector in prompt

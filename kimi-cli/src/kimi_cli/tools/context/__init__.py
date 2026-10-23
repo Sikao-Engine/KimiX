@@ -3,11 +3,13 @@ from __future__ import annotations
 
 from kimi_cli.soul import get_current_soul_or_none
 from kimi_cli.soul.compaction import CompactMode
-from kimi_cli.soul.dynamic_injections.compact_reminder import MIN_CONTEXT_USAGE
 from kimi_cli.soul.kimisoul import KimiSoul
 from pydantic import BaseModel, Field, model_validator
 
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+
+# Hard floor: refuse to compact while context usage is below this ratio.
+MIN_CONTEXT_USAGE = 0.30
 
 
 class CompactParams(BaseModel):

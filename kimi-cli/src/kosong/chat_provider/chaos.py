@@ -96,7 +96,7 @@ class ChaosTransport(httpx.AsyncBaseTransport):
         return httpx.Response(
             status_code=status_code,
             headers=headers,
-            content=content.encode(),
+            content=content,
             request=request,
         )
 

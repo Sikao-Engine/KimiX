@@ -216,7 +216,11 @@ class TestFixPwshCommandValidNaiveRejected:
         assert expected in out, f"unexpected output for {fix.command!r}: {out!r}"
 
     @pytest.mark.parametrize("cmd", TRICKY_PARSE_ONLY)
-    def test_tricky_parses_without_parse_error(self, cmd: str) -> None:
+    def test_tricky_parses_without_parse_error(self, cmd: str, tmp_path, monkeypatch) -> None:
+        # Run in a fresh, non-repo directory: the `git commit` case must fail for a
+        # *runtime* reason ("not a git repository"), never because an earlier test
+        # left the process cwd inside a committable git repository.
+        monkeypatch.chdir(tmp_path)
         fix = fix_pwsh_command(cmd)
         assert fix is not None, f"parser rejected valid command: {cmd!r}"
         rc, out = _run_pwsh(fix.command)

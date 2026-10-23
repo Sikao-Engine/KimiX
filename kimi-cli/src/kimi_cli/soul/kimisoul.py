@@ -81,9 +81,6 @@ from kimi_cli.soul.dynamic_injection import (
     DynamicInjectionProvider,
     normalize_history,
 )
-from kimi_cli.soul.dynamic_injections.budget_reminder import BudgetReminderProvider
-from kimi_cli.soul.dynamic_injections.compact_reminder import CompactReminderProvider
-from kimi_cli.soul.dynamic_injections.target_churn import TargetChurnProvider
 from kimi_cli.soul.verification_gate import VerificationGate
 from kimi_cli.soul.dynamic_injections.todo_reminder import TodoReminderProvider
 from kimi_cli.soul.error_log import (
@@ -494,35 +491,10 @@ class KimiSoul:
         self._injection_providers: list[DynamicInjectionProvider] = [
             *(
                 []
-                if not self._loop_control.compact_reminder_enabled
-                else [CompactReminderProvider(
-                    threshold=self._loop_control.compact_reminder_threshold,
-                )]
-            ),
-            *(
-                []
                 if not self._loop_control.todo_reminder_enabled
                 else [TodoReminderProvider(
                     self._load_todo_states_for_reminder,
                     interval_steps=self._loop_control.todo_reminder_interval_steps,
-                )]
-            ),
-            *(
-                []
-                if not self._loop_control.target_churn_enabled
-                else [TargetChurnProvider(
-                    file_warn=self._loop_control.target_churn_file_warn,
-                    file_strong=self._loop_control.target_churn_file_strong,
-                    error_warn=self._loop_control.target_churn_error_warn,
-                    cooldown_steps=self._loop_control.target_churn_cooldown_steps,
-                )]
-            ),
-            *(
-                []
-                if not self._loop_control.budget_reminder_enabled
-                else [BudgetReminderProvider(
-                    warn_ratios=tuple(self._loop_control.budget_warn_ratios),
-                    wall_clock_seconds=self._loop_control.budget_wall_clock_seconds,
                 )]
             ),
         ]

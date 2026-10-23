@@ -315,13 +315,6 @@ Default is 3."""
     adaptive_preserve_enabled: bool = Field(default=True)
     """When true, dynamically adjust preserve depth based on session signals
     (errors, tool calls, reasoning). Default is true."""
-    compact_reminder_enabled: bool = Field(default=False)
-    """When true, inject a system-reminder to suggest compaction when context usage
-    exceeds compact_reminder_threshold. Default is false."""
-    compact_reminder_threshold: float = Field(default=0.70, ge=0.5, le=0.95)
-    """Context usage ratio at which the compact reminder is injected.
-    Should be lower than compaction_trigger_ratio to give the agent a heads-up.
-    Default is 0.70 (70%)."""
 
     # ── Recency-edge re-injection & memory durability ────────────────────────
 
@@ -343,24 +336,6 @@ Default is 3."""
     """Maximum todo tree/stack depth (layers). push beyond this errors.
     Default 4."""
 
-    target_churn_enabled: bool = Field(default=False)
-    """When true, inject a reminder when the agent repeatedly modifies the same
-    file target (across different tools) or hits the same normalized error
-    repeatedly — loop shapes that per-call streak detection cannot catch.
-    Default is false."""
-    target_churn_file_warn: int = Field(default=8, ge=2)
-    """Number of edits to the same file target that triggers a churn reminder.
-    Default is 8."""
-    target_churn_file_strong: int = Field(default=15, ge=3)
-    """Number of edits to the same file target that triggers a strong
-    stop-patching reminder (once per file per turn). Default is 15."""
-    target_churn_error_warn: int = Field(default=5, ge=2)
-    """Consecutive identical (normalized) tool errors that trigger an
-    error-signature reminder. Default is 5."""
-    target_churn_cooldown_steps: int = Field(default=10, ge=0)
-    """Minimum number of steps to stay silent after any target-churn
-    injection. Default is 6."""
-
     verification_gate_enabled: bool = Field(default=True)
     """When true, a turn that ends with unfinished todos or unverified code
     edits is nudged to continue instead of finishing. Applies at the soul
@@ -374,18 +349,6 @@ Default is 3."""
     successful prompt. The soul-layer verification gate is the primary
     mechanism; this is the CLI fallback. 0 disables the CLI fallback.
     Default is 1."""
-
-    budget_reminder_enabled: bool = Field(default=False)
-    """When true, inject budget-awareness reminders as step (or wall-clock)
-    usage crosses ``budget_warn_ratios`` of the per-turn budget, so the
-    agent can plan its wrap-up. Default is false."""
-    budget_warn_ratios: tuple[float, ...] = Field(default=(0.7, 0.9))
-    """Ascending usage ratios of the per-turn budget that each trigger one
-    reminder per turn. The final ratio issues an urgent wrap-up reminder.
-    Default is (0.7, 0.9)."""
-    budget_wall_clock_seconds: int = Field(default=0, ge=0)
-    """Optional per-turn wall-clock budget in seconds. 0 disables the
-    wall-clock dimension (step budget only). Default is 0."""
 
     compaction_decision_section_enabled: bool = Field(default=True)
     """When true, compaction summaries must include `## Decisions &

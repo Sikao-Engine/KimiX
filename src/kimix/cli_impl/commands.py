@@ -906,9 +906,6 @@ Every builtin tool and the exact file where its implementation lives:
   - toolset.py / tool_taxonomy.py — tool loading & classification
   - denwarenji.py — D-Mail; history_index.py — BM25 history index; llm_request_recorder.py — request tracing
 - Dynamic injectors (reminders): `{dynamic_injections_dir}`
-  - budget_reminder.py — budget warnings as step/wall-clock usage crosses ratios (default 0.7/0.9)
-  - compact_reminder.py — suggests `compact` when usage exceeds threshold (default 0.70)
-  - target_churn.py — anti-loop: repeated edits to same file / repeated identical errors
   - todo_reminder.py — re-injects unfinished todo items at the context tail
 - Config: `{config_path}` — pydantic `Config` (model/provider, loop_control, background,
   notifications, services, mcp, hooks, skills); `LoopControl` drives loop/compaction/prune/

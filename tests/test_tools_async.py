@@ -90,7 +90,7 @@ class TestTaskOutput:
     async def test_not_found(self, mock_session: MagicMock) -> None:
         tool = TaskOutput(session=mock_session)
         result = await tool(TaskOutputParams(task_id="missing"))
-        assert "No running task" in str(result.message)
+        assert "not found" in str(result.message)
 
     async def test_wait_and_get_output(self, mock_session: MagicMock) -> None:
         tool = TaskOutput(session=mock_session)

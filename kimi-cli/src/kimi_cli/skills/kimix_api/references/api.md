@@ -1054,7 +1054,7 @@ from kosong.message import Message
 
 @dataclass(frozen=True, slots=True)
 class DynamicInjection:
-    type: str      # identifier, e.g. "compact_reminder"
+    type: str      # identifier, e.g. "todo_reminder"
     content: str   # plain text; will be wrapped in <system-reminder> tags
 
 class DynamicInjectionProvider(ABC):
@@ -1094,10 +1094,10 @@ Before each LLM step, `KimiSoul._collect_injections()` awaits every provider, co
 class KimiSoul:
     def __init__(self, agent: Agent, *, context: Context, anonymous: bool = False):
         ...
-        self._injection_providers: list[DynamicInjectionProvider] = [
-            CompactReminderProvider(threshold=loop_control.compact_reminder_threshold)
-                if loop_control.compact_reminder_enabled else [],
-        ]
+          self._injection_providers: list[DynamicInjectionProvider] = [
+              TodoReminderProvider(load_todo_states, interval_steps=loop_control.todo_reminder_interval_steps)
+                  if loop_control.todo_reminder_enabled else [],
+          ]
 
     def add_injection_provider(self, provider: DynamicInjectionProvider) -> None:
         self._injection_providers.append(provider)
@@ -1118,7 +1118,7 @@ Built-in providers are registered in `__init__` according to `Config` / `LoopCon
 
 | Provider | File | Type | Purpose | Config knobs |
 |----------|------|------|---------|--------------|
-| `CompactReminderProvider` | `dynamic_injections/compact_reminder.py` | `compact_reminder` | Suggests calling `Compact` when context usage exceeds a threshold. | `LoopControl.compact_reminder_enabled`, `compact_reminder_threshold` |
+| `TodoReminderProvider` | `dynamic_injections/todo_reminder.py` | `todo_reminder` | Re-injects unfinished todo items at the context tail. | `LoopControl.todo_reminder_enabled`, `todo_reminder_interval_steps` |
 
 Both providers (and any custom providers) skip subagent sessions and reset their throttling state in `on_context_compacted()` and/or `on_afk_changed()`.
 

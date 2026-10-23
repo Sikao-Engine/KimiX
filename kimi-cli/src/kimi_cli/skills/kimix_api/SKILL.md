@@ -104,7 +104,7 @@ All built-in tools are imported from `kimi_cli.tools.*`: `TaskOutput`/`job_outpu
 
 ## Dynamic System Reminders
 
-`DynamicInjection(type, content)` wrapped in `<system-reminder>`; `DynamicInjectionProvider.get_injections(history, soul)` with optional `on_context_compacted()`/`on_afk_changed()`; register via `soul.add_injection_provider(provider)`. Built-in: `CompactReminderProvider` (compact_reminder).
+`DynamicInjection(type, content)` wrapped in `<system-reminder>`; `DynamicInjectionProvider.get_injections(history, soul)` with optional `on_context_compacted()`/`on_afk_changed()`; register via `soul.add_injection_provider(provider)`. Built-in: `TodoReminderProvider` (todo_reminder).
 
 ## Context Pruning
 
