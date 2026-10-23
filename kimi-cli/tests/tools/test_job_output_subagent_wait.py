@@ -103,14 +103,16 @@ def test_background_message_points_at_job_output() -> None:
     assert "interrupt_agent" in output
 
 
-def test_background_message_states_the_wait_timeout_caveat() -> None:
-    """A bounded wait must not look like a hang: the message says so."""
+def test_background_message_states_the_unbounded_wait_contract() -> None:
+    """A subagent wait ignores ``timeout`` and only ends when the run settles."""
     output = sa._background_dispatch_output(["child-1"])
 
     assert "timeout" in output
-    assert "[status: running]" in output
-    assert "1200" in output, "the schema cap must be stated"
-    assert "again" in output, "the model must know a timed-out wait is resumable"
+    assert "unbounded" in output
+    assert "crashes" in output, "the model must know how the wait can end"
+    # A subagent wait can no longer time out, so the old resumable-wait
+    # hint ("[status: running] ... call it again") must be gone.
+    assert "[status: running]" not in output
 
 
 def test_batch_background_message_lists_every_id() -> None:
@@ -203,19 +205,36 @@ async def test_job_output_wait_blocks_until_the_subagent_settles() -> None:
     assert result.extras["status"] == "completed"
 
 
-async def test_job_output_wait_honours_the_timeout_and_leaves_the_run_alive() -> None:
-    """A timed-out wait reports ``[status: running]`` and never cancels the run."""
+async def test_job_output_wait_ignores_the_timeout_for_subagents() -> None:
+    """A subagent wait blocks past ``timeout`` until the run settles.
+
+    The run settles *after* ``timeout`` seconds: the old bounded behaviour
+    would have returned ``[status: running]`` at the 1 s mark.  The new
+    contract ignores ``timeout`` and only returns once the run finished.
+    """
     parent = _FakeSession()
-    task = _start_run(parent, "child-1", delay=30.0)
+    task = _start_run(parent, "child-1", delay=2.0)
     tool = TaskOutput(parent)  # type: ignore[arg-type]
 
     result = await tool(TaskOutputParams(job_id="child-1", wait=True, timeout=1))
 
+    assert task.done(), "the wait must last until the run settles, past timeout"
     assert not result.is_error
-    assert "[status: running]" in str(result.output)
-    assert not task.done(), "a timed-out job_output wait must not cancel the run"
-    with contextlib.suppress(asyncio.CancelledError):
-        task.cancel()
+    assert "[status: running]" not in str(result.output)
+    assert "finished (status: completed)" in str(result.output)
+
+
+def test_job_output_timeout_schema_cap_is_7200() -> None:
+    """``job_output`` accepts up to 7200 s and rejects anything above it."""
+    from pydantic import ValidationError
+
+    from kimi_cli.tools.background import MAX_JOB_OUTPUT_TIMEOUT_SECONDS
+
+    assert MAX_JOB_OUTPUT_TIMEOUT_SECONDS == 7200
+    params = TaskOutputParams(job_id="child-1", wait=True, timeout=7200)
+    assert params.timeout == 7200
+    with pytest.raises(ValidationError):
+        TaskOutputParams(job_id="child-1", wait=True, timeout=7201)
 
 
 async def test_job_output_wait_reports_the_output_file_when_it_exists(

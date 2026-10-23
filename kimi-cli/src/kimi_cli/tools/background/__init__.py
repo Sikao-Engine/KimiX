@@ -17,7 +17,6 @@ from kimi_cli.tools.common import (
 )
 from kimi_cli.tools.display import BackgroundTaskDisplayBlock
 from kimi_cli.tools.prompt_common import (
-    MAX_TIMEOUT_SECONDS,
     accepts_alias_text,
     wait_for_pattern_field,
 )
@@ -35,6 +34,16 @@ from .utils import (
     record_finished_task,
     remove_task_id,
 )
+
+#: Maximum ``timeout`` (seconds) accepted by ``job_output`` for shell-job
+#: waits — two hours.  This is intentionally separate from the shared
+#: ``prompt_common.MAX_TIMEOUT_SECONDS`` (1200 s), which bounds the
+#: *process-spawning* tools (``bash`` / ``pwsh`` / ``python`` / ``Run``);
+#: ``job_output`` only observes an already-running task, so it may wait
+#: longer.  Note this cap applies to shell jobs only: a ``wait`` on a
+#: *subagent* session id ignores ``timeout`` entirely and blocks until the
+#: run settles (see ``TaskOutput._get_subagent_output``).
+MAX_JOB_OUTPUT_TIMEOUT_SECONDS = 7200
 
 
 class TaskOutputParams(BaseModel):
@@ -75,11 +84,12 @@ class TaskOutputParams(BaseModel):
         default=60,
         validation_alias=AliasChoices("timeout", "timeout_ms"),
         ge=1,
-        le=MAX_TIMEOUT_SECONDS,
+        le=MAX_JOB_OUTPUT_TIMEOUT_SECONDS,
         description=(
-            "Max wait in seconds (only meaningful with wait: true). "
-            "Defaults to the configured wait timeout; capped at the schema "
-            "maximum. "
+            "Max wait in seconds (only meaningful with wait: true), capped "
+            "at the schema maximum. Ignored when waiting on a subagent "
+            "session id: that wait is unbounded and ends only when the "
+            "subagent settles. "
             + accepts_alias_text("timeout", "timeout_ms", word=False)
         ),
     )
@@ -116,8 +126,9 @@ class TaskOutput(CallableTool2):
         "Read a background job. Stream jobs return only output since the "
         "previous read; final-output jobs return their result after settlement. "
         "Every response ends with `[status: ...]`. Reads are non-blocking "
-        "unless `wait: true`, which waits up to the configured cap and can "
-        "block on a background subagent session id until it settles. "
+        "unless `wait: true`, which waits up to the configured cap. A wait "
+        "on a background subagent session id ignores the cap and blocks "
+        "until the subagent settles. "
         f"Jobs that already finished stay retrievable from a history of "
         f"the last {MAX_FINISHED_TASKS} completed jobs."
     )
@@ -353,10 +364,14 @@ class TaskOutput(CallableTool2):
     ) -> ToolReturnValue | None:
         """Wait for a background subagent session, if *session_id* is one.
 
-        Blocks until the run settles (bounded by ``params.timeout`` when
-        ``wait`` is set), then reports the recorded state and the output file
-        path.  Returns ``None`` when the id belongs to no subagent of this
-        session so the caller falls through to the regular not-found error.
+        Blocks until the run settles, then reports the recorded state and
+        the output file path.  The wait is deliberately *unbounded*:
+        ``params.timeout`` is ignored here, so the read blocks however long
+        the subagent needs and only returns once the run settles — whether it
+        completes, fails, or crashes (a crashed run settles its task with the
+        exception, ending the wait).  Returns ``None`` when the id belongs to
+        no subagent of this session so the caller falls through to the
+        regular not-found error.
 
         A subagent whose session was already closed (``interrupt_agent``, or a
         parent-close cascade) is still one of *this* session's subagents: its
@@ -391,14 +406,14 @@ class TaskOutput(CallableTool2):
                     ),
                     brief="Subagent still running",
                 )
-            # ``asyncio.wait`` never cancels the run; on timeout it is left
-            # alive and the caller sees [status: running].
-            done, _pending = await asyncio.wait({task}, timeout=params.timeout)
-            if not done:
-                return ToolOk(
-                    output=f"Subagent '{session_id}' [status: running]",
-                    brief="Subagent still running",
-                )
+            # ``asyncio.wait`` without a timeout blocks until the detached
+            # run settles, however long that takes: a subagent wait ignores
+            # ``params.timeout`` on purpose, so the caller never sees a
+            # misleading "still running" for a healthy long-running
+            # subagent.  The wait ends only when the run completes, fails,
+            # or crashes (a crash settles the task with the exception).
+            # ``asyncio.wait`` never cancels the run.
+            await asyncio.wait({task})
             # ``_run_background`` never raises (it converts its own errors),
             # but suppress defensively so a wait can never fail the turn.
             with contextlib.suppress(Exception):

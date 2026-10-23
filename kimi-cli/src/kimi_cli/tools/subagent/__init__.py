@@ -421,12 +421,12 @@ def _output_message(session_id: str, saved: str) -> str:
 def _background_dispatch_output(session_ids: list[str]) -> str:
     """Tool output for a detached dispatch: the ids plus how to wait on them.
 
-    ``job_output`` (``kimi_cli.tools.background``) is the only way to block on a
-    detached run, so it is named here explicitly — and so is its cap: ``wait:
-    true`` is bounded by ``timeout`` (default 60 s, max 1200 s) and returns
-    ``[status: running]`` when that elapses, leaving the run alive.  A
-    multi-minute subagent would otherwise look stalled, or lost, after one
-    short wait, so the hint says to raise ``timeout`` or call again.
+ ``job_output`` (``kimi_cli.tools.background``) is the only way to block on a
+ detached run, so it is named here explicitly — and so is its contract: a
+ ``wait`` on a subagent session id is *unbounded* and ignores ``timeout``,
+ returning only once the run settles (with its status and output file).
+ A crashed or failed run settles its task too, ending the wait; a healthy
+ long-running subagent can never look "timed out".
 
     Shared by the single and batch background paths so both promise exactly the
     same thing.
@@ -436,11 +436,10 @@ def _background_dispatch_output(session_ids: list[str]) -> str:
         f"{ids_block}\n\n"
         "Started in the background; you'll be notified when each finishes. "
         "To wait for one instead, call "
-        "job_output(job_id='<session id>', wait: true, timeout=<seconds>): it "
-        "returns as soon as that run settles (with its status and output file) "
-        "or with [status: running] once `timeout` elapses — default 60 s, max "
-        "1200 s — leaving the run alive, so pass a larger timeout or call it "
-        "again for a long run. list_agents lists live subagents; "
+        "job_output(job_id='<session id>', wait: true): it returns as soon as "
+        "that run settles (with its status and output file). The wait is "
+        "unbounded — `timeout` is ignored for subagents — and ends only if "
+        "the run crashes or raises. list_agents lists live subagents; "
         "interrupt_agent stops one. Output is saved to "
         "`.kimix_cache/temp_<session id>.md`."
     )
