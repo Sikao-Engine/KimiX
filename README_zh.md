@@ -135,6 +135,7 @@ Kimi-CLI-X 在 `KimiSoul` 核心循环中内建了一套**自动上下文记忆�
 | [`docs/tutorials/4_skills.md`](docs/tutorials/4_skills.md) | **自定义 Skill 编写教程**。讲解 Skill 的设计原则、目录结构、`SKILL.md` 编写规范、附属资源组织方式、测试打包流程及安装使用方法。 |
 | [`docs/tutorials/5_server.md`](docs/tutorials/5_server.md) | **JSON-RPC 服务端教程**。介绍基于 TCP 的 JSON-RPC 2.0 协议格式、错误码、服务端接口、WebSocket 桥接及命令行启动参数。 |
 | [`docs/tutorials/6_multi_provider.md`](docs/tutorials/6_multi_provider.md) | **多 Provider 配置**。通过带 `role` 标签的 `sub_providers` 将子代理和 Planner 路由到不同 LLM Provider。 |
+| [`docs/tutorials/7_builtin_tool_injection.md`](docs/tutorials/7_builtin_tool_injection.md) | **内置工具注入**。通过 `.kimix/config.json` 声明的 per-session JSON-RPC 服务器扩展 `read`/`write`/`edit`，附 `tools/kimix_lsp.py` 参考实现详解。 |
 
 ### 配置参考
 

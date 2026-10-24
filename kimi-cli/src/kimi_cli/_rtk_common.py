@@ -17,7 +17,7 @@ import tarfile
 import zipfile
 from pathlib import Path
 
-RTK_VERSION = "0.51.0"
+RTK_VERSION = "1.0.1"
 RTK_BASE_URL = "https://github.com/rtk-ai/rtk/releases/download"
 
 

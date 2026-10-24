@@ -133,6 +133,7 @@ The `todo_list` tool tracks multi-step plans — one tool, one item shape:
 | [`docs/tutorials/4_skills_en.md`](docs/tutorials/4_skills_en.md) | Custom skill authoring: design principles, directory structure, `SKILL.md` spec, resource organization, testing, packaging, and installation. |
 | [`docs/tutorials/5_server_en.md`](docs/tutorials/5_server_en.md) | HTTP server tutorial: FastAPI + SSE, OpenCode-compatible REST API, session management, event streaming, SSE CLI debugger, dummy mode, and client implementation. |
 | [`docs/tutorials/6_multi_provider_en.md`](docs/tutorials/6_multi_provider_en.md) | Multi-provider configuration: route sub-agents and planner to different LLM providers with role-tagged `sub_providers`. |
+| [`docs/tutorials/7_builtin_tool_injection_en.md`](docs/tutorials/7_builtin_tool_injection_en.md) | Built-in tool injection: extend `read`/`write`/`edit` via per-session JSON-RPC servers declared in `.kimix/config.json`, with `tools/kimix_lsp.py` as the reference implementation. |
 
 ### Config Reference
 
