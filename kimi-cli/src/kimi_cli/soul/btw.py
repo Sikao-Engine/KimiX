@@ -19,7 +19,7 @@ from kosong.message import Message, ToolCall
 from kosong.tooling import Tool, ToolError, ToolResult
 
 from kimi_cli.soul import LLMNotSet, wire_send
-from kimi_cli.soul.dynamic_injection import normalize_history
+from kimi_cli.soul.message import normalize_history
 from kimi_cli.soul.message import strip_system_reminders, system_reminder
 from kimi_cli.soul.stream_filter import _EmptyPartFilteredChatProvider
 from kimi_cli.utils.logging import logger

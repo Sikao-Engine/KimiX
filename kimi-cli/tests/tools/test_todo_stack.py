@@ -12,14 +12,12 @@ title (+ ``parent`` scope), which removes scope-state mistakes and reduces the
 number of calls needed for hierarchical work.
 
 Also covers ``format_todo_injection`` (session_state) and
-``TodoReminderProvider`` signature behavior, and native-gated recursive
 status counts.
 """
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
+import orjson
 import orjson
 
 from kimi_cli.session_state import (
@@ -29,7 +27,6 @@ from kimi_cli.session_state import (
     load_session_state,
 )
 from kimi_cli.soul.agent import Runtime
-from kimi_cli.soul.dynamic_injections.todo_reminder import TodoReminderProvider
 from kimi_cli.tools.todo import (
     _TODOLIST_SUCCESS_HINT,
     Params,
@@ -632,115 +629,6 @@ class TestFormatTodoInjectionStack:
         assert "- (stack: Parent)" in text
         assert "Parent (done)" not in text
         assert "  - [ ] child (pending)" in text
-
-
-# ---------------------------------------------------------------------------
-# 7. TodoReminderProvider signature sensitivity
-# ---------------------------------------------------------------------------
-
-
-class TestReminderSignature:
-    def test_signature_changes_on_child_status_change(self) -> None:
-        items = [
-            TodoItemState(
-                title="P", status="pending", children=[TodoItemState(title="c", status="pending")]
-            )
-        ]
-        sig_pending = TodoReminderProvider._signature(items)
-        changed = [
-            TodoItemState(
-                title="P", status="pending", children=[TodoItemState(title="c", status="done")]
-            )
-        ]
-        assert TodoReminderProvider._signature(changed) != sig_pending
-
-    def test_signature_changes_on_stack_change(self) -> None:
-        items = [TodoItemState(title="P", status="pending")]
-        base = TodoReminderProvider._signature(items)
-        assert TodoReminderProvider._signature(items, stack=["A"]) != base
-        assert (
-            TodoReminderProvider._signature(items, stack=["A", "B"])
-            != TodoReminderProvider._signature(items, stack=["A"])
-        )
-
-    async def test_get_injections_includes_stack_breadcrumb(self) -> None:
-        provider = TodoReminderProvider(
-            todos_loader=lambda: [TodoItemState(title="P", status="pending")],
-            stack_loader=lambda: ["A", "B"],
-        )
-        soul = SimpleNamespace(_current_step_no=1)
-        injections = await provider.get_injections([], soul)  # type: ignore[arg-type]
-        assert len(injections) == 1
-        assert "- (stack: A > B)" in injections[0].content
-        assert "- [pending] P" in injections[0].content
-
-    async def test_stack_change_retriggers_injection(self) -> None:
-        state = {"stack": []}
-        provider = TodoReminderProvider(
-            todos_loader=lambda: [TodoItemState(title="P", status="pending")],
-            stack_loader=lambda: state["stack"],
-            interval_steps=100,
-        )
-        soul = SimpleNamespace(_current_step_no=1)
-        first = await provider.get_injections([], soul)  # type: ignore[arg-type]
-        assert len(first) == 1
-
-        # Same stack, same signature → throttled within the interval.
-        soul._current_step_no = 2
-        assert await provider.get_injections([], soul) == []  # type: ignore[arg-type]
-
-        # Stack change alters the signature → re-injected.
-        state["stack"] = ["A"]
-        again = await provider.get_injections([], soul)  # type: ignore[arg-type]
-        assert len(again) == 1
-        assert "- (stack: A)" in again[0].content
-
-    async def test_get_injections_handle_todo_models_with_content_field(self) -> None:
-        """Provider must accept Todo models (title stored as ``content``)."""
-        provider = TodoReminderProvider(
-            todos_loader=lambda: [Todo(content="P", status="pending")],
-        )
-        soul = SimpleNamespace(_current_step_no=1)
-        injections = await provider.get_injections([], soul)  # type: ignore[arg-type]
-        assert len(injections) == 1
-        assert "- [pending] P" in injections[0].content
-
-    async def test_no_injection_after_all_done_and_state_resets(self) -> None:
-        """Once every todo is done the reminder must stop and not reappear."""
-        state = {
-            "todos": [
-                TodoItemState(title="A", status="in_progress"),
-                TodoItemState(title="B", status="pending"),
-            ]
-        }
-        provider = TodoReminderProvider(
-            todos_loader=lambda: state["todos"],
-            interval_steps=100,
-        )
-        soul = SimpleNamespace(_current_step_no=1)
-        first = await provider.get_injections([], soul)  # type: ignore[arg-type]
-        assert len(first) == 1
-        assert "- [in_progress] A" in first[0].content
-        assert "- [pending] B" in first[0].content
-
-        # Mark everything as done.
-        state["todos"] = [
-            TodoItemState(title="A", status="done"),
-            TodoItemState(title="B", status="done"),
-        ]
-        soul._current_step_no = 2
-        assert await provider.get_injections([], soul) == []  # type: ignore[arg-type]
-
-        # Reminder stays off while everything remains done.
-        soul._current_step_no = 3
-        assert await provider.get_injections([], soul) == []  # type: ignore[arg-type]
-
-        # A new pending todo triggers an immediate reminder after the reset.
-        state["todos"] = [TodoItemState(title="C", status="pending")]
-        soul._current_step_no = 4
-        again = await provider.get_injections([], soul)  # type: ignore[arg-type]
-        assert len(again) == 1
-        assert "- [pending] C" in again[0].content
 
 
 # ---------------------------------------------------------------------------

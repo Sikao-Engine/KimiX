@@ -725,7 +725,7 @@ def test_prompt_plan_async_falls_back_to_main_provider_without_sub_providers(tmp
     assert provider_dict.get("model") == "deepseek-v4-flash-official"
     assert provider_dict.get("url") == "http://v2.open.venus.oa.com/llmproxy"
     # Loop-control overrides are still applied on top of the fallback.
-    assert provider_dict.get("loop_control", {}).get("todo_reminder_enabled") is False
+    assert provider_dict.get("loop_control", {}).get("auto_retrieve_history") is False
 
 
 def test_prompt_plan_async_uses_planner_sub_provider_when_present(tmp_path: Path, monkeypatch: Any) -> None:

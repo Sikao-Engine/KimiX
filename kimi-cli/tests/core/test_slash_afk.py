@@ -9,7 +9,6 @@ from kosong.tooling.empty import EmptyToolset
 
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.dynamic_injection import DynamicInjection, DynamicInjectionProvider
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.slash import cmd_afk as afk_slash
 from kimi_cli.soul.slash import cmd_yolo as yolo_slash
@@ -56,32 +55,6 @@ async def test_afk_slash_toggles_afk_flag(
     assert soul.runtime.approval.is_afk() is False
     assert soul.runtime.approval.is_afk_flag() is False
     assert any("afk" in s.text.lower() and "disabled" in s.text.lower() for s in sent)
-
-
-async def test_afk_slash_notifies_injection_providers(
-    runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    class RecorderProvider(DynamicInjectionProvider):
-        def __init__(self) -> None:
-            self.calls: list[bool] = []
-
-        async def get_injections(self, history, soul) -> list[DynamicInjection]:
-            _ = (history, soul)
-            return []
-
-        async def on_afk_changed(self, enabled: bool) -> None:
-            self.calls.append(enabled)
-
-    soul = _make_soul(runtime, tmp_path)
-    recorder = RecorderProvider()
-    soul.add_injection_provider(recorder)
-    monkeypatch.setattr("kimi_cli.soul.slash.wire_send", lambda _msg: None)
-
-    await _run(afk_slash, soul)
-    await _run(afk_slash, soul)
-    await _run(afk_slash, soul)
-
-    assert recorder.calls == [True, False, True]
 
 
 async def test_afk_slash_does_not_touch_yolo_flag(

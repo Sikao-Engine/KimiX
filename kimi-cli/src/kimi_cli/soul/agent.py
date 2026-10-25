@@ -90,8 +90,8 @@ class Runtime:
     current_prompt: str | None = None
     """The current user prompt string, set by prompt_async before each prompt.
 
-    Consumed by the todo tool (ALL_DONE_REMINDER) and _maybe_build_todo_reminder
-    to inject the original request into reminders.
+  Consumed by the todo tool (ALL_DONE_REMINDER) and kimix.utils.prompt's
+  _maybe_build_todo_reminder to inject the original request into reminders.
     """
 
     def __post_init__(self) -> None:

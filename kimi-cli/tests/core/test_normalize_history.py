@@ -1,10 +1,10 @@
-"""Tests for normalize_history in the dynamic_injection module."""
+"""Tests for normalize_history in the message module."""
 
 from __future__ import annotations
 
 from kosong.message import ContentPart, Message, TextPart
 
-from kimi_cli.soul.dynamic_injection import normalize_history
+from kimi_cli.soul.message import normalize_history
 from kimi_cli.soul.message import system_reminder
 
 

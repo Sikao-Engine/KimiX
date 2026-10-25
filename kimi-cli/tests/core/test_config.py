@@ -70,10 +70,11 @@ def test_load_config_compaction_trigger_ratio_default():
     assert config.loop_control.compaction_trigger_ratio == 0.8
 
 
-def test_load_config_dynamic_injection_defaults_disabled():
-    """Dynamic-injection reminders that can restart model thought are off by default."""
+def test_load_config_todo_reminder_fields_removed():
+    """The removed todo-reminder loop-control fields are no longer accepted."""
     config = load_config_from_string("{}")
-    assert config.loop_control.todo_reminder_enabled is False
+    assert not hasattr(config.loop_control, "todo_reminder_enabled")
+    assert not hasattr(config.loop_control, "todo_reminder_interval_steps")
 
 
 def test_load_config_compaction_trigger_ratio_too_low():

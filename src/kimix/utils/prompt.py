@@ -895,7 +895,6 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
         # Deep-copy so we don't mutate the shared default provider dict
         planner_provider = copy.deepcopy(planner_provider) if planner_provider else {}
         planner_provider.setdefault("loop_control", {})
-        planner_provider["loop_control"]["todo_reminder_enabled"] = False
         # Plan sessions are short-lived and focused on a single requirement.
         # Disable history auto-retrieval so archived/working/recency memory
         # injections do not show up as extra "user" messages in the planner.

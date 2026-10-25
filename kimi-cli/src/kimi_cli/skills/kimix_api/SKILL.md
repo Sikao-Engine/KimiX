@@ -102,9 +102,8 @@ All built-in tools are imported from `kimi_cli.tools.*`: `TaskOutput`/`job_outpu
 
 `cli()` — launches the interactive Kimix CLI.
 
-## Dynamic System Reminders
-
-`DynamicInjection(type, content)` wrapped in `<system-reminder>`; `DynamicInjectionProvider.get_injections(history, soul)` with optional `on_context_compacted()`/`on_afk_changed()`; register via `soul.add_injection_provider(provider)`. Built-in: `TodoReminderProvider` (todo_reminder).
+## System Reminders
+`<system-reminder>` user messages are appended to the context by `KimiSoul` (auto-retrieved memory citations on step 1, the verification gate, and notifications) and stripped/re-injected fresh each step. `normalize_history()` (in `kimi_cli/soul/message.py`) merges adjacent user messages for the API call but never merges system-reminder or notification messages.
 
 ## Context Pruning
 

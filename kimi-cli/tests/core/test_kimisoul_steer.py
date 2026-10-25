@@ -17,7 +17,6 @@ from kimi_cli.soul import LLMNotSupported, run_soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.approval import Approval
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.dynamic_injection import DynamicInjection
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.message import is_system_reminder_message, system_reminder
 from kimi_cli.soul.toolset import KimiToolset
@@ -303,7 +302,7 @@ async def test_agent_loop_continues_after_tool_rejected_when_steer_is_injected(
 
 
 @pytest.mark.asyncio
-async def test_step_merges_plain_steer_with_dynamic_injection_in_model_history(
+async def test_step_merges_plain_steer_with_auto_retrieved_reminder_in_model_history(
     runtime: Runtime,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -329,13 +328,12 @@ async def test_step_merges_plain_steer_with_dynamic_injection_in_model_history(
             _tool_result_futures={},
         )
 
-    async def fake_collect_injections() -> list[DynamicInjection]:
-        return [DynamicInjection(type="test_reminder", content="Internal reminder")]
-
+    async def fake_auto_retrieve() -> list[str]:
+        return ["Internal reminder"]
     monkeypatch.setattr(
         soul,
-        "_collect_injections",
-        fake_collect_injections,
+        "_maybe_auto_retrieve_history",
+        fake_auto_retrieve,
     )
     monkeypatch.setattr(kimisoul_module.kosong, "step", fake_kosong_step)
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
@@ -410,13 +408,11 @@ async def test_step_passes_current_turn_index_to_pruner(
             _tool_result_futures={},
         )
 
-    async def fake_collect_injections() -> list[DynamicInjection]:
+    async def fake_auto_retrieve() -> list[str]:
         return []
-
     recording = _RecordingPruner()
     soul._pruner = recording  # type: ignore[assignment]
-
-    monkeypatch.setattr(soul, "_collect_injections", fake_collect_injections)
+    monkeypatch.setattr(soul, "_maybe_auto_retrieve_history", fake_auto_retrieve)
     monkeypatch.setattr(kimisoul_module.kosong, "step", fake_kosong_step)
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
 

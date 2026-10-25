@@ -89,6 +89,31 @@ async def test_empty_input_is_ignored(runtime: Runtime, tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_kimisoul_run_direct_empty_input_is_ignored(
+    runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defense in depth: ``KimiSoul.run`` itself must drop blank input even
+    when invoked directly (bypassing the ``run_soul`` funnel), so no empty
+    ``user`` message is ever appended to the session and no turn is framed on
+    the wire."""
+    soul = _make_soul(runtime, tmp_path)
+    turn_calls: list[str | list] = []
+    wire_events: list = []
+    monkeypatch.setattr(soul, "_turn", lambda msg: turn_calls.append(msg))
+    monkeypatch.setattr(
+        "kimi_cli.soul.kimisoul.wire_send", lambda event: wire_events.append(event)
+    )
+
+    for blank in ("", "   ", [], [TextPart(text="  ")]):
+        await soul.run(blank)
+
+    assert turn_calls == []
+    assert wire_events == []
+    assert len(soul.context.history) == 0
+    assert soul.is_running() is False
+
+
+@pytest.mark.asyncio
 async def test_first_real_turn_sets_session_title(
     runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

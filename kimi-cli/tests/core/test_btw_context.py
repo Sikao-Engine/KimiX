@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from kosong.message import Message, TextPart
 
 from kimi_cli.soul.btw import _build_btw_context
-from kimi_cli.soul.dynamic_injection import normalize_history
+from kimi_cli.soul.message import normalize_history
 from kimi_cli.soul.message import strip_system_reminders, system_reminder
 
 

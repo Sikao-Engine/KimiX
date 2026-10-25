@@ -7,6 +7,7 @@ from kosong.message import Message
 from kosong.tooling.error import ToolRuntimeError
 
 from kimi_cli.llm import ModelCapability
+from kimi_cli.notifications import is_notification_message
 from kimi_cli.wire.types import (
     ContentPart,
     ImageURLPart,
@@ -47,6 +48,40 @@ def strip_system_reminders(history: list[Message]) -> int:
         else:
             i += 1
     return removed
+
+
+def normalize_history(history: Sequence[Message]) -> list[Message]:
+    """Merge adjacent user messages to produce a clean API input sequence.
+
+    Ephemeral ``<system-reminder>`` user messages are **never** merged (the
+    same exemption as notification messages): they are re-injected fresh on
+    every step, so merging them into a real user message would make the
+    request-time message boundary differ from storage and churn the provider
+    prefix cache on every step.
+
+    Only ``user`` role messages are merged. Assistant and tool messages are
+    never merged because their ``tool_calls`` / ``tool_call_id`` fields form
+    linked pairs that must stay intact.
+    """
+    if not history:
+        return []
+
+    result: list[Message] = []
+    for msg in history:
+        if (
+            result
+            and result[-1].role == msg.role
+            and msg.role == "user"
+            and not is_notification_message(result[-1])
+            and not is_notification_message(msg)
+            and not is_system_reminder_message(result[-1])
+            and not is_system_reminder_message(msg)
+        ):
+            merged_content = list(result[-1].content) + list(msg.content)
+            result[-1] = Message(role="user", content=merged_content)
+        else:
+            result.append(msg)
+    return result
 
 
 def tool_result_to_message(tool_result: ToolResult) -> Message:

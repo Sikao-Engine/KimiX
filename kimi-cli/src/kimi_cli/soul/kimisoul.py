@@ -76,13 +76,7 @@ from kimi_cli.soul.context_overflow import (
 )
 from kimi_cli.soul.context_pruning import ContextPruner
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.dynamic_injection import (
-    DynamicInjection,
-    DynamicInjectionProvider,
-    normalize_history,
-)
 from kimi_cli.soul.verification_gate import VerificationGate
-from kimi_cli.soul.dynamic_injections.todo_reminder import TodoReminderProvider
 from kimi_cli.soul.error_log import (
     PHASE_OVERFLOW_RECOVERY_FAILED,
     PHASE_STEP_RETRIES_EXHAUSTED,
@@ -92,6 +86,7 @@ from kimi_cli.soul.llm_request_recorder import LLMRequestRecorder
 from kimi_cli.soul.message import (
     check_message,
     is_system_reminder_message,
+    normalize_history,
     strip_system_reminders,
     system,
     system_reminder,
@@ -488,16 +483,6 @@ class KimiSoul:
         self._current_turn_user_text: str = ""
         self._last_auto_retrieved_turn_id: int | None = None
         self._recently_retrieved_turn_ids: set[int] = set()
-        self._injection_providers: list[DynamicInjectionProvider] = [
-            *(
-                []
-                if not self._loop_control.todo_reminder_enabled
-                else [TodoReminderProvider(
-                    self._load_todo_states_for_reminder,
-                    interval_steps=self._loop_control.todo_reminder_interval_steps,
-                )]
-            ),
-        ]
         self._hook_engine: HookEngine = HookEngine()
         self._verification_gate = VerificationGate(
             max_nudges=self._loop_control.verification_gate_max_nudges,
@@ -634,31 +619,13 @@ class KimiSoul:
             logger.debug("Failed to load todos for reminder", exc_info=True)
             return []
 
-    def add_injection_provider(self, provider: DynamicInjectionProvider) -> None:
-        """Register an additional dynamic injection provider."""
-        self._injection_providers.append(provider)
-
-    async def _collect_injections(self) -> list[DynamicInjection]:
-        """Collect dynamic injections from all registered providers."""
-        injections: list[DynamicInjection] = []
-        for provider in self._injection_providers:
-            try:
-                result = await provider.get_injections(self._context.history, self)
-                injections.extend(result)
-            except Exception:
-                logger.warning(
-                    "injection provider %s failed",
-                    type(provider).__name__,
-                    exc_info=True,
-                )
-        return injections
-
-    async def _maybe_auto_retrieve_history(self) -> list[DynamicInjection]:
+    async def _maybe_auto_retrieve_history(self) -> list[str]:
         """Auto-inject relevant turns from long-term, working, and recency memory.
 
-        Returns up to three distinct injections per turn, deduplicated so the
-        same turn_id is never injected twice in the same turn or in the
-        immediately previous auto-retrieval.
+        Returns up to three distinct reminder texts per turn, deduplicated so
+        the same turn_id is never injected twice in the same turn or in the
+        immediately previous auto-retrieval. Each text is appended to the
+        context wrapped in ``<system-reminder>`` tags.
 
         Only fires on the first step of a turn when at least one retrieval tier
         is enabled and the user query is non-trivial.
@@ -691,7 +658,7 @@ class KimiSoul:
             r for r in results if r["turn_id"] not in self._recently_retrieved_turn_ids
         ]
 
-        injections: list[DynamicInjection] = []
+        reminders: list[str] = []
         used_turn_ids: set[int] = set()
 
         wrapper_overhead = 15  # tokens for <system-reminder> tags and newlines
@@ -738,9 +705,7 @@ class KimiSoul:
                             turn_id=turn_id,
                             score=score,
                         )
-                        injections.append(
-                            DynamicInjection(type="auto_retrieved_history", content=citation)
-                        )
+                        reminders.append(citation)
 
         # ── B. Working memory (non-compacted turns, excluding recent context) ─
         if lc.auto_retrieve_working_memory:
@@ -777,9 +742,7 @@ class KimiSoul:
                             turn_id=turn_id,
                             score=score,
                         )
-                        injections.append(
-                            DynamicInjection(type="working_memory", content=citation)
-                        )
+                        reminders.append(citation)
 
         # ── C. Recency memory (best boosted score, compacted or non-compacted) ─
         if lc.auto_retrieve_recency_memory:
@@ -806,14 +769,12 @@ class KimiSoul:
                         turn_id=turn_id,
                         boosted_score=boosted_score,
                     )
-                    injections.append(
-                        DynamicInjection(type="recency_memory", content=citation)
-                    )
+                    reminders.append(citation)
 
         # Respect the per-turn cap
         max_inj = lc.auto_retrieve_max_injections_per_turn
-        if len(injections) > max_inj:
-            injections = injections[:max_inj]
+        if len(reminders) > max_inj:
+            reminders = reminders[:max_inj]
             used_turn_ids = set(list(used_turn_ids)[:max_inj])
 
         # Update dedup tracking
@@ -827,36 +788,7 @@ class KimiSoul:
         if used_turn_ids:
             self._last_auto_retrieved_turn_id = max(used_turn_ids)
 
-        return injections
-
-    async def _notify_injection_providers_compacted(self) -> None:
-        """Notify all injection providers that the context has been compacted.
-
-        Failures are isolated per-provider so a buggy third-party provider
-        cannot abort compaction (which would skip the CompactionEnd wire event
-        and PostCompact hook).
-        """
-        for provider in self._injection_providers:
-            try:
-                await provider.on_context_compacted()
-            except Exception:
-                logger.warning(
-                    "injection provider %s on_context_compacted failed",
-                    type(provider).__name__,
-                    exc_info=True,
-                )
-
-    async def notify_afk_changed(self, enabled: bool) -> None:
-        """Notify dynamic injection providers that afk mode changed."""
-        for provider in self._injection_providers:
-            try:
-                await provider.on_afk_changed(enabled)
-            except Exception:
-                logger.warning(
-                    "injection provider %s on_afk_changed failed",
-                    type(provider).__name__,
-                    exc_info=True,
-                )
+        return reminders
 
     @property
     def thinking(self) -> bool | None:
@@ -1019,12 +951,19 @@ class KimiSoul:
 
         This is the core turn entry point: it only frames the turn on the
         wire (``TurnBegin``/``TurnEnd``) and drives ``_turn``. Entry-point
-        hygiene — the empty-input guard, slash-command dispatch,
-        approval-source lifecycle, and session auto-titling — lives in
-        :func:`kimi_cli.soul.run_soul`, the common funnel used by all
-        clients. Callers invoking ``run`` directly must handle those
-        concerns themselves.
+        hygiene — slash-command dispatch, approval-source lifecycle, and
+        session auto-titling — lives in :func:`kimi_cli.soul.run_soul`, the
+        common funnel used by all clients. Callers invoking ``run`` directly
+        must handle those concerns themselves.
+
+        An empty-input guard also lives here (defense in depth, mirroring
+        ``run_soul``): a blank prompt must never be appended to the session
+        as an empty ``user`` message, or the LLM would answer with a
+        spurious "the user sent an empty message" turn.
         """
+        if _user_input_is_empty(user_input):
+            logger.debug("Ignoring empty user input; no turn started")
+            return
         turn_started = False
         turn_finished = False
         try:
@@ -1510,7 +1449,7 @@ class KimiSoul:
 
         Sub-lifecycle (2e.x):
             2e.1. Notification delivery  - push pending notifications (root only).
-            2e.2. Dynamic injection      - collect and append provider injections.
+            2e.2. Auto-retrieval        - append retrieved-memory reminders.
             2e.3. History normalization  - merge adjacent user messages.
             2e.4. LLM call with retry    - kosong.step + tenacity retry + recovery.
                2e.4.1. Toolset begin_step- reset per-step dedup state.
@@ -1570,31 +1509,27 @@ class KimiSoul:
             )
 
         # ═══════════════════════════════════════════════════════════════════════
-        # 2e.2. DYNAMIC INJECTION
+        # 2e.2. AUTO-RETRIEVED MEMORY REMINDERS
         # ═══════════════════════════════════════════════════════════════════════
 
         # ── 2e.2a. Strip stale system reminders from previous steps/turns ─────
-        # Providers re-inject fresh reminders below, so removing old ones is safe
+        # Fresh reminders are re-appended below, so removing old ones is safe
         # (reminders are ephemeral: one fresh copy per step, never accumulated).
-        # NOTE: this must NOT notify providers of "compaction" — doing so resets
-        # their throttling state every step and makes throttled reminders (context
-        # meter, todo, budget, compact) re-inject on every single step. Providers
-        # keep their own cooldown state and re-decide below.
         strip_system_reminders(self._context._history)
 
-        auto_retrieval_injections = await self._maybe_auto_retrieve_history()
-        injections = await self._collect_injections()
-        # Prepend auto-retrieved injections so they appear before provider injections
-        for inj in reversed(auto_retrieval_injections):
-            injections.insert(0, inj)
-        if injections:
-            combined_reminders = "\n".join(system_reminder(inj.content).text for inj in injections)
-            await self._context.append_message(
-                Message(
-                    role="user",
-                    content=[TextPart(text=combined_reminders)],
+        # ── 2e.2b. Append auto-retrieved memory citations ─────────────────────
+        # Blank reminder text is never appended: an empty ``user`` message would
+        # be forwarded to the LLM as a spurious empty turn.
+        reminders = await self._maybe_auto_retrieve_history()
+        if reminders:
+            combined_reminders = "\n".join(system_reminder(text).text for text in reminders)
+            if combined_reminders.strip():
+                await self._context.append_message(
+                    Message(
+                        role="user",
+                        content=[TextPart(text=combined_reminders)],
+                    )
                 )
-            )
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.3. CONTEXT PRUNING (smart history removal, Layer 1)
@@ -2230,12 +2165,6 @@ class KimiSoul:
 
             # Estimate token count so context_usage is not reported as 0%
             await self._context.update_token_count(estimated_token_count)
-
-            # Notify dynamic injection providers that history has been rebuilt so
-            # they can reset any one-shot throttling state. Failures are isolated
-            # per-provider so compaction completion (wire event) is not affected
-            # by a buggy provider.
-            await self._notify_injection_providers_compacted()
 
             wire_send(
                 CompactionEnd(

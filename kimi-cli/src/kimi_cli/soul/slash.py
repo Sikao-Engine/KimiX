@@ -224,7 +224,6 @@ async def cmd_afk(soul: KimiSoul, args: str):
 
     if soul.runtime.approval.is_afk():
         soul.runtime.approval.set_afk(False)
-        await soul.notify_afk_changed(False)
         if soul.runtime.approval.is_yolo_flag():
             wire_send(
                 TextPart(
@@ -235,7 +234,6 @@ async def cmd_afk(soul: KimiSoul, args: str):
             wire_send(TextPart(text="afk mode disabled. You are back at the terminal."))
     else:
         soul.runtime.approval.set_afk(True)
-        await soul.notify_afk_changed(True)
         wire_send(
             TextPart(
                 text=(

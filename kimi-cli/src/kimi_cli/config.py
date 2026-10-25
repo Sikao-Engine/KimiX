@@ -316,15 +316,8 @@ Default is 3."""
     """When true, dynamically adjust preserve depth based on session signals
     (errors, tool calls, reasoning). Default is true."""
 
-    # ── Recency-edge re-injection & memory durability ────────────────────────
+    # ── Memory durability ────────────────────────────────────────────────────
 
-    todo_reminder_enabled: bool = Field(default=False)
-    """When true, periodically re-inject unfinished todo items at the end
-    of the context window, where model attention is strongest (recency edge).
-    Default is false."""
-    todo_reminder_interval_steps: int = Field(default=20, ge=1)
-    """Minimum number of steps between repeated todo reminder injections when
-    the todo list has not changed. Default is 20."""
     todo_compact_injection_enabled: bool = Field(default=True)
     """When true, the active (unfinished) todo plan is deterministically
     appended to the context-compaction output under a stable header, so the

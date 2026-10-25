@@ -29,7 +29,6 @@ def test_build_reflection_prompt_includes_architecture_map():
     assert "src/kimix/utils/system_prompt.py" in norm
     assert "src/kimix/agent_worker.json" in norm
     assert "kimi-cli/src/kimi_cli/soul" in norm
-    assert "kimi-cli/src/kimi_cli/soul/dynamic_injections" in norm
     assert "kimi-cli/src/kimi_cli/config.py" in norm
 
     # System prompt summary.
@@ -66,9 +65,8 @@ def test_build_reflection_prompt_includes_architecture_map():
         "context.py",
         "context_db.py",
         "context_pruning.py",
-        "message.py",
-        "dynamic_injection.py",
-        "verification_gate.py",
+          "message.py",
+          "verification_gate.py",
         "approval.py",
         "btw.py",
         "steer.py",
@@ -78,11 +76,7 @@ def test_build_reflection_prompt_includes_architecture_map():
     ):
         assert soul_file in prompt
 
-    # Dynamic injectors (reminders).
-    for injector in (
-        "todo_reminder.py",
-    ):
-        assert injector in prompt
+
 
     # Config summary.
     assert "loopcontrol" in norm

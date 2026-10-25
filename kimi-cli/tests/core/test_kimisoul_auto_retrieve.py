@@ -100,8 +100,8 @@ async def test_auto_retrieve_long_term_memory_injects_compacted() -> None:
 
     result = await soul._maybe_auto_retrieve_history()  # pyright: ignore[reportPrivateUsage]
     assert len(result) == 1
-    assert result[0].type == "auto_retrieved_history"
-    assert "old compacted question" in result[0].content
+    assert result[0].startswith("[Auto-retrieved from past conversation")
+    assert "old compacted question" in result[0]
 
 
 async def test_auto_retrieve_working_memory_injects_non_compacted() -> None:
@@ -140,8 +140,8 @@ async def test_auto_retrieve_working_memory_injects_non_compacted() -> None:
 
     result = await soul._maybe_auto_retrieve_history()  # pyright: ignore[reportPrivateUsage]
     assert len(result) == 1
-    assert result[0].type == "working_memory"
-    assert "older working memory question" in result[0].content
+    assert result[0].startswith("[Relevant context from our current conversation]")
+    assert "older working memory question" in result[0]
 
 
 async def test_auto_retrieve_recency_memory_injects_boosted_recent() -> None:
@@ -163,8 +163,8 @@ async def test_auto_retrieve_recency_memory_injects_boosted_recent() -> None:
 
     result = await soul._maybe_auto_retrieve_history()  # pyright: ignore[reportPrivateUsage]
     assert len(result) == 1
-    assert result[0].type == "recency_memory"
-    assert "recently discussed topic" in result[0].content
+    assert result[0].startswith("[Recently discussed")
+    assert "recently discussed topic" in result[0]
 
 
 async def test_auto_retrieve_dedup_prevents_duplicate_injection() -> None:
@@ -255,8 +255,8 @@ async def test_auto_retrieve_skips_recent_context() -> None:
     result = await soul._maybe_auto_retrieve_history()  # pyright: ignore[reportPrivateUsage]
     # The most recent 2 turns should be excluded from working memory
     assert len(result) == 1
-    assert result[0].type == "working_memory"
-    assert "older working memory" in result[0].content
+    assert result[0].startswith("[Relevant context from our current conversation]")
+    assert "older working memory" in result[0]
 
 
 async def test_auto_retrieve_updates_recently_retrieved_set() -> None:
@@ -382,7 +382,7 @@ async def test_auto_retrieve_token_budget_skips_excess_injections() -> None:
     result = await soul._maybe_auto_retrieve_history()  # pyright: ignore[reportPrivateUsage]
     # Only the first injection should fit within the 50-token budget
     assert len(result) == 1
-    assert result[0].type == "auto_retrieved_history"
+    assert result[0].startswith("[Auto-retrieved from past conversation")
 
 
 async def test_auto_retrieve_single_injection_exceeds_budget() -> None:

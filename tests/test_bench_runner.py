@@ -292,13 +292,13 @@ async def test_attribute_runs_crash_shortcircuit(tmp_path: Path) -> None:
 def test_load_profile_valid(tmp_path: Path) -> None:
     profile = tmp_path / "p.yaml"
     profile.write_text(
-        "model: kimi\nruns_per_task: 3\nfeatures:\n  todo_reminder_enabled: true\n",
+        "model: kimi\nruns_per_task: 3\nfeatures:\n  verification_gate_enabled: true\n",
         encoding="utf-8",
     )
     data = load_profile(profile)
     assert data["model"] == "kimi"
     assert data["runs_per_task"] == 3
-    assert data["features"]["todo_reminder_enabled"] is True
+    assert data["features"]["verification_gate_enabled"] is True
 
 
 def test_load_profile_unknown_keys(tmp_path: Path) -> None:
@@ -324,12 +324,12 @@ def test_apply_profile_to_config_merges_overrides() -> None:
     from tools.bench.profile import apply_profile_to_config
 
     profile = {
-        "loop_control_overrides": {"todo_reminder_enabled": False, "todo_reminder_interval_steps": 9},
+        "loop_control_overrides": {"auto_retrieve_history": True, "context_pruning_enabled": True},
         "features": {"verification_gate_enabled": False},
     }
     config = apply_profile_to_config(profile, load_config())
-    assert config.loop_control.todo_reminder_enabled is False
-    assert config.loop_control.todo_reminder_interval_steps == 9
+    assert config.loop_control.auto_retrieve_history is True
+    assert config.loop_control.context_pruning_enabled is True
     assert config.loop_control.verification_gate_enabled is False
     # Untouched keys keep their defaults.
     assert config.loop_control.verification_gate_max_nudges == 2
@@ -352,7 +352,7 @@ def test_apply_profile_noop_without_overrides() -> None:
     config = load_config()
     result = apply_profile_to_config({}, config)
     assert result is config
-    assert result.loop_control.todo_reminder_enabled is False
+    assert result.loop_control.auto_retrieve_history is False
 
 
 async def test_config_matrix_groups_by_signature(tmp_path: Path) -> None:
@@ -362,7 +362,7 @@ async def test_config_matrix_groups_by_signature(tmp_path: Path) -> None:
     out = tmp_path / "bench_runs"
     snapshot = {
         "model": "m1",
-        "loop_control_overrides": {"todo_reminder_enabled": True},
+        "loop_control_overrides": {"auto_retrieve_history": True},
     }
     await run_bench(
         tasks, 2, out, _mock_runner_factory(), concurrency=1,
@@ -373,7 +373,7 @@ async def test_config_matrix_groups_by_signature(tmp_path: Path) -> None:
     assert len(matrix) == 1
     signature = next(iter(matrix))
     assert "model=m1" in signature
-    assert "todo_reminder_enabled=True" in signature
+    assert "auto_retrieve_history=True" in signature
     # task-ok solves both runs, task-fail solves none -> 0.5
     assert matrix[signature]["solve_rate"] == 0.5
     assert matrix[signature]["n_runs"] == 4

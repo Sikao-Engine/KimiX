@@ -855,7 +855,6 @@ def _build_reflection_prompt(session: Any, *, report_path: Path | None = None) -
     system_prompt_path = agent_src / 'utils' / 'system_prompt.py'  # ...\src\kimix\utils\system_prompt.py
     worker_agent_json = agent_src / 'agent_worker.json'            # ...\src\kimix\agent_worker.json
     soul_dir = repo_root / 'kimi-cli' / 'src' / 'kimi_cli' / 'soul'  # ...\kimi-cli\src\kimi_cli\soul
-    dynamic_injections_dir = soul_dir / 'dynamic_injections'        # ...\soul\dynamic_injections
     config_path = repo_root / 'kimi-cli' / 'src' / 'kimi_cli' / 'config.py'
     try:
         agents_md = agents_md_path.read_text(encoding='utf-8', errors='replace')
@@ -894,19 +893,17 @@ Every builtin tool and the exact file where its implementation lives:
   and `kimi_cli.tools.*`).
 - Soul runtime: `{soul_dir}`
   - agent.py — Runtime + BuiltinSystemPromptArgs; loads AGENTS.md, skills, additional dirs
-  - kimisoul.py — main agent loop: step/turn lifecycle, retries, auto-compaction, injections
+  - kimisoul.py — main agent loop: step/turn lifecycle, retries, auto-compaction, reminders
   - compaction.py — context compaction (modes, adaptive preserve depth, auto-trigger)
   - context.py / context_db.py / context_records.py — context storage (JSONL/SQLite + migration), records
   - context_pruning.py — smart history removal (Tier A ephemeral / B elision / C micro-compress)
-  - message.py — message helpers + `<system-reminder>` tags
-  - dynamic_injection.py — DynamicInjection/Provider base + history normalization
+  - message.py — message helpers + `<system-reminder>` tags + history normalization
   - verification_gate.py — soul-layer verification nudges for todos/code edits
   - approval.py — approval state (yolo/afk/auto-approve)
   - btw.py / steer.py / slash.py — side questions, mid-stream steering, slash registry
   - toolset.py / tool_taxonomy.py — tool loading & classification
   - denwarenji.py — D-Mail; history_index.py — BM25 history index; llm_request_recorder.py — request tracing
-- Dynamic injectors (reminders): `{dynamic_injections_dir}`
-  - todo_reminder.py — re-injects unfinished todo items at the context tail
+
 - Config: `{config_path}` — pydantic `Config` (model/provider, loop_control, background,
   notifications, services, mcp, hooks, skills); `LoopControl` drives loop/compaction/prune/
   reminder thresholds and toggles.
