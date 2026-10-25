@@ -505,7 +505,7 @@ await prompt_plan_async("Build a web application", plan_file=Path("plan.md"))
 
 **Flow:**
 1. Deletes any existing `plan_file` and enables plan mode (`note._enable_plan = True`).
-2. Creates a planner session with `agent_type=SystemPromptType.TodoMaker` and `agent_file='agent_planner.json'`; it uses the `planner` sub-provider when configured (falls back to the main provider), disables budget/context-meter/compact/todo/target-churn reminders in `loop_control`, and is locked **read-only** so it cannot touch the filesystem.
+2. Creates a planner session with `agent_type=SystemPromptType.TodoMaker` and `agent_file='agent_planner.json'`; it uses the `planner` sub-provider when configured (falls back to the main provider), disables history auto-retrieval in `loop_control`, and is locked **read-only** so it cannot touch the filesystem.
 3. Asks the planner to generate a comprehensive plan and save it via the `write_plan` tool — up to 3 attempts, retrying when the plan file is not produced.
 4. Opens the generated plan with the system default application.
 5. Interactively asks whether to implement the plan; `y` proceeds, otherwise the user gives revision feedback (fed back to the planner via `write_plan`/`edit_plan` and the plan is re-opened), or `/quit` aborts.

@@ -104,7 +104,6 @@ The `KimiSoul` core loop actively keeps long runs on track — no manual babysit
 - **Verification Gate** — a turn can't end while todos are unfinished, or while files were edited without running any check. Failing checks are fed back to the agent to fix.
 - **Anti-loop detection** — catches repeated edits to the same file across different tools, and the same error recurring without a root-cause fix; nudges the agent to change strategy.
 - **Todo reminders** — unfinished todos are periodically re-surfaced at the end of the context, so goals never drift out of attention.
-- **Compact reminders** — when context fills up (~70%), the agent is prompted to compact on its own terms before forced auto-compaction kicks in.
 - **Budget reminders** (opt-in) — wrap-up warnings as the per-turn step/time budget runs out, so the agent finishes gracefully instead of being cut off.
 - **Decision-aware compaction** — compaction summaries preserve a `Decisions & Conclusions` and a `Verification Status` section, so early decisions and verified work survive.
 - **Context pruning** — stale tool outputs, thinking blocks, and near-duplicate content are automatically elided to reclaim context space.

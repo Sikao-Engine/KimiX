@@ -443,9 +443,8 @@ async def test_multiple_update_cycles(tmp_path: Path) -> None:
 # pending estimate with the same semantics as the JSONL backend: only messages
 # appended AFTER the last usage snapshot are pending. Regressions here make
 # ``token_count_with_pending`` roughly double the real size right after a
-# session restore, which spuriously fires the compact reminder injected in
-# ``KimiSoul._step`` (the "Context N% full" system-reminder) and the
-# auto-compaction check on the first turn after resume — e.g. a ``/continue``.
+# session restore, which spuriously triggers the auto-compaction check on the
+# first turn after resume — e.g. a ``/continue``.
 
 
 @pytest.mark.asyncio
