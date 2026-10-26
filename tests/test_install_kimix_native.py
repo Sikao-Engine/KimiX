@@ -36,9 +36,14 @@ _NATIVE_FILE = "runtime_py.pyd" if sys.platform == "win32" else "runtime_py.so"
 def test_native_files_is_platform_aware(monkeypatch):
     """The staged artifact name follows the platform (mirrors kimix-base
     publish.py): .pyd on Windows, .so on Linux & macOS."""
+    # KIMIX_BASE_NATIVE_FILES is the import-time snapshot for the *host*
+    # platform, so it cannot follow a monkeypatched sys.platform.
+    host_files = install_mod.KIMIX_BASE_NATIVE_FILES
+    assert host_files == (
+        ("runtime_py.pyd",) if sys.platform == "win32" else ("runtime_py.so",)
+    )
     monkeypatch.setattr(install_mod.sys, "platform", "win32")
     assert install_mod._native_files() == ("runtime_py.pyd",)
-    assert install_mod.KIMIX_BASE_NATIVE_FILES == ("runtime_py.pyd",)
     monkeypatch.setattr(install_mod.sys, "platform", "linux")
     assert install_mod._native_files() == ("runtime_py.so",)
     monkeypatch.setattr(install_mod.sys, "platform", "darwin")

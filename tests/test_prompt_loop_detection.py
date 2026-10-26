@@ -11,6 +11,7 @@ from kosong.message import TextPart
 from kimi_cli.llm import LoopDetectedError
 
 prompt_mod = importlib.import_module("kimix.utils.prompt")
+_PROMPT_MODULE = prompt_mod.__name__
 
 
 @dataclass
@@ -43,6 +44,30 @@ class FakeSession:
         self.cancelled = True
 
 
+def _record_sleeps(monkeypatch: Any) -> list[tuple[str, float]]:
+    """Record ``asyncio.sleep`` calls as ``(calling module, seconds)``.
+
+    The sleep is patched on the global ``asyncio`` module, so *any* coroutine in
+    the loop can record here -- including a background task leaked by an earlier
+    test.  Callers must therefore scope their assertion to the module under
+    test (see ``_prompt_sleeps``) instead of comparing the whole list.
+    """
+    import sys
+
+    sleeps: list[tuple[str, float]] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleeps.append((sys._getframe(1).f_globals.get("__name__", ""), seconds))
+
+    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+    return sleeps
+
+
+def _prompt_sleeps(sleeps: list[tuple[str, float]]) -> list[float]:
+    """Only the sleeps taken by the module under test."""
+    return [seconds for module, seconds in sleeps if module == _PROMPT_MODULE]
+
+
 def _suppress_output(monkeypatch: Any) -> list[str]:
     printed: list[str] = []
 
@@ -61,12 +86,7 @@ async def test_run_prompt_iter_cancels_on_word_loop(monkeypatch: Any) -> None:
     monkeypatch.setenv("KIMIX_LOOP_DETECTION_ENABLED", "1")
     monkeypatch.setenv("KIMIX_LOOP_WORD_THRESHOLD", "5")
     printed = _suppress_output(monkeypatch)
-    sleeps: list[float] = []
-
-    async def _fake_sleep(seconds: float) -> None:
-        sleeps.append(seconds)
-
-    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+    sleeps = _record_sleeps(monkeypatch)
 
     parts = [TextPart(text="loop ")] * 60
     session = FakeSession(parts=parts)
@@ -79,7 +99,7 @@ async def test_run_prompt_iter_cancels_on_word_loop(monkeypatch: Any) -> None:
     assert session.cancelled
     assert any("Loop detected" in text for text in printed)
     # Loop detection should not be retried as a transient failure.
-    assert sleeps == []
+    assert _prompt_sleeps(sleeps) == []
 
 
 @pytest.mark.asyncio
@@ -87,12 +107,7 @@ async def test_run_prompt_iter_cancels_on_low_level_loop_detected_error(monkeypa
     """A LoopDetectedError raised inside the stream should cancel gracefully."""
     monkeypatch.setenv("KIMIX_LOOP_DETECTION_ENABLED", "1")
     printed = _suppress_output(monkeypatch)
-    sleeps: list[float] = []
-
-    async def _fake_sleep(seconds: float) -> None:
-        sleeps.append(seconds)
-
-    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+    sleeps = _record_sleeps(monkeypatch)
 
     parts = [TextPart(text="hello ")] * 10
     session = FakeSession(parts=parts, raises_at=5)
@@ -104,4 +119,4 @@ async def test_run_prompt_iter_cancels_on_low_level_loop_detected_error(monkeypa
 
     assert session.cancelled
     assert any("Loop detected" in text for text in printed)
-    assert sleeps == []
+    assert _prompt_sleeps(sleeps) == []

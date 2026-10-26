@@ -304,14 +304,17 @@ def test_python_params_still_validate_source() -> None:
 
 
 def test_timeout_cap_shared_by_all_long_running_tools() -> None:
-    """bash / pwsh / python / Run / job_output advertise one cap (1200s).
+    """bash / pwsh / python / Run advertise one cap (1200s).
 
-    ``MAX_TIMEOUT_SECONDS`` in ``prompt_common`` is the single source of truth:
-    ``timeout_field()`` (bash, python, Run) and the hand-written ``Field``s of
-    ``pwsh`` and ``job_output`` all bind their ``le=`` to it, so the schema
-    maximum cannot drift per tool.
+    ``MAX_TIMEOUT_SECONDS`` in ``prompt_common`` is the single source of truth
+    for the *process-spawning* tools: ``timeout_field()`` (bash, python, Run)
+    and the hand-written ``Field`` of ``pwsh`` all bind their ``le=`` to it, so
+    the schema maximum cannot drift per tool.  ``job_output`` only observes an
+    already-running task instead of spawning one, so it intentionally documents
+    its own (longer) cap, ``background.MAX_JOB_OUTPUT_TIMEOUT_SECONDS``, which
+    is pinned here as well.
     """
-    from kimi_cli.tools.background import TaskOutputParams
+    from kimi_cli.tools.background import MAX_JOB_OUTPUT_TIMEOUT_SECONDS, TaskOutputParams
     from kimi_cli.tools.file.bash.bash_tool import BashParams
     from kimi_cli.tools.file.bash.pwsh_tool import PowershellParams
     from kimi_cli.tools.file.run import RunParams
@@ -319,7 +322,6 @@ def test_timeout_cap_shared_by_all_long_running_tools() -> None:
     from kimi_cli.tools.py import Params as PyParams
 
     assert MAX_TIMEOUT_SECONDS == 1200
-
     # The shared factory itself carries the cap.
     class _TimeoutProbe(BaseModel):
         timeout: int = timeout_field()
@@ -327,13 +329,16 @@ def test_timeout_cap_shared_by_all_long_running_tools() -> None:
     probe = _TimeoutProbe.model_json_schema()["properties"]["timeout"]
     assert probe["default"] == 30
     assert (probe["minimum"], probe["maximum"]) == (1, MAX_TIMEOUT_SECONDS)
-
-    models = (BashParams, PowershellParams, PyParams, RunParams, TaskOutputParams)
+    models = (BashParams, PowershellParams, PyParams, RunParams)
     for model in models:
         prop = model.model_json_schema()["properties"]["timeout"]
         assert prop["minimum"] == 1, model.__name__
         assert prop["maximum"] == MAX_TIMEOUT_SECONDS, model.__name__
-
+    # job_output observes an already-running task, so it carries its own cap.
+    observe_prop = TaskOutputParams.model_json_schema()["properties"]["timeout"]
+    assert observe_prop["minimum"] == 1
+    assert observe_prop["maximum"] == MAX_JOB_OUTPUT_TIMEOUT_SECONDS
+    assert MAX_JOB_OUTPUT_TIMEOUT_SECONDS > MAX_TIMEOUT_SECONDS
     # Boundary behaviour matches the advertised range for every tool.
     payloads: list[tuple[type, dict[str, Any]]] = [
         (BashParams, {"cmd": "x"}),
@@ -343,9 +348,12 @@ def test_timeout_cap_shared_by_all_long_running_tools() -> None:
         (TaskOutputParams, {}),
     ]
     for model, payload in payloads:
-        assert model.model_validate({**payload, "timeout": 1200}).timeout == 1200
+        cap = MAX_TIMEOUT_SECONDS if model is not TaskOutputParams else (
+            MAX_JOB_OUTPUT_TIMEOUT_SECONDS
+        )
+        assert model.model_validate({**payload, "timeout": cap}).timeout == cap
         with pytest.raises(ValidationError):
-            model.model_validate({**payload, "timeout": 1201})
+            model.model_validate({**payload, "timeout": cap + 1})
 
 
 if __name__ == "__main__":

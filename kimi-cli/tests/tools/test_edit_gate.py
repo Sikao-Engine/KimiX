@@ -14,6 +14,7 @@ Report: ``reviews/tools/C10-edit-editfile.md``.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -1022,14 +1023,18 @@ async def test_probe14b_oversized_and_hostile_payloads(
     assert not res_shell.is_error
     assert await shell.read_text() == "$(whoami)`id`\n"
 
-    # Windows separators in the path are accepted.
-    win = temp_work_dir / "win_sep.txt"
-    await win.write_text("sep\n")
-    res_win = await edit_file_tool.call(
-        {"path": str(win).replace("/", "\\"), "old_string": "sep", "new_string": "SEP"}
-    )
-    assert not res_win.is_error
-    assert await win.read_text() == "SEP\n"
+    # Windows separators in the path are accepted — Windows only: on POSIX a
+    # backslash is an ordinary filename character, so ``normalize_user_path``
+    # deliberately passes it through untouched and the path is resolved
+    # relative to the work dir.
+    if sys.platform == "win32":
+        win = temp_work_dir / "win_sep.txt"
+        await win.write_text("sep\n")
+        res_win = await edit_file_tool.call(
+            {"path": str(win).replace("/", "\\"), "old_string": "sep", "new_string": "SEP"}
+        )
+        assert not res_win.is_error
+        assert await win.read_text() == "SEP\n"
 
 
 # ---------------------------------------------------------------------------

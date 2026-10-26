@@ -34,6 +34,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -441,38 +442,61 @@ def test_translations_parse_with_bash(command: str) -> None:
     assert proc.returncode == 0, (command, fixed, proc.stderr)
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Git Bash nul leak is Windows-only")
-def test_reproduced_command_runs_and_leaks_no_nul(tmp_path: Path) -> None:
-    """Run the fixed reproduction under real Git Bash: rc=0, no ``nul`` file.
+    @pytest.mark.skipif(sys.platform != "win32", reason="Git Bash nul leak is Windows-only")
+    def test_reproduced_command_runs_and_leaks_no_nul(tmp_path: Path) -> None:
+        """Run the fixed reproduction under real Git Bash: rc=0, no ``nul`` file.
 
-    The relative operand is absent (isolated cwd), so its else-branch must
-    execute.  The absolute operand ``D:\\LuisaCompute`` comes verbatim from
-    the bug report: when the host happens to have that directory the
-    translated then-branch runs instead (its ``ls | grep vk`` output is
-    machine-dependent), so only the else output is pinned.
-    """
-    bash = _bash_or_skip()
-    fixed = _fix(REPRODUCED).command
-    script = tmp_path / "cmd_if_probe.sh"
-    script.write_text(fixed + "\n", encoding="utf-8", newline="\n")
-    proc = subprocess.run(
-        [bash, "--noprofile", "--norc", str(script)],
-        capture_output=True,
-        text=True,
-        cwd=str(tmp_path),
-        timeout=60,
-    )
-    assert proc.returncode == 0, (proc.returncode, proc.stdout, proc.stderr)
-    assert "no LuisaCompute dir" in proc.stdout
-    assert "---" in proc.stdout
-    absolute_operand_exists = os.path.exists(r"D:\LuisaCompute")
-    if not absolute_operand_exists:
-        assert "no D:/LuisaCompute" in proc.stdout
-    assert "syntax error" not in proc.stderr
-    leftovers = [p.name.lower() for p in tmp_path.iterdir()]
-    assert "nul" not in leftovers, (
-        f"empty nul file created running {fixed!r}; dir holds {leftovers}"
-    )
+        The relative operand is absent (isolated cwd), so its else-branch must
+        execute.  The absolute operand ``D:\\LuisaCompute`` comes verbatim from
+        the bug report and is host state: when the host has that directory the
+        translated then-branch runs instead (``dir … | findstr vk``, whose exit
+        status depends on the machine's listing), so the verbatim run only pins
+        the clean-run invariants.  A hermetic twin — the same command with the
+        absolute operand renamed to a name that cannot exist — pins the exact
+        ``rc == 0`` + else-branch behavior on every host.
+        """
+        bash = _bash_or_skip()
+
+        def _run(command: str, name: str) -> subprocess.CompletedProcess[str]:
+            script = tmp_path / name
+            script.write_text(command + "\n", encoding="utf-8", newline="\n")
+            proc = subprocess.run(
+                [bash, "--noprofile", "--norc", str(script)],
+                capture_output=True,
+                text=True,
+                cwd=str(tmp_path),
+                timeout=60,
+            )
+            # rc == 2 is the historical bash syntax-error exit code.
+            assert proc.returncode != 2, (proc.returncode, proc.stdout, proc.stderr)
+            assert "syntax error" not in proc.stderr
+            return proc
+
+        absent_operand = rf"D:\LuisaCompute_absent_{uuid.uuid4().hex[:8]}"
+        assert not os.path.exists(absent_operand)
+        twin = _run(
+            _fix(REPRODUCED.replace(r"D:\LuisaCompute", absent_operand)).command,
+            "cmd_if_probe_absent.sh",
+        )
+        assert twin.returncode == 0, (twin.returncode, twin.stdout, twin.stderr)
+        assert "no LuisaCompute dir" in twin.stdout
+        assert "---" in twin.stdout
+        assert "no D:/LuisaCompute" in twin.stdout
+
+        fixed = _fix(REPRODUCED).command
+        proc = _run(fixed, "cmd_if_probe.sh")
+        absolute_operand_exists = os.path.exists(r"D:\LuisaCompute")
+        if absolute_operand_exists:
+            assert proc.returncode in (0, 1), (proc.returncode, proc.stdout, proc.stderr)
+        else:
+            assert proc.returncode == 0, (proc.returncode, proc.stdout, proc.stderr)
+            assert "no D:/LuisaCompute" in proc.stdout
+        assert "no LuisaCompute dir" in proc.stdout
+        assert "---" in proc.stdout
+        leftovers = [p.name.lower() for p in tmp_path.iterdir()]
+        assert "nul" not in leftovers, (
+            f"empty nul file created running {fixed!r}; dir holds {leftovers}"
+        )
 
 
 def test_branch_group_keeps_interpreter_context(tmp_path: Path) -> None:

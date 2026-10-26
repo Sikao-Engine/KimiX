@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from kimi_cli.tools.background import TaskOutput, TaskOutputParams
+from kimi_cli.tools.background import (
+    MAX_JOB_OUTPUT_TIMEOUT_SECONDS,
+    TaskOutput,
+    TaskOutputParams,
+)
 from kimi_cli.tools.background.utils import (
     BackgroundStream,
     add_task,
@@ -29,7 +33,10 @@ def test_canonical_timeout_is_in_seconds() -> None:
     assert "timeout" in props
     assert "timeout_ms" not in props
     assert "Max wait in seconds" in props["timeout"]["description"]
-    assert props["timeout"]["maximum"] == 1200
+    # job_output only observes an already-running task, so it documents its own
+    # cap rather than prompt_common.MAX_TIMEOUT_SECONDS (which bounds the
+    # process-spawning tools).
+    assert props["timeout"]["maximum"] == MAX_JOB_OUTPUT_TIMEOUT_SECONDS
     assert TaskOutputParams(timeout=60).timeout == 60
 
 

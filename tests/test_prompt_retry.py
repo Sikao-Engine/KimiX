@@ -96,3 +96,72 @@ async def test_run_single_prompt_propagates_non_retryable_400(monkeypatch: Any) 
     # 400 is not retried at the high level.
     assert sleeps == []
     assert session.cancelled
+
+
+# ---------------------------------------------------------------------------
+# A closed session is a cancellation, not a "gracefully handled" prompt error
+# ---------------------------------------------------------------------------
+
+
+class _ClosedSession(FakeSession):
+    """A session that was torn down under the prompt (interrupt/cascade)."""
+
+    def __init__(self) -> None:
+        super().__init__(raises=None)
+        self._closed = True
+
+    async def prompt(self, prompt_str: str, *, merge_wire_messages: bool = False) -> Any:
+        # The SDK raises this before it even starts streaming.
+        from kimi_agent_sdk import SessionStateError
+
+        raise SessionStateError("Session is closed")
+        if False:  # pragma: no cover - keeps this an async generator
+            yield None
+
+
+@pytest.mark.asyncio
+async def test_prompt_async_does_not_report_a_closed_session_as_an_error(
+    monkeypatch: Any,
+) -> None:
+    """No "Prompt error (gracefully handled)" / "prompt failed." for a close.
+
+    Those two red lines describe a prompt that *failed*, but a session closed
+    underneath the prompt (``interrupt_agent``, a parent-close cascade, CLI
+    shutdown) is simply a cancelled conversation — printing them made an
+    ordinary teardown look like an agent failure.
+    """
+    printed = _suppress_output(monkeypatch)
+    session = _ClosedSession()
+
+    # It must not raise either: ``close_session_after_prompt`` teardown and the
+    # caller's own handling still run.
+    await prompt_mod.prompt_async(
+        prompt_str="hi",
+        session=session,
+        info_print=False,
+    )
+
+    joined = "\n".join(str(text) for text in printed)
+    assert "Prompt error" not in joined
+    assert "prompt failed." not in joined
+    assert "Session is closed" not in joined
+
+
+@pytest.mark.asyncio
+async def test_prompt_async_still_reports_a_live_session_failure(
+    monkeypatch: Any,
+) -> None:
+    """Control probe: a failure on a *live* session is still reported."""
+    printed = _suppress_output(monkeypatch)
+    session = FakeSession(raises=RuntimeError("provider exploded"))
+    session._closed = False
+
+    await prompt_mod.prompt_async(
+        prompt_str="hi",
+        session=session,
+        info_print=False,
+    )
+
+    joined = "\n".join(str(text) for text in printed)
+    assert "Prompt error (gracefully handled): provider exploded" in joined
+    assert "prompt failed." in joined

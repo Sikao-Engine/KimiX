@@ -5,7 +5,7 @@ Every probe asserts an *observable* outcome (never ``is not None`` alone) and
 collectively covers:
 
 * every field of ``SubAgentParams`` (``prompt``,
-  ``run_in_background``, ``session_id``, ``close_session``, ``return_history``,
+  ``session_id``, ``close_session``, ``return_history``,
   ``history_format``, ``inherit_context``);
 * every declared alias (``task`` -> ``prompt``; ``session`` -> ``session_id``;
   ``agent_id`` | ``session`` | ``session_id`` for ``interrupt_agent``);
@@ -41,7 +41,6 @@ from kimi_cli.tools.subagent import (
     AgentList,
     AgentListParams,
     SubAgentParams,
-    _background_tasks_for,
     _child_parent,
     _children_by_parent,
     _destroy_child_sessions_async,
@@ -224,9 +223,9 @@ async def test_probe_at_path_resolution(monkeypatch, tmp_path: Path) -> None:
     ):
         mock_create.return_value = _sub_session()
         agent = Agent(parent)
-        r_work = await agent(SubAgentParams(prompt="@in-work.md", run_in_background=False))
-        r_cwd = await agent(SubAgentParams(prompt="@in-cwd.md", run_in_background=False))
-        r_missing = await agent(SubAgentParams(prompt="@missing.md", run_in_background=False))
+        r_work = await agent(SubAgentParams(prompt="@in-work.md"))
+        r_cwd = await agent(SubAgentParams(prompt="@in-cwd.md"))
+        r_missing = await agent(SubAgentParams(prompt="@missing.md"))
 
     assert r_work.is_error is False and captured[0] == "from work dir"
     assert r_cwd.is_error is False and captured[1] == "from cwd"
@@ -236,52 +235,40 @@ async def test_probe_at_path_resolution(monkeypatch, tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Probe 4 — run_in_background defaults to False; explicit true stays detached
+# Probe 4 — a run always blocks until its result file is written
 # ---------------------------------------------------------------------------
-async def test_probe_run_in_background_defaults_false() -> None:
-    assert SubAgentParams(prompt="x").run_in_background is False
-    assert SubAgentParams(prompt="x", run_in_background=True).run_in_background is True
+async def test_probe_run_blocks_until_prompt_finishes() -> None:
+    # The background mode is gone: the request never accepts the flag.
+    assert "run_in_background" not in SubAgentParams.model_fields
 
-    # Default: foreground — the child prompt is awaited before the tool returns.
-    parent_fg = _parent("fg")
+    parent = _parent("fg")
+    order: list[str] = []
+
+    async def prompt(**kwargs: Any) -> None:
+        order.append("prompt")
+        out_fn = kwargs.get("output_function")
+        if callable(out_fn):
+            out_fn("done", MessageType.Text)
+
     with (
         patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.utils.prompt_async", new_callable=AsyncMock) as mock_prompt,
+        patch("kimix.utils.prompt_async", side_effect=prompt),
         patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
         mock_create.return_value = _sub_session()
-        result = await Agent(parent_fg)(
-            SubAgentParams(prompt="x")
-        )
-        assert result.extras["status"] == "closed"
-        mock_prompt.assert_awaited_once()
+        result = await Agent(parent)(SubAgentParams(prompt="x"))
+        order.append("returned")
 
-    # Explicit true: detached — returns before the child ran.
-    parent = _parent()
-    with (
-        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mock_create,
-        patch("kimix.utils.prompt_async", new_callable=AsyncMock) as mock_prompt,
-        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
-    ):
-        mock_create.return_value = _sub_session()
-        result = await Agent(parent)(
-            SubAgentParams(prompt="x", run_in_background=True)
-        )
-        assert result.extras["status"] == "running"
-        assert result.extras["session_id"] in result.output
-        # Returned before the child ran: the prompt was never awaited yet.
-        mock_prompt.assert_not_awaited()
-
-    for task in list(_background_tasks_for(parent)):
-        task.cancel()
-    await _pump()
+    # The child prompt ran before the tool returned, and its status is final.
+    assert order == ["prompt", "returned"]
+    assert result.extras["status"] == "closed"
 
 
 # ---------------------------------------------------------------------------
-# Probe 5 — close_session default per mode + explicit overrides
+# Probe 5 — close_session default and explicit overrides
 # ---------------------------------------------------------------------------
 async def test_probe_close_session_defaults_and_overrides() -> None:
-    # Foreground, default -> closed.
+    # Default -> the scratch session is closed.
     parent_fg = _parent("fg")
     with (
         patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
@@ -289,46 +276,12 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
         patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mclose,
     ):
         mc.return_value = _sub_session()
-        r_fg = await Agent(parent_fg)(
-            SubAgentParams(prompt="x", run_in_background=False)
-        )
+        r_fg = await Agent(parent_fg)(SubAgentParams(prompt="x"))
     assert r_fg.extras["status"] == "closed"
     assert mclose.await_count == 1
     assert _get_store(parent_fg).get(r_fg.extras["session_id"]) is None
 
-    # Background (run_in_background=true) -> kept open, completed, resumable.
-    parent_bg = _parent("bg")
-    with (
-        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt([])),
-        patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mclose,
-    ):
-        mc.return_value = _sub_session()
-        r_bg = await Agent(parent_bg)(
-            SubAgentParams(prompt="x", run_in_background=True)
-        )
-        assert r_bg.extras["status"] == "running"
-        await _pump()
-    assert mclose.await_count == 0
-    entry = _get_store(parent_bg).get(r_bg.extras["session_id"])
-    assert entry is not None and entry.state == "completed" and entry.is_active is True
-
-    # Background, explicit close_session=True -> closed on completion.
-    parent_bgc = _parent("bgc")
-    with (
-        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt([])),
-        patch("kimix.utils.close_session_async", new_callable=AsyncMock) as mclose,
-    ):
-        mc.return_value = _sub_session()
-        r_bgc = await Agent(parent_bgc)(
-            SubAgentParams(prompt="x", close_session=True, run_in_background=True)
-        )
-        await _pump()
-    assert mclose.await_count == 1
-    assert _get_store(parent_bgc).get(r_bgc.extras["session_id"]) is None
-
-    # Foreground, explicit close_session=False -> kept open ("continued").
+    # Explicit close_session=False -> kept open, completed, resumable.
     parent_fgk = _parent("fgk")
     with (
         patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
@@ -337,7 +290,7 @@ async def test_probe_close_session_defaults_and_overrides() -> None:
     ):
         mc.return_value = _sub_session()
         r_fgk = await Agent(parent_fgk)(
-            SubAgentParams(prompt="x", run_in_background=False, close_session=False)
+            SubAgentParams(prompt="x", close_session=False)
         )
     assert r_fgk.extras["status"] == "continued"
     assert mclose.await_count == 0
@@ -363,7 +316,6 @@ async def test_probe_inherit_context_copies_and_resumes(tmp_path: Path) -> None:
                 prompt="x",
                 inherit_context=True,
                 session_id="inherit-1",
-                run_in_background=False,
             )
         )
 
@@ -379,7 +331,7 @@ async def test_probe_inherit_context_copies_and_resumes(tmp_path: Path) -> None:
     no_id_parent.id = ""
     with patch("kimi_cli.tools.subagent.Session.copy", new_callable=AsyncMock) as mock_copy2:
         failed = await Agent(no_id_parent)(
-            SubAgentParams(prompt="x", inherit_context=True, run_in_background=False)
+            SubAgentParams(prompt="x", inherit_context=True)
         )
     assert failed.is_error is True
     assert failed.message == "Cannot inherit parent context: parent session has no id"
@@ -414,7 +366,6 @@ async def test_probe_removed_context_params_are_ignored(tmp_path: Path) -> None:
                 context_files=["marker.txt"],
                 context_data={"k": [1, 2]},
                 description="ignored label",
-                run_in_background=False,
             )
         )
 
@@ -478,7 +429,6 @@ async def test_probe_return_history_all_three_formats() -> None:
                     prompt="x",
                     return_history=True,
                     history_format=fmt,
-                    run_in_background=False,
                 )
             )
         assert result.is_error is False
@@ -510,31 +460,34 @@ async def test_probe_session_dir_matches_sdk_layout(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Probe 10 — the background task set is per parent session
+# Probe 10 — one session id can only be claimed by one run at a time
 # ---------------------------------------------------------------------------
-async def test_probe_background_tasks_are_per_parent() -> None:
-    parent_a = SimpleNamespace(custom_data={})
-    parent_b = SimpleNamespace(custom_data={})
+async def test_probe_run_claim_is_exclusive_and_token_checked() -> None:
+    agent_mod._active_runs.clear()
+    token = agent_mod._claim_session_run("c1")
+    assert agent_mod._active_runs == {"c1": token}
 
-    tasks_a = _background_tasks_for(parent_a)
-    assert _background_tasks_for(parent_a) is tasks_a  # memoised in custom_data
-    assert _background_tasks_for(parent_b) is not tasks_a
-    assert parent_a.custom_data["agent_background_tasks"] is tasks_a
+    # A second claim on the same id is rejected with actionable guidance.
+    with pytest.raises(RuntimeError, match="currently running"):
+        agent_mod._claim_session_run("c1")
 
-    tasks_a.add(asyncio.create_task(asyncio.sleep(0)))
-    assert len(_background_tasks_for(parent_a)) == 1
-    assert len(_background_tasks_for(parent_b)) == 0
+    # Another id is independent.
+    other = agent_mod._claim_session_run("c2")
+    assert set(agent_mod._active_runs) == {"c1", "c2"}
 
-    # The SDK wrapper resolves to the same owning set as the CLI session.
-    sdk_wrapper = SimpleNamespace(_cli=SimpleNamespace(session=parent_a))
-    assert _background_tasks_for(sdk_wrapper) is tasks_a
-
-    # A session without custom_data still yields an iterable (throwaway) set.
-    assert _background_tasks_for(SimpleNamespace()) == set()
-
-    for task in list(tasks_a):
-        task.cancel()
-    await _pump()
+    # A stale token cannot release a newer claim.
+    agent_mod._release_session_run("c1", object())
+    assert "c1" in agent_mod._active_runs
+    agent_mod._release_session_run("c1", token)
+    assert "c1" not in agent_mod._active_runs
+    # Releasing twice is a no-op.
+    agent_mod._release_session_run("c1", token)
+    # The id can be claimed again once released.
+    again = agent_mod._claim_session_run("c1")
+    assert again is not token
+    agent_mod._release_session_run("c1", again)
+    agent_mod._release_session_run("c2", other)
+    assert agent_mod._active_runs == {}
 
 
 # ---------------------------------------------------------------------------
@@ -617,7 +570,7 @@ async def test_probe_failed_prompt_saves_retry_file(tmp_path: Path) -> None:
         mock_create.return_value = _sub_session()
         mock_prompt.side_effect = RuntimeError("boom")
         result = await Agent(parent)(
-            SubAgentParams(prompt="do X", run_in_background=False)
+            SubAgentParams(prompt="do X")
         )
 
     assert result.is_error is True
@@ -643,7 +596,7 @@ async def test_probe_session_id_determinism() -> None:
     store.put(_entry(busy, "busy-1"))
 
     running = await Agent(parent)(
-        SubAgentParams(prompt="more", session_id="busy-1", run_in_background=False)
+        SubAgentParams(prompt="more", session_id="busy-1")
     )
     assert running.is_error is True
     assert running.message == (
@@ -661,7 +614,7 @@ async def test_probe_session_id_determinism() -> None:
     ):
         mock_create.return_value = _sub_session()
         fresh = await Agent(parent)(
-            SubAgentParams(prompt="x", session_id="never-seen-1", run_in_background=False)
+            SubAgentParams(prompt="x", session_id="never-seen-1")
         )
     assert fresh.is_error is False
     assert fresh.extras["session_id"] == "never-seen-1"
@@ -675,7 +628,7 @@ async def test_probe_session_id_determinism() -> None:
     ):
         mock_create.return_value = _sub_session()
         generated = await Agent(parent)(
-            SubAgentParams(prompt="x", session_id="", run_in_background=False)
+            SubAgentParams(prompt="x", session_id="")
         )
     new_id = generated.extras["session_id"]
     assert len(new_id) == 36 and mock_create.await_args.kwargs["session_id"] == new_id
@@ -711,7 +664,7 @@ async def test_probe_interrupt_race_leaves_no_orphan() -> None:
     ):
         store = _get_store(parent)
         store.put(_entry(prepared.session, "race-child"))
-        task = asyncio.create_task(Agent(parent)._run_background(prepared))
+        task = asyncio.create_task(Agent(parent)._execute(prepared))
         await asyncio.wait_for(started.wait(), timeout=5)
         assert _child_parent.get("race-child") == "race-parent"
 
@@ -728,7 +681,8 @@ async def test_probe_interrupt_race_leaves_no_orphan() -> None:
     assert all(entry["session_id"] != "race-child" for entry in store.list_active())
     assert _get_agent_session("race-child") is None
     assert "race-child" not in _child_parent
-    assert mock_close.await_count == 1
+    # The claim taken by _prepare_run is released by the interrupted run.
+    assert "race-child" not in agent_mod._active_runs
 
 
 # ---------------------------------------------------------------------------
@@ -752,18 +706,18 @@ async def test_probe_prompt_size_boundary_and_empty(tmp_path: Path) -> None:
         mock_create.return_value = _sub_session()
         agent = Agent(parent)
 
-        empty = await agent(SubAgentParams(prompt="", run_in_background=False))
+        empty = await agent(SubAgentParams(prompt=""))
         assert empty.is_error is False
         assert captured[0] == ""  # documented: no empty-prompt validation
 
         exact = "x" * (100 * 1024)
-        at_boundary = await agent(SubAgentParams(prompt=exact, run_in_background=False))
+        at_boundary = await agent(SubAgentParams(prompt=exact))
         assert at_boundary.is_error is False
         assert offloaded == []  # 100 KiB is still inline
         assert captured[1] == exact
 
         over = "x" * (100 * 1024 + 1)
-        above = await agent(SubAgentParams(prompt=over, run_in_background=False))
+        above = await agent(SubAgentParams(prompt=over))
         assert above.is_error is False
         assert offloaded == [(over, ".md")]
         assert "Please read the task from `" in captured[2]
@@ -788,13 +742,13 @@ async def test_probe_hostile_at_paths(tmp_path: Path) -> None:
         mock_create.return_value = _sub_session()
         agent = Agent(parent)
         # "@" alone resolves to the work dir itself -> IsADirectoryError.
-        bare = await agent(SubAgentParams(prompt="@", run_in_background=False))
+        bare = await agent(SubAgentParams(prompt="@"))
         # A missing absolute path is a deterministic ToolError.
         missing_abs = await agent(
-            SubAgentParams(prompt=f"@{tmp_path / 'nope.md'}", run_in_background=False)
+            SubAgentParams(prompt=f"@{tmp_path / 'nope.md'}")
         )
         # "../" escapes the work dir and is read anyway (finding: no containment).
-        escaped = await agent(SubAgentParams(prompt="@../secret.md", run_in_background=False))
+        escaped = await agent(SubAgentParams(prompt="@../secret.md"))
 
     assert bare.is_error is True
     assert bare.brief == "Failed to create sub-agent session"
@@ -827,13 +781,11 @@ async def test_probe_wrong_types_and_schema_roundtrip() -> None:
         SubAgentParams(prompt="single", session_id=["s1", None])
 
     # The lax coercions pydantic performs are asserted, not assumed.
-    assert SubAgentParams(prompt="x", run_in_background="yes").run_in_background is True  # type: ignore[arg-type]
     assert SubAgentParams(prompt="x", close_session=1).close_session is True  # type: ignore[arg-type]
 
     payload = SubAgentParams(prompt="x").model_dump()
     assert set(payload) == {
         "prompt",
-        "run_in_background",
         "session_id",
         "close_session",
         "return_history",
@@ -872,28 +824,27 @@ async def test_probe_recursive_guard_and_companions() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Probe 20 — defensive background error site + double-close determinism
+# Probe 20 — unexpected _execute error site + double-close determinism
 # ---------------------------------------------------------------------------
-async def test_probe_background_defensive_error_and_double_close() -> None:
+async def test_probe_execute_error_site_and_double_close() -> None:
     parent = _parent("bg-err")
     prepared = await _prepare_bg(parent, _sub_session(), "bg-err-child")
-    notified: list[tuple[str, Any]] = []
 
-    async def fake_notify(self: Any, session_id: str, result: Any) -> None:
-        notified.append((session_id, result))
+    async def boom(**_kwargs: Any) -> None:
+        raise RuntimeError("kaboom")
 
     with (
-        patch.object(Agent, "_execute", side_effect=RuntimeError("kaboom")),
-        patch.object(Agent, "_notify_parent_background_finished", fake_notify),
+        patch("kimix.utils.prompt_async", side_effect=boom),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
-        await Agent(parent)._run_background(prepared)
+        result = await Agent(parent)._execute(prepared)
 
-    assert len(notified) == 1
-    session_id, result = notified[0]
-    assert session_id == "bg-err-child"
+    # A prompt failure is reported through the tool result, never raised.
     assert result.is_error is True
-    assert result.message == "kaboom"
-    assert result.brief == "Background subagent failed"
+    assert result.brief == "sub-agent task failed"
+    assert "kaboom" in result.message
+    # ... and the claim is released so the id can be resumed later.
+    assert "bg-err-child" not in agent_mod._active_runs
 
     # interrupt_agent: unknown id and re-close are deterministic ToolErrors.
     lister = _parent("closer")

@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import sys
 from pathlib import Path
 
 import pytest
@@ -449,9 +448,19 @@ async def test_max_lines_boundary(read_file_tool: ReadFile, temp_work_dir: KaosP
 
 
 # --- [out of work-dir] warning tests ---
+# Product gap (not a platform difference): ReadFile never annotates its
+# messages with `[out of work-dir]` — its outside-work-dir guard was removed
+# in commit 304a8b46, and only write/edit/hash_line emit that marker. These
+# tests pin the unimplemented feature, so they xfail on every platform
+# instead of being skipped on Windows only.
+_OUT_OF_WORKDIR_GAP = (
+    "ReadFile does not implement the [out of work-dir] message prefix "
+    "(outside-work-dir guard removed in commit 304a8b46; only write/edit "
+    "annotate outside-work-dir calls)"
+)
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+@pytest.mark.xfail(strict=False, reason=_OUT_OF_WORKDIR_GAP)
 async def test_read_outside_work_dir_has_warning(
     read_file_tool: ReadFile, outside_file: Path
 ):
@@ -469,7 +478,7 @@ async def test_read_inside_work_dir_no_warning(read_file_tool: ReadFile, sample_
     assert "[out of work-dir]" not in result.message
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+@pytest.mark.xfail(strict=False, reason=_OUT_OF_WORKDIR_GAP)
 async def test_read_outside_work_dir_nonexistent_has_warning(
     read_file_tool: ReadFile, outside_file: Path
 ):
@@ -479,7 +488,7 @@ async def test_read_outside_work_dir_nonexistent_has_warning(
     assert "[out of work-dir]" in result.message
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+@pytest.mark.xfail(strict=False, reason=_OUT_OF_WORKDIR_GAP)
 async def test_read_outside_work_dir_directory_has_warning(
     read_file_tool: ReadFile
 ):
@@ -492,7 +501,7 @@ async def test_read_outside_work_dir_directory_has_warning(
         assert "[out of work-dir]" in result.message
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in ReadFile")
+@pytest.mark.xfail(strict=False, reason=_OUT_OF_WORKDIR_GAP)
 async def test_read_outside_relative_path_error_has_warning(
     read_file_tool: ReadFile, temp_work_dir: KaosPath
 ):

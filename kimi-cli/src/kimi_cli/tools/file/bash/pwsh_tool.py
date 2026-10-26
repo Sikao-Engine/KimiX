@@ -95,8 +95,12 @@ def _pwsh_major_version(path: str) -> int | None:
 
 
 def _is_windows_apps_stub(path: str) -> bool:
-    """Return True if *path* points into the WindowsApps directory (Store stub)."""
-    return "WindowsApps" in os.path.normpath(path).split(os.sep)
+    """Return True if *path* points into the WindowsApps directory (Store stub).
+
+    Both separators are recognized so that classifying a Windows path does not
+    depend on the host's ``os.sep``.
+    """
+    return "WindowsApps" in re.split(r"[\\/]", path)
 
 
 def _where_candidates(name: str) -> list[str]:
@@ -143,11 +147,15 @@ def _is_versioned_pwsh7_install(path: str) -> bool:
     Microsoft always installs PowerShell 7.x into a ``PowerShell\\7`` (Windows)
     or ``.../7/`` (POSIX) directory, so an executable at such a path is known
     to be version 7+ without having to spawn a subprocess to ask it.
+
+    The check is separator-agnostic (and case-insensitive) on purpose: it
+    classifies a *path string*, which may be in either platform's spelling,
+    rather than the host filesystem, so ``os.path``'s flavour is irrelevant.
     """
-    norm = os.path.normcase(os.path.normpath(path))
-    if sys.platform == "win32":
-        return norm.endswith(os.path.normcase(r"PowerShell\7\pwsh.exe"))
-    return norm.endswith("/7/pwsh")
+    parts = path.replace("\\", "/").rstrip("/").split("/")
+    if len(parts) < 2 or parts[-2] != "7":
+        return False
+    return parts[-1].lower() in ("pwsh", "pwsh.exe")
 
 
 @functools.lru_cache(maxsize=1)

@@ -11,7 +11,7 @@
     "custom_headers": {},
     "oauth": {
         "storage": "file",
-        "key": "my-key"
+        "key": "oauth/kimi-code"
     },
     "env": {},
     "services": {

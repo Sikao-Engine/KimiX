@@ -92,6 +92,24 @@ class Params(BaseModel):
         return self
 
 
+def _venv_python_candidates(venv_dir: Path) -> list[Path]:
+    """Return the interpreter paths of *venv_dir* that this host can run.
+
+    Venv layouts are host specific: Windows uses ``Scripts/python.exe`` while
+    POSIX uses ``bin/python``.  A checkout shared between the two (e.g. this
+    repository mounted into WSL through ``/mnt/c``) can contain a ``Scripts``
+    directory holding a Windows ``.exe`` which is *never* runnable on POSIX --
+    spawning it goes through interop and fails with a confusing
+    "can't open file" error.  So the host's own layout is probed first and the
+    foreign one is only kept as a compatibility fallback on Windows (where the
+    historical order was ``Scripts/python.exe`` then ``bin/python``).
+    """
+    posix_layout = [venv_dir / "bin" / "python", venv_dir / "bin" / "python3"]
+    if os.name != "nt":
+        return posix_layout
+    return [venv_dir / "Scripts" / "python.exe", *posix_layout]
+
+
 class python(CallableTool2[Params]):  # noqa: N801
     name: str = "python"
     description: str = (
@@ -115,7 +133,9 @@ class python(CallableTool2[Params]):  # noqa: N801
 
         Priority order:
           1. ``KIMIX_PYTHON_EXECUTABLE`` env var (explicit override).
-          2. A project ``.venv`` next to the session dir / cwd (walking up).
+          2. A project ``.venv`` next to the session dir / cwd (walking up),
+             probing this host's venv layout first (see
+             ``_venv_python_candidates``).
           3. ``VIRTUAL_ENV`` env var (active venv).
           4. ``sys.executable`` (fallback, backward compatible).
 
@@ -139,19 +159,13 @@ class python(CallableTool2[Params]):  # noqa: N801
         bases.append(Path.cwd())
         for base in bases:
             for parent in (base, *base.parents):
-                for candidate in (
-                    parent / ".venv" / "Scripts" / "python.exe",  # Windows
-                    parent / ".venv" / "bin" / "python",          # POSIX
-                ):
+                for candidate in _venv_python_candidates(parent / ".venv"):
                     if candidate.is_file():
                         return str(candidate)
         # 3. VIRTUAL_ENV
         venv = os.environ.get("VIRTUAL_ENV")
         if venv:
-            for candidate in (
-                Path(venv) / "Scripts" / "python.exe",
-                Path(venv) / "bin" / "python",
-            ):
+            for candidate in _venv_python_candidates(Path(venv)):
                 if candidate.is_file():
                     return str(candidate)
         # 4. fallback

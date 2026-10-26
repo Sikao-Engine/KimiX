@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-import platform
-
-import pytest
-
 from kimi_cli.agentspec import DEFAULT_AGENT_FILE
 from kimi_cli.soul.agent import load_agent
 from kimi_cli.subagents.builder import SubagentBuilder
 from kimi_cli.subagents.models import AgentLaunchSpec, AgentTypeDefinition, ToolPolicy
 
 
-@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
 async def test_builder_builds_coder_with_write_tools(runtime):
     await load_agent(DEFAULT_AGENT_FILE, runtime, mcp_configs=[])
 
@@ -27,7 +22,7 @@ async def test_builder_builds_coder_with_write_tools(runtime):
     )
 
     tool_names = [tool.name for tool in coder.toolset.tools]
-    assert "bash" in tool_names
+    assert "read" in tool_names
     assert "write" in tool_names
     assert "edit" in tool_names
     assert "subagent" not in tool_names
@@ -35,8 +30,7 @@ async def test_builder_builds_coder_with_write_tools(runtime):
     assert not [name for name in tool_names if name.startswith("todo_")]
 
 
-@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
-async def test_builder_builds_explore_read_only_with_shell(runtime):
+async def test_builder_builds_explore_read_only(runtime):
     await load_agent(DEFAULT_AGENT_FILE, runtime, mcp_configs=[])
 
     builder = SubagentBuilder(runtime)
@@ -52,41 +46,46 @@ async def test_builder_builds_explore_read_only_with_shell(runtime):
     )
 
     tool_names = [tool.name for tool in explore.toolset.tools]
-    assert "bash" in tool_names
     assert "read" in tool_names
     assert "grep" in tool_names
+    assert "web_search" in tool_names
     assert "write" not in tool_names
     assert "edit" not in tool_names
     assert "subagent" not in tool_names
 
 
-@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
-async def test_builder_builds_plan_without_shell_or_write_tools(runtime):
+async def test_builder_inherit_policy_keeps_privileged_tools(runtime):
+    """Tool filtering comes from the agent spec, not from the tool policy: a type
+    built from the root spec keeps the agent/todo/ask-user tools that the
+    ``coder`` and ``explore`` specs exclude.
+    """
     await load_agent(DEFAULT_AGENT_FILE, runtime, mcp_configs=[])
 
     builder = SubagentBuilder(runtime)
-    plan = await builder.build_builtin_instance(
-        agent_id="aplan",
-        type_def=runtime.labor_market.require_builtin_type("plan"),
+    inherited = await builder.build_builtin_instance(
+        agent_id="amocker",
+        type_def=AgentTypeDefinition(
+            name="mocker",
+            description="The mock agent for testing purposes.",
+            agent_file=DEFAULT_AGENT_FILE,
+            tool_policy=ToolPolicy(mode="inherit"),
+        ),
         launch_spec=AgentLaunchSpec(
-            agent_id="aplan",
-            subagent_type="plan",
+            agent_id="amocker",
+            subagent_type="mocker",
             model_override=None,
             effective_model=None,
         ),
     )
 
-    tool_names = [tool.name for tool in plan.toolset.tools]
-    assert "read" in tool_names
-    assert "glob" in tool_names
-    assert "web_search" in tool_names
-    assert "bash" not in tool_names
-    assert "write" not in tool_names
-    assert "edit" not in tool_names
-    assert "subagent" not in tool_names
+    tool_names = [tool.name for tool in inherited.toolset.tools]
+    assert "subagent" in tool_names
+    assert "AskUserQuestion" in tool_names
+    assert "todo_list" in tool_names
+    assert "write" in tool_names
+    assert "edit" in tool_names
 
 
-@pytest.mark.skipif(platform.system() == "Windows", reason="Skipping test on Windows")
 async def test_builder_model_priority_prefers_override_then_type_default_then_inherit(
     runtime, monkeypatch
 ):
@@ -133,15 +132,15 @@ async def test_builder_model_priority_prefers_override_then_type_default_then_in
     await builder.build_builtin_instance(
         agent_id="ainherit",
         type_def=AgentTypeDefinition(
-            name="plan",
-            description="Planning agent.",
-            agent_file=DEFAULT_AGENT_FILE.parent / "plan.yaml",
+            name="coder",
+            description="General software engineering.",
+            agent_file=DEFAULT_AGENT_FILE.parent / "coder.yaml",
             default_model=None,
             tool_policy=ToolPolicy(mode="allowlist", tools=()),
         ),
         launch_spec=AgentLaunchSpec(
             agent_id="ainherit",
-            subagent_type="plan",
+            subagent_type="coder",
             model_override=None,
             effective_model=None,
         ),

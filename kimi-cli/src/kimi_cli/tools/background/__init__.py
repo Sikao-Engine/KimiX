@@ -1,6 +1,5 @@
 """Background task management tools."""
 import asyncio
-import contextlib
 import sys
 from typing import Literal
 
@@ -40,9 +39,7 @@ from .utils import (
 #: ``prompt_common.MAX_TIMEOUT_SECONDS`` (1200 s), which bounds the
 #: *process-spawning* tools (``bash`` / ``pwsh`` / ``python`` / ``Run``);
 #: ``job_output`` only observes an already-running task, so it may wait
-#: longer.  Note this cap applies to shell jobs only: a ``wait`` on a
-#: *subagent* session id ignores ``timeout`` entirely and blocks until the
-#: run settles (see ``TaskOutput._get_subagent_output``).
+#: longer.
 MAX_JOB_OUTPUT_TIMEOUT_SECONDS = 7200
 
 
@@ -55,8 +52,6 @@ class TaskOutputParams(BaseModel):
         validation_alias=AliasChoices("job_id", "task_id"),
         description=(
             "Job id returned by the tool that started the background work. "
-            "Also accepts a background subagent session id (from "
-            "subagent(run_in_background=true)) to wait on it. "
             "When None, lists all tasks. "
             + accepts_alias_text("job_id", "task_id", word=False)
         ),
@@ -87,9 +82,7 @@ class TaskOutputParams(BaseModel):
         le=MAX_JOB_OUTPUT_TIMEOUT_SECONDS,
         description=(
             "Max wait in seconds (only meaningful with wait: true), capped "
-            "at the schema maximum. Ignored when waiting on a subagent "
-            "session id: that wait is unbounded and ends only when the "
-            "subagent settles. "
+            "at the schema maximum. "
             + accepts_alias_text("timeout", "timeout_ms", word=False)
         ),
     )
@@ -126,9 +119,7 @@ class TaskOutput(CallableTool2):
         "Read a background job. Stream jobs return only output since the "
         "previous read; final-output jobs return their result after settlement. "
         "Every response ends with `[status: ...]`. Reads are non-blocking "
-        "unless `wait: true`, which waits up to the configured cap. A wait "
-        "on a background subagent session id ignores the cap and blocks "
-        "until the subagent settles. "
+        "unless `wait: true`, which waits up to the configured cap. "
         f"Jobs that already finished stay retrievable from a history of "
         f"the last {MAX_FINISHED_TASKS} completed jobs."
     )
@@ -359,121 +350,6 @@ class TaskOutput(CallableTool2):
             display_block=display_block,
         )
 
-    async def _get_subagent_output(
-        self, session_id: str, params: TaskOutputParams
-    ) -> ToolReturnValue | None:
-        """Wait for a background subagent session, if *session_id* is one.
-
-        Blocks until the run settles, then reports the recorded state and
-        the output file path.  The wait is deliberately *unbounded*:
-        ``params.timeout`` is ignored here, so the read blocks however long
-        the subagent needs and only returns once the run settles — whether it
-        completes, fails, or crashes (a crashed run settles its task with the
-        exception, ending the wait).  Returns ``None`` when the id belongs to
-        no subagent of this session so the caller falls through to the
-        regular not-found error.
-
-        A subagent whose session was already closed (``interrupt_agent``, or a
-        parent-close cascade) is still one of *this* session's subagents: its
-        tombstone in the store means the run was interrupted, so it reports
-        ``status: closed`` instead of the misleading "no running task" error.
-        The parent is told the run was interrupted by a steer, so it may well
-        call ``job_output`` on that id straight afterwards.
-        """
-        from kimi_cli.tools.subagent import (
-            _background_run_tasks,
-            _existing_output_path,
-            _get_store,
-        )
-
-        store = _get_store(self._session)
-        entry = store.get(session_id)
-        if entry is None:
-            # No live entry: either the id was never a subagent of this
-            # session (fall through to not-found), or its session was closed
-            # after the run started (report the interruption, don't lose it).
-            if not store.was_closed(session_id):
-                return None
-            return self._closed_subagent_output(session_id)
-        task = _background_run_tasks.get(session_id)
-        if task is not None and not task.done():
-            if not params.wait:
-                return ToolOk(
-                    output=(
-                        f"Subagent '{session_id}' is still running. "
-                        "Call `job_output` with wait: true to block until it "
-                        "finishes."
-                    ),
-                    brief="Subagent still running",
-                )
-            # ``asyncio.wait`` without a timeout blocks until the detached
-            # run settles, however long that takes: a subagent wait ignores
-            # ``params.timeout`` on purpose, so the caller never sees a
-            # misleading "still running" for a healthy long-running
-            # subagent.  The wait ends only when the run completes, fails,
-            # or crashes (a crash settles the task with the exception).
-            # ``asyncio.wait`` never cancels the run.
-            await asyncio.wait({task})
-            # ``_run_background`` never raises (it converts its own errors),
-            # but suppress defensively so a wait can never fail the turn.
-            with contextlib.suppress(Exception):
-                await task
-            # The run settled: re-read the store entry it left behind.  An
-            # interrupt mid-run closes the entry, which then reads as "closed".
-            entry = store.get(session_id)
-        if entry is None:
-            status = "closed"
-        elif task is None and entry.state == "running":
-            # A running entry without a tracked task should not happen (every
-            # background run registers one); report it instead of pretending
-            # the run finished.
-            return ToolOk(
-                output=(
-                    f"Subagent '{session_id}' is still running, but no "
-                    "waitable background task was found for it. Check its "
-                    "state with list_agents."
-                ),
-                brief="Subagent still running",
-            )
-        else:
-            status = entry.state
-        output = f"Subagent '{session_id}' finished (status: {status})."
-        output_file = _existing_output_path(self._session, session_id)
-        if output_file:
-            output += f" Output: {output_file}"
-        result = ToolOk(output=output, brief="Subagent finished")
-        result.extras = {
-            "session_id": session_id,
-            "status": status,
-            "output_file": output_file,
-        }
-        return result
-
-    def _closed_subagent_output(self, session_id: str) -> ToolReturnValue:
-        """Report an interrupted (tombstoned) subagent run as ``closed``.
-
-        The store forgot the entry when the session was closed, so the recorded
-        state is gone — but "closed" is the truthful answer either way (the run
-        was interrupted, or it finished and was then closed explicitly), and an
-        id this session closed is never a "task not found" error.
-        """
-        from kimi_cli.tools.subagent import _existing_output_path
-
-        output_file = _existing_output_path(self._session, session_id)
-        output = f"Subagent '{session_id}' finished (status: closed)."
-        if output_file:
-            output += f" Output: {output_file}"
-        result = ToolOk(
-            output=output,
-            brief="Subagent closed",
-        )
-        result.extras = {
-            "session_id": session_id,
-            "status": "closed",
-            "output_file": output_file,
-        }
-        return result
-
     async def _get_output(self, tasks: dict, params: TaskOutputParams) -> ToolReturnValue:
         """Get output from a specific task."""
         job_id = params.job_id.strip()
@@ -484,23 +360,16 @@ class TaskOutput(CallableTool2):
                 # Already finished (and already removed from the active
                 # registry): serve the saved result instead of a dead-end.
                 return await self._get_history_output(record, params)
-            # Fallback: the id may be a background subagent session started
-            # by the ``subagent`` tool; wait for that run and report its state.
-            subagent_result = await self._get_subagent_output(job_id, params)
-            if subagent_result is not None:
-                return subagent_result
             started = [tid for tid, s in tasks.items() if await s.is_started()]
             if not started:
-                # Neither a live/finished shell job nor a subagent of this
-                # session: name the id, so a typo — or a *different* session's
-                # subagent id — is obviously the problem instead of a bare
-                # "No running task", which reads as "nothing is running
-                # anywhere" and hides both mistakes.
+                # Name the id, so a typo is obviously the problem instead of a
+                # bare "No running task", which reads as "nothing is running
+                # anywhere".
                 return ToolError(
                     message=(
-                        f"Job '{job_id}' not found: no background task or "
-                        "subagent of this session has that id. Use action='list' "
-                        "for running jobs, or list_agents for live subagents."
+                        f"Job '{job_id}' not found: no background task of this "
+                        "session has that id. Use action='list' for running "
+                        "jobs."
                     ),
                     output="",
                     brief=f"Job '{job_id}' not found"

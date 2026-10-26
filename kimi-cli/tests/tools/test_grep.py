@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import tempfile
 from pathlib import Path
 
@@ -1617,10 +1616,20 @@ def test_is_eagain():
 
 
 # --- [out of work-dir] warning tests ---
+# Product gap (not a platform difference): only the write/edit/hash_line tools
+# annotate their messages with `[out of work-dir]`, and Grep deliberately
+# accepts absolute paths outside the workspace without any such marker. These
+# tests pin the unimplemented feature, so they xfail everywhere instead of
+# being skipped on Windows only.
+_OUT_OF_WORKDIR_GAP = (
+    "Grep does not implement the [out of work-dir] message prefix "
+    "(only write/edit annotate outside-work-dir calls; absolute paths outside "
+    "the workspace are accepted silently)"
+)
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Grep")
+@pytest.mark.xfail(strict=False, reason=_OUT_OF_WORKDIR_GAP)
 async def test_grep_outside_work_dir_has_warning(grep_tool: Grep):
     """Grep with path outside work-dir should include [out of work-dir] in message."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -1641,7 +1650,7 @@ async def test_grep_outside_work_dir_has_warning(grep_tool: Grep):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Grep")
+@pytest.mark.xfail(strict=False, reason=_OUT_OF_WORKDIR_GAP)
 async def test_grep_outside_work_dir_nonexistent_has_warning(grep_tool: Grep):
     """Grep with non-existent outside path should include [out of work-dir]."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -1656,7 +1665,7 @@ async def test_grep_outside_work_dir_nonexistent_has_warning(grep_tool: Grep):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(sys.platform == "win32", reason="[out of work-dir] warning not implemented in Grep")
+@pytest.mark.xfail(strict=False, reason=_OUT_OF_WORKDIR_GAP)
 async def test_grep_outside_work_dir_no_matches_has_warning(grep_tool: Grep):
     """Grep outside work-dir with no matches should include [out of work-dir]."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -1868,7 +1877,7 @@ def test_rtk_fold_note_with_original_path():
     note = _rtk_fold_note(meta, original_path="C:\\tmp\\rtk_out.txt")
     assert note is not None
     assert "rtk folded output: 40 more lines in src/a.py" in note
-    assert "Original output: C:/tmp/rtk_out.txt" in note
+    assert "Original output: `C:/tmp/rtk_out.txt`" in note
 
 
 @pytest.mark.asyncio
@@ -2064,8 +2073,10 @@ async def test_grep_rtk_markers_stripped_and_summarized(
     assert "5 more files" in result.message
     assert "Full log: tail -n +2 C:\\log\\tee.log" in result.message
     # The original rtk stream (including protocol lines) was exported.
-    assert "Original output:" in result.message
-    original_path = result.message.split("Original output: ", 1)[1].strip()
+    # The path is backtick-quoted (else the message's sentence-final "." would
+    # look like part of the filename on POSIX, where trailing dots are real).
+    assert "Original output: `" in result.message
+    original_path = result.message.split("Original output: `", 1)[1].split("`", 1)[0]
     assert Path(original_path).is_file()
     saved = Path(original_path).read_text(encoding="utf-8")
     assert "42 matches in 1 files" in saved

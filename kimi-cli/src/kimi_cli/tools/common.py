@@ -580,6 +580,9 @@ def _pid_alive(pid: int) -> bool:
         return False
     except PermissionError:
         return True
+    except OverflowError:
+        # Out of the C int (pid_t) range: no such process can exist.
+        return False
     return True
 
 

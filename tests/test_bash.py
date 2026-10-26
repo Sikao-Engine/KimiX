@@ -5470,6 +5470,14 @@ class TestBashInteractiveArgumentBuilding:
             assert "echo start" in decoded
             assert args.kwargs.get("append_newline") is True or args[0][4] is True
 
+    @pytest.mark.skipif(
+        sys.platform != "win32",
+        reason=(
+            "asserts the Windows Git Bash compatibility prelude; off Windows "
+            "bash_compatibility_prelude() is empty so interactive mode starts "
+            "with a bare `bash -i` and no payload"
+        ),
+    )
     async def test_interactive_args_without_cmd(self, mock_session: MagicMock) -> None:
         with patch("kimi_cli.tools.file.bash.bash_tool.find_bash", return_value=r"C:\Git\bin\bash.exe"), patch(
             "kimi_cli.tools.file.bash.bash_tool._should_enable_bash", return_value=True
@@ -6989,6 +6997,14 @@ class TestBashFixRealGitBashOperands:
         assert result.returncode == 0, result.stderr
         assert result.stdout == "abc\n"
 
+    @pytest.mark.skipif(
+        sys.platform != "win32",
+        reason=(
+            "the watch() fallback is only injected where Git Bash lacks watch; "
+            "on POSIX hosts the real procps watch owns the name and paints a "
+            "full-screen curses UI instead of plain output"
+        ),
+    )
     @pytest.mark.parametrize(
         "command",
         [
@@ -7277,7 +7293,7 @@ class TestBashFixRound0InlineScriptHarvest:
     shell) must still register fallback definitions for the child shell."""
 
     def test_single_quote_is_control(self) -> None:
-        r = fix_bash_command("bash -c 'rev $HOME'")
+        r = _fix_for_windows("bash -c 'rev $HOME'")
         assert r.replacements == ("rev",)
         assert r.command.split("\n")[-1] == "bash -c 'rev $HOME'"
 
@@ -7293,7 +7309,7 @@ class TestBashFixRound0InlineScriptHarvest:
     def test_dq_inline_script_registers_fallback(
         self, cmd: str, expected_names: tuple[str, ...]
     ) -> None:
-        r = fix_bash_command(cmd)
+        r = _fix_for_windows(cmd)
         assert r.replacements == expected_names
         # The operand text needs no source edit -> command tail is
         # byte-for-byte unchanged (the fix is the definition + export).
@@ -7301,16 +7317,16 @@ class TestBashFixRound0InlineScriptHarvest:
         assert "if declare -F rev >/dev/null; then export -f rev; fi" in r.command
 
     def test_dq_inline_registers_even_under_path_ambiguity(self) -> None:
-        r = fix_bash_command(r'eval "cd C:\x && rev <<< $y"')
+        r = _fix_for_windows(r'eval "cd C:\x && rev <<< $y"')
         assert "rev" in r.replacements
         assert r.command.split("\n")[-1] == r'eval "cd C:\x && rev <<< $y"'
 
     def test_single_quote_control_substitution(self) -> None:
-        r = fix_bash_command("bash -c 'uptime'")
+        r = _fix_for_windows("bash -c 'uptime'")
         assert r.replacements == ("uptime",)
 
     def test_eval_path_is_consistent(self) -> None:
-        r = fix_bash_command('eval "$(rev)"')
+        r = _fix_for_windows('eval "$(rev)"')
         assert "rev" in r.replacements
 
     @pytest.mark.parametrize(
@@ -7328,7 +7344,7 @@ class TestBashFixRound0InlineScriptHarvest:
     def test_wrapper_scans_substitutions_in_nonliteral_operand(
         self, cmd: str, expected_names: tuple[str, ...]
     ) -> None:
-        r = fix_bash_command(cmd)
+        r = _fix_for_windows(cmd)
         for name in expected_names:
             assert name in r.replacements, f"{name!r} missing from {r.replacements!r}"
         # The operand text cannot be re-emitted (it holds expansions), so the
@@ -7466,8 +7482,11 @@ _ROUND1_PS51 = _round1_which("powershell", "powershell.exe")
 
 
 def _round1_run_pwsh(script: str) -> tuple[str, str, int]:
+    """Run *script* under PowerShell 7; skip when pwsh cannot be executed here."""
+    if sys.platform != "win32" or not _ROUND1_PS7:
+        pytest.skip("requires Windows PowerShell 7 (pwsh)")
     p = subprocess.run(
-        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+        [_ROUND1_PS7, "-NoProfile", "-NonInteractive", "-Command", script],
         capture_output=True,
         text=True,
         timeout=60,
@@ -8093,8 +8112,21 @@ _ROUND2_POWERSHELL51 = (
 )
 
 
+def _round2_ps51_available() -> bool:
+    """Whether the Windows PowerShell 5.1 parser can actually be executed here.
+
+    ``_ROUND2_POWERSHELL51`` is a Windows path, so the parse check below can only
+    run on a Windows host.  Callers keep their pure-text assertions first and
+    then skip on hosts without PS 5.1, so the transform is still verified
+    everywhere while the 5.1 parser verdict stays Windows-only.
+    """
+    return sys.platform == "win32" and os.path.exists(_ROUND2_POWERSHELL51)
+
+
 def _round2_ps51_parse_errors(script):
     """Return the PS5.1 *parser* errors for *script* (no execution)."""
+    if not _round2_ps51_available():
+        pytest.skip("requires Windows PowerShell 5.1 (powershell.exe)")
     fd, path = tempfile.mkstemp(suffix=".ps1")
     os.close(fd)
     with open(path, "w", encoding="utf-8") as f:
@@ -8640,7 +8672,7 @@ class TestBashFixRound4CompoundFunctionBody:
 class TestBashFixRound4MixedSlashPaths:
     """Bug R4-C: anchored mixed-separator paths (``D:/x\\y``) are rewritten.
 
-    Left untouched, Bash eats the lone backslash (``\X`` -> ``X`` for every
+    Left untouched, Bash eats the lone backslash (``\\X`` -> ``X`` for every
     ``X`` outside quotes) and collapses two segments into one name.
     """
 
@@ -8652,25 +8684,28 @@ class TestBashFixRound4MixedSlashPaths:
         (tmp_path / "mdx.txt").write_text("WRONG")
         return tmp_path
 
-    def test_mixed_slash_drive_path_is_rewritten(self, _scratch):
-        cmd = f"cat {_scratch.as_posix()}/md\\inner.txt"
-        result = _shell_compat.fix_bash_command(cmd)
+    def test_mixed_slash_drive_path_is_rewritten(self):
+        # A drive-anchored mixed path (the shape the scanner rewrites); keep the
+        # operand literal so the assertion holds on every host, not just where
+        # ``tmp_path`` happens to be a ``C:``-style path.
+        result = _shell_compat.fix_bash_command(r"cat D:/proj/md\inner.txt")
         assert "\\inner" not in result.command
-        assert f"{_scratch.as_posix()}/md/inner.txt" in result.command
+        assert "D:/proj/md/inner.txt" in result.command
         assert result.path_changes
 
-    def test_mixed_slash_preserves_word_value(self, _scratch):
-        result = _shell_compat.fix_bash_command(
-            f"echo {_scratch.as_posix()}/md\\x.txt"
-        )
+    def test_mixed_slash_preserves_word_value(self):
+        result = _shell_compat.fix_bash_command(r"echo D:/proj/md\x.txt")
         assert result.path_changes
-        assert f"{_scratch.as_posix()}/md/x.txt" in result.command
+        assert "D:/proj/md/x.txt" in result.command
 
     def test_mixed_slash_home_relative(self):
         result = _shell_compat.fix_bash_command(r"echo ~/Desktop\file.txt")
         assert result.command == "echo ~/Desktop/file.txt"
 
-    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires Git Bash")
+    @pytest.mark.skipif(
+        not BASH_AVAILABLE or sys.platform != "win32",
+        reason="requires Git Bash with Windows (drive-anchored) path semantics",
+    )
     def test_mixed_slash_real_bash_reads_intended_file(self, _scratch):
         bash = find_bash()
         cmd = f"cat {_scratch.as_posix()}/md\\inner.txt"
@@ -8681,7 +8716,10 @@ class TestBashFixRound4MixedSlashPaths:
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.strip() == "INTENDED"
 
-    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires Git Bash")
+    @pytest.mark.skipif(
+        not BASH_AVAILABLE or sys.platform != "win32",
+        reason="requires Git Bash with Windows (drive-anchored) path semantics",
+    )
     def test_pure_backslash_anchor_is_fixed_control(self, _scratch):
         # control: the same path in pure-backslash form is rewritten and works
         cmd = f"cat {str(_scratch).replace(chr(92), '/')}\\md\\inner.txt"

@@ -95,11 +95,14 @@ def sample_avif(work_dir: Path) -> Path:
 
 
 @pytest.fixture
-def mock_session() -> MagicMock:
+def mock_session(tmp_path: Path) -> MagicMock:
     session = MagicMock()
     session.custom_data = {}
     session.custom_config = {"provider_dict": {"name": "mock"}}
     session.id = "test-session-id"
+    # A real, existing work dir: tool code derives output/cache paths from it, so
+    # a MagicMock attribute would create junk directories under the CWD.
+    session.work_dir = KaosPath(str(tmp_path))
     return session
 
 

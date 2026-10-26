@@ -85,7 +85,10 @@ def test_mixed_errorlevel_and_exit_b_refused() -> None:
     assert "exit /b" in result.unsupported
     assert "if (( $? != 0 ))" in result.command  # header did rewrite
     tool = object.__new__(bt.Bash)
-    assert isinstance(bt.Bash._prepare_command(tool, src), ToolError)
+    # The app-layer gate returns POSIX input untouched, so the Windows path the
+    # tool actually runs (refusal before spawning) is forced open here.
+    with patch("kimi_cli.tools.file.bash.bash_fix.sys.platform", "win32"):
+        assert isinstance(bt.Bash._prepare_command(tool, src), ToolError)
 
 
 @pytest.mark.parametrize(("command", "key"), REFUSE_CASES)
@@ -147,9 +150,12 @@ def test_prepare_command_refuses_goto() -> None:
     from kimi_cli.tools.file.bash import bash_tool as bt
 
     # ``_prepare_command`` returns the ToolError before touching the instance
-    # (``fix.unsupported`` is checked first), so a bare object suffices.
+    # (``fix.unsupported`` is checked first), so a bare object suffices.  The
+    # app-layer Windows gate is forced open: off Windows the scanner leaves the
+    # cmd.exe text untouched, so nothing would be refused.
     tool = object.__new__(bt.Bash)
-    result = bt.Bash._prepare_command(tool, "goto :end")
+    with patch("kimi_cli.tools.file.bash.bash_fix.sys.platform", "win32"):
+        result = bt.Bash._prepare_command(tool, "goto :end")
     assert isinstance(result, ToolError)
     assert "goto" in result.message
     assert result.brief == "Unsupported command on Windows"

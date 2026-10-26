@@ -51,18 +51,28 @@ class AgentSessionStore:
     # once the set is full, so unbounded growth is impossible.
     MAX_TOMBSTONES: int = 64
 
-    def __init__(self, on_close: "Callable[[str], None] | None" = None) -> None:
+    def __init__(
+        self,
+        on_close: "Callable[[str], None] | None" = None,
+        is_busy: "Callable[[str], bool] | None" = None,
+    ) -> None:
         """``on_close`` is notified with a session id whenever it leaves the store.
 
         The store only owns sessions it kept alive (``close_session=False``);
         the module-level registries (live SDK session, parent/child ownership,
         queued messages) are notified so an evicted session does not stay
         referenced — or listed — after it was closed.
+
+        ``is_busy`` answers "is a run driving this session right now?" and keeps
+        eviction away from it: a resumed session stays listed as completed while
+        its next run is in progress, so without this an unrelated dispatch could
+        evict — and close — the session that run is prompting.
         """
         self.entries: dict[str, AgentSessionEntry] = {}
         # Insertion-ordered set of closed session ids (dict-as-ordered-set).
         self._closed_ids: dict[str, None] = {}
         self._on_close = on_close
+        self._is_busy = is_busy
 
     def _notify_closed(self, session_id: str) -> None:
         if self._on_close is None:
@@ -116,18 +126,30 @@ class AgentSessionStore:
         return result
 
     async def evict_lru_if_needed(self) -> None:
+        """Drop least-recently-used idle sessions until the store has room.
+
+        A session that a run is driving is never evicted: closing it would abort
+        the prompt in flight (the SDK then raises
+        ``SessionStateError("Session is closed")``), which is exactly what a
+        wide parallel dispatch used to trigger once the store filled up.  When
+        every entry is busy the store simply grows past ``MAX_SESSIONS``; those
+        runs leave or free their entries as they finish, so the next eviction
+        has room again.
+        """
         from kimix.utils import close_session_async
 
         while len(self.entries) >= self.MAX_SESSIONS:
-            # Prefer evicting finished sessions: a completed background
-            # subagent stays listed (list_agents) and resumable
-            # (subagent(session_id=...)) until LRU pressure picks it, so a
-            # freshly finished child is never dropped just because a newer
-            # run started.
-            completed = [
-                sid for sid, e in self.entries.items() if e.state == "completed"
+            # Prefer evicting finished sessions: a completed subagent stays
+            # listed (list_agents) and resumable (subagent(session_id=...))
+            # until LRU pressure picks it, so a freshly finished child is never
+            # dropped just because a newer run started.
+            pool = [
+                sid
+                for sid, e in self.entries.items()
+                if e.state != "running" and not self._busy(sid)
             ]
-            pool = completed if completed else list(self.entries.keys())
+            if not pool:
+                return
             lru_id = min(
                 pool,
                 key=lambda sid: self.entries[sid].last_accessed,
@@ -137,3 +159,11 @@ class AgentSessionStore:
             self._notify_closed(lru_id)
             with contextlib.suppress(Exception):
                 await close_session_async(entry.session)
+
+    def _busy(self, session_id: str) -> bool:
+        """True when a run is driving *session_id* right now."""
+        if self._is_busy is None:
+            return False
+        with contextlib.suppress(Exception):
+            return bool(self._is_busy(session_id))
+        return False

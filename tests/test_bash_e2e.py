@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import tempfile
 from dataclasses import dataclass, field
@@ -424,6 +425,7 @@ class TestCmdConditionalExecution:
 
     def test_reproduced_cmd_if_runs_under_bash(self, tmp_path) -> None:
         import subprocess
+        import uuid
 
         if pytest is None:  # pragma: no cover - standalone use
             return
@@ -444,22 +446,51 @@ class TestCmdConditionalExecution:
             "dir D:/LuisaCompute/include/luisa/backends/ext 2>/dev/null "
             "| findstr vk; else echo no D:/LuisaCompute; fi"
         )
-        script = tmp_path / "cmd_if_e2e.sh"
-        script.write_text(result.command + "\n", encoding="utf-8", newline="\n")
-        proc = subprocess.run(
-            [str(bash), "--noprofile", "--norc", str(script)],
-            capture_output=True,
-            text=True,
-            cwd=str(tmp_path),
-            timeout=60,
-        )
-        # rc == 2 is the historical bash syntax-error exit code.
-        assert proc.returncode != 2, proc.stderr
-        assert proc.returncode == 0, (proc.returncode, proc.stderr)
-        assert "syntax error" not in proc.stderr
+
+        def _execute(command: str, name: str):
+            script = tmp_path / name
+            script.write_text(command + "\n", encoding="utf-8", newline="\n")
+            proc = subprocess.run(
+                [str(bash), "--noprofile", "--norc", str(script)],
+                capture_output=True,
+                text=True,
+                cwd=str(tmp_path),
+                timeout=60,
+            )
+            # rc == 2 is the historical bash syntax-error exit code.
+            assert proc.returncode != 2, proc.stderr
+            assert "syntax error" not in proc.stderr
+            return proc
+
+        # Hermetic proof that the translation *runs*: the same shape with the
+        # absolute operand renamed to a name that cannot exist on any host, so
+        # both conditionals take their else-branch and the chain ends with rc 0.
+        absent_operand = rf"D:\LuisaCompute_absent_{uuid.uuid4().hex[:8]}"
+        assert not os.path.exists(absent_operand)
+        twin_command = run_parser(self.REPRODUCED.replace(r"D:\LuisaCompute", absent_operand))
+        twin = _execute(twin_command.command, "cmd_if_e2e_absent.sh")
+        assert twin.returncode == 0, (twin.returncode, twin.stdout, twin.stderr)
+        assert "no LuisaCompute dir" in twin.stdout
+        assert "---" in twin.stdout
+        assert "no D:/LuisaCompute" in twin.stdout
+
+        # The verbatim reported command: the absolute operand ``D:\LuisaCompute``
+        # is host state.  When it is absent the else-branch runs and the chain
+        # exits 0; when the host has it, the then-branch runs
+        # (``dir … | findstr vk``) and findstr's exit status is whatever the
+        # machine's directory listing implies, so only the clean-run invariants
+        # are pinned there.
+        proc = _execute(result.command, "cmd_if_e2e.sh")
+        absolute_operand_exists = os.path.exists(r"D:\LuisaCompute")
+        if absolute_operand_exists:
+            assert proc.returncode in (0, 1), (proc.returncode, proc.stdout, proc.stderr)
+        else:
+            assert proc.returncode == 0, (proc.returncode, proc.stdout, proc.stderr)
+            assert "no D:/LuisaCompute" in proc.stdout
         assert "no LuisaCompute dir" in proc.stdout
         assert "---" in proc.stdout
         leftovers = [p.name.lower() for p in tmp_path.iterdir()]
+        assert "nul" not in leftovers, f"nul leak: {leftovers}"
         assert "nul" not in leftovers, f"nul leak: {leftovers}"
 
 

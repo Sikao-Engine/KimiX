@@ -124,7 +124,6 @@ def test_is_versioned_pwsh7_install_windows(monkeypatch: pytest.MonkeyPatch) -> 
     assert not _is_versioned_pwsh7_install(r"C:\other\pwsh.exe")
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="os.path.normpath is Windows-flavoured on win32")
 def test_is_versioned_pwsh7_install_posix(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "platform", "linux")
     assert _is_versioned_pwsh7_install("/opt/microsoft/powershell/7/pwsh")
@@ -306,8 +305,10 @@ def test_hardline_blocked(session: Session) -> None:
     assert "hardline" in result.message.lower()
 
 
-def test_hardline_disabled_by_config(session: Session, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(sys, "platform", "win32")
+def test_hardline_disabled_by_config(session: Session) -> None:
+    # No platform monkeypatching: the hardline floor is platform-independent,
+    # and forcing ``sys.platform`` breaks discovery (``shutil.which`` then takes
+    # the Windows branch against a POSIX ``shutil._winapi``).
     tool = _make_tool(session)
     tool._hardline_enabled = False
     assert tool._hardline_blocked("rm -rf /") is None

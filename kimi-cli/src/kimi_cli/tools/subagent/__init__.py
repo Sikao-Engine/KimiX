@@ -31,61 +31,76 @@ from .store import AgentSessionEntry, AgentSessionStore, ConversationTurn
 # Module-level registry mapping sub-agent session id -> its store entry.
 _agent_entries: dict[str, AgentSessionEntry] = {}
 
-# Detached background subagent runs are tracked per parent session (in the
-# parent session's ``custom_data`` under ``_BACKGROUND_TASKS_KEY``) so that
-# ``kimix.utils.prompt`` can wait for a session's own subagents — and only
-# those — when the session's prompt finishes.  A started task is kept in the
-# set so it is not garbage collected before it settles; a done callback
-# discards it.
-_BACKGROUND_TASKS_KEY = "agent_background_tasks"
+# Sub-agent session id -> token of the run currently driving that session.
+#
+# One sub-agent session can only be prompted by one run at a time: the SDK
+# raises ``SessionStateError("Session is already running")`` for a second
+# concurrent prompt, and ``prompt_async`` reacts to *any* prompt exception by
+# cancelling that session — which would abort the sibling run and, because the
+# finishing run closes the session, leave the other with the opaque
+# ``SessionStateError("Session is closed")``.  A claim is taken when the run is
+# prepared (before any prompt starts) and released when it finishes, so a
+# parallel dispatch — batch or several concurrent ``subagent`` tool calls — that
+# targets one session id twice fails fast with a clear message instead of
+# corrupting both runs.  A plain dict is enough: every claim/release happens on
+# the single event loop without an intervening await.
+_active_runs: dict[str, object] = {}
 
 
-def _background_tasks_for(session: Any) -> set[asyncio.Task]:
-    """Return (creating if needed) the detached-task set owned by *session*.
+def _claim_session_run(session_id: str) -> object:
+    """Reserve *session_id* for one run and return its release token.
 
-    Accepts either a ``kimi_cli.session.Session`` or the SDK wrapper around
-    one (``kimi_agent_sdk.Session``); both expose the owning CLI session's
-    ``custom_data``.  Returns a detached throwaway set when no custom data
-    is available, so callers can uniformly iterate the result.
+    Raises ``RuntimeError`` when another run already drives that session, which
+    ``_prepare_run`` surfaces as a ``ToolError`` naming the conflict.
     """
-    cli_session = session
-    custom_data = getattr(cli_session, "custom_data", None)
-    if not isinstance(custom_data, dict):
-        # SDK-wrapped session: the owning CLI session hangs off ``_cli``.
-        wrapped = getattr(getattr(session, "_cli", None), "session", None)
-        if wrapped is not None:
-            cli_session = wrapped
-            custom_data = getattr(cli_session, "custom_data", None)
-    if not isinstance(custom_data, dict):
-        return set()
-    tasks = custom_data.get(_BACKGROUND_TASKS_KEY)
-    if tasks is None:
-        tasks = set()
-        custom_data[_BACKGROUND_TASKS_KEY] = tasks
-    return tasks
+    if session_id in _active_runs:
+        raise RuntimeError(
+            f"Sub-agent '{session_id}' is currently running; wait for it to "
+            "finish before resuming it with more work."
+        )
+    token = object()
+    _active_runs[session_id] = token
+    return token
 
 
-# Sub-agent session id -> its detached background run task.  Populated by
-# ``Agent._start_background_task`` so ``job_output`` can block on one
-# specific run instead of the whole owning-session set above; a done callback
-# discards the mapping when the run settles.  Concurrent runs never share a
-# session id (``_prepare_run`` rejects resuming a running session), so a plain
-# dict is enough.
-_background_run_tasks: dict[str, asyncio.Task] = {}
+def _release_session_run(session_id: str, token: object) -> None:
+    """Release a claim taken by :func:`_claim_session_run` (idempotent).
 
-
-async def wait_for_background_agents(session: Any) -> None:
-    """Wait until every background subagent run owned by *session* settles.
-
-    ``kimix.utils.prompt.prompt_async`` calls this when the session's prompt
-    is finished but detached background subagents are still running, so they
-    complete (closing/updating their own sessions) before the parent session
-    is torn down — closing the parent would otherwise cascade-close them
-    mid-run.  Never raises.
+    The token comparison makes a late release from a superseded run a no-op, so
+    a newer run's claim is never dropped by an older one finishing late.
     """
-    pending = [t for t in _background_tasks_for(session) if not t.done()]
-    if pending:
-        await asyncio.gather(*pending, return_exceptions=True)
+    if _active_runs.get(session_id) is token:
+        _active_runs.pop(session_id, None)
+
+
+def _session_is_closed(session: Any) -> bool:
+    """True when *session* has already been closed (nothing can prompt it).
+
+    ``_closed`` is compared with ``is True`` on purpose: a stand-in session in a
+    test (``MagicMock``) answers every attribute with a truthy mock, and must
+    not be mistaken for a closed session.
+    """
+    if session is None:
+        return True
+    return getattr(session, "_closed", False) is True
+
+
+async def _abandon_unlaunched(
+    session: Any, session_id: str, is_reused: bool
+) -> None:
+    """Discard a resolved session whose run was rejected before it started.
+
+    A freshly created scratch session is closed and forgotten so a rejected
+    dispatch leaves nothing behind; a resumed session belongs to its owner and
+    is only unregistered.  Never raises: this runs on an error path.
+    """
+    if is_reused:
+        return
+    from kimix.utils import close_session_async
+
+    with contextlib.suppress(Exception):
+        await close_session_async(session)
+    _forget_child_session_record(session_id)
 
 
 # Live sub-agent session registry: sub-agent session id -> live SDK Session.
@@ -290,10 +305,6 @@ def _register_entry(session_id: str, entry: AgentSessionEntry) -> None:
     _agent_entries[session_id] = entry
 
 
-def _get_entry(session_id: str) -> AgentSessionEntry | None:
-    return _agent_entries.get(session_id)
-
-
 def _unregister_entry(session_id: str) -> None:
     _agent_entries.pop(session_id, None)
 
@@ -418,33 +429,6 @@ def _output_message(session_id: str, saved: str) -> str:
     return f"Output could not be saved to a file\nSession ID: {session_id}"
 
 
-def _background_dispatch_output(session_ids: list[str]) -> str:
-    """Tool output for a detached dispatch: the ids plus how to wait on them.
-
- ``job_output`` (``kimi_cli.tools.background``) is the only way to block on a
- detached run, so it is named here explicitly — and so is its contract: a
- ``wait`` on a subagent session id is *unbounded* and ignores ``timeout``,
- returning only once the run settles (with its status and output file).
- A crashed or failed run settles its task too, ending the wait; a healthy
- long-running subagent can never look "timed out".
-
-    Shared by the single and batch background paths so both promise exactly the
-    same thing.
-    """
-    ids_block = "\n".join(f"Session ID: {session_id}" for session_id in session_ids)
-    return (
-        f"{ids_block}\n\n"
-        "Started in the background; you'll be notified when each finishes. "
-        "To wait for one instead, call "
-        "job_output(job_id='<session id>', wait: true): it returns as soon as "
-        "that run settles (with its status and output file). The wait is "
-        "unbounded — `timeout` is ignored for subagents — and ends only if "
-        "the run crashes or raises. list_agents lists live subagents; "
-        "interrupt_agent stops one. Output is saved to "
-        "`.kimix_cache/temp_<session id>.md`."
-    )
-
-
 class SubAgentParams(BaseModel):
     model_config = {"populate_by_name": True}
 
@@ -458,17 +442,6 @@ class SubAgentParams(BaseModel):
             + accepts_alias_text("prompt", "task", word=False)
         ),
     )
-    run_in_background: bool = Field(
-        default=False,
-        description=(
-            "Whether to run in the background and return a durable subagent id "
-            "immediately. Defaults to false (block for the result); set true "
-            "to run detached — you are notified when it finishes and can "
-            "block on it with job_output(job_id='<id>', wait: true, "
-            "timeout=<seconds>); a wait that hits its timeout returns "
-            "[status: running] and leaves the run alive."
-        ),
-    )
     session_id: str | list[str | None] | None = Field(
         default=None,
         alias="session",  # common LLM variant
@@ -479,19 +452,20 @@ class SubAgentParams(BaseModel):
             "When ``prompt`` is a list of N prompts, this may be a list of N "
             "entries (``None`` = a fresh session for that prompt; a string = "
             "resume that session) or ``None`` (all N sessions are fresh); a "
-            "bare string with a list prompt is rejected. "
+            "bare string with a list prompt is rejected.  One session id can "
+            "only be driven by one run at a time, so a batch may not target the "
+            "same id twice. "
             + accepts_alias_text("session_id", "session", word=False)
         ),
     )
     close_session: bool | None = Field(
         default=None,
         description=(
-            "Close the subagent session after this prompt. Unset (default): a "
-            "foreground run closes it, a background run keeps it open so its "
-            "durable id stays listed by list_agents and resumable. Set "
-            "true/false to override. Closing deletes the scratch dir "
-            "(`.kimix_cache/<id>`), so the session can no longer be resumed "
-            "with its history."
+            "Close the subagent session after this prompt. Unset (default): "
+            "the run closes it, since sub-agent sessions are scratch. Set "
+            "false to keep it open so its id stays listed by list_agents and "
+            "resumable. Closing deletes the scratch dir (`.kimix_cache/<id>`), "
+            "so the session can no longer be resumed with its history."
         ),
     )
     return_history: bool = Field(
@@ -562,15 +536,13 @@ class SubAgentParams(BaseModel):
         """Normalize into N single-run param objects.
 
         A string ``prompt`` yields a one-element list (the single-run path). A
-        list ``prompt`` yields one param per element; ``run_in_background``,
-        ``close_session``, ``return_history``, ``history_format`` and
-        ``inherit_context`` are shared across all runs. Each returned object has
-        a string ``prompt`` and a string-or-None ``session_id`` so the existing
-        ``_prepare_run``/``_execute``/``_launch_background`` machinery is reused
-        unchanged.
+        list ``prompt`` yields one param per element; ``close_session``,
+        ``return_history``, ``history_format`` and ``inherit_context`` are
+        shared across all runs. Each returned object has a string ``prompt`` and
+        a string-or-None ``session_id`` so ``_prepare_run``/``_execute`` are
+        reused unchanged.
         """
         shared: dict[str, Any] = {
-            "run_in_background": self.run_in_background,
             "close_session": self.close_session,
             "return_history": self.return_history,
             "history_format": self.history_format,
@@ -592,8 +564,10 @@ class SubAgentParams(BaseModel):
 class _PreparedRun:
     """Everything ``_execute`` needs, resolved before a run starts.
 
-    ``params.close_session`` already holds the *effective* value (background
-    runs keep the session unless the caller explicitly said otherwise).
+    ``params.close_session`` already holds the *effective* value, and
+    ``claim`` is this run's reservation of ``session_id`` (see
+    :func:`_claim_session_run`) — released when the run finishes, or by
+    ``_rollback_prepared`` when the dispatch never launched it.
     """
 
     params: SubAgentParams
@@ -601,15 +575,7 @@ class _PreparedRun:
     session_id: str
     is_reused: bool
     prompt: str
-    background: bool
-
-
-def _consume_background_task_error(task: asyncio.Task) -> None:
-    """Retrieve a finished background task's exception (never raises)."""
-    if task.cancelled():
-        return
-    with contextlib.suppress(Exception):
-        task.exception()
+    claim: object
 
 
 def _get_store(session: Session) -> AgentSessionStore:
@@ -617,8 +583,12 @@ def _get_store(session: Session) -> AgentSessionStore:
     if store is None:
         # The store keeps sessions alive across ``subagent`` calls; tell the
         # module registries when it releases one (LRU eviction) so nothing keeps
-        # pointing at a closed session.
-        store = AgentSessionStore(on_close=_forget_child_session_record)
+        # pointing at a closed session, and keep eviction away from a session a
+        # run is currently driving.
+        store = AgentSessionStore(
+            on_close=_forget_child_session_record,
+            is_busy=lambda session_id: session_id in _active_runs,
+        )
         session.custom_data["agent_conversation_store"] = store
     return store
 
@@ -721,15 +691,12 @@ class Agent(CallableTool2):
         "one call; one session id is returned per prompt. With a list prompt, "
         "`session_id` may be null (all fresh sessions) or a list of the same "
         "count whose entries are a session id to resume or null for a new one. "
-        "Runs in the foreground by default, blocking until the result is "
-        "written to `.kimix_cache/temp_<session_id>.md` and returning that "
-        "path. Set run_in_background: true to return a durable subagent id "
-        "immediately instead — you are notified when it finishes, you can "
-        "block on it with job_output(job_id='<id>', wait: true, "
-        "timeout=<seconds>) (a timeout leaves the run alive and returns "
-        "[status: running]), and the child "
-        "conversation stays resumable via subagent(session_id='<id>', ...). "
-        "Sub-agents belong to the "
+        "Every run blocks until its result is written to "
+        "`.kimix_cache/temp_<session_id>.md`, and only that path is returned. "
+        "Runs of one call are executed concurrently, but one session id is "
+        "driven by one run at a time, so the same id cannot appear twice in a "
+        "batch. A session kept open with `close_session: false` stays resumable "
+        "via subagent(session_id='<id>', ...). Sub-agents belong to the "
         "session that spawned them: closing or clearing that session closes "
         "them all and deletes their scratch dirs, so ids work only while the "
         "parent session lives."
@@ -772,8 +739,6 @@ class Agent(CallableTool2):
                 message=str(exc),
                 brief="Failed to create sub-agent session",
             )
-        if prepared.background:
-            return await self._launch_background(prepared)
         return await self._execute(prepared)
 
     async def _dispatch_batch(self, params: SubAgentParams) -> ToolReturnValue:
@@ -781,11 +746,11 @@ class Agent(CallableTool2):
 
         Every run's ``_prepare_run`` (the part that can fail synchronously) is
         awaited first, bounded by the per-run semaphore; only when all of them
-        succeed is anything launched. This mirrors the single-run contract that
+        succeed is anything prompted. This mirrors the single-run contract that
         a session-creation / ``@file`` / busy-session error surfaces here as a
-        ``ToolError`` before any detached task or prompt is started. A one-
-        element list behaves like a batch of one but still returns the list-
-        shaped ``session_ids`` extras.
+        ``ToolError`` before any prompt is started. A one-element list behaves
+        like a batch of one but still returns the list-shaped ``session_ids``
+        extras.
         """
         runs = params._split_params()
 
@@ -816,8 +781,6 @@ class Agent(CallableTool2):
                 brief="Failed to create sub-agent session",
             )
 
-        if params.run_in_background:
-            return await self._dispatch_batch_background(params, prepared)
         return await self._dispatch_batch_foreground(params, prepared)
 
     async def _rollback_prepared(self, prepared: list[_PreparedRun]) -> None:
@@ -825,53 +788,21 @@ class Agent(CallableTool2):
 
         A batch that fails preparation mid-way may already have created live
         sessions for its successful siblings. Close the freshly created ones
-        (resumed sessions belong to their owners) and forget every bookkeeping
-        record, so the failed dispatch leaves no orphaned sessions or detached
-        tasks. Never raises: cleanup must not mask the preparation error.
+        (resumed sessions belong to their owners), release their run claims and
+        forget every bookkeeping record, so the failed dispatch leaves no
+        orphaned sessions or held claims. Never raises: cleanup must not mask
+        the preparation error.
         """
         from kimix.utils import close_session_async
 
         for run in prepared:
             try:
+                _release_session_run(run.session_id, run.claim)
                 if not run.is_reused:
                     await close_session_async(run.session)
                 _forget_child_session_record(run.session_id)
             except Exception:
                 pass
-
-    async def _dispatch_batch_background(
-        self, params: SubAgentParams, prepared: list[_PreparedRun]
-    ) -> ToolReturnValue:
-        """Launch every prepared run detached and return one combined ToolOk."""
-        session_ids: list[str] = []
-        turn_count = 0
-        histories: list[Any] = []
-        for run in prepared:
-            entry = await self._start_background_task(run)
-            session_ids.append(run.session_id)
-            turn_count += entry.total_turns
-            if params.return_history:
-                histories.append(
-                    self._format_history(
-                        entry.conversation_history, params.history_format
-                    )
-                )
-        result = ToolOk(
-            output=self._batch_background_output(session_ids),
-            brief="Background subagents started",
-        )
-        extras: dict[str, Any] = {
-            "session_ids": session_ids,
-            "status": "running",
-            "turn_count": turn_count,
-        }
-        if params.return_history:
-            extras["conversation_history"] = histories
-        result.extras = extras
-        return result
-
-    def _batch_background_output(self, session_ids: list[str]) -> str:
-        return _background_dispatch_output(session_ids)
 
     async def _dispatch_batch_foreground(
         self, params: SubAgentParams, prepared: list[_PreparedRun]
@@ -947,13 +878,13 @@ class Agent(CallableTool2):
 
 
     async def _prepare_run(self, params: SubAgentParams) -> _PreparedRun:
-        """Resolve the target session and build the effective prompt.
+        """Resolve the target session, claim it, and build the effective prompt.
 
         Everything that can fail synchronously — ``@file`` prompt resolution,
-        session creation — happens here, before a background run is launched,
-        so errors surface in the caller instead of being lost inside the
-        detached task. The prompt text is resolved first so a bad ``@path``
-        cannot leave a freshly created session orphaned.
+        session creation, the busy-session check — happens here, before any
+        prompt starts, so errors surface in the caller. The prompt text is
+        resolved first so a bad ``@path`` cannot leave a freshly created session
+        orphaned.
         """
         # Resolve @file prompt references to the full task text *before* any
         # session is created or resumed: a missing/invalid prompt file must not
@@ -978,20 +909,34 @@ class Agent(CallableTool2):
         _get_store(self._session)
 
         # A session mid-run cannot take another prompt (the SDK raises
-        # ``SessionStateError`` which ``prompt_async`` swallows, turning the
-        # call into a silent no-op) — reject it up front with real guidance.
+        # ``SessionStateError("Session is already running")`` which
+        # ``prompt_async`` turns into a cancel of that session) — reject it up
+        # front with real guidance.
         if isinstance(getattr(session, "_cancel_event", None), asyncio.Event):
+            await _abandon_unlaunched(session, session_id, is_reused)
             raise RuntimeError(
                 f"Sub-agent '{session_id}' is currently running; wait for it "
                 "to finish before resuming it with more work."
             )
 
-        background = bool(params.run_in_background)
-        # Effective close policy: background runs keep the session open by
-        # default so the durable id stays listed/resumable/messageable (the
-        # documented background contract); foreground runs close by default.
-        # An explicit close_session always wins.
-        effective_close = not background if params.close_session is None else params.close_session
+        # Reserve the session for this run *before* returning.  Two runs on one
+        # session would fight over the same SDK cancel event: the second
+        # prompt() raises "Session is already running", and prompt_async reacts
+        # to any prompt error by cancelling the session — aborting the sibling
+        # run, whose session is then closed by the finishing run, leaving the
+        # loser with an opaque "Session is closed".  The ``_cancel_event`` check
+        # above cannot see that race: in a parallel dispatch every run is
+        # prepared (and its session resolved) before any of them starts.
+        try:
+            claim = _claim_session_run(session_id)
+        except RuntimeError:
+            await _abandon_unlaunched(session, session_id, is_reused)
+            raise
+
+        # Effective close policy: a sub-agent session is scratch space, so the
+        # run closes it unless the caller explicitly asked to keep it (an open
+        # session stays listed by list_agents and resumable).
+        effective_close = True if params.close_session is None else params.close_session
         effective_params = params.model_copy(update={"close_session": effective_close})
         return _PreparedRun(
             params=effective_params,
@@ -999,107 +944,8 @@ class Agent(CallableTool2):
             session_id=session_id,
             is_reused=is_reused,
             prompt=prompt,
-            background=background,
+            claim=claim,
         )
-
-    async def _start_background_task(
-        self, prepared: _PreparedRun
-    ) -> AgentSessionEntry:
-        """Register the store entry and spawn the detached run task.
-
-        Shared by the single and batch background paths so store/task
-        registration is written once. Returns the created ``AgentSessionEntry``
-        (state ``running``); callers build their own ``ToolOk`` from it.
-        """
-        store = _get_store(self._session)
-        existing = store.get(prepared.session_id)
-        if existing is None:
-            await store.evict_lru_if_needed()
-        entry = AgentSessionEntry(
-            session=prepared.session,
-            session_id=prepared.session_id,
-            created_at=existing.created_at if existing else time.time(),
-            last_accessed=time.time(),
-            conversation_history=list(existing.conversation_history) if existing else [],
-            total_turns=existing.total_turns if existing else 0,
-            is_active=True,
-            state="running",
-        )
-        store.put(entry)
-        _register_entry(prepared.session_id, entry)
-
-        task = asyncio.create_task(self._run_background(prepared))
-        _background_run_tasks[prepared.session_id] = task
-        owned_tasks = _background_tasks_for(self._session)
-        owned_tasks.add(task)
-        task.add_done_callback(owned_tasks.discard)
-        task.add_done_callback(_consume_background_task_error)
-        task.add_done_callback(
-            lambda _t, sid=prepared.session_id: _background_run_tasks.pop(sid, None)
-        )
-        return entry
-
-    async def _launch_background(self, prepared: _PreparedRun) -> ToolReturnValue:
-        """Start ``_execute`` as a detached task and return the durable id now."""
-        entry = await self._start_background_task(prepared)
-
-        result = ToolOk(
-            output=_background_dispatch_output([prepared.session_id]),
-            brief="Background subagent started",
-        )
-        extras: dict[str, Any] = {
-            "session_id": prepared.session_id,
-            "status": "running",
-            "turn_count": entry.total_turns,
-        }
-        if prepared.params.return_history:
-            extras["conversation_history"] = self._format_history(
-                entry.conversation_history, prepared.params.history_format
-            )
-        result.extras = extras
-        return result
-
-    async def _run_background(self, prepared: _PreparedRun) -> None:
-        """Detached task body for a background subagent run."""
-        try:
-            result = await self._execute(prepared)
-        except Exception as exc:
-            # ``_execute`` handles its own errors; this is a defensive net so
-            # a background failure still notifies the parent and never logs
-            # an unretrieved task exception.
-            result = ToolError(
-                output="",
-                message=str(exc),
-                brief="Background subagent failed",
-            )
-        await self._notify_parent_background_finished(prepared.session_id, result)
-
-    async def _notify_parent_background_finished(
-        self, session_id: str, result: ToolReturnValue
-    ) -> None:
-        """Best-effort steer telling the parent the background run settled.
-
-        Delivered as a steer into the parent's running loop; when the parent
-        is idle the steer is dropped (its queue is rebuilt at the next turn).
-        """
-        parent_id = _cli_session_id(self._session)
-        if not parent_id:
-            return
-        parent = _get_agent_session(parent_id) or _sdk_session_by_id(parent_id)
-        if parent is None:
-            return
-        status = "failed" if result.is_error else "completed"
-        extras = getattr(result, "extras", None) or {}
-        saved = str(extras.get("output_file") or "")
-        store = _get_store(self._session)
-        if _was_closed_mid_turn(result, extras, store, session_id):
-            # The run was interrupted (its session was closed mid-turn), so the
-            # output is partial — say so instead of reporting a clean
-            # completion.
-            notice = _interrupted_notice(session_id, saved)
-        else:
-            notice = _finished_notice(session_id, status, saved)
-        await _push_steer_notice(parent, notice)
 
     async def _execute(self, prepared: _PreparedRun) -> ToolReturnValue:
         import kimix.utils as utils
@@ -1111,6 +957,23 @@ class Agent(CallableTool2):
         store = _get_store(self._session)
 
         try:
+            # A session that was closed between preparation and this point (an
+            # ``interrupt_agent`` on a queued run, or a parent-close cascade)
+            # cannot be prompted: the SDK would raise the opaque
+            # ``SessionStateError("Session is closed")``.  Report it as the
+            # interruption it is, and let the sibling runs of a batch proceed.
+            if _session_is_closed(session):
+                return ToolError(
+                    output="",
+                    message=(
+                        f"Sub-agent '{session_id}' was closed before this run "
+                        "started (interrupted, or its parent session closed). "
+                        "Start it again without `session_id` to run a fresh "
+                        "sub-agent."
+                    ),
+                    brief="sub-agent session closed",
+                )
+
             collector = _AgentConversationCollector()
             collector.finalize_user_turn(prepared.prompt)
 
@@ -1125,7 +988,16 @@ class Agent(CallableTool2):
                     session=session,
                     output_function=output_function,
                     info_print=False,
-                    merge_wire_messages=True, format_output=True
+                    merge_wire_messages=True,
+                    format_output=True,
+                    # This run's outcome is reported by *this* tool, so the child
+                    # must not swallow its own failure: with the default
+                    # ``ensure_todo_finished=True`` a broken prompt becomes a
+                    # silent "(no text output)" success plus the confusing
+                    # "Prompt error (gracefully handled)" / "prompt failed."
+                    # pair on the shared console.  Let the error through and
+                    # turn it into a real tool error below.
+                    ensure_todo_finished=False,
                 )
             except Exception as e:
                 err_msg = str(e)
@@ -1152,7 +1024,19 @@ class Agent(CallableTool2):
                 # while the tool call is generated (see kimix.base), so
                 # printing it here would show it twice.
                 saved_suffix = _prompt_saved_message(prepared.prompt)  # full effective prompt actually sent
-                message = f"{err_msg} {saved_suffix}".strip() if saved_suffix else err_msg
+                if _session_is_closed(session):
+                    # Never surface the SDK's opaque "Session is closed": name
+                    # what happened (the session went away under the run) and
+                    # say how to get the result again.
+                    message = (
+                        f"Sub-agent '{session_id}' was closed while it was "
+                        "running (interrupted, or its parent session closed), "
+                        "so its output is incomplete."
+                    )
+                    if saved_suffix:
+                        message = f"{message} {saved_suffix}"
+                else:
+                    message = f"{err_msg} {saved_suffix}".strip() if saved_suffix else err_msg
                 result = ToolError(
                     output=output,
                     message=message,
@@ -1201,6 +1085,10 @@ class Agent(CallableTool2):
                 message=str(exc),
                 brief="Failed to create sub-agent session",
             )
+        finally:
+            # The run owns the session from preparation until here; releasing it
+            # lets a later call resume the same id.
+            _release_session_run(session_id, prepared.claim)
 
     def _build_extras(
         self,
@@ -1261,7 +1149,7 @@ class Agent(CallableTool2):
             if (
                 entry is not None
                 and entry.is_active
-                and not getattr(entry.session, "_closed", False)
+                and not _session_is_closed(entry.session)
             ):
                 entry.last_accessed = time.time()
                 _register_entry(params.session_id, entry)
@@ -1397,10 +1285,10 @@ class Agent(CallableTool2):
     ) -> None:
         """Register the parent and child SDK sessions for agent bookkeeping.
 
-        The parent is registered under its own id so background completion
-        notices can steer it; the child is recorded as belonging to the
-        parent session so that closing/destroying the parent tears the child
-        down with it.
+        The parent is registered under its own id so the store and the close
+        hooks can resolve it; the child is recorded as belonging to the parent
+        session so that closing/destroying the parent tears the child down with
+        it.
         """
         parent_id = _cli_session_id(self._session)
         parent_sdk = _sdk_session_by_id(parent_id)
@@ -1473,14 +1361,13 @@ class AgentListParams(BaseModel):
 class AgentList(CallableTool2):
     name: str = "list_agents"
     description: str = (
-        "List your continuable background subagents by durable id and label. "
-        "Use it to recall which ones you started, not to poll for completion — "
-        "you're told when one finishes. Each entry reports session_id, "
-        "created_at, last_accessed, total_turns, state, is_active; sessions "
-        "closed via interrupt_agent are removed. A listed child stays resumable: "
-        "subagent(session_id=..., ...) starts a new turn on the same "
-        "conversation. Use job_output(job_id='<id>', wait: true) to block "
-        "until a running one finishes."
+        "List the subagents of this session that are still open, by durable id "
+        "and label. A subagent is listed while it runs and stays listed after a "
+        "run that was kept open with `close_session: false`. Each entry reports "
+        "session_id, created_at, last_accessed, total_turns, state, is_active; "
+        "sessions closed via interrupt_agent are removed. A listed child stays "
+        "resumable: subagent(session_id=..., ...) starts a new turn on the same "
+        "conversation."
     )
     params: type[BaseModel] = AgentListParams
 
@@ -1510,12 +1397,13 @@ class AgentCloseParams(BaseModel):
 class AgentClose(CallableTool2):
     name: str = "interrupt_agent"
     description: str = (
-        "Request cancellation of a background agent's current turn by its agent "
+        "Request cancellation of a running subagent's current turn by its agent "
         "id. The target may be your direct child or a deeper agent under you. "
         "Its current turn stops (agents it started keep running) and the "
         "subagent session is closed and removed from the active list. Returns "
         "as soon as the stop is accepted, so the target may run briefly; "
-        "interrupting an already-finished agent still closes its session."
+        "interrupting an already-finished agent still closes its session, which "
+        "is how a session kept open with `close_session: false` is discarded."
     )
     params: type[BaseModel] = AgentCloseParams
 
@@ -1544,28 +1432,12 @@ class AgentClose(CallableTool2):
         )
 
 
-def _existing_output_path(session: Any, session_id: str) -> str:
-    """Best-effort display path of a finished run's output file, when it exists.
-
-    Mirrors the primary location ``_write_subagent_output`` writes to; the
-    shared-temp-folder fallback location is not guessable, so it is skipped.
-    """
-    try:
-        from kimi_agent_sdk._session import _sdk_sessions_dir
-
-        work_dir = _session_work_dir(session) or KaosPath(".")
-        path = _sdk_sessions_dir(work_dir) / _output_file_name(session_id)
-    except Exception:
-        return ""
-    return _display_output_path(path) if path.exists() else ""
-
-
 # ---------------------------------------------------------------------------
-# History formatting / background-notice helpers.
+# History formatting helpers.
 #
-# Split out of `Agent._format_history` and `Agent._notify_parent_background_finished`
-# so both methods stay under the G1 cyclomatic-complexity threshold of 12
-# (finding F-19).  Pure functions of their arguments; no state is read.
+# Split out of `Agent._format_history` so the method stays under the G1
+# cyclomatic-complexity threshold of 12 (finding F-19).  Pure functions of their
+# arguments; no state is read.
 # ---------------------------------------------------------------------------
 
 _ROLE_ICONS = {"user": "👤", "assistant": "🤖", "tool": "🔧", "error": "❌", "system": "⚙️"}
@@ -1611,46 +1483,3 @@ def _is_text_turn(turn: ConversationTurn) -> bool:
     if turn.role != "assistant" or not turn.metadata:
         return False
     return turn.metadata.get("type") == "text"
-
-
-def _was_closed_mid_turn(
-    result: ToolReturnValue, extras: dict, store: Any, session_id: str
-) -> bool:
-    """True when the run was interrupted because its session was closed mid-turn."""
-    if result.is_error:
-        return False
-    if extras.get("status") != "continued":
-        return False
-    return store.get(session_id) is None and store.was_closed(session_id)
-
-
-def _finished_notice(session_id: str, status: str, saved: str) -> str:
-    """Steer text for a settled background run: the output file, never the text.
-
-    The sub-agent's result is only ever referenced by path, so a completed run
-    cannot inject its report into the parent's context through the notice.
-    """
-    head = f"Background subagent '{session_id}' {status}."
-    if saved:
-        return f"{head} Output: {saved}"
-    return f"{head} Output could not be saved to a file."
-
-
-def _interrupted_notice(session_id: str, saved: str) -> str:
-    """Build the 'was interrupted' steer text (path only, no partial text)."""
-    head = f"Background subagent '{session_id}' was interrupted."
-    if saved:
-        return f"{head} Partial output: {saved}"
-    return f"{head} Partial output could not be saved to a file."
-
-
-async def _push_steer_notice(parent: Any, notice: str) -> None:
-    """Best-effort steer delivery; a dropped steer is not an error."""
-    from kimi_cli.soul.steer import Steer
-
-    try:
-        steer = Steer.from_session(parent)
-        if steer is not None:
-            await steer.push(notice)
-    except Exception:
-        pass

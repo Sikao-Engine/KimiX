@@ -23,6 +23,10 @@ from kosong.tooling import TOOL_NAME_REDIRECTS, normalize_tool_name, resolve_too
 
 TODO_TARGET = "todo_list"
 
+# The agent manifests live in the ``kimi-cli`` workspace member, which is not the
+# CWD when the suite is run from the repository root -- anchor them on this file.
+_AGENTS_DIR = Path(__file__).resolve().parents[2] / "src" / "kimi_cli" / "agents"
+
 # Names a model hallucinates when it wants a planning tool.
 HALLUCINATED_TODO_NAMES = [
     "TodoList", "TaskList", "Todo", "Todos", "TaskManager", "TaskPlan", "Plan",
@@ -149,8 +153,8 @@ class TestRegistration:
     @pytest.mark.parametrize(
         "manifest",
         [
-            Path("src/kimi_cli/agents/default/agent.yaml"),
-            Path("src/kimi_cli/agents/okabe/agent.yaml"),
+            _AGENTS_DIR / "default/agent.yaml",
+            _AGENTS_DIR / "okabe/agent.yaml",
         ],
     )
     def test_base_agents_list_the_single_todo_tool(self, manifest: Path) -> None:
@@ -160,7 +164,7 @@ class TestRegistration:
         assert tools == [f"kimi_cli.tools.todo:{TODO_TARGET}"], tools
 
     def test_no_retired_entry_in_any_manifest(self) -> None:
-        root = Path("src/kimi_cli/agents")
+        root = _AGENTS_DIR
         offenders: list[str] = []
         for path in root.rglob("*.yaml"):
             text = path.read_text(encoding="utf-8")

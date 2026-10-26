@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from kaos.path import KaosPath
+
 from kimix.base import MessageType
 from kimi_cli.tools.swarm import (
     AgentSwarm,
@@ -19,10 +21,11 @@ from kimi_cli.tools.swarm import (
 
 
 @pytest.fixture
-def mock_session() -> MagicMock:
+def mock_session(tmp_path: Path) -> MagicMock:
     session = MagicMock()
     session.custom_data = {"is_swarm_session": True}
     session.custom_config = {"provider_dict": {"name": "mock"}}
+    session.work_dir = KaosPath(str(tmp_path))
     return session
 
 

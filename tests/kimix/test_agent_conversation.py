@@ -17,7 +17,6 @@ from kimi_cli.tools.subagent import (
     AgentListParams,
     SubAgentParams,
     _AgentConversationCollector,
-    _background_tasks_for,
     _get_agent_session,
     _get_store,
     _register_agent_session,
@@ -25,7 +24,6 @@ from kimi_cli.tools.subagent import (
     _resolve_prompt,
     _unregister_agent_session,
     _unregister_entry,
-    wait_for_background_agents,
 )
 from kimi_cli.tools.subagent.store import (
     AgentSessionEntry,
@@ -37,10 +35,13 @@ from kimi_cli.tools.subagent.store import (
 # Fixtures
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def mock_session() -> MagicMock:
+def mock_session(tmp_path: Path) -> MagicMock:
     session = MagicMock()
     session.custom_data = {}
     session.custom_config = {}
+    # A real, existing work dir: the subagent tool derives its output/cache
+    # paths from it, so a MagicMock attribute would litter the CWD.
+    session.work_dir = KaosPath(str(tmp_path))
     return session
 
 
@@ -121,6 +122,9 @@ async def test_store_lru_eviction(mock_sub_session: MagicMock) -> None:
             last_accessed=time.time() + i,
             conversation_history=[],
             total_turns=0,
+            # Finished runs are the eviction pool; a session a run is driving
+            # is never closed (see test_eviction_* ).
+            state="completed",
         )
         store.put(entry)
 
@@ -153,6 +157,7 @@ async def test_store_notifies_when_a_session_leaves(
                 last_accessed=time.time() + i,
                 conversation_history=[],
                 total_turns=0,
+                state="completed",
             )
         )
 
@@ -186,6 +191,7 @@ async def test_store_notification_failure_does_not_break_eviction(
                 last_accessed=time.time() + i,
                 conversation_history=[],
                 total_turns=0,
+                state="completed",
             )
         )
 
@@ -247,7 +253,7 @@ async def test_collector_empty_output() -> None:
 async def test_agent_recursive_guard(mock_session: MagicMock) -> None:
     mock_session.custom_config = {"is_sub_agent": True}
     agent = Agent(mock_session)
-    result = await agent(SubAgentParams(prompt="test", run_in_background=False))
+    result = await agent(SubAgentParams(prompt="test"))
     assert result.is_error
     assert "Recursive sub-agent call detected" in result.message
 
@@ -268,7 +274,7 @@ async def test_agent_new_session(
                 "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
-                result = await agent(SubAgentParams(prompt="do X", run_in_background=False))
+                result = await agent(SubAgentParams(prompt="do X"))
 
     assert not result.is_error
     assert result.extras is not None
@@ -295,7 +301,7 @@ async def test_agent_keep_alive_stores_session(
                 "kimix.utils.close_session_async", new_callable=AsyncMock
             ) as mock_close:
                 agent = Agent(mock_session)
-                result = await agent(SubAgentParams(prompt="do X", close_session=False, run_in_background=False))
+                result = await agent(SubAgentParams(prompt="do X", close_session=False))
 
     assert not result.is_error
     assert result.extras["status"] == "continued"
@@ -328,7 +334,7 @@ async def test_agent_reuse_session(
         ):
             agent = Agent(mock_session)
             result = await agent(
-                SubAgentParams(prompt="follow up", session_id="reuse-id", close_session=False, run_in_background=False)
+                SubAgentParams(prompt="follow up", session_id="reuse-id", close_session=False)
             )
 
     assert not result.is_error
@@ -365,7 +371,7 @@ async def test_agent_close_session_param(
                 agent = Agent(mock_session)
                 result = await agent(
                     SubAgentParams(
-                        prompt="do X", session_id="close-id", close_session=True, run_in_background=False)
+                        prompt="do X", session_id="close-id", close_session=True)
                 )
 
     assert not result.is_error
@@ -390,7 +396,7 @@ async def test_agent_return_history(
                 "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
-                result = await agent(SubAgentParams(prompt="do X", return_history=True, run_in_background=False))
+                result = await agent(SubAgentParams(prompt="do X", return_history=True))
 
     assert not result.is_error
     assert "conversation_history" in result.extras
@@ -416,7 +422,7 @@ async def test_agent_error_path(
                 "kimix.utils.close_session_async", new_callable=AsyncMock
             ) as mock_close:
                 agent = Agent(mock_session)
-                result = await agent(SubAgentParams(prompt="do X", close_session=False, run_in_background=False))
+                result = await agent(SubAgentParams(prompt="do X", close_session=False))
 
     assert result.is_error
     assert "boom" in result.message
@@ -429,6 +435,12 @@ async def test_agent_error_saves_prompt_file(
 ) -> None:
     """A failed sub-agent run saves the effective prompt for retry."""
     mock_session.custom_config = {"chat_provider": None}
+    # A real work dir keeps the run-output write inside ``tmp_path`` and
+    # deterministic.  A MagicMock ``work_dir`` makes that write fail on Windows
+    # (invalid characters) while succeeding on POSIX (as a junk directory), so
+    # its outcome — and therefore the order of the saved files — is not
+    # portable; only the prompt file goes through the patched helper.
+    mock_session.work_dir = KaosPath(str(tmp_path))
     saved_files: list[Path] = []
 
     def fake_create_script_file(content: str, ext: str = ".md") -> str:
@@ -454,18 +466,20 @@ async def test_agent_error_saves_prompt_file(
                 ):
                     agent = Agent(mock_session)
                     result = await agent(
-                        SubAgentParams(prompt="do X", close_session=False, run_in_background=False)
+                        SubAgentParams(prompt="do X", close_session=False)
                     )
 
     assert result.is_error
     assert "boom" in result.message
     assert "[prompt saved to" in result.message
     assert "prompt=@" in result.message
-    # The run output file is saved first, so the prompt file is not
-    # ``saved_0.md``; take the path the result reports and check its content.
+    # The run output and the retry prompt are two distinct files; the prompt
+    # is the one the result reports, so a retry can reference it.
+    output_file = Path(str(result.extras["output_file"])).resolve()
     prompt_file = Path(str(result.extras["prompt_file"]))
     assert prompt_file in saved_files
-    assert prompt_file != saved_files[0]
+    assert prompt_file.resolve() != output_file
+    assert output_file.read_text(encoding="utf-8") == "(no text output)"
     # The saved file contains the exact prompt string sent to prompt_async.
     sent_prompt = mock_prompt.await_args.kwargs["prompt_str"]
     assert prompt_file.read_text(encoding="utf-8") == sent_prompt
@@ -493,7 +507,7 @@ async def test_agent_prompt_from_file(
             ):
                 agent = Agent(mock_session)
                 result = await agent(
-                    SubAgentParams(prompt="@task.md", close_session=False, run_in_background=False)
+                    SubAgentParams(prompt="@task.md", close_session=False)
                 )
 
     assert not result.is_error
@@ -513,7 +527,7 @@ async def test_agent_prompt_file_missing(
     ) as mock_create:
         mock_create.return_value = mock_sub_session
         agent = Agent(mock_session)
-        result = await agent(SubAgentParams(prompt="@missing.md", run_in_background=False))
+        result = await agent(SubAgentParams(prompt="@missing.md"))
 
     assert result.is_error
     assert "prompt file not found" in result.message
@@ -564,7 +578,7 @@ async def test_agent_long_prompt_offloads_to_temp_file(
                     side_effect=fake_create_script_file,
                 ):
                     agent = Agent(mock_session)
-                    result = await agent(SubAgentParams(prompt=prompt_text, run_in_background=False))
+                    result = await agent(SubAgentParams(prompt=prompt_text))
 
     assert not result.is_error
     # The prompt is offloaded before the session is created; the run's own
@@ -600,7 +614,7 @@ async def test_agent_lru_eviction(
                     mock_sub.close = AsyncMock()
                     mock_create.return_value = mock_sub
                     await agent(
-                        SubAgentParams(prompt=f"task {i}", close_session=False, run_in_background=False)
+                        SubAgentParams(prompt=f"task {i}", close_session=False)
                     )
 
     assert len(store.entries) == 2
@@ -633,7 +647,7 @@ async def test_agent_inherit_context_copies_parent_session(
                 ):
                     agent = Agent(mock_session)
                     result = await agent(
-                        SubAgentParams(prompt="do X", inherit_context=True, run_in_background=False)
+                        SubAgentParams(prompt="do X", inherit_context=True)
                     )
 
     assert not result.is_error
@@ -674,7 +688,7 @@ async def test_agent_inherit_context_with_explicit_session_id(
                         SubAgentParams(
                             prompt="do X",
                             session_id="fresh-sub",
-                            inherit_context=True, run_in_background=False)
+                            inherit_context=True)
                     )
 
     assert not result.is_error
@@ -717,7 +731,7 @@ async def test_agent_inherit_context_ignored_on_reuse(
                         prompt="follow up",
                         session_id="reuse-id",
                         inherit_context=True,
-                        close_session=False, run_in_background=False)
+                        close_session=False)
                 )
 
     assert not result.is_error
@@ -738,7 +752,7 @@ async def test_agent_inherit_context_without_parent_id_errors(
         "kimi_cli.tools.subagent.Session.copy", new_callable=AsyncMock
     ) as mock_copy:
         agent = Agent(mock_session)
-        result = await agent(SubAgentParams(prompt="do X", inherit_context=True, run_in_background=False))
+        result = await agent(SubAgentParams(prompt="do X", inherit_context=True))
 
     assert result.is_error
     assert "Cannot inherit parent context" in result.message
@@ -941,7 +955,7 @@ async def test_agent_resolve_session_registers_parent_and_child(
                 "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
-                result = await agent(SubAgentParams(prompt="do X", close_session=False, run_in_background=False))
+                result = await agent(SubAgentParams(prompt="do X", close_session=False))
 
     assert not result.is_error
     child_id = result.extras["session_id"]
@@ -979,7 +993,7 @@ async def test_agent_work_dir_inherited_by_sub_session(
                 "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
-                await agent(SubAgentParams(prompt="do X", run_in_background=False))
+                await agent(SubAgentParams(prompt="do X"))
 
     assert mock_create.await_args is not None
     _, kwargs = mock_create.await_args
@@ -1011,7 +1025,7 @@ async def test_agent_work_dir_sdk_wrapped_session(
                 "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
-                await agent(SubAgentParams(prompt="do X", run_in_background=False))
+                await agent(SubAgentParams(prompt="do X"))
 
     assert mock_create.await_args is not None
     _, kwargs = mock_create.await_args
@@ -1037,7 +1051,7 @@ async def test_agent_work_dir_none_falls_back_to_cwd(
                 "kimix.utils.close_session_async", new_callable=AsyncMock
             ):
                 agent = Agent(mock_session)
-                result = await agent(SubAgentParams(prompt="do X", run_in_background=False))
+                result = await agent(SubAgentParams(prompt="do X"))
 
     assert not result.is_error
     assert mock_create.await_args is not None
@@ -1046,19 +1060,8 @@ async def test_agent_work_dir_none_falls_back_to_cwd(
 
 
 # ---------------------------------------------------------------------------
-# Background subagent lifecycle (run_in_background=true)
+# Run lifecycle: no detached mode, an open session stays addressable
 # ---------------------------------------------------------------------------
-
-
-async def _pump_background(n: int = 50) -> None:
-    """Let detached background tasks run to completion.
-
-    Every ``await asyncio.sleep(0)`` yields one event-loop iteration; the
-    mocked ``prompt_async`` completes without further scheduling, so a few
-    dozen iterations are far more than the task chain needs.
-    """
-    for _ in range(n):
-        await asyncio.sleep(0)
 
 
 def _capturing_prompt(captured: list[str], text: str = "done"):
@@ -1072,59 +1075,10 @@ def _capturing_prompt(captured: list[str], text: str = "done"):
     return _mock
 
 
-async def test_agent_background_returns_durable_id_immediately(
+async def test_agent_keeps_session_open_when_asked(
     mock_session: MagicMock, mock_sub_session: MagicMock
 ) -> None:
-    """The default (background) call must not wait for the subagent result."""
-    mock_session.custom_config = {"chat_provider": None}
-    prompt_started = asyncio.Event()
-
-    async def _blocking_prompt(*args, **kwargs):
-        prompt_started.set()
-        await asyncio.Event().wait()  # never completes on its own
-
-    with (
-        patch(
-            "kimix.utils._create_session_async", new_callable=AsyncMock
-        ) as mock_create,
-        patch(
-            "kimix.utils.prompt_async", new_callable=AsyncMock
-        ) as mock_prompt,
-        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
-    ):
-        mock_create.return_value = mock_sub_session
-        mock_prompt.side_effect = _blocking_prompt
-        agent = Agent(mock_session)
-        result = await agent(SubAgentParams(prompt="do X", run_in_background=True))
-    assert not result.is_error
-    assert result.extras is not None
-    assert result.extras["status"] == "running"
-    session_id = result.extras["session_id"]
-    assert session_id
-    assert session_id in result.output
-
-    # The tool returned BEFORE the subagent ran: registered as running, and
-    # the LLM has not been asked yet.
-    assert not prompt_started.is_set()
-    mock_prompt.assert_not_awaited()
-    # The detached run is tracked on the owning session (not globally).
-    assert len(_background_tasks_for(mock_session)) == 1
-    store = _get_store(mock_session)
-    entry = store.get(session_id)
-    assert entry is not None
-    assert entry.state == "running"
-    assert entry.is_active
-
-    # Clean up the deliberately never-finishing background task.
-    for task in list(_background_tasks_for(mock_session)):
-        task.cancel()
-    await _pump_background()
-
-
-async def test_agent_background_completes_and_stays_addressable(
-    mock_session: MagicMock, mock_sub_session: MagicMock
-) -> None:
-    """A finished background subagent stays listed and resumable by default."""
+    """``close_session: false`` leaves a finished run listed and resumable."""
     mock_session.custom_config = {"chat_provider": None}
     captured: list[str] = []
 
@@ -1142,18 +1096,19 @@ async def test_agent_background_completes_and_stays_addressable(
         mock_create.return_value = mock_sub_session
         mock_prompt.side_effect = _capturing_prompt(captured, "answer")
         agent = Agent(mock_session)
-        result = await agent(SubAgentParams(prompt="do X", run_in_background=True))
+        result = await agent(SubAgentParams(prompt="do X", close_session=False))
         session_id = result.extras["session_id"]
-        await _pump_background()
 
-    assert captured, "background run never executed the prompt"
+    # The prompt was executed before the tool returned (no detached runs).
+    assert captured == ["do X"]
+    assert result.extras["status"] == "continued"
+    mock_close.assert_not_awaited()
+
     store = _get_store(mock_session)
     entry = store.get(session_id)
-    assert entry is not None, "completed background subagent left the store"
+    assert entry is not None, "kept-open subagent left the store"
     assert entry.state == "completed"
     assert entry.is_active
-    # Default background runs keep the session open for later turns.
-    mock_close.assert_not_awaited()
     assert _get_agent_session(session_id) is mock_sub_session
 
     # list_agents still reports the completed subagent (durable id recall).
@@ -1163,44 +1118,10 @@ async def test_agent_background_completes_and_stays_addressable(
     assert '"completed"' in listing.output
 
 
-async def test_agent_background_explicit_close_session_closes(
-    mock_session: MagicMock, mock_sub_session: MagicMock
-) -> None:
-    """close_session=true on a background run closes it on completion."""
-    mock_session.custom_config = {"chat_provider": None}
-
-    with (
-        patch(
-            "kimix.utils._create_session_async", new_callable=AsyncMock
-        ) as mock_create,
-        patch(
-            "kimix.utils.prompt_async", new_callable=AsyncMock
-        ) as mock_prompt,
-        patch(
-            "kimix.utils.close_session_async", new_callable=AsyncMock
-        ) as mock_close,
-    ):
-        mock_create.return_value = mock_sub_session
-        mock_prompt.side_effect = _capturing_prompt([], "answer")
-        agent = Agent(mock_session)
-        result = await agent(
-            SubAgentParams(
-                prompt="do X", close_session=True, run_in_background=True
-            )
-        )
-        session_id = result.extras["session_id"]
-        await _pump_background()
-
-    assert result.extras["status"] == "running"
-    mock_close.assert_awaited_once()
-    assert _get_store(mock_session).get(session_id) is None
-    assert _get_agent_session(session_id) is None
-
-
 async def test_agent_foreground_default_still_closes(
     mock_session: MagicMock, mock_sub_session: MagicMock
 ) -> None:
-    """Foreground default semantics are unchanged: the session closes."""
+    """The default closes the scratch session once the run finished."""
     mock_session.custom_config = {"chat_provider": None}
 
     with (
@@ -1217,110 +1138,11 @@ async def test_agent_foreground_default_still_closes(
         mock_create.return_value = mock_sub_session
         mock_prompt.side_effect = _capturing_prompt([], "answer")
         agent = Agent(mock_session)
-        result = await agent(
-            SubAgentParams(prompt="do X", run_in_background=False)
-        )
+        result = await agent(SubAgentParams(prompt="do X"))
 
     assert not result.is_error
     assert result.extras["status"] == "closed"
     mock_close.assert_awaited_once()
-
-
-async def test_agent_background_notifies_parent_on_completion(
-    mock_session: MagicMock, mock_sub_session: MagicMock
-) -> None:
-    """When the background run settles the parent receives a notice steer."""
-    mock_session.custom_config = {"chat_provider": None}
-    mock_session.id = "main-1"
-    parent_sdk = _fake_sdk_session("main-1")
-    _register_agent_session("main-1", parent_sdk)
-    fake = _FakeSteer(delivered=True)
-    try:
-        with (
-            patch(
-                "kimix.utils._create_session_async", new_callable=AsyncMock
-            ) as mock_create,
-            patch(
-                "kimix.utils.prompt_async", new_callable=AsyncMock
-            ) as mock_prompt,
-            patch("kimix.utils.close_session_async", new_callable=AsyncMock),
-            patch(
-                "kimi_cli.soul.steer.Steer.from_session", return_value=fake
-            ) as mock_from,
-        ):
-            mock_create.return_value = mock_sub_session
-            mock_prompt.side_effect = _capturing_prompt([], "all done")
-            agent = Agent(mock_session)
-            result = await agent(SubAgentParams(prompt="do X", run_in_background=True))
-            session_id = result.extras["session_id"]
-            await _pump_background()
-    finally:
-        _unregister_agent_session("main-1")
-
-    assert mock_from.call_count == 1
-    assert len(fake.pushed) == 1
-    notice = fake.pushed[0]
-    assert session_id in notice
-    assert "completed" in notice
-    # The notice only points at the output file: the sub-agent's report must
-    # never be injected into the parent context.
-    assert "Output:" in notice
-    assert "all done" not in notice
-
-
-async def test_wait_for_background_agents_waits_until_settled(
-    mock_session: MagicMock,
-) -> None:
-    """``wait_for_background_agents`` blocks until the session's own detached
-    background tasks settle (used by ``prompt_async`` when a session finishes
-    while its subagents are still running)."""
-    finished: list[str] = []
-
-    async def _slow() -> None:
-        await asyncio.sleep(0.01)
-        finished.append("slow")
-
-    async def _fast() -> None:
-        finished.append("fast")
-
-    tasks = _background_tasks_for(mock_session)
-    slow = asyncio.create_task(_slow())
-    fast = asyncio.create_task(_fast())
-    tasks.add(slow)
-    tasks.add(fast)
-    slow.add_done_callback(tasks.discard)
-    fast.add_done_callback(tasks.discard)
-
-    await wait_for_background_agents(mock_session)
-
-    assert sorted(finished) == ["fast", "slow"]
-    # Settled tasks are discarded from the owning set via the done callback.
-    await _pump_background()
-    assert _background_tasks_for(mock_session) == set()
-
-
-async def test_wait_for_background_agents_sdk_wrapped_session(
-    mock_session: MagicMock,
-) -> None:
-    """The SDK wrapper (``session._cli.session``) resolves to the same task
-    set as the bare CLI session, so ``prompt_async`` can wait on it."""
-    done = asyncio.Event()
-
-    async def _work() -> None:
-        done.set()
-
-    tasks = _background_tasks_for(mock_session)
-    task = asyncio.create_task(_work())
-    tasks.add(task)
-    task.add_done_callback(tasks.discard)
-
-    sdk = MagicMock()
-    cli = MagicMock()
-    cli.session = mock_session
-    sdk._cli = cli
-
-    await wait_for_background_agents(sdk)
-    assert done.is_set()
 
 
 async def test_agent_resume_while_running_rejected(
@@ -1349,7 +1171,7 @@ async def test_agent_resume_while_running_rejected(
     agent = Agent(mock_session)
     result = await agent(
         SubAgentParams(
-            prompt="more work", session_id="busy-1", run_in_background=False
+            prompt="more work", session_id="busy-1"
         )
     )
 

@@ -51,17 +51,42 @@ _CLI_FILES = (
 )
 
 
+#: The inventory is a *generated* Phase-0 artifact written into the transient
+#: ``.kimix_cache/`` scratch dir, so it is absent in a fresh checkout (and in
+#: CI).  The inventory-derived checks below therefore skip instead of aborting
+#: collection of the whole root suite; the authoritative re-export contract
+#: (every ``_shell.<name>`` the app modules read) is asserted independently by
+#: ``test_cli_bash_modules_all_names_resolve``.
+_INVENTORY_MISSING = (
+    f"phase-0 symbol inventory artifact not regenerated ({_INVENTORY_PATH})"
+)
+
+
 def _inventory() -> list[str]:
-    with open(_INVENTORY_PATH, encoding="utf-8") as fh:
-        return [ln.strip() for ln in fh if ln.strip()]
+    """The frozen Phase-0 symbol surface, or ``[]`` when the artifact is absent."""
+    try:
+        with open(_INVENTORY_PATH, encoding="utf-8") as fh:
+            return [ln.strip() for ln in fh if ln.strip()]
+    except OSError:
+        return []
+
+
+_INVENTORY = _inventory()
+_INVENTORY_PARAMS = (
+    list(_INVENTORY)
+    if _INVENTORY
+    else [pytest.param("<inventory-missing>", marks=pytest.mark.skip(reason=_INVENTORY_MISSING))]
+)
 
 
 # --------------------------------------------------------------------------- 1
 def test_inventory_is_195_names() -> None:
-    assert len(_inventory()) == 195
+    if not _INVENTORY:
+        pytest.skip(_INVENTORY_MISSING)
+    assert len(_INVENTORY) == 195
 
 
-@pytest.mark.parametrize("name", _inventory())
+@pytest.mark.parametrize("name", _INVENTORY_PARAMS)
 def test_facade_exposes_every_inventory_name(name: str) -> None:
     """The facade re-exports the complete historical module-level surface."""
     assert hasattr(_shell_compat, name), f"kimix_native._shell_compat lost {name!r}"

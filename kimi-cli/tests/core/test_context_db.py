@@ -649,10 +649,15 @@ class TestContextDBFts:
         assert await db.search_messages("   ") == []
 
     async def test_fts_stays_in_sync_after_append_and_revert(self, db: ContextDB) -> None:
-        import apsw
+        # Read through the *same* SQLite library the writer uses (aiosqlite ->
+        # stdlib sqlite3). A second SQLite library in the same process (apsw
+        # bundles its own) cannot share WAL state on POSIX: fcntl locks are
+        # per-process, so the two libraries' in-process lock tables disagree and
+        # the reader sees a stale snapshot (it may even checkpoint away the WAL).
+        import sqlite3
 
         def fts_counts() -> tuple[int, int]:
-            conn = apsw.Connection(str(db.db_path))
+            conn = sqlite3.connect(str(db.db_path))
             n = conn.execute("SELECT COUNT(*) FROM messages_fts_docsize").fetchone()[0]
             m = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
             conn.close()

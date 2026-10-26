@@ -39,6 +39,20 @@ def tool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> python:
     yield t  # type: ignore[misc]
 
 
+def _venv_python(venv_dir: Path) -> Path:
+    """Create (empty) the interpreter of *venv_dir* in this host's venv layout.
+
+    Windows venvs use ``Scripts/python.exe``, POSIX venvs ``bin/python``; the
+    tool only accepts the layout of the running host (a Windows ``.exe`` shim
+    is not executable on POSIX), so the fixture must follow it too.
+    """
+    relative = Path("Scripts", "python.exe") if os.name == "nt" else Path("bin", "python")
+    venv_py = venv_dir / relative
+    venv_py.parent.mkdir(parents=True, exist_ok=True)
+    venv_py.touch()
+    return venv_py
+
+
 class TestResolvepython:
     def test_fallback_to_sys_executable(self, tool: python) -> None:
         assert tool._resolve_python(PythonParams(mode="interactive")) == sys.executable
@@ -58,9 +72,7 @@ class TestResolvepython:
         assert tool._resolve_python(PythonParams(mode="interactive")) == sys.executable
 
     def test_project_venv_discovery(self, tool: python, tmp_path: Path) -> None:
-        venv_py = tmp_path / ".venv" / "Scripts" / "python.exe"
-        venv_py.parent.mkdir(parents=True)
-        venv_py.touch()
+        venv_py = _venv_python(tmp_path / ".venv")
         # session dir is under tmp_path, so discovery walks up and finds .venv
         assert tool._resolve_python(PythonParams(mode="interactive")) == str(venv_py)
 
@@ -69,25 +81,20 @@ class TestResolvepython:
     ) -> None:
         # session dir is NOT under the venv root so only VIRTUAL_ENV matches
         venv_root = tmp_path / "elsewhere" / "myenv"
-        venv_py = venv_root / "Scripts" / "python.exe"
-        venv_py.parent.mkdir(parents=True)
-        venv_py.touch()
+        venv_py = _venv_python(venv_root)
         monkeypatch.setenv("VIRTUAL_ENV", str(venv_root))
         assert tool._resolve_python(PythonParams(mode="interactive")) == str(venv_py)
 
     def test_priority_order(
         self, tool: python, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        venv_py = tmp_path / ".venv" / "Scripts" / "python.exe"
-        venv_py.parent.mkdir(parents=True)
-        venv_py.touch()
+        venv_py = _venv_python(tmp_path / ".venv")
         override = tmp_path / "override.exe"
         override.touch()
         # project .venv beats VIRTUAL_ENV
-        other = tmp_path / "other"
-        (other / "Scripts").mkdir(parents=True)
-        (other / "Scripts" / "python.exe").touch()
-        monkeypatch.setenv("VIRTUAL_ENV", str(other))
+        other_root = tmp_path / "other"
+        _venv_python(other_root)
+        monkeypatch.setenv("VIRTUAL_ENV", str(other_root))
         assert tool._resolve_python(PythonParams(mode="interactive")) == str(venv_py)
         # override beats project .venv
         monkeypatch.setenv("KIMIX_PYTHON_EXECUTABLE", str(override))
@@ -95,11 +102,37 @@ class TestResolvepython:
         assert tool._resolve_python(PythonParams(mode="interactive")) == str(override)
 
     def test_cache_revalidated_when_deleted(self, tool: python, tmp_path: Path) -> None:
-        venv_py = tmp_path / ".venv" / "Scripts" / "python.exe"
-        venv_py.parent.mkdir(parents=True)
-        venv_py.touch()
+        venv_py = _venv_python(tmp_path / ".venv")
         assert tool._resolve_python(PythonParams(mode="interactive")) == str(venv_py)
         venv_py.unlink()
+        assert tool._resolve_python(PythonParams(mode="interactive")) == sys.executable
+
+    def test_host_layout_preferred_when_both_layouts_exist(
+        self, tool: python, tmp_path: Path
+    ) -> None:
+        """A checkout shared with the other OS can hold both layouts; the host's
+        own interpreter must win."""
+        venv_dir = tmp_path / ".venv"
+        native = _venv_python(venv_dir)
+        # Present the *other* platform's layout as well.
+        foreign_relative = (
+            Path("bin", "python") if os.name == "nt" else Path("Scripts", "python.exe")
+        )
+        foreign = venv_dir / foreign_relative
+        foreign.parent.mkdir(parents=True, exist_ok=True)
+        foreign.touch()
+        assert tool._resolve_python(PythonParams(mode="interactive")) == str(native)
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX-only regression guard")
+    def test_windows_scripts_layout_is_ignored_on_posix(
+        self, tool: python, tmp_path: Path
+    ) -> None:
+        """Regression: a Windows ``.venv/Scripts/python.exe`` in a repo mounted
+        into WSL is not runnable there, so it must never be resolved (spawning
+        it fails through interop with "can't open file")."""
+        windows_py = tmp_path / ".venv" / "Scripts" / "python.exe"
+        windows_py.parent.mkdir(parents=True)
+        windows_py.touch()
         assert tool._resolve_python(PythonParams(mode="interactive")) == sys.executable
 
 

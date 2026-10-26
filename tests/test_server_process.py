@@ -863,13 +863,15 @@ def test_stop_reaps_child_spawned_on_a_different_loop(
 
     assert "failed to reap process" not in caplog.text
     assert get_live_server_processes() == []
-    # On POSIX the pid is fully reaped (os.kill raises ChildProcessError).  On
-    # Windows terminate()==TerminateProcess is immediate, but a terminated
-    # process handle stays openable until the (dead) spawn loop releases it, so
-    # os.kill(pid, 0) is not a reliable liveness probe there; the absence of a
-    # 'failed to reap' log + a drained registry is the contract we assert.
+    # On POSIX the pid is fully reaped, so it is no longer probeable: CPython
+    # raises ProcessLookupError (ESRCH) from os.kill, or ChildProcessError when
+    # the zombie is still pending.  On Windows terminate()==TerminateProcess is
+    # immediate, but a terminated process handle stays openable until the (dead)
+    # spawn loop releases it, so os.kill(pid, 0) is not a reliable liveness
+    # probe there; the absence of a 'failed to reap' log + a drained registry is
+    # the contract we assert.
     if sys.platform != "win32":
-        with pytest.raises(ChildProcessError):
+        with pytest.raises((ChildProcessError, ProcessLookupError)):
             os.kill(pid, 0)
     _ = (os, _time, pid)  # keep names referenced for the win32 branch above
 

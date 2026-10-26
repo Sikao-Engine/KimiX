@@ -679,9 +679,12 @@ def _rtk_fold_note(
         log = meta["skipped_log"]
     if log:
         note += f" Full log: {log}"
-    if original_path:
-        note += f" Original output: {original_path.replace(chr(92), '/')}"
-    return note
+        if original_path:
+            # Backtick-quote the path: the result message is sentence-terminated
+            # (".") by ToolResultBuilder, and on POSIX a bare trailing "." would
+            # read as part of the filename.
+            note += f" Original output: `{original_path.replace(chr(92), '/')}`"
+        return note
 
 
 # Minimal type-to-extension mapping for common file types.
@@ -2242,12 +2245,15 @@ class Grep(CallableTool2[Params]):
             if self._is_valid_file(search_path, params):
                 files.append(search_path)
         else:
+            # Sort entries so the pure-Python fallback yields the same order on
+            # every filesystem (Windows NTFS returns sorted names, POSIX ext4
+            # returns hash order) — offset/head_limit pagination depends on it.
             for root, dirs, filenames in os.walk(search_path):
-                dirs[:] = [
+                dirs[:] = sorted(
                     d for d in dirs
                     if not _should_skip_dir(d, params.include_ignored)
-                ]
-                for filename in filenames:
+                )
+                for filename in sorted(filenames):
                     file_path = Path(root) / filename
                     if self._is_valid_file(file_path, params):
                         files.append(file_path)

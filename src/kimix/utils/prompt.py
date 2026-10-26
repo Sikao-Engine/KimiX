@@ -307,6 +307,15 @@ async def _export_session_todos(session: Session, path: Path) -> None:
         base.print_error(f"Failed to export todo list to {path}: {exc}")
 
 
+def _session_closed(session: Any) -> bool:
+    """True when *session* was closed (its conversation no longer exists).
+
+    ``_closed`` is compared with ``is True`` so a test double answering every
+    attribute with a truthy mock is not mistaken for a closed session.
+    """
+    return getattr(session, "_closed", False) is True
+
+
 def _provider_key(provider_dict: dict[str, Any]) -> tuple:
     """Build a hashable identity key for a provider_dict.
 
@@ -680,6 +689,14 @@ async def prompt_async(
         if runtime is not None:
             runtime.current_prompt = prompt_str
 
+    # A prompt that stopped because its session was closed (``interrupt_agent``,
+    # a parent-close cascade, CLI shutdown) is a *cancellation* of a
+    # conversation that no longer exists, not a prompt that failed: reporting it
+    # as one produced the confusing "Prompt error (gracefully handled): Session
+    # is closed" + "prompt failed." pair, which looks like an agent failure
+    # while the agent has simply been torn down.  Set below and honoured by the
+    # final branch, so nothing is printed for it.
+    cancelled_by_close = False
     try:
         if ensure_todo_finished:
             # When ensure_todo_finished=True, catch ALL exceptions from the
@@ -699,13 +716,17 @@ async def prompt_async(
                     timeout=timeout,
                 )
             except Exception as exc:
-                base._stream.colorful_print_word(
-                    f"Prompt error (gracefully handled): {exc}",
-                    fg=Color.BRIGHT_RED,
-                    styles=[Style.BOLD],
-                    require_new_line=True,
-                )
-                prompt_success = False
+                if _session_closed(session):
+                    cancelled_by_close = True
+                    prompt_success = False
+                else:
+                    base._stream.colorful_print_word(
+                        f"Prompt error (gracefully handled): {exc}",
+                        fg=Color.BRIGHT_RED,
+                        styles=[Style.BOLD],
+                        require_new_line=True,
+                    )
+                    prompt_success = False
         else:
             prompt_success = await _run_single_prompt(
                 session,
@@ -748,7 +769,7 @@ async def prompt_async(
                         require_new_line=True,
                     )
                     break
-        elif not prompt_success:
+        elif not prompt_success and not cancelled_by_close:
             base._stream.colorful_print_word("prompt failed.", fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True)
 
     finally:
@@ -763,17 +784,6 @@ async def prompt_async(
                     await _clear_session_todos(session)
                 except Exception as exc:
                     base.print_error(f"Failed to clear todos: {exc}")
-                # Background subagents spawned through the ``subagent`` tool
-                # may still be running now that this session's prompt is
-                # finished.  Wait for all of them to settle before teardown:
-                # closing the parent session would otherwise cascade-close
-                # (and delete) their scratch session directories mid-run.
-                try:
-                    from kimi_cli.tools.subagent import wait_for_background_agents
-
-                    await wait_for_background_agents(session)
-                except Exception as exc:
-                    base.print_error(f"Failed to wait for background subagents: {exc}")
                 if close_session_after_prompt:
                     try:
                         await close_session_async(session)

@@ -5,8 +5,7 @@ instead of the full text, so a long sub-agent report is read on demand and
 never floods the parent's context.  These probes pin the file location (one
 file per sub-agent session, path-hostile ids flattened), the save fallbacks
 (the shared temp folder, then a pathless failure notice) and — importantly —
-that neither the tool result nor the background steer ever echoes the
-sub-agent's own text back to the parent.
+that the tool result never echoes the sub-agent's own text back to the parent.
 """
 
 from __future__ import annotations
@@ -17,7 +16,6 @@ from pathlib import Path
 from kaos.path import KaosPath
 from kimi_cli.tools import subagent as sa
 from kimi_cli.tools.subagent import Agent, SubAgentParams, _PreparedRun
-from kosong.tooling import ToolOk
 
 MessageType = importlib.import_module("kimix.ui.printing").MessageType
 
@@ -58,7 +56,9 @@ def _prepared(session, params: SubAgentParams, prompt: str) -> _PreparedRun:
         session_id="child-1",
         is_reused=False,
         prompt=prompt,
-        background=False,
+        # A real _prepare_run reserves the session; here the run is driven
+        # directly, so any token will do (releasing it is a no-op).
+        claim=object(),
     )
 
 
@@ -176,7 +176,7 @@ async def test_execute_writes_result_and_returns_the_path(tmp_path, monkeypatch)
     result = await tool._execute(
         _prepared(
             _FakeSession(tmp_path, "child-1"),
-            SubAgentParams(prompt="do it", run_in_background=False),
+            SubAgentParams(prompt="do it"),
             "do it",
         )
     )
@@ -196,7 +196,7 @@ async def test_execute_writes_partial_result_and_reports_the_error(tmp_path, mon
     child = _FakeSession(tmp_path, "child-1")
 
     result = await tool._execute(
-        _prepared(child, SubAgentParams(prompt="do it", run_in_background=False), "do it")
+        _prepared(child, SubAgentParams(prompt="do it"), "do it")
     )
 
     assert result.is_error
@@ -219,7 +219,7 @@ async def test_execute_never_returns_the_text_when_the_primary_save_fails(
     result = await tool._execute(
         _prepared(
             _FakeSession(tmp_path, "child-1"),
-            SubAgentParams(prompt="do it", run_in_background=False),
+            SubAgentParams(prompt="do it"),
             "do it",
         )
     )
@@ -246,7 +246,7 @@ async def test_execute_reports_a_failed_save_without_echoing_the_text(tmp_path, 
     result = await tool._execute(
         _prepared(
             _FakeSession(tmp_path, "child-1"),
-            SubAgentParams(prompt="do it", run_in_background=False),
+            SubAgentParams(prompt="do it"),
             "do it",
         )
     )
@@ -254,55 +254,3 @@ async def test_execute_reports_a_failed_save_without_echoing_the_text(tmp_path, 
     assert result.output == "Output could not be saved to a file\nSession ID: child-1"
     assert "final answer" not in result.output
     assert "output_file" not in result.extras
-
-
-# --------------------------------------------------------------------------- #
-# Background completion notice
-# --------------------------------------------------------------------------- #
-
-
-async def test_background_notice_points_at_the_output_file(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    tool = Agent(_FakeSession(tmp_path))
-    pushed: list[str] = []
-
-    async def fake_push(parent, notice):
-        pushed.append(notice)
-
-    monkeypatch.setattr(sa, "_push_steer_notice", fake_push)
-    monkeypatch.setattr(sa, "_get_agent_session", lambda session_id: object())
-    result = ToolOk(output="Output saved to .kimix_cache/temp_child-1.md\nSession ID: child-1")
-    result.extras = {
-        "session_id": "child-1",
-        "status": "continued",
-        "output_file": ".kimix_cache/temp_child-1.md",
-    }
-
-    await tool._notify_parent_background_finished("child-1", result)
-
-    assert pushed == [
-        "Background subagent 'child-1' completed. Output: .kimix_cache/temp_child-1.md"
-    ]
-
-
-def test_finished_notice_without_a_saved_file_reports_the_failure():
-    assert sa._finished_notice("child-1", "failed", "") == (
-        "Background subagent 'child-1' failed. Output could not be saved to a file."
-    )
-
-
-def test_interrupted_notice_uses_the_partial_output_file():
-    notice = sa._interrupted_notice("child-1", ".kimix_cache/temp_child-1.md")
-    assert notice == (
-        "Background subagent 'child-1' was interrupted. "
-        "Partial output: .kimix_cache/temp_child-1.md"
-    )
-
-
-def test_interrupted_notice_never_echoes_partial_text():
-    notice = sa._interrupted_notice("child-1", "")
-
-    assert notice == (
-        "Background subagent 'child-1' was interrupted. "
-        "Partial output could not be saved to a file."
-    )

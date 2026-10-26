@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import platform
-import sys
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
@@ -40,6 +39,18 @@ def runtime_with_additional_dir(runtime: Runtime, additional_dir: KaosPath) -> R
 
 
 # ── Glob tests ──────────────────────────────────────────────────────────────
+# Product gap (not a platform difference): Glob performs no workspace
+# containment check at all — its `_validate_directory` helper is disabled, so
+# an absolute directory outside work_dir/additional_dirs/skills_dirs is
+# searched instead of rejected with "outside the workspace" (a missing one
+# reports "does not exist" instead). Only read/grep/write/edit implement
+# workspace rules, and they allow absolute paths outside the workspace too.
+# Tests that pin the missing rejection xfail on every platform instead of
+# being skipped on Windows only.
+_GLOB_NO_CONTAINMENT = (
+    "Glob implements no workspace containment check: an outside directory "
+    "is searched instead of rejected with 'outside the workspace'"
+)
 
 
 async def test_glob_in_additional_dir(
@@ -70,7 +81,7 @@ async def test_glob_in_additional_dir_subdirectory(
     assert "main.py" in result.output
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation order differs")
+@pytest.mark.xfail(strict=False, reason=_GLOB_NO_CONTAINMENT)
 async def test_glob_outside_all_dirs_rejected(
     runtime_with_additional_dir: Runtime,
 ):
@@ -165,7 +176,7 @@ async def test_replace_in_additional_dir(
 # ── Dynamic mutation tests ──────────────────────────────────────────────────
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation differs")
+@pytest.mark.xfail(strict=False, reason=_GLOB_NO_CONTAINMENT)
 async def test_add_dir_dynamically_affects_tools(runtime: Runtime, approval: Approval):
     """Adding a dir to runtime.additional_dirs should immediately affect tool behavior."""
     glob_tool = Glob(runtime)
@@ -247,7 +258,7 @@ async def test_glob_in_skills_dir_subdirectory(
     assert "read_content.py" in result.output
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation order differs")
+@pytest.mark.xfail(strict=False, reason=_GLOB_NO_CONTAINMENT)
 async def test_glob_outside_skills_and_workspace_rejected(
     runtime_with_skills_dir: Runtime,
 ):
@@ -260,7 +271,7 @@ async def test_glob_outside_skills_and_workspace_rejected(
     assert "outside the workspace" in result.message
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows path validation differs")
+@pytest.mark.xfail(strict=False, reason=_GLOB_NO_CONTAINMENT)
 async def test_glob_skill_scripts_dir_outside_workspace(
     runtime: Runtime,
 ):

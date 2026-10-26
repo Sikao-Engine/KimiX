@@ -102,26 +102,29 @@ REPORT_TOOLS: dict[str, dict[str, Any]] = {
     },
     "subagent": {
         "class": "Agent",
-        "canonical": ["prompt", "run_in_background"],
-        "aliases": {"task": "prompt"},
+        # ``session_id`` is declared with the ``session`` alias, so the tool
+        # schema advertises it as ``session`` (both spellings validate).
+        "canonical": ["prompt", "session", "close_session"],
+        "aliases": {"task": "prompt", "session_id": "session"},
         "desc_lead": "Delegate a self-contained task to a subagent",
         "param_desc": {
             "prompt": "The complete, self-contained task for the subagent.",
-            "run_in_background": "Whether to run in the background and return a durable subagent id immediately.",
+            "session": "Session ID to resume an existing sub-agent session.",
+            "close_session": "Close the subagent session after this prompt.",
         },
     },
     "list_agents": {
         "class": "AgentList",
         "canonical": ["scope"],
         "aliases": {},
-        "desc_lead": "List your continuable background subagents by durable id and label.",
+        "desc_lead": "List the subagents of this session that are still open, by durable id and label.",
         "param_desc": {"scope": "`children` (default) lists direct children only."},
     },
     "interrupt_agent": {
         "class": "AgentClose",
         "canonical": ["agent_id"],
         "aliases": {"session": "agent_id", "session_id": "agent_id"},
-        "desc_lead": "Request cancellation of a background agent's current turn by its agent id.",
+        "desc_lead": "Request cancellation of a running subagent's current turn by its agent id.",
         "param_desc": {"agent_id": "The agent id of the running agent to interrupt."},
     },
     "job_output": {
@@ -317,16 +320,27 @@ def test_legacy_tool_names_resolve_via_redirects() -> None:
         )
 
 
-def test_legacy_shell_names_resolve_to_pwsh_on_windows() -> None:
-    """On Windows the shell-name redirects point at pwsh."""
+def test_legacy_shell_names_resolve_to_pwsh_on_windows(monkeypatch) -> None:
+    """Shell-name redirects are platform-aware: pwsh on Windows, bash on POSIX.
+
+    The table is built from ``sys.platform`` at call time (see
+    ``_build_platform_redirects``), so both branches are asserted on either
+    host instead of pinning whichever one the test machine happens to be.
+    """
     from kimi_cli.soul.toolset import _build_platform_redirects
 
-    redirects = _build_platform_redirects()
-    assert redirects[normalize_tool_name("Powershell")] == "pwsh"
-    if sys.platform == "win32":
-        assert redirects[normalize_tool_name("Bash")] == "pwsh"
-    else:
-        assert redirects[normalize_tool_name("Powershell")] == "bash"
+    with monkeypatch.context() as win_platform:
+        win_platform.setattr(sys, "platform", "win32")
+        win_redirects = _build_platform_redirects()
+    assert win_redirects[normalize_tool_name("Powershell")] == "pwsh"
+    assert win_redirects[normalize_tool_name("Bash")] == "pwsh"
+
+    with monkeypatch.context() as posix_platform:
+        posix_platform.setattr(sys, "platform", "linux")
+        posix_redirects = _build_platform_redirects()
+    # A PowerShell reference still resolves to a shell that exists on POSIX.
+    assert posix_redirects[normalize_tool_name("Powershell")] == "bash"
+    assert posix_redirects[normalize_tool_name("Pwsh")] == "bash"
 
 
 def test_todo_item_schema_uses_title() -> None:

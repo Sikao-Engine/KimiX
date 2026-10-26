@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import socket
 from collections.abc import AsyncIterator
 from typing import Protocol
 
@@ -189,10 +191,24 @@ async def test_fetch_url_empty_url(fetch_url_tool: fetch_url) -> None:
     )
 
 
+def _can_connect(host: str, port: int = 443, timeout: float = 5.0) -> bool:
+    """Return whether a TCP connection to ``host:port`` can be established."""
+    try:
+        socket.create_connection((host, port), timeout=timeout).close()
+    except OSError:
+        return False
+    return True
+
+
 async def test_fetch_url_javascript_driven_site(fetch_url_tool: fetch_url) -> None:
     """Test fetching from a JavaScript-driven site that may not work with trafilatura."""
-    result = await fetch_url_tool(Params(url="https://www.moonshot.ai/"))
-
+    host = "www.moonshot.ai"
+    # This test exercises a live third-party site, so it needs real network access.
+    # The check is deliberately narrow: only a failure to connect at all (no DNS, no
+    # outbound TCP) skips it; any other outcome is still asserted below.
+    if not await asyncio.to_thread(_can_connect, host):
+        pytest.skip(f"{host}:443 is unreachable from this host (no network access)")
+    result = await fetch_url_tool(Params(url=f"https://{host}/"))
     # This may fail due to JavaScript rendering requirements
     # If it fails, should indicate extraction issues
     if result.is_error:

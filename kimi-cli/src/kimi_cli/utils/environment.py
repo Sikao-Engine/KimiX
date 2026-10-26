@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ctypes
 import ntpath
 import os
 import platform
@@ -9,13 +10,20 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from functools import lru_cache
+from types import ModuleType
 from typing import Literal
 
 from kaos.path import KaosPath
 
 if sys.platform == "win32":
-    import ctypes
     import winreg
+else:
+    # ``winreg`` is Windows-only.  Keep the name bound to ``None`` (instead of
+    # leaving it undefined) so the Windows code paths below can be exercised on
+    # POSIX hosts -- e.g. tests that force the ``sys.platform == "win32"`` gate
+    # or patch ``winreg`` with a fake -- and so ``refresh_windows_env`` degrades
+    # to a no-op rather than raising ``NameError``.
+    winreg = None  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +209,7 @@ def refresh_windows_env() -> None:
     external package managers (WinGet, MSI, etc.) without
     restarting the process.
     """
-    if sys.platform != "win32":
+    if sys.platform != "win32" or winreg is None:
         return
 
     # --- PATH ---
@@ -391,11 +399,25 @@ async def _find_git_bash_path() -> KaosPath:
     raise GitBashNotFoundError(_GIT_BASH_INSTALL_HINT)
 
 
+def _path_module_for(path: str) -> ModuleType:
+    """Return ``ntpath`` or the host ``os.path``, matching the style of *path*.
+
+    git-bash discovery runs on Windows, where every path is Windows style.  The
+    helpers below are nevertheless host independent: tests pass Windows-style
+    paths on POSIX hosts, and this checkout is also used from WSL with POSIX
+    paths.  ``ntpath.join`` applied to a POSIX path would emit
+    ``/srv/git\\bin\\bash.exe``, a path that can never exist, so the separator
+    flavour has to follow the path that was passed in.
+    """
+    return ntpath if "\\" in path or bool(ntpath.splitdrive(path)[0]) else os.path
+
+
 def _git_bash_candidate_from_git_path(git_path: str) -> KaosPath:
     # git.exe usually lives at <git>/cmd/git.exe; bash.exe is at <git>/bin/bash.exe.
-    # Use ntpath explicitly so this works regardless of the host OS that imports
-    # this module (tests on macOS pass Windows-style paths through this code).
-    return KaosPath(ntpath.join(ntpath.dirname(git_path), "..", "bin", "bash.exe"))
+    # Use the path flavour of the input so this works regardless of the host OS
+    # that imports this module (tests on macOS pass Windows-style paths here).
+    pathmod = _path_module_for(git_path)
+    return KaosPath(pathmod.join(pathmod.dirname(git_path), "..", "bin", "bash.exe"))
 
 
 def _git_bash_candidates_from_ancestors(git_path: str) -> list[KaosPath]:
@@ -407,14 +429,15 @@ def _git_bash_candidates_from_ancestors(git_path: str) -> list[KaosPath]:
     on PATH). Walking up a few levels finds those siblings without having to
     ask git itself via the very slow ``git --exec-path`` subprocess.
     """
+    pathmod = _path_module_for(git_path)
     candidates: list[KaosPath] = []
-    current = ntpath.dirname(ntpath.normpath(git_path))
+    current = pathmod.dirname(pathmod.normpath(git_path))
     for _ in range(_GIT_BASH_ANCESTOR_DEPTH):
         if not current:
             break
-        candidates.append(KaosPath(ntpath.join(current, "bin", "bash.exe")))
-        candidates.append(KaosPath(ntpath.join(current, "git-bash.exe")))
-        parent = ntpath.dirname(current)
+        candidates.append(KaosPath(pathmod.join(current, "bin", "bash.exe")))
+        candidates.append(KaosPath(pathmod.join(current, "git-bash.exe")))
+        parent = pathmod.dirname(current)
         if parent == current:
             break
         current = parent
@@ -444,20 +467,21 @@ def _git_exec_path(git_path: str) -> str | None:
 
 
 def _git_bash_candidates_from_exec_path(exec_path: str) -> list[KaosPath]:
-    normalized_exec_path = ntpath.normpath(exec_path)
+    pathmod = _path_module_for(exec_path)
+    normalized_exec_path = pathmod.normpath(exec_path)
     install_root = _git_install_root_from_exec_path(normalized_exec_path)
     if install_root is not None:
-        return [KaosPath(ntpath.join(install_root, "bin", "bash.exe"))]
+        return [KaosPath(pathmod.join(install_root, "bin", "bash.exe"))]
 
-    return [
-        KaosPath(ntpath.normpath(ntpath.join(normalized_exec_path, "..", "..", "bin", "bash.exe")))
-    ]
+    fallback = pathmod.join(normalized_exec_path, "..", "..", "bin", "bash.exe")
+    return [KaosPath(pathmod.normpath(fallback))]
 
 
 def _git_install_root_from_exec_path(exec_path: str) -> str | None:
-    current = ntpath.normpath(exec_path)
+    pathmod = _path_module_for(exec_path)
+    current = pathmod.normpath(exec_path)
     while True:
-        parent, name = ntpath.split(current)
+        parent, name = pathmod.split(current)
         if name.casefold() in {"mingw32", "mingw64"}:
             return parent
         if parent == current:

@@ -59,7 +59,7 @@ import tempfile
 import time
 import urllib.request
 import zipfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 ROOT = Path(__file__).resolve().parent
 DIST_DIR = ROOT / "dist"
@@ -224,8 +224,14 @@ def select_native_artifacts(names: list[str], key: str) -> list[str]:
 
 
 def win_path_to_wsl(path: Path) -> str:
-    """Translate a Windows path to its WSL ``/mnt/<drive>`` form."""
-    s = str(path.resolve())
+    """Translate a Windows path to its WSL ``/mnt/<drive>`` form.
+
+    The input is a *Windows* path even when this runs on a POSIX host (WSL
+    re-exec), where ``Path("D:\\x")`` has no drive component — so the raw
+    string is parsed with Windows semantics before translating.
+    """
+    win = PureWindowsPath(os.fspath(path))
+    s = str(win) if win.drive else str(path.resolve())
     m = re.match(r"^([A-Za-z]):[\\/](.*)$", s)
     if m:
         return "/mnt/" + m.group(1).lower() + "/" + m.group(2).replace("\\", "/")
