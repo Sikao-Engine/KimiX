@@ -177,10 +177,10 @@ def test_descriptions_unchanged() -> None:
         "Execute a bash command, ALWAYS native POSIX syntax. "
         "For long sessions: interactive=True, then task_id=<id> to continue; "
         "wait_for_pattern to block; job_output to monitor; send 'exit' to close."
-        " On Windows Git Bash `cmd` is auto-fixed before it runs: unquoted `\\`→`/`,"
-        " `/tmp/…`, `/c/…`→native paths, `nul`→`/dev/null`, `cd /d`→`cd`, missing POSIX"
-        " tools (`open`, `watch`, `sudo`, …)→fallbacks, cmd.exe forms→bash; unfixable"
-        " commands are rejected with the reason."
+        " On Windows prefer the `pwsh` tool. Git Bash `cmd` is auto-fixed before it runs:"
+        " unquoted `\\`→`/`, `/tmp/…`, `/c/…`→native paths, `nul`→`/dev/null`, `cd /d`→`cd`,"
+        " missing POSIX tools (`open`, `watch`, `sudo`, …)→fallbacks, cmd.exe forms→bash;"
+        " unfixable commands are rejected with the reason."
         + self_kill_hint_text
     )
 
@@ -214,7 +214,8 @@ def test_bash_windows_description_mentions_fix_rules() -> None:
 
     The tool rewrites every ``cmd`` (unquoted backslashes + ``fix_bash_command``)
     before running it, so the wire text must say so — and stay short enough to
-    travel with every request.
+    travel with every request.  It must also point the model at the ``pwsh``
+    tool first, because PowerShell is the native Windows shell.
     """
     from kimi_cli.tools.file.bash import bash_tool as bt
 
@@ -232,6 +233,9 @@ def test_bash_windows_description_mentions_fix_rules() -> None:
         assert fragment in desc, f"Windows bash description missing {fragment!r}"
     note = bt._WINDOWS_BASH_FIX_DESCRIPTION
     assert note.startswith(" ")
+    # Windows preference: point at the native-shell tool before the fix rules.
+    assert "prefer the `pwsh` tool" in note
+    assert note.index("`pwsh`") < note.index("auto-fixed")
     # Concise: one short paragraph, no line breaks, no doubled spaces.
     assert "\n" not in note and len(note) < 420
 
