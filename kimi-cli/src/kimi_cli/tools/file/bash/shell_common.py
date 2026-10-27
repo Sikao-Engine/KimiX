@@ -53,6 +53,9 @@ def inspect_bash_command(command: str) -> bash_fix.BashFix:
     callers can surface them (the Bash tool turns ``unsupported`` into an
     error message instead of executing a guaranteed "command not found").
     """
+    # ``bash_fix.fix_bash_command`` is the single interception point for the
+    # whole pipeline (this function is the only caller), so tests patch that
+    # name to observe/assert fixer usage.
     return bash_fix.fix_bash_command(_bash_tool()._prepare_bash_cmd(command))
 
 

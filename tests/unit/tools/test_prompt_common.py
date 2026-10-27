@@ -27,6 +27,7 @@ from kimi_cli.tools.prompt_common import (
 )
 
 
+
 class _FakeSession:
     """Minimal stand-in for kimi_cli.session.Session used by tool __init__s."""
 
@@ -173,9 +174,13 @@ def test_descriptions_unchanged() -> None:
     )
 
     assert tools["bash"].description == (
-        "Execute a bash command, ALWAYS native POSIX syntax."
+        "Execute a bash command, ALWAYS native POSIX syntax. "
         "For long sessions: interactive=True, then task_id=<id> to continue; "
         "wait_for_pattern to block; job_output to monitor; send 'exit' to close."
+        " On Windows Git Bash `cmd` is auto-fixed before it runs: unquoted `\\`→`/`,"
+        " `/tmp/…`, `/c/…`→native paths, `nul`→`/dev/null`, `cd /d`→`cd`, missing POSIX"
+        " tools (`open`, `watch`, `sudo`, …)→fallbacks, cmd.exe forms→bash; unfixable"
+        " commands are rejected with the reason."
         + self_kill_hint_text
     )
 
@@ -202,6 +207,47 @@ def test_descriptions_unchanged() -> None:
         "For long runs: run_in_background=True, then task_id=<id> to continue; "
         "wait_for_pattern to block; job_output to monitor."
     )
+
+
+def test_bash_windows_description_mentions_fix_rules() -> None:
+    """On Windows the Bash description states the automatic Git Bash fix rules.
+
+    The tool rewrites every ``cmd`` (unquoted backslashes + ``fix_bash_command``)
+    before running it, so the wire text must say so — and stay short enough to
+    travel with every request.
+    """
+    from kimi_cli.tools.file.bash import bash_tool as bt
+
+    tools = _build_tools()
+    desc = tools["bash"].description
+    for fragment in (
+        "auto-fixed",
+        "unquoted",  # `_prepare_bash_cmd`: unquoted `\` -> `/`
+        "/tmp/",  # Git Bash virtual POSIX path -> native temp dir
+        "/c/",  # drive-letter spelling -> `C:/`
+        "/dev/null",  # `nul` rewrite
+        "cd /d",
+        "rejected",  # BashFix.unsupported gate
+    ):
+        assert fragment in desc, f"Windows bash description missing {fragment!r}"
+    note = bt._WINDOWS_BASH_FIX_DESCRIPTION
+    assert note.startswith(" ")
+    # Concise: one short paragraph, no line breaks, no doubled spaces.
+    assert "\n" not in note and len(note) < 420
+
+
+def test_bash_non_windows_description_omits_fix_rules() -> None:
+    """Off Windows the fix note is absent: nothing rewrites the command there."""
+    from kimi_cli.tools.file.bash import bash_tool as bt
+    from kimi_cli.tools.file.bash.bash_tool import Bash
+
+    with mock.patch.object(bt.sys, "platform", "linux"), mock.patch.object(
+        bt, "_should_enable_bash", return_value=True
+    ), mock.patch.object(bt, "find_bash", return_value="/bin/bash"):
+        tool = Bash(_FakeSession())
+    assert tool.description.startswith("Execute a bash command, ALWAYS native POSIX syntax. ")
+    assert "auto-fixed" not in tool.description
+    assert "/dev/null" not in tool.description
 
 
 def test_generic_conventions_removed_from_tool_text() -> None:

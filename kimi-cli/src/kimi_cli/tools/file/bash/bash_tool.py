@@ -40,14 +40,7 @@ from kimi_cli.tools.common import (
     _summarize_long_output_async,
     _token_filter_output,
 )
-from kimi_cli.tools.file.bash.bash_fix import (
-    bash_compatibility_prelude,
-    # Kept in the module namespace even though one-shot preparation now goes
-    # through ``shell_common.prepare_bash_command``: tests patch
-    # ``bash_tool.fix_bash_command`` to assert the fixer is never run for
-    # forbidden source commands.
-    fix_bash_command,  # noqa: F401
-)
+from kimi_cli.tools.file.bash.bash_fix import bash_compatibility_prelude
 from kimi_cli.tools.file.bash.output_enhance import (
     annotate_failure,
     interpret_exit_code,
@@ -539,6 +532,18 @@ def _process_unquoted(cmd: str) -> str:
 
 
 
+def _ends_with_unescaped_backslash(text: str) -> bool:
+    r"""Return whether *text* ends in a ``\`` that bash treats as a continuation.
+
+    An odd number of trailing backslashes escapes the newline that follows, so
+    bash keeps parsing the next input line as part of the same command.  Such a
+    fragment must never be rewritten: the fixer would turn the ``\`` into
+    ``/`` and silently change what the shell is still assembling.
+    """
+    static = text.rstrip(" \t\r\n")
+    return (len(static) - len(static.rstrip("\\"))) % 2 == 1
+
+
 def _prepare_bash_cmd(cmd: str) -> str:
     r"""Prepare a command string for safe use with bash -c.
 
@@ -595,12 +600,27 @@ class BashParams(BaseModel):
     _validate_cmd = shell_cmd_required_validator("cmd")
 
 
+#: Windows-only suffix appended to the Bash tool description.  The tool
+#: rewrites every ``cmd`` through ``_prepare_bash_cmd`` (unquoted backslash
+#: paths) + ``fix_bash_command`` (Git Bash fallbacks, path/nul rewrites) before
+#: it runs, so the model must know which spellings are translated automatically
+#: — and that an unfixable command is rejected up front instead of silently
+#: failing with "command not found".  Kept to one short sentence pair: the
+#: description travels with every request.
+_WINDOWS_BASH_FIX_DESCRIPTION = (
+    " On Windows Git Bash `cmd` is auto-fixed before it runs: unquoted `\\`→`/`,"
+    " `/tmp/…`, `/c/…`→native paths, `nul`→`/dev/null`, `cd /d`→`cd`, missing POSIX"
+    " tools (`open`, `watch`, `sudo`, …)→fallbacks, cmd.exe forms→bash; unfixable"
+    " commands are rejected with the reason."
+)
+
+
 class Bash(CallableTool2[BashParams]):
     """Execute a bash command via the system bash, with background task support."""
 
     name: str = "bash"
     description: str = (
-        "Execute a bash command, ALWAYS native POSIX syntax."
+        "Execute a bash command, ALWAYS native POSIX syntax. "
         + _interactive_scope_text(is_shell=True)
     )
     params: type[BashParams] = BashParams
@@ -638,6 +658,12 @@ class Bash(CallableTool2[BashParams]):
             self._hardline_enabled = True
             self._redact_secrets = True
             self._self_kill_guard_enabled = True
+
+        # Windows-only: state the automatic Git Bash fix rules so the model does
+        # not hand-roll Windows spellings the fixer already handles (and knows
+        # why an unfixable command comes back as an error).
+        if sys.platform == "win32":
+            self.description += _WINDOWS_BASH_FIX_DESCRIPTION
 
         # Proactive self-kill hint: make the agent's own PID visible up front
         # so the model avoids targeting it; the guard below blocks attempts.
@@ -1068,8 +1094,7 @@ class Bash(CallableTool2[BashParams]):
         if not stripped:
             return False
 
-        trailing_backslashes = len(stripped) - len(stripped.rstrip("\\"))
-        if trailing_backslashes % 2:
+        if _ends_with_unescaped_backslash(stripped):
             return True
 
         try:
@@ -1240,12 +1265,23 @@ class Bash(CallableTool2[BashParams]):
                 brief="Unsafe command fragment",
             )
 
-        # A persistent shell accepts arbitrary parser fragments: a heredoc
-        # body, an unfinished quote, or the remainder of a compound command.
-        # Rewriting such input as an independent program would corrupt parser
-        # state and `$?`.  Compatibility functions were exported when the
-        # interactive shell started, so continuation text is sent verbatim.
-        rtk_cmd = params.cmd
+        # Continuation input is a parser fragment, not a program: an
+        # unfinished quote, a compound-command remainder, or a heredoc body.
+        # It still goes through the same compatibility fixer as every other
+        # execution path (unquoted ``\``-paths, ``/tmp/…``, ``nul``,
+        # missing-POSIX-tool fallbacks), because the running shell would
+        # otherwise mangle a Windows path exactly like the one-shot path did.
+        # The one exception is a trailing unescaped ``\``: bash folds that
+        # fragment into the *next* input line, and the fixer would rewrite it
+        # to ``/`` (``body\`` -> ``body/``), corrupting the continuation.
+        if _ends_with_unescaped_backslash(params.cmd):
+            rtk_cmd = params.cmd
+        else:
+            prepared = self._prepare_command(params.cmd)
+            if isinstance(prepared, ToolError):
+                return prepared
+            rtk_cmd = prepared
+        # RTK rewrites a whole program, not a fragment: never applied here.
         rtk_rewritten = False
 
         # Report only output produced after an accepted input command.  Retain

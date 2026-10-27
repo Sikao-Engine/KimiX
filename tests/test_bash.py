@@ -31,6 +31,7 @@ from kimi_cli.tools.file.bash.bash_tool import (
     _bash_runs,
     _bash_subprocess_env,
     _configured_shell,
+    _ends_with_unescaped_backslash,
     _find_git_bash_windows,
     _git_bash_candidate_from_git_path,
     _git_bash_candidates_from_exec_path,
@@ -5098,9 +5099,9 @@ class TestBashFixToolIntegration:
             assert f"{name}()" in command
             assert f"declare -F {name}" in command
 
-    async def test_existing_interactive_session_input_is_fixed(
-        self, bash_instance: Bash
-    ) -> None:
+    @staticmethod
+    def _existing_session(bash_instance: Bash, task_id: str) -> AsyncMock:
+        """Register a mock running session and return its stream."""
         data = TaskData()
         stream = AsyncMock()
         stream.is_started = AsyncMock(return_value=True)
@@ -5109,23 +5110,69 @@ class TestBashFixToolIntegration:
         stream.wait_for_output = AsyncMock(return_value=("", False, 0.01))
         stream.thread_is_alive = AsyncMock(return_value=True)
         stream.success = AsyncMock(return_value=True)
-        data.tasks = {"bash_compat": stream}
+        data.tasks = {task_id: stream}
         bash_instance._session.custom_data["background_task_data"] = data
+        return stream
 
-        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+    @staticmethod
+    def _windows_platform() -> Any:
+        """Patch both win32 gates (scanner normalization + command fixer)."""
+        stack = ExitStack()
+        stack.enter_context(
+            patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32")
+        )
+        stack.enter_context(patch("kimi_cli.tools.file.bash.bash_fix.sys.platform", "win32"))
+        return stack
+
+    async def test_existing_interactive_session_input_is_fixed(
+        self, bash_instance: Bash
+    ) -> None:
+        """Continuation input reaches the same fixer as every other path."""
+        stream = self._existing_session(bash_instance, "bash_compat")
+
+        with self._windows_platform():
             result = await bash_instance(
                 BashParams(cmd="xdg-open README.md", task_id="bash_compat")
             )
 
         assert isinstance(result, ToolOk)
         sent = stream.input.await_args.args[0]
-        assert sent == "xdg-open README.md\n"
-        assert "xdg-open()" not in sent
+        assert sent.endswith("\nxdg-open README.md\n")
+        assert "xdg-open()" in sent
+
+    async def test_existing_interactive_session_paths_are_normalized(
+        self, bash_instance: Bash
+    ) -> None:
+        """Unquoted Windows paths are repaired for continuation input too."""
+        stream = self._existing_session(bash_instance, "bash_paths")
+
+        with self._windows_platform():
+            result = await bash_instance(
+                BashParams(
+                    cmd=r"cat src\kimix\agent_worker.json", task_id="bash_paths"
+                )
+            )
+
+        assert isinstance(result, ToolOk)
+        sent = stream.input.await_args.args[0]
+        assert sent == "cat src/kimix/agent_worker.json\n"
+
+    async def test_complete_continuation_command_gets_fallback_definition(
+        self, bash_instance: Bash
+    ) -> None:
+        """A complete continuation command gets the missing-POSIX-tool shim."""
+        stream = self._existing_session(bash_instance, "bash_rev")
+
+        with self._windows_platform():
+            await bash_instance(BashParams(cmd="rev", task_id="bash_rev"))
+
+        sent = stream.input.await_args.args[0]
+        assert sent.endswith("\nrev\n")
+        assert "rev()" in sent
 
     @pytest.mark.parametrize(
         "fragment",
         [
-            "rev",
             "EOF",
             "then",
             "'continued text",
@@ -5134,27 +5181,56 @@ class TestBashFixToolIntegration:
             "body\\",
         ],
     )
-    async def test_existing_interactive_session_input_is_not_reparsed_as_program(
+    async def test_incomplete_interactive_fragment_is_sent_verbatim(
         self, bash_instance: Bash, fragment: str
     ) -> None:
-        data = TaskData()
-        stream = AsyncMock()
-        stream.is_started = AsyncMock(return_value=True)
-        stream.pop_output = AsyncMock(return_value="")
-        stream.input = AsyncMock(return_value=True)
-        stream.wait_for_output = AsyncMock(return_value=("", False, 0.01))
-        stream.thread_is_alive = AsyncMock(return_value=True)
-        stream.success = AsyncMock(return_value=True)
-        data.tasks = {"bash_fragment": stream}
-        bash_instance._session.custom_data["background_task_data"] = data
+        """A parser fragment bash is still assembling is never rewritten."""
+        stream = self._existing_session(bash_instance, "bash_fragment")
 
-        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+        with self._windows_platform():
             result = await bash_instance(
                 BashParams(cmd=fragment, task_id="bash_fragment")
             )
 
         assert isinstance(result, ToolOk)
         stream.input.assert_awaited_once_with(fragment + "\n")
+
+    async def test_continuation_fixer_runs_after_the_source_policy_check(
+        self, bash_instance: Bash
+    ) -> None:
+        """A forbidden source command is rejected before the fixer sees it."""
+        stream = self._existing_session(bash_instance, "bash_forbidden")
+        bash_instance._forbidden_keywords = ["gtimeout"]
+
+        with self._windows_platform(), patch(
+            "kimi_cli.tools.file.bash.bash_fix.fix_bash_command"
+        ) as fixer:
+            result = await bash_instance(
+                BashParams(cmd="gtimeout 2 true", task_id="bash_forbidden")
+            )
+
+        assert isinstance(result, ToolError)
+        fixer.assert_not_called()
+        stream.input.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("body\\", True),
+            ("body\\   ", True),
+            ("body\n", False),
+            ("body\\\\", False),
+            ("echo a\\ \\", True),
+            ("", False),
+            ("plain command", False),
+            ("printf 'a'", False),
+        ],
+    )
+    def test_unescaped_trailing_backslash_detection(
+        self, text: str, expected: bool
+    ) -> None:
+        """Only an odd run of trailing backslashes continues the next line."""
+        assert _ends_with_unescaped_backslash(text) is expected
 
     async def test_compatibility_fix_runs_before_rtk(
         self, bash_instance: Bash
@@ -5210,7 +5286,7 @@ class TestBashFixToolIntegration:
         ):
             bash = Bash(session=mock_session)
 
-        with patch("kimi_cli.tools.file.bash.bash_tool.fix_bash_command") as fixer:
+        with patch("kimi_cli.tools.file.bash.bash_fix.fix_bash_command") as fixer:
             result = await bash(BashParams(cmd="gtimeout 2 true"))
 
         assert isinstance(result, ToolError)
@@ -5241,7 +5317,7 @@ class TestBashFixToolIntegration:
         self, bash_instance: Bash
     ) -> None:
         bash_instance._forbidden_keywords = ["gtimeout"]
-        with patch("kimi_cli.tools.file.bash.bash_tool.fix_bash_command") as fixer:
+        with patch("kimi_cli.tools.file.bash.bash_fix.fix_bash_command") as fixer:
             result = await bash_instance(
                 BashParams(cmd="gtimeout 2 true", task_id="existing")
             )
@@ -5342,42 +5418,53 @@ class TestBashFixToolIntegration:
         assert isinstance(result, ToolError)
         process_task_class.assert_not_called()
 
-    @pytest.mark.parametrize(
-        ("generated_keyword", "command"),
-        [("perl", "rev"), ("rtk", "git status")],
-    )
-    async def test_continuation_is_not_rewritten_or_blocked_by_generated_text(
-        self, bash_instance: Bash, generated_keyword: str, command: str
+    async def test_continuation_fallback_shim_is_policy_checked(
+        self, bash_instance: Bash
     ) -> None:
-        data = TaskData()
-        stream = AsyncMock()
-        stream.is_started = AsyncMock(return_value=True)
+        """Continuation is fixed, so the shim text it generates is policy-checked.
+
+        ``rev`` expands to a shell shim that calls ``perl``, and the one-shot
+        path already applies forbidden rules to generated text; the live-session
+        path must not become a hole in that check.
+        """
+        stream = self._existing_session(bash_instance, "existing")
+        bash_instance._forbidden_keywords = ["perl"]
+
+        with self._windows_platform():
+            result = await bash_instance(
+                BashParams(cmd="rev", task_id="existing")
+            )
+
+        assert isinstance(result, ToolError)
+        assert "forbidden" in result.message
+        stream.input.assert_not_awaited()
+
+    async def test_continuation_is_never_rtk_rewritten(
+        self, bash_instance: Bash
+    ) -> None:
+        """RTK rewrites whole programs, so a session fragment is left alone."""
+        stream = self._existing_session(bash_instance, "existing")
         stream.pop_output = AsyncMock(return_value="buffered output")
-        stream.input = AsyncMock(return_value=True)
         stream.wait_for_output = AsyncMock(return_value=("new output", False, 0.01))
-        stream.thread_is_alive = AsyncMock(return_value=True)
-        stream.success = AsyncMock(return_value=True)
-        data.tasks = {"existing": stream}
-        bash_instance._session.custom_data["background_task_data"] = data
-        bash_instance._forbidden_keywords = [generated_keyword]
+        bash_instance._forbidden_keywords = ["rtk"]
 
         syntax_ok = subprocess.CompletedProcess(
             args=[], returncode=0, stdout="", stderr=""
         )
-        with patch(
+        with self._windows_platform(), patch(
             "kimi_cli.tools.file.bash.bash_tool._maybe_rewrite_shell_command_with_rtk"
         ) as rewrite, patch(
             "kimi_cli.tools.file.bash.bash_tool.subprocess.run",
             return_value=syntax_ok,
         ):
             result = await bash_instance(
-                BashParams(cmd=command, task_id="existing")
+                BashParams(cmd="git status", task_id="existing")
             )
 
         assert isinstance(result, ToolOk)
         rewrite.assert_not_called()
         stream.pop_output.assert_awaited_once_with()
-        stream.input.assert_awaited_once_with(command + "\n")
+        stream.input.assert_awaited_once_with("git status\n")
 
     async def test_failed_continuation_delivery_returns_buffered_output(
         self, bash_instance: Bash
