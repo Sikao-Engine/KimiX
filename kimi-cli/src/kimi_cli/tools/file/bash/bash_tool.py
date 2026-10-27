@@ -612,8 +612,9 @@ class BashParams(BaseModel):
 _WINDOWS_BASH_FIX_DESCRIPTION = (
     " On Windows prefer the `pwsh` tool. Git Bash `cmd` is auto-fixed before it runs:"
     " unquoted `\\`→`/`, `/tmp/…`, `/c/…`→native paths, `nul`→`/dev/null`, `cd /d`→`cd`,"
-    " missing POSIX tools (`open`, `watch`, `sudo`, …)→fallbacks, cmd.exe forms→bash;"
-    " unfixable commands are rejected with the reason."
+    " msiexec-style `//flag`→`/flag` (MSYS path conversion is off; `/flag` passes"
+    " verbatim), missing POSIX tools (`open`, `watch`, `sudo`, …)"
+    "→fallbacks, cmd.exe forms→bash; unfixable commands are rejected with the reason."
 )
 
 

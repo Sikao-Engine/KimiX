@@ -42,10 +42,7 @@ from anthropic import (
 )
 from anthropic.lib.streaming import MessageStopEvent
 from anthropic.types import (
-    Base64ImageSourceParam,
-    CacheControlEphemeralParam,
     ContentBlockParam,
-    ImageBlockParam,
     MessageDeltaEvent,
     MessageDeltaUsage,
     MessageParam,
@@ -55,14 +52,10 @@ from anthropic.types import (
     RawContentBlockDeltaEvent,
     RawContentBlockStartEvent,
     RawMessageStreamEvent,
-    TextBlockParam,
-    ThinkingBlockParam,
     ThinkingConfigParam,
     ToolChoiceParam,
     ToolParam,
     ToolResultBlockParam,
-    ToolUseBlockParam,
-    URLImageSourceParam,
     Usage,
 )
 from anthropic.types import (
@@ -362,13 +355,15 @@ class Anthropic:
     ) -> AnthropicStreamedMessage:
         # https://docs.claude.com/en/api/messages#body-messages
         # Anthropic API does not support system roles, but just a system prompt.
+        # NOTE: anthropic SDK 2.x types (TypedDicts) are not runtime-callable
+        # (``'typing.Union' object is not callable``), so build plain dicts.
         system = (
             [
-                TextBlockParam(
-                    text=system_prompt,
-                    type="text",
-                    cache_control=CacheControlEphemeralParam(type="ephemeral"),
-                )
+                {
+                    "text": system_prompt,
+                    "type": "text",
+                    "cache_control": {"type": "ephemeral"},
+                }
             ]
             if system_prompt
             else omit
@@ -419,7 +414,7 @@ class Anthropic:
                         | "server_tool_use"
                         | "web_search_tool_result"
                     ):
-                        last_block["cache_control"] = CacheControlEphemeralParam(type="ephemeral")
+                        last_block["cache_control"] = {"type": "ephemeral"}
                     case "thinking" | "redacted_thinking":
                         pass
         generation_kwargs: dict[str, Any] = {}
@@ -457,7 +452,7 @@ class Anthropic:
 
         tools_ = [_convert_tool(tool) for tool in tools]
         if tools:
-            tools_[-1]["cache_control"] = CacheControlEphemeralParam(type="ephemeral")
+            tools_[-1]["cache_control"] = {"type": "ephemeral"}
         try:
             response = await self._client.messages.create(
                 model=self._model,
@@ -643,35 +638,36 @@ class Anthropic:
         if role == "system":
             # Anthropic does not support system messages in the conversation.
             # We map it to a special user message.
-            return MessageParam(
-                role="user",
-                content=[
-                    TextBlockParam(
-                        type="text", text=f"<system>{message.extract_text(sep='\n')}</system>"
-                    )
+            return {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"<system>{message.extract_text(sep='\n')}</system>",
+                    }
                 ],
-            )
+            }
         elif role == "tool":
             if error_msg := check_tool_call_id(
                 message.tool_call_id, message.extract_text(sep="\n")
             ):
                 # Return the error to the LLM instead of crashing.
-                return MessageParam(
-                    role="user",
-                    content=[TextBlockParam(type="text", text=error_msg)],
-                )
+                return {
+                    "role": "user",
+                    "content": [{"type": "text", "text": error_msg}],
+                }
             if self._tool_message_conversion == "extract_text":
                 content = message.extract_text(sep="\n")
             else:
                 content = message.content
             block = _tool_result_message_to_block(message.tool_call_id, content)
-            return MessageParam(role="user", content=[block])
+            return {"role": "user", "content": [block]}
 
         assert role in ("user", "assistant")
         blocks: list[ContentBlockParam] = []
         for part in message.content:
             if isinstance(part, TextPart):
-                blocks.append(TextBlockParam(type="text", text=part.text))
+                blocks.append({"type": "text", "text": part.text})
             elif isinstance(part, ImageURLPart):
                 blocks.append(_image_url_part_to_anthropic(part))
             elif isinstance(part, ThinkPart):
@@ -680,9 +676,11 @@ class Anthropic:
                     continue
                 else:
                     blocks.append(
-                        ThinkingBlockParam(
-                            type="thinking", thinking=part.think, signature=part.encrypted
-                        )
+                        {
+                            "type": "thinking",
+                            "thinking": part.think,
+                            "signature": part.encrypted,
+                        }
                     )
             else:
                 continue
@@ -690,7 +688,7 @@ class Anthropic:
         if message.tool_calls:
             error_texts = validate_tool_call_arguments(message.tool_calls)
             for err_text in error_texts:
-                blocks.append(TextBlockParam(type="text", text=err_text))
+                blocks.append({"type": "text", "text": err_text})
 
         from kosong.utils.jsonx import loads_relaxed
 
@@ -700,14 +698,14 @@ class Anthropic:
             else:
                 tool_input = {}
             blocks.append(
-                ToolUseBlockParam(
-                    type="tool_use",
-                    id=tool_call.id,
-                    name=tool_call.function.name,
-                    input=tool_input,
-                )
+                {
+                    "type": "tool_use",
+                    "id": tool_call.id,
+                    "name": tool_call.function.name,
+                    "input": tool_input,
+                }
             )
-        return MessageParam(role=role, content=blocks)
+        return {"role": role, "content": blocks}
 
 
 class AnthropicStreamedMessage(BaseStreamedMessage):
@@ -890,25 +888,25 @@ def _tool_result_message_to_block(
         for part in content:
             if isinstance(part, TextPart):
                 if part.text:
-                    blocks.append(TextBlockParam(type="text", text=part.text))
+                    blocks.append({"type": "text", "text": part.text})
             elif isinstance(part, ImageURLPart):
                 blocks.append(_image_url_part_to_anthropic(part))
             else:
                 # https://docs.claude.com/en/docs/build-with-claude/files#file-types-and-content-blocks
                 # Anthropic API supports very limited file types
                 blocks.append(
-                    TextBlockParam(
-                        type="text",
-                        text=f"Error: Anthropic API does not support {type(part)} in tool result.",
-                    )
+                    {
+                        "type": "text",
+                        "text": f"Error: Anthropic API does not support {type(part)} in tool result.",
+                    }
                 )
         block_content = blocks
 
-    return ToolResultBlockParam(
-        type="tool_result",
-        tool_use_id=tool_call_id,
-        content=block_content,
-    )
+    return {
+        "type": "tool_result",
+        "tool_use_id": tool_call_id,
+        "content": block_content,
+    }
 
 
 def _image_url_part_to_anthropic(part: ImageURLPart) -> ToolResultContent:
@@ -917,29 +915,29 @@ def _image_url_part_to_anthropic(part: ImageURLPart) -> ToolResultContent:
     if url.startswith("data:"):
         res = url[5:].split(";base64,", 1)
         if len(res) != 2:
-            return TextBlockParam(
-                type="text",
-                text=f"Error: Invalid data URL for image: {url}",
-            )
+            return {
+                "type": "text",
+                "text": f"Error: Invalid data URL for image: {url}",
+            }
         media_type, data = res
         if media_type not in ("image/png", "image/jpeg", "image/gif", "image/webp"):
-            return TextBlockParam(
-                type="text",
-                text=f"Error: Unsupported media type for base64 image: {media_type}, url: {url}",
-            )
-        return ImageBlockParam(
-            type="image",
-            source=Base64ImageSourceParam(
-                type="base64",
-                data=data,
-                media_type=media_type,
-            ),
-        )
+            return {
+                "type": "text",
+                "text": f"Error: Unsupported media type for base64 image: {media_type}, url: {url}",
+            }
+        return {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "data": data,
+                "media_type": media_type,
+            },
+        }
     else:
-        return ImageBlockParam(
-            type="image",
-            source=URLImageSourceParam(type="url", url=url),
-        )
+        return {
+            "type": "image",
+            "source": {"type": "url", "url": url},
+        }
 
 
 def _response_headers(error: AnthropicError) -> Mapping[str, str] | None:

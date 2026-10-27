@@ -868,6 +868,170 @@ class TestBashFixMappings:
         assert _fix_for_windows(command) == BashFix(command)
 
 
+class TestBashFixNativeSlashFlags:
+    """Doubled-slash flags of native Windows tools (``msiexec //a`` -> ``/a``).
+
+    The shell environment disables MSYS path conversion, so the classic Git
+    Bash workaround spelling reaches the tool verbatim and is rejected; the
+    fixer repairs unquoted ``//flag`` arguments of known slash-flag tools.
+    """
+
+    @pytest.mark.parametrize(
+        ("source", "expected", "fixes"),
+        [
+            ("msiexec //a pkg.msi //qb", "msiexec /a pkg.msi /qb", ("//a", "//qb")),
+            (
+                "msiexec //i wsl.msi //qn //norestart",
+                "msiexec /i wsl.msi /qn /norestart",
+                ("//i", "//qn", "//norestart"),
+            ),
+            ("cmd //c dir", "cmd /c dir", ("//c",)),
+            ("cmd //k ver", "cmd /k ver", ("//k",)),
+            ("chkdsk D: //f //r", "chkdsk D: /f /r", ("//f", "//r")),
+            (
+                "msiexec //a x.msi | cat",
+                "msiexec /a x.msi | cat",
+                ("//a",),
+            ),
+            (
+                "echo $(msiexec //a x.msi)",
+                "echo $(msiexec /a x.msi)",
+                ("//a",),
+            ),
+            ("{ msiexec //a x.msi; }", "{ msiexec /a x.msi; }", ("//a",)),
+            # Case-insensitive tool names and flags (msiexec accepts both).
+            ("MSIEXEC //A x.msi", "MSIEXEC /A x.msi", ("//A",)),
+        ],
+    )
+    def test_doubled_slash_flag_rewritten(
+        self, source: str, expected: str, fixes: tuple[str, ...]
+    ) -> None:
+        result = _fix_for_windows(source)
+        assert result.command == expected
+        assert result.native_flag_fixes == fixes
+        assert result.changed
+
+    @pytest.mark.parametrize(
+        ("source", "fragment", "fixes"),
+        [
+            # Keyword-wrapped commands: the tolerant parser tiles `if`/`while`/
+            # `!` as the command word with the real command as first argument.
+            ("if msiexec //a x.msi; then echo y; fi", "msiexec /a x.msi", ("//a",)),
+            ("while msiexec //i x.msi; do break; done", "msiexec /i x.msi", ("//i",)),
+            ("! msiexec //a x.msi", "msiexec /a x.msi", ("//a",)),
+            ("if cmd //c dir; then echo y; fi", "cmd /c dir", ("//c",)),
+        ],
+    )
+    def test_keyword_wrapped_commands(
+        self, source: str, fragment: str, fixes: tuple[str, ...]
+    ) -> None:
+        result = _fix_for_windows(source)
+        assert fragment in result.command
+        assert result.native_flag_fixes == fixes
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # Array literals are DATA: the parenthesised body is tiled as a
+            # subshell compound but must never be rewritten.
+            "declare -a x=(msiexec //a)",
+            "declare -a x=([0]=msiexec //a)",
+            "x=(msiexec //a)",
+            "arr=(//a //b)",
+        ],
+    )
+    def test_array_literal_data_untouched(self, command: str) -> None:
+        assert _fix_for_windows(command) == BashFix(command)
+
+    @pytest.mark.parametrize(
+        ("source", "tail", "fixes"),
+        [
+            # Stub-aware fallbacks prepend a function definition; the user's
+            # command line is re-emitted verbatim at the end (and repaired).
+            ("taskkill //pid 1234 //f", "taskkill /pid 1234 /f", ("//pid", "//f")),
+            ("xcopy //y //e src dst", "xcopy /y /e src dst", ("//y", "//e")),
+        ],
+    )
+    def test_fallback_wrapped_commands(
+        self, source: str, tail: str, fixes: tuple[str, ...]
+    ) -> None:
+        result = _fix_for_windows(source)
+        assert result.command.endswith(tail)
+        assert result.native_flag_fixes == fixes
+        assert result.changed
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            # Full-path command words (both spellings) resolve to the tool stem.
+            r"C:\Windows\System32\msiexec.exe //a x.msi",
+            "C:/Windows/System32/msiexec.exe //a x.msi",
+            "MSIEXEC.EXE //a x.msi",
+        ],
+    )
+    def test_full_path_and_exe_suffix_command_words(self, source: str) -> None:
+        result = _fix_for_windows(source)
+        assert result.native_flag_fixes == ("//a",)
+        # Only the flag is rewritten; the command word keeps its spelling.
+        assert result.command.rstrip().endswith(" /a x.msi")
+        assert result.command.rstrip().split(" ")[0].lower().endswith("msiexec.exe")
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # Already-correct single-slash spelling is a byte-for-byte noop.
+            "msiexec /a pkg.msi /qb",
+            # UNC-looking multi-segment words are not switches.
+            "robocopy //server/share //server/dst /e",
+            # POSIX tools are never touched, even with // data spellings.
+            "sed 's,a//,x' file",
+            "foo //bar baz",
+            "curl -s http://h//p",
+            # Quoted flags decode to a value but their raw spelling carries
+            # quotes: conservative pass-through.
+            "msiexec '//a' x.msi",
+            'msiexec "//a" x.msi',
+            # Glob/expansion-bearing spellings are left for the shell.
+            "msiexec //L*v x.msi",
+            "msiexec //$FLAG x.msi",
+            # Runtime-reparsed quoted scripts index a different source string.
+            'bash -c "msiexec //a x"',
+            "eval 'msiexec //a x'",
+            # Executable wrappers: the wrapper word is the command word, so
+            # the conservative v1 policy passes these through untouched.
+            "env msiexec //a x.msi",
+            "timeout 5 msiexec //a x.msi",
+            # Heredoc bodies are data, never command contexts.
+            "cat <<EOF\nmsiexec //a\nEOF",
+            # Without any known tool name nothing is rewritten.
+            "echo //a ok",
+        ],
+    )
+    def test_conservative_pass_through(self, command: str) -> None:
+        assert _fix_for_windows(command) == BashFix(command)
+
+    @pytest.mark.parametrize("platform", ["linux", "darwin", "freebsd", "cygwin"])
+    def test_non_windows_is_byte_for_byte_noop(self, platform: str) -> None:
+        command = "msiexec //a pkg.msi //qb"
+        assert _fix_for_platform(command, platform) == BashFix(command)
+
+    def test_warning_mentions_the_repair(self) -> None:
+        result = _fix_for_windows("msiexec //a pkg.msi //qb")
+        assert "//a" in result.warning
+        assert "single-slash" in result.warning
+
+    def test_msiexec_incident_command_end_to_end(self) -> None:
+        """The exact command shape from the incident session is repaired."""
+        source = (
+            "cd /c/dev/x/.kimix_cache && msiexec //a wsl.msi //qb "
+            "TARGETDIR=C:\\dev\\x\\.kimix_cache\\wsl_msi 2>&1; echo rc=$?"
+        )
+        result = _fix_for_windows(source)
+        assert "msiexec /a wsl.msi /qb" in result.command
+        assert "//a" in result.native_flag_fixes
+        assert "//qb" in result.native_flag_fixes
+
+
 class TestBashFixCommandPositions:
     @pytest.mark.parametrize(
         ("source", "expected"),

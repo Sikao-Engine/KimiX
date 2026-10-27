@@ -115,6 +115,10 @@ from kimix_native.shell_compat.fallback_data import (  # noqa: F401
     _wrapper_runner,
 )
 
+from kimix_native.shell_compat.native_flags import (  # noqa: F401
+    native_flag_fix,
+)
+
 from kimix_native.shell_compat.bash_core import (  # noqa: F401
     BashFix,
     _ARITHMETIC_SPECIAL_RE,
@@ -319,6 +323,13 @@ from kimix_native.shell_compat.pwsh_transform import (  # noqa: F401
 # The result object is always the reference
 # ``shell_compat.bash_core.BashFix`` frozen dataclass, rebuilt here from the
 # native tuple, so object shape/equality/warning semantics are unchanged.
+# One deliberate addition sits AFTER that rebuild: the doubled-slash flag
+# repair (``msiexec //a`` -> ``msiexec /a``, see
+# ``shell_compat.native_flags``) post-processes the shared result on Windows,
+# so the compiled kernel and the pure-Python reference both apply it exactly
+# once and remain byte-equal with each other.  (It is not part of the
+# native-vs-reference differential: the C++ port cannot be extended from
+# this repository.)
 import sys as _sys
 
 # Reference implementations, captured before the wrappers below shadow them
@@ -383,25 +394,46 @@ def fix_bash_command(command: str) -> BashFix:
         raise TypeError("command must be a string")
     native = _native_bash_fix()
     if native is None:
-        return _py_fix_bash_command(command)
-    (
-        fixed,
-        replacements,
-        path_changes,
-        shell_wrappers,
-        nul_fixes,
-        unsupported,
-        cmd_conditional_fixes,
-    ) = native.fix_bash_command(command, _native_temp_dir())
-    return BashFix(
-        command=fixed,
-        replacements=tuple(replacements),
-        path_changes=tuple(path_changes),
-        shell_wrappers=tuple(shell_wrappers),
-        nul_fixes=tuple(nul_fixes),
-        unsupported=tuple(unsupported),
-        cmd_conditional_fixes=tuple(cmd_conditional_fixes),
-    )
+        result = _py_fix_bash_command(command)
+    else:
+        (
+            fixed,
+            replacements,
+            path_changes,
+            shell_wrappers,
+            nul_fixes,
+            unsupported,
+            cmd_conditional_fixes,
+        ) = native.fix_bash_command(command, _native_temp_dir())
+        result = BashFix(
+            command=fixed,
+            replacements=tuple(replacements),
+            path_changes=tuple(path_changes),
+            shell_wrappers=tuple(shell_wrappers),
+            nul_fixes=tuple(nul_fixes),
+            unsupported=tuple(unsupported),
+            cmd_conditional_fixes=tuple(cmd_conditional_fixes),
+        )
+    # Doubled-slash flag repair (``msiexec //a`` -> ``msiexec /a``) runs as a
+    # post-pass over the shared BashFix value so BOTH the compiled kernel and
+    # the pure-Python reference apply it exactly once and stay byte-equal.
+    # The C++ kernel cannot be extended from this repository; the facade is
+    # the single integration point.  Windows-only, no-op everywhere else.
+    if _sys.platform == "win32" and "//" in result.command:
+        flag_fix = native_flag_fix(result.command)
+        if flag_fix is not None:
+            fixed_command, original_words = flag_fix
+            result = BashFix(
+                command=fixed_command,
+                replacements=result.replacements,
+                path_changes=result.path_changes,
+                shell_wrappers=result.shell_wrappers,
+                nul_fixes=result.nul_fixes,
+                unsupported=result.unsupported,
+                cmd_conditional_fixes=result.cmd_conditional_fixes,
+                native_flag_fixes=result.native_flag_fixes + original_words,
+            )
+    return result
 
 
 def bash_compatibility_prelude() -> str:

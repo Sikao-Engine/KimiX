@@ -177,11 +177,12 @@ def test_descriptions_unchanged() -> None:
         "Execute a bash command, ALWAYS native POSIX syntax. "
         "For long sessions: interactive=True, then task_id=<id> to continue; "
         "wait_for_pattern to block; job_output to monitor; send 'exit' to close."
-        " On Windows prefer the `pwsh` tool. Git Bash `cmd` is auto-fixed before it runs:"
-        " unquoted `\\`→`/`, `/tmp/…`, `/c/…`→native paths, `nul`→`/dev/null`, `cd /d`→`cd`,"
-        " missing POSIX tools (`open`, `watch`, `sudo`, …)→fallbacks, cmd.exe forms→bash;"
-        " unfixable commands are rejected with the reason."
-        + self_kill_hint_text
+          " On Windows prefer the `pwsh` tool. Git Bash `cmd` is auto-fixed before it runs:"
+          " unquoted `\\`→`/`, `/tmp/…`, `/c/…`→native paths, `nul`→`/dev/null`, `cd /d`→`cd`,"
+          " msiexec-style `//flag`→`/flag` (MSYS path conversion is off; `/flag` passes"
+          " verbatim), missing POSIX tools (`open`, `watch`, `sudo`, …)"
+          "→fallbacks, cmd.exe forms→bash; unfixable commands are rejected with the reason."
+          + self_kill_hint_text
     )
 
     assert tools["pwsh"].description == (
@@ -226,9 +227,10 @@ def test_bash_windows_description_mentions_fix_rules() -> None:
         "unquoted",  # `_prepare_bash_cmd`: unquoted `\` -> `/`
         "/tmp/",  # Git Bash virtual POSIX path -> native temp dir
         "/c/",  # drive-letter spelling -> `C:/`
-        "/dev/null",  # `nul` rewrite
-        "cd /d",
-        "rejected",  # BashFix.unsupported gate
+          "/dev/null",  # `nul` rewrite
+          "cd /d",
+          "//flag",  # doubled-slash native-tool flag rewrite
+          "rejected",  # BashFix.unsupported gate
     ):
         assert fragment in desc, f"Windows bash description missing {fragment!r}"
     note = bt._WINDOWS_BASH_FIX_DESCRIPTION

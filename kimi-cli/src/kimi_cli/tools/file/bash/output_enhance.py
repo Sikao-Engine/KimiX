@@ -69,6 +69,13 @@ def interpret_exit_code(command: str, exit_code: int | None) -> str | None:
     # stay identical under native and pure-Python execution.
     if exit_code == 141 and _compat_tools()._compat_has_top_level_pipe(command):
         return "SIGPIPE: an upstream pipeline stage was truncated (expected when piping to head/tail)"
+    # Checked before the native fast path (like the SIGPIPE rule): the
+    # compiled kernel predates the doubled-slash flag rule, so it must be
+    # decided here to stay identical under native and pure-Python execution.
+    if "//" in command:
+        hint = _compat_tools()._compat_double_slash_flag_hint(command)
+        if hint is not None:
+            return hint
     if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and command.isascii():
         return _NATIVE_TOOLS.interpret_exit_code(command, exit_code)
     return _compat_tools()._compat_interpret_exit_code(command, exit_code)

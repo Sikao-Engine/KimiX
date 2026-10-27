@@ -841,12 +841,50 @@ def _compat_base_command_name(command: str) -> str:
     return ""
 
 
+def _compat_double_slash_flag_hint(command: str) -> str | None:
+    """Hint for a doubled-slash flag passed to a native Windows tool.
+
+    The Bash/Pwsh environments disable MSYS path conversion, so the classic
+    Git Bash workaround spelling ``msiexec //a`` no longer collapses to
+    ``/a``: it reaches the tool verbatim and is rejected as an invalid
+    switch (msiexec classically exits 103 for an unparseable command line,
+    or 1639 "invalid command line").  The command-time fixer rewrites the
+    spelling automatically (``kimix_native.shell_compat.native_flags``);
+    this hint explains the failure when the fixer did not run (e.g. the
+    quoted or wrapped forms it deliberately passes through).
+    """
+    if "//" not in command:
+        return None
+    name = _compat_base_command_name(command).lower()
+    try:
+        from kimix_native.shell_compat.native_flags import (
+            _DOUBLE_SLASH_FLAG_RE,
+            _NATIVE_SLASH_TOOLS,
+        )
+    except ImportError:  # pragma: no cover - package half-installed
+        return None
+    if name not in _NATIVE_SLASH_TOOLS:
+        return None
+    if not any(_DOUBLE_SLASH_FLAG_RE.match(tok) for tok in command.split()):
+        return None
+    return (
+        f"A doubled-slash flag (`//x`) reached native Windows tool `{name}` "
+        "verbatim: this shell disables MSYS path conversion, so `//x` is NOT "
+        "collapsed to `/x` and the tool rejects it as an invalid switch. "
+        "Use single-slash flags (`/x`)."
+    )
+
+
 def _compat_interpret_exit_code(command: str, exit_code: int | None) -> str | None:
     """Exact mirror of output_enhance.py::interpret_exit_code (44-75)."""
     if exit_code is None or exit_code == 0:
         return None
     name = _compat_base_command_name(command).lower()
     code = exit_code
+    if "//" in command:
+        hint = _compat_double_slash_flag_hint(command)
+        if hint is not None:
+            return hint
 
     if name in ("grep", "egrep", "fgrep", "rg", "ag", "ack") and code == 1:
         return "No matches found (not an error)"

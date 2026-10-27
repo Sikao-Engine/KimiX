@@ -61,6 +61,17 @@ bodies, assignments, case patterns, and ordinary arguments are data, not
 commands.  Nested command substitutions and process substitutions are scanned
 as their own command contexts.
 
+Doubled-slash flags of native Windows tools are rewritten to single slash:
+the tool environment disables MSYS path conversion (so native tools receive
+``/flag`` switches verbatim), which also means the classic Git Bash
+workaround spelling ``msiexec //a`` no longer collapses back — it reaches
+the tool verbatim and is rejected as an invalid switch.  Unquoted ``//flag``
+arguments of known slash-flag native tools (``msiexec``, ``cmd``,
+``tasklist``, ``xcopy``, ...; full paths and an ``.exe`` suffix are
+recognized) are repaired to ``/flag``; quoted, escaped, expansion-bearing
+and UNC-looking words pass through byte-for-byte.  See
+``kimix_native.shell_compat.native_flags``.
+
 Windows-style null-device redirections are rewritten to ``/dev/null``: any
 output/redirection target whose literal value is the bare word ``nul`` —
 plain (``> nul``), backslash-escaped (``> \\nul``, ``> n\\ul``), ANSI-C
@@ -160,4 +171,6 @@ def fix_bash_command(command: str) -> BashFix:
         shell_wrappers=tuple(getattr(result, "shell_wrappers", ())),
         nul_fixes=tuple(getattr(result, "nul_fixes", ())),
         unsupported=tuple(getattr(result, "unsupported", ())),
+        cmd_conditional_fixes=tuple(getattr(result, "cmd_conditional_fixes", ())),
+        native_flag_fixes=tuple(getattr(result, "native_flag_fixes", ())),
     )

@@ -88,6 +88,37 @@ class TestInterpretExitCode:
     ) -> None:
         assert interpret_exit_code(command, code) is None
 
+    @pytest.mark.parametrize(
+        ("command", "code"),
+        [
+            # The incident shape: msiexec rejects verbatim //flags (rc 103).
+            ("msiexec //a pkg.msi //qb", 103),
+            ("msiexec //i wsl.msi //qn", 1639),
+            ("cmd //c dir", 1),
+            ("tasklist //fi x", 160),
+        ],
+    )
+    def test_doubled_slash_flag_hint(self, command: str, code: int) -> None:
+        meaning = interpret_exit_code(command, code)
+        assert meaning is not None
+        assert "single-slash" in meaning
+        assert "path conversion" in meaning
+
+    @pytest.mark.parametrize(
+        ("command", "code"),
+        [
+            # Single-slash spelling: no hint (the failure has another cause).
+            ("msiexec /a pkg.msi /qb", 103),
+            ("msiexec /i wsl.msi /qn", 1639),
+            # Success is never annotated.
+            ("msiexec //a pkg.msi //qb", 0),
+            # POSIX tools never get the hint.
+            ("echo //a ok", 1),
+        ],
+    )
+    def test_no_doubled_slash_flag_hint(self, command: str, code: int | None) -> None:
+        assert interpret_exit_code(command, code) is None
+
 
 # ============================================================================
 # is_expected_exit

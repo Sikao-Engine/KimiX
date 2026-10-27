@@ -691,7 +691,14 @@ class BashFix:
     Git Bash equivalent (see ``_UNSUPPORTED_BODIES`` for the reasons); the
     command text is left byte-for-byte unchanged for those.  Empty tuples
     Empty tuples
-    mean the command was returned byte-for-byte unchanged.  ``cmd_conditional_fixes``
+    ``native_flag_fixes`` records each doubled-slash argument word
+    (``//a``, ``//qb``, ...) of a known slash-flag native Windows tool
+    (``msiexec``, ``cmd``, ``tasklist``, ...) that was rewritten to the
+    single-slash spelling (``/a``) — the shell environment disables MSYS
+    path conversion, so the ``//x`` workaround spelling reaches the tool
+    verbatim and is rejected as an invalid switch (see
+    :mod:`kimix_native.shell_compat.native_flags` for the tool table and
+    the conservative rewrite policy).  ``cmd_conditional_fixes``
     records the original keyword region of each cmd.exe control-flow construct
     that was translated to a bash equivalent by the scanner (see
     ``_try_cmd_if`` / ``_try_cmd_for`` / ``_try_at_prefix``): ``if [not] exist
@@ -712,6 +719,7 @@ class BashFix:
     nul_fixes: tuple[str, ...] = ()
     unsupported: tuple[str, ...] = ()
     cmd_conditional_fixes: tuple[str, ...] = ()
+    native_flag_fixes: tuple[str, ...] = ()
 
     @property
     def changed(self) -> bool:
@@ -722,6 +730,7 @@ class BashFix:
             or bool(self.shell_wrappers)
             or bool(self.nul_fixes)
             or bool(self.cmd_conditional_fixes)
+            or bool(self.native_flag_fixes)
         )
 
     @property
@@ -768,6 +777,14 @@ class BashFix:
                 "(`if exist`/`if defined`/`if errorlevel`/`if ...==...` tests, "
                 "`for %v in (...) do` loops, `@echo off|on` -> `set +x|-x`): "
                 f"{words}."
+            )
+        if self.native_flag_fixes:
+            words = ", ".join(f"`{word}`" for word in self.native_flag_fixes)
+            parts.append(
+                "Rewrote doubled-slash flag(s) of native Windows tool(s) "
+                f"{words} to single-slash spellings (MSYS path conversion is "
+                "disabled in this shell, so `//x` would reach the tool "
+                "verbatim and be rejected — use `/x`)."
             )
         return " ".join(parts)
 
