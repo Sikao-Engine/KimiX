@@ -302,11 +302,15 @@ async def test_agent_loop_continues_after_tool_rejected_when_steer_is_injected(
 
 
 @pytest.mark.asyncio
-async def test_step_merges_plain_steer_with_auto_retrieved_reminder_in_model_history(
+async def test_step_keeps_steer_separate_from_system_reminder_in_model_history(
     runtime: Runtime,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A plain steer followed by a system-reminder user message (the shape the
+    verification gate produces) must stay two separate messages: history
+    normalization must not merge the reminder into the steer message, so the
+    cached prefix boundary stays stable across steps."""
     soul = _make_soul(runtime, tmp_path)
     captured_history: list[Message] = []
 
@@ -317,6 +321,17 @@ async def test_step_merges_plain_steer_with_auto_retrieved_reminder_in_model_his
         ]
     )
     await soul._inject_steer("Follow user note")
+    # Simulate a reminder producer (e.g. the verification gate) appending its
+    # reminder right after the steer, within the same step boundary.
+    await soul.context.append_message(
+        Message(
+            role="user",
+            content=[system_reminder("Internal reminder")],
+        )
+    )
+    # The reminder is fresh for this step: prevent the stale-reminder strip at
+    # _step entry from removing it, so it reaches the model history.
+    monkeypatch.setattr(kimisoul_module, "strip_system_reminders", lambda _history: 0)
 
     async def fake_kosong_step(chat_provider, system_prompt, toolset, history, **kwargs):
         captured_history[:] = list(history)
@@ -328,18 +343,9 @@ async def test_step_merges_plain_steer_with_auto_retrieved_reminder_in_model_his
             _tool_result_futures={},
         )
 
-    async def fake_auto_retrieve() -> list[str]:
-        return ["Internal reminder"]
-    monkeypatch.setattr(
-        soul,
-        "_maybe_auto_retrieve_history",
-        fake_auto_retrieve,
-    )
     monkeypatch.setattr(kimisoul_module.kosong, "step", fake_kosong_step)
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
-
     outcome = await soul._step()
-
     assert outcome is not None
     assert soul.context.history[-3:] == [
         Message(role="user", content=[TextPart(text="Follow user note")]),
@@ -408,11 +414,8 @@ async def test_step_passes_current_turn_index_to_pruner(
             _tool_result_futures={},
         )
 
-    async def fake_auto_retrieve() -> list[str]:
-        return []
     recording = _RecordingPruner()
     soul._pruner = recording  # type: ignore[assignment]
-    monkeypatch.setattr(soul, "_maybe_auto_retrieve_history", fake_auto_retrieve)
     monkeypatch.setattr(kimisoul_module.kosong, "step", fake_kosong_step)
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
 

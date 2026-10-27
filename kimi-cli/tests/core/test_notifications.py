@@ -142,10 +142,6 @@ async def test_kimisoul_appends_notification_message(runtime: Runtime, tmp_path:
     runtime.background_tasks.publish_terminal_notifications()
 
     soul, context = _make_soul(runtime, tmp_path)
-    # Disable auto-retrieval so it doesn't re-inject the notification message
-    soul._loop_control.auto_retrieve_history = False
-    soul._loop_control.auto_retrieve_working_memory = False
-    soul._loop_control.auto_retrieve_recency_memory = False
 
     async def _drain_ui(wire: Wire) -> None:
         wire_ui = wire.ui_side(merge=True)
@@ -181,10 +177,6 @@ async def test_kimisoul_skips_notification_delivery_when_read_only(
     soul, context = _make_soul(runtime, tmp_path)
     # The soul copies the runtime; set read_only on the instance it actually uses.
     soul._runtime.read_only = True
-    # Disable auto-retrieval so the only possible injection is the notification.
-    soul._loop_control.auto_retrieve_history = False
-    soul._loop_control.auto_retrieve_working_memory = False
-    soul._loop_control.auto_retrieve_recency_memory = False
 
     async def _drain_ui(wire: Wire) -> None:
         wire_ui = wire.ui_side(merge=True)

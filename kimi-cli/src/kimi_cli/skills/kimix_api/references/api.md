@@ -1056,8 +1056,7 @@ def system_reminder(message: str) -> TextPart:
 ### Delivery in `KimiSoul`
 Before each LLM step (`KimiSoul._step`):
 1. `strip_system_reminders()` removes stale `<system-reminder>` user messages from previous steps/turns (reminders are ephemeral: one fresh copy per step, never accumulated).
-2. `KimiSoul._maybe_auto_retrieve_history()` may return up to three auto-retrieved memory citation texts (long-term / working / recency tiers, gated by `LoopControl.auto_retrieve_*` flags and a per-turn token budget). Each is wrapped with `system_reminder()` and the combined text is appended as a single user-role message. Blank reminder text is never appended, so no empty user message can reach the LLM.
-3. The verification gate (`LoopControl.verification_gate_enabled`) and pending notifications may append further reminder messages when they fire.
+2. The verification gate (`LoopControl.verification_gate_enabled`) and pending notifications may append further reminder messages when they fire.
 Adjacent user messages are later merged by `normalize_history()` (`kimi_cli/soul/message.py`) for the API call — but system-reminder and notification messages are never merged, so the request-time message boundary matches storage and the provider prefix cache stays stable.
 ## Context Pruning (Smart History Removal)
 
@@ -1139,8 +1138,7 @@ Defaults enforce: `prune_target_ratio < prune_trigger_ratio < compaction_trigger
 ### Retrieval of Elided Content
 
 Tier B elided content is not lost — the originals are archived:
-- Tool results are now indexed in `HistoryIndex` (previously only user/assistant turns)
-- Auto-retrieval (`_maybe_auto_retrieve_history`) resurfaces relevant elided turns automatically
+- Tool results are indexed in `HistoryIndex` (previously only user/assistant turns), keeping the archived originals searchable
 
 ### Slash Command
 

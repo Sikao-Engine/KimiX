@@ -884,6 +884,42 @@ def build_plan_retry_reminder(requirement: str) -> str:
     )
 
 
+def build_planner_provider_dict() -> dict[str, Any]:
+    """Build the provider_dict for a short-lived planner session.
+
+    Falls back to the main provider settings when no ``planner`` sub-provider
+    is configured. Deep-copies before returning so the shared default provider
+    dicts are never mutated. Shared by ``prompt_plan_async`` and both server
+    session managers so the planner creation sites cannot drift apart.
+    """
+    import copy
+
+    planner_provider = base.get_default_sub_provider("planner")
+    if planner_provider is None or not planner_provider.get("type"):
+        # No usable planner sub-provider configured (e.g. the config has
+        # no `sub_providers` key): fall back to the main provider settings
+        # so the planner session can still be created.
+        planner_provider = base._default_provider
+    # Deep-copy so we don't mutate the shared default provider dict
+    planner_provider = copy.deepcopy(planner_provider) if planner_provider else {}
+    return planner_provider
+
+
+def lock_planner_session_read_only(session: Session) -> None:
+    """Mark a planner session read-only so it receives no auto-injections.
+
+    ``KimiSoul`` skips notification delivery (``deliver_pending("llm")``)
+    for read-only runtimes, so pending notifications are never appended to the
+    plan session's context as fake user requests.
+    """
+    cli = getattr(session, "_cli", None)
+    if cli is None:
+        return
+    runtime = getattr(cli, "_runtime", None)
+    if runtime is not None:
+        runtime.read_only = True
+
+
 async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md") -> None:
     import kimi_cli.tools.note as note
 
@@ -895,22 +931,7 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
     planner_session: Session | None = None
 
     try:
-        import copy
-        planner_provider = base.get_default_sub_provider("planner")
-        if planner_provider is None or not planner_provider.get("type"):
-            # No usable planner sub-provider configured (e.g. the config has
-            # no `sub_providers` key): fall back to the main provider settings
-            # so the planner session can still be created.
-            planner_provider = base._default_provider
-        # Deep-copy so we don't mutate the shared default provider dict
-        planner_provider = copy.deepcopy(planner_provider) if planner_provider else {}
-        planner_provider.setdefault("loop_control", {})
-        # Plan sessions are short-lived and focused on a single requirement.
-        # Disable history auto-retrieval so archived/working/recency memory
-        # injections do not show up as extra "user" messages in the planner.
-        planner_provider["loop_control"]["auto_retrieve_history"] = False
-        planner_provider["loop_control"]["auto_retrieve_working_memory"] = False
-        planner_provider["loop_control"]["auto_retrieve_recency_memory"] = False
+        planner_provider = build_planner_provider_dict()
         # Inherit the caller's working directory so relative plan paths and
         # AGENTS.md/skills resolution match the session that spawned the planner
         # (a planner session that defaults to the process CWD cannot find the
@@ -940,10 +961,8 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
 
         # Lock the planner session to read-only so it cannot write to the filesystem
         # or modify external state — its sole job is to generate a plan via write_plan.
-        if hasattr(planner_session, '_cli') and planner_session._cli is not None:
-            _runtime = getattr(planner_session._cli, '_runtime', None)
-            if _runtime is not None:
-                _runtime.read_only = True
+        # This also blocks notification delivery into the plan session.
+        lock_planner_session_read_only(planner_session)
 
         reminder = (
             "read the following requirement carefully and generate a comprehensive plan. "

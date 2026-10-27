@@ -23,7 +23,11 @@ from kimix.ui.printing import MessageType
 from kimix.ui.stream import format_tool_args
 from kimix.server.bus import bus, BusEvent
 from kimix.utils.session import _create_session_async
-from kimix.utils.prompt import build_plan_retry_reminder
+from kimix.utils.prompt import (
+    build_plan_retry_reminder,
+    build_planner_provider_dict,
+    lock_planner_session_read_only,
+)
 from kimix.utils.system_prompt import SystemPromptType
 
 
@@ -319,12 +323,17 @@ async def _process_plan(
     cumulative_text = ""
 
     try:
-        # Create a planner SDK session
+        # Create a planner SDK session. The planner provider dict disables
+        # history/working/recency auto-retrieval and the read-only lock skips
+        # notification delivery, so no auto-injected message ever reaches the
+        # plan session — its sole input is the planning requirement below.
         planner_session = await _create_session_async(
             agent_type=SystemPromptType.TodoMaker,
             agent_file=_default_agent_file_dir / "agent_planner.json",
+            provider_dict=build_planner_provider_dict(),
         )
         planner_session.get_custom_data()["plan_writing_path"] = plan_file
+        lock_planner_session_read_only(planner_session)
         state.planner_session = planner_session
 
         # Enable plan tools

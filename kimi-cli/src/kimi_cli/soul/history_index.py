@@ -16,7 +16,6 @@ The public API is unchanged from the old in-memory BM25 implementation so
 
 from __future__ import annotations
 
-import math
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -550,38 +549,6 @@ class HistoryIndex:
                     out.append({**turn, "score": score})
                     break
         return out
-
-    def search_with_recency(
-        self,
-        query: str,
-        *,
-        top_k: int = 3,
-        recency_weight: float = 1.0,
-    ) -> list[dict[str, Any]]:
-        """BM25 search with recency boosting.
-
-        boosted_score = bm25_score * (1 + recency_weight * exp(-hours_ago / 24.0))
-        """
-        turns = self._turns if self._use_fts else self._turns_list
-        if not turns:
-            return []
-
-        # Fetch a larger candidate pool so recency re-ranking has room to work
-        candidates = self.search(query, top_k=top_k * 3)
-        if not candidates:
-            return []
-
-        now = time.time()
-        scored: list[tuple[float, dict[str, Any]]] = []
-        for turn in candidates:
-            bm25_score = turn.get("score", 0.0)
-            hours_ago = (now - turn["timestamp"]) / 3600.0
-            boost = 1.0 + recency_weight * math.exp(-hours_ago / 24.0)
-            boosted_score = bm25_score * boost
-            scored.append((boosted_score, {**turn, "boosted_score": boosted_score}))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [turn for _, turn in scored[:top_k]]
 
     # ------------------------------------------------------------------
     # Persistence

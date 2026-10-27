@@ -481,8 +481,6 @@ class KimiSoul:
         self._current_turn_id: str = ""
         self._current_step_no: int = 0
         self._current_turn_user_text: str = ""
-        self._last_auto_retrieved_turn_id: int | None = None
-        self._recently_retrieved_turn_ids: set[int] = set()
         self._hook_engine: HookEngine = HookEngine()
         self._verification_gate = VerificationGate(
             max_nudges=self._loop_control.verification_gate_max_nudges,
@@ -618,177 +616,6 @@ class KimiSoul:
         except Exception:
             logger.debug("Failed to load todos for reminder", exc_info=True)
             return []
-
-    async def _maybe_auto_retrieve_history(self) -> list[str]:
-        """Auto-inject relevant turns from long-term, working, and recency memory.
-
-        Returns up to three distinct reminder texts per turn, deduplicated so
-        the same turn_id is never injected twice in the same turn or in the
-        immediately previous auto-retrieval. Each text is appended to the
-        context wrapped in ``<system-reminder>`` tags.
-
-        Only fires on the first step of a turn when at least one retrieval tier
-        is enabled and the user query is non-trivial.
-        """
-        lc = self._loop_control
-        if not (
-            lc.auto_retrieve_history
-            or lc.auto_retrieve_working_memory
-            or lc.auto_retrieve_recency_memory
-        ):
-            return []
-        if self._current_step_no != 1:
-            return []
-        query = self._current_turn_user_text
-        if len(query) < 10:
-            return []
-
-        try:
-            results = self._history_index.search_with_recency(
-                query,
-                top_k=10,
-                recency_weight=lc.auto_retrieve_recency_weight,
-            )
-        except Exception:
-            logger.debug("History index search failed during auto-retrieval", exc_info=True)
-            return []
-
-        # Deduplicate against recently retrieved turn IDs
-        candidates = [
-            r for r in results if r["turn_id"] not in self._recently_retrieved_turn_ids
-        ]
-
-        reminders: list[str] = []
-        used_turn_ids: set[int] = set()
-
-        wrapper_overhead = 15  # tokens for <system-reminder> tags and newlines
-        budget = lc.auto_retrieve_max_tokens_per_turn
-        spent = 0
-
-        def _can_afford(citation: str, turn_id: int) -> bool:
-            nonlocal spent
-            citation_tokens = count_tokens(citation, model=self.model_name)
-            injection_cost = citation_tokens + wrapper_overhead
-            if spent + injection_cost <= budget:
-                spent += injection_cost
-                return True
-            logger.debug(
-                "Skipping auto-retrieved turn {turn_id}: would exceed token budget "
-                "({spent} + {cost} > {budget})",
-                turn_id=turn_id,
-                spent=spent,
-                cost=injection_cost,
-                budget=budget,
-            )
-            return False
-
-        # ── A. Long-term memory (compacted turns) ────────────────────────────
-        if lc.auto_retrieve_history:
-            compacted = [
-                r for r in candidates if r.get("is_compacted") and r["turn_id"] not in used_turn_ids
-            ]
-            if compacted:
-                best = compacted[0]
-                score = best.get("score", 0.0)
-                if score >= lc.auto_retrieve_history_threshold:
-                    turn_id = best["turn_id"]
-                    role = best.get("role", "unknown")
-                    text = best.get("text", "")
-                    citation = (
-                        f"[Auto-retrieved from past conversation — relevance: {score:.2f}]\n"
-                        f"> **{role}**\n> {text.replace(chr(10), chr(10) + '> ')}"
-                    )
-                    if _can_afford(citation, turn_id):
-                        used_turn_ids.add(turn_id)
-                        logger.debug(
-                            "Auto-retrieved history turn {turn_id} with score {score}",
-                            turn_id=turn_id,
-                            score=score,
-                        )
-                        reminders.append(citation)
-
-        # ── B. Working memory (non-compacted turns, excluding recent context) ─
-        if lc.auto_retrieve_working_memory:
-            # Exclude the last 2 non-compacted turns (last user+assistant pair)
-            # because they are already at the end of the LLM context.
-            non_compacted = [
-                r
-                for r in candidates
-                if not r.get("is_compacted") and r["turn_id"] not in used_turn_ids
-            ]
-            # Find the most recent non-compacted turn_ids to exclude
-            all_non_compacted_turn_ids = [
-                t["turn_id"] for t in self._history_index._turns if not t.get("is_compacted")
-            ]
-            recent_turn_ids = set(all_non_compacted_turn_ids[-2:]) if len(all_non_compacted_turn_ids) >= 2 else set(all_non_compacted_turn_ids)
-            eligible = [
-                r for r in non_compacted if r["turn_id"] not in recent_turn_ids
-            ]
-            if eligible:
-                best = eligible[0]
-                score = best.get("score", 0.0)
-                if score >= lc.auto_retrieve_working_memory_threshold:
-                    turn_id = best["turn_id"]
-                    role = best.get("role", "unknown")
-                    text = best.get("text", "")
-                    citation = (
-                        f"[Relevant context from our current conversation]\n"
-                        f"> **{role}**\n> {text.replace(chr(10), chr(10) + '> ')}"
-                    )
-                    if _can_afford(citation, turn_id):
-                        used_turn_ids.add(turn_id)
-                        logger.debug(
-                            "Auto-retrieved working memory turn {turn_id} with score {score}",
-                            turn_id=turn_id,
-                            score=score,
-                        )
-                        reminders.append(citation)
-
-        # ── C. Recency memory (best boosted score, compacted or non-compacted) ─
-        if lc.auto_retrieve_recency_memory:
-            eligible = [
-                r
-                for r in candidates
-                if r["turn_id"] not in used_turn_ids
-                and r.get("boosted_score", 0.0) >= lc.auto_retrieve_recency_memory_threshold
-            ]
-            if eligible:
-                best = eligible[0]
-                turn_id = best["turn_id"]
-                role = best.get("role", "unknown")
-                text = best.get("text", "")
-                boosted_score = best.get("boosted_score", 0.0)
-                citation = (
-                    f"[Recently discussed — relevance: {boosted_score:.2f}]\n"
-                    f"> **{role}**\n> {text.replace(chr(10), chr(10) + '> ')}"
-                )
-                if _can_afford(citation, turn_id):
-                    used_turn_ids.add(turn_id)
-                    logger.debug(
-                        "Auto-retrieved recency memory turn {turn_id} with boosted_score {boosted_score}",
-                        turn_id=turn_id,
-                        boosted_score=boosted_score,
-                    )
-                    reminders.append(citation)
-
-        # Respect the per-turn cap
-        max_inj = lc.auto_retrieve_max_injections_per_turn
-        if len(reminders) > max_inj:
-            reminders = reminders[:max_inj]
-            used_turn_ids = set(list(used_turn_ids)[:max_inj])
-
-        # Update dedup tracking
-        for turn_id in used_turn_ids:
-            self._recently_retrieved_turn_ids.add(turn_id)
-        # Keep the set bounded to the last ~10 IDs (turn_id is monotonically
-        # increasing, so the smallest id is the oldest).
-        while len(self._recently_retrieved_turn_ids) > 10:
-            self._recently_retrieved_turn_ids.discard(min(self._recently_retrieved_turn_ids))
-        # Update backward-compat single-ID tracker with the most recent injection
-        if used_turn_ids:
-            self._last_auto_retrieved_turn_id = max(used_turn_ids)
-
-        return reminders
 
     @property
     def thinking(self) -> bool | None:
@@ -1509,27 +1336,12 @@ class KimiSoul:
             )
 
         # ═══════════════════════════════════════════════════════════════════════
-        # 2e.2. AUTO-RETRIEVED MEMORY REMINDERS
+        # 2e.2. STRIP STALE SYSTEM REMINDERS
         # ═══════════════════════════════════════════════════════════════════════
-
-        # ── 2e.2a. Strip stale system reminders from previous steps/turns ─────
-        # Fresh reminders are re-appended below, so removing old ones is safe
-        # (reminders are ephemeral: one fresh copy per step, never accumulated).
+        # Reminders (verification gate, side questions) are ephemeral: one fresh
+        # copy per step, never accumulated. Removing old ones before each LLM
+        # step is safe and keeps the history clean.
         strip_system_reminders(self._context._history)
-
-        # ── 2e.2b. Append auto-retrieved memory citations ─────────────────────
-        # Blank reminder text is never appended: an empty ``user`` message would
-        # be forwarded to the LLM as a spurious empty turn.
-        reminders = await self._maybe_auto_retrieve_history()
-        if reminders:
-            combined_reminders = "\n".join(system_reminder(text).text for text in reminders)
-            if combined_reminders.strip():
-                await self._context.append_message(
-                    Message(
-                        role="user",
-                        content=[TextPart(text=combined_reminders)],
-                    )
-                )
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.3. CONTEXT PRUNING (smart history removal, Layer 1)
@@ -2118,7 +1930,6 @@ class KimiSoul:
             else:
                 compact_export_path = None
 
-            self._recently_retrieved_turn_ids.clear()
             self._pruner.reset_cooldown()
             await self._context.clear()
             # cache-05: render the compacting prompt (deterministic — the same

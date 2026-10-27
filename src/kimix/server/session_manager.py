@@ -33,6 +33,8 @@ from kimix.utils import (
     clear_session_async,
     close_session_async,
     build_plan_retry_reminder,
+    build_planner_provider_dict,
+    lock_planner_session_read_only,
 )
 from kimi_cli.session_state import load_session_state
 from kosong.utils.jsonx import loads_relaxed
@@ -1519,12 +1521,18 @@ class SessionManager:
                 if plan_file.is_file():
                     plan_file.unlink()
 
-                # Create a planner SDK session
+                # Create a planner SDK session. The planner provider dict
+                # disables history/working/recency auto-retrieval and the
+                # read-only lock skips notification delivery, so no
+                # auto-injected message ever reaches the plan session — its
+                # sole input is the planning requirement below.
                 planner_session = await _create_session_async(
                     agent_type=SystemPromptType.TodoMaker,
                     agent_file=_default_agent_file_dir / "agent_planner.json",
+                    provider_dict=build_planner_provider_dict(),
                 )
                 planner_session.get_custom_data()["plan_writing_path"] = plan_file
+                lock_planner_session_read_only(planner_session)
                 entry._planner_session = planner_session
 
                 # Enable plan tools

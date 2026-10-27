@@ -81,19 +81,6 @@ Triggered when context token ratio hits `compaction_trigger_ratio` or free space
 - **Cascade handling**: When already-compacted content is compressed again (depth ≥3), switches to `COMPACT_CASCADE` prompt to prevent information degradation.
 - Post-compaction, all rounds marked `is_compacted` in HistoryIndex for future retrieval.
 
-#### 3. Auto History Retrieval
-
-- **Auto retrieval** (`_maybe_auto_retrieve_history`): Each round, if user input ≥10 chars, BM25-searches HistoryIndex for matching compacted rounds; injects matches above `auto_retrieve_history_threshold` as `[Auto-retrieved from past conversation]`.
-
-```
-┌──────────────┐    append     ┌──────────────┐    overflow    ┌──────────────────┐
-│   Context    │ ───────────► │ HistoryIndex │ ────────────► │ SimpleCompaction │
-│ (live window)│              │ (BM25 index) │               │ (LLM summary)    │
-└──────────────┘              └──────────────┘               └──────────────────┘
-       ▲                            │   
-       │       auto-retrieve        │   
-       └────────────────────────────┘   
-```
 
 ---
 

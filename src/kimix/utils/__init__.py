@@ -44,6 +44,8 @@ from .prompt import (
     prompt_plan,
     prompt_plan_async,
     build_plan_retry_reminder,
+    build_planner_provider_dict,
+    lock_planner_session_read_only,
 )
 from .fix_error import fix_error, async_prompt, async_fix_error
 
@@ -88,6 +90,8 @@ __all__ = [
     "prompt_plan",
     "prompt_plan_async",
     "build_plan_retry_reminder",
+    "build_planner_provider_dict",
+    "lock_planner_session_read_only",
     "fix_error",
     "async_prompt",
     "async_fix_error",

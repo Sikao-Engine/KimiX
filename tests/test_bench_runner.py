@@ -324,12 +324,12 @@ def test_apply_profile_to_config_merges_overrides() -> None:
     from tools.bench.profile import apply_profile_to_config
 
     profile = {
-        "loop_control_overrides": {"auto_retrieve_history": True, "context_pruning_enabled": True},
+        "loop_control_overrides": {"context_pruning_enabled": True, "prune_subagents": True},
         "features": {"verification_gate_enabled": False},
     }
     config = apply_profile_to_config(profile, load_config())
-    assert config.loop_control.auto_retrieve_history is True
     assert config.loop_control.context_pruning_enabled is True
+    assert config.loop_control.prune_subagents is True
     assert config.loop_control.verification_gate_enabled is False
     # Untouched keys keep their defaults.
     assert config.loop_control.verification_gate_max_nudges == 2
@@ -352,7 +352,7 @@ def test_apply_profile_noop_without_overrides() -> None:
     config = load_config()
     result = apply_profile_to_config({}, config)
     assert result is config
-    assert result.loop_control.auto_retrieve_history is False
+    assert result.loop_control.context_pruning_enabled is True
 
 
 async def test_config_matrix_groups_by_signature(tmp_path: Path) -> None:
@@ -362,7 +362,7 @@ async def test_config_matrix_groups_by_signature(tmp_path: Path) -> None:
     out = tmp_path / "bench_runs"
     snapshot = {
         "model": "m1",
-        "loop_control_overrides": {"auto_retrieve_history": True},
+        "loop_control_overrides": {"context_pruning_enabled": True},
     }
     await run_bench(
         tasks, 2, out, _mock_runner_factory(), concurrency=1,
@@ -373,7 +373,7 @@ async def test_config_matrix_groups_by_signature(tmp_path: Path) -> None:
     assert len(matrix) == 1
     signature = next(iter(matrix))
     assert "model=m1" in signature
-    assert "auto_retrieve_history=True" in signature
+    assert "context_pruning_enabled=True" in signature
     # task-ok solves both runs, task-fail solves none -> 0.5
     assert matrix[signature]["solve_rate"] == 0.5
     assert matrix[signature]["n_runs"] == 4

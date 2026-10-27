@@ -359,36 +359,6 @@ Default is 3."""
     'self_eval' (one model review call) or 'majority' (pairwise votes).
     Default is 'self_eval'."""
 
-    auto_retrieve_history: bool = Field(default=True)
-    """When true, automatically search archived conversation history before each
-    turn and inject the most relevant past turn if it exceeds the similarity
-    threshold. Default is true."""
-    auto_retrieve_history_threshold: float = Field(default=5.0, ge=0.0)
-    """Minimum BM25 relevance score for auto-injecting a matching archived turn.
-    Higher values require stronger matches. Default is 5.0."""
-    auto_retrieve_working_memory: bool = Field(default=True)
-    """When true, search the current (non-compacted) conversation for relevant
-    turns that may be buried deep in the context window. Default is true."""
-    auto_retrieve_working_memory_threshold: float = Field(default=5.0, ge=0.0)
-    """Minimum BM25 relevance score for auto-injecting a working-memory turn.
-    Default is 5.0."""
-    auto_retrieve_recency_memory: bool = Field(default=True)
-    """When true, boost recent turns with a time-decay factor and inject the
-    best boosted match if it exceeds the threshold. Default is true."""
-    auto_retrieve_recency_memory_threshold: float = Field(default=4.0, ge=0.0)
-    """Minimum boosted score for auto-injecting a recency-memory turn.
-    Default is 4.0."""
-    auto_retrieve_recency_weight: float = Field(default=1.0, ge=0.0)
-    """Weight applied to the recency boost multiplier.
-    Default is 1.0."""
-    auto_retrieve_max_injections_per_turn: int = Field(default=3, ge=1, le=5)
-    """Maximum number of auto-retrieved injections to inject per turn.
-    Default is 3."""
-    auto_retrieve_max_tokens_per_turn: int = Field(default=20_000, ge=500, le=100_000)
-    """Maximum total token budget for all auto-retrieved history injections in one turn.
-    If the cumulative token count of selected injections exceeds this budget,
-    additional injections are skipped. Default is 2,000."""
-
     # ── Context pruning (smart history removal) ──────────────────────────────
 
     context_pruning_enabled: bool = Field(default=True)

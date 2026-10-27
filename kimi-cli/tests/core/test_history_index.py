@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 
 from kosong.message import Message
@@ -114,53 +113,6 @@ class TestHistoryIndex:
         results = idx.search("original text", top_k=1)
         assert len(results) >= 1
         assert results[0]["text"] == text
-
-    def test_search_with_recency_boosts_newer_docs(self):
-        idx = HistoryIndex()
-        # Index docs with a shared rare term plus unrelated docs so BM25 IDF
-        # for the shared term is non-zero (needs enough docs for IDF > 0).
-        idx.index_messages([_msg("user", "older document about alpha programming")])
-        idx._turns[0]["timestamp"] = time.time() - 7200  # 2 hours ago
-        idx.index_messages([_msg("assistant", "unrelated answer about java")])
-        idx.index_messages([_msg("user", "newer document about alpha programming")])
-        idx.index_messages([_msg("assistant", "another unrelated answer about golang")])
-
-        results = idx.search_with_recency("alpha programming", top_k=2, recency_weight=1.0)
-        # Filter to the two matching docs
-        matching = [r for r in results if "alpha" in r["text"]]
-        assert len(matching) == 2
-        # With the default 24-hour decay, the 2-hour-old doc gets ~1.92 boost, the new doc gets ~2.0 boost
-        # so the newer doc should rank first despite identical BM25 scores
-        assert matching[0]["turn_id"] == 2
-        assert matching[1]["turn_id"] == 0
-        assert matching[0]["boosted_score"] > matching[1]["boosted_score"]
-
-    def test_search_with_recency_weight_zero_falls_back_to_bm25(self):
-        idx = HistoryIndex()
-        idx.index_messages([_msg("user", "older document about alpha programming")])
-        idx._turns[0]["timestamp"] = time.time() - 7200
-        idx.index_messages([_msg("assistant", "unrelated answer about java")])
-        idx.index_messages([_msg("user", "newer document about alpha programming")])
-        idx.index_messages([_msg("assistant", "another unrelated answer about golang")])
-
-        results = idx.search_with_recency("alpha programming", top_k=2, recency_weight=0.0)
-        # With zero recency weight, ordering should match pure BM25
-        bm25_results = idx.search("alpha programming", top_k=2)
-        assert [r["turn_id"] for r in results] == [r["turn_id"] for r in bm25_results]
-
-    def test_search_with_recency_preserves_original_score(self):
-        idx = HistoryIndex()
-        idx.index_messages([_msg("user", "unique search term xyz")])
-        idx.index_messages([_msg("assistant", "something unrelated about java")])
-        results = idx.search_with_recency("unique search term xyz", top_k=1)
-        assert len(results) == 1
-        assert "score" in results[0]
-        assert "boosted_score" in results[0]
-        assert results[0]["boosted_score"] >= results[0]["score"]
-
-
-class TestHistoryIndexFts:
-    """FTS5-backed HistoryIndex (history.db) — durable, uncapped, CJK-capable."""
 
     def _make(self, tmp_path: Path, name: str = "history.db") -> HistoryIndex:
         idx = HistoryIndex(db_path=tmp_path / name)
@@ -301,32 +253,6 @@ class TestHistoryIndexFts:
         idx.index_messages([_msg("user", "Fresh start")])
         assert len(idx._turns) == 1
         idx.close()
-
-    def test_search_with_recency_works(self, tmp_path: Path):
-        idx = self._make(tmp_path)
-        idx.index_messages([_msg("user", "older document about alpha programming")])
-        # _turns returns copies in FTS mode, so update the persisted timestamp
-        # through the connection directly.
-        idx._ensure_conn().execute(
-            "UPDATE turns SET timestamp = ? WHERE turn_id = 0", (time.time() - 7200,)
-        )
-        idx.index_messages([_msg("assistant", "unrelated answer about java")])
-        idx.index_messages([_msg("user", "newer document about alpha programming")])
-        idx.index_messages([_msg("assistant", "another unrelated answer about golang")])
-
-        results = idx.search_with_recency("alpha programming", top_k=2, recency_weight=1.0)
-        matching = [r for r in results if "alpha" in r["text"]]
-        assert len(matching) == 2
-        # 0-based turn ids: older=0, newer=2
-        assert matching[0]["turn_id"] == 2
-        assert matching[1]["turn_id"] == 0
-        assert matching[0]["boosted_score"] > matching[1]["boosted_score"]
-        assert matching[0]["boosted_score"] >= matching[0]["score"]
-        idx.close()
-
-
-class TestHistoryIndexPhaseC:
-    """Phase C Hermes parity: incremental merge, stale breadcrumbs, rebuild_fts."""
 
     def test_rebuild_fts_recovers_corrupt_index(self, tmp_path: Path):
         idx = HistoryIndex(db_path=tmp_path / "history.db")

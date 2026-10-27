@@ -1232,7 +1232,6 @@ async def test_compact_context_silently_noops_on_oversized_summary(tmp_path):
     soul._hook_engine = MagicMock()
     soul._hook_engine.trigger = AsyncMock()
     soul._injection_providers = []
-    soul._recently_retrieved_turn_ids = set()
     soul._recently_restored_refs = set()
     soul._pruner = MagicMock()
     soul._compact_cache_dir = []

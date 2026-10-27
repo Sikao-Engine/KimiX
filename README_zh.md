@@ -82,19 +82,6 @@ Kimi-CLI-X 在 `KimiSoul` 核心循环中内建了一套**自动上下文记忆�
 - **级联处理**：当已压缩内容再次被压缩（深度 ≥3），自动切换为 `COMPACT_CASCADE` 提示词防止信息退化。
 - 压缩后，所有轮次在 HistoryIndex 中标记为 `is_compacted`，供后续检索。
 
-#### 3. 自动历史检索
-
-- **自动检索**（`_maybe_auto_retrieve_history`）：每轮第一步，若用户输入 ≥10 字符，自动在 HistoryIndex 中 BM25 搜索匹配的已压缩轮次，得分超过 `auto_retrieve_history_threshold` 时以 `[Auto-retrieved from past conversation]` 形式注入上下文。
-
-```
-┌──────────────┐   append   ┌──────────────┐  overflow  ┌──────────────────┐
-│    Context   │ ─────────► │ HistoryIndex │ ─────────► │ SimpleCompaction │
-│  (实时窗口)   │            │ (BM25 索引)   │            │  (LLM 摘要压缩)   │
-└──────────────┘            └──────────────┘            └──────────────────┘
-        ▲                           │
-        │      auto-retrieve        │
-        └───────────────────────────┘
-```
 
 ---
 
