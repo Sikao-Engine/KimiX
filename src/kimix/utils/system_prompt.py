@@ -58,8 +58,8 @@ Split into independent homogeneous sub-tasks.
 Call `workflow` with description, subagent_type (coder/explore/plan), prompt_template containing {{item}}, items list.
 Dispatch and summarize only. If not parallelizable, explain why and stop.
 ''',
-    'sp_agent_md': 'AGENTS.md:\n```\n{content}\n```\n',
-    'sp_read_agents_md': 'Read AGENTS.md before work.\n',
+    'sp_agent_md': '{name}:\n```\n{content}\n```\n',
+    'sp_read_agents_md': 'Read {names} before work.\n',
     'sp_skills': 'Skills:\n{skills}\n',
 }
 
@@ -98,6 +98,15 @@ def _load_items(name: str, **substitutions: str) -> list[str]:
     return [line for line in text.splitlines() if line.strip()]
 
 
+# Project instruction files appended to the system prompt, in order. Both are
+# agent-instruction conventions (AGENTS.md is the Kimi/Codex one, CLAUDE.md the
+# Claude Code one), so a repo may carry either or both.
+_AGENT_MD_FILES: tuple[str, ...] = ('AGENTS.md', 'CLAUDE.md')
+
+# A single instruction file larger than this (in UTF-8 bytes) is replaced by a
+# short "read it before work" pointer instead of being inlined.
+_AGENT_MD_MAX_BYTES = 4096
+
 # Concise system prompt to reduce LLM overthinking and hallucination
 _SYSTEM_PROMP = _load('sp_template').rstrip('\n')
 _TOOL_CONVENTIONS = _load('sp_tool_conventions').strip() + '\n'
@@ -124,8 +133,13 @@ def get_system_prompt(
         agent_role: SystemPromptType = SystemPromptType.Worker,
         max_system_prompt_tokens: int = 4_000,
 ) -> Callable[[BuiltinSystemPromptArgs], str]:
-    agent_md = (Path(str(work_dir)) if work_dir is not None else Path(
-        os.curdir)) / 'AGENTS.md'
+    work_dir_path = Path(str(work_dir)) if work_dir is not None else Path(
+        os.curdir)
+    # Resolved lazily inside the prompt function: the files may be created after
+    # this factory ran, and a missing file simply contributes nothing.
+    agent_md_paths: tuple[tuple[str, Path], ...] = tuple(
+        (name, work_dir_path / name) for name in _AGENT_MD_FILES
+    )
     yolo = yolo if yolo is not None else base._default_yolo
 
 
@@ -190,14 +204,51 @@ def get_system_prompt(
                 role_doc = "Swarm orchestrator"
                 items.extend(_load_items('sp_swarm_leader_items'))
 
-        def _build_agent_md_doc() -> str:
-            if use_agent_md and agent_md.is_file():
-                agent_md_content = agent_md.read_text(
-                    encoding='utf-8', errors='replace')
-                if len(agent_md_content.encode('utf-8')) > 4096:
-                    return _load('sp_read_agents_md')
-                return _load('sp_agent_md').replace('{content}', agent_md_content)
-            return ''
+        def _existing_agent_md() -> list[tuple[str, Path]]:
+            """Return the present instruction files, skipping duplicate targets."""
+            found: list[tuple[str, Path]] = []
+            seen: set[Path] = set()
+            for name, path in agent_md_paths:
+                try:
+                    if not path.is_file():
+                        continue
+                    real = path.resolve()
+                except OSError:
+                    continue
+                # CLAUDE.md is often a symlink/copy of AGENTS.md: append the
+                # guidance once rather than duplicating it under both names.
+                if real in seen:
+                    continue
+                seen.add(real)
+                found.append((name, path))
+            return found
+
+        def _read_hint(names: list[str]) -> str:
+            if not names:
+                return ''
+            return _load('sp_read_agents_md').replace('{names}', ', '.join(names))
+
+        def _build_agent_md_doc(files: list[tuple[str, Path]]) -> str:
+            if not use_agent_md or not files:
+                return ''
+            docs: list[str] = []
+            oversized: list[str] = []
+            for name, path in files:
+                try:
+                    content = path.read_text(encoding='utf-8', errors='replace')
+                except OSError:
+                    continue
+                if len(content.encode('utf-8')) > _AGENT_MD_MAX_BYTES:
+                    oversized.append(name)
+                    continue
+                docs.append(
+                    _load('sp_agent_md')
+                    .replace('{name}', name)
+                    .replace('{content}', content)
+                )
+            if oversized:
+                docs.append(_read_hint(oversized))
+            return ''.join(docs)
 
         if compact_export_path:
             items.append(f"Pre-compaction context exported to: {compact_export_path}")
@@ -209,9 +260,10 @@ def get_system_prompt(
             numbered_block = ''.join(
                 f'- {item}\n' for item in items
             )
-        agent_md_doc = _build_agent_md_doc()
+        agent_md_files = _existing_agent_md() if use_agent_md else []
+        agent_md_doc = _build_agent_md_doc(agent_md_files)
         if count_tokens(agent_md_doc) >= max_system_prompt_tokens:
-            agent_md_doc = _load('sp_read_agents_md')
+            agent_md_doc = _read_hint([name for name, _ in agent_md_files])
         prompt = _SYSTEM_PROMP.format(
             TOOL_CONVENTIONS=tool_conventions,
             AGENT_ROLE=role_doc.strip(),
