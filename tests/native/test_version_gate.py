@@ -26,6 +26,11 @@ _REPO = Path(__file__).resolve().parents[2]
 _BIN = _REPO / "bin"
 _NATIVE_FILE = "runtime_py.pyd" if sys.platform == "win32" else "runtime_py.so"
 
+# Shared libraries the compiled extension links against at import time.  They
+# are staged next to it (see ``_stage``) because the loader resolves them from
+# the extension's own directory.
+_SIBLING_LIBRARY_PATTERNS = ("*.dll", "*.so", "*.dylib")
+
 pytestmark = pytest.mark.skipif(
     not (_BIN / _NATIVE_FILE).is_file(),
     reason="native runtime not staged",
@@ -58,6 +63,16 @@ def _stage(marker: str | None) -> Path:
     stage_bin = root / "bin"
     stage_bin.mkdir()
     shutil.copy2(_BIN / _NATIVE_FILE, stage_bin / _NATIVE_FILE)
+    # ``runtime_py`` is a dynamically linked extension: on Windows it imports
+    # ``kimix-core.dll`` / ``kimix_api.dll`` / ``lua.dll`` / ``fts5_cjk.dll``
+    # from its own directory, which the loader searches via
+    # LOAD_WITH_ALTERED_SEARCH_PATH.  Staging the extension alone makes every
+    # import fail with "DLL load failed", which would surface here as a bogus
+    # ``ImportError`` instead of the version-gate reason under test.
+    for pattern in _SIBLING_LIBRARY_PATTERNS:
+        for library in _BIN.glob(pattern):
+            if library.name != _NATIVE_FILE:
+                shutil.copy2(library, stage_bin / library.name)
     shutil.copytree(
         _BIN / "kimix_native",
         stage_bin / "kimix_native",

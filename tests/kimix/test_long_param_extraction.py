@@ -116,10 +116,31 @@ class TestLooksLikeMalformedJsonParam:
         assert _looks_like_malformed_json_param(encoded) is True
 
     def test_escaped_newlines_detected(self):
-        """Content with escaped newlines (\\n) instead of real newlines is detected."""
-        text = "line1\\nline2\\n" + "x" * 200
+        """A payload whose line breaks were escaped into ``\\n`` is detected.
+
+        The detector needs several *unquoted* escapes (a flattened document),
+        so the fixture is a real multi-line script with every break encoded.
+        """
+        text = "\\n".join(f"echo line {i}" for i in range(10)) + "\\n" + "x" * 200
         assert len(text) > _LONG_PARAM_MIN_LENGTH
+        assert "\\n" in text and "\n" not in text
         assert _looks_like_malformed_json_param(text) is True
+
+    def test_quoted_escaped_newline_is_not_malformed(self):
+        """A literal ``\\n`` protected by quotes is command data, not a payload.
+
+        Regression: a long one-liner piping through ``tr '\\n' ' '`` used to be
+        rejected as a malformed parameter instead of reaching bash.
+        """
+        command = (
+            'cd /c/dev/kimi-agent && export PATH="/c/tools/msvc/bin:$PATH"; '
+            "for t in test_long_param test_bash_parser test_gate; do printf "
+            '"%-32s " $t; ./bin/debug/$t.exe > /tmp/run_$t.log 2>&1; echo '
+            "\"exit=$? :: $(head -2 /tmp/run_$t.log | tr '\\n' ' ')\"; done"
+        )
+        assert len(command) > _LONG_PARAM_MIN_LENGTH
+        assert "\\n" in command and "\n" not in command
+        assert _looks_like_malformed_json_param(command) is False
 
     def test_whitespace_string_returns_false(self):
         """Whitespace-only strings should return False."""
@@ -234,12 +255,21 @@ class TestExtractContentFromMalformed:
         assert result == obj["cmd"]
 
     def test_escaped_newlines_replaced(self):
-        """Escaped newlines (\\n) should be replaced with real newlines."""
-        text = "line1\\nline2\\nline3\\n" + "x" * 200
+        """Escaped newlines (\\n) of a flattened payload become real newlines."""
+        text = "\\n".join(f"line{i}" for i in range(10)) + "\\n"
         result = _extract_content_from_malformed(text)
         assert result is not None
         assert "\\n" not in result
         assert "\n" in result
+        assert result.splitlines()[0] == "line0"
+
+    def test_quoted_escaped_newline_not_rewritten(self):
+        """A one-liner quoting ``'\\n'`` is returned untouched (no rewriting)."""
+        command = (
+            'for t in test_long_param test_bash_parser; do printf "%-32s " $t; '
+            "./bin/debug/$t.exe | head -2 | tr '\\n' ' '; done"
+        )
+        assert _extract_content_from_malformed(command) is None
 
 
 # ── _extract_and_save_long_param ────────────────────────────────────────────

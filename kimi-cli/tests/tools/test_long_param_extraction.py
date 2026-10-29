@@ -73,7 +73,7 @@ echo all done
 """
 ESCAPED_BASH_SCRIPT = _flatten(_REAL_BASH_SCRIPT)
 
-# Few escapes, but acompanied by the other artifacts a JSON encoder emits.
+# Few escapes, but accompanied by the other artifacts a JSON encoder emits.
 ESCAPED_WITH_QUOTE_HINTS = (
     'cd /c/dev/repo && echo \\"building the whole test suite now\\" \\n '
     "cmake --build build --config RelWithDebInfo \\n ./build/tests/run_all.exe \\n"
@@ -101,7 +101,7 @@ def test_literal_escape_newline_in_one_liner_is_not_malformed(command: str) -> N
     _assert_reaches_tool(command)
 
 
-def test_tr_newline_command_is_eye_checked() -> None:
+def test_escaped_newline_predicate_ignores_quoted_escapes() -> None:
     """The escaped-newline predicate is the exact switch that regressed."""
     assert _looks_escaped_newlines(BASH_FOR_LOOP_WITH_TR) is False
     assert _looks_escaped_newlines(BASH_PRINTF_SCRIPT_WRITER) is False
