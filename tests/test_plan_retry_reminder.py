@@ -1,22 +1,28 @@
-"""Regression tests for the plan-session retry nudge provenance fix.
+"""Regression tests for the plan-session retry reminder contract.
 
 Background: ``prompt_plan_async`` (and both server session managers) verified
 the plan file on disk with ``plan_file.exists() and size > 0``. On failure the
-loop re-prompted the planner with an inline message ("The plan file was not
-generated. Please generate the plan and save it using the write_plan tool.")
-that arrived as a user-role turn but was machine-generated. Planners read it
-as the user confirming/reviewing their work and answered a question nobody
-asked (hallucinated confirmation turns).
+loop originally re-prompted the planner with an inline machine-built message
+("The plan file was not generated. Please generate the plan and save it using
+the write_plan tool.") delivered as a user-role turn. Planners read it as the
+user confirming/reviewing their work and answered a question nobody asked
+(hallucinated confirmation turns, e.g. "The user is asking me to continue").
 
-The fix routes all three call sites through ``build_plan_retry_reminder``,
-which labels the nudge ``[system check]`` and states explicitly that it is not
-a user message. These tests cover:
+An intermediate fix kept the injection but labeled it ``[system check]`` and
+stated "it is NOT a message from the user" — the label treated the symptom;
+the nudge still arrived as a user-role turn and models kept misattributing it.
 
-- builder wording (label, provenance, instruction, requirement embedding)
-- prompt_plan_async retry: 2nd-attempt prompt is the labeled nudge
-- prompt_plan_async exhausted retries: every retry is labeled, no raise
-- drift guard: the old ambiguous literal is gone from all three sites, each
-  site references the shared builder
+The current contract deletes the synthetic nudge entirely: the retry loop
+re-sends the ORIGINAL requirement reminder (text derived from real user
+input), which cannot be mistaken for a new human turn. These tests cover:
+
+- prompt_plan_async retry: every attempt receives the original reminder,
+  byte-identical across attempts (no machine-phrased nudge, no label)
+- prompt_plan_async exhausted retries: graceful "Plan generation failed",
+  no raise
+- drift guard: the old ambiguous literal, the ``[system check]`` label, and
+  the deleted ``build_plan_retry_reminder``/``PLAN_RETRY_CHECK_PREFIX``
+  symbols appear nowhere in the source tree
 """
 
 import importlib
@@ -31,16 +37,18 @@ import kimix.base as base
 # ``prompt`` re-exported by kimix.utils.__init__ (it shadows the submodule
 # attribute); importlib reliably returns the module object.
 prompt_mod = importlib.import_module("kimix.utils.prompt")
-from kimix.utils.prompt import (
-    PLAN_RETRY_CHECK_PREFIX,
-    build_plan_retry_reminder,
-    prompt_plan_async,
-)
+from kimix.utils.prompt import prompt_plan_async
 
 REQUIREMENT = "  Add --max-distance and --ao-gamma to the AO baker.  "
 
 # The full old second sentence; must not be re-inlined at any call site.
 OLD_NUDGE_SENTENCE = "Please generate the plan and save it using the write_plan tool."
+
+# Symbols deleted from the source tree; must not be referenced anywhere.
+DELETED_SYMBOLS = ["build_plan_retry_reminder", "PLAN_RETRY_CHECK_PREFIX"]
+
+# The retired provenance label of the synthetic nudge.
+RETIRED_LABEL = "[system check]"
 
 
 class _FakePlannerSession:
@@ -128,34 +136,22 @@ async def _drive(monkeypatch, patched, prompts: list[str], write_on_attempt: int
     return fake
 
 
-class TestBuildPlanRetryReminder:
-    def test_starts_with_system_check_label(self):
-        text = build_plan_retry_reminder("do the thing")
-        assert text.startswith(PLAN_RETRY_CHECK_PREFIX)
-
-    def test_states_it_is_not_a_user_message(self):
-        text = build_plan_retry_reminder("do the thing")
-        assert "NOT a message from the user" in text
-        assert "No human has read, confirmed, or reviewed anything yet" in text
-
-    def test_contains_actionable_instruction_and_requirement(self):
-        text = build_plan_retry_reminder("  spaced requirement \n")
-        assert "Call write_plan with the complete plan now" in text
-        assert text.endswith("Requirement:\nspaced requirement")
-
-    def test_old_ambiguous_phrasing_gone(self):
-        # The builder must not reintroduce the confirmation-question tone.
-        text = build_plan_retry_reminder("x").lower()
-        assert "please generate the plan" not in text
-        assert "do not ask the user questions" in text
+def _assert_original_reminder(text: str) -> None:
+    """The reminder must be the original requirement text, with no machine nudge."""
+    assert RETIRED_LABEL not in text
+    assert "NOT a message from the user" not in text
+    assert OLD_NUDGE_SENTENCE not in text
+    assert "plan file was not found" not in text.lower()
+    assert "Requirement:" in text
+    assert "Add --max-distance and --ao-gamma to the AO baker." in text
 
 
 class TestPromptPlanAsyncRetry:
-    async def test_second_attempt_receives_labeled_nudge(self, monkeypatch, patched, tmp_path):
+    async def test_retry_resends_original_reminder_verbatim(self, monkeypatch, patched, tmp_path):
         """Attempt 1 never writes the file; attempt 2 writes it.
 
-        The second planner prompt must be the [system check]-labeled nudge,
-        and the first must remain the original human-authored reminder.
+        The second planner prompt must be the ORIGINAL requirement reminder,
+        byte-identical to the first — no synthetic nudge, no label.
         """
         prompts: list[str] = []
         plan_file = tmp_path / "plan.md"
@@ -166,22 +162,18 @@ class TestPromptPlanAsyncRetry:
         )
 
         assert len(prompts) == 2, prompts
-        # First attempt: original reminder, no system-check label.
-        assert not prompts[0].startswith(PLAN_RETRY_CHECK_PREFIX)
-        assert "Requirement:" in prompts[0]
-        # Second attempt: labeled automated nudge carrying the requirement.
-        assert prompts[1].startswith(PLAN_RETRY_CHECK_PREFIX)
-        assert "NOT a message from the user" in prompts[1]
-        assert "Add --max-distance and --ao-gamma to the AO baker." in prompts[1]
-        assert OLD_NUDGE_SENTENCE not in prompts[1]
+        _assert_original_reminder(prompts[0])
+        _assert_original_reminder(prompts[1])
+        # Retry carries the exact original reminder, not a reworded variant.
+        assert prompts[1] == prompts[0]
 
         # The run must not have swallowed any exception on the way.
         assert not any("prompt_plan failed" in t for t in patched.printed_texts())
         # Approved plan flows to implementation; planner session closed.
         patched.close_mock.assert_awaited_once()
 
-    async def test_all_retries_labeled_when_plan_never_written(self, monkeypatch, patched, tmp_path):
-        """File never appears: 3 attempts, both retries labeled, graceful return."""
+    async def test_all_retries_original_reminder_when_plan_never_written(self, monkeypatch, patched, tmp_path):
+        """File never appears: 3 attempts, every prompt is the original reminder."""
         prompts: list[str] = []
         plan_file = tmp_path / "plan.md"
         await _drive(
@@ -191,9 +183,10 @@ class TestPromptPlanAsyncRetry:
         )
 
         assert len(prompts) == 3, prompts
-        assert not prompts[0].startswith(PLAN_RETRY_CHECK_PREFIX)
-        assert prompts[1].startswith(PLAN_RETRY_CHECK_PREFIX)
-        assert prompts[2].startswith(PLAN_RETRY_CHECK_PREFIX)
+        for p in prompts:
+            _assert_original_reminder(p)
+        assert prompts[1] == prompts[0]
+        assert prompts[2] == prompts[0]
         assert any("Plan generation failed" in t for t in patched.printed_texts())
         assert not any("prompt_plan failed" in t for t in patched.printed_texts())
         patched.close_mock.assert_awaited_once()
@@ -271,7 +264,7 @@ class TestReviewLoopRestored:
 
 
 class TestCallSiteDriftGuard:
-    """The three nudge call sites must go through the shared builder."""
+    """The retry contract must hold identically at all three plan call sites."""
 
     SITES = [
         "src/kimix/utils/prompt.py",
@@ -279,9 +272,31 @@ class TestCallSiteDriftGuard:
         "src/kimix/server/dummy_session_manager.py",
     ]
 
-    def test_old_literal_gone_and_builder_used(self):
+    def test_no_site_reinjects_a_synthetic_nudge(self):
         root = Path(__file__).resolve().parents[1]
         for rel in self.SITES:
             src = (root / rel).read_text(encoding="utf-8")
             assert OLD_NUDGE_SENTENCE not in src, f"{rel} re-inlines the ambiguous nudge"
-            assert "build_plan_retry_reminder" in src, f"{rel} bypasses the shared builder"
+            assert RETIRED_LABEL not in src, f"{rel} re-injects the labeled nudge"
+            for symbol in DELETED_SYMBOLS:
+                assert symbol not in src, f"{rel} still references deleted {symbol}"
+
+    def test_deleted_symbols_absent_tree_wide(self):
+        """build_plan_retry_reminder / PLAN_RETRY_CHECK_PREFIX have no callers left."""
+        root = Path(__file__).resolve().parents[1]
+        offenders: list[str] = []
+        for py in (root / "src").rglob("*.py"):
+            text = py.read_text(encoding="utf-8")
+            for symbol in DELETED_SYMBOLS:
+                if symbol in text:
+                    offenders.append(f"{py.relative_to(root)}: {symbol}")
+        assert not offenders, "deleted symbols still referenced:\n" + "\n".join(offenders)
+
+    def test_original_reminder_present_at_all_sites(self):
+        """All three sites still seed the retry loop with the original reminder,
+        so a retry re-sends real user-derived content (drift guard)."""
+        root = Path(__file__).resolve().parents[1]
+        needle = "read the following requirement carefully and generate a comprehensive plan."
+        for rel in self.SITES:
+            src = (root / rel).read_text(encoding="utf-8")
+            assert needle in src, f"{rel} lost the original requirement reminder"

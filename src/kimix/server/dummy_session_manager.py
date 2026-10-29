@@ -24,7 +24,6 @@ from kimix.ui.stream import format_tool_args
 from kimix.server.bus import bus, BusEvent
 from kimix.utils.session import _create_session_async
 from kimix.utils.prompt import (
-    build_plan_retry_reminder,
     build_planner_provider_dict,
     lock_planner_session_read_only,
 )
@@ -544,8 +543,10 @@ async def _process_plan(
                     # Accepted or timeout — proceed to finish
                     break
 
-                if attempt < max_plan_attempts - 1:
-                    prompt_text = build_plan_retry_reminder(text)
+                # Retry: re-send the original requirement reminder unchanged
+                # (prompt_text still holds it). Do NOT inject a machine-phrased
+                # nudge as a user-role turn — planners misread synthetic user
+                # turns as human confirmation.
             except Exception as exc:
                 if attempt == max_plan_attempts - 1:
                     raise

@@ -43,7 +43,6 @@ from .prompt import (
     prompt_path,
     prompt_plan,
     prompt_plan_async,
-    build_plan_retry_reminder,
     build_planner_provider_dict,
     lock_planner_session_read_only,
 )
@@ -89,7 +88,6 @@ __all__ = [
     "prompt_path",
     "prompt_plan",
     "prompt_plan_async",
-    "build_plan_retry_reminder",
     "build_planner_provider_dict",
     "lock_planner_session_read_only",
     "fix_error",
