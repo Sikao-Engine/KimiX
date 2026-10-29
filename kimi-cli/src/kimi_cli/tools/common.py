@@ -58,6 +58,101 @@ Values shorter than this are not worth the overhead of saving to a temp file.
 """
 
 
+_ESCAPED_NEWLINE_MIN_COUNT = 3
+"""Minimum number of ``\\n`` escape sequences before suspecting the payload's
+line breaks were JSON-escaped.
+
+A *single* ``\\n`` inside a long one-liner is ordinary code, never an encoding
+artifact: ``tr '\\n' ' '``, ``printf '%s\\n'``, ``sed 's/\\n//'``,
+``awk -F'\\n'`` and the ``"\\n"`` C/Python string literal all carry exactly the
+two characters backslash + ``n``.  Requiring several occurrences before
+rewriting anything keeps such commands intact — a 440-character ``for`` loop that
+piped through ``tr '\\n' ' '`` used to be rejected as a "malformed parameter"
+instead of being executed.
+"""
+
+
+_ESCAPED_NEWLINE_STRONG_COUNT = 6
+"""Occurrence count at which ``\\n`` alone is trusted to mean "escaped".
+
+At this density the value is a flattened multi-line document; a hand-written
+one-liner does not carry six literal ``\\n`` escapes.
+"""
+
+
+_JSON_ESCAPE_HINTS = ('\\"', '\\\\')
+"""Other escape artifacts an encoder emits alongside ``\\n``.
+
+A serializer escapes a quote (``\\"``) and doubles a backslash (``\\\\``);
+those two are what a flattened document carries besides its ``\\n`` line
+separators.  Whitespace hints (``\\t``, ``\\r``) and ``\\uXXXX`` are
+deliberately *not* used: ``C:\\temp``, ``C:\\new``, ``C:\\users`` and UNC
+``\\\\server\\share`` are ordinary Windows arguments, so those sequences say
+nothing about JSON encoding on this platform.  The cost of the narrowed hint
+set is a flattened payload with very few line breaks and no quotes at all
+passing through untouched — cheap, because a tool error is recoverable, whereas
+a wrongly rejected call is not.
+"""
+
+
+def _count_unquoted_escaped_newlines(value: str) -> int:
+    """Count the ``\\n`` sequences that no quote protects.
+
+    A literal ``\\n`` is *data* while it sits inside quotes — ``tr '\\n' ' '``,
+    ``printf '%s\\n'``, ``printf "...\\n..."``, ``grep '\\n'`` — and an escaped
+    line break of a flattened document sits *between* lines, i.e. outside
+    quotes.  Scanning quotes is what separates the two without guessing.
+
+    The scan is deliberately forgiving: single quotes never escape, double
+    quotes take backslash escapes, and an unterminated quote makes the rest of
+    the value count as quoted (the lenient direction — a missed payload only
+    costs a tool error, never a rejected call).
+    """
+    count = 0
+    quote: str | None = None
+    i = 0
+    length = len(value)
+    while i < length:
+        ch = value[i]
+        if ch == '\\':
+            if quote is None and i + 1 < length and value[i + 1] == 'n':
+                count += 1
+            i += 2
+            continue
+        if quote is None:
+            if ch in ('"', "'"):
+                quote = ch
+        elif ch == quote:
+            quote = None
+        i += 1
+    return count
+
+
+def _looks_escaped_newlines(value: str) -> bool:
+    """Return True when *value* looks like text whose newlines were escaped.
+
+    Only a value that contains **no** real newline can be a flattened payload,
+    and even then ``\\n`` must be an encoder's line separator rather than a
+    literal escape sequence inside a one-line command or code fragment: it has
+    to appear outside quotes, often enough (or next to other encoder artifacts)
+    to be a separator.
+
+    This gates the destructive branch of both malformed-param detectors: it is
+    the difference between "save the escaped text and ask for a retry" and
+    "run the perfectly valid command".
+    """
+    if not value or '\n' in value:
+        return False
+    count = value.count('\\n')
+    if count < _ESCAPED_NEWLINE_MIN_COUNT:
+        return False
+    if _count_unquoted_escaped_newlines(value) == 0:
+        return False
+    if count >= _ESCAPED_NEWLINE_STRONG_COUNT:
+        return True
+    return any(hint in value for hint in _JSON_ESCAPE_HINTS)
+
+
 _SUBAGENT_LIST_PARAMS = frozenset({"prompt", "task"})
 """``subagent`` params whose value may legitimately be a ``list[str]``.
 
@@ -114,7 +209,7 @@ def _looks_like_malformed_json_param(value: str) -> bool:
         except Exception:
             pass
     # Case 3: Contains escaped newlines (\n instead of actual newlines)
-    return bool('\\n' in stripped and '\n' not in stripped and len(stripped) > _LONG_PARAM_MIN_LENGTH)
+    return _looks_escaped_newlines(stripped)
 
 
 def _extract_content_from_malformed(value: str) -> str | None:
@@ -159,8 +254,10 @@ def _extract_content_from_malformed(value: str) -> str | None:
         except Exception:
             pass
 
-    # Case 4: Escaped newlines -- replace \\n with \n
-    if '\\n' in stripped and '\n' not in stripped:
+    # Case 4: Escaped newlines -- replace \\n with \n.  A single literal ``\n``
+    # is legal one-line code (``tr '\n' ' '``), so only a genuinely flattened
+    # payload is rewritten here; anything else must reach the tool untouched.
+    if _looks_escaped_newlines(stripped):
         return stripped.replace('\\n', '\n')
 
     return None
