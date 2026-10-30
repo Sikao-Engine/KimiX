@@ -454,8 +454,19 @@ def compact_default_context() -> None:
 
 
 def get_tool_call_errors(session: Session | None = None) -> list[dict[str, Any]]:
-    """Return a list of tool-call errors from the session."""
-    return []
+    """Return every failed tool call of the session as plain dictionaries.
+
+    Each entry is :meth:`kimix.utils.tool_calls.ToolInvocation.to_dict` — the
+    tool name, its parsed ``arguments``, the result ``message`` (``ERROR:``
+    prefix stripped) and the result ``output``.  Use
+    :func:`kimix.utils.tool_calls.collect_tool_invocations` directly to iterate
+    *all* tool calls (not only the failed ones), optionally filtered by tool name.
+    """
+    from .tool_calls import tool_call_error_dicts
+
+    if session is None:
+        session = get_default_session()
+    return tool_call_error_dicts(session)
 
 
 def clear_default_context(force_create: bool = False, resume: bool = False, print_info: bool = True) -> None:

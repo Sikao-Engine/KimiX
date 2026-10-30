@@ -41,6 +41,7 @@ Available commands:
   {colorful_text('/load:<id>', fg=Color.YELLOW)}    - Copy a named session into a new anonymous session
   {colorful_text('/sessions', fg=Color.YELLOW)}       - List resumable sessions for the current working directory
   {colorful_text('/reflection', fg=Color.YELLOW)} - Reflect on current context and refactor agent source code
+  {colorful_text('/reflection_bash:<path>', fg=Color.YELLOW)} - Write a prompt reviewing the bash IR parser against this session's bash calls
   {colorful_text('/supervisor', fg=Color.YELLOW)} - Start a supervisor session with multi-line input text
   {colorful_text('/swarm', fg=Color.YELLOW)}          - Start a swarm session with multi-line input text
   {colorful_text('/plan', fg=Color.YELLOW)}           - Plan a long-term task, step-by-step, then execute

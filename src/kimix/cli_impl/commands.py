@@ -1,6 +1,7 @@
 import importlib
 import inspect
 import os
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -48,6 +49,7 @@ from kimix.utils import (
     _create_default_session,
     clear_default_context,
     close_session,
+    collect_tool_invocations,
     compact_default_context,
     create_session,
     create_supervisor_session,
@@ -932,6 +934,378 @@ Include: the misunderstanding found, what was changed, and why.
 '''
 
 
+# ---------------------------------------------------------------------------
+# /reflection_bash:<prompt_file_path>
+# ---------------------------------------------------------------------------
+# The Bash IR review command: it reads the *current session context*, extracts
+# every ``bash`` tool invocation (arguments + result message + result output,
+# failed ones marked), runs the live fixer over each command so the emitted
+# prompt shows what the parser produced, and writes one markdown prompt file that
+# asks the agent to review the IR parser.
+
+#: Tool names whose invocations are collected by ``/reflection_bash``.
+_BASH_TOOL_NAMES: tuple[str, ...] = ('bash',)
+
+#: Per-invocation output budget for the emitted JSON (head+tail folding): tool
+#: output can be hundreds of KB and the failed *message* is what matters.
+_BASH_OUTPUT_LIMIT = 4000
+_BASH_OUTPUT_HEAD = 3000
+
+
+def _fold_text(text: str, *, limit: int = _BASH_OUTPUT_LIMIT, head: int = _BASH_OUTPUT_HEAD) -> tuple[str, bool]:
+    """Fold *text* to ~*limit* chars keeping its head and tail (returns folded, truncated)."""
+    if len(text) <= limit:
+        return text, False
+    head = max(0, min(head, limit))
+    tail = max(0, limit - head)
+    omitted = len(text) - head - tail
+    marker = f'\n...[{omitted} characters omitted]...\n'
+    folded = text[:head] + marker + (text[len(text) - tail:] if tail else '')
+    return folded, True
+
+
+def _code_block(content: str, language: str = '') -> str:
+    """Fence *content* with a backtick run longer than any run it contains.
+
+    Commands and tool output routinely embed markdown fences themselves, so a
+    fixed ``` fence would end the block early.
+    """
+    longest = run = 0
+    for char in content:
+        if char == '`':
+            run += 1
+            longest = max(longest, run)
+        else:
+            run = 0
+    fence = '`' * max(3, longest + 1)
+    return f'{fence}{language}\n{content}\n{fence}'
+
+
+def _bash_ir_fix(command: str) -> dict[str, Any] | None:
+    """Run the live Bash fixer pipeline over *command* and describe the result.
+
+    Uses ``shell_common.inspect_bash_command`` — the exact pipeline the Bash tool
+    applies (``_prepare_bash_cmd`` + ``fix_bash_command``) — so the emitted
+    prompt shows both the translated command and the structured change notes.
+    Never raises: a broken/unavailable fixer is reported in the payload instead
+    of failing the command.
+    """
+    try:
+        from kimi_cli.tools.file.bash import shell_common
+
+        fix = shell_common.inspect_bash_command(command)
+    except Exception as exc:
+        return {'error': f'{type(exc).__name__}: {exc}'}
+    return {
+        'platform': sys.platform,
+        'changed': fix.command != command,
+        'command': fix.command,
+        'replacements': list(fix.replacements),
+        'path_changes': list(fix.path_changes),
+        'shell_wrappers': list(getattr(fix, 'shell_wrappers', ()) or ()),
+        'nul_fixes': list(getattr(fix, 'nul_fixes', ()) or ()),
+        'unsupported': list(getattr(fix, 'unsupported', ()) or ()),
+        'cmd_conditional_fixes': list(getattr(fix, 'cmd_conditional_fixes', ()) or ()),
+        'native_flag_fixes': list(getattr(fix, 'native_flag_fixes', ()) or ()),
+    }
+
+
+def _bash_invocation_payload(invocation: Any) -> dict[str, Any]:
+    """Build the JSON record of one ``bash`` invocation for the prompt file."""
+    payload: dict[str, Any] = {
+        'index': invocation.index + 1,
+        'status': invocation.status,
+        'tool': invocation.tool_name,
+        'call_id': invocation.call_id,
+        'command': invocation.command,
+        'arguments': invocation.arguments,
+        'message': invocation.message,
+        'output': None,
+    }
+    if invocation.arguments_error is not None:
+        payload['arguments_raw'] = invocation.arguments_raw
+        payload['arguments_error'] = invocation.arguments_error
+    output = invocation.output or ''
+    folded, truncated = _fold_text(output)
+    payload['output'] = folded or None
+    if truncated:
+        payload['output_truncated'] = True
+        payload['output_characters'] = len(output)
+    if invocation.command:
+        payload['ir_fix'] = _bash_ir_fix(invocation.command)
+    return payload
+
+
+def _build_bash_reflection_prompt(
+    session: Any,
+    invocations: list[Any],
+    *,
+    prompt_path: Path | None = None,
+) -> str:
+    """Build the ``/reflection_bash`` markdown prompt.
+
+    The prompt carries (1) the exact source paths of the Bash fixer and its
+    consumers, (2) the architecture and the per-command workflow of the IR
+    parser, (3) the invariants a correct translation must keep, and (4) every
+    observed ``bash`` invocation as one JSON code block — arguments, result
+    ``message``, result ``output`` and the fixer's own translation of the
+    command — with the failed ones marked.
+    """
+    agent_src = Path(__file__).resolve().parent.parent          # ...\src\kimix
+    repo_root = agent_src.parent.parent                          # ...\kimi-agent
+    bash_dir = repo_root / 'kimi-cli' / 'src' / 'kimi_cli' / 'tools' / 'file' / 'bash'
+    shell_compat_path = repo_root / 'bin' / 'kimix_native' / '_shell_compat.py'
+    shell_compat_pkg = repo_root / 'bin' / 'kimix_native' / 'shell_compat'
+    bash_fix_path = bash_dir / 'bash_fix.py'
+    shell_common_path = bash_dir / 'shell_common.py'
+    bash_tool_path = bash_dir / 'bash_tool.py'
+    output_enhance_path = bash_dir / 'output_enhance.py'
+    pwsh_fix_path = shell_compat_pkg / 'pwsh_fix.py'
+    test_bash = repo_root / 'tests' / 'test_bash.py'
+    test_bash_e2e = repo_root / 'tests' / 'test_bash_e2e.py'
+    python_path = sys.executable or 'python'
+    session_id = getattr(session, 'id', None) or 'unknown'
+    now = pendulum.now()
+
+    failed = [item for item in invocations if item.status != 'ok']
+    payload = orjson.dumps(
+        [_bash_invocation_payload(item) for item in invocations],
+        option=orjson.OPT_INDENT_2,
+    ).decode('utf-8')
+
+    failed_lines = '\n'.join(
+        f'- invocation #{item.index + 1}: `{_fold_text(item.command or "<no command>", limit=160)[0]}`'
+        f' — {item.message or item.status}'
+        for item in failed
+    ) or '- (none: every recorded bash call succeeded)'
+
+    header = f'''# Bash IR Reflection Task
+
+`fix_bash_command` translates native POSIX (`bash`) commands into Windows
+Git-Bash compatible commands.  It is **not stable**: some inputs still pass
+through in a form that Git Bash cannot run (or run differently).  Review the
+translator against the real invocations recorded at the end of this document,
+find the root cause of each break, and fix the parser.
+
+## Context
+- Prompt file: `{prompt_path if prompt_path is not None else "<not written yet>"}`
+- Session: `{session_id}` — generated {now.format('YYYY-MM-DD HH:mm:ss')}
+- Working directory: `{Path.cwd()}`
+- Host platform: `{sys.platform}` (the fixer only edits on `win32`; elsewhere it returns its input unchanged)
+- Recorded bash invocations: {len(invocations)} ({len(failed)} not `ok`)
+- Agent source: `{agent_src}`
+
+## Failed / unanswered invocations (quick index)
+{failed_lines}
+
+## 1. Source of truth — read before changing anything
+
+Bash fixer (the translation engine, **this is the file to review**):
+- `{shell_compat_path}` — the bash fixer module: `fix_bash_command()`,
+  `_process_unquoted()`, `bash_compatibility_prelude()`.  It is a *stable
+  facade*: it re-exports the complete historical module-level surface (195
+  names, explicit imports, no `*`) and holds no rule logic of its own.  It is
+  also loaded directly by file path by the test suite, so it must stay importable
+  standalone.
+- `{shell_compat_pkg}` — the implementation package (one module, one
+  responsibility):
+  - `models.py` / `spans.py` — lossless IR nodes (`ScriptNode`, `CommandNode`,
+    `PipelineNode`, `CommandListNode`, `WordNode`, `RedirectionNode`,
+    `HeredocNode`, `ExpansionNode`, `RawNode`) and the coordinate layer
+    (`SourceSpan`, `Edit`, `Diagnostic`).  Nodes reference the single source
+    string *by reference*; nothing is copied or re-normalized, so rendering
+    reproduces the input byte-for-byte.
+  - `lexer.py` — one O(n) tokenizer plus the canonical quote / escape /
+    substitution boundary oracles (`find_dq_end`, `find_ansi_c_end`,
+    `find_backtick_end`, `find_matching_paren`).
+  - `parser.py` — tolerant command-context IR builder.  It is deliberately NOT a
+    POSIX grammar: command word vs arguments vs assignments, redirections,
+    heredocs, comments, nested executable substitutions and wrapper hints are
+    recognized only where recognition is safe; anything ambiguous stays
+    `RawNode` and the parser NEVER raises on malformed input.  Terms tile their
+    span (children + gaps == parent text).
+  - `translator.py` — the single orchestration entry `translate()`: scan flow,
+    the `EditPlan` / `render_splices` render contract (splices in original-source
+    coordinates, overlaps and descending spans rejected, original string object
+    returned when nothing changed) and the fallback prefix.
+  - `ir_command.py` — the genuine per-command IR decision engine (dispatcher
+    slots 4-8, `translate_ir()`), the independent proof that the decisions are
+    IR-owned rather than flow-owned.
+  - `bash_core.py` — `BashFix`, the `_BashFixScanner` compatibility reader that
+    drives the scan flow, and `fix_bash_command`.
+  - `paths.py` — Windows path, null-device (`nul`/`NUL`) and `cd /d` rules.
+  - `wrappers.py` — compatibility classification, fallback registration
+    (`command -v`-guarded definitions), wrapper-operand/unwrap rules, runtime
+    reparse (`bash -c`, `sh -c`, `eval`).
+  - `cmd_translator.py` — cmd.exe `@` / `if` / `for` translation and the
+    unsupported `goto`/`call` refusals.
+  - `heredoc.py` — heredoc trailing-operator repair and the heredoc event model.
+  - `fallback_data.py` — guarded fallback bodies and unsupported-command reasons.
+  - `unquoted.py` — `_process_unquoted` (unquoted `\\` -> `/`).
+  - `native_flags.py` — doubled-slash flag repair (`msiexec //a` -> `/a`).
+  - `{pwsh_fix_path}` (and `pwsh_transform.py`) — the PowerShell siblings; out of scope here.
+
+Consumers (how the fixer is reached from a tool call):
+- `{bash_fix_path}` — tool-side `fix_bash_command()`: the `win32` gate plus the
+  heredoc-operator repair.
+- `{shell_common_path}` — `inspect_bash_command()` =
+  `_prepare_bash_cmd()` (`_process_unquoted`) + `fix_bash_command()`.  This is the
+  ONLY pipeline the tool applies; the `ir_fix` field of every invocation below
+  is exactly this function's output.
+- `{bash_tool_path}` — the `bash` tool: `_prepare_command()` turns
+  `BashFix.unsupported` into a `ToolError` (so a refusal is visible instead of a
+  guaranteed "command not found"), then executes the prepared command.
+- `{output_enhance_path}` — exit-code interpretation / failure annotation.  It
+  explains a result and never fixes a command — do not "fix" parse bugs there.
+
+Tests: `{test_bash}` (unit: fixer rules, native vs reference parity) and
+`{test_bash_e2e}` (src -> dest corpus; `pytest {test_bash_e2e} --case=<file>`,
+`--record` refreshes expectations).  Every parser fix needs a regression case.
+
+## 2. Architecture in one paragraph
+The pipeline is a **lossless tolerant IR**: `lexer` turns the source into tokens
+with exact quote/expansion boundaries; `parser` builds IR nodes that reference
+source spans (never copies), so `render_source()` is byte-identical; the rule
+modules (`paths`, `wrappers`, `cmd_translator`, `heredoc`, `fallback_data`,
+`native_flags`) make per-rule decisions over those nodes and emit `Edit` splices
+in original-source coordinates; `translator.EditPlan` collects the splices
+(rejecting overlaps), renders them once, and prepends the fallback prefix only
+when a fallback was actually registered.  `bash_core._BashFixScanner` is the
+compatibility *reader* that owns the scan FLOW (the linear word/redirection walk,
+nested-region recursion, report ordering) while every rule DECISION delegates to
+the IR modules, so there is exactly one implementation per rule.  The
+conservative pass-through policy governs everything: an already Git-Bash
+compatible command must come back **byte-for-byte** (the same string object), and
+only verified compatibility cases may produce an edit or a guarded fallback.
+
+## 3. Workflow of one `bash` tool call
+1. The model calls the `bash` tool with `{{"cmd": "...", "mode": ..., "timeout": ...}}`
+   (`BashParams`; `command` is accepted as an alias of `cmd`).
+2. `bash_tool._prepare_command()` -> `shell_common.inspect_bash_command(cmd)`
+   -> `bash_tool._prepare_bash_cmd(cmd)` = `_process_unquoted`: every unquoted
+   `\\` that is not an escape (i.e. not before a bash metacharacter and not inside
+   `'...'`, `"..."`, `$'...'`, `$(...)`, backticks) becomes `/`.
+3. `bash_fix.fix_bash_command()` applies the `sys.platform == "win32"` gate and
+   calls `_shell_compat.fix_bash_command()`.
+4. The facade delegates to the native kernel when the compiled runtime is active,
+   otherwise to the pure-Python reference in `shell_compat`; the two must stay
+   byte-equal.  The facade then applies the doubled-slash flag post-pass.
+5. `shell_compat.translator.translate()` drives the reader, collects the edits,
+   renders them, adds the fallback prefix, and finally applies the heredoc
+   trailing-operator repair.
+6. `BashFix(command, replacements, path_changes, shell_wrappers, nul_fixes,
+   unsupported, cmd_conditional_fixes, native_flag_fixes)` is returned;
+   `unsupported` non-empty means the command has no faithful Git-Bash equivalent
+   and the tool refuses it with the recorded reason.
+7. The tool executes the prepared command via `bash -c` and wraps stdout/stderr
+   and the exit code into the tool result (`ToolOk` / `ToolError`).  A failed
+   result reaches the history as `role="tool"` with a `<system>ERROR: ...</system>`
+   metadata part.
+
+## 4. What to review (invariants a correct translation must keep)
+- **Byte-for-byte pass-through**: an already compatible command returns the
+  original string object — no re-rendering, no reordering, no re-quoting, no
+  unrelated normalization.  A diff on such input is a bug.
+- **Edit safety**: every change is a `(start, end, replacement)` splice in
+  original-source coordinates; `EditPlan.add` must reject overlapping or
+  descending spans, and a splice must never cut through a quote, heredoc body,
+  `${{...}}`, `$((...))`, `$(...)`, backtick region, comment or escape sequence.
+- **Never rewrite data**: inside single quotes, heredoc bodies (unless the
+  construct itself is being repaired) and comments the source is data.
+- **Backslashes are ambiguous**: `D:\\repo\\src` is a path (spaces/drive), while
+  `my\\ file.txt` and `foo\\bar` are escapes.  Aggressive unquoted-slash
+  conversion and quote-region detection are the historical weak spot — check the
+  failing commands against both readings.
+- **Tolerance**: malformed, adversarial or deeply nested input must pass through
+  unchanged (`RawNode`, depth limit, `RecursionError` caught) — never raise, never
+  emit half-translated output.
+- **Guarded fallbacks**: fallback definitions are emitted only when the command
+  word is a registered missing tool, are wrapped in a `command -v` guard, appear
+  once, in discovery order, and never shadow a real executable.
+- **Refusals stay refusals**: `unsupported` keeps the source untouched and
+  carries the reason plus a native alternative; it must not silently mangle.
+- **Ordering**: `replacements` / `path_changes` / `shell_wrappers` / `nul_fixes`
+  / `unsupported` are reported in source discovery order; the reports feed the
+  tool messages and the test corpus.
+- **Generalize**: no case-by-case string patches keyed on a specific command;
+  fix the rule that decided wrongly, and cover it with a corpus case.
+
+## 5. Observed bash invocations (this session)
+Every `bash` tool call of the current session, in conversation order, as one JSON
+array: `arguments` is the parsed call payload, `message` is the tool-result
+metadata (`ERROR: ...` prefix stripped; `null` when the call was never answered),
+`output` is the tool-result payload (head/tail folded when very long;
+`output_truncated` / `output_characters` tell you when), `status` is `ok`,
+`failed` or `no_result`, and `ir_fix` is what the current fixer produced for
+`command` — compare it with the invocation's `output` to see whether the
+translation was wrong, merely incomplete, or irrelevant to the failure.
+
+{_code_block(payload, 'json')}
+
+## 6. How to reproduce and verify
+- Reproduce one translation exactly as the tool does:
+  `{python_path} -c "from kimi_cli.tools.file.bash.shell_common import inspect_bash_command as i; print(i(r'<cmd>'))"`
+- Check the minimum fix point: prefer a rule change in
+  `{shell_compat_pkg}` (never in the tool-only wrappers) and keep the facade's
+  exported surface intact.
+- Add the failing command as a regression case in `{test_bash_e2e}`
+  (`--case=<file>` / `--record`) and/or a rule unit test in `{test_bash}`.
+- Run `uv run tools/syntax_check.py <file>` on every edited Python file, then
+  `uv run pytest {test_bash} {test_bash_e2e} -x -q`.
+
+## 7. Deliverables
+1. The root cause of every `failed` invocation above (why the emitted Git-Bash
+   command cannot run, or runs differently from the POSIX original).
+2. The generic fix in the parser, with the invariant it restores.
+3. Regression tests (corpus case and/or unit test) that fail before the fix and
+   pass after it.
+4. A short report of the changes: what was misunderstood, what was changed, and
+   why — written to `{repo_root / 'docs' / f'reflection_bash_report_{now.format("YYYYMMDD_HHMMSS")}.md'}`.
+'''
+    return header
+
+
+def _cmd_reflection_bash(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
+    """Write a Bash IR review prompt for the current session to a markdown file.
+
+    Usage: ``/reflection_bash:<prompt_file_path>``.  The prompt lists every
+    ``bash`` tool invocation of the current session (arguments, result message,
+    result output, failed ones marked) and asks the agent to review the IR bash
+    parser so native POSIX commands survive the Windows Git-Bash translation.
+    """
+    raw_path = ':'.join(task_split[1:]).strip() if len(task_split) > 1 else ''
+    if not raw_path:
+        print_error('Command must be /reflection_bash:<prompt_file_path>')
+        return None, False
+    session = get_default_session()
+    if session is None:
+        print_error('No active session. Start a conversation first.')
+        return None, False
+    target = Path(raw_path)
+    if not target.is_absolute():
+        target = constants.curr_dir / target
+    try:
+        invocations = collect_tool_invocations(session, tool_names=_BASH_TOOL_NAMES)
+    except Exception as exc:  # noqa: BLE001 - a broken context must not kill the CLI
+        print_error(f'Failed to read the session context: {exc}')
+        return None, False
+    try:
+        content = _build_bash_reflection_prompt(session, invocations, prompt_path=target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding='utf-8')
+    except OSError as exc:
+        print_error(f'Failed to write {target}: {exc}')
+        return None, False
+    failed = sum(1 for item in invocations if item.status != 'ok')
+    print_success(
+        f'Wrote {len(invocations)} bash invocation(s) ({failed} not ok) to {target}'
+    )
+    if not invocations:
+        print_warning('No bash tool call was recorded in this session; the prompt has no evidence section.')
+    print_info(f'Run it with: /file:{target}')
+    return None, False
+
+
 def _cmd_reflection(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     """Reflect on the current context and refactor the agent source code."""
     session = get_default_session()
@@ -992,6 +1366,7 @@ _command_map = {
     'load': _cmd_load,
     'sessions': _cmd_sessions,
     'reflection': _cmd_reflection,
+    'reflection_bash': _cmd_reflection_bash,
     'supervisor': _cmd_supervisor,
     'swarm': _cmd_swarm,
     'init': _cmd_init,
@@ -1008,4 +1383,5 @@ _command_arg_types: dict[str, str] = {
     "plan": "file",
     "swarm": "swarm",
     "code": "file",
+    "reflection_bash": "file",
 }

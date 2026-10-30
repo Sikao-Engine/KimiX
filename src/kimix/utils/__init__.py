@@ -46,6 +46,14 @@ from .prompt import (
     build_planner_provider_dict,
     lock_planner_session_read_only,
 )
+from .tool_calls import (
+    ToolInvocation,
+    collect_tool_invocations,
+    iter_tool_invocations,
+    session_history,
+    split_tool_result,
+    tool_call_error_dicts,
+)
 from .fix_error import fix_error, async_prompt, async_fix_error
 
 __all__ = [
@@ -95,4 +103,10 @@ __all__ = [
     "async_fix_error",
     "compact_default_context",
     "refresh_env_from_registry",
+    "ToolInvocation",
+    "collect_tool_invocations",
+    "iter_tool_invocations",
+    "session_history",
+    "split_tool_result",
+    "tool_call_error_dicts",
 ]
