@@ -28,15 +28,21 @@ from kimi_cli.tools.file.bash import (
 from kimi_cli.tools.file.bash.bash_fix import BashFix, fix_bash_command
 from kimi_cli.tools.file.bash.bash_tool import (
     _BASH_EXTERNAL_PROGRAM_PROBE,
+    _ARGV_BACKSLASH_PAIR,
+    _MAX_INLINE_BASH_ARGV,
+    _PAYLOAD_ENV_VAR,
+    _bash_argv_env,
     _bash_runs,
     _bash_subprocess_env,
     _configured_shell,
+    _encode_startup_script,
     _ends_with_unescaped_backslash,
     _find_git_bash_windows,
     _git_bash_candidate_from_git_path,
     _git_bash_candidates_from_exec_path,
     _git_install_root_from_exec_path,
     _is_git_bash_install,
+    _payload_eval_command,
     _prepare_bash_cmd,
     _with_msystem_neutralized,
     find_bash,
@@ -9710,3 +9716,174 @@ class TestBashFixCmdConditional:
     def test_non_cmd_shapes_untouched(self, command: str) -> None:
         result = _fix_for_windows(command)
         assert result.command == command
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# argv transport — MSYS2/Cygwin re-parse the inline ``bash -c`` argument with
+# their own quoting rules and collapse every run of ``n >= 2`` backslashes to
+# ``ceil(n / 2)`` backslashes.  A backslash *pair* that is data for the shell
+# therefore arrives one backslash short.
+#
+# Recorded repro (invocation #60 of the 2026-10-30 session):
+#
+#   cd /c/dev/TCDemoForUE5 && iconv -f CP936 -t UTF-8 Saved/…/build-4.log \
+#     | grep -E ": error [A-Z]+[0-9]+" \
+#     | sed -E 's/^.*Source\\//; s/: error ([A-Z]+[0-9]+): /\t\1\t/' | sort -u
+#   → sed: -e expression #1, char 19: unknown option to `s'
+#
+# The ``\\`` sed needs arrived as a single backslash, so the first ``s``
+# command ended early and the tail of the expression was parsed as flags.
+# The parser must NOT compensate by emitting ``\\\\``: that spelling is only
+# correct while the script travels inline and would corrupt the very same
+# command once it exceeds the payload threshold.  The transport owns this
+# invariant instead — ``_bash_argv_env`` sends any script containing a
+# backslash pair through the base64+gzip payload, which is delivered
+# byte-for-byte.
+# ═══════════════════════════════════════════════════════════════════════════
+
+#: The exact sed script from the recorded failure (``\\`` = one literal
+#: backslash for sed, ``\t``/``\1`` = tab and backreference).
+_SED_BACKSLASH_SCRIPT = r"""s/^.*Source\\//; s/: error ([A-Z]+[0-9]+): /\t\1\t/"""
+
+#: The full recorded command (only the ``cd`` target is normalized here).
+_SED_BACKSLASH_REPRO = (
+    "cd /c/dev/TCDemoForUE5 && iconv -f CP936 -t UTF-8 Saved/NocturneBuild/build-4.log "
+    '2>/dev/null | grep -E ": error [A-Z]+[0-9]+" | sed -E '
+    "'" + _SED_BACKSLASH_SCRIPT + "' | sort -u | head -60"
+)
+
+
+def _decode_bash_payload(env: dict[str, str]) -> str:
+    """Decode the base64+gzip script carried in ``KIMIX_BASH_PAYLOAD``."""
+    import base64 as _b64
+    import gzip as _gz
+
+    return _gz.decompress(_b64.b64decode(env[_PAYLOAD_ENV_VAR])).decode("utf-8")
+
+
+class TestBashArgvTransportBackslashCollapse:
+    """The one-shot transport must deliver the prepared script byte-for-byte.
+
+    Before the fix ``_bash_argv_env`` only left the inline ``bash -c`` channel
+    for scripts longer than ~6 KB, so every short command containing a
+    backslash pair was silently rewritten by the MSYS2 argv parser — a hard
+    failure for ``sed`` (see the class docstring) and a silent
+    semantic change for patterns (``grep "a\\b"``).
+    """
+
+    def test_backslash_pair_uses_env_payload(self) -> None:
+        script = "sed -E '" + _SED_BACKSLASH_SCRIPT + "' build-4.log"
+        argv, env = _bash_argv_env(script)
+        assert argv == ["-c", _payload_eval_command()]
+        assert _decode_bash_payload(env) == script
+
+    def test_backslash_pair_marker(self) -> None:
+        # exactly the two-character sequence the argv parser collapses
+        assert _ARGV_BACKSLASH_PAIR == "\\\\"
+        assert _ARGV_BACKSLASH_PAIR in "a\\\\b"
+        assert _ARGV_BACKSLASH_PAIR in "a\\\\\\b"
+        # a lone backslash round-trips, so it must stay on the cheap path
+        assert _ARGV_BACKSLASH_PAIR not in "a\\b"
+
+    @pytest.mark.parametrize(
+        "script",
+        [
+            "ls -la",
+            'grep -rn "a\\|b" Source | head -5',
+            "echo 'a\\b'",
+            "python -c \"print(1)\"",
+        ],
+    )
+    def test_scripts_without_pairs_stay_inline(self, script: str) -> None:
+        argv, env = _bash_argv_env(script)
+        assert argv == ["-c", script]
+        assert _PAYLOAD_ENV_VAR not in env
+
+    def test_oversized_script_still_uses_payload(self) -> None:
+        script = "echo hi\n" * (_MAX_INLINE_BASH_ARGV // 8 + 16)
+        argv, env = _bash_argv_env(script)
+        assert argv == ["-c", _payload_eval_command()]
+        assert _decode_bash_payload(env) == script
+
+    def test_parser_leaves_backslash_pairs_to_the_transport(self) -> None:
+        """Fixer output keeps the ``\\`` pair; the payload restores it."""
+        result = _fix_for_windows(_SED_BACKSLASH_REPRO)
+        assert result.command.startswith("cd C:/dev/TCDemoForUE5 && ")
+        assert "'" + _SED_BACKSLASH_SCRIPT + "'" in result.command
+        assert result.unsupported == ()
+        assert _ARGV_BACKSLASH_PAIR in result.command
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires a real bash")
+    def test_payload_round_trips_a_backslash_pair(self) -> None:
+        bash = find_bash()
+        assert bash is not None
+        script = "printf '[%s]' 'a\\\\b'"  # two backslashes as data
+        argv, env = _bash_argv_env(script)
+        proc = subprocess.run(
+            [bash, *argv],
+            capture_output=True,
+            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout == "[a\\\\b]"
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires a real bash")
+    def test_inline_channel_collapses_the_pair(self) -> None:
+        """Pin the cause of the recorded failure (MSYS2 argv re-parse)."""
+        if sys.platform != "win32":
+            pytest.skip("MSYS2/Cygwin argv re-parse artifact")
+        bash = find_bash() or ""
+        if not _is_git_bash_install(bash):
+            pytest.skip("not a Git Bash install")
+        proc = subprocess.run(
+            [bash, "-c", "printf '[%s]' 'a\\\\b'"],
+            capture_output=True,
+            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+            env=_bash_subprocess_env(),
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout == "[a\\b]"  # one backslash: the data was corrupted
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="requires a real bash")
+    def test_recorded_sed_command_runs_through_the_transport(self, tmp_path: Any) -> None:
+        """End-to-end: the #60 sed pipeline now parses and produces output."""
+        bash = find_bash()
+        assert bash is not None
+        log = tmp_path / "build-4.log"
+        log.write_text(
+            "C:\\dev\\TCDemoForUE5\\Plugins\\X\\Source\\Foo.cpp(1,2): error C1234: boom\n"
+            "C:\\dev\\TCDemoForUE5\\Source\\Bar.cpp(3,4): error LNK2019: unresolved\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        workdir = str(tmp_path).replace("\\", "/")
+        script = (
+            "cd '" + workdir + "' && iconv -f UTF-8 -t UTF-8 build-4.log 2>/dev/null "
+            '| grep -E ": error [A-Z]+[0-9]+" | sed -E '
+            "'" + _SED_BACKSLASH_SCRIPT + "' | sort -u | head -60"
+        )
+        argv, env = _bash_argv_env(script)
+        assert argv == ["-c", _payload_eval_command()]
+        proc = subprocess.run(
+            [bash, *argv],
+            capture_output=True,
+            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "unknown option to `s'" not in proc.stderr
+        assert proc.stdout.split() == [
+            "Bar.cpp(3,4)",
+            "LNK2019",
+            "unresolved",
+            "Foo.cpp(1,2)",
+            "C1234",
+            "boom",
+        ]

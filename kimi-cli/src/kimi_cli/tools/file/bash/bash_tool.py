@@ -82,6 +82,22 @@ _PAYLOAD_ENV_VAR = "KIMIX_BASH_PAYLOAD"
 #: length limit and is never path-converted.
 _MAX_INLINE_BASH_ARGV = 6000
 
+#: MSYS2/Cygwin re-parse the single ``-c`` argument with their *own* quoting
+#: rules, so an inline script is not delivered byte-for-byte: every run of
+#: ``n >= 2`` backslashes arrives as ``ceil(n / 2)`` backslashes (``\\`` ->
+#: ``\``, ``\\\`` -> ``\\``, ``\\\\`` -> ``\\``).  Only regions where a
+#: backslash is *literal data* are affected -- single quotes, ``$'...'``
+#: escapes, heredoc bodies and comments -- and there the extra collapse is
+#: not compensated by bash later on: ``sed -E 's/^.*Source\\//'`` reaches
+#: ``sed`` as ``s/^.*Source\//`` and dies with ``unknown option to `s'``,
+#: while a ``grep``/``sed`` pattern that keeps parsing silently matches
+#: something else.  (Inside double quotes bash collapses ``\\`` -> ``\``
+#: itself, so the two levels coincide and the result is unchanged.)  A lone
+#: backslash survives, so only a *pair* forces the payload path.  This is
+#: the same transport channel :func:`_encode_startup_script` already
+#: provides for oversized scripts; it round-trips the script exactly.
+_ARGV_BACKSLASH_PAIR = "\\\\"
+
 
 def _encode_startup_script(script: str) -> str:
     """Encode a multi-line script as a single-line base64+gzip payload.
@@ -109,13 +125,22 @@ def _payload_eval_command() -> str:
 def _bash_argv_env(script: str) -> tuple[list[str], dict[str, str]]:
     """Return ``(argv, env)`` running *script* via ``bash -c``.
 
-    Short scripts are passed inline (historical behavior).  Scripts whose
-    command-line rendering would approach the MSYS2 corruption threshold are
-    gzip+base64-encoded into :data:`_PAYLOAD_ENV_VAR` so the command line
-    stays tiny; the receiving shell decodes and evals the payload.
+    Short scripts are passed inline (historical behavior), but the inline
+    channel is lossy for two independent reasons, and either one routes the
+    script through the gzip+base64 environment payload instead:
+
+    * length: a ``-c`` argument close to the MSYS2 command-line corruption
+      threshold (:data:`_MAX_INLINE_BASH_ARGV`) is truncated/mangled;
+    * backslash pairs: MSYS2/Cygwin collapse ``\\\\`` to ``\\`` while
+      re-parsing the command line, so script data such as
+      ``sed 's/^.*Source\\\\//'`` would reach the tool with one backslash
+      missing (:data:`_ARGV_BACKSLASH_PAIR`).
+
+    The payload keeps the command line tiny and ASCII-only; the receiving
+    shell decodes and evals the script verbatim.
     """
     env = _bash_subprocess_env()
-    if len(script) <= _MAX_INLINE_BASH_ARGV:
+    if len(script) <= _MAX_INLINE_BASH_ARGV and _ARGV_BACKSLASH_PAIR not in script:
         return ["-c", script], env
     env[_PAYLOAD_ENV_VAR] = _encode_startup_script(script)
     return ["-c", _payload_eval_command()], env
