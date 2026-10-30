@@ -205,15 +205,24 @@ class ToolOk(ToolReturnValue):
 
 
 class ToolError(ToolReturnValue):
-    """Subclass of `ToolReturnValue` representing a failed tool call."""
+    """Subclass of `ToolReturnValue` representing a failed tool call.
+
+    ``message`` is normalized to a non-empty string: an error without an
+    explanatory message cannot be shown to the model (the conversation layer
+    used to fail hard on it, aborting the turn), so the brief — or a generic
+    fallback when even the brief is empty — is used instead.
+    """
 
     def __init__(
         self, *, message: str, brief: str, output: str | ContentPart | list[ContentPart] = ""
     ):
+        text = message
+        if not text:
+            text = brief or "Tool call failed."
         super().__init__(
             is_error=True,
             output=([output] if isinstance(output, ContentPart) else output),
-            message=message,
+            message=text,
             display=[BriefDisplayBlock(text=brief)] if brief else [],
         )
 

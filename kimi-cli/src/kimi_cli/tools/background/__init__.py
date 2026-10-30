@@ -43,6 +43,44 @@ from .utils import (
 MAX_JOB_OUTPUT_TIMEOUT_SECONDS = 7200
 
 
+def _failure_message(
+    message: str,
+    job_id: str,
+    *,
+    exit_code: int | None = None,
+    elapsed: float | None = None,
+) -> str:
+    """Return a guaranteed non-empty error message for a failed job.
+
+    ``ToolError`` must always carry a message: the conversation layer turns an
+    empty one into a hard failure ("Error return value should have a message"),
+    which aborts the turn instead of telling the model what went wrong.
+
+    A failed job can be known without any human-readable detail — a
+    finished-task history entry recorded as a best-effort safety net by
+    ``remove_task_id`` has ``message == ""`` (see ``_record_from_stream``) — so
+    fall back to a synthesized one-liner built from the task id and the exit
+    code, and append the spent time like every other completion message.
+    """
+    text = (message or "").strip()
+    if not text:
+        exit_note = f" (exit code {exit_code})" if exit_code is not None else ""
+        text = f"Task '{job_id}' failed{exit_note}."
+    return _append_elapsed(text, elapsed)
+
+
+def _exception_message(exc: BaseException) -> str:
+    """Return a never-empty description of *exc* for a ``ToolError`` message.
+
+    ``str(exc)`` is empty for argument-less exceptions (``TimeoutError()``,
+    ``CancelledError()``, ...), which would otherwise produce an empty tool
+    error message and crash the message conversion.
+    """
+    text = str(exc).strip()
+    name = type(exc).__name__
+    return f"{name}: {text}" if text else f"{name} while reading the job output."
+
+
 class TaskOutputParams(BaseModel):
     """Parameters for job_output (TaskOutput)."""
     model_config = {"populate_by_name": True}
@@ -167,7 +205,7 @@ class TaskOutput(CallableTool2):
 
         except Exception as e:
             return ToolError(
-                message=str(e),
+                message=_exception_message(e),
                 output="Failed to get task output",
                 brief="Task output error"
             )
@@ -339,7 +377,12 @@ class TaskOutput(CallableTool2):
         message = _append_elapsed(record.message, record.elapsed)
         if not record.success:
             return ToolError(
-                message=message,
+                message=_failure_message(
+                    record.message,
+                    job_id,
+                    exit_code=record.exit_code,
+                    elapsed=record.elapsed,
+                ),
                 output=output_text,
                 brief=f"Task '{job_id}' failed",
             )
@@ -452,7 +495,12 @@ class TaskOutput(CallableTool2):
                 else:
                     output_text = processed if processed else "(no output)"
                 return ToolError(
-                    message=_append_elapsed(message, spent_seconds),
+                    message=_failure_message(
+                        message,
+                        job_id,
+                        exit_code=stream.exit_code,
+                        elapsed=spent_seconds,
+                    ),
                     output=output_text,
                     brief=f"Task '{params.job_id}' failed"
                 )

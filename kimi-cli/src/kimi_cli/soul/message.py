@@ -87,8 +87,16 @@ def normalize_history(history: Sequence[Message]) -> list[Message]:
 def tool_result_to_message(tool_result: ToolResult) -> Message:
     """Convert a tool result to a message."""
     if tool_result.return_value.is_error:
-        assert tool_result.return_value.message, "Error return value should have a message"
         message = tool_result.return_value.message
+        if not message:
+            # Defensive: an error result without an explanatory message used
+            # to abort the whole turn ("Error return value should have a
+            # message").  Fall back to the brief (or a generic text) so the
+            # model still learns that the call failed.
+            message = (
+                tool_result.return_value.brief
+                or f"{type(tool_result.return_value).__name__}: tool call failed."
+            )
         if isinstance(tool_result.return_value, ToolRuntimeError):
             message += "\nThis is an unexpected error and the tool is probably not working."
         content: list[ContentPart] = [system(f"ERROR: {message}")]
