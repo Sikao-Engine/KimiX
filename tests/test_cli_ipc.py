@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -79,6 +80,7 @@ def test_discover_servers_filters_process_and_project(
     )
     (cache_dir / "pid_not-a-number").write_text("ignored", encoding="utf-8")
     monkeypatch.setattr(ipc, "_is_project_python_process", lambda pid, _: pid == 101)
+    monkeypatch.setattr(ipc, "_pid_alive", lambda _: False)
 
     endpoints = ipc.discover_servers(cache_dir, tmp_path)
 
@@ -87,6 +89,30 @@ def test_discover_servers_filters_process_and_project(
     assert not stale.exists()
     assert not other_project.exists()
     assert (cache_dir / "pid_not-a-number").exists()
+
+
+def test_discovery_preserves_live_registration_after_validation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / ".kimix_cache"
+    cache_dir.mkdir()
+    registration = _write_registration(cache_dir, tmp_path, 101)
+    monkeypatch.setattr(ipc, "_is_project_python_process", lambda *_: False)
+    monkeypatch.setattr(ipc, "_pid_alive", lambda _: True)
+
+    assert ipc.discover_servers(cache_dir, tmp_path) == []
+    assert registration.exists()
+
+
+def test_pid_alive_accepts_live_child_process() -> None:
+    process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        assert ipc._pid_alive(process.pid)
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+    assert not ipc._pid_alive(process.pid)
 
 
 def test_discover_servers_honors_requested_pid(

@@ -23,9 +23,38 @@ class ServerEndpoint:
     path: Path
 
 
-def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
+def _windows_pid_alive(pid: int) -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    process_query_limited_information = 0x1000
+    still_active = 259
+    error_access_denied = 5
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    open_process.restype = wintypes.HANDLE
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+    handle = open_process(process_query_limited_information, False, pid)
+    if not handle:
+        # An existing process may deny inspection; do not classify it as dead.
+        return ctypes.get_last_error() == error_access_denied
+    try:
+        get_exit_code = kernel32.GetExitCodeProcess
+        get_exit_code.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        get_exit_code.restype = wintypes.BOOL
+        exit_code = wintypes.DWORD()
+        if not get_exit_code(handle, ctypes.byref(exit_code)):
+            # The handle proves the process exists even if its state is unavailable.
+            return True
+        return exit_code.value == still_active
+    finally:
+        close_handle(handle)
+
+
+def _posix_pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -35,6 +64,12 @@ def _pid_alive(pid: int) -> bool:
     except OSError:
         return False
     return True
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    return _windows_pid_alive(pid) if sys.platform == "win32" else _posix_pid_alive(pid)
 
 
 def _windows_process_details(pid: int) -> tuple[str, str, Path | None] | None:
@@ -173,8 +208,11 @@ def discover_servers(
         if endpoint is not None:
             endpoints.append(endpoint)
             continue
-        # A registration is only useful while its process and endpoint are valid.
-        # Failure to remove a stale file must not prevent trying the other files.
+        # Validation can fail because process inspection is unavailable. Only
+        # remove a registration when its PID is confirmed dead; never let a new
+        # client delete a live CLI's file merely because validation rejected it.
+        if _pid_alive(pid):
+            continue
         try:
             path.unlink(missing_ok=True)
         except OSError:
