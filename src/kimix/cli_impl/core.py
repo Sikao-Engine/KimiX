@@ -118,6 +118,7 @@ def _client_cli_loop(ipc_server: CLIIPCServer) -> None:
                         if suffix == ".py":
                             print_info(f"Executing {path.name}", end="\n\n")
                             try:
+                                ipc_server.set_busy(True)
                                 exec_ctx["__file__"] = str(path)
                                 exec(s, exec_ctx)
                             except KeyboardInterrupt as e:
@@ -128,6 +129,7 @@ def _client_cli_loop(ipc_server: CLIIPCServer) -> None:
                                 print_error(str(e))
                                 print_error(traceback.format_exc())
                             finally:
+                                ipc_server.set_busy(False)
                                 sync_all()
                             input_str = None
                         else:
@@ -141,6 +143,9 @@ def _client_cli_loop(ipc_server: CLIIPCServer) -> None:
                         input_str = None
                 if input_str is not None and len(input_str) > 0:
                     try:
+                        # The window is busy while the agent runs: keyboard
+                        # input must not be captured for the next prompt.
+                        ipc_server.set_busy(True)
                         if base._default_manually_cot:
                             print_info(
                                 "Manually CoT mode enabled: may use multiple sessions and extra tokens."
@@ -154,6 +159,8 @@ def _client_cli_loop(ipc_server: CLIIPCServer) -> None:
                             )
                     except KeyboardInterrupt:
                         print_warning("Keyboard Interrupt.")
+                    finally:
+                        ipc_server.set_busy(False)
         except KeyboardInterrupt:
             print_success("\nbye.")
             break

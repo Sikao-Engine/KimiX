@@ -6,6 +6,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -13,6 +14,80 @@ from typing import Iterable
 import orjson
 
 _MAX_MESSAGE_BYTES = 16 * 1024 * 1024
+
+
+def _set_stdin_echo(enabled: bool) -> None:
+    """Best-effort terminal echo control; no-op when stdin is not a tty.
+
+    While the CLI window is busy, echo is disabled so keystrokes do not
+    print into the streaming output. Idle behavior must match a regular
+    ``input()`` prompt, so echo is restored as soon as the window is idle.
+    """
+    try:
+        if not sys.stdin.isatty():
+            return
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            enable_echo_input = 0x0004
+            std_input_handle = wintypes.DWORD(-10)
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(std_input_handle)
+            if not handle:
+                return
+            mode = wintypes.DWORD()
+            if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+                return
+            new_mode = (
+                mode.value | enable_echo_input
+                if enabled
+                else mode.value & ~enable_echo_input
+            )
+            kernel32.SetConsoleMode(handle, wintypes.DWORD(new_mode))
+        else:
+            import termios
+
+            file_descriptor = sys.stdin.fileno()
+            attributes = termios.tcgetattr(file_descriptor)
+            if enabled:
+                attributes[3] |= termios.ECHO
+            else:
+                attributes[3] &= ~termios.ECHO
+            termios.tcsetattr(file_descriptor, termios.TCSADRAIN, attributes)
+    except Exception:
+        # Echo control is a convenience, never a reason to break the CLI.
+        pass
+
+
+def _flush_stdin() -> None:
+    """Best-effort discard of keystrokes typed while the window was busy.
+
+    Dropping only whole lines is not enough: text typed without pressing
+    Enter stays buffered in the terminal and would reappear at the next
+    prompt once the window goes idle. Flushing on every busy transition
+    guarantees busy-window keystrokes are truly ignored, never cached.
+    No-op when stdin is not a tty.
+    """
+    try:
+        if not sys.stdin.isatty():
+            return
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            std_input_handle = wintypes.DWORD(-10)
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetStdHandle(std_input_handle)
+            if handle:
+                kernel32.FlushConsoleInputBuffer(handle)
+        else:
+            import termios
+
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except Exception:
+        # Flushing is a convenience, never a reason to break the CLI.
+        pass
 
 
 @dataclass(frozen=True)
@@ -248,6 +323,9 @@ class CLIIPCServer:
         self._listener: socket.socket | None = None
         self._inputs: queue.Queue[str | BaseException] = queue.Queue()
         self._closed = threading.Event()
+        self._busy = threading.Event()
+        self._busy_lock = threading.Lock()
+        self._busy_depth = 0
         self._local_input_started = False
         self._local_input_lock = threading.Lock()
 
@@ -275,6 +353,10 @@ class CLIIPCServer:
         threading.Thread(target=self._accept_loop, name="kimix-ipc", daemon=True).start()
 
     def close(self) -> None:
+        # Never leave the user's terminal with echo disabled (termios
+        # settings survive process exit on POSIX).
+        _flush_stdin()
+        _set_stdin_echo(True)
         self._closed.set()
         listener = self._listener
         self._listener = None
@@ -343,13 +425,47 @@ class CLIIPCServer:
                 # Malformed or disconnected clients must not stop the CLI server.
                 return
 
+    def set_busy(self, busy: bool) -> None:
+        """Mark the CLI window busy (agent streaming/processing).
+
+        While busy, the local input thread stops accepting keyboard input so
+        keystrokes typed into a busy window are not captured for the next
+        prompt. Additionally the terminal echo is disabled and pending input
+        is flushed, so busy-window keystrokes neither print in the window
+        nor resurface at the next prompt. IPC messages from ``kimix connect``
+        are still accepted and queued the whole time.
+        """
+        with self._busy_lock:
+            if busy:
+                self._busy_depth += 1
+                if self._busy_depth == 1:
+                    self._busy.set()
+                    _set_stdin_echo(False)
+                    _flush_stdin()
+            else:
+                if self._busy_depth > 0:
+                    self._busy_depth -= 1
+                if self._busy_depth == 0:
+                    self._busy.clear()
+                    _flush_stdin()
+                    _set_stdin_echo(True)
+
     def _read_local_input(self) -> None:
         while not self._closed.is_set():
+            if self._busy.is_set():
+                # The CLI window is busy: do not accept keyboard input.
+                time.sleep(0.05)
+                continue
             try:
-                self._inputs.put(input())
+                line = input()
             except BaseException as error:
                 self._inputs.put(error)
                 return
+            if self._busy.is_set():
+                # Enter was pressed while the window was busy; drop the line
+                # instead of feeding it to whatever prompt comes next.
+                continue
+            self._inputs.put(line)
 
     def read_input(self) -> str:
         with self._local_input_lock:

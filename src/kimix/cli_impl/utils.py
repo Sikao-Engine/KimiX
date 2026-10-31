@@ -36,7 +36,12 @@ def _input(
     text_arr: list[str],
     ipc_server: CLIIPCServer | None = None,
 ) -> str:
-    """Read queued, terminal, or IPC input without blocking either input source."""
+    """Read queued, terminal, or IPC input without blocking either input source.
+
+    Keyboard input is only accepted while the CLI window is idle: the IPC
+    server drops keystrokes typed while it is busy (agent streaming or
+    processing), so a busy window never captures input meant for later.
+    """
     if text_arr:
         return text_arr.pop(0)
     if text:

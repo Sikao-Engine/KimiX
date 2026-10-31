@@ -943,42 +943,36 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
             f"Requirement:\n{requirement.strip()}"
         )
 
-        max_plan_attempts = 3
-        plan_generated = False
-        for attempt in range(max_plan_attempts):
-            if planner_session._cancel_event is not None and planner_session._cancel_event.is_set():
-                break
-            try:
-                base._stream.colorful_print_word(
-                    f"Generating plan (attempt {attempt + 1}/{max_plan_attempts})...\n",
-                    fg=Color.BRIGHT_CYAN,
-                    require_new_line=True,
-                )
-                async for message in planner_session.prompt(reminder):
-                    await print_agent_json(message, planner_session, None, True)
-                base._stream.print_word("\n", require_new_line=True)
-
-                if plan_file.exists() and plan_file.stat().st_size > 0:
-                    plan_generated = True
-                    break
-
-                # Retry: re-send the original requirement reminder unchanged.
-                # Do NOT inject a machine-phrased nudge as a user-role turn —
-                # planners misread synthetic user turns as human confirmation
-                # ("the user is asking me to continue"), even when labeled.
-            except KeyboardInterrupt:
-                if planner_session:
-                    planner_session.cancel()
-                break
-            except Exception as exc:
-                base._stream.colorful_print_word(
-                    str(exc), fg=Color.BRIGHT_RED, styles=[Style.BOLD], require_new_line=True
-                )
-                if planner_session:
-                    planner_session.cancel()
-                if attempt == max_plan_attempts - 1:
-                    raise
-                await asyncio.sleep(1)
+        # Single attempt, never re-prompt: re-sending the requirement (or any
+        # machine-phrased nudge) as a fresh user-role turn makes planners
+        # misread it as the user echoing/confirming the original request
+        # ("The user is echoing the original requirement. The plan is already
+        # saved."), producing hallucinated confirmation turns. If the single
+        # turn does not produce a plan file, report the failure instead.
+        #
+        # The plan file is checked on EVERY exit path, not just the clean one:
+        # the turn can die mid-stream AFTER write_plan already succeeded
+        # (e.g. a transient provider error on the closing summary step). That
+        # plan is complete and valid — salvage it instead of failing the run.
+        try:
+            base._stream.colorful_print_word(
+                "Generating plan...\n",
+                fg=Color.BRIGHT_CYAN,
+                require_new_line=True,
+            )
+            async for message in planner_session.prompt(reminder):
+                await print_agent_json(message, planner_session, None, True)
+            base._stream.print_word("\n", require_new_line=True)
+        except KeyboardInterrupt:
+            if planner_session:
+                planner_session.cancel()
+        except Exception:
+            if planner_session:
+                planner_session.cancel()
+            # No plan on disk -> the generation truly failed; surface the error.
+            if not plan_file.exists() or plan_file.stat().st_size == 0:
+                raise
+        plan_generated = plan_file.exists() and plan_file.stat().st_size > 0
         if not plan_generated:
             base._stream.colorful_print_word(
                 "Plan generation failed: plan file not found.",

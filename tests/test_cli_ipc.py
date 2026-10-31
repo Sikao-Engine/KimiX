@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -274,3 +275,150 @@ def test_active_ipc_server_also_handles_command_prompts() -> None:
         assert utils._input("", []) == "command answer"
     finally:
         utils._set_active_ipc_server(None)
+
+
+def _make_server(tmp_path: Path) -> ipc.CLIIPCServer:
+    return ipc.CLIIPCServer(tmp_path / ".kimix_cache", tmp_path)
+
+
+def test_local_input_ignored_while_busy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    server = _make_server(tmp_path)
+    calls: list[str] = []
+
+    def fake_input() -> str:
+        calls.append("called")
+        return "typed while busy"
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    server.set_busy(True)
+    # The loop sleeps while busy, so close it from a timer to unblock it.
+    timer = threading.Timer(0.1, server._closed.set)
+    timer.start()
+    try:
+        server._read_local_input()
+    finally:
+        timer.cancel()
+
+    assert calls == []
+    assert server._inputs.empty()
+
+
+def test_local_input_resumes_after_busy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    server = _make_server(tmp_path)
+    calls: list[str] = []
+
+    def fake_input() -> str:
+        calls.append("called")
+        server._closed.set()  # stop the loop after this read
+        return "typed while idle"
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    server.set_busy(True)
+    server.set_busy(False)
+    server._read_local_input()
+
+    assert calls == ["called"]
+    assert server._inputs.get_nowait() == "typed while idle"
+
+
+def test_local_input_drops_line_completed_while_busy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    server = _make_server(tmp_path)
+
+    def fake_input() -> str:
+        # The window becomes busy while the blocking read is in flight.
+        server.set_busy(True)
+        return "completed during busy"
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    # The loop sleeps while busy, so close it from a timer to unblock it.
+    timer = threading.Timer(0.1, server._closed.set)
+    timer.start()
+    try:
+        server._read_local_input()
+    finally:
+        timer.cancel()
+
+    assert server._inputs.empty()
+
+
+def test_ipc_input_still_accepted_while_busy(tmp_path: Path) -> None:
+    with ipc.CLIIPCServer(tmp_path / ".kimix_cache", tmp_path) as server:
+        registration = orjson.loads(server.path.read_bytes())
+        endpoint = ipc.ServerEndpoint(
+            pid=server.pid,
+            port=server.port,
+            token=registration["token"],
+            path=server.path,
+        )
+        server.set_busy(True)
+        try:
+            ipc.send_messages(endpoint, ["remote while busy"])
+            assert server.read_input() == "remote while busy"
+        finally:
+            server.set_busy(False)
+
+
+def test_set_busy_disables_echo_and_flushes_pending_input(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Busy windows must swallow keystrokes completely: no echo, no buffer."""
+    server = _make_server(tmp_path)
+    calls: list[tuple[str, bool]] = []
+
+    monkeypatch.setattr(
+        ipc, "_set_stdin_echo", lambda enabled: calls.append(("echo", enabled))
+    )
+    monkeypatch.setattr(ipc, "_flush_stdin", lambda: calls.append(("flush", True)))
+
+    server.set_busy(True)
+    server.set_busy(False)
+
+    # Entering busy: echo off first, then discard pending input.
+    # Leaving busy: discard stale input first, then echo back on.
+    assert calls == [("echo", False), ("flush", True), ("flush", True), ("echo", True)]
+
+
+def test_set_busy_nested_keeps_window_busy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Overlapping busy regions must not restore echo mid-run."""
+    server = _make_server(tmp_path)
+    calls: list[tuple[str, bool]] = []
+
+    monkeypatch.setattr(
+        ipc, "_set_stdin_echo", lambda enabled: calls.append(("echo", enabled))
+    )
+    monkeypatch.setattr(ipc, "_flush_stdin", lambda: calls.append(("flush", True)))
+
+    server.set_busy(True)
+    server.set_busy(True)
+    server.set_busy(False)
+    assert server._busy.is_set()
+    assert calls == [("echo", False), ("flush", True)]
+    server.set_busy(False)
+    assert not server._busy.is_set()
+    assert calls[-2:] == [("flush", True), ("echo", True)]
+
+
+def test_close_restores_terminal_echo(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Exiting while busy must not leave the user's terminal without echo."""
+    server = _make_server(tmp_path)
+    calls: list[tuple[str, bool]] = []
+
+    monkeypatch.setattr(
+        ipc, "_set_stdin_echo", lambda enabled: calls.append(("echo", enabled))
+    )
+    monkeypatch.setattr(ipc, "_flush_stdin", lambda: calls.append(("flush", True)))
+
+    server.set_busy(True)
+    server.close()
+
+    assert ("echo", True) in calls

@@ -12,14 +12,24 @@ An intermediate fix kept the injection but labeled it ``[system check]`` and
 stated "it is NOT a message from the user" — the label treated the symptom;
 the nudge still arrived as a user-role turn and models kept misattributing it.
 
-The current contract deletes the synthetic nudge entirely: the retry loop
-re-sends the ORIGINAL requirement reminder (text derived from real user
-input), which cannot be mistaken for a new human turn. These tests cover:
+A later iteration kept a retry loop that re-sent the ORIGINAL requirement
+reminder verbatim on failure. That still misled planners whenever attempt 1
+partially succeeded (plan saved, then a transient stream error): the retry
+delivered the requirement again as a fresh user-role turn and the planner
+hallucinated a confirmation — "The user is echoing the original requirement.
+The plan is already saved." — answering a question nobody asked.
 
-- prompt_plan_async retry: every attempt receives the original reminder,
-  byte-identical across attempts (no machine-phrased nudge, no label)
-- prompt_plan_async exhausted retries: graceful "Plan generation failed",
-  no raise
+The current contract deletes the automatic repetition entirely:
+``prompt_plan_async`` prompts the planner exactly ONCE for generation. No
+retry loop, no re-sent reminder, no machine-phrased nudge. When the single
+turn does not produce a plan file, the run reports "Plan generation failed"
+instead of re-prompting. These tests cover:
+
+- prompt_plan_async generation: exactly one planner prompt (no retry)
+- prompt_plan_async missing plan file after the single turn: graceful
+  "Plan generation failed", no second prompt, no raise
+- prompt_plan_async generation exception: propagates to the outer handler
+  ("prompt_plan failed"), planner session still closed
 - drift guard: the old ambiguous literal, the ``[system check]`` label, and
   the deleted ``build_plan_retry_reminder``/``PLAN_RETRY_CHECK_PREFIX``
   symbols appear nowhere in the source tree
@@ -146,34 +156,35 @@ def _assert_original_reminder(text: str) -> None:
     assert "Add --max-distance and --ao-gamma to the AO baker." in text
 
 
-class TestPromptPlanAsyncRetry:
-    async def test_retry_resends_original_reminder_verbatim(self, monkeypatch, patched, tmp_path):
-        """Attempt 1 never writes the file; attempt 2 writes it.
+class TestPromptPlanAsyncNoRetry:
+    """The generation phase must prompt the planner exactly once — never retry.
 
-        The second planner prompt must be the ORIGINAL requirement reminder,
-        byte-identical to the first — no synthetic nudge, no label.
-        """
+    Any automatic repetition (re-sending the original reminder, or a
+    machine-phrased nudge) arrives as a fresh user-role turn that planners
+    misread as the user echoing/confirming the request.
+    """
+
+    async def test_single_prompt_when_plan_written_on_first_turn(self, monkeypatch, patched, tmp_path):
+        """Plan written during the single generation turn: no second prompt."""
         prompts: list[str] = []
         plan_file = tmp_path / "plan.md"
         await _drive(
             monkeypatch, patched, prompts,
-            write_on_attempt=2, plan_file=plan_file,
+            write_on_attempt=1, plan_file=plan_file,
             inputs=["y"],  # approve the plan in the review loop
         )
 
-        assert len(prompts) == 2, prompts
+        assert len(prompts) == 1, prompts
         _assert_original_reminder(prompts[0])
-        _assert_original_reminder(prompts[1])
-        # Retry carries the exact original reminder, not a reworded variant.
-        assert prompts[1] == prompts[0]
-
+        # No "attempt N/M" progress line either.
+        assert not any("attempt" in t.lower() for t in patched.printed_texts())
         # The run must not have swallowed any exception on the way.
         assert not any("prompt_plan failed" in t for t in patched.printed_texts())
         # Approved plan flows to implementation; planner session closed.
         patched.close_mock.assert_awaited_once()
 
-    async def test_all_retries_original_reminder_when_plan_never_written(self, monkeypatch, patched, tmp_path):
-        """File never appears: 3 attempts, every prompt is the original reminder."""
+    async def test_no_retry_when_plan_never_written(self, monkeypatch, patched, tmp_path):
+        """File never appears: graceful failure, exactly one planner prompt."""
         prompts: list[str] = []
         plan_file = tmp_path / "plan.md"
         await _drive(
@@ -182,13 +193,64 @@ class TestPromptPlanAsyncRetry:
             inputs=[],  # review loop never reached
         )
 
-        assert len(prompts) == 3, prompts
-        for p in prompts:
-            _assert_original_reminder(p)
-        assert prompts[1] == prompts[0]
-        assert prompts[2] == prompts[0]
+        assert len(prompts) == 1, prompts
+        _assert_original_reminder(prompts[0])
         assert any("Plan generation failed" in t for t in patched.printed_texts())
         assert not any("prompt_plan failed" in t for t in patched.printed_texts())
+        # No implementation session, no review loop.
+        patched.create_default_mock.assert_not_awaited()
+        patched.prompt_async_mock.assert_not_awaited()
+        patched.close_mock.assert_awaited_once()
+
+    async def test_generation_exception_propagates_to_outer_handler(self, monkeypatch, patched, tmp_path):
+        """A failing generation turn with NO plan on disk surfaces the error."""
+        plan_file = tmp_path / "plan.md"
+        fake = _FakePlannerSession([], None, plan_file)
+
+        async def _boom(text: str, **kwargs):
+            fake.prompts.append(text)
+            raise RuntimeError("provider stream reset")
+            yield  # pragma: no cover — makes this an async generator
+
+        fake.prompt = _boom  # type: ignore[assignment]
+        monkeypatch.setattr(prompt_mod, "_create_session_async", AsyncMock(return_value=fake))
+        monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+        await prompt_plan_async(REQUIREMENT, plan_file)
+
+        # Exactly one generation prompt, then the outer handler prints the error.
+        assert len(fake.prompts) == 1, fake.prompts
+        _assert_original_reminder(fake.prompts[0])
+        assert any("prompt_plan failed" in t for t in patched.printed_texts())
+        assert not any("Generating plan (attempt" in t for t in patched.printed_texts())
+        # Planner session still closed via finally.
+        patched.close_mock.assert_awaited_once()
+
+    async def test_exception_after_plan_written_salvages_plan(self, monkeypatch, patched, tmp_path):
+        """Turn dies mid-stream AFTER write_plan succeeded: the on-disk plan is
+        salvaged and the run proceeds to review/implementation — it must NOT
+        surface as "prompt_plan failed" (this was the old phantom-retry trigger).
+        """
+        plan_file = tmp_path / "plan.md"
+        fake = _FakePlannerSession([], None, plan_file)
+
+        async def _boom_after_write(text: str, **kwargs):
+            fake.prompts.append(text)
+            plan_file.write_text("# Plan\n\nstep one\n", encoding="utf-8")
+            raise RuntimeError("provider stream reset")
+            yield  # pragma: no cover — makes this an async generator
+
+        fake.prompt = _boom_after_write  # type: ignore[assignment]
+        monkeypatch.setattr(prompt_mod, "_create_session_async", AsyncMock(return_value=fake))
+        monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+
+        await prompt_plan_async(REQUIREMENT, plan_file)
+
+        assert len(fake.prompts) == 1, fake.prompts
+        assert not any("prompt_plan failed" in t for t in patched.printed_texts())
+        assert any("Plan generated" in t for t in patched.printed_texts())
+        # Salvaged plan flows straight into the review/implementation phase.
+        patched.prompt_async_mock.assert_awaited_once()
         patched.close_mock.assert_awaited_once()
 
 
@@ -293,8 +355,8 @@ class TestCallSiteDriftGuard:
         assert not offenders, "deleted symbols still referenced:\n" + "\n".join(offenders)
 
     def test_original_reminder_present_at_all_sites(self):
-        """All three sites still seed the retry loop with the original reminder,
-        so a retry re-sends real user-derived content (drift guard)."""
+        """All three sites still seed the planner with the original reminder
+        (text derived from real user input, no machine nudge) — drift guard."""
         root = Path(__file__).resolve().parents[1]
         needle = "read the following requirement carefully and generate a comprehensive plan."
         for rel in self.SITES:
