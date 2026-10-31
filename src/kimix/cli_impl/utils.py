@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import regex as re
 import textwrap
-from typing import Any, Iterator
+from typing import TYPE_CHECKING, Any, Iterator
+
+import regex as re
 
 from kimix.ui.printing import (
+    GRAY_LIGHT,
     BgColor,
     BgColor256,
     Color,
     Color256,
-    GRAY_LIGHT,
     Style,
     _ansi_prefix,
     _resolve_bg,
@@ -18,16 +19,32 @@ from kimix.ui.printing import (
     colorful_text,
 )
 
+if TYPE_CHECKING:
+    from .ipc import CLIIPCServer
+
+_active_ipc_server: CLIIPCServer | None = None
+
+
+def _set_active_ipc_server(ipc_server: CLIIPCServer | None) -> None:
+    """Share the server's input multiplexer with slash-command prompts."""
+    global _active_ipc_server
+    _active_ipc_server = ipc_server
+
 
 def _input(
     text: str,
     text_arr: list[str],
+    ipc_server: CLIIPCServer | None = None,
 ) -> str:
-    if text_arr is None or len(text_arr) == 0:
-        if text:
-            print(text, end='', flush=True)
-        return input()
-    return text_arr.pop(0)
+    """Read queued, terminal, or IPC input without blocking either input source."""
+    if text_arr:
+        return text_arr.pop(0)
+    if text:
+        print(text, end="", flush=True)
+    active_server = ipc_server or _active_ipc_server
+    if active_server is not None:
+        return active_server.read_input()
+    return input()
 
 
 def _split_text(lines: list[str], command_map: set[str] | None = None) -> list[str]:

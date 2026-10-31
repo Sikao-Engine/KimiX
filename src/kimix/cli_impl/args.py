@@ -12,15 +12,15 @@ from kaos.path import KaosPath
 import kimix.base as base
 from kimix.ui.printing import print_debug, print_error, print_warning
 
-from . import constants, utils  # noqa: F401
-
 # Import moved helpers from config.py
 from kimix.utils.config import (
-    _normalize_sub_providers,
-    _pick_main_from_sub_providers,
     _REQUIRED_PROVIDER_KEYS,
     _SUB_PROVIDER_PICK_PRIORITY,
+    _normalize_sub_providers,
+    _pick_main_from_sub_providers,
 )
+
+from . import constants, utils  # noqa: F401
 
 
 def _load_project_mcp_config() -> dict[str, Any]:
@@ -190,6 +190,14 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
     )
     mcp_test_parser.add_argument("server_name", help="Name of the MCP server to test")
 
+    parser.add_argument(
+        "--connect",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="PID",
+        help="Send stdin to another Kimix CLI (optionally select its process ID)",
+    )
     parser.add_argument("-c", "--clean", action="store_true", help="Delete cache file after quit")
     parser.add_argument(
         "-no_color", "--no_color", action="store_true", help="Disable colorful print"
@@ -234,6 +242,11 @@ def set_arg() -> tuple[str | None, argparse.Namespace]:
                 args = known_args
     else:
         args = known_args
+
+    # A connected client only forwards stdin. In particular, do not load a
+    # provider config or initialize any agent/session state in this process.
+    if args.command is None and args.connect is not None:
+        return "connect", args
 
     # Extract --config from remaining args if not already set
     # (handles the case where --config appears after the subcommand)

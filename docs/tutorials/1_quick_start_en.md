@@ -137,8 +137,31 @@ kimix --config=<path>
 | `--manually-cot` | Enable manual CoT (may use multiple sessions) |
 | `-s`, `--skill-dir` | Custom skill directory (repeatable) |
 | `--config` | JSON config path. Searches: cwd parents, package parents, `PATH` |
+| `--connect[=PID]` | Forward stdin to another running Kimix CLI instead of starting a new agent |
 
 > **Auto-loading skill directories**: On startup, Kimix also reads `.kimix/skill.json` in the current directory. If it contains a `skill_dir` field (string or array of strings) and the directories exist, they are automatically appended to the default skill search paths.
+
+#### IPC Connect Mode
+
+Every normal interactive Kimix CLI automatically starts an authenticated loopback IPC server and registers itself as `.kimix_cache/pid_<pid>`. No separate server command is required. The running CLI accepts local terminal input and remote input through the same queue, so injected prompts and `/` commands behave as if they were typed into that CLI.
+
+Run the connect client from the **same project working directory** as the target CLI:
+
+```bash
+# Send one prompt to the first available CLI in this project
+printf 'Explain this project\n' | kimix --connect
+
+# Send two separate inputs to a specific CLI process
+printf '/context\nSummarize the current task\n' | kimix --connect=12345
+```
+
+Use `--connect=<PID>` (or `--connect <PID>`) to select a particular server; omit the PID to select the first valid registration. The PID is part of each registration filename and can also be obtained from your operating system's process manager.
+
+- **Redirected stdin:** the complete input is sent in one request. The server splits LF and CRLF lines and queues each line as a separate prompt or command. Requests are limited to 16 MiB.
+- **Interactive stdin:** each line entered is forwarded immediately. Press `Ctrl+C` or send EOF to stop the client.
+- **Client-only process:** connect mode does not load provider configuration, create a session, or run an agent loop. It only forwards input; agent responses remain in the target CLI's terminal rather than being returned to the client.
+
+Discovery accepts only live Python/Kimix processes registered for the current project. Stale registrations are removed during discovery, and a normal CLI exit removes its own registration.
 
 ### Interactive Commands
 

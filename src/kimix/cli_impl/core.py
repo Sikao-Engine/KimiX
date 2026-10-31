@@ -1,10 +1,14 @@
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
-import kimix.base as base
 from kimi_cli import native_loader
+
+import kimix.base as base
+import kimix.utils._globals as _globals
 from kimix.base import sync_all
+from kimix.cot import cot_prompt
 from kimix.ui.printing import (
     print_debug,
     print_error,
@@ -12,14 +16,13 @@ from kimix.ui.printing import (
     print_success,
     print_warning,
 )
-from kimix.cot import cot_prompt
-import kimix.utils._globals as _globals
 from kimix.utils import _create_default_session, close_session, get_default_session, prompt
 
 from . import constants
 from .args import set_arg
 from .commands import _cmd_unknown, _command_map
-from .utils import _input
+from .ipc import CLIIPCServer, discover_servers, send_messages
+from .utils import _input, _set_active_ipc_server
 
 exec_ctx: dict[str, Any] = {}
 
@@ -48,6 +51,22 @@ def _enable_line_editing() -> None:
 
 
 def _client_cli() -> None:
+    cache_dir = constants.curr_dir / ".kimix_cache"
+    with CLIIPCServer(cache_dir, constants.curr_dir) as ipc_server:
+        # Reap stale registrations and identify other CLIs in this project.
+        discover_servers(
+            cache_dir,
+            constants.curr_dir,
+            exclude_pid=ipc_server.pid,
+        )
+        _set_active_ipc_server(ipc_server)
+        try:
+            _client_cli_loop(ipc_server)
+        finally:
+            _set_active_ipc_server(None)
+
+
+def _client_cli_loop(ipc_server: CLIIPCServer) -> None:
     global exec_ctx
     _enable_line_editing()
     input_str = None
@@ -57,7 +76,11 @@ def _client_cli() -> None:
 
     while True:
         try:
-            input_str = _input("\n>>>>>>>>> Enter your prompt or command:\n", text_arr)
+            input_str = _input(
+                "\n>>>>>>>>> Enter your prompt or command:\n",
+                text_arr,
+                ipc_server,
+            )
         except KeyboardInterrupt:
             print_success("\nbye.")
             break
@@ -156,6 +179,48 @@ def _client_cli() -> None:
         close_session(session)
 
 
+def _connect_cli(connect: str) -> None:
+    """Forward this process's stdin to an existing CLI, without starting an agent."""
+    requested_pid: int | None = None
+    if connect:
+        try:
+            requested_pid = int(connect)
+            if requested_pid <= 0:
+                raise ValueError
+        except ValueError:
+            print_error(f"Invalid process ID for --connect: {connect}")
+            return
+
+    endpoints = discover_servers(
+        constants.curr_dir / ".kimix_cache",
+        constants.curr_dir,
+        requested_pid=requested_pid,
+    )
+    if not endpoints:
+        target = f"PID {requested_pid}" if requested_pid is not None else "any running CLI"
+        print_error(f"Could not connect to {target} in {constants.curr_dir}.")
+        return
+    endpoint = endpoints[0]
+
+    try:
+        if sys.stdin.isatty():
+            while True:
+                try:
+                    message = input(">>>>>>>> Message for CLI server (Ctrl+C to quit):\n")
+                except (EOFError, KeyboardInterrupt):
+                    print_success("\nbye.")
+                    break
+                send_messages(endpoint, [message])
+        else:
+            content = sys.stdin.read()
+            if content:
+                # One request carries the complete input as a list; the server
+                # splits LF and CRLF into individual sentences for its main loop.
+                send_messages(endpoint, [content])
+    except (OSError, ConnectionError, ValueError) as error:
+        print_error(f"Failed to send input to CLI server {endpoint.pid}: {error}")
+
+
 def _run_cli() -> None:
     global exec_ctx
     exec_ctx = {"__name__": "__main__"}
@@ -163,6 +228,10 @@ def _run_cli() -> None:
     _check_native()
 
     subcmd, args = set_arg()
+
+    if subcmd == "connect":
+        _connect_cli(args.connect)
+        return
 
     if subcmd == "serve":
         from kimix.server.serve import serve_cli

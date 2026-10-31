@@ -3,6 +3,7 @@
 import asyncio
 import ntpath
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -7513,16 +7514,18 @@ class TestBashFixRound0WatchInterval:
     def _run_watch(self, args: list[str]) -> subprocess.CompletedProcess | None:
         body = _shell_compat._FALLBACK_BODIES["watch"]
         script = f"watch() {{ {body}; }}\nwatch {subprocess.list2cmdline(args)}\n"
-        try:
-            return subprocess.run(
-                [_ROUND0_GIT_BASH, "-c", script],
-                capture_output=True,
-                timeout=4,
-                env=_round0_bash_env(),
-            )
-        except subprocess.TimeoutExpired:
-            # Timed out inside the repeat loop -> the option was accepted.
-            return None
+        # Let Git Bash's timeout manage the nested shell's process group. Killing
+        # only the Windows launcher can orphan an inner Bash that retains the
+        # captured output pipes and leaves subprocess.run blocked forever.
+        timed_script = f"timeout 0.2 {shlex.quote(_ROUND0_GIT_BASH)} -c {shlex.quote(script)}"
+        result = subprocess.run(
+            [_ROUND0_GIT_BASH, "-c", timed_script],
+            capture_output=True,
+            timeout=4,
+            env=_round0_bash_env(),
+        )
+        # Timed out inside the repeat loop -> the option was accepted.
+        return None if result.returncode == 124 else result
 
     def test_watch_interval_is_not_rejected(self) -> None:
         result = self._run_watch(["--interval", "0.05", "true"])
