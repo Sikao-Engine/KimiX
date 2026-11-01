@@ -18,7 +18,18 @@ _REQUIRED_PROVIDER_KEYS: tuple[str, ...] = ("type", "max_context_size", "model",
 
 # Priority for picking a sub_provider as the main provider when root lacks 'model'.
 # Earlier values in the tuple have higher priority.
-_SUB_PROVIDER_PICK_PRIORITY: tuple[str | None, ...] = (None, "sub_agent", "planner")
+# "researcher" is deliberately last: a researcher sub-provider must never
+# become the main-provider fallback ahead of the general-purpose roles.
+_SUB_PROVIDER_PICK_PRIORITY: tuple[str | None, ...] = (None, "sub_agent", "planner", "researcher")
+
+
+# Default agent JSON manifest for role-specific child sessions, relative to
+# ``base._default_agent_file_dir``. A tool that creates a child session for a
+# known role can use this instead of hardcoding the manifest path. The
+# ``researcher`` role backs the research tool's read-only child session.
+_ROLE_DEFAULT_AGENT_FILES: dict[str, str] = {
+    "researcher": "agent_readonly.json",
+}
 
 
 # Keys that identify a specific provider entry and must never be inherited
@@ -128,6 +139,7 @@ def _pick_main_from_sub_providers(
       1. Entry with no ``role`` key (or empty role)
       2. Entry with ``role = "sub_agent"``
       3. Entry with ``role = "planner"``
+      4. Entry with ``role = "researcher"`` (read-only role; always last)
 
     Mutates ``config_data`` in place by copying all non-``role`` keys from the winner.
     """

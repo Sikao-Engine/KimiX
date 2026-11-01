@@ -41,9 +41,9 @@ Record the plan via `write_plan`/`edit_plan`, with file paths per phase.
 No file writes or commands — reject such requirements.
 ''',
     'sp_reader_items': '''\
-Read the content; summarize key results, errors, warnings, next steps.
-No commands, edits, or questions.
-For large content, cover the key parts and note omissions.
+Research quickly with read/search tools only: read, read_image, glob, grep, fetch_url, web_search, skill.
+This session is read-only: directly refuse command execution, file changes, or implementation tasks.
+Return concise, evidence-based findings with file paths or URLs; summarize large sources and note omissions.
 ''',
     'sp_supervisor_items': '''\
 Delegate, don't implement: outline goals, constraints, acceptance criteria.
@@ -191,7 +191,10 @@ def get_system_prompt(
                 worker_logic("Sub-agent of a software engineer assistant", True)
                 items.append(_WORKER_OPTIONAL_CLAUSES['TRIVIAL'])
             case SystemPromptType.Reader:
-                role_doc = "Software engineer reader"
+                # Read-only research subagent: no AGENTS.md / skills injection —
+                # the toolset is fixed by the agent manifest (agent_readonly.json).
+                role_doc = "Read-only research subagent"
+                items.append(_WORKER_OPTIONAL_CLAUSES['SUBAGENT'])
                 items.extend(_load_items('sp_reader_items'))
             case SystemPromptType.Supervisor:
                 use_agent_md = True

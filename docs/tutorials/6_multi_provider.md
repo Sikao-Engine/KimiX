@@ -56,6 +56,7 @@ Kimix 现在支持将不同 Agent 角色路由到不同的 LLM Provider。你不
 |------|--------|
 | `sub_agent` | `Agent` 工具、超长输出总结 |
 | `planner` | `/plan` 命令 (`prompt_plan_async`) |
+| `researcher` | `research` 工具的只读子代理 |
 | `backup` | 主 Provider 重试耗尽后，`_run_single_prompt` 中的自动故障转移 |
 
 如果省略 `role`，默认值为 `sub_agent`。
@@ -97,7 +98,7 @@ workspace/
 - 文件不存在、JSON 非法或 `json` 值不是字符串时，只有该条目会被忽略并打印警告，其余条目不受影响。
 - 循环引用（A 引用 B、B 又引用 A）与自引用会被自动检测并忽略，同时限制最大嵌套层数。
 
-`docs/sub_provider_link.json`（主配置）与 `docs/subagent.json`（被引用配置）是可直接复制使用的完整示例。
+`docs/sub_provider_link.json`（主配置）与 `docs/subagent.json`（被引用配置）是可直接复制使用的完整示例。`research` 工具的配置与用法见 `docs/research.md` 和 `docs/research.json`。
 
 ---
 

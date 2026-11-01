@@ -56,6 +56,7 @@ The `model` field can be either `kimi-for-coding` or `kimi-for-coding-highspeed`
 |------|---------|
 | `sub_agent` | `Agent` tool, long-output summarization |
 | `planner` | `/plan` command (`prompt_plan_async`) |
+| `researcher` | `research` tool's read-only child agent |
 | `backup` | Automatic failover in `_run_single_prompt` when the primary provider exhausts retries |
 
 If `role` is omitted, it defaults to `sub_agent`.
@@ -97,7 +98,7 @@ workspace/
 - A missing file, invalid JSON, or a non-string `json` value drops only that entry with a warning; other entries are unaffected.
 - Cycles (A links B, B links A) and self-links are detected and ignored, and the nesting depth is capped.
 
-`docs/sub_provider_link.json` (main config) and `docs/subagent.json` (linked config) are ready-to-copy examples.
+`docs/sub_provider_link.json` (main config) and `docs/subagent.json` (linked config) are ready-to-copy examples. See `docs/research.md` and `docs/research.json` for research-tool configuration and usage.
 
 ---
 
