@@ -12,9 +12,10 @@ from pathlib import Path
 
 import orjson
 import pytest
-from kaos.path import KaosPath
 
+from kaos.path import KaosPath
 from kimi_cli.tools.file import read as read_module
+from kimi_cli.tools.file import read_extract
 from kimi_cli.tools.file.read import Params, ReadFile
 from kimi_cli.tools.file.read_extract import (
     EXTRACTABLE_EXTENSIONS,
@@ -22,6 +23,7 @@ from kimi_cli.tools.file.read_extract import (
     extract_document_text,
     is_extractable_document,
 )
+from kimi_cli.tools.file.read_pdf_pages import render_pdf_page
 
 NB_JSON = {
     "nbformat": 4,
@@ -143,6 +145,34 @@ def _build_pdf(path: KaosPath, pages: int = 2) -> None:
     for index in range(pages):
         page = doc.new_page()
         page.insert_text((72, 72), f"PDF text page {index + 1}")
+    doc.save(str(path))
+    doc.close()
+
+
+def _build_encrypted_pdf(path: KaosPath) -> None:
+    """A PDF that opens but refuses every read until the user password is given."""
+    import pymupdf
+
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "Secret text behind a password")
+    doc.save(
+        str(path),
+        encryption=pymupdf.PDF_ENCRYPT_AES_256,
+        user_pw="hunter2",
+        owner_pw="owner",
+    )
+    doc.close()
+
+
+def _build_image_only_pdf(path: KaosPath) -> None:
+    """A scanned-style page: one image, no text layer at all."""
+    import pymupdf
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 64, 64), 0)
+    pix.set_rect(pix.irect, (200, 200, 200))
+    page.insert_image(pymupdf.Rect(72, 72, 300, 300), pixmap=pix)
     doc.save(str(path))
     doc.close()
 
@@ -329,6 +359,78 @@ def test_extract_bad_pdf_raises(temp_work_dir: KaosPath):
         extract_document_text(str(bad))
 
 
+def test_extract_pdf_password_protected(temp_work_dir: KaosPath):
+    """A user-password PDF must say so instead of blaming an empty text layer."""
+    pdf = temp_work_dir / "secret.pdf"
+    _build_encrypted_pdf(pdf)
+
+    with pytest.raises(ExtractionError, match="password-protected"):
+        extract_document_text(str(pdf))
+
+
+def test_extract_pdf_without_text_layer_points_at_pdf_page(temp_work_dir: KaosPath):
+    """An image-only PDF has no text, but the tool can still render the page."""
+    pdf = temp_work_dir / "scan.pdf"
+    _build_image_only_pdf(pdf)
+
+    with pytest.raises(ExtractionError) as excinfo:
+        extract_document_text(str(pdf))
+    message = str(excinfo.value)
+    assert "no extractable text" in message
+    assert "pdf_page" in message
+
+
+def test_extract_pdf_marks_page_truncation(temp_work_dir: KaosPath, monkeypatch):
+    """The page cap must be visible, not a silent cut mid-document."""
+    monkeypatch.setattr(read_extract, "_MAX_PDF_PAGES", 3)
+    pdf = temp_work_dir / "long.pdf"
+    _build_pdf(pdf, pages=5)
+
+    text = extract_document_text(str(pdf))
+
+    assert text.count("# ── Page ") == 3
+    assert "# ── Page 3 ──" in text
+    assert "# ── Page 4 ──" not in text
+    assert "# ── Truncated ──" in text
+    assert "first 3 of 5 pages" in text
+
+
+# ── pdf_page rendering ────────────────────────────────────────────────────────
+
+
+def test_render_pdf_page_password_protected(temp_work_dir: KaosPath):
+    pdf = temp_work_dir / "secret.pdf"
+    _build_encrypted_pdf(pdf)
+
+    result = render_pdf_page(str(pdf), 1, capabilities={"image_in"})
+
+    assert result.is_error
+    assert result.brief == "PDF password required"
+    assert "password-protected" in result.message
+
+
+def test_render_pdf_page_out_of_range(temp_work_dir: KaosPath):
+    pdf = temp_work_dir / "paper.pdf"
+    _build_pdf(pdf, pages=2)
+
+    result = render_pdf_page(str(pdf), 3, capabilities={"image_in"})
+
+    assert result.is_error
+    assert result.brief == "Invalid PDF page"
+    assert "out of range (1..2)" in result.message
+
+
+def test_render_pdf_page_requires_image_capability(temp_work_dir: KaosPath):
+    pdf = temp_work_dir / "paper.pdf"
+    _build_pdf(pdf, pages=1)
+
+    result = render_pdf_page(str(pdf), 1, capabilities=set())
+
+    assert result.is_error
+    assert result.brief == "Unsupported media type"
+    assert "leaving pdf_page unset" in result.message
+
+
 # ── tool-level tests ──────────────────────────────────────────────────────────
 
 
@@ -406,6 +508,19 @@ async def test_read_pdf_via_tool(read_file_tool: ReadFile, temp_work_dir: KaosPa
     assert "PDF text page 1" in result.output
     assert "(extracted from .pdf document)" in result.message
     assert "Path:" in result.message
+
+
+async def test_read_scanned_pdf_suggests_pdf_page(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath
+):
+    """The model must learn about the image fallback from the error itself."""
+    pdf = temp_work_dir / "scan.pdf"
+    _build_image_only_pdf(pdf)
+
+    result = await read_file_tool(Params(path=str(pdf)))
+
+    assert result.is_error
+    assert "pdf_page" in result.message
 
 
 async def test_read_malformed_docx_bad_zip(read_file_tool: ReadFile, temp_work_dir: KaosPath):

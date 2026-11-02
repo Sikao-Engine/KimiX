@@ -10,6 +10,7 @@ import kaos
 from kaos.path import KaosPath
 
 from kimi_cli.utils.logging import logger
+from kimi_cli.utils.subprocess_cleanup import close_pipe_transports, reap_process
 
 _TIMEOUT = 5.0
 _MAX_DIRTY_FILES = 20
@@ -99,15 +100,18 @@ async def _run_git(args: list[str], cwd: str, timeout: float = _TIMEOUT) -> str 
     except TimeoutError:
         logger.debug("git {args} timed out after {t}s", args=args, t=timeout)
         if proc is not None:
-            await proc.kill()
-            await proc.wait()
+            await reap_process(proc, kill=True, timeout=5)
         return None
     except Exception:
         logger.debug("git {args} failed", args=args)
-        if proc is not None and proc.returncode is None:
-            await proc.kill()
-            await proc.wait()
+        if proc is not None:
+            await reap_process(proc, kill=True, timeout=5)
         return None
+    finally:
+        # stderr is never read here: release every pipe transport once the child
+        # is done so none of them can outlive the event loop that owns it.
+        if proc is not None:
+            close_pipe_transports(proc)
 
 
 # Well-known public hosts whose remote URLs are safe to surface and

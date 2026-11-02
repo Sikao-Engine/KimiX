@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from kimi_agent_sdk import Session
+from kimi_cli.utils.subprocess_cleanup import close_loop_pipe_transports
 from kimix.base import _default_agent_file_dir
 from kimix.ui.printing import MessageType
 from kimix.ui.stream import format_tool_args
@@ -177,6 +178,14 @@ def _work_loop(state: SessionStateClass) -> None:
                 loop.run_until_complete(state.close_session())
             except Exception:
                 pass
+        # Any sub-process pipe transport still bound to this loop (a tool child
+        # that was abandoned, e.g. on interrupt) must be released *before* the
+        # loop closes: an unclosed transport trips asyncio's deallocator later
+        # with ``ValueError: I/O operation on closed pipe``.
+        try:
+            close_loop_pipe_transports(loop)
+        except Exception:
+            pass
         loop.close()
 
 

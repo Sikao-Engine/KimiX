@@ -30,6 +30,10 @@ __all__ = ["render_pdf_page"]
 _DPI_SEQUENCE = (150, 96, 72)
 
 
+class PdfPasswordError(Exception):
+    """Raised when the PDF needs a user password before a page can be rendered."""
+
+
 def _render_pdf_page_to_png(path: str | Path, page: int, dpi: int) -> bytes:
     """Render a single PDF page to PNG bytes using PyMuPDF."""
     try:
@@ -38,6 +42,14 @@ def _render_pdf_page_to_png(path: str | Path, page: int, dpi: int) -> bytes:
         raise RuntimeError(f"PyMuPDF is required for PDF page rendering: {exc}") from exc
     doc = pymupdf.open(path)
     try:
+        # Must be checked before rendering: PyMuPDF otherwise raises a bare
+        # ValueError ("document closed or encrypted"), which the range check
+        # below would report as an invalid page number.
+        if doc.needs_pass:
+            raise PdfPasswordError(
+                "PDF is password-protected; ask the user for the password "
+                "before reading it as images."
+            )
         if page < 1 or page > len(doc):
             raise ValueError(f"Page {page} is out of range (1..{len(doc)})")
         page_obj = doc.load_page(page - 1)
@@ -145,6 +157,8 @@ def render_pdf_page(
     for dpi in _DPI_SEQUENCE:
         try:
             png_data = _render_pdf_page_to_png(path, page, dpi)
+        except PdfPasswordError as exc:
+            return ToolError(message=str(exc), brief="PDF password required")
         except ValueError as exc:
             return ToolError(message=str(exc), brief="Invalid PDF page")
         except Exception as exc:

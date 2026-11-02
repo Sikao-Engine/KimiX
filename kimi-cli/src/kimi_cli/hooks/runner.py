@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 import orjson
 
 from kimi_cli import logger
+from kimi_cli.utils.subprocess_cleanup import reap_process
 
 
 @dataclass
@@ -29,6 +31,7 @@ async def run_hook(
     cwd: str | None = None,
 ) -> HookResult:
     """Execute a single hook command. Fail-open: errors/timeouts -> allow."""
+    proc: asyncio.subprocess.Process | None = None
     try:
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -43,15 +46,20 @@ async def run_hook(
                 timeout=timeout,
             )
         except TimeoutError:
-            proc.kill()
-            await proc.wait()
+            # Kill *and* release the stdin/stdout/stderr pipe transports: a hook
+            # that timed out (or was interrupted) must not leave them behind for
+            # the garbage collector to trip over later.
+            await reap_process(proc, kill=True, timeout=5)
             logger.warning("Hook timed out after {}s: {}", timeout, command)
             return HookResult(action="allow", timed_out=True)
         except asyncio.CancelledError:
-            proc.kill()
-            await proc.wait()
+            with contextlib.suppress(BaseException):
+                await reap_process(proc, kill=True, timeout=5)
             raise
     except Exception as e:
+        if proc is not None:
+            with contextlib.suppress(BaseException):
+                await reap_process(proc, kill=True, timeout=5)
         logger.warning("Hook failed: {}: {}", command, e)
         return HookResult(action="allow", stderr=str(e))
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +14,7 @@ from loguru import logger
 
 from kimi_cli.plugin import PluginToolSpec
 from kimi_cli.tools.utils import ToolRejectedError
+from kimi_cli.utils.subprocess_cleanup import reap_process
 from kimi_cli.utils.subprocess_env import get_clean_env
 from kimi_cli.wire.types import ToolReturnValue
 
@@ -103,12 +105,11 @@ class PluginTool(CallableTool):
                 timeout=120,
             )
         except asyncio.CancelledError:
-            proc.kill()
-            await proc.wait()
+            with contextlib.suppress(BaseException):
+                await reap_process(proc, kill=True, timeout=5)
             raise
         except TimeoutError:
-            proc.kill()
-            await proc.wait()
+            await reap_process(proc, kill=True, timeout=5)
             return ToolError(
                 message=f"Plugin tool '{self.name}' timed out after 120s.",
                 brief="Timeout",

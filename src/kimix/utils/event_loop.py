@@ -34,6 +34,8 @@ import threading
 from collections.abc import Coroutine
 from typing import Any, TypeVar
 
+from kimi_cli.utils.subprocess_cleanup import close_loop_pipe_transports
+
 __all__ = [
     "close_process_event_loop",
     "get_process_event_loop",
@@ -154,6 +156,10 @@ def close_process_event_loop() -> None:
         if pending:
             loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
         loop.run_until_complete(loop.shutdown_asyncgens())
+        # A sub-process spawned on this loop may still own pipe transports; they
+        # must be released *before* the loop closes, otherwise asyncio's
+        # deallocator later raises ``ValueError: I/O operation on closed pipe``.
+        close_loop_pipe_transports(loop)
     except Exception:  # pragma: no cover - teardown is best effort
         pass
     finally:

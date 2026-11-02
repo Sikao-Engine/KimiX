@@ -206,7 +206,8 @@ class Params(BaseModel):
         ge=1,
         description=(
             "Render this PDF page as an image. "
-            "Requires a model with image_in capability; otherwise returns an error."
+            "Requires a model with image_in capability; otherwise returns an error. "
+            "Leave unset to extract the text layer of every page instead."
         ),
     )
     profile_raw: bool = Field(

@@ -78,6 +78,7 @@ from kimi_cli.utils.path import (
     normalize_user_path,
 )
 from kimi_cli.utils.sensitive import is_sensitive_file, sensitive_file_warning
+from kimi_cli.utils.subprocess_cleanup import close_pipe_transports
 from kimi_cli.vfs import VFS
 from kosong.tooling import (
     FIELD_ALIASES_FILE,
@@ -574,6 +575,7 @@ async def _kill_process(process: asyncio.subprocess.Process) -> None:
     except TimeoutError:
         process.kill()
         await process.wait()
+    close_pipe_transports(process)
 
 
 def _is_eagain(stderr: str) -> bool:
@@ -1366,6 +1368,13 @@ class Grep(CallableTool2[Params]):
         except TimeoutError:
             await _kill_process(process)
             timed_out = True
+        finally:
+            # Release the stdout/stderr pipe transports deterministically: a
+            # timed-out or cancelled rg (or a wrapper such as ``rtk``) can leave
+            # the read ends open, and a transport that outlives its event loop
+            # later trips the GC deallocator with
+            # ``ValueError: I/O operation on closed pipe``.
+            close_pipe_transports(process)
 
         output = stdout_buf.decode("utf-8", errors="replace")
         stderr_str = stderr_buf.decode("utf-8", errors="replace")

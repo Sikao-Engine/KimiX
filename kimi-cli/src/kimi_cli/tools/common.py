@@ -24,6 +24,7 @@ from kimi_cli.native_loader import (
 from kimi_cli.native_loader import (
     use_native as _native_use_native,
 )
+from kimi_cli.utils.subprocess_cleanup import close_pipe_transports
 
 from kosong.tooling import ToolReturnValue
 
@@ -2330,6 +2331,13 @@ class ProcessTask:
                     await process.wait()
                 except Exception:
                     pass
+            if process is not None:
+                # Deterministic teardown: the child is reaped, so release its
+                # stdin/stdout/stderr pipe transports now.  A transport that
+                # outlives the worker loop would be closed underneath asyncio
+                # by ``loop.close()`` and later trip the GC __del__ with
+                # ``ValueError: I/O operation on closed pipe``.
+                close_pipe_transports(process)
 
     async def _stop_function(self) -> None:
         """Signal the background process to stop (kills the whole process tree)."""

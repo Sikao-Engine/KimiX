@@ -22,6 +22,9 @@ from kimi_cli.native_loader import (  # noqa: E402 -- deliberately a late import
     use_native as _native_use_native,
 )
 from kimi_cli.session import Session  # noqa: E402 -- deliberately a late import
+from kimi_cli.utils.subprocess_cleanup import (  # noqa: E402 -- deliberately late
+    aclose_loop_pipe_transports,
+)
 
 # Resolved once at import time (stable runtime: result never changes).
 _NATIVE_TOOLS = _native_get_module("tools")
@@ -256,6 +259,17 @@ class BackgroundStream:
                                 with v._lock:
                                     v._worker_loop = None
                                     v._worker_task = None
+                                # ``asyncio.run`` closes this loop as soon as
+                                # this coroutine returns: release every
+                                # sub-process pipe transport first, otherwise
+                                # they outlive the loop and asyncio's
+                                # deallocator later raises
+                                # ``ValueError: I/O operation on closed pipe``.
+                                try:
+                                    await aclose_loop_pipe_transports(loop)
+                                except BaseException:
+                                    pass
+
 
                         result = asyncio.run(run_worker())
                     else:

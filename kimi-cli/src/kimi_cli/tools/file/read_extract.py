@@ -308,19 +308,37 @@ def _extract_pdf(path: str) -> str:
     except Exception as exc:
         raise ExtractionError(f"Not a valid PDF: {exc}") from exc
     try:
+        # A user-password PDF opens fine but yields nothing from get_text(), so
+        # check it up front instead of reporting the empty-text case below.
+        if document.needs_pass:
+            raise ExtractionError(
+                "PDF is password-protected; ask the user for the password "
+                "(rendering it with `pdf_page` fails without it too)"
+            )
+        total_pages = document.page_count
+        if total_pages <= 0:
+            raise ExtractionError("PDF has no pages")
         out: list[str] = []
         has_text = False
-        for index, page in enumerate(document, 1):
-            if index > _MAX_PDF_PAGES:
-                break
-            text = page.get_text("text").rstrip("\n")
+        last_page = min(total_pages, _MAX_PDF_PAGES)
+        for index in range(1, last_page + 1):
+            text = document.load_page(index - 1).get_text("text").rstrip("\n")
             if text:
                 has_text = True
             out.append(f"# ── Page {index} ──")
             out.append(text if text else "(empty)")
             out.append("")
         if not has_text:
-            raise ExtractionError("PDF contains no extractable text")
+            raise ExtractionError(
+                "PDF contains no extractable text (probably a scanned image); "
+                "read it as images instead, e.g. `pdf_page=1`"
+            )
+        if total_pages > last_page:
+            out.append(
+                f"# ── Truncated ──\n"
+                f"Only the first {last_page} of {total_pages} pages were extracted "
+                f"(page limit {_MAX_PDF_PAGES})."
+            )
         return "\n".join(out).rstrip("\n") + "\n"
     except ExtractionError:
         raise
