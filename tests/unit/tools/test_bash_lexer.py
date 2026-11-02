@@ -534,13 +534,123 @@ def test_lexer_region_ends_match_legacy_oracles(source: str) -> None:
             elif kind is WordPartKind.ANSI_C_QUOTE:
                 expected = eof if value == -1 else value
             elif kind is WordPartKind.PARAMETER_EXPANSION:
-                expected = eof if value is None else value + 1
+                # ``_match_parameter_braces`` returns the index AFTER the
+                # closing ``}`` (bash_core contract), so the region ends
+                # exactly there — no extra delimiter arithmetic.
+                expected = eof if value is None else value
             else:  # ARITHMETIC_EXPANSION
-                expected = eof if value is None else value + 2
+                # ``_match_arithmetic_span`` returns the index AFTER ``))``.
+                expected = eof if value is None else value
             # embedded regions inside ${ } / $(( )) are rejected by the
             # oracle contract (returns None) — those parts extend to EOF in
             # both lexer and expectation.
             assert span.end == expected, (source, kind, span.start, expected, span.end)
+
+
+# ── word boundaries around ``${ }`` / ``$(( ))`` ────────────────────────────
+#
+# Regression (2026-11-02 reflection): the ``${...}`` and ``$((...))`` branches
+# treated the oracle's "index AFTER the closing delimiter" return value as the
+# index *of* the delimiter, so the region span swallowed the character that
+# followed the expansion.  ``echo ${x} y`` lexed as ONE word ``"${x} y"``, and
+# ``echo ${x} # note`` lost its comment token entirely (the ``#`` became
+# mid-word content), which desynced quote/comment state for the rest of the
+# command and made the tool's data-region protection miss those comments.
+
+
+@pytest.mark.parametrize(
+    ("source", "expected_words"),
+    [
+        ("echo ${x} y", ["echo", "${x}", "y"]),
+        ("echo ${x}${y} z", ["echo", "${x}${y}", "z"]),
+        ("echo $((1+2)) y", ["echo", "$((1+2))", "y"]),
+        ("cp ${src} dest", ["cp", "${src}", "dest"]),
+        ("echo ${x:-default} y", ["echo", "${x:-default}", "y"]),
+        ("echo ${x}/y z", ["echo", "${x}/y", "z"]),
+    ],
+)
+def test_expansion_does_not_swallow_following_word(source: str, expected_words: list[str]) -> None:
+    words = [
+        source[t.span.start : t.span.end]
+        for t in lex(source).tokens
+        if t.kind is TokenKind.WORD
+    ]
+    assert words == expected_words
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "echo ${x:-$(y)} tail",
+        "echo $((1+$(x))) tail",
+    ],
+)
+def test_expansion_with_embedded_command_substitution_stays_opaque(
+    source: str,
+) -> None:
+    """Documented legacy contract, deliberately unchanged.
+
+    ``bash_core._match_parameter_braces`` / ``_match_arithmetic_span`` return
+    ``None`` when the region embeds a command substitution (its inner command
+    context is scanned separately, and editing a word across it would clash
+    with the edits recorded there).  The word then runs to the end of the range
+    and the translator leaves it alone (conservative pass-through) — the same
+    behaviour the oracle-equality test above pins.
+    """
+    words = [
+        source[t.span.start : t.span.end]
+        for t in lex(source).tokens
+        if t.kind is TokenKind.WORD
+    ]
+    assert words == ["echo", source[5:]]
+
+
+def test_parameter_expansion_part_ends_at_closing_brace() -> None:
+    source = "echo ${x} y"
+    params = [
+        (span, inner)
+        for t in lex(source).tokens
+        for kind, span, inner in t.parts
+        if kind is WordPartKind.PARAMETER_EXPANSION
+    ]
+    assert len(params) == 1
+    span, inner = params[0]
+    assert source[span.start : span.end] == "${x}"
+    assert inner is not None
+    assert source[slice(*inner)] == "x"
+
+
+def test_arithmetic_expansion_part_ends_at_closing_parens() -> None:
+    source = "echo $((1+2)) y"
+    parts = [
+        (span, inner)
+        for t in lex(source).tokens
+        for kind, span, inner in t.parts
+        if kind is WordPartKind.ARITHMETIC_EXPANSION
+    ]
+    assert len(parts) == 1
+    span, inner = parts[0]
+    assert source[span.start : span.end] == "$((1+2))"
+    assert inner is not None
+    assert source[slice(*inner)] == "1+2"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "echo ${x} # tail",
+        "echo $((1+2)) # tail",
+        "echo ${x:-d} # tail",
+        "echo ${x} ; # tail",
+    ],
+)
+def test_comment_after_expansion_is_a_comment(source: str) -> None:
+    comments = [
+        source[t.span.start : t.span.end]
+        for t in lex(source).tokens
+        if t.kind is TokenKind.COMMENT
+    ]
+    assert comments == ["# tail"], source
 
 
 @pytest.mark.parametrize(

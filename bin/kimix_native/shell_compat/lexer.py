@@ -242,7 +242,7 @@ def match_dquote_span(text: str, i: int) -> Optional[int]:
 
 
 def match_parameter_braces(text: str, i: int) -> Optional[int]:
-    """Index of the ``}`` closing ``${`` (opened at ``i - 2``); ``None`` open.
+    """Index AFTER the ``}`` closing ``${`` (opened at ``i - 2``); ``None`` open.
 
     Re-export of ``bash_core._match_parameter_braces``; ``None`` also when a
     ``$(…)``/backtick is embedded (legacy contract: inner command contexts
@@ -252,7 +252,7 @@ def match_parameter_braces(text: str, i: int) -> Optional[int]:
 
 
 def match_arithmetic_span(text: str, i: int) -> Optional[int]:
-    """Index of the first ``)`` of the ``))`` closing ``$((``; ``None`` open.
+    """Index AFTER the ``))`` closing ``$((``; ``None`` when open.
 
     Re-export of ``bash_core._match_arithmetic_span``; ``None`` also when a
     ``$(…)`` command substitution is embedded.
@@ -603,15 +603,20 @@ def _scan_word(
                         i = end
                         literal_start = i
                         continue
-                    end_after = stop + 2  # consume the '))'
+                    # ``_match_arithmetic_span`` returns the index AFTER the
+                    # closing ``))`` (bash_core contract), so ``stop`` is the
+                    # word-relative end of the whole expansion and the inner
+                    # expression is ``i + 3 .. stop - 2``.  Adding the closing
+                    # delimiters again here used to swallow the two characters
+                    # that follow the expansion (see the regression note below).
                     parts.append(
                         (
                             WordPartKind.ARITHMETIC_EXPANSION,
-                            SourceSpan(i, end_after),
-                            (i + 3, stop),
+                            SourceSpan(i, stop),
+                            (i + 3, stop - 2),
                         )
                     )
-                    i = end_after
+                    i = stop
                     literal_start = i
                     continue
                 close = find_matching_paren(source, i + 1)
@@ -655,14 +660,22 @@ def _scan_word(
                     i = end
                     literal_start = i
                     continue
+                # ``_match_parameter_braces`` returns the index AFTER the
+                # closing ``}`` (bash_core contract), so ``stop`` is the
+                # word-relative end of ``${...}`` and the inner body is
+                # ``i + 2 .. stop - 1``.  Treating it as the index *of* ``}``
+                # (``stop + 1``) swallowed the character after the expansion:
+                # ``echo ${x} y`` became ONE word ``"${x} y"`` and
+                # ``echo ${x} # c`` lost its comment token, which desynced the
+                # quote state for the rest of the command.
                 parts.append(
                     (
                         WordPartKind.PARAMETER_EXPANSION,
-                        SourceSpan(i, stop + 1),
-                        (i + 2, stop),
+                        SourceSpan(i, stop),
+                        (i + 2, stop - 1),
                     )
                 )
-                i = stop + 1
+                i = stop
                 literal_start = i
                 continue
             # plain '$' is ordinary word content

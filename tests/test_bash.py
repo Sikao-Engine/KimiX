@@ -4158,6 +4158,185 @@ class TestPrepareBashCmd:
             cmd = r'echo "$(cat C:\a\b.txt)"'
             assert _prepare_bash_cmd(cmd) == 'echo "$(cat C:/a/b.txt)"'
 
+    # -- heredoc bodies are data: never rewritten ----------------------------
+    #
+    # A heredoc body is not command syntax: bash does no word splitting, quote
+    # removal or escape processing there (a quoted delimiter disables even
+    # ``$``/``\`` expansion), and MSYS never re-parses it.  The fixer must copy
+    # it byte-for-byte.  Regression: ``python - <<'PYEDIT'`` patch scripts carry
+    # ``\\r\\n`` / ``\\n`` escapes inside the body, and the unquoted scanner
+    # rewrote every ``\`` to ``/``, so ``nl = '\\r\\n'`` reached Python as
+    # ``nl = '//r//n'`` — the patch then rewrote files with ``//`` where a
+    # newline belonged.
+
+    def test_heredoc_body_escapes_preserved_on_windows(self) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = (
+                "python - <<'PYEDIT'\n"
+                "nl = '\\r\\n' if '\\r\\n' in raw else '\\n'\n"
+                'structDesc << "uint v"sv << ";\\n"sv;\n'
+                "PYEDIT\n"
+            )
+            assert _prepare_bash_cmd(cmd) == cmd
+
+    def test_heredoc_body_escapes_preserved_via_direct_check_on_windows(self) -> None:
+        r"""``\\`` must not become ``//`` inside the body, but still does outside."""
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "cat <<'EOF'\na\\\\nb\nEOF\n"
+            assert _prepare_bash_cmd(cmd) == cmd
+            # Outside a heredoc the historical behavior is unchanged.
+            assert _prepare_bash_cmd("cd C:\\dev\\x") == "cd C:/dev/x"
+
+    def test_heredoc_body_path_preserved_and_next_command_fixed_on_windows(self) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "cat <<'EOF'\nC:\\dev\\x\nEOF\ncd C:\\dev\\y\n"
+            expected = "cat <<'EOF'\nC:\\dev\\x\nEOF\ncd C:/dev/y\n"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_expanding_heredoc_body_preserved_on_windows(self) -> None:
+        r"""An unquoted delimiter only expands ``$``/`` ` ``/``\`` before a
+        newline, so a path in the body still needs no normalization."""
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "cat <<EOF\nC:\\dev\\x\nEOF\n"
+            assert _prepare_bash_cmd(cmd) == cmd
+
+    def test_dash_heredoc_body_preserved_on_windows(self) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "cat <<-'EOF'\n\ta\\\\nb\n\tEOF\n"
+            assert _prepare_bash_cmd(cmd) == cmd
+
+    def test_unterminated_heredoc_body_preserved_on_windows(self) -> None:
+        """No terminator: the body runs to the end of the input, all of it data."""
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "cat <<EOF\nC:\\dev\\x\n"
+            assert _prepare_bash_cmd(cmd) == cmd
+
+    def test_multiple_heredoc_bodies_preserved_on_windows(self) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = (
+                "cat <<'A'\nx\\\\ny\nA\n"
+                "cat <<B\nz\\\\w\nB\n"
+                "cd C:\\dev\\q\n"
+            )
+            expected = (
+                "cat <<'A'\nx\\\\ny\nA\n"
+                "cat <<B\nz\\\\w\nB\n"
+                "cd C:/dev/q\n"
+            )
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_apostrophe_in_heredoc_body_does_not_leak_quote_state_on_windows(self) -> None:
+        """An unbalanced quote in the body used to put the scanner in a quoted
+        region, so later real paths were silently left unnormalized."""
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "cat <<'EOF'\nit's here\nEOF\ncd C:\\dev\\x\n"
+            expected = "cat <<'EOF'\nit's here\nEOF\ncd C:/dev/x\n"
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_heredoc_body_inside_command_substitution_preserved_on_windows(self) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = 'out=$(cat <<\'EOF\'\na\\\\nb\nEOF\n); echo "$out"\n'
+            assert _prepare_bash_cmd(cmd) == cmd
+
+    def test_heredoc_operator_inside_quotes_is_not_a_heredoc_on_windows(self) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = 'echo "a << b" && cd C:\\dev\\x\n'
+            expected = 'echo "a << b" && cd C:/dev/x\n'
+            assert _prepare_bash_cmd(cmd) == expected
+
+    def test_here_string_is_not_a_heredoc_on_windows(self) -> None:
+        r"""``<<<`` is a here-STRING: its word is normal syntax, so it stays fixed."""
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "cat <<< C:\\dev\\x\n"
+            assert _prepare_bash_cmd(cmd) == "cat <<< C:/dev/x\n"
+
+    def test_heredoc_body_triple_quoted_snippets_not_rewritten_on_windows(self) -> None:
+        r"""The reported failure: ``";\\n"sv`` became ``";//n"sv``.
+
+        Python ``\"\"\"`` delimiters inside the body desynchronize the bash
+        scanner's double-quote regions, so the C++ escape was scanned as
+        *unquoted* text and each ``\`` was turned into ``/``.  Treating the
+        whole body as data removes the desynchronization entirely.
+        """
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = (
+                "python - <<'PYEDIT'\n"
+                "patch('x.cpp', [\n"
+                '("""a\n'
+                'structDesc << ";\\\\n"sv;""",\n'
+                ' """),\n'
+                "])\n"
+                "PYEDIT\n"
+            )
+            assert _prepare_bash_cmd(cmd) == cmd
+
+    def test_data_region_spans_cover_body_and_terminator(self) -> None:
+        from kimi_cli.tools.file.bash.bash_tool import _data_region_spans
+
+        cmd = "cat <<'EOF'\na\\\\nb\nEOF\ncd C:\\dev\\x\n"
+        spans = _data_region_spans(cmd)
+        assert len(spans) == 1
+        start, end = spans[0]
+        assert cmd[start:end].startswith("a\\\\nb")
+        assert cmd[start:end].rstrip("\n").endswith("EOF")
+        assert _data_region_spans("echo hi") == ()
+        assert _data_region_spans("cat <<< x") == ()
+
+    # -- comments are data too ----------------------------------------------
+
+    def test_comment_text_is_not_rewritten_on_windows(self) -> None:
+        r"""A comment is data: the fixer must not touch the path inside it."""
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            for cmd in (
+                "ls # see C:\\dev\\x\n",
+                "ls # see kimi-cli\\src\\x.py\n",
+                "ls # C:\\dev\\x > nul\n",
+            ):
+                assert _prepare_bash_cmd(cmd) == cmd
+
+    def test_comment_quote_does_not_leak_into_following_command_on_windows(self) -> None:
+        """An apostrophe in a comment used to swallow the next real command."""
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "ls # don't\ncd C:\\dev\\x\n"
+            assert _prepare_bash_cmd(cmd) == "ls # don't\ncd C:/dev/x\n"
+
+    def test_hash_inside_a_word_is_not_a_comment_on_windows(self) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "echo a#b C:\\dev\\x\n"
+            assert _prepare_bash_cmd(cmd) == "echo a#b C:/dev/x\n"
+
+    def test_comment_after_parameter_expansion_is_protected_on_windows(self) -> None:
+        r"""``${x} # note`` is a comment (the lexer now reports it as one)."""
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "echo ${x} # see C:\\dev\\x\n"
+            assert _prepare_bash_cmd(cmd) == cmd
+
+    def test_comment_region_spans_are_reported(self) -> None:
+        from kimi_cli.tools.file.bash.bash_tool import _data_region_spans
+
+        cmd = "echo hi # don't\nls # tail\n"
+        spans = _data_region_spans(cmd)
+        assert [cmd[s:e] for s, e in spans] == ["# don't", "# tail"]
+
+    def test_heredoc_body_survives_the_full_transport_on_windows(self) -> None:
+        r"""The prepared script reaches bash verbatim through the payload channel
+        (a script with a ``\\`` pair is never sent inline)."""
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            cmd = "python - <<'PY'\nnl = '\\\\r\\\\n'\nPY\n"
+            prepared = _prepare_bash_cmd(cmd)
+            assert prepared == cmd
+            argv, env = _bash_argv_env(prepared)
+            assert _PAYLOAD_ENV_VAR in env
+            import gzip
+
+            import pybase64
+
+            decoded = gzip.decompress(
+                pybase64.b64decode(env[_PAYLOAD_ENV_VAR])
+            ).decode("utf-8")
+            assert decoded == prepared
+            assert argv == ["-c", _payload_eval_command()]
+
 
 # ============================================================================
 # Bash.__call__ — integration tests with backslash paths on Windows
@@ -4224,6 +4403,71 @@ class TestBashBackslashPaths:
         result = await bash(params)
         assert isinstance(result, ToolOk)
         assert "hello slash" in result.output
+
+
+# ============================================================================
+# Bash.__call__ — heredoc bodies reach the child process verbatim on Windows
+# ============================================================================
+
+
+@pytest.mark.skipif(
+    not BASH_AVAILABLE,
+    reason="Bash tool is not available on this platform",
+)
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason="The unquoted-backslash fixer only runs on Windows",
+)
+class TestBashHeredocBodies:
+    async def test_quoted_heredoc_body_is_written_verbatim(
+        self, mock_session: MagicMock, tmp_path: Path
+    ) -> None:
+        r"""A quoted heredoc body is data: bash writes ``a\r\nb`` unchanged.
+
+        End-to-end regression for the file-rewriting bug: the fixer used to
+        turn every ``\`` of the body into ``/``, so a heredoc-fed script wrote
+        ``a//r//n`` (or, for a ``python - <<'PY'`` patch script, silently
+        replaced real newline escapes with ``//``).
+        """
+        out = tmp_path / "body.txt"
+        out_posix = str(out).replace("\\", "/")
+        bash = Bash(session=mock_session)
+        params = BashParams(cmd=f"cat > '{out_posix}' <<'EOF'\na\\r\\nb\nEOF\n")
+        result = await bash(params)
+        assert isinstance(result, ToolOk), result
+        assert out.read_text(encoding="utf-8") == "a\\r\\nb\n"
+
+    async def test_python_heredoc_sees_its_own_escapes(
+        self, mock_session: MagicMock
+    ) -> None:
+        r"""The reported failure, end to end: ``";\\n"sv`` must reach Python
+        unchanged (the body is data for bash, whatever quotes it contains)."""
+        bash = Bash(session=mock_session)
+        params = BashParams(
+            cmd="python - <<'PY'\n"
+            'text = """x\n'
+            'structDesc << ";\\\\n"sv;"""\n'
+            "print('BS', text.count(chr(92)), 'SLASH', text.count(chr(47)))\n"
+            "PY\n"
+        )
+        result = await bash(params)
+        assert isinstance(result, ToolOk), result
+        # Python's own literal ``\\n`` leaves one backslash; the fixer used to
+        # rewrite the pair as ``//``, i.e. zero backslashes and two slashes.
+        assert "BS 1 SLASH 0" in result.output
+
+    async def test_command_after_heredoc_still_gets_path_fixed(
+        self, mock_session: MagicMock, tmp_path: Path
+    ) -> None:
+        f = tmp_path / "test.txt"
+        f.write_text("hello after heredoc", encoding="utf-8")
+        bash = Bash(session=mock_session)
+        params = BashParams(
+            cmd=f"cat <<'EOF'\nbody\\with\\backslashes\nEOF\ncat {f}\n"
+        )
+        result = await bash(params)
+        assert isinstance(result, ToolOk), result
+        assert "hello after heredoc" in result.output
 
 
 # ============================================================================

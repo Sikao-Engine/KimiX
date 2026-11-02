@@ -60,6 +60,22 @@ class TestPrepareBashCommand:
         else:
             assert result == "echo hi > nul"
 
+    def test_heredoc_body_passes_the_whole_pipeline_unchanged(self) -> None:
+        r"""Heredoc bodies are data: neither fixer stage may touch them.
+
+        The body carries ``\\r\\n`` (a backslash *pair*: the historical bug
+        turned it into ``//r//n``), a ``nul``-looking word and a ``/tmp``-style
+        path, i.e. the two spellings ``fix_bash_command`` rewrites elsewhere.
+        Both fixer stages must leave the body byte-for-byte while still
+        normalizing the command that follows it.
+        """
+        body = "nl = '\\r\\n'\n" + "nul > nul\n" + "tmp=/tmp/x\n"
+        cmd = "python - <<'EOF'\n" + body + "EOF\ncat src\\a.py\n"
+        fixed_tail = "cat src/a.py\n" if sys.platform == "win32" else "cat src\\a.py\n"
+        assert shell_common.prepare_bash_command(cmd) == (
+            "python - <<'EOF'\n" + body + "EOF\n" + fixed_tail
+        )
+
 
 class TestBashArgv:
     def test_login_argv_and_env(self, monkeypatch: pytest.MonkeyPatch) -> None:

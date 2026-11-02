@@ -569,6 +569,90 @@ def _ends_with_unescaped_backslash(text: str) -> bool:
     return (len(static) - len(static.rstrip("\\"))) % 2 == 1
 
 
+def _data_region_spans(cmd: str) -> tuple[tuple[int, int], ...]:
+    r"""Return the ``(start, end)`` spans of the DATA regions in *cmd*.
+
+    Two constructs are data rather than command syntax, so the
+    unquoted-backslash fixer must copy them byte-for-byte:
+
+    * **heredoc bodies** (``<<`` / ``<<-``) — bash does no word splitting,
+      quote removal or escape processing there (a quoted delimiter disables
+      even ``$`` / ``\`` expansion), and MSYS never re-parses them;
+    * **comments** — bash never expands or executes them.
+
+    Leaving them alone is not cosmetic.  ``python - <<'PYEDIT'`` bodies
+    routinely carry ``\n`` / ``\r\n`` escapes written as ``\\n`` / ``\\r\\n``,
+    and the fixer turns every unquoted ``\`` into ``/``, so ``nl = '\\r\\n'``
+    reached Python as ``nl = '//r//n'`` — a silently wrong pattern that then
+    rewrote files with ``//`` where a newline belonged.  Quotes are equally
+    dangerous: an unbalanced ``it's`` in either region used to flip the scanner
+    into a quoted region for the rest of the command, so later real paths were
+    no longer normalized at all.
+
+    The spans come from the tolerant shell parser
+    (:mod:`kimix_native.shell_compat.parser`), the component that already
+    models ``<<`` / ``<<-`` redirections (``HeredocNode``), comments and
+    heredoc-body tiles (``RawNode``) — so this is not a second shell
+    implementation.  An unterminated heredoc's body runs to the end of the
+    input, which is exactly what the parser reports (``body_end is None``).
+    Any failure (shim unavailable, unparsable input) yields no spans, i.e. the
+    historical whole-command behavior.
+    """
+    # Cheap gate: without a ``<<`` operator and without a ``#`` there is no
+    # data region to protect (and no parse to pay for).
+    if "<<" not in cmd and "#" not in cmd:
+        return ()
+    try:
+        from kimix_native.shell_compat.models import HeredocNode, RawNode, walk_nodes
+        from kimix_native.shell_compat.parser import parse
+
+        script = parse(cmd)
+        spans: list[tuple[int, int]] = []
+        for node in walk_nodes(script):
+            if isinstance(node, HeredocNode):
+                start, end = node.body_start, node.body_end
+            elif isinstance(node, RawNode) and (
+                node.reason == "comment" or node.reason.startswith("heredoc-body")
+            ):
+                start, end = node.span.start, node.span.end
+            else:
+                continue
+            if end is None:  # unterminated heredoc: the body runs to the end
+                end = len(cmd)
+            if 0 <= start < end <= len(cmd):
+                spans.append((start, end))
+    except Exception:  # pragma: no cover - defensive: never break a command
+        return ()
+    if len(spans) <= 1:
+        return tuple(spans)
+    # Nested/adjacent regions (e.g. a heredoc inside ``$(...)``) are merged so
+    # the copy in :func:`_process_unquoted_preserving_data` stays monotonic.
+    spans.sort()
+    merged: list[tuple[int, int]] = [spans[0]]
+    for start, end in spans[1:]:
+        last_start, last_end = merged[-1]
+        if start <= last_end:
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return tuple(merged)
+
+
+def _process_unquoted_preserving_data(cmd: str) -> str:
+    r"""Normalize unquoted backslashes in *cmd*, copying data regions verbatim."""
+    spans = _data_region_spans(cmd)
+    if not spans:
+        return _process_unquoted(cmd)
+    out: list[str] = []
+    pos = 0
+    for start, end in spans:
+        out.append(_process_unquoted(cmd[pos:start]))
+        out.append(cmd[start:end])
+        pos = end
+    out.append(_process_unquoted(cmd[pos:]))
+    return "".join(out)
+
+
 def _prepare_bash_cmd(cmd: str) -> str:
     r"""Prepare a command string for safe use with bash -c.
 
@@ -584,12 +668,17 @@ def _prepare_bash_cmd(cmd: str) -> str:
     in their content, because bash runs the content of a command
     substitution in a subshell where it is parsed unquoted.
 
+    Heredoc *bodies* are the one region left byte-for-byte untouched: they are
+    data, never command syntax, so bash does not consume their backslashes as
+    escapes and they must not be rewritten (see
+    :func:`_data_region_spans`).
+
     On non-Windows platforms, returns the command unchanged to preserve
     existing behavior.
     """
     if sys.platform != "win32":
         return cmd
-    return _process_unquoted(cmd)
+    return _process_unquoted_preserving_data(cmd)
 
 
 class BashParams(BaseModel):
@@ -1299,6 +1388,10 @@ class Bash(CallableTool2[BashParams]):
         # execution path (unquoted ``\``-paths, ``/tmp/…``, ``nul``,
         # missing-POSIX-tool fallbacks), because the running shell would
         # otherwise mangle a Windows path exactly like the one-shot path did.
+        # A heredoc that is *opened* in the fragment is recognized and its
+        # bodies are protected (:func:`_data_region_spans`); a fragment that
+        # is only a *body* of a heredoc opened by an earlier call carries no
+        # ``<<`` header, so it is indistinguishable from command text here.
         # The one exception is a trailing unescaped ``\``: bash folds that
         # fragment into the *next* input line, and the fixer would rewrite it
         # to ``/`` (``body\`` -> ``body/``), corrupting the continuation.
