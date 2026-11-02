@@ -208,6 +208,11 @@ def _connect_cli(connect: str) -> None:
         print_error(f"Could not connect to {target} in {constants.curr_dir}.")
         return
     endpoint = endpoints[0]
+    if len(endpoints) > 1:
+        pids = ", ".join(str(candidate.pid) for candidate in endpoints)
+        print_debug(f"Found {len(endpoints)} CLI servers ({pids}); using PID {endpoint.pid}.")
+    else:
+        print_debug(f"Forwarding stdin to CLI server PID {endpoint.pid}.")
 
     try:
         if sys.stdin.isatty():

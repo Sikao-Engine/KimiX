@@ -229,6 +229,48 @@ def test_connect_cli_forwards_stdin_as_one_message_list(
     assert sent == [(endpoint, ["first\nsecond\r\n"])]
 
 
+def test_connect_cli_debug_message_mentions_target_pid(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    endpoint = ipc.ServerEndpoint(4321, 4099, "token", tmp_path / "pid_4321")
+    monkeypatch.setattr(core, "discover_servers", lambda *_, **__: [endpoint])
+    monkeypatch.setattr(core.constants, "curr_dir", tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("hello\n"))
+    monkeypatch.setattr(core, "send_messages", lambda *_, **__: None)
+    debug_messages: list[str] = []
+    monkeypatch.setattr(core, "print_debug", debug_messages.append)
+
+    core._connect_cli("")
+
+    assert len(debug_messages) == 1
+    assert "4321" in debug_messages[0]
+    assert "4099" not in debug_messages[0]
+
+
+def test_connect_cli_debug_message_lists_multiple_servers(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    first = ipc.ServerEndpoint(111, 4099, "token-a", tmp_path / "pid_111")
+    second = ipc.ServerEndpoint(222, 4100, "token-b", tmp_path / "pid_222")
+    monkeypatch.setattr(core, "discover_servers", lambda *_, **__: [first, second])
+    monkeypatch.setattr(core.constants, "curr_dir", tmp_path)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("hello\n"))
+    sent: list[ipc.ServerEndpoint] = []
+    monkeypatch.setattr(core, "send_messages", lambda target, _msgs: sent.append(target))
+    debug_messages: list[str] = []
+    monkeypatch.setattr(core, "print_debug", debug_messages.append)
+
+    core._connect_cli("")
+
+    assert sent == [first]
+    assert len(debug_messages) == 1
+    assert "111" in debug_messages[0]
+    assert "222" in debug_messages[0]
+    assert "using PID 111" in debug_messages[0]
+
+
 def test_server_wrapper_always_closes_registration(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
