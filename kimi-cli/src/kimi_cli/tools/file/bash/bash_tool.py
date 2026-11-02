@@ -1217,7 +1217,7 @@ class Bash(CallableTool2[BashParams]):
         if blocked is not None:
             return blocked
         background_argv, background_env = _bash_argv_env(
-            _with_msystem_neutralized(rtk_cmd, self._bash)
+            _with_msystem_neutralized(_PIPEFAIL_PREFIX + rtk_cmd, self._bash)
         )
         process_task = ProcessTask(self._bash, background_argv, None, background_env)
         task_id = await process_task.start(self._session, "bash")
@@ -1229,22 +1229,22 @@ class Bash(CallableTool2[BashParams]):
             )
 
         if params.wait_for_pattern is not None and process_task.stream is not None:
-            from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
-            inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
             output, matched, elapsed = await process_task.stream.wait_for_output(
-                timeout=params.timeout, pattern=pattern,
-                inactivity_timeout=inactivity_timeout,
+                timeout=params.timeout,
+                pattern=pattern,
+                inactivity_timeout=None,
+                preserve_on_completion=True,
             )
             alive = await process_task.thread_is_alive()
             status = "running" if alive else "completed"
+            action = (
+                "Background task completed" if status == "completed" else "Running in background"
+            )
+            prefix = "[rtk] " if rtk_rewritten else ""
             return await self._format_session_result(
                 task_id, process_task.stream, params, output, status,
                 wait_matched=matched, elapsed_seconds=elapsed,
-                message=(
-                    f"[rtk] Running in background. task_id: `{task_id}`."
-                    if rtk_rewritten
-                    else f"Running in background. task_id: `{task_id}`."
-                ),
+                message=f"{prefix}{action}. task_id: `{task_id}`.",
                 brief="Background task started",
                 rtk_rewritten=rtk_rewritten,
             )
@@ -1410,6 +1410,13 @@ class Bash(CallableTool2[BashParams]):
                 real_exit_code = 0 if await stream.success() else None
         if exit_code_meaning is None and real_exit_code is not None:
             exit_code_meaning = interpret_exit_code(params.cmd, real_exit_code)
+        failed = False
+        if status == "completed" and stream is not None:
+            failed = not await stream.success() and not is_expected_exit(
+                params.cmd, real_exit_code
+            )
+            if failed and failure_hint is None:
+                failure_hint = annotate_failure(output, params.cmd, real_exit_code)
         block = _build_session_output_block(
             task_id=task_id,
             status=status,
@@ -1426,11 +1433,25 @@ class Bash(CallableTool2[BashParams]):
         suffix = _original_saved_message(original_path)
         if suffix:
             message = f"{message} {suffix}" if message else suffix
+        spent_seconds: float | None = None
         if status == "completed":
             # Only a finished sub-process has a meaningful "spent time"; a
             # still-running task would report the wait time instead.
-            message = _append_elapsed(
-                message, _subprocess_elapsed(stream, elapsed_seconds)
+            spent_seconds = _subprocess_elapsed(stream, elapsed_seconds)
+            message = _append_elapsed(message, spent_seconds)
+        if failed:
+            failure_message = "failed" + (
+                f" Hint: {failure_hint}" if failure_hint else ""
+            )
+            cmd_suffix = _command_saved_message(params.cmd, ".sh", "bash")
+            if cmd_suffix:
+                failure_message = f"{failure_message} {cmd_suffix}"
+            if suffix:
+                failure_message = f"{failure_message} {suffix}"
+            return ToolError(
+                output=block,
+                message=_append_elapsed(failure_message, spent_seconds),
+                brief="Command execution failed",
             )
         return ToolOk(output=block, message=message, brief=brief)
 

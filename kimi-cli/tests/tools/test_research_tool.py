@@ -233,6 +233,7 @@ async def test_background_ids_increment_per_session_and_wait_returns_text(tmp_pa
     assert "task_id: research_2" in second.output
     # Both are registered in the same per-session infrastructure as bash/pwsh.
     assert set(get_all_tasks(tool._session)) == {"research_1", "research_2"}
+    assert all(stream.final_output for stream in get_all_tasks(tool._session).values())
 
     reader = TaskOutput(tool._session)
     got = await reader(TaskOutputParams(job_id="research_1", wait=True, timeout=30))
@@ -255,7 +256,14 @@ async def test_background_ids_increment_per_session_and_wait_returns_text(tmp_pa
     assert "child-1" not in sa._agent_sessions
     # research_2 is still registered (not yet read to completion).
     assert "research_2" in get_all_tasks(tool._session)
-    await reader(TaskOutputParams(job_id="research_2", wait=True, timeout=30))
+    stream = get_all_tasks(tool._session)["research_2"]
+    await stream.wait(timeout=30)
+    # Even an extra consuming-looking poll cannot destroy a final-output job's
+    # only copy before job_output archives it.
+    assert await stream.pop_output() == "background findings"
+    second = await reader(TaskOutputParams(job_id="research_2", wait=True, timeout=30))
+    assert not second.is_error
+    assert second.output == "background findings"
     assert children[1] in closed
 
 
@@ -308,6 +316,40 @@ async def test_background_kill_cancels_child_and_cleans_up(tmp_path, monkeypatch
     assert record is not None
     assert not record.success
     assert "cancelled" in record.output
+
+
+async def test_background_kill_forces_hanging_cleanup_to_exit(tmp_path, monkeypatch):
+    """Repeated force cancellation also interrupts child-session cleanup."""
+    tool = _make_tool(tmp_path)
+    _patch_create_session(monkeypatch)
+    closed = []
+
+    async def hanging_close(session):
+        closed.append(session)
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(kimix_utils, "close_session_async", hanging_close)
+    block = threading.Event()
+    _patch_prompt(monkeypatch, block=block)
+
+    started = await tool(ResearchParams(query="long research", run_in_background=True))
+    task_id = started.output.split("task_id: ", 1)[1].splitlines()[0].strip()
+    assert block.wait(timeout=10)
+    stream = get_all_tasks(tool._session)[task_id]
+
+    reader = TaskOutput(tool._session)
+    killed = await asyncio.wait_for(
+        reader(TaskOutputParams(job_id=task_id, action="kill")),
+        timeout=5,
+    )
+
+    assert not killed.is_error
+    assert "killed" in killed.brief
+    assert not await stream.thread_is_alive()
+    assert task_id not in get_all_tasks(tool._session)
+    assert len(closed) == 1
+    assert "child-1" not in sa._agent_sessions
+    assert "child-1" not in sa._child_parent
 
 
 if __name__ == "__main__":

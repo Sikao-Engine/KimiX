@@ -174,6 +174,9 @@ class BackgroundStream:
         self._stop_function: Callable[[], Any] | None = None
         self._input_function: Callable[[str], Any] | None = None
         self._lock = threading.Lock()
+        self._worker_loop: asyncio.AbstractEventLoop | None = None
+        self._worker_task: asyncio.Task[Any] | None = None
+        self._cancel_requested = False
         self._success = False
         self._exit_code: int | None = None
         self._output = io.StringIO()
@@ -182,6 +185,12 @@ class BackgroundStream:
         self._completed_event = threading.Event()
         self._process_elapsed: float | None = None
         self.format_output: BackgroundOutputFormatter | None = None
+        self.force_stop_function: Callable[[], Any] | Callable[[], Awaitable[Any]] | None = None
+        # Final-output jobs publish one logical result rather than an
+        # incremental stream.  Keep that result buffered until the terminal
+        # read moves it into finished-task history, even if a polling read
+        # races with worker shutdown.
+        self.final_output = False
 
     async def success(self) -> bool:
         return self._success
@@ -228,7 +237,27 @@ class BackgroundStream:
             def func(v: BackgroundStream, function: Callable[[queue.Queue[str]], Any] | Callable[[queue.Queue[str]], Awaitable[Any]]) -> None:
                 try:
                     if inspect.iscoroutinefunction(function):
-                        result = asyncio.run(function(q))
+                        coroutine_function = cast(
+                            Callable[[queue.Queue[str]], Awaitable[Any]], function
+                        )
+
+                        async def run_worker() -> Any:
+                            loop = asyncio.get_running_loop()
+                            task = asyncio.current_task()
+                            with v._lock:
+                                v._worker_loop = loop
+                                v._worker_task = task
+                                cancel_requested = v._cancel_requested
+                            if cancel_requested and task is not None:
+                                task.cancel()
+                            try:
+                                return await coroutine_function(q)
+                            finally:
+                                with v._lock:
+                                    v._worker_loop = None
+                                    v._worker_task = None
+
+                        result = asyncio.run(run_worker())
                     else:
                         result = function(q)
                     if isinstance(result, tuple) and len(result) >= 2:
@@ -241,6 +270,8 @@ class BackgroundStream:
                         # `not result` silently flips None to failure (regression
                         # caught by tests/unit/tools/test_elapsed_report.py).
                         v._success = False if result == False else True  # noqa: E712
+                except asyncio.CancelledError:
+                    v._success = False
                 except Exception:
                     v._success = False
                 finally:
@@ -318,8 +349,9 @@ class BackgroundStream:
 
     async def pop_output(self) -> str:
         output = await self.get_output()
-        self._output.truncate(0)
-        self._output.seek(0)
+        if not self.final_output:
+            self._output.truncate(0)
+            self._output.seek(0)
         return output
 
     async def get_queue(self) -> queue.Queue[str] | None:
@@ -351,9 +383,11 @@ class BackgroundStream:
         Args:
             timeout: Maximum total seconds to wait.
             inactivity_timeout: Seconds of output inactivity that triggers an
-                early return. Only active when ``timeout`` exceeds it.
-                Defaults to ``DEFAULT_INACTIVITY_TIMEOUT`` at call time so
-                tests can patch the module constant.
+            early return. Only active when ``timeout`` exceeds it.
+            Defaults to ``DEFAULT_INACTIVITY_TIMEOUT`` at call time so
+            tests can patch the module constant.  Pass ``0`` to disable the
+            inactivity cutoff while retaining periodic output draining.
+
 
         Returns:
             ``(completed, elapsed_seconds, inactivity_timed_out)``.
@@ -363,11 +397,12 @@ class BackgroundStream:
         """
         if inactivity_timeout is None:
             inactivity_timeout = DEFAULT_INACTIVITY_TIMEOUT
+        monitor_inactivity = inactivity_timeout > 0
 
         start = time.monotonic()
 
         # Preserve exact original behavior for short timeouts.
-        if timeout <= inactivity_timeout:
+        if monitor_inactivity and timeout <= inactivity_timeout:
             await self.wait(timeout)
             elapsed = time.monotonic() - start
             return not await self.thread_is_alive(), elapsed, False
@@ -387,7 +422,7 @@ class BackgroundStream:
                 return True, elapsed, False
             with self._lock:
                 inactive_for = time.monotonic() - self._last_output_time
-            if inactive_for >= inactivity_timeout:
+            if monitor_inactivity and inactive_for >= inactivity_timeout:
                 return False, elapsed, True
 
             await asyncio.sleep(0.5)
@@ -398,6 +433,7 @@ class BackgroundStream:
         timeout: float,
         pattern: re.Pattern[str] | None = None,
         inactivity_timeout: float | None = None,
+        preserve_on_completion: bool = False,
     ) -> tuple[str, bool, float]:
         """Wait for output, optionally until ``pattern`` matches.
 
@@ -406,10 +442,13 @@ class BackgroundStream:
                 checking the current accumulated output.
             pattern: Compiled regex pattern. When provided, the loop stops as
                 soon as the pattern is found in the accumulated output.
-            inactivity_timeout: Seconds of output inactivity that triggers an
-                early return. When set, if no new output has been received for
+            inactivity_timeout: When set, if no new output has been received for
                 this many seconds, the wait ends early. Also checks the
                 internal ``_completed_event`` to detect thread completion.
+            preserve_on_completion: Keep a completed task's output buffered so
+                a later ``job_output`` call can archive and replay the final
+                result.  Running-task reads retain their consuming semantics.
+
 
         Returns:
             ``(output, matched, elapsed_seconds)``. ``matched`` is ``True`` only
@@ -447,12 +486,13 @@ class BackgroundStream:
                     break
             await asyncio.sleep(0.1)
 
-        # Clear the internal buffer since the caller has consumed all
-        # accumulated output via the returned `output` string. This ensures
-        # subsequent get_output() / pop_output() calls do not repeat the
-        # same data.
-        self._output.truncate(0)
-        self._output.seek(0)
+        # Stream reads consume their output.  Final-output jobs are the
+        # exception, as are completed tasks for which the caller explicitly
+        # wants a later job_output read to retain the complete final result.
+        completed = self._completed_event.is_set() or not await self.thread_is_alive()
+        if not self.final_output and not (preserve_on_completion and completed):
+            self._output.truncate(0)
+            self._output.seek(0)
 
         return output, matched, elapsed
 
@@ -476,6 +516,49 @@ class BackgroundStream:
                 else:
                     stop_func()
             except Exception:
+                pass
+        return thread_alive
+
+    async def force_stop(self) -> bool:
+        """Force a worker to exit, cancelling its coroutine when applicable.
+
+        The registered stop function remains responsible for external resources
+        (ProcessTask uses it to kill the whole subprocess tree).  Cancelling the
+        coroutine as well releases asyncio workers stuck in cleanup or waiting
+        on an operation that the resource-specific stop did not interrupt.
+
+        This is deliberately safe for Python worker threads: it never uses
+        asynchronous thread exceptions or OS thread termination.
+        """
+        with self._lock:
+            if not self._started:
+                return False
+            self._cancel_requested = True
+            self._stopped = True
+            thread_alive = self._thread is not None and self._thread.is_alive()
+            stop_func = (
+                self.force_stop_function or self._stop_function
+                if thread_alive
+                else None
+            )
+            loop = self._worker_loop
+            task = self._worker_task
+
+        if stop_func is not None:
+            try:
+                if inspect.iscoroutinefunction(stop_func):
+                    await stop_func()
+                else:
+                    stop_func()
+            except Exception:
+                pass
+
+        if loop is not None and task is not None:
+            try:
+                loop.call_soon_threadsafe(task.cancel)
+            except RuntimeError:
+                # The worker completed and closed its loop between the lock and
+                # the cancellation request.
                 pass
         return thread_alive
 

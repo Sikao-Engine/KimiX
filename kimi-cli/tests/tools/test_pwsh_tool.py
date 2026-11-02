@@ -413,6 +413,111 @@ async def test_call_background_mode(session: Session) -> None:
 
 
 @pytest.mark.asyncio
+async def test_background_forbidden_command_blocked(session: Session) -> None:
+    tool = _make_tool(session)
+    tool._forbidden_keywords = ["write-output"]
+
+    result = await tool(
+        PowershellParams(command='Write-Output "must-not-run"', run_in_background=True)
+    )
+
+    assert isinstance(result, ToolError)
+    assert "forbidden" in result.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_background_uses_ps5_transform(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeProcessTask:
+        stream = None
+
+        def __init__(self, executable: str, args: list[str], cwd: Any, env: Any) -> None:
+            captured["executable"] = executable
+            captured["args"] = args
+
+        async def start(self, session: Session, kind: str) -> str:
+            return "pwsh_fake"
+
+    monkeypatch.setattr(
+        "kimi_cli.tools.file.bash.pwsh_tool.ProcessTask", FakeProcessTask
+    )
+    monkeypatch.setattr(
+        "kimi_cli.tools.file.bash.pwsh_tool.pwsh_transform",
+        lambda command: ("Transformed-Command", []),
+    )
+    tool = _make_tool(session)
+    tool._pwsh_path = None
+    tool._pwsh_fallback_path = "powershell-fake"
+
+    result = await tool(PowershellParams(command="Original-Command", run_in_background=True))
+
+    assert isinstance(result, ToolOk)
+    assert captured["executable"] == "powershell-fake"
+    assert "Transformed-Command" in captured["args"][-1]
+
+
+@pytest.mark.asyncio
+async def test_background_workdir_is_honored(session: Session, tmp_path: Any) -> None:
+    from kimi_cli.tools.background import TaskOutput, TaskOutputParams
+    from kimi_cli.tools.background.utils import get_all_tasks, remove_task_id
+
+    tool = _make_tool(session)
+    started = await tool(
+        PowershellParams(
+            command="Write-Output (Get-Location).Path",
+            workdir=str(tmp_path),
+            run_in_background=True,
+        )
+    )
+    assert isinstance(started, ToolOk)
+    task_id = next(iter(get_all_tasks(session)))
+    try:
+        reader = TaskOutput(session)
+        result = await reader(TaskOutputParams(job_id=task_id, wait=True, timeout=20))
+        assert isinstance(result, ToolOk)
+        assert str(tmp_path) in result.output
+    finally:
+        stream = get_all_tasks(session).get(task_id)
+        if stream is not None:
+            await stream.stop()
+            await stream.wait(timeout=5)
+            remove_task_id(session, task_id)
+
+
+@pytest.mark.asyncio
+async def test_background_pattern_wait_preserves_failure_and_output(session: Session) -> None:
+    from kimi_cli.tools.background import TaskOutput, TaskOutputParams
+    from kimi_cli.tools.background.utils import get_all_tasks
+
+    tool = _make_tool(session)
+    initial = await tool(
+        PowershellParams(
+            command='Write-Output "before-exit"; exit 3',
+            run_in_background=True,
+            wait_for_pattern="never",
+            timeout=20,
+        )
+    )
+
+    assert isinstance(initial, ToolError)
+    assert "exit_code: 3" in initial.output
+    assert "before-exit" in initial.output
+
+    task_id = next(iter(get_all_tasks(session)))
+    reader = TaskOutput(session)
+    final = await reader(TaskOutputParams(job_id=task_id, wait=True, timeout=20))
+    assert isinstance(final, ToolError)
+    assert "before-exit" in final.output
+
+    history = await reader(TaskOutputParams(job_id=task_id))
+    assert isinstance(history, ToolError)
+    assert "before-exit" in history.output
+
+
+@pytest.mark.asyncio
 async def test_call_with_workdir(session: Session, tmp_path: Any) -> None:
     tool = _make_tool(session)
     result = await tool(
@@ -488,3 +593,32 @@ async def test_interactive_session_start_continue_exit(session: Session) -> None
         if stream is not None:
             await stream.stop()
             remove_task_id(session, task_id)
+
+
+@pytest.mark.asyncio
+async def test_background_pattern_wait_ignores_output_inactivity(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import kimi_cli.tools.background.utils as background_utils
+    from kimi_cli.tools.background.utils import get_all_tasks, remove_task_id
+
+    monkeypatch.setattr(background_utils, "DEFAULT_INACTIVITY_TIMEOUT", 0.1)
+    tool = _make_tool(session)
+    initial = await tool(
+        PowershellParams(
+            command='Start-Sleep -Milliseconds 800; Write-Output "quiet-done"',
+            run_in_background=True,
+            wait_for_pattern="quiet-done",
+            timeout=5,
+        )
+    )
+
+    assert isinstance(initial, ToolOk)
+    assert "quiet-done" in initial.output
+    assert "wait_matched: true" in initial.output
+    task_id = next(iter(get_all_tasks(session)))
+    stream = get_all_tasks(session).get(task_id)
+    if stream is not None:
+        await stream.stop()
+        await stream.wait(timeout=5)
+        remove_task_id(session, task_id)

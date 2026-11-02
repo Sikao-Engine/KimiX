@@ -877,8 +877,23 @@ class Powershell(CallableTool2[PowershellParams]):
         pattern = self._compile_pattern(params.wait_for_pattern)
         if isinstance(pattern, ToolError):
             return pattern
-        cmd = params.command
+
+        # Keep background command preparation aligned with foreground mode.
+        # In particular, configured command policy and PS5.1 compatibility
+        # must not disappear merely because execution is asynchronous.
+        rtk_cmd, rtk_rewritten = _maybe_rewrite_shell_command_with_rtk(
+            params.command, True, pwsh=True
+        )
         note = ""
+        if self._pwsh_path is not None:
+            cmd = rtk_cmd
+            executable = self._pwsh_path
+        else:
+            cmd, transform_warnings = pwsh_transform(rtk_cmd)
+            if transform_warnings:
+                note = "\n[WARNING]" + "\n".join(w for w in transform_warnings)
+            executable = self._pwsh_fallback_path or "powershell"
+
         if cmd:
             # Same PowerShell-aware parser as the foreground path: repair
             # unclosed quotes/here-strings/comments and protect the try/catch
@@ -892,14 +907,31 @@ class Powershell(CallableTool2[PowershellParams]):
                 )
             if fix.changed:
                 cmd = fix.command
-                note = "\n[WARNING] " + fix.warning
+                note += "\n[WARNING] " + fix.warning
+
+        if cmd and self._forbidden_keywords:
+            normalized_cmd = " ".join(cmd.split()).lower()
+            for keyword in self._forbidden_keywords:
+                if keyword in normalized_cmd:
+                    return ToolError(
+                        output="",
+                        message=f"`{cmd}` is forbidden by config rule." + note,
+                        brief="Forbidden command",
+                    )
         blocked = self._hardline_blocked(cmd)
         if blocked is not None:
             return blocked
         blocked = self._self_kill_blocked(cmd)
         if blocked is not None:
             return blocked
-        executable = self._pwsh_path if self._pwsh_path else (self._pwsh_fallback_path or "powershell")
+
+        if sys.platform == "win32":
+            from kimix.utils.windows_env import refresh_env_from_registry
+            refresh_env_from_registry()
+        if params.workdir:
+            workdir = params.workdir.replace("'", "''")
+            cmd = f"Set-Location -LiteralPath '{workdir}'; {cmd}"
+
         from kimi_cli.tools.file.bash import shell_common
 
         raw_command = shell_common.wrap_pwsh_command(cmd)
@@ -916,24 +948,35 @@ class Powershell(CallableTool2[PowershellParams]):
                 self._format_background_output,
                 cmd,
                 params,
-                rtk_rewritten=False,
+                rtk_rewritten=rtk_rewritten,
                 transform_warning=note,
             )
 
         if params.wait_for_pattern is not None and process_task.stream is not None:
-            from kimi_cli.tools.background.utils import DEFAULT_INACTIVITY_TIMEOUT
-            inactivity_timeout = min(DEFAULT_INACTIVITY_TIMEOUT, float(params.timeout))
             output, matched, elapsed = await process_task.stream.wait_for_output(
-                timeout=params.timeout, pattern=pattern,
-                inactivity_timeout=inactivity_timeout,
+                timeout=params.timeout,
+                pattern=pattern,
+                inactivity_timeout=None,
+                preserve_on_completion=True,
             )
             alive = await process_task.thread_is_alive()
             status = "running" if alive else "completed"
+            message = (
+                f"Background task completed. task_id: `{task_id}`."
+                if status == "completed"
+                else f"Running in background. task_id: `{task_id}`."
+            )
             return await self._format_session_result(
-                task_id, process_task.stream, params, output, status,
-                wait_matched=matched, elapsed_seconds=elapsed,
-                message=f"Running in background. task_id: `{task_id}`." + note,
+                task_id,
+                process_task.stream,
+                params,
+                output,
+                status,
+                wait_matched=matched,
+                elapsed_seconds=elapsed,
+                message=message + note,
                 brief="Background task started",
+                rtk_rewritten=rtk_rewritten,
             )
 
         return ToolOk(
@@ -1069,6 +1112,13 @@ class Powershell(CallableTool2[PowershellParams]):
                 real_exit_code = 0 if await stream.success() else None
         if exit_code_meaning is None and real_exit_code is not None:
             exit_code_meaning = interpret_exit_code(params.command, real_exit_code)
+        failed = False
+        if status == "completed" and stream is not None:
+            failed = not await stream.success() and not is_expected_exit(
+                params.command, real_exit_code
+            )
+            if failed and failure_hint is None:
+                failure_hint = annotate_failure(output, params.command, real_exit_code)
         block = _build_session_output_block(
             task_id=task_id,
             status=status,
@@ -1085,11 +1135,25 @@ class Powershell(CallableTool2[PowershellParams]):
         suffix = _original_saved_message(original_path)
         if suffix:
             message = f"{message} {suffix}" if message else suffix
+        spent_seconds: float | None = None
         if status == "completed":
             # Only a finished sub-process has a meaningful "spent time"; a
             # still-running task would report the wait time instead.
-            message = _append_elapsed(
-                message, _subprocess_elapsed(stream, elapsed_seconds)
+            spent_seconds = _subprocess_elapsed(stream, elapsed_seconds)
+            message = _append_elapsed(message, spent_seconds)
+        if failed:
+            failure_message = "failed" + (
+                f" Hint: {failure_hint}" if failure_hint else ""
+            )
+            cmd_suffix = _command_saved_message(params.command, ".ps1", "PowerShell")
+            if cmd_suffix:
+                failure_message = f"{failure_message} {cmd_suffix}"
+            if suffix:
+                failure_message = f"{failure_message} {suffix}"
+            return ToolError(
+                output=block,
+                message=_append_elapsed(failure_message, spent_seconds),
+                brief="Command execution failed",
             )
         return ToolOk(output=block, message=message, brief=brief)
 

@@ -2340,6 +2340,14 @@ class ProcessTask:
             with contextlib.suppress(Exception):
                 kill_child_tree(proc.pid)
 
+    async def _force_stop_function(self) -> None:
+        """Immediately force-kill the whole subprocess tree for job_output kill."""
+        self._stop_event.set()
+        proc = self._process_ref
+        if proc is not None and proc.returncode is None:
+            with contextlib.suppress(Exception):
+                kill_child_tree(proc.pid, force=True)
+
     async def _input_function(self, data: str) -> bool:
         """Push data to the process's stdin.
 
@@ -2385,6 +2393,7 @@ class ProcessTask:
         """
         from kimi_cli.tools.background.utils import BackgroundStream, add_task, generate_task_id
         self._stream = BackgroundStream()
+        self._stream.force_stop_function = self._force_stop_function
         # Generate a task ID based on the executable name
         self._task_id = generate_task_id(session, kind, name)
         await self._stream.start(self._run_process_bg,

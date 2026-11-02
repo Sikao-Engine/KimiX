@@ -261,12 +261,15 @@ class TaskOutput(CallableTool2):
                 brief=f"Task '{params.job_id}' not found"
             )
 
-        await stream.stop()
-        # Give the worker thread a brief, bounded chance to record the killed
-        # child's exit code so the kill result (and the finished-task record)
-        # can show the real exit status instead of None.  The child was just
-        # terminated, so this returns almost immediately.
-        await stream.wait(timeout=5)
+        # Kill is a force operation for every task kind.  ProcessTask kills the
+        # whole process tree; coroutine workers are also cancelled.  Repeat the
+        # cancellation while cleanup unwinds, and do not expose a final result
+        # or drop the registry entry until the worker thread has actually gone.
+        await stream.force_stop()
+        while await stream.thread_is_alive():
+            await stream.wait(timeout=0.1)
+            if await stream.thread_is_alive():
+                await stream.force_stop()
         output = await stream.pop_output()
 
         processed, message, original_path, _output_path, _output_truncated = await self._process_completed_output(
@@ -436,11 +439,10 @@ class TaskOutput(CallableTool2):
                     brief="Invalid pattern",
                 )
             if params.wait:
-                inactivity_timeout = min(900, timeout)
                 output, wait_matched, _elapsed = await stream.wait_for_output(
                     timeout=timeout,
                     pattern=pattern,
-                    inactivity_timeout=inactivity_timeout,
+                    inactivity_timeout=None,
                 )
                 task_alive = await stream.thread_is_alive()
             else:
@@ -448,15 +450,18 @@ class TaskOutput(CallableTool2):
                 task_alive = await stream.thread_is_alive()
         else:
             if params.wait:
-                inactivity_timeout = min(900, timeout)
-                completed, _elapsed, _inactivity_timed_out = await stream.wait_with_inactivity_timeout(
-                    timeout, inactivity_timeout
+                # Wait for settlement or the caller's actual timeout.  Output
+                # inactivity is not task failure and must not silently shorten
+                # the requested wait; passing 0 retains periodic draining.
+                completed, _elapsed, _inactivity_timed_out = (
+                    await stream.wait_with_inactivity_timeout(timeout, 0)
                 )
                 task_alive = not completed
             else:
                 task_alive = await stream.thread_is_alive()
 
-            # Use pop_output to ensure each call returns only new data
+            # Stream jobs consume output; final-output jobs retain their one
+            # logical result until the terminal read archives it.
             output = await stream.pop_output()
 
         if not task_alive:

@@ -235,6 +235,10 @@ class Research(CallableTool2):
         tasks = get_all_tasks(self._session)
         task_id = self._next_task_id(tasks)
         stream = BackgroundStream()
+        # Research publishes one final result, not an incremental stream.
+        # Preserve it until the terminal job_output read archives it so a
+        # polling/completion race cannot consume the only copy.
+        stream.final_output = True
         holder: dict[str, Any] = {}
 
         async def format_output(

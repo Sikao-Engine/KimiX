@@ -33,6 +33,7 @@ from kimi_cli.tools.background import (
 from kimi_cli.tools.background.utils import (
     BackgroundStream,
     add_task,
+    get_all_tasks,
     record_finished_task,
     remove_task_id,
 )
@@ -63,6 +64,37 @@ def _convert_error(value: ToolReturnValue) -> str:
     text = message.content[0].text  # type: ignore[union-attr]
     # ``system()`` wraps the text in <system>…</system>.
     return text.removeprefix("<system>").removesuffix("</system>")
+
+
+@pytest.mark.asyncio
+async def test_kill_force_cancels_async_worker_and_finalizes() -> None:
+    """Kill cancels coroutine workers even when their stop callback is a no-op."""
+    import queue
+
+    session = _FakeSession()
+    stream = BackgroundStream()
+
+    async def worker(q: queue.Queue[str]) -> tuple[bool, int]:
+        try:
+            await asyncio.Event().wait()
+        finally:
+            q.put("worker cancelled")
+        return True, 0
+
+    await stream.start(worker, lambda: None)
+    add_task(session, "async_stuck", stream)  # type: ignore[arg-type]
+
+    reader = TaskOutput(session)  # type: ignore[arg-type]
+    result = await asyncio.wait_for(
+        reader(TaskOutputParams(job_id="async_stuck", action="kill")),
+        timeout=5,
+    )
+
+    assert not result.is_error
+    assert "killed" in result.brief
+    assert "worker cancelled" in result.output
+    assert not await stream.thread_is_alive()
+    assert "async_stuck" not in get_all_tasks(session)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
