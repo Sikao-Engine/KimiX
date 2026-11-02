@@ -2,11 +2,13 @@
 """Install script for the project using uv."""
 
 import argparse
+import csv
 import json
 import os
 import platform
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -1060,6 +1062,229 @@ def _ensure_tool_bin_on_path(bin_dir: Path | None = None) -> bool:
     return _report_tool_bin_not_on_path(bin_dir)
 
 
+# ---------------------------------------------------------------------------
+# Removing a pre-existing ``kimix`` executable before ``uv tool install``
+# ---------------------------------------------------------------------------
+#
+# ``uv tool install`` refuses to touch an executable it does not own::
+#
+#     error: Executable already exists: kimix.exe (use `--force` to overwrite)
+#
+# That happens whenever ``<uv tool bin dir>/kimix.exe`` survives from an older
+# install (a manual copy, an uninstalled tool, an interrupted upgrade, …).  On
+# Windows the file cannot be deleted while a process is still running it, so the
+# stale copy is removed *before* the install: every running kimix process is
+# force-terminated, then the executable is deleted forcibly (read-only attribute
+# cleared, transient AV/handle locks retried).
+
+
+def _kimix_executable_names() -> tuple[str, ...]:
+    """Candidate file names of the ``kimix`` console script on this platform."""
+    if sys.platform == "win32":
+        # ``uv`` installs ``kimix.exe``; a stale POSIX-style wrapper may exist too.
+        return ("kimix.exe", "kimix")
+    return ("kimix",)
+
+
+def _uv_tool_bin_dir_or_none() -> Path | None:
+    """Return ``_uv_tool_bin_dir()`` or None when uv cannot be interrogated."""
+    try:
+        return _uv_tool_bin_dir()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _iter_kimix_executables(bin_dir: Path | None = None) -> list[Path]:
+    """Locate existing kimix executables that would block ``uv tool install``.
+
+    Only the *uv tool bin dir* is inspected — that is where uv's
+    ``Executable already exists: kimix.exe`` collision happens.  Unrelated
+    console scripts (e.g. this checkout's ``.venv/Scripts/kimix.exe``) live
+    elsewhere and must not be touched.  Passing *bin_dir* is only used by tests.
+    Never raises: an unreadable directory yields an empty list.
+    """
+    if bin_dir is None:
+        bin_dir = _uv_tool_bin_dir_or_none()
+        if bin_dir is None:
+            return []
+
+    wanted = {name.lower() for name in _kimix_executable_names()}
+    try:
+        entries = sorted(Path(bin_dir).iterdir())
+    except OSError:
+        return []
+
+    found: list[Path] = []
+    seen: set[str] = set()
+    for entry in entries:
+        # Windows file names are case-insensitive: match on the folded name.
+        if entry.name.lower() not in wanted:
+            continue
+        try:
+            if not entry.is_file():
+                continue
+            key = os.path.normcase(os.path.abspath(entry))
+        except OSError:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        found.append(entry)
+    return found
+
+
+def _windows_kimix_pids() -> list[int]:
+    """Parse ``tasklist`` for running ``kimix.exe`` process ids (best effort)."""
+    pids: list[int] = []
+    for image in ("kimix.exe", "kimix"):
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"IMAGENAME eq {image}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                errors="replace",  # tasklist/ps output is OEM-codepage
+                timeout=30,
+                check=False,
+            )
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+        for row in csv.reader((result.stdout or "").splitlines()):
+            # Rows look like ``"kimix.exe","1234","Console","1","12,345 K"``;
+            # the "no tasks are running" notice is a single non-CSV field.
+            if len(row) < 2:
+                continue
+            if row[0].strip().strip('"').lower() != image:
+                continue
+            try:
+                pids.append(int(row[1].strip().strip('"')))
+            except ValueError:
+                continue
+    return sorted(set(pids))
+
+
+def _posix_kimix_pids() -> list[int]:
+    """Parse ``ps`` for running ``kimix`` process ids (best effort)."""
+    try:
+        result = subprocess.run(
+            ["ps", "-A", "-o", "pid=,comm="],
+            capture_output=True,
+            text=True,
+            errors="replace",  # ps output may contain non-UTF-8 locales
+            timeout=30,
+            check=False,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return []
+    pids: list[int] = []
+    for line in (result.stdout or "").splitlines():
+        pid_str, _, comm = line.strip().partition(" ")
+        comm = comm.strip()
+        if not comm or Path(comm).name.lower() != "kimix":
+            continue
+        try:
+            pids.append(int(pid_str))
+        except ValueError:
+            continue
+    return sorted(set(pids))
+
+
+def _find_running_kimix_pids() -> list[int]:
+    """Return the PIDs of every running kimix process (empty list on error)."""
+    if sys.platform == "win32":
+        return _windows_kimix_pids()
+    return _posix_kimix_pids()
+
+
+def _terminate_pid(pid: int) -> bool:
+    """Force-terminate *pid*; returns True when the kill command succeeded."""
+    if sys.platform == "win32":
+        cmd = ["taskkill", "/F", "/T", "/PID", str(pid)]
+    else:
+        cmd = ["kill", "-9", str(pid)]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, errors="replace", timeout=30, check=False
+        )
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
+def _kill_running_kimix_processes(settle: float = 1.5) -> list[int]:
+    """Force-terminate every running kimix process.
+
+    Windows keeps an executable locked while a process runs it, so the processes
+    holding the stale ``kimix.exe`` must die before it can be replaced.  A short
+    *settle* pause lets the OS release the file handles.  Returns the PIDs that
+    were successfully terminated.
+    """
+    pids = _find_running_kimix_pids()
+    if not pids:
+        return []
+    joined = ", ".join(str(pid) for pid in pids)
+    print(f"\n🛑 Force-terminating {len(pids)} running kimix process(es): {joined}")
+    killed = [pid for pid in pids if _terminate_pid(pid)]
+    failed = [pid for pid in pids if pid not in killed]
+    if failed:
+        print("   ⚠️  Could not terminate: " + ", ".join(str(pid) for pid in failed))
+    if killed and settle > 0:
+        time.sleep(settle)
+    return killed
+
+
+def _remove_file_forced(path: Path, attempts: int = 5, delay: float = 1.0) -> bool:
+    """Delete *path* forcibly, surviving the read-only flag and transient locks."""
+    for attempt in range(attempts):
+        try:
+            if sys.platform == "win32":
+                # Clear the read-only attribute: ``unlink`` fails on it on Windows.
+                try:
+                    os.chmod(path, stat.S_IWRITE)
+                except OSError:
+                    pass
+            _unlink_with_retry(path, attempts=1)
+            return True
+        except FileNotFoundError:
+            return True
+        except PermissionError:
+            if attempt == attempts - 1:
+                return False
+            time.sleep(delay)
+        except OSError:
+            return False
+    return False
+
+
+def _force_remove_kimix_executable(bin_dir: Path | None = None) -> bool:
+    """Remove stale kimix executables so ``uv tool install`` can recreate them.
+
+    Terminates every running kimix process (their executables are locked on
+    Windows) and then deletes each discovered ``kimix``/``kimix.exe`` file
+    forcibly.  Returns True when no kimix executable is left behind, i.e. when
+    ``uv tool install -e .`` no longer trips over
+    ``Executable already exists: kimix.exe``.  Passing *bin_dir* is only used by
+    tests.
+    """
+    targets = _iter_kimix_executables(bin_dir)
+    if not targets:
+        return True
+
+    print("\n🧹 Removing pre-existing kimix executable(s) before uv tool install:")
+    for target in targets:
+        print(f"   • {target}")
+
+    _kill_running_kimix_processes()
+
+    remaining: list[Path] = []
+    for target in targets:
+        if _remove_file_forced(target):
+            print(f"   ✅ deleted {target}")
+        else:
+            print(f"   ❌ could not delete {target}")
+            remaining.append(target)
+    return not remaining
+
+
 def main(argv: list[str] | None = None) -> int:
     global _ASSUME_YES
 
@@ -1136,6 +1361,17 @@ def main(argv: list[str] | None = None) -> int:
 
     # 6. Run uv tool install -e .
     if _ask_yes_no("Install tool in editable mode?"):
+        # uv refuses to overwrite an executable it does not own:
+        #   error: Executable already exists: kimix.exe (use `--force` to overwrite)
+        # so kill the processes still running the old executable and force-delete
+        # it before reinstalling.
+        if not _force_remove_kimix_executable():
+            print(
+                "\n⚠️  A kimix executable could not be removed.\n"
+                "   `uv tool install` may fail with 'Executable already exists';\n"
+                "   close every kimix process and re-run, or use "
+                "`uv tool install -e . --force`."
+            )
         if not run_command(["uv", "tool", "install", "-e", "."], "Installing tool in editable mode"):
             print(
                 "\n💔 Oops! Something went wrong while installing the tool.\n"
