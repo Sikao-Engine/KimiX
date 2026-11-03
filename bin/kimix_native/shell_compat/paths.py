@@ -468,6 +468,12 @@ _BRACED_PATH_REFERENCE_RE = re.compile(
     r"(?<![\\$])\$\{([A-Za-z_][A-Za-z0-9_]*)\}(?=/)"
 )
 _BRACED_PARAMETER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}\Z")
+_PLAIN_PARAMETER_AT_END_RE = re.compile(
+    r"(?<![\\$])\$([A-Za-z_][A-Za-z0-9_]*)\Z"
+)
+_BRACED_PARAMETER_AT_END_RE = re.compile(
+    r"(?<![\\$])\$\{([A-Za-z_][A-Za-z0-9_]*)\}\Z"
+)
 _VIRTUAL_ASSIGNMENT_GATE_RE = re.compile(r"=/[A-Za-z]/")
 _MAX_PATH_WALK_DEPTH = 16
 
@@ -551,6 +557,30 @@ def _record_word_path_references(
                 and source[span.end] == "/"
             ):
                 references.setdefault(match.group(1), []).append(span.start)
+        if (
+            kind in (WordPartKind.DOUBLE_QUOTE, WordPartKind.LOCALE_QUOTE)
+            and span.end < len(source)
+            and source[span.end] == "/"
+        ):
+            # The suffix may follow the closing quote: both ``"$L"/include``
+            # and ``"${L}"/include`` are executable path uses, just like
+            # ``"$L/include"``.  Inspect only the expansion at the END of the
+            # quoted region; an earlier variable is not the path-root segment
+            # directly joined to the suffix.  Single/ANSI-C quotes never enter
+            # this branch and remain data.
+            prefix_len = 2 if kind == WordPartKind.LOCALE_QUOTE else 1
+            prefix = '$"' if prefix_len == 2 else '"'
+            if not (text.startswith(prefix) and text.endswith('"')):
+                continue
+            inner = text[prefix_len:-1]
+            for pattern in (
+                _PLAIN_PARAMETER_AT_END_RE,
+                _BRACED_PARAMETER_AT_END_RE,
+            ):
+                match = pattern.search(inner)
+                if match is not None:
+                    position = span.start + prefix_len + match.start()
+                    references.setdefault(match.group(1), []).append(position)
 
 
 def _may_have_virtual_path_assignment(source: str) -> bool:

@@ -2712,6 +2712,14 @@ class TestBashFixGitBashPosixPaths:
                 'export L=C:/dev/x; clang++ -I "${L}/include"',
             ),
             (
+                'L=/c/dev/x && clang++ -I "${L}"/include',
+                'L=C:/dev/x && clang++ -I "${L}"/include',
+            ),
+            (
+                'L=/c/dev/x && clang++ -I "$L"/include',
+                'L=C:/dev/x && clang++ -I "$L"/include',
+            ),
+            (
                 "L=/tmp/x; tool ${L}/out",
                 "L={tmp}/x; tool ${L}/out",
             ),
@@ -2738,6 +2746,7 @@ class TestBashFixGitBashPosixPaths:
             "L=/c/dev/x; printf '%s' $L",  # no path-suffix use
             "printf '%s' $L/include; L=/c/dev/x",  # reference precedes assignment
             "L=/c/dev/x; printf '%s' '$L/include'",  # quoted data
+            "L=/c/dev/x; printf '%s' '$L'/include",  # quoted data + suffix
             "L=/c/dev/x; cat <<'EOF'\n$L/include\nEOF",  # heredoc data
             "L=/c/dev/x; echo ok # $L/include",  # comment data
             "env L=/c/dev/x clang++ -I $L/include",  # env operand is data
