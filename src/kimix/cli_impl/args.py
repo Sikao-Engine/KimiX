@@ -7,18 +7,13 @@ from pathlib import Path
 from typing import Any
 
 import orjson
-from kaos.path import KaosPath
 
-import kimix.base as base
-from kimix.ui.printing import print_debug, print_error, print_warning
-
-# Import moved helpers from config.py
-from kimix.utils.config import (
-    _REQUIRED_PROVIDER_KEYS,
-    _SUB_PROVIDER_PICK_PRIORITY,
-    _normalize_sub_providers,
-    _pick_main_from_sub_providers,
-)
+# Heavy agent dependencies are deferred via PEP 810 module-level lazy imports
+# so that ``set_arg()`` — and therefore ``kimix --help`` and ``kimix --connect``
+# — can run without loading the SDK stack (kosong / kimi_agent_sdk / pydantic).
+# The bindings reify on first attribute use, well after argument parsing.
+lazy import kimix.base as base
+lazy from kimix.ui.printing import print_debug, print_warning
 
 from . import constants, utils  # noqa: F401
 

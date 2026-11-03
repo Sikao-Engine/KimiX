@@ -179,7 +179,9 @@ class TcpGroupServer:
         if client_sock is None:
             return None
 
-        data = b""
+        # Accumulate in a bytearray to avoid quadratic bytes concatenation
+        # on large, fragmented payloads; bytes(data) preserves the return type.
+        data = bytearray()
         while len(data) < size:
             try:
                 chunk = client_sock.recv(size - len(data))
@@ -191,7 +193,7 @@ class TcpGroupServer:
             except Exception:
                 return None
 
-        return data
+        return bytes(data)
 
     def send(self, client_id: int, message: str) -> bool:
         """Send a message to a specific client using length-prefixed protocol."""

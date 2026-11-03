@@ -1,28 +1,47 @@
+"""CLI dispatch core.
+
+Startup-performance design (Python 3.15+): every heavy agent dependency is
+imported through a PEP 810 module-level ``lazy`` statement, so this module —
+and therefore ``kimix --help`` / ``kimix --connect`` — loads without the SDK
+stack (kosong / kimi_agent_sdk / pydantic).  Bindings reify on first use.
+
+``from __future__ import annotations`` is required here: without it, the
+``CLIIPCServer`` parameter annotation in ``_client_cli_loop`` would be
+reified at function-definition time and defeat the lazy bindings.
+"""
+
+from __future__ import annotations
+
 import os
 import sys
 from pathlib import Path
 from typing import Any
 
-from kimi_cli import native_loader
+lazy from kimi_cli import native_loader
 
-import kimix.base as base
-import kimix.utils._globals as _globals
-from kimix.base import sync_all
-from kimix.cot import cot_prompt
-from kimix.ui.printing import (
+lazy import kimix.base as base
+lazy import kimix.utils._globals as _globals
+lazy from kimix.base import sync_all
+lazy from kimix.cot import cot_prompt
+lazy from kimix.ui.printing import (
     print_debug,
     print_error,
     print_info,
     print_success,
     print_warning,
 )
-from kimix.utils import _create_default_session, close_session, get_default_session, prompt
+lazy from kimix.utils import (
+    _create_default_session,
+    close_session,
+    get_default_session,
+    prompt,
+)
 
 from . import constants
 from .args import set_arg
-from .commands import _cmd_unknown, _command_map
-from .ipc import CLIIPCServer, discover_servers, send_messages
-from .utils import _input, _set_active_ipc_server
+lazy from .commands import _cmd_unknown, _command_map
+lazy from .ipc import CLIIPCServer, discover_servers, send_messages
+lazy from .utils import _input, _set_active_ipc_server
 
 exec_ctx: dict[str, Any] = {}
 

@@ -169,7 +169,9 @@ class TCPServer:
         if self._client_socket is None:
             return None
         
-        data = b''
+        # Accumulate in a bytearray to avoid quadratic bytes concatenation
+        # on large, fragmented payloads; bytes(data) preserves the return type.
+        data = bytearray()
         while len(data) < size:
             try:
                 chunk = self._client_socket.recv(size - len(data))
@@ -180,8 +182,8 @@ class TCPServer:
                 continue
             except Exception:
                 return None
-        
-        return data
+
+        return bytes(data)
     
     def send(self, message: str) -> bool:
         """Send a message to the connected client using length-prefixed protocol."""
