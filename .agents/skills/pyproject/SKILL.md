@@ -21,7 +21,7 @@ Workspace
 Common Tool Configs
 
 - Ruff (all): line-length = 100, select = ["E", "F", "UP", "B", "SIM", "I"]; root adds N, W, ignores E501.
-- pyright/ty: strict, pythonVersion = "3.14", src/**/*.py + tests/**/*.py.
+- pyright/ty: strict, pythonVersion = "3.15", src/**/*.py + tests/**/*.py.
 - mypy (root only): strict, excludes tests/, scripts/.
 - Build backends: hatchling (root, wheel targets src/kimix, src/my_tools); uv_build (kimi-cli, module-name = ["kimi_cli", "kosong", "kaos"]).
 - Scripts: kimix → kimix.cli:cli; kimi/kimi-cli-x → kimi_cli.__main__:main.

@@ -306,6 +306,20 @@ def test_assignment_path_rule_matches_reference_with_native_staged() -> None:
     )
 
 
+def test_contextual_path_rules_match_reference_with_native_staged() -> None:
+    """Newer operand-role and non-commuting guards select the reference."""
+    _native()
+    for source in (
+        'p=/tmp/x; [ "$p" = /tmp/x ]',
+        'find /tmp/root -path "/tmp/root/*"',
+        r"find D:\root -newer D:\ref -name D:\pattern",
+        "wsl.exe -e ls -d /tmp",
+        "realpath /tmp/..",
+        "echo /tmp/a:/tmp/b",
+    ):
+        assert _shell.fix_bash_command(source) == _shell._py_fix_bash_command(source)
+
+
 # ---------------------------------------------------------------------------
 # 4. temp-dir plumbing (the reference gettempdir()/monkeypatch contract)
 # ---------------------------------------------------------------------------

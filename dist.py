@@ -8,7 +8,7 @@ Produces two bundles::
 
 Each bundle carries everything the target user needs:
 
-* a private CPython interpreter (python-build-standalone, CPython 3.14 x64);
+  * a private CPython interpreter (python-build-standalone, CPython 3.15 x64);
 * every runtime dependency pinned by ``uv.lock`` (main deps + ``office`` and
   ``image_process`` extras) — no ``python``/``pip``/``uv`` on the user machine;
 * the compiled kimix native runtime (``runtime_py.pyd`` / ``runtime_py.so``)
@@ -41,7 +41,7 @@ The ``ubuntu`` target can be built two ways:
   ``pip download`` tag emulation.
 
 The script only uses the standard library so it can run under the WSL system
-Python (3.10+) as well as the project venv (3.14).
+Python (3.10+) as well as the project venv (3.15).
 """
 
 from __future__ import annotations
@@ -65,8 +65,8 @@ ROOT = Path(__file__).resolve().parent
 DIST_DIR = ROOT / "dist"
 CACHE_DIR = ROOT / ".dist_cache"
 
-# CPython series required by pyproject.toml (requires-python = ">=3.14").
-PYTHON_SERIES = "3.14"
+# CPython series required by pyproject.toml (requires-python = ">=3.15.2").
+PYTHON_SERIES = "3.15"
 
 # kimix native runtime release (mirrors install.py).
 NATIVE_VERSION = (ROOT / "KIMIX_NATIVE_VERSION").read_text(encoding="utf-8").strip()
@@ -201,7 +201,7 @@ def pbs_asset_regex(key: str) -> str:
 def pick_pbs_asset(assets: list[dict], key: str) -> str | None:
     """Pick the newest ``install_only`` CPython asset for *key* from a release's assets.
 
-    Asset names look like ``cpython-3.14.1+20251215-x86_64-pc-windows-msvc-install_only.tar.gz``;
+    Asset names look like ``cpython-3.15.1+20251215-x86_64-pc-windows-msvc-install_only.tar.gz``;
     sorting by name orders by CPython version then build date.
     """
     pattern = re.compile(pbs_asset_regex(key))
@@ -611,7 +611,7 @@ def smoke(key: str, out: Path) -> None:
     # pure-Python fallback. Hard-require it only where the upstream release is
     # known to match the bundled CPython (win). Other platforms may ship an
     # extension compiled for a different CPython (e.g. the KimiX-native linux
-    # build targets 3.10 while this bundle ships 3.14) — that is a graceful
+    # build targets 3.10 while this bundle ships 3.15) — that is a graceful
     # fallback, not a packaging failure.
     native_probe = (
         "import sys; sys.path.insert(0, %r); import kimix_native as k; "

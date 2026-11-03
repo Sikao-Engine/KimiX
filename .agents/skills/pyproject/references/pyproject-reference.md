@@ -24,7 +24,7 @@ Workspace sources in root: `kimi-cli-x`.
 
 ### Type Checkers
 
-- **pyright** / **ty**: `typeCheckingMode = "strict"`, `pythonVersion = "3.14"`, includes `src/**/*.py`, `tests/**/*.py`.
+- **pyright** / **ty**: `typeCheckingMode = "strict"`, `pythonVersion = "3.15"`, includes `src/**/*.py`, `tests/**/*.py`.
 - **mypy** (root only): strict mode, `disallow_untyped_defs = true`, excludes `tests/`, `scripts/`.
 
 ### Build Backends
@@ -73,7 +73,7 @@ version = "0.1.9"
 description = "..."
 readme = "README.md"
 license = { text = "MIT" } # or "Apache-2.0"
-requires-python = ">=3.14"
+requires-python = ">=3.15.2"
 authors = [{ name = "...", email = "..." }]
 dependencies = ["numpy", "kimi-cli-x>=1.39.1"]
 ```
@@ -133,7 +133,7 @@ kimi = "kimi_cli.__main__:main"
 
 ```toml
 [tool.ruff]
-target-version = "py314" # or omitted
+target-version = "py315" # or omitted
 line-length = 100
 
 [tool.ruff.lint]
@@ -149,11 +149,11 @@ ignore = ["E501"]
 ```toml
 [tool.pyright]
 typeCheckingMode = "strict"
-pythonVersion = "3.14"
+pythonVersion = "3.15"
 include = ["src/**/*.py", "tests/**/*.py"]
 
 [tool.ty.environment]
-python-version = "3.14"
+python-version = "3.15"
 
 [tool.ty.src]
 include = ["src/**/*.py", "tests/**/*.py"]

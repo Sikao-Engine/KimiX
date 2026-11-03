@@ -8,12 +8,12 @@ version = "0.1.29"
 description = "Kimi Agent Tools - Custom tool collection for Kimi Agent SDK"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.14"
+requires-python = ">=3.15.2"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
 ]
 dependencies = [
     "numpy>=2.4.3",
@@ -86,7 +86,7 @@ members = [
 kimi-cli-x = { workspace = true }
 
 [tool.ruff]
-target-version = "py314"
+target-version = "py315"
 line-length = 100
 
 [tool.ruff.lint]
@@ -107,6 +107,9 @@ kimix = "kimix.cli:cli"
 [tool.mypy]
 # Strict mode switch
 strict = true
+
+# Interpreter the type checker targets (mirrors requires-python).
+python_version = "3.15"
 
 # Or manually enable individual strict checks (when strict = false)
 warn_return_any = true

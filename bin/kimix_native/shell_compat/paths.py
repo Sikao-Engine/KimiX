@@ -130,6 +130,7 @@ __all__ = [
     "path_assignment_edit",
     "path_assignment_edits",
     "has_path_assignment_translation",
+    "has_python_owned_path_translation",
     "is_effective_nul_word",
     # IR-driven pure functions (Phase 4 design surface)
     "path_replacement_for_word",
@@ -410,20 +411,49 @@ def quote_virtual_path(normalized: str) -> Optional[str]:
     return "".join(out)
 
 
+def _virtual_prefix_rewrite_is_safe(raw: str) -> bool:
+    """Whether replacing only the virtual root preserves the word's value.
+
+    ``..`` does not commute with a mount rewrite (``/tmp/..`` is the Git Bash
+    root, not the parent of Windows TEMP).  A literal colon can join several
+    path values (classpaths, host:guest pairs); rewriting only the first prefix
+    would silently produce a half-translated list.  Expansion spans are opaque
+    data here, so a parameter operator such as ``${x:-default}`` is not mistaken
+    for a literal list separator.
+    """
+    spans = split_virtual_path_expansions(raw)
+    if spans is None:
+        return True  # the existing quoting validator will reject the word
+    for is_expansion, span in spans:
+        if is_expansion:
+            continue
+        decoded = decode_virtual_path_span(span)
+        if decoded is None:
+            return True  # preserve the existing conservative rejection path
+        if ":" in decoded or any(
+            segment == ".." for segment in decoded.split("/")
+        ):
+            return False
+    return True
+
+
 def git_bash_abs_path_replacement(
     raw: str, temp_dir: Optional[str] = None
 ) -> Optional[str]:
     """Return the native Windows spelling of a Git Bash virtual absolute path.
 
-    Byte-for-byte identical to ``_BashFixScanner._git_bash_abs_path_replacement``
-    (``/tmp/...`` -> the real Windows temp dir, ``/c/...`` -> ``C:/...``), with a
-    single behavioral addition for testability: when an explicit ``temp_dir`` is
+    Implements ``_BashFixScanner._git_bash_abs_path_replacement``
+    (``/tmp/...`` -> the real Windows temp dir, ``/c/...`` -> ``C:/...``).
+    Non-commuting ``..`` segments and literal colon-joined words are rejected
+    before the prefix rewrite.  When an explicit ``temp_dir`` is
     passed it is used instead of the late-binding resolver.  When ``temp_dir`` is
     ``None`` (the live scanner path) the rewrite reads the temp dir through
     :func:`bash_core._windows_temp_dir_from_namespace`, honoring a facade
     monkeypatch of ``_windows_temp_dir`` exactly like the scanner did.
     """
     if not raw:
+        return None
+    if not _virtual_prefix_rewrite_is_safe(raw):
         return None
     if raw.startswith("/tmp"):
         if raw != "/tmp" and not raw.startswith("/tmp/"):
@@ -438,8 +468,8 @@ def git_bash_abs_path_replacement(
 def path_replacement(raw: str, temp_dir: Optional[str] = None) -> Optional[str]:
     """Return the Git Bash spelling for a Windows path word.
 
-    Byte-for-byte identical to ``_BashFixScanner._path_replacement`` (covers the
-    native backslash spelling and the Git Bash virtual POSIX absolute spelling);
+    Covers the native backslash spelling and safe Git Bash virtual POSIX
+    absolute spellings for ``_BashFixScanner._path_replacement``;
     ``temp_dir`` is threaded to :func:`git_bash_abs_path_replacement` for direct
     unit testing and is ``None`` on the live scanner path.
     """
@@ -691,9 +721,36 @@ def has_path_assignment_translation(source: str) -> bool:
     return False
 
 
+# The compiled kernel predates command-role and non-commuting-path guards.  A
+# cheap source predicate routes only potentially affected inputs through the
+# reference implementation; quoted/data false positives merely lose acceleration,
+# never change behavior.  Keeping this decision here avoids rule logic in the
+# stable facade.
+_CONTEXT_PATH_COMMAND_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:find|test|wsl(?:\.exe)?|wslpath(?:\.exe)?)"
+    r"(?![A-Za-z0-9_])|\["
+)
+_VIRTUAL_PATH_CANDIDATE_RE = re.compile(
+    r"/tmp(?![A-Za-z0-9_])|/[A-Za-z]/"
+)
+
+
+def has_python_owned_path_translation(source: str) -> bool:
+    """Whether a source may exercise a rule absent from the native kernel."""
+    if has_path_assignment_translation(source):
+        return True
+    has_virtual_path = _VIRTUAL_PATH_CANDIDATE_RE.search(source) is not None
+    if _CONTEXT_PATH_COMMAND_RE.search(source) is not None and (
+        has_virtual_path or "\\" in source
+    ):
+        return True
+    return has_virtual_path and (":" in source or ".." in source)
+
+
 # ======================================================================
-# null-device rule (ported from _is_effective_nul_target / the redirection arm)
+# null-device rule (ported from _is_effective_nul_word / the redirection arm)
 # ======================================================================
+
 
 
 def is_effective_nul_word(raw: str) -> bool:

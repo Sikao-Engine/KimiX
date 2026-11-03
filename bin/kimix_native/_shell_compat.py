@@ -394,14 +394,14 @@ def fix_bash_command(command: str) -> BashFix:
         raise TypeError("command must be a string")
     native = _native_bash_fix()
     if native is not None:
-        # The compiled kernel predates usage-aware virtual-path assignment
-        # repair.  Keep the public native/reference contract byte-equal by
-        # taking the reference path only for sources where that rule fires;
-        # all other commands retain native acceleration.  The predicate and
-        # decision live in shell_compat.paths, not in this stable facade.
-        from kimix_native.shell_compat.paths import has_path_assignment_translation
+        # The compiled kernel predates usage-aware assignment repair and the
+        # command-role/non-commuting virtual-path guards.  Keep native/reference
+        # results byte-equal by selecting the reference only for sources that
+        # may exercise those rules; the predicate lives in shell_compat.paths,
+        # not in this stable facade.
+        from kimix_native.shell_compat.paths import has_python_owned_path_translation
 
-        if has_path_assignment_translation(command):
+        if has_python_owned_path_translation(command):
             native = None
     if native is None:
         result = _py_fix_bash_command(command)

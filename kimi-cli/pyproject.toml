@@ -3,7 +3,7 @@ name = "kimi-cli-x"
 version = "1.45.3"
 description = "Kimi Code CLI is your next CLI agent."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.15.2"
 dependencies = [
     "agent-client-protocol>=0.9.0",
     "aiofiles>=24.1.0",
@@ -103,7 +103,7 @@ select = [
 
 [tool.pyright]
 typeCheckingMode = "standard"
-pythonVersion = "3.14"
+pythonVersion = "3.15"
 include = [
     "src/**/*.py",
     "tests/**/*.py",
@@ -113,7 +113,7 @@ include = [
 strict = ["src/kimi_cli/**/*.py"]
 
 [tool.ty.environment]
-python-version = "3.14"
+python-version = "3.15"
 
 [tool.ty.src]
 include = [

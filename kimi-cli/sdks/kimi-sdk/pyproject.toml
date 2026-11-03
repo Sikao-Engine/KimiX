@@ -3,7 +3,7 @@ name = "kimi-sdk"
 version = "0.2.1"
 description = "A lightweight Python SDK for the Kimi API."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.15.2"
 dependencies = ["kosong>=0.37.0"]
 
 [dependency-groups]
@@ -41,11 +41,11 @@ select = [
 
 [tool.pyright]
 typeCheckingMode = "strict"
-pythonVersion = "3.14"
+pythonVersion = "3.15"
 include = ["src/**/*.py", "tests/**/*.py"]
 
 [tool.ty.environment]
-python-version = "3.14"
+python-version = "3.15"
 
 [tool.ty.src]
 include = ["src/**/*.py", "tests/**/*.py"]

@@ -2779,6 +2779,108 @@ class TestBashFixGitBashPosixPaths:
     ) -> None:
         assert _fix_for_windows(command) == BashFix(command)
 
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # test/[ string operands are data; virtual paths in file tests are
+            # already understood by the shell builtin and need no host rewrite.
+            'p=/tmp/x; [ "$p" = /tmp/x ]',
+            '[ /tmp/x = "$p" ]',
+            'test "$p" != /c/dev/x',
+            '[ -f /tmp/x ] && echo y',
+            '[ /tmp/a -nt /tmp/b ]',
+            'test -e /c/dev/x',
+            # find is an MSYS consumer.  Rewriting its root but not a quoted
+            # pattern breaks root/pattern identity; pattern operands themselves
+            # are data too.
+            'find /tmp/zzd -path "/tmp/zzd/*"',
+            'find . -path /tmp/*',
+            'find . -name /tmp/*',
+            'find . -regex /tmp/.*',
+            'find . -newer /tmp/ref',
+            # WSL operands belong to the Linux guest, including unquoted forms.
+            'wsl.exe -e ls -d /tmp',
+            'wsl.exe python3 /tmp/x.py',
+            'wslpath -w /tmp/x',
+            # A mount substitution cannot commute with `..`, and a single word
+            # may contain a colon-joined list rather than one host path.
+            'realpath /tmp/..',
+            'cd /c/dev/..',
+            'echo /tmp/a:/tmp/b',
+            'java -cp /tmp/a.jar:/tmp/b.jar:/tmp/c.jar M',
+        ],
+    )
+    def test_context_or_noncommuting_virtual_paths_are_untouched(
+        self, command: str
+    ) -> None:
+        result = _fix_for_windows(command)
+        assert result == BashFix(command)
+        assert result.command is command
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            (r"[ -f D:\x ]", "[ -f D:/x ]"),
+            (r"[ D:\a -nt D:\b ]", "[ D:/a -nt D:/b ]"),
+            (r"test -e C:\Users\me", "test -e C:/Users/me"),
+            (
+                r"find D:\root -newer D:\ref -name D:\pattern",
+                "find D:/root -newer D:/ref -name D:\\pattern",
+            ),
+        ],
+    )
+    def test_msys_path_operands_still_normalize_native_backslashes(
+        self, source: str, expected: str
+    ) -> None:
+        result = _fix_for_windows(source)
+        assert result.command == expected
+        assert result.path_changes
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            r'[ "$p" = D:\x ]',
+            r'[ D:\x = "$p" ]',
+            r'test "$p" != C:\Users\me',
+        ],
+    )
+    def test_test_string_operands_keep_native_backslashes_as_data(
+        self, command: str
+    ) -> None:
+        assert _fix_for_windows(command) == BashFix(command)
+
+    def test_wsl_guest_operand_and_local_redirection_stay_in_own_namespaces(
+        self,
+    ) -> None:
+        result = _fix_for_windows("wsl.exe -e cat /tmp/in > /tmp/out")
+        assert result.command == f"wsl.exe -e cat /tmp/in > {self._tmp()}/out"
+        assert result.path_changes == ("/tmp/out",)
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            (
+                "wsl.exe --cd /c/Windows -e ls /tmp",
+                "wsl.exe --cd C:/Windows -e ls /tmp",
+            ),
+            (
+                "wsl.exe --cd=/c/Windows -e ls /tmp",
+                "wsl.exe --cd=C:/Windows -e ls /tmp",
+            ),
+            (
+                "wsl.exe -d Ubuntu --cd /c/Windows -e ls /tmp",
+                "wsl.exe -d Ubuntu --cd C:/Windows -e ls /tmp",
+            ),
+        ],
+    )
+    def test_wsl_launcher_cd_path_remains_host_owned(
+        self, source: str, expected: str
+    ) -> None:
+        result = _fix_for_windows(source)
+        assert result.command == expected
+        reported = "--cd=/c/Windows" if source.startswith("wsl.exe --cd=") else "/c/Windows"
+        assert result.path_changes == (reported,)
+
     def test_cd_d_flag_is_not_mistaken_for_drive_path(self) -> None:
         # ``cd /d`` is cmd.exe's flag form and must keep working; only
         # ``/d/...`` (a Git Bash drive mount with a segment) is rewritten.

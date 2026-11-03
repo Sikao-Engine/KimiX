@@ -48,23 +48,23 @@ class TestPickPbsAsset:
 
     def test_picks_install_only_for_target(self):
         names = [
-            "cpython-3.14.0+20251001-x86_64-pc-windows-msvc-install_only.tar.gz",
-            "cpython-3.14.1+20251115-x86_64-pc-windows-msvc-install_only.tar.gz",
-            "cpython-3.14.1+20251115-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
+            "cpython-3.15.0+20251001-x86_64-pc-windows-msvc-install_only.tar.gz",
+            "cpython-3.15.1+20251115-x86_64-pc-windows-msvc-install_only.tar.gz",
+            "cpython-3.15.1+20251115-x86_64-pc-windows-msvc-install_only_stripped.tar.gz",
             "cpython-3.13.9+20251115-x86_64-pc-windows-msvc-install_only.tar.gz",
         ]
         picked = dist.pick_pbs_asset(self._assets(names), "win")
-        assert picked == "cpython-3.14.1+20251115-x86_64-pc-windows-msvc-install_only.tar.gz"
+        assert picked == "cpython-3.15.1+20251115-x86_64-pc-windows-msvc-install_only.tar.gz"
 
     def test_ignores_other_platform_assets(self):
         names = [
-            "cpython-3.14.1+20251115-x86_64-unknown-linux-gnu-install_only.tar.gz",
-            "cpython-3.14.1+20251115-aarch64-apple-darwin-install_only.tar.gz",
+            "cpython-3.15.1+20251115-x86_64-unknown-linux-gnu-install_only.tar.gz",
+            "cpython-3.15.1+20251115-aarch64-apple-darwin-install_only.tar.gz",
         ]
         assert dist.pick_pbs_asset(self._assets(names), "win") is None
         assert (
             dist.pick_pbs_asset(self._assets(names), "ubuntu")
-            == "cpython-3.14.1+20251115-x86_64-unknown-linux-gnu-install_only.tar.gz"
+            == "cpython-3.15.1+20251115-x86_64-unknown-linux-gnu-install_only.tar.gz"
         )
 
     def test_pbs_asset_regex_rejects_wrong_series(self):
@@ -72,7 +72,7 @@ class TestPickPbsAsset:
 
         pattern = re.compile(dist.pbs_asset_regex("win"))
         assert not pattern.match(
-            "cpython-3.15.0+20251115-x86_64-pc-windows-msvc-install_only.tar.gz"
+            "cpython-3.16.0+20251115-x86_64-pc-windows-msvc-install_only.tar.gz"
         )
 
 

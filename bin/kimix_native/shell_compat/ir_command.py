@@ -341,30 +341,41 @@ def _walk_arguments(
     d: CommandDecision, source: str, command: "CommandNode", *, start_after: int = 0,
     pattern_word: Optional[str] = None,
 ) -> None:
-    """slot 6: the argument-word path rule with the pattern-consumer suppression
-    when the EFFECTIVE command word is a pattern program (grep/sed/awk/rg).
-    ``pattern_word`` is the effective command-word literal value the scanner uses
-    (the raw word for a plain command, the stripped word after an ``@`` strip,
-    the post-unwrap word after a redundant shell); it defaults to the command
-    node's own command word decoded."""
+    """slot 6: argument paths using the EFFECTIVE command's operand policy.
+
+    ``pattern_word`` is the decoded plain/@-stripped/unwrapped/wrapped command.
+    Grep-family patterns, find/test operand roles, and WSL's guest namespace all
+    delegate to the same wrappers.py decisions as the live scanner.
+    """
     from kimix_native.shell_compat import wrappers as W
-    from kimix_native.shell_compat.bash_core import _PATTERN_PROGRAM_COMMANDS
 
     if pattern_word is None:
         cw = command.command_word
         pattern_word = _decode(_raw(cw, source)) if cw is not None else None
-    pattern_family = (
-        pattern_word
-        if (pattern_word is not None and pattern_word in _PATTERN_PROGRAM_COMMANDS)
-        else None
-    )
+    pattern_family = W.path_operand_family_of(pattern_word)
     pending: Optional[str] = None
     bare = 0
-    for a in command.arguments:
+    arguments = command.arguments
+    for index, a in enumerate(arguments):
         if a.span.start < start_after:
             continue
         araw = _raw(a, source)
         path_ok = True
+        if pattern_family in W._CONTEXTUAL_PATH_FAMILIES:
+            value = _decode(araw)
+            word = value if value is not None else araw
+            next_word = None
+            if pattern_family == "test" and index + 1 < len(arguments):
+                next_raw = _raw(arguments[index + 1], source)
+                next_value = _decode(next_raw)
+                next_word = next_value if next_value is not None else next_raw
+            replacement, pending = W.contextual_path_replacement(
+                pattern_family, araw, word, pending, next_word
+            )
+            if replacement is not None:
+                d.slot6_edits.append((a.span.start, a.span.end, replacement))
+                d.paths6.append(araw)
+            continue
         if pattern_family is not None:
             value = _decode(araw)
             word = value if value is not None else araw
@@ -390,12 +401,17 @@ def _walk_arguments(
             _add_arg_path(d, source, a, 6)
 
 
-def _walk_arguments_after(d: CommandDecision, source: str, command: "CommandNode", consumed_to: int) -> None:
-    """slot 6: the words after the wrapped command keep the path rule."""
-    for a in command.arguments:
-        if a.span.start < consumed_to:
-            continue
-        _add_arg_path(d, source, a, 6)
+def _walk_arguments_after(
+    d: CommandDecision,
+    source: str,
+    command: "CommandNode",
+    consumed_to: int,
+    pattern_word: Optional[str] = None,
+) -> None:
+    """slot 6: words after a wrapped command use its own operand policy."""
+    _walk_arguments(
+        d, source, command, start_after=consumed_to, pattern_word=pattern_word
+    )
 
 
 def _walk_redirections(d: CommandDecision, source: str, command: "CommandNode") -> None:
@@ -502,7 +518,9 @@ def _consume_wrapper(d: CommandDecision, source: str, command: "CommandNode", *,
         idx += 1
         wrapped_done = True
     if wrapped_done:
-        _walk_arguments_after(d, source, command, consumed_to)
+        _walk_arguments_after(
+            d, source, command, consumed_to, pattern_word=wval
+        )
 
 
 def _shell_operand(d: CommandDecision, source: str, command: "CommandNode", shell_word: Any) -> bool:
@@ -664,7 +682,12 @@ def _classify_command_word(
         else:
             # the EFFECTIVE command word is ``val`` (the @-strip / plain word);
             # it drives the pattern-program suppression for the arguments.
-            _walk_arguments(d, source, command, pattern_word=val)
+            _walk_arguments(
+                d,
+                source,
+                command,
+                pattern_word=val if val is not None else raw,
+            )
     _walk_redirections(d, source, command)
     _emit_embedded(d, source, command)
     _walk_expansions(d, source, command)

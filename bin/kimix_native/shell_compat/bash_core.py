@@ -2354,46 +2354,65 @@ class _BashFixScanner:
                     # do-less ``for ((expr)) { … }" body opens here
                     command_expected = True
                 elif pattern_family is not None:
-                    # Argument of a pattern-consuming command (grep/sed/awk):
-                    # the leading operand is pattern/program DATA, so a
-                    # drive-prefixed word keeps its runtime value instead of
-                    # being "repaired" into a different string (see
-                    # _PATTERN_PROGRAM_COMMANDS).
+                    # Argument of a pattern-consuming or namespace-owning
+                    # command.  Besides grep/sed/awk's pattern state machine,
+                    # find/test need operand roles and WSL needs a guest-path
+                    # boundary; all decisions live in wrappers.py.
                     value = self._literal_word_value(raw)
                     word = value if value is not None else raw
-                    if pattern_pending is not None:
-                        pending, pattern_pending = pattern_pending, None
-                        path_ok = pending == "path"
-                    elif word.startswith("-") and word != "-":
-                        option = self._classify_pattern_option(
-                            pattern_family, word
+                    from kimix_native.shell_compat.wrappers import (
+                        _CONTEXTUAL_PATH_FAMILIES,
+                        contextual_path_replacement,
+                    )
+
+                    if pattern_family in _CONTEXTUAL_PATH_FAMILIES:
+                        next_word = (
+                            self._peek_literal_word(i, end)
+                            if pattern_family == "test"
+                            else None
                         )
-                        # Option words themselves are never paths (they do
-                        # not start with a drive letter, so the rewrite
-                        # could not fire anyway); defer the verdict for
-                        # value-taking options.
-                        path_ok = False
-                        if option == "data-pending":
-                            pattern_pending = "data"
-                        elif option == "path-pending":
-                            pattern_pending = "path"
-                        elif option == "value-pending":
-                            pattern_pending = "value"
-                    elif pattern_bare == 0:
-                        # First bare operand: the pattern/program.
-                        pattern_bare += 1
-                        path_ok = False
-                    else:
-                        # Later bare operands: files.
-                        pattern_bare += 1
-                        path_ok = True
-                    if path_ok:
-                        replacement = self._path_replacement(raw)
+                        replacement, pattern_pending = contextual_path_replacement(
+                            pattern_family, raw, word, pattern_pending, next_word
+                        )
                         if replacement is not None:
                             self.edits.append(
                                 (word_start, word_end, replacement)
                             )
                             self.path_notes.append(raw)
+                    else:
+                        # grep/sed/awk: the leading operand is pattern/program
+                        # DATA, so a drive-prefixed word keeps its runtime value.
+                        if pattern_pending is not None:
+                            pending, pattern_pending = pattern_pending, None
+                            path_ok = pending == "path"
+                        elif word.startswith("-") and word != "-":
+                            option = self._classify_pattern_option(
+                                pattern_family, word
+                            )
+                            # Option words themselves are never paths; defer the
+                            # verdict for value-taking options.
+                            path_ok = False
+                            if option == "data-pending":
+                                pattern_pending = "data"
+                            elif option == "path-pending":
+                                pattern_pending = "path"
+                            elif option == "value-pending":
+                                pattern_pending = "value"
+                        elif pattern_bare == 0:
+                            # First bare operand: the pattern/program.
+                            pattern_bare += 1
+                            path_ok = False
+                        else:
+                            # Later bare operands: files.
+                            pattern_bare += 1
+                            path_ok = True
+                        if path_ok:
+                            replacement = self._path_replacement(raw)
+                            if replacement is not None:
+                                self.edits.append(
+                                    (word_start, word_end, replacement)
+                                )
+                                self.path_notes.append(raw)
                 else:
                     replacement = self._path_replacement(raw)
                     if replacement is not None:
@@ -2667,11 +2686,9 @@ class _BashFixScanner:
             # position decisions (e.g. ``find -exec sh -c '...'``) know what
             # program will consume the words that follow.
             command_word = literal if literal is not None else raw
-            pattern_family = (
-                command_word
-                if command_word in _PATTERN_PROGRAM_COMMANDS
-                else None
-            )
+            from kimix_native.shell_compat.wrappers import path_operand_family_of
+
+            pattern_family = path_operand_family_of(command_word)
             pattern_pending = None
             pattern_bare = 0
 

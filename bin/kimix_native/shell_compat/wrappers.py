@@ -455,6 +455,141 @@ def pattern_family_of(command_word: Optional[str]) -> Optional[str]:
     return None
 
 
+# Commands whose arguments need more than the position-blind path rewrite.
+# ``find`` and the ``test`` builtins are MSYS/shell consumers: Git Bash virtual
+# paths already have the right meaning for them, so only native backslash
+# spellings may be normalized.  WSL is the opposite namespace boundary: its
+# operands belong to Linux, not to the Windows host.
+_FIND_PATTERN_OPERANDS = frozenset(
+    {
+        "-name",
+        "-iname",
+        "-path",
+        "-ipath",
+        "-wholename",
+        "-iwholename",
+        "-regex",
+        "-iregex",
+        "-lname",
+        "-ilname",
+    }
+)
+_TEST_UNARY_PATH_OPERATORS = frozenset(
+    {
+        "-b",
+        "-c",
+        "-d",
+        "-e",
+        "-f",
+        "-g",
+        "-h",
+        "-k",
+        "-p",
+        "-r",
+        "-s",
+        "-u",
+        "-w",
+        "-x",
+        "-G",
+        "-L",
+        "-N",
+        "-O",
+        "-S",
+    }
+)
+_TEST_BINARY_PATH_OPERATORS = frozenset({"-nt", "-ot", "-ef"})
+_CONTEXTUAL_PATH_FAMILIES = frozenset({"find", "test", "wsl"})
+
+
+def path_operand_family_of(command_word: Optional[str]) -> Optional[str]:
+    """Return the operand-role policy family for an executable word.
+
+    The existing grep/sed/awk families retain their own state machine below.
+    The additional families prevent virtual-path conversion from changing
+    string comparisons, find pattern/root identity, or Linux guest paths.
+    """
+    family = pattern_family_of(command_word)
+    if family is not None:
+        return family
+    if command_word == "find":
+        return "find"
+    if command_word in {"[", "test"}:
+        return "test"
+    if command_word is not None:
+        # A virtual/native path to the WSL launcher itself is still translated
+        # by the command-word rule; only its operands are guest-owned.
+        executable = command_word.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if executable in {"wsl", "wsl.exe", "wslpath", "wslpath.exe"}:
+            return "wsl"
+    return None
+
+
+def contextual_path_replacement(
+    family: str,
+    raw: str,
+    word: str,
+    state: Optional[str],
+    next_word: Optional[str],
+) -> Tuple[Optional[str], Optional[str]]:
+    """Return ``(replacement, next_state)`` for one role-aware operand.
+
+    ``state`` is the previous decoded word for ``test`` and a pending-pattern
+    marker for ``find``.  ``next_word`` lets a left operand of ``-nt``/``-ot``/
+    ``-ef`` keep its path role without retroactively changing an earlier edit.
+    No virtual-absolute replacement is performed here: these consumers either
+    already understand the Git Bash namespace or explicitly use the WSL one.
+    """
+    from kimix_native.shell_compat.paths import (
+        path_replacement,
+        windows_path_replacement,
+    )
+
+    if family == "wsl":
+        # Launcher options are host-owned until the guest command begins.  In
+        # particular, ``wsl --cd C:/...`` still benefits from host conversion,
+        # while everything after ``-e``/``--exec``/``--`` or the first command
+        # word belongs to Linux.
+        if state == "guest":
+            return None, state
+        if state == "option-value":
+            return None, None
+        if state == "host-path":
+            return path_replacement(raw), None
+        if word in {"-e", "--exec", "--"}:
+            return None, "guest"
+        if word in {"-d", "--distribution", "-u", "--user"}:
+            return None, "option-value"
+        if word == "--cd":
+            return None, "host-path"
+        if word.startswith("--cd="):
+            value = raw[len("--cd=") :]
+            replacement = path_replacement(value)
+            return (
+                "--cd=" + replacement if replacement is not None else None
+            ), None
+        if word.startswith("-"):
+            return None, state
+        return None, "guest"
+    if family == "find":
+        if state == "pattern":
+            return None, None
+        if word in _FIND_PATTERN_OPERANDS:
+            return None, "pattern"
+        # find is an MSYS executable: its roots and reference files understand
+        # /tmp and /c directly.  Backslash paths still need Bash-safe spelling.
+        return windows_path_replacement(raw), None
+    if family == "test":
+        is_path = (
+            state in _TEST_UNARY_PATH_OPERATORS
+            or state in _TEST_BINARY_PATH_OPERATORS
+            or next_word in _TEST_BINARY_PATH_OPERATORS
+        )
+        replacement = windows_path_replacement(raw) if is_path else None
+        return replacement, word
+    # Unknown families are ordinary arguments, not an exceptional input.
+    return None, state
+
+
 def classify_pattern_option(family: str, word: str) -> Optional[str]:
     """Byte-for-byte port of ``_BashFixScanner._classify_pattern_option``."""
     if family in _GREP_PATTERN_FAMILY:
@@ -1122,6 +1257,7 @@ __all__ = [
     "classify_command",
     "classify_command_node",
     "classify_pattern_option",
+    "contextual_path_replacement",
     "eval_concat_fallback_name",
     "exec_operand_shell_word",
     "export_lines",
@@ -1129,6 +1265,7 @@ __all__ = [
     "fallback_registration",
     "gnu_alias_target",
     "is_inline_script_word",
+    "path_operand_family_of",
     "pattern_family_of",
     "pattern_operand_path_ok",
     "plausible_script_file",
