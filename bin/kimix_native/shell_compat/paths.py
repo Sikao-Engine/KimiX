@@ -61,6 +61,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
 
+try:
+    import regex as re
+except ImportError:  # pragma: no cover
+    import re  # stdlib: the used patterns are all stdlib-compatible
+
 if TYPE_CHECKING:  # pragma: no cover
     from kimix_native.shell_compat.models import CommandNode, RedirectionNode, WordNode
     from kimix_native.shell_compat.spans import SourceSpan
@@ -77,6 +82,7 @@ if TYPE_CHECKING:  # pragma: no cover
 # null-device and cd rules must mirror exactly; importing it is safe because
 # bash_core does NOT import this module at load time.
 from kimix_native.shell_compat.bash_core import (
+    _ASSIGNMENT_RE,
     _ESCAPED_LITERAL_CHARS,
     _OPERATOR_CHARS,
     _PATH_DRIVE_RE,
@@ -120,6 +126,10 @@ __all__ = [
     "plausible_path_segments",
     "decode_virtual_path_span",
     "split_virtual_path_expansions",
+    "virtual_path_variable_references",
+    "path_assignment_edit",
+    "path_assignment_edits",
+    "has_path_assignment_translation",
     "is_effective_nul_word",
     # IR-driven pure functions (Phase 4 design surface)
     "path_replacement_for_word",
@@ -439,6 +449,216 @@ def path_replacement(raw: str, temp_dir: Optional[str] = None) -> Optional[str]:
     if replacement is not None:
         return replacement
     return git_bash_abs_path_replacement(raw, temp_dir)
+
+
+# ======================================================================
+# usage-aware virtual-path assignments
+# ======================================================================
+
+# ``L=/c/dev/x; clang++ -I $L/include`` needs the same /c/ -> C:/ rewrite as a
+# literal clang++ operand: native Windows programs do not understand Git Bash's
+# virtual drive mounts.  Assignments remain data by default, however; the mere
+# spelling ``x=/tmp/x`` is not proof that x will be consumed as a path.  The
+# analysis below therefore activates the rule only for a LATER executable-word
+# reference that appends a path suffix (``$L/...`` or ``${L}/...``).
+_PLAIN_PATH_REFERENCE_RE = re.compile(
+    r"(?<![\\$])\$([A-Za-z_][A-Za-z0-9_]*)(?=/)"
+)
+_BRACED_PATH_REFERENCE_RE = re.compile(
+    r"(?<![\\$])\$\{([A-Za-z_][A-Za-z0-9_]*)\}(?=/)"
+)
+_BRACED_PARAMETER_RE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}\Z")
+_VIRTUAL_ASSIGNMENT_GATE_RE = re.compile(r"=/[A-Za-z]/")
+_MAX_PATH_WALK_DEPTH = 16
+
+
+def _executable_commands(node: object, depth: int = 0):
+    """Yield commands whose words and spans belong to the same source string.
+
+    Command/process substitutions are executable child contexts and share the
+    root coordinates.  Heredocs and runtime-reparsed quoted scripts are not
+    entered: the former are data, while the latter's inner nodes index a
+    different source string.  The explicit depth bound keeps malformed input a
+    conservative no-op.
+    """
+    if depth > _MAX_PATH_WALK_DEPTH:
+        return
+    from kimix_native.shell_compat.models import NodeKind
+
+    kind = node.kind
+    if kind == NodeKind.COMMAND:
+        yield node
+        for expansion in node.expansions:
+            yield from _executable_commands(expansion, depth + 1)
+        return
+    if kind == NodeKind.EXPANSION:
+        child = node.child
+        if child is not None:
+            yield from _executable_commands(child, depth + 1)
+        return
+    if kind in (NodeKind.EMBEDDED, NodeKind.HEREDOC, NodeKind.RAW):
+        return
+    for attr in ("children", "commands"):
+        for child in getattr(node, attr, ()) or ():
+            yield from _executable_commands(child, depth + 1)
+    if kind == NodeKind.COMPOUND:
+        for _part_name, part in node.parts:
+            yield from _executable_commands(part, depth + 1)
+
+
+def _command_words(command: object):
+    """Yield executable words, excluding heredoc delimiters and bodies."""
+    yield from command.assignments
+    if command.command_word is not None:
+        yield command.command_word
+    yield from command.arguments
+    for redirection in command.redirections:
+        if redirection.target is not None:
+            yield redirection.target
+
+
+def _record_word_path_references(
+    word: object, source: str, references: dict[str, List[int]]
+) -> None:
+    """Collect simple variable expansions immediately followed by ``/``.
+
+    Lexer parts provide the quote boundaries: single/ANSI-C quotes and escaped
+    characters are never searched, while literal and double-quoted regions may
+    contain expansions.  A braced parameter split from its suffix is handled
+    from its exact source span.  More complex parameter operators are opaque.
+    """
+    from kimix_native.shell_compat.models import WordPartKind
+
+    searchable = {
+        WordPartKind.LITERAL,
+        WordPartKind.DOUBLE_QUOTE,
+        WordPartKind.LOCALE_QUOTE,
+        WordPartKind.PARAMETER_EXPANSION,
+    }
+    for kind, span in word.parts:
+        if kind not in searchable:
+            continue
+        text = span.text(source)
+        for pattern in (_PLAIN_PATH_REFERENCE_RE, _BRACED_PATH_REFERENCE_RE):
+            for match in pattern.finditer(text):
+                name = match.group(1)
+                references.setdefault(name, []).append(span.start + match.start())
+        if kind == WordPartKind.PARAMETER_EXPANSION:
+            match = _BRACED_PARAMETER_RE.fullmatch(text)
+            if (
+                match is not None
+                and span.end < len(source)
+                and source[span.end] == "/"
+            ):
+                references.setdefault(match.group(1), []).append(span.start)
+
+
+def _may_have_virtual_path_assignment(source: str) -> bool:
+    """Cheap pre-parse gate; never decides whether a rewrite is legal."""
+    return (
+        "=" in source
+        and "$" in source
+        and (
+            "=/tmp" in source
+            or _VIRTUAL_ASSIGNMENT_GATE_RE.search(source) is not None
+        )
+    )
+
+
+def _path_assignment_analysis(source: str):
+    """Parse once and return ``(commands, later-path-reference positions)``."""
+    if not _may_have_virtual_path_assignment(source):
+        return (), {}
+    try:
+        from kimix_native.shell_compat.parser import parse
+
+        commands = tuple(_executable_commands(parse(source)))
+    except (ImportError, RecursionError):  # pragma: no cover - defensive fallback
+        return (), {}
+    references: dict[str, List[int]] = {}
+    for command in commands:
+        for word in _command_words(command):
+            _record_word_path_references(word, source, references)
+    return commands, references
+
+
+def virtual_path_variable_references(source: str) -> dict[str, List[int]]:
+    """Return executable ``$NAME/...`` / ``${NAME}/...`` reference positions."""
+    return _path_assignment_analysis(source)[1]
+
+
+def path_assignment_edit(
+    raw: str,
+    references: dict[str, List[int]],
+    assignment_start: int = 0,
+) -> Optional[Tuple[int, str, str]]:
+    """Return ``(value_offset, original, replacement)`` for a proven path root.
+
+    Only a plain, unquoted ``NAME=VALUE`` assignment is eligible (not ``+=``),
+    VALUE must independently satisfy :func:`path_replacement`, and at least one
+    path-suffix reference must occur AFTER the complete assignment word.  The
+    caller splices only the value span, leaving the variable name and ``=``
+    byte-for-byte intact.
+    """
+    match = _ASSIGNMENT_RE.match(raw)
+    if match is None:
+        return None
+    name = raw[: match.end() - 1]
+    if name.endswith("+"):
+        return None
+    assignment_end = assignment_start + len(raw)
+    if not any(
+        position >= assignment_end for position in references.get(name, ())
+    ):
+        return None
+    value_offset = match.end()
+    original = raw[value_offset:]
+    replacement = path_replacement(original)
+    if replacement is None:
+        return None
+    return value_offset, original, replacement
+
+
+def path_assignment_edits(source: str) -> List[Tuple[int, int, str]]:
+    """Return source-coordinate value edits for all proven path assignments."""
+    commands, references = _path_assignment_analysis(source)
+    edits: List[Tuple[int, int, str]] = []
+    for command in commands:
+        for word in command.assignments:
+            raw = word.span.text(source)
+            decision = path_assignment_edit(raw, references, word.span.start)
+            if decision is None:
+                continue
+            offset, _original, replacement = decision
+            edits.append((word.span.start + offset, word.span.end, replacement))
+    return edits
+
+
+def has_path_assignment_translation(source: str) -> bool:
+    """Whether the source or an embedded script needs the Python-owned rule.
+
+    Embedded scripts have independent source coordinates and are deliberately
+    excluded from ``path_assignment_edits``.  Inspect their own source strings
+    here so the native facade still selects the reference engine when a nested
+    shell/eval operand would exercise the new rule.
+    """
+    if path_assignment_edits(source):
+        return True
+    if not _may_have_virtual_path_assignment(source):
+        return False
+    try:
+        from kimix_native.shell_compat.models import EmbeddedScriptNode, walk_nodes
+        from kimix_native.shell_compat.parser import parse
+
+        for node in walk_nodes(parse(source)):
+            if not isinstance(node, EmbeddedScriptNode) or node.inner is None:
+                continue
+            inner_source = node.inner.source
+            if inner_source != source and path_assignment_edits(inner_source):
+                return True
+    except (ImportError, RecursionError):  # pragma: no cover - defensive fallback
+        return False
+    return False
 
 
 # ======================================================================

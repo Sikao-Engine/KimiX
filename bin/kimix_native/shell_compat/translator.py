@@ -174,6 +174,7 @@ class TranslationContext:
         "pending_dispatch",
         "consumed_end",
         "heredoc_events",
+        "_path_variable_references",
     )
 
     def __init__(self) -> None:
@@ -197,6 +198,17 @@ class TranslationContext:
         #: heredoc handler for the final trailing-operator repair (mirrors the
         #: LIVE scanner's ``heredoc_events``).
         self.heredoc_events: List[Tuple[int, int]] = []
+        self._path_variable_references: Optional[dict[str, List[int]]] = None
+
+    def path_variable_references(self, source: str) -> dict[str, List[int]]:
+        """Cached IR analysis shared by every per-command path dispatch."""
+        if self._path_variable_references is None:
+            from kimix_native.shell_compat.paths import (
+                virtual_path_variable_references,
+            )
+
+            self._path_variable_references = virtual_path_variable_references(source)
+        return self._path_variable_references
 
     # ── recording (source order preserved by construction) ────────────────
 

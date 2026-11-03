@@ -289,6 +289,23 @@ def test_native_empty_command_is_a_pass_through() -> None:
     assert _shell.fix_bash_command("") == _shell.BashFix("")
 
 
+def test_assignment_path_rule_matches_reference_with_native_staged() -> None:
+    """The facade falls back only for the rule absent from the C++ kernel."""
+    _native()
+    source = "L=/c/dev/x && clang++ -I $L/include"
+    result = _shell.fix_bash_command(source)
+    assert result == _shell._py_fix_bash_command(source)
+    assert result.command == "L=C:/dev/x && clang++ -I $L/include"
+    assert result.path_changes == ("/c/dev/x",)
+
+    nested = "bash -c 'L=/c/dev/x && clang++ -I $L/include'"
+    nested_result = _shell.fix_bash_command(nested)
+    assert nested_result == _shell._py_fix_bash_command(nested)
+    assert nested_result.command == (
+        "bash -c 'L=C:/dev/x && clang++ -I $L/include'"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 4. temp-dir plumbing (the reference gettempdir()/monkeypatch contract)
 # ---------------------------------------------------------------------------

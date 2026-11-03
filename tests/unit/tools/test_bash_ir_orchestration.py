@@ -98,6 +98,8 @@ _CONTROLLED_BATTERY = [
     r"rev C:\a > nul",
     r"tree C:\dir > NUL",
     "cat /c/x/y",
+    "L=/c/dev/x && clang++ -I $L/include",
+    "export L=/c/dev/x; clang++ -I ${L}/include",
     r"cd /d D:\x",
     "echo 2>nul",
     "journalctl -u x",

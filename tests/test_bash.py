@@ -2676,6 +2676,80 @@ class TestBashFixGitBashPosixPaths:
         assert result.replacements == ()
         assert result.path_changes
 
+    def test_virtual_path_assignment_used_as_path_root_is_rewritten(self) -> None:
+        """Recorded invocation #58: native clang++ cannot resolve /c/... via $L."""
+        source = (
+            "cd /c/dev/semevia-next/.kimix_cache/chunkcheck && "
+            "L=/c/dev/semevia-next/thirdparty/LuisaCompute && "
+            "clang++ -std=c++20 -DLUISA_USE_SYSTEM_STL "
+            "-DLUISA_EMBED_HOST_ONLY=1 -I $L/include -I $L/src/tests "
+            "-I $L/examples $L/src/tests/unit/embedding/test_embed_chunker.cpp "
+            "$L/examples/embedding/embed/chunker.cpp -o chunker_test.exe "
+            "2>&1 | head -40"
+        )
+        result = _fix_for_windows(source)
+        assert result.command == source.replace(
+            "/c/dev/semevia-next/.kimix_cache/chunkcheck",
+            "C:/dev/semevia-next/.kimix_cache/chunkcheck",
+        ).replace(
+            "L=/c/dev/semevia-next/thirdparty/LuisaCompute",
+            "L=C:/dev/semevia-next/thirdparty/LuisaCompute",
+        )
+        assert result.path_changes == (
+            "/c/dev/semevia-next/.kimix_cache/chunkcheck",
+            "/c/dev/semevia-next/thirdparty/LuisaCompute",
+        )
+
+    @pytest.mark.parametrize(
+        ("source", "expected"),
+        [
+            (
+                "L=/c/dev/x && clang++ -I $L/include",
+                "L=C:/dev/x && clang++ -I $L/include",
+            ),
+            (
+                'export L=/c/dev/x; clang++ -I "${L}/include"',
+                'export L=C:/dev/x; clang++ -I "${L}/include"',
+            ),
+            (
+                "L=/tmp/x; tool ${L}/out",
+                "L={tmp}/x; tool ${L}/out",
+            ),
+            (
+                "bash -c 'L=/c/dev/x && clang++ -I $L/include'",
+                "bash -c 'L=C:/dev/x && clang++ -I $L/include'",
+            ),
+            (
+                "eval 'L=/c/dev/x; clang++ -I ${L}/include'",
+                "eval 'L=C:/dev/x; clang++ -I ${L}/include'",
+            ),
+        ],
+    )
+    def test_virtual_path_assignment_path_use_variants(
+        self, source: str, expected: str
+    ) -> None:
+        result = _fix_for_windows(source)
+        assert result.command == expected.replace("{tmp}", self._tmp())
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "L=/c/dev/x",  # no path use: retain the assignment-data policy
+            "L=/c/dev/x; printf '%s' $L",  # no path-suffix use
+            "printf '%s' $L/include; L=/c/dev/x",  # reference precedes assignment
+            "L=/c/dev/x; printf '%s' '$L/include'",  # quoted data
+            "L=/c/dev/x; cat <<'EOF'\n$L/include\nEOF",  # heredoc data
+            "L=/c/dev/x; echo ok # $L/include",  # comment data
+            "env L=/c/dev/x clang++ -I $L/include",  # env operand is data
+            "echo L=/c/dev/x",  # ordinary argument, not an assignment
+            "L='/c/dev/x'; clang++ -I $L/include",  # quoted assignment data
+        ],
+    )
+    def test_virtual_path_assignment_without_executable_path_use_is_untouched(
+        self, command: str
+    ) -> None:
+        assert _fix_for_windows(command) == BashFix(command)
+
     @pytest.mark.parametrize(
         "command",
         [

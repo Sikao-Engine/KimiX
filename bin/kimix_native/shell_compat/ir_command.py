@@ -285,6 +285,27 @@ def _harvest_span(d: CommandDecision, source: str, ss: int, se: int) -> None:
 # ── slot 6: path rules ────────────────────────────────────────────────────────
 
 
+def _walk_assignment_paths(
+    d: CommandDecision,
+    source: str,
+    command: "CommandNode",
+    references: dict[str, List[int]],
+) -> None:
+    """slot 6: assignments proven to be path roots by later IR references."""
+    from kimix_native.shell_compat import paths as P
+
+    for word in command.assignments:
+        raw = _raw(word, source)
+        decision = P.path_assignment_edit(raw, references, word.span.start)
+        if decision is None:
+            continue
+        offset, original, replacement = decision
+        d.slot6_edits.append(
+            (word.span.start + offset, word.span.end, replacement)
+        )
+        d.paths6.append(original)
+
+
 def _cmd_word_path(d: CommandDecision, source: str, command: "CommandNode") -> None:
     """slot 6: a command word can itself be a Windows / virtual path."""
     from kimix_native.shell_compat import paths as P, wrappers as W
@@ -731,7 +752,11 @@ def _at_cmd_control(d: CommandDecision, command: "CommandNode", source: str,
     return True
 
 
-def decide_command(command: "CommandNode", source: str) -> CommandDecision:
+def decide_command(
+    command: "CommandNode",
+    source: str,
+    path_variable_references: Optional[dict[str, List[int]]] = None,
+) -> CommandDecision:
     """Compute command's IR decisions (the scanner's per-command word machine)
     bucketed across 3.5 slots 4-8.  Pure and deterministic: the five slot
     handlers each call this and commit only their bucket, so the dispatcher
@@ -743,6 +768,10 @@ def decide_command(command: "CommandNode", source: str) -> CommandDecision:
     RuleResult.dispatch continuation).  Substitution child contexts recurse (they
     share the OUTER coordinate string)."""
     d = CommandDecision()
+    if path_variable_references is not None:
+        # Assignments precede the command word, so their edits/reports are
+        # discovered before slot-6 command-word and argument paths.
+        _walk_assignment_paths(d, source, command, path_variable_references)
     cw = command.command_word
     if cw is None:
         _walk_redirections(d, source, command)
@@ -876,7 +905,11 @@ def rule_path(command: "CommandNode", source: str, context: "TranslationContext"
     cmd cd /d flag deletion (slot 6)."""
     from kimix_native.shell_compat.translator import RuleResult
 
-    d = decide_command(command, source)
+    d = decide_command(
+        command,
+        source,
+        path_variable_references=context.path_variable_references(source),
+    )
     if d.is_cmd_owned or not d.slot6_edits:
         return None
     return RuleResult(

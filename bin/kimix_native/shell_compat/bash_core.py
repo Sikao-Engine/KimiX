@@ -905,7 +905,7 @@ _INT_RE = re.compile(r"^-?[0-9]+$")
 class _BashFixScanner:
     """Conservative scanner for Bash executable command positions."""
 
-    __slots__ = ("s", "n", "edits", "names", "path_notes", "shell_notes", "heredoc_events", "nest_depth", "nul_fixes", "unsupported", "cmd_conditional_notes")
+    __slots__ = ("s", "n", "edits", "names", "path_notes", "shell_notes", "heredoc_events", "nest_depth", "nul_fixes", "unsupported", "cmd_conditional_notes", "_path_variable_references")
 
     def __init__(self, command: str) -> None:
         self.s = command
@@ -919,6 +919,10 @@ class _BashFixScanner:
         self.nul_fixes: list[str] = []
         self.unsupported: list[str] = []
         self.cmd_conditional_notes: list[str] = []
+        # Lazily derived from the tolerant IR on the first command scan.  The
+        # map makes assignment-path decisions usage-aware without changing the
+        # historical assignment-data default.
+        self._path_variable_references: dict[str, list[int]] | None = None
 
     def fix(self) -> BashFix:
         try:
@@ -1943,6 +1947,14 @@ class _BashFixScanner:
             return
         self.nest_depth += 1
         try:
+            if self._path_variable_references is None:
+                from kimix_native.shell_compat.paths import (
+                    virtual_path_variable_references,
+                )
+
+                self._path_variable_references = virtual_path_variable_references(
+                    self.s
+                )
             self._scan_range_inner(start, end)
         finally:
             self.nest_depth -= 1
@@ -2278,6 +2290,16 @@ class _BashFixScanner:
                 continue
 
             if not command_expected:
+                if command_word is not None:
+                    # Declaration builtins (export/local/declare/...) classify
+                    # NAME=value operands as assignments in the IR too.  Apply
+                    # the same usage-aware path rule as command-prefix and
+                    # standalone assignments; other declaration args keep the
+                    # ordinary argument behavior below.
+                    from kimix_native.shell_compat.parser import DECLARATION_BUILTINS
+
+                    if command_word in DECLARATION_BUILTINS:
+                        self._record_path_assignment(word_start, word_end, raw)
                 if (
                     command_word in _EXEC_OPERAND_COMMANDS
                     and self._shell_wrapper_name(raw) is not None
@@ -2455,6 +2477,7 @@ class _BashFixScanner:
                 command_expected = False
                 continue
             if "=" in raw and _ASSIGNMENT_RE.match(raw):
+                self._record_path_assignment(word_start, word_end, raw)
                 if i < end and s[i] == "(":
                     close = self._find_matching(i + 1, end, ")")
                     self._scan_array_words(i + 1, close if close < end else end)
@@ -3587,6 +3610,22 @@ class _BashFixScanner:
         from kimix_native.shell_compat.paths import path_replacement
 
         return path_replacement(raw)
+
+    def _record_path_assignment(
+        self, word_start: int, word_end: int, raw: str
+    ) -> bool:
+        """Rewrite an assignment value proven to be used as a path root."""
+        from kimix_native.shell_compat.paths import path_assignment_edit
+
+        decision = path_assignment_edit(
+            raw, self._path_variable_references or {}, word_start
+        )
+        if decision is None:
+            return False
+        offset, original, replacement = decision
+        self.edits.append((word_start + offset, word_end, replacement))
+        self.path_notes.append(original)
+        return True
 
     @staticmethod
     def _plausible_path_segments(raw: str) -> bool:
