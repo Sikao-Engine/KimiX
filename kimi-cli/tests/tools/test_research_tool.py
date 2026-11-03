@@ -59,7 +59,19 @@ def _patch_create_session(monkeypatch, *, children: list | None = None, created:
 
     async def fake_create_session_async(**kwargs):
         calls.append(kwargs)
-        child = SimpleNamespace(id=f"child-{len(calls)}", _closed=False)
+        # Mirror the SDK wrapper: the real session (with custom_data) lives on
+        # ``_cli.session``; the research tool reads it for the cache-only guard.
+        core = SimpleNamespace(
+            id=f"child-{len(calls)}",
+            work_dir=kwargs.get("work_dir"),
+            custom_data=dict(kwargs.get("custom_data") or {}),
+            _closed=False,
+        )
+        child = SimpleNamespace(
+            id=core.id,
+            _closed=False,
+            _cli=SimpleNamespace(session=core),
+        )
         if children is not None:
             children.append(child)
         if created is not None:

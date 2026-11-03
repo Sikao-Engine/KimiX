@@ -20,7 +20,7 @@
       "kimi_cli.tools.web:web_search",
       "kimi_cli.tools.context:compact",
       "kimi_cli.tools.skill:skill",
-      "kimi_cli.tools.research:Research"
+      "kimi_cli.tools.research:research"
     ],
     "disabled_tools": [
       "kimi_cli.tools.subagent:interrupt_agent",

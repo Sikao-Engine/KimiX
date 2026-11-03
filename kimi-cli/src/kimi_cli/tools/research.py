@@ -13,6 +13,14 @@ background-task infrastructure as ``bash``/``pwsh`` under a ``research_<n>``
 task id, so the generic ``job_output`` tool can wait for, read, and kill it
 without any tool-specific support.
 
+The child owns ``write``/``edit`` in *cache-only* mode
+(:mod:`kimi_cli.tools.file.cache_scope`): every argument path must be a plain
+relative name and is saved under ``<work dir>/.kimix_cache/research/<id>/``, so
+a researcher can leave a long report behind without ever touching the
+repository.  The child's written paths are collected from that session's ledger
+and appended to the returned text, which is how the calling agent learns what
+it can ``read``.
+
 ``kimi_cli`` must not import ``kimix``/``kimi_agent_sdk`` at module load
 (``kimix`` depends on ``kimi_cli``, and the SDK imports ``kimi_cli.app``,
 which would form a cycle); every ``kimix.*`` symbol is imported lazily inside
@@ -34,6 +42,13 @@ from kimi_cli.tools.background.utils import (
     add_task,
     get_all_tasks,
 )
+from kimi_cli.tools.file.cache_scope import (
+    CACHE_ONLY_WRITE_KEY,
+    CACHE_WRITTEN_FILES_KEY,
+    cache_only_write_enabled,
+    display_cache_path,
+    enable_cache_only_write,
+)
 from kimi_cli.tools.subagent import (
     _AgentConversationCollector,
     _cli_session_id,
@@ -47,11 +62,53 @@ if TYPE_CHECKING:
     import queue
 
 
+def _core_session(session: Any) -> Any:
+    """Return the ``kimi_cli.session.Session`` behind an SDK wrapper.
+
+    Tools are constructed with the core session and read ``custom_data`` from
+    it; the SDK wrapper only exposes it as ``session._cli.session``.
+    """
+    for candidate in (
+        getattr(getattr(session, "_cli", None), "session", None),
+        getattr(session, "session", None),
+    ):
+        if candidate is not None:
+            return candidate
+    return session
+
+
 def _error_text(exc: BaseException) -> str:
     """A never-empty description of *exc* (``str(exc)`` is empty for many)."""
     text = str(exc).strip()
     name = type(exc).__name__
     return f"{name}: {text}" if text else name
+
+
+def _append_written_files(text: str, written: list[str]) -> str:
+    """Append the researcher's artifact paths to *text* (never raises).
+
+    The paths are sandbox-relative (``.kimix_cache/<rel>``) so the calling agent
+    can hand them straight to ``read`` — the child shares the parent's work dir.
+    """
+    try:
+        shown: list[str] = []
+        for rel in written:
+            if isinstance(rel, str) and rel and rel not in shown:
+                shown.append(rel)
+        if not shown:
+            return text
+        lines = [
+            "",
+            "",
+            "## Research artifacts",
+            f"The researcher wrote {len(shown)} file(s) (sandboxed to `.kimix_cache/`):",
+        ]
+        lines.extend(f"- {display_cache_path(rel)}" for rel in shown)
+        lines.append("Use `read` with these paths to inspect the full content.")
+        return text + "\n".join(lines)
+    except Exception:
+        return text
+
 
 
 class ResearchParams(BaseModel):
@@ -93,14 +150,14 @@ class Research(CallableTool2):
         if params.run_in_background:
             return await self._start_background(params.query)
         try:
-            child, child_id = await self._create_child_session()
+            child, child_id, written = await self._create_child_session()
         except Exception as exc:
             return ToolError(
                 output="",
                 message=_error_text(exc),
                 brief="Failed to create research session",
             )
-        text, err = await self._research(child, child_id, params.query)
+        text, err = await self._research(child, child_id, params.query, written)
         if err is not None:
             return ToolError(
                 output=text,
@@ -113,7 +170,7 @@ class Research(CallableTool2):
     # Child session
     # ------------------------------------------------------------------ #
 
-    async def _create_child_session(self) -> tuple[Any, str]:
+    async def _create_child_session(self) -> tuple[Any, str, list[str]]:
         """Create the fresh, anonymous, read-only researcher child session.
 
         Mirrors the ``subagent`` provider fallback: a ``researcher``-role
@@ -122,6 +179,10 @@ class Research(CallableTool2):
         role mapping (``_ROLE_DEFAULT_AGENT_FILES['researcher']``), the
         system prompt is ``SystemPromptType.Reader``, and the child inherits
         the parent's work dir and ``chat_provider``.
+
+        The child is created in *cache-only write* mode and handed the ledger
+        list itself, so the artifacts it writes outlive the child's teardown
+        (its session and ``custom_data`` are dropped on completion).
         """
         import kimix.base as base
         from kimix.utils import _create_session_async
@@ -137,6 +198,9 @@ class Research(CallableTool2):
         agent_file = base._default_agent_file_dir / _ROLE_DEFAULT_AGENT_FILES.get(
             "researcher", "agent_readonly.json"
         )
+        # The ledger list is shared with the child (``custom_data.update`` keeps
+        # the reference), so its paths stay readable after the session closes.
+        written: list[str] = []
         child = await _create_session_async(
             work_dir=_session_work_dir(self._session),
             agent_file=agent_file,
@@ -145,14 +209,42 @@ class Research(CallableTool2):
             chat_provider=chat_provider,
             resume=True,
             anonymous=True,
+            custom_data={
+                CACHE_ONLY_WRITE_KEY: True,
+                CACHE_WRITTEN_FILES_KEY: written,
+            },
         )
         child_id = _cli_session_id(child)
-        _register_child_session(_cli_session_id(self._session), child_id)
-        return child, child_id
+        # Fail closed: the child owns write/edit, so it MUST be confined to its
+        # cache sandbox before it is prompted.  ``custom_data`` above already
+        # sets the flag on the real session, but verify on the session the
+        # tools actually receive (an SDK wrapper hides it behind ``_cli``).
+        core = _core_session(child)
+        written = enable_cache_only_write(core, written)
+        if not cache_only_write_enabled(core):
+            # Never prompt an unconfined researcher: it owns write/edit and a
+            # yolo child would otherwise be free to modify the repository.
+            from kimix.utils import close_session_async
 
-    async def _research(self, child: Any, child_id: str, query: str) -> tuple[str, str | None]:
+            with contextlib.suppress(BaseException):
+                await close_session_async(child)
+            raise RuntimeError(
+                "research child session could not be confined to cache-only writes"
+            )
+        _register_child_session(_cli_session_id(self._session), child_id)
+        return child, child_id, written
+
+    async def _research(
+        self,
+        child: Any,
+        child_id: str,
+        query: str,
+        written: list[str],
+    ) -> tuple[str, str | None]:
         """Prompt the child and return its final assistant text plus an error.
 
+        *written* is the child's live artifact ledger; it is copied once the
+        prompt finishes so the returned text lists the files it created.
         The child session is closed and every bookkeeping record of it is
         dropped in a ``finally`` — on success, prompt failure, and caller
         cancellation — so a finished research run never leaks sessions.
@@ -189,9 +281,12 @@ class Research(CallableTool2):
                 raise
             except Exception as exc:
                 err = _error_text(exc)
+            # Collect the artifacts before the session (and its ``custom_data``)
+            # is torn down below.
             text = collector.finalize_assistant_turn()
             if not text:
                 text = "(no text output)"
+            text = _append_written_files(text, list(written))
         finally:
             # Close and forget on success, prompt failure AND caller
             # cancellation — a finished (or killed) research run must never
@@ -278,9 +373,9 @@ class Research(CallableTool2):
             err: str | None = None
             text = ""
             try:
-                child, child_id = await self._create_child_session()
+                child, child_id, written = await self._create_child_session()
                 try:
-                    text, err = await self._research(child, child_id, query)
+                    text, err = await self._research(child, child_id, query, written)
                 except asyncio.CancelledError:
                     err = "Research task was cancelled."
             except asyncio.CancelledError:

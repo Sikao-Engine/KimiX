@@ -285,7 +285,11 @@ class TestFileToolLogging:
 
         with (
             patch("kimi_cli.tools.file.edit.modes.replace.logger") as mock_logger,
-            patch("kimi_cli.tools.file.edit.modes.replace.kaos_path_from_tool_input") as mock_path,
+            # Path resolution moved into ``BaseEditTool.resolve_tool_path`` so
+            # cache-only mode can share it; patch the binding that is called.
+            patch(
+                "kimi_cli.tools.file.edit.base.kaos_path_from_tool_input"
+            ) as mock_path,
         ):
             mock_path.side_effect = RuntimeError("Unexpected")
             result = await edit_file_tool(

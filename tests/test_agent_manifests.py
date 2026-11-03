@@ -42,7 +42,7 @@ def test_all_manifest_entries_resolve_to_tool_classes():
 def test_worker_and_planner_have_research():
     for manifest in ('agent_worker.json', 'agent_planner.json'):
         names = {entry.partition(':')[2] for entry in _entries(manifest)}
-        assert 'Research' in names, f'{manifest}: missing kimi_cli.tools.research:Research'
+        assert 'research' in names, f'{manifest}: missing kimi_cli.tools.research:research'
 
 
 def test_planner_has_job_output_to_retrieve_background_research():

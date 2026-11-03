@@ -6,6 +6,8 @@
       "kimi_cli.tools.file:read_image",
       "kimi_cli.tools.file:glob",
       "kimi_cli.tools.file:grep",
+      "kimi_cli.tools.file:write",
+      "kimi_cli.tools.file:edit",
       "kimi_cli.tools.web.kimix_fetch:fetch_url",
       "kimi_cli.tools.web:web_search",
       "kimi_cli.tools.skill:skill"

@@ -26,6 +26,11 @@ from .utils import _input, _set_active_ipc_server
 
 exec_ctx: dict[str, Any] = {}
 
+# Printed once when an interactive ``--connect`` session starts. It is not used
+# as the per-line prompt: a modern terminal already shows the caret, and
+# re-printing the hint for every message would spam the scrollback.
+_CONNECT_BANNER = ">>>>>>>> Message for CLI server (Ctrl+C to quit):"
+
 
 def _check_native() -> None:
     """Detect the optional native acceleration path and log its status.
@@ -216,9 +221,12 @@ def _connect_cli(connect: str) -> None:
 
     try:
         if sys.stdin.isatty():
+            # The banner is a one-time hint. Repeating it on every prompt would
+            # flood the transcript, so subsequent reads stay prompt-free.
+            print(_CONNECT_BANNER, flush=True)
             while True:
                 try:
-                    message = input(">>>>>>>> Message for CLI server (Ctrl+C to quit):\n")
+                    message = input()
                 except (EOFError, KeyboardInterrupt):
                     print_success("\nbye.")
                     break

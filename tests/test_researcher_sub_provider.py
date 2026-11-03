@@ -43,16 +43,21 @@ class TestResearcherDefaultAgentFile:
         manifest = base._default_agent_file_dir / config_mod._ROLE_DEFAULT_AGENT_FILES["researcher"]
         assert manifest.is_file(), f"manifest not found: {manifest}"
 
-    def test_mapped_manifest_declares_read_only_tools(self) -> None:
+    def test_mapped_manifest_declares_read_and_cache_only_report_tools(self) -> None:
         import orjson
 
         manifest = base._default_agent_file_dir / config_mod._ROLE_DEFAULT_AGENT_FILES["researcher"]
         tools = orjson.loads(manifest.read_bytes())["agent"]["tools"]
+        # ``write``/``edit`` are the cache-only *report* variants: the research
+        # child may only save plain relative paths under its `.kimix_cache/`
+        # sandbox, so the manifest still grants no way to edit the project.
         assert set(tools) == {
             "kimi_cli.tools.file:read",
             "kimi_cli.tools.file:read_image",
             "kimi_cli.tools.file:glob",
             "kimi_cli.tools.file:grep",
+            "kimi_cli.tools.file:write",
+            "kimi_cli.tools.file:edit",
             "kimi_cli.tools.web.kimix_fetch:fetch_url",
             "kimi_cli.tools.web:web_search",
             "kimi_cli.tools.skill:skill",

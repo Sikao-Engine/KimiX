@@ -30,6 +30,15 @@ from kimi_cli.vfs import VFS
 from kosong.tooling import CallableTool2, DisplayBlock, ToolError, ToolReturnValue, alias_note
 
 from .auto_generated import assert_editable_file
+from .cache_scope import (
+    cache_namespace,
+    cache_only_write_enabled,
+    cache_relative_path,
+    cache_scope_note,
+    display_cache_path,
+    record_cache_written,
+    resolve_cache_only_path,
+)
 from .conflict_detect import (
     ConflictError,
     conflict_region_present,
@@ -232,7 +241,6 @@ class WriteFile(CallableTool2[Params]):
         return ret
 
     async def _call_core(self, params: Params) -> ToolReturnValue:
-        display_path = params.file_path.replace("\\", "/")
         # The former `TODO: checks:` block here asked for a "path may contain secrets"
         # warning.  That check is deliberately NOT implemented in the write path: refusing or
         # annotating writes by filename heuristics would change tool-visible behaviour and
@@ -246,6 +254,38 @@ class WriteFile(CallableTool2[Params]):
                 brief="Empty file path",
             )
 
+        # Cache-scoped mode (read-only researcher child sessions): the caller may
+        # only name a *relative* file, which is resolved inside this session's
+        # ``<work dir>/.kimix_cache/research/<id>/`` sandbox.  Rewriting the
+        # argument to that absolute path keeps the rest of the flow (VFS,
+        # snapshots, size verification) identical and makes every later
+        # `[out of work-dir]` check pass.
+        cache_only = cache_only_write_enabled(self._session)
+        cache_rel: str | None = None
+        if cache_only:
+            resolved, cache_error = resolve_cache_only_path(
+                params.file_path,
+                self._work_dir,
+                cache_namespace(self._session),
+            )
+            if cache_error is not None or resolved is None:
+                return ToolError(
+                    message=cache_error or "Invalid cache path.",
+                    brief="Invalid cache path",
+                )
+            cache_rel = cache_relative_path(resolved, self._work_dir)
+            if cache_rel is None:
+                # Defensive: resolve_cache_only_path already guarantees this.
+                return ToolError(
+                    message="Resolved path is outside the cache sandbox.",
+                    brief="Invalid cache path",
+                )
+            params = params.model_copy(update={"file_path": str(resolved)})
+        display_path = (
+            display_cache_path(cache_rel)
+            if cache_rel
+            else params.file_path.replace("\\", "/")
+        )
         # Plan 24: conflict:// URIs resolve recorded marker blocks instead of
         # writing a path — dispatch before any KaosPath resolution.
         if "conflict://" in params.file_path:
@@ -255,7 +295,12 @@ class WriteFile(CallableTool2[Params]):
             p = kaos_path_from_tool_input(params.file_path, self._work_dir)
             logical_path = p
             display_logical_path = str(logical_path).replace("\\", "/")
-            _outside = not is_within_directory(logical_path.canonical(), self._work_dir)
+            # A cache-only path is inside its sandbox by construction.  The
+            # sandbox's physical path can differ from a short/symlinked work-dir
+            # spelling, so the usual prefix test would wrongly say "out of work-dir".
+            _outside = False if cache_only else not is_within_directory(
+                logical_path.canonical(), self._work_dir
+            )
             err, path_is_inside = await self._validate_path(logical_path, params.file_path)
             if err:
                 err.message = f"[out of work-dir] {err.message}" if _outside else err.message
@@ -377,14 +422,18 @@ class WriteFile(CallableTool2[Params]):
             approval_text = f"Write file `{display_logical_path}`"
             if params.justification:
                 approval_text += f" — {params.justification}"
-            result = await self._approval.request(
-                self.name,
-                action,
-                approval_text,
-                display=diff_blocks,
-            )
-            if not result:
-                return result.rejection_error()
+            if not cache_only:
+                # Cache-only writes are confined to the session's own scratch
+                # sandbox and the researcher child has no user to ask, so the
+                # request is skipped instead of hanging on an unanswerable prompt.
+                result = await self._approval.request(
+                    self.name,
+                    action,
+                    approval_text,
+                    display=diff_blocks,
+                )
+                if not result:
+                    return result.rejection_error()
 
             # Write content to file (plan 24: mode-aware conflict guard).
             conflict_err, conflict_note, old_had_blocks = await self._conflict_guard(
@@ -502,6 +551,11 @@ class WriteFile(CallableTool2[Params]):
                 f"Current size: {file_size} bytes. Path: {display_path}",
                 " Verified: size matches.",
             ]
+            if cache_only and cache_rel:
+                # Report artifacts are the whole point of the cache-only mode:
+                # record the path so ``research`` can hand it to the parent.
+                record_cache_written(self._session, cache_rel)
+                message_parts.append(cache_scope_note(cache_rel))
             if conflict_note:
                 message_parts.append(conflict_note)
             if _drift_note:
@@ -523,11 +577,12 @@ class WriteFile(CallableTool2[Params]):
                 "write failed: {path}: {error}", path=params.file_path, error=e
             )
             _outside_ex = False
-            with contextlib.suppress(Exception):
-                _outside_ex = not is_within_directory(
-                    kaos_path_from_tool_input(params.file_path, self._work_dir).canonical(),
-                    self._work_dir,
-                )
+            if not cache_only:
+                with contextlib.suppress(Exception):
+                    _outside_ex = not is_within_directory(
+                        kaos_path_from_tool_input(params.file_path, self._work_dir).canonical(),
+                        self._work_dir,
+                    )
             return ToolError(
                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to write to {display_path}: {e}.",
                 brief="Failed to write file",

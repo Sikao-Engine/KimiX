@@ -12,7 +12,6 @@ from kimi_cli.tools.file import FileActions
 from kimi_cli.tools.file.edit.params import EditMode, EditParams
 from kimi_cli.tools.file.edit_safety import create_edit_parse_guard
 from kimi_cli.utils.diff import build_diff_blocks
-from kimi_cli.utils.path import kaos_path_from_tool_input
 from kosong.tooling import ToolError, ToolReturnValue
 
 from ..base import BaseEditTool
@@ -41,6 +40,7 @@ class SloppyOp:
 class _SloppyPrepared:
     op: SloppyOp
     p: KaosPath
+    cache_rel: str | None
     display_path: str
     content: str
 
@@ -260,8 +260,11 @@ class SloppyModeExecutor:
         prepared: list[_SloppyPrepared] = []
         seen_paths: set[str] = set()
         for op in ops:
-            p = kaos_path_from_tool_input(op.path, tool._work_dir)
-            display_path = str(p).replace("\\", "/")
+            p, cache_rel, path_error = tool.resolve_tool_path(op.path)
+            if path_error is not None:
+                return ToolError(message=path_error, brief="Invalid cache path")
+            assert p is not None
+            display_path = tool.display_for(p, cache_rel)
             err, _ = await tool._validate_path(p, op.path)
             if err:
                 return ToolError(
@@ -279,7 +282,15 @@ class SloppyModeExecutor:
                     message=f"`{display_path}` does not exist.",
                     brief="File not found",
                 )
-            prepared.append(_SloppyPrepared(op=op, p=p, display_path=display_path, content=content))
+            prepared.append(
+                _SloppyPrepared(
+                    op=op,
+                    p=p,
+                    cache_rel=cache_rel,
+                    display_path=display_path,
+                    content=content,
+                )
+            )
 
         # Apply all ops atomically: parse + locate first, then compute new contents.
         new_contents: dict[int, tuple[_SloppyPrepared, str]] = {}
@@ -314,15 +325,15 @@ class SloppyModeExecutor:
 
             diff_blocks = await build_diff_blocks(prep.display_path, prep.content, new_content)
             action = FileActions.EDIT if tool._is_within_workspace(prep.p) else FileActions.EDIT_OUTSIDE
-            approval_result = await tool._approval.request(
+            approval_error = await tool.approve_write(
                 "edit",
                 action,
                 f"Edit file `{prep.display_path}`"
                 + (f" — {params.justification}" if params.justification else ""),
-                display=diff_blocks,
+                diff_blocks,
             )
-            if not approval_result:
-                return approval_result.rejection_error()
+            if approval_error is not None:
+                return approval_error
 
             if params.allow_conflicts:
                 pass
@@ -346,6 +357,8 @@ class SloppyModeExecutor:
                 )
 
             await tool._write_text(prep.p, new_content)
+            if tool.cache_only:
+                tool.record_cache_write(prep.cache_rel)
             results.append(f"Edited `{prep.display_path}`.")
 
             guard = create_edit_parse_guard(

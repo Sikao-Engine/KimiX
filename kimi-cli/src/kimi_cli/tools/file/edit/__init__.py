@@ -11,6 +11,7 @@ from kimi_cli.tools.file.session_bridge import before_tool, merge_message
 from kimi_cli.vfs import VFS
 from kosong.tooling import CallableTool2, ToolError, ToolReturnValue
 
+from ..cache_scope import cache_only_write_enabled
 from .base import BaseEditTool
 from .modes import MODE_REGISTRY
 from .modes.replace import ReplaceModeExecutor
@@ -69,6 +70,12 @@ class EditFile(CallableTool2[EditParams]):
             # Validation should always populate this, but repair if needed.
             params.resolved_mode = normalize_edit_mode(params.mode) or "replace"
 
+        # Cache-only mode (read-only researcher child sessions) is a per-session
+        # flag.  Read it per call instead of trusting construction time, so a
+        # session switched into the mode after the tool was built still applies.
+        # Path resolution itself happens inside each mode executor.
+        self._tool.cache_only = cache_only_write_enabled(self._session)
+        executor_cls = MODE_REGISTRY.get(params.resolved_mode)
         executor_cls = MODE_REGISTRY.get(params.resolved_mode)
         if executor_cls is None:
             return ToolError(

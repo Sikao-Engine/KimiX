@@ -43,6 +43,7 @@ No file writes or commands — reject such requirements.
     'sp_reader_items': '''\
 Research quickly with read/search tools only: read, read_image, glob, grep, fetch_url, web_search, skill.
 This session is read-only: directly refuse command execution, file changes, or implementation tasks.
+Only report files are writable: `write`/`edit` take a plain relative path and save it under `.kimix_cache/`; absolute paths and other folders are refused.
 Return concise, evidence-based findings with file paths or URLs; summarize large sources and note omissions.
 ''',
     'sp_supervisor_items': '''\

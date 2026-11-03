@@ -2,11 +2,14 @@
 
 The Reader prompt drives the research tool's read-only child session, whose
 toolset is fixed by ``src/kimix/agent_readonly.json`` (read, read_image, glob,
-grep, fetch_url, web_search, skill). These tests pin the prompt contract:
+grep, write, edit, fetch_url, web_search, skill). ``write``/``edit`` are the
+cache-only *report* variant: they accept a plain relative path and save it under
+``.kimix_cache/``, never in the repository. These tests pin the prompt contract:
 
-  - it names exactly the read/search tools the manifest provides;
+  - it names exactly the tools the manifest provides;
   - it demands an evidence-based, self-contained final result with sources;
-  - it directly refuses execution, file changes, and implementation tasks;
+  - it directly refuses execution, file changes, and implementation tasks, and
+    describes the ``.kimix_cache/`` report sandbox as the only exception;
   - it stays free of AGENTS.md / CLAUDE.md / skills injection (unlike the
     worker-family prompts) — the manifest, not repo docs, defines its tools.
 """
@@ -17,6 +20,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from kimix.utils.system_prompt import SystemPromptType, get_system_prompt
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def _make_runtime(work_dir: Path, skills: str = "") -> SimpleNamespace:
@@ -51,13 +56,42 @@ class TestReaderRoleDoc:
 class TestReaderToolGuidance:
     def test_names_every_manifest_tool(self, tmp_path: Path):
         prompt = _reader_prompt(tmp_path)
-        for tool in ("read", "read_image", "glob", "grep", "fetch_url", "web_search", "skill"):
+        for tool in (
+            "read",
+            "read_image",
+            "glob",
+            "grep",
+            "write",
+            "edit",
+            "fetch_url",
+            "web_search",
+            "skill",
+        ):
             assert tool in prompt, f"Reader prompt does not mention `{tool}`"
+
+    def test_manifest_tools_match_the_prompt_list(self, tmp_path: Path):
+        """The manifest and the prompt must not drift apart."""
+        import orjson
+
+        manifest = REPO_ROOT / "src" / "kimix" / "agent_readonly.json"
+        entries = orjson.loads(manifest.read_bytes())["agent"]["tools"]
+        names = [entry.partition(":")[2] for entry in entries]
+        prompt = _reader_prompt(tmp_path)
+        for name in names:
+            assert name in prompt, f"manifest tool `{name}` missing from Reader prompt"
 
     def test_read_only_session_directly_refuses_non_research_tasks(self, tmp_path: Path):
         prompt = _reader_prompt(tmp_path)
         assert "This session is read-only" in prompt
-        assert "directly refuse command execution, file changes, or implementation tasks" in prompt
+        assert (
+            "directly refuse command execution, file changes, or implementation tasks"
+            in prompt
+        )
+
+    def test_states_the_cache_only_report_sandbox(self, tmp_path: Path):
+        prompt = _reader_prompt(tmp_path)
+        assert ".kimix_cache/" in prompt
+        assert "relative path" in prompt
 
     def test_research_should_finish_quickly(self, tmp_path: Path):
         prompt = _reader_prompt(tmp_path)

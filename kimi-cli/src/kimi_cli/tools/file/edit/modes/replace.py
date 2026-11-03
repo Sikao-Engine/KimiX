@@ -305,17 +305,28 @@ class ReplaceModeExecutor:
             )
 
         try:
-            p = kaos_path_from_tool_input(file_path, tool._work_dir)
+            p, cache_rel, path_error = tool.resolve_tool_path(file_path)
+            if path_error is not None:
+                return ToolError(message=path_error, brief="Invalid cache path")
+            assert p is not None
+            # Cache-only paths are already absolute sandbox paths; normal mode
+            # keeps resolving the original argument (VFS-aware) below.
+            resolved_input = str(p) if tool.cache_only else file_path
             logical_path = p
-            display_logical_path = str(logical_path).replace("\\", "/")
-            _outside = not is_within_directory(logical_path.canonical(), tool._work_dir)
-            err, _ = await tool._validate_path(p, file_path)
+            display_logical_path = tool.display_for(logical_path, cache_rel)
+            display_path = display_logical_path
+            # Cache-only paths are inside the sandbox by construction; its
+            # physical path may differ from a short/symlinked work-dir spelling.
+            _outside = False if tool.cache_only else not is_within_directory(
+                logical_path.canonical(), tool._work_dir
+            )
+            err, _ = await tool._validate_path(p, resolved_input)
             if err:
                 if _outside:
                     err.message = f"[out of work-dir] {err.message}"
                 return err
 
-            p = await tool._resolve_for_write(file_path)
+            p = await tool._resolve_for_write(resolved_input)
 
             try:
                 st = await p.stat()
@@ -413,15 +424,15 @@ class ReplaceModeExecutor:
             )
 
             action = FileActions.EDIT if tool._is_within_workspace(p) else FileActions.EDIT_OUTSIDE
-            approval_result = await tool._approval.request(
+            approval_error = await tool.approve_write(
                 "edit",
                 action,
                 f"Edit file `{display_logical_path}`"
                 + (f" — {params.justification}" if params.justification else ""),
-                display=diff_blocks,
+                diff_blocks,
             )
-            if not approval_result:
-                return approval_result.rejection_error()
+            if approval_error is not None:
+                return approval_error
 
             file_path_str = str(logical_path)
             fmt_error, is_json = await tool._check_format(file_path_str, new_content)
@@ -455,6 +466,11 @@ class ReplaceModeExecutor:
                 pass
 
             await tool._write_text(p, new_content)
+            if tool.cache_only:
+                # Report artifacts are the point of the cache-only mode: always
+                # report the sandbox path so the parent agent can read it.
+                tool.record_cache_write(cache_rel)
+                result_msg_parts.append(tool.cache_note(cache_rel))
             # Plan 25 M2: record the post-write version + bust FS-scan caches.
             with contextlib.suppress(Exception):
                 record_content_snapshot(
@@ -511,11 +527,12 @@ class ReplaceModeExecutor:
         except (OSError, ValueError, RuntimeError) as e:
             logger.warning("edit failed: {path}: {error}", path=file_path, error=e)
             _outside_ex = False
-            with contextlib.suppress(Exception):
-                _outside_ex = not is_within_directory(
-                    kaos_path_from_tool_input(file_path, tool._work_dir).canonical(),
-                    tool._work_dir,
-                )
+            if not tool.cache_only:
+                with contextlib.suppress(Exception):
+                    _outside_ex = not is_within_directory(
+                        kaos_path_from_tool_input(file_path, tool._work_dir).canonical(),
+                        tool._work_dir,
+                    )
             return ToolError(
                 message=f"{'[out of work-dir] ' if _outside_ex else ''}Failed to edit. Error: {e} Path: {display_path}",
                 brief="Failed to edit file",

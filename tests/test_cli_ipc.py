@@ -229,6 +229,48 @@ def test_connect_cli_forwards_stdin_as_one_message_list(
     assert sent == [(endpoint, ["first\nsecond\r\n"])]
 
 
+class _FakeTTYStdin(io.StringIO):
+    """Stdin stub that reports itself as an interactive terminal."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_connect_cli_prints_banner_only_once(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    endpoint = ipc.ServerEndpoint(123, 4099, "token", tmp_path / "pid_123")
+    monkeypatch.setattr(core, "discover_servers", lambda *_, **__: [endpoint])
+    monkeypatch.setattr(core.constants, "curr_dir", tmp_path)
+    monkeypatch.setattr(sys, "stdin", _FakeTTYStdin(""))
+    sent: list[list[str]] = []
+    monkeypatch.setattr(core, "send_messages", lambda target, messages: sent.append(messages))
+    answers = iter(["first", "second", "third"])
+    prompts: list[str] = []
+
+    def fake_input(prompt: str = "") -> str:
+        prompts.append(prompt)
+        try:
+            return next(answers)
+        except StopIteration:
+            raise EOFError from None
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    debug_messages: list[str] = []
+    monkeypatch.setattr(core, "print_debug", debug_messages.append)
+
+    core._connect_cli("")
+
+    out = capsys.readouterr().out
+    assert out.count("Message for CLI server (Ctrl+C to quit)") == 1
+    # The hint is a one-time banner; the per-line reads stay silent
+    # (three messages plus the final read that raises EOFError).
+    assert prompts == ["", "", "", ""]
+    assert sent == [["first"], ["second"], ["third"]]
+
+
 def test_connect_cli_debug_message_mentions_target_pid(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

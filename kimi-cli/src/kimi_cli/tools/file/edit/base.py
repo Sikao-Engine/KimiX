@@ -32,6 +32,15 @@ from kimi_cli.utils.path import (
 from kimi_cli.vfs import VFS
 from kosong.tooling import ToolError, ToolReturnValue
 
+from ..cache_scope import (
+    cache_namespace,
+    cache_only_write_enabled,
+    cache_relative_path,
+    cache_scope_note,
+    display_cache_path,
+    record_cache_written,
+    resolve_cache_only_path,
+)
 from ..utils import check_path_protected, resolve_vfs
 
 
@@ -44,6 +53,10 @@ class BaseEditTool:
         self._approval = approval
         self._session = session
         self._vfs = vfs
+        # Cache-only mode (read-only researcher child sessions): every write is
+        # confined to this session's ``.kimix_cache/research/<id>/`` sandbox.
+        # Refreshed per call by ``EditFile`` so the flag is never assumed.
+        self.cache_only: bool = cache_only_write_enabled(session)
 
     def _out_prefix(self, is_outside: bool) -> str:
         return "[out of work-dir] " if is_outside else ""
@@ -145,15 +158,68 @@ class BaseEditTool:
         prompt_text = f"Edit file `{display_path}`"
         if justification:
             prompt_text += f" — {justification}"
-        result = await self._approval.request(
-            name,
-            action,
-            prompt_text,
-            display=diff_blocks,
-        )
+        return await self.approve_write(name, action, prompt_text, diff_blocks)
+
+    async def approve_write(
+        self,
+        name: str,
+        action: FileActions,
+        description: str,
+        display: list[DisplayBlock] | None = None,
+    ) -> ToolReturnValue | None:
+        """Ask for approval unless the write is cache-only (then auto-approve).
+
+        A read-only researcher child has no user attached to its turn, so
+        requesting approval would block forever; its writes are confined to the
+        session's own ``.kimix_cache/`` sandbox, so they are pre-approved.
+        """
+        if self.cache_only:
+            return None
+        result = await self._approval.request(name, action, description, display=display)
         if not result:
             return result.rejection_error()
         return None
+
+    def resolve_tool_path(
+        self, raw_path: str
+    ) -> tuple[KaosPath | None, str | None, str | None]:
+        """Resolve *raw_path*, honoring the cache-only write scope.
+
+        Returns ``(path, cache_relative_path, error_message)``.  In a normal
+        session the path is the usual work-dir-relative resolution and the
+        relative path is ``None``; in cache-only mode the path is forced inside
+        this session's ``<work dir>/.kimix_cache/research/<id>/`` sandbox and
+        the relative path is the ``.kimix_cache``-relative spelling to show the
+        model.
+        """
+        if not self.cache_only:
+            return kaos_path_from_tool_input(raw_path, self._work_dir), None, None
+        resolved, error = resolve_cache_only_path(
+            raw_path, self._work_dir, cache_namespace(self._session)
+        )
+        if error is not None or resolved is None:
+            return None, None, error or "Invalid cache path."
+        rel = cache_relative_path(resolved, self._work_dir)
+        if rel is None:  # pragma: no cover - resolve_cache_only_path guarantees it
+            return None, None, "Path is outside the cache sandbox."
+        return resolved, rel, None
+
+    def display_for(self, path: KaosPath, rel_path: str | None) -> str:
+        """Display spelling of *path* (cache-relative in sandbox mode)."""
+        if rel_path:
+            return display_cache_path(rel_path)
+        return str(path).replace("\\", "/")
+
+    def record_cache_write(self, rel_path: str | None) -> None:
+        """Record a successful cache-only write; no-op for normal sessions."""
+        if self.cache_only:
+            record_cache_written(self._session, rel_path)
+
+    def cache_note(self, rel_path: str | None) -> str:
+        """Sandbox note appended to a successful cache-only edit message."""
+        if not self.cache_only:
+            return ""
+        return cache_scope_note(rel_path)
 
     async def _check_conflicts(
         self,
