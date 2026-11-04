@@ -305,16 +305,16 @@ from kimix_native.shell_compat.pwsh_transform import (  # noqa: F401
 # Native acceleration: runtime_py.bash_fix
 # ======================================================================
 #
-# The Git Bash scanner exists twice now: this pure-Python reference (the
-# fallback) and the compiled ``runtime_py.bash_fix`` kernel — the C++ port of
-# exactly this algorithm in the kimix native repo (src/llm/bash_parser),
-# locked byte-for-byte against the reference by its differential golden
-# battery.  When the native runtime is loaded, the three public entry points
-# below delegate to it:
-#
-#   fix_bash_command            -> bash_fix.fix_bash_command
-#   bash_compatibility_prelude  -> bash_fix.bash_compatibility_prelude
-#   _process_unquoted           -> bash_fix.process_unquoted
+# The scanner exists twice: this pure-Python reference (the fallback) and the
+# compiled ``runtime_py.bash_fix`` kernel (the C++ port in the kimix native
+# repo, src/llm/bash_parser), locked against the reference by its differential
+# golden battery.  When the native runtime is loaded, two entry points delegate:
+#   fix_bash_command and bash_compatibility_prelude -> bash_fix's versions.
+# ``_process_unquoted`` stays on the reference: the kernel predates the
+# path-word rule and rewrites POSIX escapes (``cat foo\bar`` -> ``cat foo/bar``),
+# which changes the word bash computes.
+# kernel predates the path-word rule and rewrites POSIX escapes
+# (``cat foo\bar`` -> ``cat foo/bar``), which changes the word bash computes.
 #
 # The gate is the shim's standard one, so pure Python stays the reference and
 # the whole algorithm stays reachable: ``KIMIX_NATIVE=0`` (or
@@ -466,15 +466,16 @@ def bash_compatibility_prelude() -> str:
 
 
 def _process_unquoted(cmd: str) -> str:
-    """Convert unquoted backslashes to forward slashes (native when active)."""
+    """Normalize path separators in *cmd* (reference implementation only).
+
+    The compiled kernel predates the path-word oracle and still converts every
+    unquoted escape (``cat foo\\bar`` -> ``cat foo/bar``), changing the word
+    bash computes.  ``bash_tool._process_unquoted`` documents that the kernel
+    must not be used for shell parsing; this facade enforces that policy.
+    """
     if not isinstance(cmd, str):
         raise TypeError("cmd must be a string")
-    native = _native_bash_fix()
-    if native is None:
-        return _py_process_unquoted(cmd)
-    fixed = native.process_unquoted(cmd)
-    # Same pass-through identity contract as fix_bash_command.
-    return cmd if fixed == cmd else fixed
+    return _py_process_unquoted(cmd)
 
 
 # NOTE: the reference kernel in ``shell_compat.bash_core`` is deliberately left

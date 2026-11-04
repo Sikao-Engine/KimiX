@@ -10,11 +10,18 @@ legacy implementation and its quote/substitution scanners lived in
 the emitter, driven by the consolidated boundary oracles of
 :mod:`kimix_native.shell_compat.lexer`.
 
-Behavior (identical to the legacy scanner, bit-for-bit -- see
-``tests/unit/tools/test_bash_unquoted_ir.py`` for the differential gate):
+Behavior (see ``tests/unit/tools/test_bash_unquoted_ir.py`` for the gate):
 
-* a backslash before a non-metacharacter becomes ``/`` (Windows path
-  normalization for Git Bash);
+* a backslash is a path separator only when its **word** is a Windows path
+  word recognized by :func:`kimix_native.shell_compat.paths.windows_path_replacement`
+  (drive ``D:\\``, UNC ``\\\\server``, root ``\\Users``, ``~\\``, ``.\\`` /
+  ``..\\``, or a multi-segment relative path with a plausible directory
+  segment); only then does it become ``/``;
+* everywhere else a backslash is a POSIX escape and is preserved with the
+  character it escapes: ``cat foo\\bar`` is ``cat foobar`` to bash, so
+  rewriting it to ``cat foo/bar`` would silently address a different file.
+  This is the historical weak spot -- the unquoted emitter used to convert
+  every non-metacharacter backslash;
 * a backslash before a bash metacharacter is preserved as the escape pair;
 * backslashes inside single quotes, double quotes and ANSI-C quote regions
   stay intact (the regions are copied verbatim -- a lone backslash inside a
@@ -90,6 +97,36 @@ __all__ = ["_process_unquoted"]
 # this module keeps the legacy pattern verbatim.
 _UNQUOTED_SPECIAL_RE = re.compile(r'[\\\'"$`]')
 
+# One unquoted word: everything up to whitespace or a shell operator.  Quotes,
+# ``$`` and backticks stay inside the match on purpose -- the word oracle
+# rejects them, so a word that carries a quoted / expansion part is treated
+# conservatively (its backslashes are escapes, not separators).
+_UNQUOTED_WORD_RE = re.compile(r"[^\s|&;()<>]+")
+
+
+def _path_word_backslashes(cmd: str) -> set[int]:
+    """Offsets of backslashes that separate the segments of a Windows path word.
+
+    The decision is delegated to the single path oracle
+    (:func:`kimix_native.shell_compat.paths.windows_path_replacement`) so the
+    pre-pass and the IR fixer agree on what a path is.  A word the oracle does
+    not recognize (``foo\\bar``, ``src\\a.py``, ``\\a\\b``, ``x\\n\\t``) keeps
+    its backslashes: they are POSIX escapes, and converting them changes the
+    value bash would compute.
+    """
+    from kimix_native.shell_compat.paths import windows_path_replacement
+
+    offsets: set[int] = set()
+    for match in _UNQUOTED_WORD_RE.finditer(cmd):
+        word = match.group()
+        if "\\" not in word or windows_path_replacement(word) is None:
+            continue
+        base = match.start()
+        for index, char in enumerate(word):
+            if char == "\\":
+                offsets.add(base + index)
+    return offsets
+
 
 def _nul_spans(cmd: str):
     """Word spans that are escaped spellings of ``nul`` (legacy _ESCAPED_NUL_RE)."""
@@ -107,15 +144,16 @@ def _in_nul(i: int, nul_spans) -> bool:
 
 
 def _process_unquoted(cmd: str) -> str:
-    r"""Convert unquoted backslashes to forward slashes in ``cmd``.
+    r"""Normalize the separators of unquoted Windows path words in ``cmd``.
 
-    Lexer-driven reimplementation of the legacy bash_core scanner with the
-    exact same behavior; see the module docstring for the rule list.  The
-    emitter walks ``cmd`` in unquoted mode; a region boundary is taken only
-    when the region is properly closed (every ``_find_*`` oracle returns
-    ``-1`` on unterminated input, in which case the copy runs to the end of
-    ``cmd`` verbatim, matching the legacy).  Command/backtick substitutions
-    and double-quoted regions are described in the module docstring.
+    Rule: a backslash becomes ``/`` only when it separates the segments of a
+    word recognized as a Windows path by the path oracle; every other
+    unquoted backslash is a POSIX escape and is copied with its escaped
+    character.  The emitter walks ``cmd`` in unquoted mode; a region boundary
+    is taken only when the region is properly closed (every ``_find_*`` oracle
+    returns ``-1`` on unterminated input, in which case the copy runs to the
+    end of ``cmd`` verbatim).  Command/backtick substitutions and
+    double-quoted regions are described in the module docstring.
 
     With no backslash the walk is a no-op: return the input object itself so
     the caller's pass-through identity contract survives (the pipeline runs
@@ -132,6 +170,7 @@ def _process_unquoted(cmd: str) -> str:
     # ``_process_unquoted`` slices recompute on their own slice — reproduced
     # below where a recursion passes a fresh slice).
     nul = _nul_spans(cmd)
+    path_backslashes = _path_word_backslashes(cmd)
     i = 0
     while i < length:
         # ---- find the next special character ----
@@ -188,9 +227,19 @@ def _process_unquoted(cmd: str) -> str:
                 result.append("\\")
                 result.append(cmd[i + 1])
                 i += 2
-            else:
+            elif i in path_backslashes:
                 result.append("/")
                 i += 1
+            else:
+                # A POSIX escape, not a separator in a recognized Windows
+                # path word: keep the backslash and the character it escapes
+                # so the word's value stays what bash would compute.
+                result.append("\\")
+                if i + 1 < length:
+                    result.append(cmd[i + 1])
+                    i += 2
+                else:
+                    i += 1
         else:
             # ``$`` not followed by ``'`` (covers top-level ``$(…)``, whose
             # content the legacy walker consumes by flat continuation: the
@@ -198,7 +247,11 @@ def _process_unquoted(cmd: str) -> str:
             # single character and advance one.
             result.append(char)
             i += 1
-    return "".join(result)
+    # Pass-through identity: a command this pass did not change must come back
+    # as the original object (the facade/tool rely on ``is`` for unchanged
+    # input; re-joining the walk always allocates a new string).
+    out = "".join(result)
+    return cmd if out == cmd else out
 
 
 def _dq_region(cmd: str, dq_start: int, dq_end: int, nul) -> str:

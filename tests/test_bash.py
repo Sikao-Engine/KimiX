@@ -3887,8 +3887,11 @@ class TestPrepareBashCmd:
 
     def test_mixed_quoted_and_unquoted_backslashes_on_windows(self) -> None:
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            # single-backslash relative words are POSIX escapes: the quoted
+            # word is data and ``src\\b.py`` is ``srcb.py`` to bash, so both
+            # pass through unchanged.
             cmd = r"cat 'src\a.py' src\b.py"
-            assert _prepare_bash_cmd(cmd) == r"cat 'src\a.py' src/b.py"
+            assert _prepare_bash_cmd(cmd) == r"cat 'src\a.py' src\b.py"
 
     def test_escaped_quote_inside_double_quotes_on_windows(self) -> None:
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
@@ -3926,12 +3929,14 @@ class TestPrepareBashCmd:
 
     def test_backslash_at_end_of_string_on_windows(self) -> None:
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            assert _prepare_bash_cmd("echo trailing\\") == "echo trailing/"
+            # a trailing backslash is a POSIX escape (a line continuation when
+            # followed by a newline), not a path separator.
+            assert _prepare_bash_cmd("echo trailing\\") == "echo trailing\\"
 
     def test_pipes_and_redirects_with_paths_on_windows(self) -> None:
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            cmd = r"cat src\a.py | grep x > out\b.txt"
-            assert _prepare_bash_cmd(cmd) == "cat src/a.py | grep x > out/b.txt"
+            cmd = r"cat src\app\file.py | grep x > out\logs\b.txt"
+            assert _prepare_bash_cmd(cmd) == "cat src/app/file.py | grep x > out/logs/b.txt"
 
     def test_preserves_quoted_path_with_spaces_on_windows(self) -> None:
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
@@ -3945,15 +3950,16 @@ class TestPrepareBashCmd:
 
     def test_command_substitution_with_backslashes_on_windows(self) -> None:
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            # $(...) is not a quoted region; backslashes inside are converted
-            cmd = r"echo $(cat src\file.py)"
-            assert _prepare_bash_cmd(cmd) == "echo $(cat src/file.py)"
+            # $(...) is not a quoted region; a *path* word inside is converted
+            # (a bare single-backslash escape would stay verbatim).
+            cmd = r"echo $(cat C:\a\b)"
+            assert _prepare_bash_cmd(cmd) == "echo $(cat C:/a/b)"
 
     def test_backtick_with_backslashes_on_windows(self) -> None:
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            # Backticks are not a quoted region; backslashes inside are converted
-            cmd = r"echo `cat src\file.py`"
-            assert _prepare_bash_cmd(cmd) == "echo `cat src/file.py`"
+            # Backticks are not a quoted region; a path word inside converts.
+            cmd = r"echo `cat C:\a\b`"
+            assert _prepare_bash_cmd(cmd) == "echo `cat C:/a/b`"
 
     def test_find_command_with_escaped_parens_on_windows(self) -> None:
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
@@ -3995,10 +4001,10 @@ class TestPrepareBashCmd:
     def test_escaped_single_quote_outside_quotes_on_windows(self) -> None:
         """\' outside quotes should be preserved and NOT start a single-quoted region."""
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            # \' → literal ', backslashes after should be converted
+            # \' stays an escaped quote; the word is not a recognized Windows
+            # path (it contains quote escapes), so ``\k`` stays an escape too.
             cmd = r"echo \'src\kimix\'"
-            expected = r"echo \'src/kimix\'"
-            assert _prepare_bash_cmd(cmd) == expected
+            assert _prepare_bash_cmd(cmd) == cmd
 
     def test_escaped_double_quote_outside_quotes_on_windows(self) -> None:
         r"""\" outside quotes should be preserved and NOT start a double-quoted region."""
@@ -4006,8 +4012,7 @@ class TestPrepareBashCmd:
             # \" outside quotes: backslash escapes the double-quote → literal "
             # The " should NOT start a double-quoted region.
             cmd = r'echo \"src\kimix\"'
-            expected = r'echo \"src/kimix\"'
-            assert _prepare_bash_cmd(cmd) == expected
+            assert _prepare_bash_cmd(cmd) == cmd
 
     def test_escaped_dollar_prevents_ansi_c_detection_on_windows(self) -> None:
         """Escaped dollar before single-quote should NOT trigger ANSI-C processing."""
@@ -4116,16 +4121,19 @@ class TestPrepareBashCmd:
     def test_mixed_quotes_complex_on_windows(self) -> None:
         """Complex mix of quote types and backslashes."""
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            # 'single' preserved, "double" preserved, $'ansi' preserved, src\path → src/path
-            cmd = "echo 'single' \"double\" $'ansi' src\\path"
-            expected = "echo 'single' \"double\" $'ansi' src/path"
+            # 'single' preserved, "double" preserved, $'ansi' preserved,
+            # src\foo\bar is a multi-segment path word → converted.
+            cmd = "echo 'single' \"double\" $'ansi' src\\foo\\bar"
+            expected = "echo 'single' \"double\" $'ansi' src/foo/bar"
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_only_backslashes_on_windows(self) -> None:
         """String with only backslashes."""
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            assert _prepare_bash_cmd("\\\\") == "//"
-            assert _prepare_bash_cmd("\\") == "/"
+            # one/two backslashes are POSIX escapes (bash prints one literal
+            # backslash); three form the UNC-ish ``\\\`` word and normalize.
+            assert _prepare_bash_cmd("\\\\") == "\\\\"
+            assert _prepare_bash_cmd("\\") == "\\"
             assert _prepare_bash_cmd("\\\\\\") == "///"
 
     def test_backslash_before_each_metachar_on_windows(self) -> None:
@@ -4201,8 +4209,8 @@ class TestPrepareBashCmd:
     def test_dq_with_backtick_inside_command_substitution_on_windows(self) -> None:
         r"""Backticks nested inside $(...) within DQ — content is processed."""
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            cmd = r'echo "$(cat `echo src\foo`)"'
-            assert _prepare_bash_cmd(cmd) == 'echo "$(cat `echo src/foo`)"'
+            cmd = r'echo "$(cat `echo C:\a\b`)"'
+            assert _prepare_bash_cmd(cmd) == 'echo "$(cat `echo C:/a/b`)"'
 
     def test_dq_with_command_substitution_inside_backticks_on_windows(self) -> None:
         r"""$(...) nested inside `...` at top level — content is processed."""
@@ -4273,9 +4281,10 @@ class TestPrepareBashCmd:
     def test_dq_with_dq_inside_command_substitution_on_windows(self) -> None:
         r"""DQ inside $(...) inside DQ — inner DQ preserves its backslashes."""
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            # "$(echo "src\foo" rest)" — inner DQ preserves \, rest converted
-            cmd = r'echo "$(echo "src\foo" rest\bar)"'
-            assert _prepare_bash_cmd(cmd) == r'echo "$(echo "src\foo" rest/bar)"'
+            # "$(echo "src\foo" rest\bar\baz)" — inner DQ preserves \;
+            # rest\bar\baz is a multi-segment path word → converted.
+            cmd = r'echo "$(echo "src\foo" rest\bar\baz)"'
+            assert _prepare_bash_cmd(cmd) == r'echo "$(echo "src\foo" rest/bar/baz)"'
 
     def test_top_level_backtick_with_escaped_backtick_on_windows(self) -> None:
         r"""\` at top level — escaped backtick, literal, not substitution start."""
@@ -4286,9 +4295,9 @@ class TestPrepareBashCmd:
     def test_top_level_nested_backticks_with_path_on_windows(self) -> None:
         """`` `cmd1`cmd2` `` style — backtick region content is processed."""
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            # Outer backtick runs `cmd src\file`, inner is just text
-            cmd = r"echo `cat src\file.txt`"
-            assert _prepare_bash_cmd(cmd) == "echo `cat src/file.txt`"
+            # Outer backtick runs `cmd src\foo\bar`, inner is just text
+            cmd = r"echo `cat src\foo\bar`"
+            assert _prepare_bash_cmd(cmd) == "echo `cat src/foo/bar`"
 
     def test_command_substitution_with_nested_parens_on_windows(self) -> None:
         r"""$(echo (nested) paren) — ) inside parens is balanced correctly."""
@@ -4323,11 +4332,11 @@ class TestPrepareBashCmd:
             assert _prepare_bash_cmd(cmd) == '"abc $(echo x)"'
 
     def test_dq_with_complex_nesting_on_windows(self) -> None:
-        r"""Complex nesting: $(echo "$(echo src\foo)" `echo src\bar`)."""
+        r"""Complex nesting: $(echo "$(echo src\foo\bar)" `echo src\bar\baz`)."""
         with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
-            cmd = r'echo "$(echo "$(echo src\foo)" `echo src\bar`)"'
-            # Both $() levels convert paths; inner DQ preserves its \
-            expected = r'echo "$(echo "$(echo src/foo)" `echo src/bar`)"'
+            cmd = r'echo "$(echo "$(echo src\foo\bar)" `echo src\bar\baz`)"'
+            # Both $() levels convert path words; inner DQ preserves its \
+            expected = r'echo "$(echo "$(echo src/foo/bar)" `echo src/bar/baz`)"'
             assert _prepare_bash_cmd(cmd) == expected
 
     def test_unc_path_converted_on_windows(self) -> None:
@@ -4598,6 +4607,75 @@ class TestPassThroughIdentity:
             errors="replace",
         )
         assert proc.returncode == 0, proc.stderr
+
+
+class TestUnquotedEscapeVsPathWord:
+    r"""The pre-pass converts separators only in recognized Windows path words.
+
+    In POSIX an unquoted backslash escapes the next character: ``cat foo\bar``
+    asks bash for ``foobar``.  Rewriting it to ``cat foo/bar`` (the historical
+    ``_process_unquoted`` behavior) silently addresses a different file.  The
+    path-word oracle (``windows_path_replacement``) decides: drive / UNC /
+    root / ``~\`` / ``.\`` / ``..\`` / multi-segment relative words convert;
+    every other backslash stays an escape.
+    """
+
+    ESCAPES = [
+        r"cat foo\bar",
+        r"cat src\a.py",
+        r"cd foo\bar",
+        r"echo foo\bar",
+        r"ls a\b",
+        r"echo \a\b",
+        r"echo x\n\t",
+        r"grep a\b file",
+        r"python x.py --out a\b",
+        r"ls my\ file.txt",
+    ]
+
+    PATHS = [
+        (r"cd D:\repo\src", "cd D:/repo/src"),
+        (r"cat C:\a\b", "cat C:/a/b"),
+        (r"ls \\server\share\dir", "ls //server/share/dir"),
+        (r"cd ~\Desktop\file.txt", "cd ~/Desktop/file.txt"),
+        (r"cd .\build\dist", "cd ./build/dist"),
+        (r"cd ..\src\lib", "cd ../src/lib"),
+        (r"mkdir build\dist\assets", "mkdir build/dist/assets"),
+    ]
+
+    @pytest.mark.parametrize("command", ESCAPES)
+    def test_escape_words_pass_through_unchanged(self, command: str) -> None:
+        from kimi_cli.tools.file.bash.shell_common import inspect_bash_command
+
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            prepared = _prepare_bash_cmd(command)
+            assert prepared is command
+            assert inspect_bash_command(command).command == command
+
+    @pytest.mark.parametrize(("command", "expected"), PATHS)
+    def test_recognized_path_words_still_convert(self, command: str, expected: str) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert _prepare_bash_cmd(command) == expected
+
+    def test_mixed_path_and_escape(self) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            assert (
+                _prepare_bash_cmd(r"cd D:\repo && cat foo\bar")
+                == r"cd D:/repo && cat foo\bar"
+            )
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not installed")
+    @pytest.mark.parametrize("command", [r"cat foo\bar", r"echo \a\b", r"echo x\n\t"])
+    def test_preserved_escape_is_valid_bash(self, command: str) -> None:
+        proc = subprocess.run(
+            [BASH_PATH, "--noprofile", "--norc", "-n", "-c", command],
+            capture_output=True,
+            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+        )
+        assert proc.returncode == 0, proc.stderr
+
 
 # ============================================================================
 # Bash.__call__ — integration tests with backslash paths on Windows
@@ -8336,11 +8414,13 @@ class TestBashFixRound1ProcessUnquotedDqAnsiC:
     @pytest.mark.parametrize(
         "command, expected",
         [
-            # $(...) embedded after a literal $' inside "..." must still be walked.
-            ('"a$\'b$(c\\d)e\'f"', '"a$\'b$(c/d)e\'f"'),
-            ('"p$\'q$(echo a\\b)\'r"', '"p$\'q$(echo a/b)\'r"'),
-            # The backslash must convert even when the closing ' is the last char.
-            ('"x$\'$(echo p\\q)\'"', '"x$\'$(echo p/q)\'"'),
+            # $(...) embedded after a literal $' inside "..." must still be
+            # walked.  The inner word is a drive path so the descent is
+            # observable (a bare escape would stay verbatim).
+            ('"a$\'b$(cat C:\\a\\b)e\'f"', '"a$\'b$(cat C:/a/b)e\'f"'),
+            ('"p$\'q$(cat C:\\a\\b)\'r"', '"p$\'q$(cat C:/a/b)\'r"'),
+            # The path must convert even when the closing ' is the last char.
+            ('"x$\'$(cat C:\\a\\b)\'"', '"x$\'$(cat C:/a/b)\'"'),
         ],
     )
     def test_dq_literal_ansi_c_descends_into_substitution(self, command, expected):
@@ -8357,9 +8437,10 @@ class TestBashFixRound1ProcessUnquotedDqAnsiC:
     def test_dq_backtick_after_literal_ansi_c_descends(self):
         # A backtick substitution after a literal $' inside "..." must also
         # be walked (same root cause: the DQ walker must not treat $' as a
-        # region).
-        cmd = "\"a$'b`c\\d`e'f\""
-        assert _shell_compat._process_unquoted(cmd) == "\"a$'b`c/d`e'f\""
+        # region).  The inner word is a drive path so the descent is
+        # observable.
+        cmd = "\"a$'b`cat C:\\a\\b`e'f\""
+        assert _shell_compat._process_unquoted(cmd) == "\"a$'b`cat C:/a/b`e'f\""
 
 
 class TestBashFixRound1CoalesceExpression:

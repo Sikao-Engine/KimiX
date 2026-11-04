@@ -15,11 +15,13 @@ These tests lock the Python-side contract of the native path:
    extension is current (version gate + ``KIMIX_NATIVE`` / ``KIMIX_NATIVE_BASH_FIX``
    toggles) and returns ``None`` otherwise — the facade then falls back to the
    reference;
-2. ``fix_bash_command`` / ``_process_unquoted`` / ``bash_compatibility_prelude``
-   are BYTE-IDENTICAL between the two implementations over a corpus that spans
-   every rule family (fallbacks, wrappers, Windows/Git-Bash paths, ``nul``
-   redirects, cmd.exe ``if``/``for`` translation, heredocs, unsupported commands,
-   malformed/unbalanced input, embedded NUL and non-ASCII);
+  2. ``fix_bash_command`` / ``bash_compatibility_prelude`` are BYTE-IDENTICAL
+     between the two implementations over a corpus that spans every rule family
+     (fallbacks, wrappers, Windows/Git-Bash paths, ``nul`` redirects, cmd.exe
+     ``if``/``for`` translation, heredocs, unsupported commands, malformed/
+     unbalanced input, embedded NUL and non-ASCII).  ``_process_unquoted`` is
+     deliberately reference-only (the kernel predates the path-word rule and
+     rewrites POSIX escapes), pinned by its own test below;
 3. the native path still returns the reference ``BashFix`` frozen dataclass with
    the full seven-field surface (``cmd_conditional_fixes`` included);
 4. the reference ``/tmp`` temp-dir spelling (including a monkeypatched
@@ -245,10 +247,15 @@ def test_fix_bash_command_matches_reference(command: str) -> None:
     assert _native_fields(native, command) == _reference_fields(command)
 
 
-@pytest.mark.parametrize("command", BASH_FIX_CORPUS)
-def test_process_unquoted_matches_reference(command: str) -> None:
-    native = _native()
-    assert native.process_unquoted(command) == _shell._py_process_unquoted(command)
+def test_process_unquoted_facade_uses_the_reference_rule() -> None:
+    # The compiled kernel predates the path-word rule and converts every
+    # unquoted escape (``cat foo\bar`` -> ``cat foo/bar``), changing the
+    # word bash computes.  The facade deliberately keeps the reference
+    # implementation for this pre-pass (``bash_tool._process_unquoted``
+    # documents that the kernel must not be used for shell parsing).
+    for command in (r"cat foo\bar", r"echo \a\b", r"echo x\n\t"):
+        assert _shell._process_unquoted(command) == command
+        assert _shell._process_unquoted(command) == _shell._py_process_unquoted(command)
 
 
 def test_prelude_matches_reference() -> None:
