@@ -1285,6 +1285,43 @@ def _force_remove_kimix_executable(bin_dir: Path | None = None) -> bool:
     return not remaining
 
 
+def _sync_dependencies_with_uv() -> bool:
+    """Sync dependencies, recreating stale Windows venv scripts on failure."""
+    command = ["uv", "sync"]
+    if run_command(command, "Syncing dependencies with uv"):
+        return True
+
+    # A venv created by a since-removed Python installation retains the old
+    # interpreter path in pyvenv.cfg.  uv then fails while querying the venv
+    # before it can repair it.  Removing only Scripts lets uv rebuild the venv
+    # without unnecessarily discarding the rest of the project environment.
+    scripts_dir = Path(__file__).resolve().parent / ".venv" / "Scripts"
+    print(f"\n⚠️  uv sync failed. Removing stale virtual environment scripts: {scripts_dir}")
+    try:
+        shutil.rmtree(scripts_dir)
+        print(f"✅ Removed {scripts_dir}.")
+    except FileNotFoundError:
+        print(f"ℹ️  {scripts_dir} does not exist; nothing to remove.")
+    except OSError as exc:
+        print(f"⚠️  Could not remove {scripts_dir}: {exc}")
+
+    return run_command(command, "Retrying dependency sync with uv")
+
+
+def _install_tool_with_uv() -> bool:
+    """Install the editable tool, refreshing a stale uv before one retry."""
+    command = ["uv", "tool", "install", "-e", "."]
+    if run_command(command, "Installing tool in editable mode"):
+        return True
+
+    print("\n⚠️  Tool installation failed. Reinstalling uv with pip before retrying ...")
+    reinstall_command = [sys.executable, "-m", "pip", "install", "--upgrade", "uv"]
+    if not run_command(reinstall_command, "Reinstalling uv with pip"):
+        return False
+
+    return run_command(command, "Retrying tool installation in editable mode")
+
+
 def main(argv: list[str] | None = None) -> int:
     global _ASSUME_YES
 
@@ -1342,7 +1379,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 3. Run uv sync
     if _ask_yes_no("Sync dependencies with uv?"):
-        if not run_command(["uv", "sync"], "Syncing dependencies with uv"):
+        if not _sync_dependencies_with_uv():
             print(
                 "\n💔 Oops! Something went wrong while syncing dependencies.\n"
                 "   Please check the error messages above and try again.\n"
@@ -1372,7 +1409,7 @@ def main(argv: list[str] | None = None) -> int:
                 "   close every kimix process and re-run, or use "
                 "`uv tool install -e . --force`."
             )
-        if not run_command(["uv", "tool", "install", "-e", "."], "Installing tool in editable mode"):
+        if not _install_tool_with_uv():
             print(
                 "\n💔 Oops! Something went wrong while installing the tool.\n"
                 "   Please check the error messages above and try again.\n"
