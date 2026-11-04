@@ -3,6 +3,7 @@
 import asyncio
 import os
 import shutil
+import subprocess
 import sys
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -327,6 +328,52 @@ class TestPowershellSessionContinuation:
 # ============================================================================
 # Integration tests
 # ============================================================================
+@pytest.mark.skipif(
+    not PWSH_AVAILABLE,
+    reason="requires a real PowerShell",
+)
+class TestPwshExitCodeWrapper:
+    """The one-shot wrapper must not report a failed last command as success.
+
+    ``Write-Error`` / a failed cmdlet is a *non-terminating* error: it does not
+    throw, and ``$LASTEXITCODE`` stays null.  The old wrapper ended with
+    ``exit $LASTEXITCODE`` (``$null`` -> 0), so the tool reported success.
+    """
+
+    @staticmethod
+    def _run(command: str) -> int:
+        from kimi_cli.tools.file.bash.shell_common import (
+            PWSH_ONESHOT_FLAGS,
+            wrap_pwsh_command,
+        )
+
+        executable = (
+            find_pwsh() or shutil.which("powershell.exe") or shutil.which("powershell")
+        )
+        proc = subprocess.run(
+            [executable, *PWSH_ONESHOT_FLAGS, "-Command", wrap_pwsh_command(command)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+        return proc.returncode
+
+    def test_non_terminating_error_exits_nonzero(self) -> None:
+        assert self._run('Write-Error "boom"') == 1
+
+    def test_failed_cmdlet_exits_nonzero(self) -> None:
+        assert self._run(r"Get-Item C:\kimi_no_such_path_xyz") == 1
+
+    def test_error_then_success_is_zero(self) -> None:
+        # PowerShell's documented -Command rule: the code follows the last
+        # executed command, and that command succeeded.
+        assert self._run('Write-Error "boom"; Write-Output done') == 0
+
+    def test_native_exit_code_is_preserved(self) -> None:
+        assert self._run("cmd /c exit 7") == 7
+
 
 @pytest.mark.skipif(
     not PWSH_AVAILABLE,

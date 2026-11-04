@@ -1157,9 +1157,9 @@ def _pwsh_exit_hint(code: int, sample: str) -> str | None:
     if any(marker in sample for marker in _PS_TERMINATING_MARKERS):
         return (
             "Exit 1 is PowerShell's generic failure code, not the failing "
-            "command's own code: the script hit a terminating error (see the "
-            "error text). For a native program's code, end with "
-            "`exit $LASTEXITCODE`."
+            "command's own code: PowerShell reported an error (a terminating "
+            "error, or a non-terminating error that left `$?` false). For a "
+            "native program's code, end with `exit $LASTEXITCODE`."
         )
     # A bare exit 1 can be a deliberate exit or a native program's own code.
     return None

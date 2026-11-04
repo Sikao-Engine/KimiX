@@ -99,15 +99,22 @@ def bash_file_argv(script_path: str) -> tuple[list[str], dict[str, str]]:
 # ── PowerShell ───────────────────────────────────────────────────────────────
 
 def wrap_pwsh_command(command: str) -> str:
-    """Wrap *command* with the UTF-8 console init and try/catch exit-code wrapper.
+    """Wrap *command* with the UTF-8 console init and the exit-code wrapper.
 
     The wrapper sets UTF-8 output encoding, treats Ctrl+C as input, turns
-    terminating errors into a non-zero exit code and preserves the real native
-    exit code via ``exit $LASTEXITCODE``.
+    terminating errors into a non-zero exit code, and preserves a native
+    program's real exit code via ``exit $LASTEXITCODE``.
+
+    ``$?`` is checked after the command because a *non-terminating* error
+    (``Write-Error``, a failed ``Get-Item``, ...) does not throw: the wrapper
+    used to exit ``$LASTEXITCODE`` (``$null`` -> 0) and reported success.  When
+    the last command failed without throwing, use the native code if there is
+    one, otherwise PowerShell's generic 1.
     """
     return (
         _pwsh_tool()._PWSH_CONSOLE_INIT
         + "try{" + command + "}catch{$_|Out-String|Write-Error;exit 1}"
+        + ";if(-not $?){if($LASTEXITCODE){exit $LASTEXITCODE};exit 1}"
         + ";exit $LASTEXITCODE"
     )
 
@@ -151,11 +158,9 @@ def pwsh_argv(command: str) -> tuple[list[str], str] | None:
         # PowerShell 7 not available: downgrade PS7 syntax to PS5.1.
         inner, _warnings = process_pwsh.pwsh_transform(inner)
         executable = shutil.which("powershell.exe") or shutil.which("powershell") or "powershell"
-    raw = (
-        pwsh_tool_mod._PWSH_CONSOLE_INIT
-        + "try{" + inner + "}catch{$_|Out-String|Write-Error;exit 1}"
-        + ";exit $LASTEXITCODE"
-    )
+    # Single wrapper implementation: the non-terminating-error check must not
+    # drift between the tool path and this argv helper.
+    raw = wrap_pwsh_command(inner)
     return (
         [executable, *PWSH_ONESHOT_FLAGS, "-Command", raw],
         f"PowerShell executable not found: {executable}",

@@ -568,13 +568,15 @@ class Powershell(CallableTool2[PowershellParams]):
         # Build the command line to pass to PowerShell.  Two safety measures:
         #
         # 1. Wrap the user command in ``try{…}catch{…;exit 1}`` so that
-        #    terminating errors (e.g. script-terminating ``throw``, or cmdlet
-        #    errors when ``$ErrorActionPreference = 'Stop'``) produce a non-zero
-        #    exit code instead of silently succeeding.  The catch block echoes
-        #    the error and exits with code 1.
-        # 2. Append ``; exit $LASTEXITCODE`` so PowerShell preserves the real
-        #    native exit code from external programs (otherwise all non-zero
-        #    codes are flattened to 1).
+        # terminating errors (e.g. script-terminating ``throw``, or cmdlet
+        # errors when ``$ErrorActionPreference = 'Stop'``) produce a non-zero
+        # exit code instead of silently succeeding.  The catch block echoes
+        # the error and exits with code 1.
+        # 2. Check ``$?`` after the command and append ``exit $LASTEXITCODE``:
+        # a non-terminating error (``Write-Error``, a failed ``Get-Item``)
+        # leaves ``$LASTEXITCODE`` null, so the old wrapper exited 0; now the
+        # last-command failure exits 1 unless a native program left a real
+        # non-zero code.  Successful native codes are still preserved.
         from kimi_cli.tools.file.bash import shell_common
 
         # Report semantics: each call runs in a fresh pwsh process, so a
