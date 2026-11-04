@@ -48,8 +48,10 @@ Security / shell-safety kernels (plan: commit 0582e09 "Study from hermes"):
       in file/bash/output_enhance.py)
   - is_expected_exit(command, exit_code) -> bool      (pure Python; WIRED
       in file/bash/output_enhance.py)
-  - annotate_failure(output, command, exit_code) -> str|None (WIRED in
-      file/bash/output_enhance.py)
+    - annotate_failure(output, command, exit_code) -> str|None (WIRED in
+        file/bash/output_enhance.py)
+    - shell_exit_hint(tool, command, exit_code, output) -> str|None (pure
+        Python; shell-level codes; WIRED in file/bash/output_enhance.py)
   - pattern_has_regex_newline(pattern) -> bool        (WIRED in grep_local.py)
   - multiline_pattern(pattern) -> str                 (WIRED in grep_local.py)
 
@@ -972,7 +974,6 @@ def _compat_annotate_failure(output: str, command: str, exit_code: int | None) -
         return None
     sample = output[:4000]
     lowered = sample.lower()
-
     if (
         "command not found" in lowered
         or "not recognized as an internal or external command" in lowered
@@ -997,6 +998,186 @@ def _compat_annotate_failure(output: str, command: str, exit_code: int | None) -
         )
     if "permission denied" in lowered:
         return "Permission denied. Check file permissions (ls -la) or ownership."
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Shell-level exit codes (Bash / PowerShell)
+# ---------------------------------------------------------------------------
+# Ground truth:
+# * GNU Bash manual §3.7.5 "Exit Status": 126 = found but not executable,
+#   127 = not found, 128+N = killed by signal N, builtins return 2 for
+#   incorrect usage, and a syntax error exits non-zero (bash uses 2).
+#   https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html
+# * PowerShell ``about_pwsh`` (-Command / -File): a parse error or a
+#   script-terminating error exits 1; a native program's non-zero code is
+#   flattened to 1 unless the script ends with ``exit $LASTEXITCODE`` (the
+#   tool wrapper appends that).  An invalid pwsh command line exits 64.
+#   https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_pwsh
+# * Observed on 2026-11-04 (Git 2.54.0 / Bash 5.3.9, PowerShell 7.6.2) with
+#   the tool's own wrapper: bash ``echo "`` -> 2, ``nosuchcmd`` -> 127,
+#   ``./dir`` -> 126, ``kill -TERM $$`` -> 3840 (=15<<8, not 143), a child
+#   killed by TERM -> 143, ``exit 300`` -> 44; pwsh parse/throw/not-found -> 1,
+#   ``cmd /c exit 7`` -> 7, ``exit -1`` -> 4294967295, bad CLI argument -> 64.
+# The compiled kernel predates these rules, so this helper is pure Python
+# (same approach as the SIGPIPE / doubled-slash rules in output_enhance.py).
+_BASH_SIGNALS = {
+    1: "SIGHUP", 2: "SIGINT", 3: "SIGQUIT", 4: "SIGILL", 5: "SIGTRAP",
+    6: "SIGABRT", 7: "SIGBUS", 8: "SIGFPE", 9: "SIGKILL", 10: "SIGUSR1",
+    11: "SIGSEGV", 12: "SIGUSR2", 13: "SIGPIPE", 14: "SIGALRM", 15: "SIGTERM",
+    16: "SIGSTKFLT", 17: "SIGCHLD", 18: "SIGCONT", 19: "SIGSTOP", 20: "SIGTSTP",
+    21: "SIGTTIN", 22: "SIGTTOU", 23: "SIGURG", 24: "SIGXCPU", 25: "SIGXFSZ",
+    26: "SIGVTALRM", 27: "SIGPROF", 28: "SIGWINCH", 29: "SIGIO", 30: "SIGPWR",
+    31: "SIGSYS",
+}
+
+_BASH_SYNTAX_MARKERS = (
+    # Distinctive bash parser messages (not a generic "syntax error" that a
+    # compiler or linter may print before exiting 2 itself).
+    "syntax error near unexpected token",
+    "syntax error: unexpected end of file",
+    "unexpected eof while looking for matching",
+    "unexpected end of file from `",
+)
+_BASH_BUILTIN_MARKERS = (
+    "too many arguments",
+    "usage:",
+    "invalid option",
+    "numeric argument required",
+    "can only `return'",
+    "invalid shell option",
+)
+
+_PS_PARSE_MARKERS = (
+    "parsererror",
+    "unexpected token",
+    "missing closing",
+    "missing terminator",
+)
+_PS_NOTFOUND_MARKERS = (
+    # PowerShell's own CommandNotFoundException wording.  The cmd.exe phrase
+    # ("is not recognized as an internal or external command") is deliberately
+    # absent: a `cmd /c ...` child prints it and exits 1, and that is cmd's
+    # error, not PowerShell failing to resolve the command.
+    "is not recognized as a name of a cmdlet",
+    "commandnotfoundexception",
+)
+_PS_TERMINATING_MARKERS = (
+    # The tool wraps the command in try/catch; the catch prints the error with
+    # ``Write-Error:``.  This is deliberately narrower than a generic
+    # "exception:" so a native program's own stack-trace text is not blamed on
+    # PowerShell.
+    "write-error:",
+    "cannot find path",
+)
+
+
+def _bash_exit_hint(code: int, sample: str) -> str | None:
+    if code == 126:
+        return (
+            "Exit 126 is bash's own code, not the program's: the command was "
+            "found but could not be executed (permission denied, a directory, "
+            "a bad interpreter, or a bad executable format)."
+        )
+    if code == 127:
+        if "unbound variable" in sample:
+            return (
+                "Exit 127 is bash's own code: an unset variable was expanded "
+                "under `set -u` (nounset), so the shell aborted."
+            )
+        return (
+            "Exit 127 is bash's own code, not the program's: the command was "
+            "not found (or the script path does not exist)."
+        )
+    if code == 2:
+        bash_prefixed = "bash:" in sample or "bash.exe:" in sample
+        if bash_prefixed and any(marker in sample for marker in _BASH_SYNTAX_MARKERS):
+            return (
+                "Exit 2 is bash's own code: the shell rejected the command as a "
+                "syntax error, so nothing ran. Check quotes, parentheses, and "
+                "heredoc terminators."
+            )
+        if bash_prefixed and any(
+            marker in sample for marker in _BASH_BUILTIN_MARKERS
+        ):
+            return (
+                "Exit 2 is bash's own code: a shell builtin rejected the command "
+                "(invalid usage or arguments), so the command did not run."
+            )
+        # A bare `exit 2` is a deliberate status: no hint without shell text.
+        return None
+    if 129 <= code <= 255 and 1 <= code - 128 <= 31:
+        name = _BASH_SIGNALS.get(code - 128)
+        if name is not None:
+            return (
+                f"Exit {code} = 128+{code - 128}: the process was killed by "
+                f"{name}; it did not return this code itself."
+            )
+    # Git Bash quirk: a *top-level* shell killed by signal N is reported to the
+    # Windows parent as N<<8 (3840 for SIGTERM), not as 128+N.
+    if code % 256 == 0 and 1 <= code >> 8 <= 31:
+        name = _BASH_SIGNALS.get(code >> 8)
+        if name is not None:
+            return (
+                f"Exit {code} = {code >> 8}<<8: Git Bash reports a shell "
+                f"terminated by {name} this way (not 128+{code >> 8}); the "
+                "shell was killed rather than exiting with this code."
+            )
+    return None
+
+
+def _pwsh_exit_hint(code: int, sample: str) -> str | None:
+    if code == 64 and (
+        "usage: pwsh" in sample or "cannot process the command" in sample
+    ):
+        return (
+            "Exit 64 came from pwsh itself (EX_USAGE): PowerShell rejected its "
+            "own command line, so the script never ran. This is an invocation "
+            "problem, not a script failure."
+        )
+    if code in (-1, 0xFFFFFFFF):
+        return (
+            "Exit 4294967295 is the unsigned form of -1 (0xFFFFFFFF): the "
+            "script called `exit -1` (or a native program returned -1); "
+            "PowerShell exit codes are 32-bit, so this is not a crash."
+        )
+    if code != 1:
+        return None
+    if any(marker in sample for marker in _PS_PARSE_MARKERS):
+        return (
+            "Exit 1 is PowerShell's generic failure code: the command could not "
+            "be parsed (ParserError), so nothing ran. Check quotes and parentheses."
+        )
+    if any(marker in sample for marker in _PS_NOTFOUND_MARKERS):
+        return (
+            "Exit 1 is PowerShell's generic failure code: it could not resolve "
+            "the command name (CommandNotFoundException). Check the cmdlet/module "
+            "name or PATH."
+        )
+    if any(marker in sample for marker in _PS_TERMINATING_MARKERS):
+        return (
+            "Exit 1 is PowerShell's generic failure code, not the failing "
+            "command's own code: the script hit a terminating error (see the "
+            "error text). For a native program's code, end with "
+            "`exit $LASTEXITCODE`."
+        )
+    # A bare exit 1 can be a deliberate exit or a native program's own code.
+    return None
+
+
+def _compat_shell_exit_hint(
+    tool: str, command: str, exit_code: int | None, output: str
+) -> str | None:
+    """Explain an exit code produced by the shell itself, not the command."""
+    if exit_code is None or exit_code == 0:
+        return None
+    sample = (output or "")[:4000].lower()
+    if tool == "bash":
+        return _bash_exit_hint(exit_code, sample)
+    if tool in ("pwsh", "powershell"):
+        return _pwsh_exit_hint(exit_code, sample)
+    return None
+
     return None
 
 

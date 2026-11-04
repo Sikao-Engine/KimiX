@@ -7,6 +7,8 @@ from kimi_cli.tools.file.bash.output_enhance import (
     interpret_exit_code,
     is_expected_exit,
     redact_sensitive_output,
+    shell_exit_hint,
+    shell_failure_hint,
 )
 
 
@@ -228,7 +230,90 @@ class TestAnnotateFailure:
 
 
 # ============================================================================
-# foreground_background_guidance (shell timeout hint)
+    # ============================================================================
+    # shell_exit_hint / shell_failure_hint
+    # ============================================================================
+    class TestShellExitHint:
+        @pytest.mark.parametrize(
+            ("code", "output", "expected"),
+            [
+                # bash's own codes (GNU Bash manual 3.7.5)
+                (2, "bash: -c: line 1: syntax error near unexpected token `)'", "syntax error"),
+                (2, "bash: cd: too many arguments", "shell builtin"),
+                (126, "bash: ./x: Is a directory", "Exit 126"),
+                (127, "bash: x: command not found", "Exit 127"),
+                (127, "bash: X: unbound variable", "`set -u`"),
+                (130, "", "SIGINT"),
+                (143, "", "SIGTERM"),
+                (137, "Killed", "SIGKILL"),
+                (141, "", "SIGPIPE"),
+                # Git Bash reports a killed top-level shell as N<<8
+                (3840, "", "SIGTERM"),
+                (2304, "", "SIGKILL"),
+            ],
+        )
+        def test_bash_hints(self, code: int, output: str, expected: str) -> None:
+            hint = shell_exit_hint("bash", "some command", code, output)
+            assert hint is not None
+            assert expected in hint
+
+        @pytest.mark.parametrize(
+            ("code", "output", "expected"),
+            [
+                (1, "\x1b[31;1mParserError: \x1b[0m Missing closing ')'", "could not be parsed"),
+                (1, "The term 'x' is not recognized as a name of a cmdlet", "could not resolve"),
+                (1, "Write-Error: Exception: boom", "terminating error"),
+                (64, "Usage: pwsh[.exe] [-Command ...]", "command line"),
+                (4294967295, "", "unsigned form of -1"),
+            ],
+        )
+        def test_pwsh_hints(self, code: int, output: str, expected: str) -> None:
+            hint = shell_exit_hint("pwsh", "some command", code, output)
+            assert hint is not None
+            assert expected in hint
+
+        @pytest.mark.parametrize(
+            ("tool", "code", "output"),
+            [
+                ("bash", 2, ""),  # a deliberate `exit 2` is not a syntax error
+                # A compiler's own "syntax error" (exit 2) must not be blamed
+                # on bash.
+                ("bash", 2, "compiler: syntax error in file.c:42"),
+                ("bash", 2, "cd: too many arguments"),  # no bash: prefix
+                ("bash", 255, ""),
+                ("bash", 42, ""),
+                ("bash", 0, "syntax error"),
+                ("bash", None, "syntax error"),
+                ("pwsh", 1, ""),  # a deliberate exit 1 / native code 1
+                # A native program's own "Exception:" text is not PowerShell's
+                # terminating-error marker (the wrapper prints Write-Error:).
+                ("pwsh", 1, "Exception: boom"),
+                # cmd.exe's own "not recognized" text is not PowerShell's
+                # CommandNotFoundException.
+                ("pwsh", 1, "'x' is not recognized as an internal or external command"),
+                ("pwsh", 64, ""),  # a deliberate exit 64
+                ("pwsh", 42, ""),
+                ("zsh", 2, "syntax error"),
+            ],
+        )
+        def test_no_hint_without_shell_signature(
+            self, tool: str, code: int | None, output: str
+        ) -> None:
+            assert shell_exit_hint(tool, "some command", code, output) is None
+
+        def test_combines_output_and_shell_hint(self) -> None:
+            hint = shell_failure_hint(
+                "bash", "nosuchcmd", 127, "bash: nosuchcmd: command not found"
+            )
+            assert hint is not None
+            assert "command was not found" in hint
+            assert "Exit 127" in hint
+
+        def test_deduplicates(self) -> None:
+            assert shell_failure_hint("bash", "ls", 42, "") is None
+            assert shell_failure_hint("bash", "ls", 0, "syntax error") is None
+
+    # foreground_background_guidance (shell timeout hint)
 # ============================================================================
 
 class TestForegroundBackgroundGuidance:

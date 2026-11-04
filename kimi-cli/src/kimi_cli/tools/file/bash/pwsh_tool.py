@@ -38,10 +38,10 @@ from kimi_cli.tools.common import (
     _token_filter_output,
 )
 from kimi_cli.tools.file.bash.output_enhance import (
-    annotate_failure,
     interpret_exit_code,
     is_expected_exit,
     redact_sensitive_output,
+    shell_failure_hint,
 )
 from kimi_cli.tools.file.bash.process_pwsh import pwsh_transform
 from kimi_cli.tools.file.bash.pwsh_fix import fix_pwsh_command
@@ -722,7 +722,7 @@ class Powershell(CallableTool2[PowershellParams]):
         # Exit-code semantics + failure hints run on the raw output (the
         # redacted text is what gets displayed/exported below).
         meaning = interpret_exit_code(params.command, real_exit_code)
-        hint = annotate_failure(output, params.command, real_exit_code)
+        hint = shell_failure_hint("pwsh", params.command, real_exit_code, output)
         expected = is_expected_exit(params.command, real_exit_code)
 
         # Unify success/error path: always pass the real exit code.
@@ -1118,7 +1118,7 @@ class Powershell(CallableTool2[PowershellParams]):
                 params.command, real_exit_code
             )
             if failed and failure_hint is None:
-                failure_hint = annotate_failure(output, params.command, real_exit_code)
+                failure_hint = shell_failure_hint("pwsh", params.command, real_exit_code, output)
         block = _build_session_output_block(
             task_id=task_id,
             status=status,
@@ -1185,7 +1185,7 @@ class Powershell(CallableTool2[PowershellParams]):
         suffix = _original_saved_message(original_path)
         expected = is_expected_exit(command, exit_code)
         if not success and not expected:
-            hint = annotate_failure(output, command, exit_code)
+            hint = shell_failure_hint("pwsh", command, exit_code, output)
             msg = "failed" + (f" Hint: {hint}" if hint else "")
             msg += transform_warning
             cmd_suffix = _command_saved_message(params.command, ".ps1", "PowerShell")

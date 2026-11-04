@@ -128,6 +128,36 @@ class TestPowershellArgumentBuilding:
             assert isinstance(args[0][3], dict) and "PATH" in args[0][3]
             assert args.kwargs.get("append_newline", False) is False
 
+    async def test_non_interactive_failure_gets_shell_exit_hint(
+        self, mock_session: MagicMock
+    ) -> None:
+        with patch(
+            "kimi_cli.tools.file.bash.pwsh_tool.find_pwsh",
+            return_value=r"C:\pwsh\pwsh.exe",
+        ):
+            pwsh = Powershell(session=mock_session)
+        with patch("kimi_cli.tools.file.bash.pwsh_tool.ProcessTask") as mock_pt:
+            mock_instance = MagicMock()
+            mock_instance.start = MagicMock(return_value=asyncio.Future())
+            mock_instance.start.return_value.set_result("pwsh-fail-id")
+            mock_instance.wait_with_monitor = MagicMock(return_value=asyncio.Future())
+            mock_instance.wait_with_monitor.return_value.set_result((False, 0.0, False))
+            mock_instance.thread_is_alive = MagicMock(return_value=asyncio.Future())
+            mock_instance.thread_is_alive.return_value.set_result(False)
+            mock_instance.stream = MagicMock()
+            mock_instance.stream.pop_output = MagicMock(return_value=asyncio.Future())
+            mock_instance.stream.pop_output.return_value.set_result(
+                "Write-Error: Exception: boom"
+            )
+            mock_instance.stream.success = MagicMock(return_value=asyncio.Future())
+            mock_instance.stream.success.return_value.set_result(False)
+            mock_instance.stream.exit_code = 1
+            mock_instance.stream.process_elapsed = None
+            mock_pt.return_value = mock_instance
+            result = await pwsh(PowershellParams(cmd='throw "boom"'))
+        assert isinstance(result, ToolError)
+        assert "Exit 1 is PowerShell's generic failure code" in result.message
+
     async def test_interactive_args_with_cmd(self, mock_session: MagicMock) -> None:
         with patch("kimi_cli.tools.file.bash.pwsh_tool.find_pwsh", return_value=r"C:\pwsh\pwsh.exe"):
             pwsh = Powershell(session=mock_session)

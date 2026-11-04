@@ -13,6 +13,10 @@ Provides:
 - :func:`annotate_failure` — a single actionable hint for common failure
   signatures in command output (command not found, missing file, missing
   Python module, permission denied).
+- :func:`shell_exit_hint` / :func:`shell_failure_hint` — explain exit codes
+  chosen by bash / pwsh itself (syntax error, not-found, signal, PowerShell's
+  generic 1 and usage 64) rather than by the invoked program, and merge that
+  with :func:`annotate_failure`.
 - :func:`redact_sensitive_output` — mask credentials (JWT, PEM keys, API
   tokens, auth headers, URL userinfo, ``password=`` assignments) so secrets
   never reach the model or the export pipeline.  The implementation moved to
@@ -52,6 +56,8 @@ __all__ = [
     "interpret_exit_code",
     "is_expected_exit",
     "redact_sensitive_output",
+    "shell_exit_hint",
+    "shell_failure_hint",
 ]
 
 
@@ -112,6 +118,45 @@ def annotate_failure(output: str, command: str, exit_code: int | None) -> str | 
     if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None and output.isascii():
         return _NATIVE_TOOLS.annotate_failure(output, command, exit_code)
     return _compat_tools()._compat_annotate_failure(output, command, exit_code)
+
+
+def shell_exit_hint(
+    tool: str, command: str, exit_code: int | None, output: str
+) -> str | None:
+    """Explain an exit code that the *shell* chose, not the invoked program.
+
+    Bash: 126 (found but not executable), 127 (not found / ``set -u`` abort),
+    2 (syntax error or builtin misuse), 128+N (killed by signal N), and the
+    Git-Bash ``N<<8`` spelling of a killed top-level shell.  PowerShell: 1
+    (parse error / terminating error / command not found), 64 (bad pwsh
+    command line), 4294967295 (``exit -1`` as an unsigned 32-bit code).
+
+    Pure Python on purpose: the compiled kernel predates the rule (the same
+    reason the SIGPIPE and doubled-slash rules are decided here).  Returns
+    ``None`` when the code is ordinary or the output does not disambiguate it.
+    """
+    if exit_code is None or exit_code == 0:
+        return None
+    return _compat_tools()._compat_shell_exit_hint(tool, command, exit_code, output)
+
+
+def shell_failure_hint(
+    tool: str, command: str, exit_code: int | None, output: str
+) -> str | None:
+    """Combine :func:`annotate_failure` with :func:`shell_exit_hint`.
+
+    The output-specific hint (missing file, module, permission) comes first;
+    the shell-code explanation follows.  Duplicates are removed.
+    """
+    hints = (
+        annotate_failure(output, command, exit_code),
+        shell_exit_hint(tool, command, exit_code, output),
+    )
+    unique: list[str] = []
+    for hint in hints:
+        if hint and hint not in unique:
+            unique.append(hint)
+    return " ".join(unique) if unique else None
 
 
 from kimi_cli.tools.security import (  # noqa: E402 -- deliberately a late import

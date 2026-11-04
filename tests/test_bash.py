@@ -7017,6 +7017,23 @@ class TestShellSafetyWiring:
         assert "command was not found" in result.output.lower()
         assert "Hint:" in result.message
 
+    async def test_completed_syntax_error_gets_shell_exit_hint(
+        self, bash_instance: Bash
+    ) -> None:
+        process_task = self._completed_process_task()
+        process_task.stream.pop_output = AsyncMock(
+            return_value="bash: -c: line 1: syntax error near unexpected token `)'"
+        )
+        process_task.stream.success = AsyncMock(return_value=False)
+        process_task.stream.exit_code = 2
+        with patch(
+            "kimi_cli.tools.file.bash.bash_tool.ProcessTask", return_value=process_task
+        ):
+            result = await bash_instance(BashParams(cmd="echo )"))
+        assert isinstance(result, ToolError)
+        assert "syntax error" in result.output.lower()
+        assert "Exit 2 is bash's own code" in result.message
+
     async def test_completed_success_block_has_null_meaning_and_hint(
         self, bash_instance: Bash
     ) -> None:
