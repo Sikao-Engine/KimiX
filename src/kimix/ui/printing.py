@@ -24,17 +24,77 @@ from typing import Any, Callable
 # writes to the OS file descriptor and bypasses Python-level replacements.
 _BUILTIN_PRINT = builtins.print
 
-from kimi_cli.native_loader import (
-    get_compat as _native_get_compat,
-    get_module as _native_get_module,
-    use_native as _native_use_native,
+# ---------------------------------------------------------------------------
+# Deferred native handles (PEP 810 / PEP 562)
+# ---------------------------------------------------------------------------
+# ``kimi_cli.native_loader`` resolves the compiled ``runtime_py`` extension and
+# the ``kimix_native`` shim — measured at ~20 ms and previously ~77 ms before
+# the loader stopped pre-importing every kernel submodule. It used to be
+# imported here at module scope, which charged that cost to every CLI
+# invocation (``cli_impl.main`` -> ``cli_impl.core`` -> ``args`` -> ``constants``
+# -> this module) including ``kimix --help``, which never writes through the
+# native path at all.
+#
+# The handles are therefore resolved on first use by :func:`_ensure_native`.
+# Module-level ``__getattr__`` below keeps the previously import-time
+# attributes (``_native_use_native``, ``_NATIVE_STREAM``, ``_print_func`` ...)
+# visible to *attribute* access, so external code and the native-print tests
+# observe exactly the same values as before — they just trigger resolution.
+_NATIVE_LAZY_NAMES = frozenset(
+    {
+        "_native_get_compat",
+        "_native_get_module",
+        "_native_use_native",
+        "_NATIVE_STREAM",
+        "_NATIVE_PRINT",
+        "_print_func",
+    }
 )
 
-# Resolved once at import time (stable runtime: result never changes).
-_NATIVE_STREAM = _native_get_module("stream")
-# Pure-Python reference implementation (canonical copy lives in the shim);
-# resolved lazily to avoid an import-time dependency on the shim package.
+_native_ready = False
+# Resolved lazily to avoid an import-time dependency on the shim package.
 _COMPAT_STREAM = None
+
+
+def _ensure_native() -> None:
+    """Resolve the native loader handles exactly once (idempotent).
+
+    Sets ``_native_get_compat`` / ``_native_get_module`` / ``_native_use_native``
+    / ``_NATIVE_STREAM`` / ``_NATIVE_PRINT`` and upgrades :data:`_print_func`
+    to the native binding when the PRINT kernel is enabled.
+    """
+    global _native_ready, _NATIVE_STREAM, _NATIVE_PRINT, _print_func
+    global _native_get_compat, _native_get_module, _native_use_native
+    if _native_ready:
+        return
+    _native_ready = True
+    from kimi_cli.native_loader import (
+        get_compat as _get_compat,
+        get_module as _get_module,
+        use_native as _use_native,
+    )
+
+    _native_get_compat = _get_compat
+    _native_get_module = _get_module
+    _native_use_native = _use_native
+    _NATIVE_STREAM = _get_module("stream")
+    _NATIVE_PRINT = _resolve_native_print()
+    # The sink must ALWAYS be bound: the PRINT kernel or the compiled
+    # ``native_print`` may be unavailable (``KIMIX_NATIVE=0``, a runtime that
+    # predates the print submodule, a missing build), in which case we fall back
+    # to the builtin print instead of leaving ``_print_func`` unbound.
+    if _use_native("PRINT") and _NATIVE_PRINT is not None:
+        _print_func = _native_print_func
+    else:
+        _print_func = _BUILTIN_PRINT
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve the deferred native handles on attribute access (PEP 562)."""
+    if name in _NATIVE_LAZY_NAMES:
+        _ensure_native()
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _compat_stream():
@@ -185,6 +245,8 @@ def _strip_ansi(text: str) -> str:
         return text
     # Native acceleration: kimix_native.stream.strip_ansi uses the identical
     # ANSI escape pattern; the pure-Python body below is unchanged.
+    if not _native_ready:
+        _ensure_native()
     if _native_use_native("STREAM") and _NATIVE_STREAM is not None:
         return _NATIVE_STREAM.strip_ansi(text)
     return _compat_stream()._ANSI_ESCAPE_RE.sub("", text)
@@ -235,7 +297,11 @@ def _ends_with_newline(word: str) -> bool:
 
 
 _colorful_print = True
-_print_func: Callable = print
+# The concrete sink for ``print`` — deliberately absent from the module dict
+# until :func:`_ensure_native` resolves it (see the PEP 562 block above), so a
+# bare ``import kimix.ui.printing`` stays free of the native loader. Every
+# reader below calls ``_ensure_native()`` first; ``__getattr__`` covers
+# out-of-module attribute reads such as ``printing._print_func``.
 
 
 def _resolve_native_print() -> Callable | None:
@@ -254,9 +320,6 @@ def _resolve_native_print() -> Callable | None:
         return getattr(getattr(native, "print", None), "native_print", None)
     except Exception:
         return None
-
-
-_NATIVE_PRINT = _resolve_native_print()
 
 
 def _native_print_func(
@@ -286,11 +349,9 @@ def _native_print_func(
     _NATIVE_PRINT(*values, sep=sep, end=end, file=file, flush=flush)
 
 
-if _native_use_native("PRINT") and _NATIVE_PRINT is not None:
-    _print_func = _native_print_func
-
-
 def print(*values: object, sep: str | None = " ", end: str | None = "\n", file: Any = None, flush: bool = False):
+    if not _native_ready:
+        _ensure_native()
     _print_func(*values, sep=sep, end=end, file=file, flush=flush)
 
 
@@ -364,9 +425,13 @@ def colorful_print(
     flush: bool = False,
 ) -> None:
     if not _colorful_print:
+        if not _native_ready:
+            _ensure_native()
         _print_func(text, end=end, file=file, flush=flush)
         return
     text = colorful_text(text, fg, bg, styles)
+    if not _native_ready:
+        _ensure_native()
     _print_func(text, end=end, file=file, flush=flush)
 
 
@@ -383,24 +448,37 @@ class PrintStream:
     newline when the previous output didn't end with one.
     """
 
-    def __init__(self, print_func: Callable = _print_func) -> None:
+    def __init__(self, print_func: Callable | None = None) -> None:
+        # ``None`` defers the sink to the first write, so constructing a stream
+        # (``_stream`` is built at import time) never resolves the native
+        # loader. Pass an explicit ``print_func`` to override, as before.
         self._print_func = print_func
         self._last_char_was_newline = True
         self._state = StreamPrintState.Other
 
+    def _sink(self) -> Callable:
+        """Return the write sink, resolving the native binding on first use."""
+        func = self._print_func
+        if func is None:
+            if not _native_ready:
+                _ensure_native()
+            func = self._print_func = _print_func
+        return func
+
     def print_word(self, word: str, require_new_line: bool, raw_word: str | None = None, flush: bool = False) -> None:
         """Print a word, auto-inserting a leading newline when the previous
         output didn't end with one. Pass ``flush=True`` for live streaming output."""
+        print_func = self._sink()
         if not word:
             if require_new_line and not self._last_char_was_newline:
-                self._print_func('', end='\n', flush=flush)
+                print_func('', end='\n', flush=flush)
                 self._last_char_was_newline = True
             return
 
         if require_new_line and not self._last_char_was_newline:
-            self._print_func('', end='\n', flush=flush)
+            print_func('', end='\n', flush=flush)
 
-        self._print_func(word, end='', flush=flush)
+        print_func(word, end='', flush=flush)
         check_word = raw_word if raw_word is not None else word
         self._last_char_was_newline = _ends_with_newline(check_word)
 
@@ -424,6 +502,8 @@ def print_success(text: str, end: str = "\n") -> None:
 
 
 def print_string(text: str, end: str = "\n", file: Any = None, flush: bool = False) -> None:
+    if not _native_ready:
+        _ensure_native()
     _print_func(text, end=end, file=file, flush=flush)
 
 

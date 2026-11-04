@@ -1,4 +1,7 @@
 .venv
+# Free-threaded (no-GIL) experiment environment — see
+# .kimix_cache/python315_optimization_opportunities.md §"no-GIL evaluation".
+.venv-ft
 __pycache__
 /agent.py
 requirements.txt

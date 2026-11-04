@@ -79,7 +79,10 @@ class TestTaskOutputKillReportsSuccess:
     def _stream(exit_code: int) -> MagicMock:
         stream = MagicMock()
         stream.format_output = None
-        stream.stop = AsyncMock(return_value=True)
+        # The kill action force-stops the worker and polls liveness until the
+        # thread is gone (``stop`` alone cannot cancel a stuck coroutine).
+        stream.force_stop = AsyncMock(return_value=True)
+        stream.thread_is_alive = AsyncMock(return_value=False)
         stream.wait = AsyncMock(return_value=None)
         stream.pop_output = AsyncMock(return_value="partial output\n")
         stream.success = AsyncMock(return_value=False)  # killed => non-zero exit
@@ -107,7 +110,7 @@ class TestTaskOutputKillReportsSuccess:
         assert "killed" in result.brief
         assert "exit code 1" in result.brief
         assert "partial output" in result.output
-        stream.stop.assert_awaited_once()
+        stream.force_stop.assert_awaited_once()
         stream.success.assert_awaited_once()
 
     async def test_kill_removes_task_and_keeps_history_retrievable(

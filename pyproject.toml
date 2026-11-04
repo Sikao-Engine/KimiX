@@ -152,4 +152,15 @@ dev = [
     "mypy>=1.5.0",
     "respx>=0.22.0",
     "xlwt>=1.3.0",
+    # Editor formatter stack for the VS Code ms-python.autopep8 extension.
+    # Declared here so `uv sync` keeps it: the extension's own bundled copies only
+    # support Python <= 3.14 (its typing_extensions reads the removed
+    # `typing.no_type_check_decorator`), so .vscode/settings.json sets
+    # "autopep8.importStrategy": "fromEnvironment" and these must exist in the venv.
+    # pygls must stay on the 1.x line: 2.x dropped `pygls.server.LanguageServer`,
+    # which the extension's bundled lsp_server.py still imports.
+    "autopep8>=2.3.2",
+    "pygls>=1.3,<2",
+    "cattrs>=25.1.0",
+    "typing_extensions>=4.16.0",
 ]

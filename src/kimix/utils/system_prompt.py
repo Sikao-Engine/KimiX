@@ -31,6 +31,7 @@ On error: retry, adjust, or decompose.
 Verify with tests/checks — never declare done from reading alone.
 ''',
     'sp_worker_optional': '{YOLO}\n{SUBAGENT}\n{TRIVIAL}\n',
+    'sp_worker_process': 'PID {PID}: NEVER kill your own process.\n',
     'sp_thinker_items': '''\
 Think in <thinking>...</thinking>; end with <quit/>. No text outside tags.
 Self-verify: catch errors and bad assumptions.
@@ -66,12 +67,12 @@ Dispatch and summarize only. If not parallelizable, explain why and stop.
 
 # Optional worker clauses, substituted into ``sp_worker_optional`` per role.
 _WORKER_OPTIONAL_CLAUSES: dict[str, str] = {
-'YOLO': 'Yolo: never ask — pick the best option and continue.',
- 'SUBAGENT': (
-     'Sub-Agent: deliver a self-contained final result — the parent sees only '
-     'your result, not your transcript.\n'
- ),
- 'TRIVIAL': 'Need clarification? Make your final output the question and stop; the parent answers by resuming your session.',
+    'YOLO': 'Yolo: never ask — pick the best option and continue.',
+    'SUBAGENT': (
+        'Sub-Agent: deliver a self-contained final result — the parent sees only '
+        'your result, not your transcript.\n'
+    ),
+    'TRIVIAL': 'Need clarification? Make your final output the question and stop; the parent answers by resuming your session.',
 }
 
 # Todo-tracking clause per worker flavor: a regular worker tracks its own
@@ -127,6 +128,7 @@ class SystemPromptCallback:
     # called in role
     role_callback: Callable[[SystemPromptType, list[str]], None] | None = None
 
+
 def get_system_prompt(
         yolo: bool | None = None,
         work_dir: Optional[KaosPath] = None,
@@ -143,7 +145,6 @@ def get_system_prompt(
     )
     yolo = yolo if yolo is not None else base._default_yolo
 
-
     def system_prompt_func(runtime: Runtime, is_compacting: bool = False, compact_export_path: str | None = None) -> str:
         args = runtime.builtin_args
         tool_conventions = ''
@@ -152,9 +153,11 @@ def get_system_prompt(
         skill_doc = ''
         use_agent_md = False
         use_skills = False
-        items.extend(_load_items('sp_base_items', KIMI_OS=args.KIMI_OS, KIMI_WORK_DIR=str(args.KIMI_WORK_DIR)))
+        items.extend(_load_items('sp_base_items', KIMI_OS=args.KIMI_OS,
+                     KIMI_WORK_DIR=str(args.KIMI_WORK_DIR)))
         if args.KIMI_OS == 'Windows':
             items.extend(_load_items('sp_windows_item'))
+
         def worker_logic(role: str, is_sub_agent: bool = False):
             nonlocal tool_conventions
             tool_conventions = _TOOL_CONVENTIONS
@@ -162,6 +165,7 @@ def get_system_prompt(
             use_agent_md = True
             use_skills = True
             role_doc = role
+            items.extend(_load_items('sp_worker_process', PID=str(os.getpid())))
             items.extend(_load_items('sp_worker_core'))
             if is_sub_agent:
                 items.append(_WORKER_TODO_CLAUSES['NO_TODO'])

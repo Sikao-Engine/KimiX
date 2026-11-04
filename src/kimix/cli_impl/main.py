@@ -3,8 +3,10 @@
 Startup-performance design (Python 3.15+): the CLI runner and the SDK-heavy
 ``kimix.utils`` are bound through PEP 810 module-level ``lazy`` statements, so
 ``kimix --help`` (which exits inside argument parsing) never imports them.
-``constants`` stays eager because it is cheap (terminal printing only) and is
-needed by the ``--clean`` teardown on every real run.
+``constants`` stays eager because it is cheap: it is pure stdlib (``os`` /
+``pathlib``) since its help text moved behind a PEP 562 ``__getattr__`` and its
+``kimix.ui.printing`` binding became a PEP 810 lazy import. It is also needed by
+the ``--clean`` teardown on every real run.
 """
 
 try:

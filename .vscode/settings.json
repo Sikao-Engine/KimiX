@@ -1,0 +1,28 @@
+{
+    // The platform interpreter moved from Python 3.14 to 3.15. Pin the workspace to the
+    // uv-managed venv so the Python and autopep8 extensions agree on a single 3.15 interpreter.
+    "python.defaultInterpreterPath": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+
+    // Pin the interpreter the formatter server itself is spawned with. This also overrides a
+    // stale interpreter selection cached in VS Code's workspace storage, which keeps pointing
+    // at the old 3.14 install.
+    "autopep8.interpreter": [
+        "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+    ],
+
+    // The autopep8 extension's bundled libraries only support Python <= 3.14:
+    // bundled/typing_extensions.py reads `typing.no_type_check_decorator`, removed in 3.15,
+    // so `import pygls` -> `import cattrs` raises AttributeError and the formatter server
+    // never starts. "fromEnvironment" resolves autopep8/pygls/cattrs from .venv instead.
+    "autopep8.importStrategy": "fromEnvironment",
+
+    // Mirror [tool.ruff] line-length = 100 from pyproject.toml.
+    "autopep8.args": [
+        "--max-line-length=100"
+    ],
+
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.autopep8",
+        "editor.formatOnSave": true
+    }
+}

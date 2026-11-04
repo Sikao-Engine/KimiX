@@ -275,30 +275,28 @@ def _build_kernel_table() -> dict[str, bool]:
 
 
 def _build_module_table() -> dict[str, object]:
-    """Precompute the resolved submodule for every known kernel module name.
+    """Resolve the submodule for every known kernel module name.
 
-    All known submodules (``kimix_native.<kernel.lower()>``) are imported
-    once here; each is a small shim module over the already-loaded
-    ``runtime_py`` extension, so the one-time cost is negligible and the hot
-    path becomes a single dict lookup (module object or None). When native
-    is unavailable every known module is stored as ``None`` so the tables
-    stay complete in every mode.
+    Kept for callers/tests that want the fully populated table up front. It is
+    NOT run at import time any more: eagerly importing all ten
+    ``kimix_native.<kernel>`` shims pulled ``kimix_native.parse`` ->
+    ``kimix_native._shell_compat`` -> ``shell_compat.bash_core`` (the vendored
+    bash/pwsh scanners, ~30 ms measured) into every process that merely touched
+    a native handle — including ``kimix --help`` that never parses shell.
+
+    :func:`get_module` already memoizes on demand (module object or None), so
+    the table below starts empty and is filled lazily; the hot path stays a
+    single dict lookup.
     """
     table: dict[str, object] = {}
     for kernel in _KERNELS:
-        name = kernel.lower()
-        mod: object = None
-        if NATIVE_AVAILABLE and _shim is not None:
-            try:
-                mod = importlib.import_module(f"kimix_native.{name}")
-            except ImportError:
-                mod = None
-        table[name] = mod
+        table[kernel.lower()] = get_module(kernel.lower())
     return table
 
 
 _KERNEL_TABLE = _build_kernel_table()
-_MODULE_TABLE = _build_module_table()
+# Filled lazily by ``get_module`` / ``kernel_module`` on first use per kernel.
+_MODULE_TABLE: dict[str, object] = {}
 
 
 def use_native(kernel: str) -> bool:

@@ -6,16 +6,23 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import orjson
-
 # Heavy agent dependencies are deferred via PEP 810 module-level lazy imports
 # so that ``set_arg()`` — and therefore ``kimix --help`` and ``kimix --connect``
 # — can run without loading the SDK stack (kosong / kimi_agent_sdk / pydantic).
 # The bindings reify on first attribute use, well after argument parsing.
+#
+# ``orjson`` (+13 ms), ``kimix.cli_impl.utils`` (+12 ms, dominated by ``regex``)
+# and ``kimix.ui.printing`` are deferred for the same reason: ``--help`` exits
+# inside ``parse_args()`` and never parses a config file, never formats a
+# markdown block and never prints through the kimix printing helpers. Only
+# ``constants`` stays eager — it is a handful of strings and the parsed
+# ``curr_dir`` that real runs need immediately.
 lazy import kimix.base as base
+lazy import orjson
 lazy from kimix.ui.printing import print_debug, print_warning
+lazy from . import utils  # noqa: F401  (re-exported for historical import paths)
 
-from . import constants, utils  # noqa: F401
+from . import constants
 
 
 def _load_project_mcp_config() -> dict[str, Any]:

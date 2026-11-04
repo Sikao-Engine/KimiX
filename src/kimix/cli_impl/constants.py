@@ -2,7 +2,11 @@ import os
 from pathlib import Path
 from typing import Any
 
-from kimix.ui.printing import Color, colorful_text
+# ``kimix.ui.printing`` is deferred (PEP 810) so importing this module — which
+# happens on every CLI invocation via ``cli_impl.args`` — does not pull the
+# printing stack (ctypes + the Windows console code-page setup) just to build a
+# help string that only ``/help`` ever reads.
+lazy from kimix.ui.printing import Color, colorful_text
 
 curr_dir = Path(os.curdir)
 if not curr_dir.is_absolute():
@@ -12,40 +16,49 @@ LSP_JSON = None
 frame = 0
 COMMENT = """Always write ' Start writen by AGENT ' comment before code, Always write ' End writen by AGENT ' comment after code"""
 
-# Start writen by AGENT
-HELP_STR = f'''Command line options:
-  -c, --clean         - Delete cache file after quit
-  --no_think          - Disable thinking mode
-  --no_yolo           - Disable YOLO mode
-  --no_color          - Disable colorful print
-  --manually-cot      - Enable manually CoT mode
-  -s, --skill-dir     - Specify custom skill directory
-  --config            - Specify a JSON config file (see config_example.json for example)
+
+def _build_help_str() -> str:
+    """Render :data:`HELP_STR` (deferred until ``/help`` is invoked).
+
+    Building it at import time cost ~24 ``colorful_text()`` calls on every
+    process start and — because the ANSI codes were baked in before
+    ``--no_color`` was parsed — made ``/help`` print raw escape sequences in
+    ``--no_color`` mode. Rendering on first access fixes both.
+    """
+    # Start writen by AGENT
+    return f'''Command line options:
+  -c, --clean - Delete cache file after quit
+  --no_think - Disable thinking mode
+  --no_yolo - Disable YOLO mode
+  --no_color - Disable colorful print
+  --manually-cot - Enable manually CoT mode
+  -s, --skill-dir - Specify custom skill directory
+  --config - Specify a JSON config file (see config_example.json for example)
 
 Available commands:
-  {colorful_text('/file:<path>', fg=Color.YELLOW)}    - Load a file and execute its content line by line
-  <path>              - Same as /file:<path>
-  {colorful_text('/todo:<path>', fg=Color.YELLOW)}    - Scan code file for TODO comments and prompt agent to implement them
-  {colorful_text('/clear', fg=Color.YELLOW)}          - Clear the conversation context
-  {colorful_text('/exit', fg=Color.YELLOW)}           - Exit the program
-  {colorful_text('/help', fg=Color.YELLOW)}           - Show this help message
-  {colorful_text('/context', fg=Color.YELLOW)}        - Print context usage
+  {colorful_text('/file:<path>', fg=Color.YELLOW)} - Load a file and execute its content line by line
+  <path> - Same as /file:<path>
+  {colorful_text('/todo:<path>', fg=Color.YELLOW)} - Scan code file for TODO comments and prompt agent to implement them
+  {colorful_text('/clear', fg=Color.YELLOW)} - Clear the conversation context
+  {colorful_text('/exit', fg=Color.YELLOW)} - Exit the program
+  {colorful_text('/help', fg=Color.YELLOW)} - Show this help message
+  {colorful_text('/context', fg=Color.YELLOW)} - Print context usage
   {colorful_text('/fix:<command>', fg=Color.YELLOW)}  - Run a command and fix errors if any
-  {colorful_text('/txt', fg=Color.YELLOW)}            - Input multiple line text
-  {colorful_text('/init', fg=Color.YELLOW)}           - Initialize default LLM config
+  {colorful_text('/txt', fg=Color.YELLOW)} - Input multiple line text
+  {colorful_text('/init', fg=Color.YELLOW)} - Initialize default LLM config
   {colorful_text('/compact', fg=Color.YELLOW)} - Compact conversation context
   {colorful_text('/continue', fg=Color.YELLOW)} - Let the agent continue its unfinished work in the current session
   {colorful_text('/export:<path>', fg=Color.YELLOW)}  - Export session messages to file
-  {colorful_text('/resume:<id>', fg=Color.YELLOW)}    - Close current session and resume a session by ID
-  {colorful_text('/store:<id>', fg=Color.YELLOW)}   - Copy the current session to a new named session
-  {colorful_text('/load:<id>', fg=Color.YELLOW)}    - Copy a named session into a new anonymous session
-  {colorful_text('/sessions', fg=Color.YELLOW)}       - List resumable sessions for the current working directory
+  {colorful_text('/resume:<id>', fg=Color.YELLOW)} - Close current session and resume a session by ID
+  {colorful_text('/store:<id>', fg=Color.YELLOW)} - Copy the current session to a new named session
+  {colorful_text('/load:<id>', fg=Color.YELLOW)} - Copy a named session into a new anonymous session
+  {colorful_text('/sessions', fg=Color.YELLOW)} - List resumable sessions for the current working directory
   {colorful_text('/reflection', fg=Color.YELLOW)} - Reflect on current context and refactor agent source code
   {colorful_text('/reflection_bash:<path>', fg=Color.YELLOW)} - Write a prompt reviewing the bash IR parser against this session's bash calls
   {colorful_text('/reflection_<tool>:<path>', fg=Color.YELLOW)} - Write a review prompt for one builtin tool (pwsh, python, job_output, todo_list, read, read_image, write, edit, subagent, list_agents, glob, grep, fetch_url, web_search)
   {colorful_text('/supervisor', fg=Color.YELLOW)} - Start a supervisor session with multi-line input text
-  {colorful_text('/swarm', fg=Color.YELLOW)}          - Start a swarm session with multi-line input text
-  {colorful_text('/plan', fg=Color.YELLOW)}           - Plan a long-term task, step-by-step, then execute
+  {colorful_text('/swarm', fg=Color.YELLOW)} - Start a swarm session with multi-line input text
+  {colorful_text('/plan', fg=Color.YELLOW)} - Plan a long-term task, step-by-step, then execute
   {colorful_text('/cmd:<command>', fg=Color.YELLOW)}  - Execute system command
   {colorful_text('/code:<path> [args...]', fg=Color.YELLOW)}  - Run a script file with optional arguments
 
@@ -53,7 +66,16 @@ Or enter any prompt to send to the agent.
 
 Press <Tab> after '/' to complete commands and arguments.
 '''
-# End writen by AGENT
+    # End writen by AGENT
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve ``HELP_STR`` on first access (PEP 562)."""
+    if name == "HELP_STR":
+        value = _build_help_str()
+        globals()["HELP_STR"] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 CLEAN_MODE: bool | None = None
-

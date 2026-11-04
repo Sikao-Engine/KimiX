@@ -56,17 +56,6 @@ from kimi_cli.native_loader import get_compat as _get_compat
 _shell_compat = _get_compat("_shell_compat")
 
 
-def _bash_is_available() -> bool:
-    """Return True when a real bash executable exists on this host.
-
-    Host-capability probe: the agent config's ``shell`` selection is ignored
-    so the result depends only on whether bash is actually installed (the
-    default Windows policy is Git-Bash-first with PowerShell as fallback, so
-    real sessions enable the Bash tool wherever this probe is True).
-    """
-    return find_bash() is not None
-
-
 def _pwsh_is_available() -> bool:
     """Return True when a real PowerShell can run on this host.
 
@@ -83,7 +72,18 @@ def _pwsh_is_available() -> bool:
     )
 
 
-BASH_AVAILABLE = _bash_is_available()
+# Host-capability probe: the agent config's ``shell`` selection is ignored so the
+# result depends only on whether bash is actually installed (the default Windows
+# policy is Git-Bash-first with PowerShell as fallback, so real sessions enable the
+# Bash tool wherever this probe passed).
+#
+# Probe once, at import: every ``find_bash()`` call re-runs ``where.exe git`` and
+# a 15s external-program smoke test, and returns ``None`` when that smoke test
+# times out (seen under full-suite load).  Tests that spawn bash must reuse this
+# path, otherwise a transient ``None`` turns ``[None, "-c", ...]`` into a
+# TypeError instead of taking the skipif branch.
+BASH_PATH = find_bash()
+BASH_AVAILABLE = BASH_PATH is not None
 PWSH_AVAILABLE = _pwsh_is_available()
 
 
@@ -9853,15 +9853,25 @@ class TestBashFixRound5EscapedWrappers:
             r"\nice tree",
         ],
     )
-    def test_escaped_wrapper_fixed_script_runs(self, source: str) -> None:
+    def test_escaped_wrapper_fixed_script_runs(self, source: str, tmp_path: Path) -> None:
+        """The fixed script must run in a real bash (rc 0).
+
+        ``tree`` is absent from Git for Windows, so the generated fallback walks
+        the cwd with perl.  Run it in a small temporary directory: walking the
+        repository root instead (``.git``/``.venv``/``node_modules``, ~220 KB of
+        output) made this test flip between pass and fail purely on machine load.
+        """
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "file.txt").write_text("x", encoding="utf-8")
         fixed = _fix_for_windows(source).command
         proc = subprocess.run(
-            [find_bash(), "-c", fixed],
+            [BASH_PATH, "-c", fixed],
             capture_output=True,
-            timeout=15,
+            timeout=60,
             encoding="utf-8",
             errors="replace",
             stdin=subprocess.DEVNULL,
+            cwd=tmp_path,
         )
         assert proc.returncode == 0, (
             f"{source!r} -> fixed script failed in real bash:\n{fixed}\n"

@@ -348,7 +348,9 @@ class TestJobOutputSpentTime:
             return_value=("processed output", message, None, None, False)
         )
         stream.process_elapsed = elapsed
-        stream.stop = AsyncMock(return_value=True)
+        # TaskOutput's kill action force-stops the worker (``stop`` alone cannot
+        # interrupt a coroutine worker stuck in cleanup), then polls liveness.
+        stream.force_stop = AsyncMock(return_value=True)
         stream.thread_is_alive = AsyncMock(return_value=False)
         stream.success = AsyncMock(return_value=success)
         stream.exit_code = exit_code

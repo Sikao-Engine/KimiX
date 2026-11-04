@@ -264,9 +264,14 @@ def _run_cli() -> None:
     global exec_ctx
     exec_ctx = {"__name__": "__main__"}
 
-    _check_native()
-
+    # Argument parsing runs FIRST: ``--help`` / ``--version`` exit inside
+    # ``set_arg()``, so deferring ``_check_native()`` keeps the native loader
+    # (``runtime_py`` ~6 ms) and ``kimix.ui.printing`` (~11 ms) out of the
+    # ``kimix --help`` path entirely. Nothing in ``set_arg()`` depends on the
+    # native probe; it only logs availability before a real run starts.
     subcmd, args = set_arg()
+
+    _check_native()
 
     if subcmd == "connect":
         _connect_cli(args.connect)

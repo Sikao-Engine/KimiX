@@ -127,16 +127,45 @@ def test_kernel_table_precomputed():
         assert table[kernel.title()] is expected
 
 
-def test_module_table_precomputed():
-    """The precomputed module table holds resolved submodules (or None)."""
+def test_module_table_resolved_on_demand():
+    """The module table is filled lazily (no eager kernel imports at startup).
+
+    Eagerly importing every ``kimix_native.<kernel>`` shim here pulled the
+    vendored bash/pwsh scanners (``shell_compat.bash_core``, ~30 ms) into every
+    process that touched a native handle. ``get_module`` memoizes on demand, so
+    the table starts empty and grows as kernels are used.
+    """
     table = knl._MODULE_TABLE
     assert knl.get_module("index") is table["index"]
     assert knl.get_module("does_not_exist") is None
     if knl.NATIVE_AVAILABLE:
         assert table["index"] is not None
-        assert callable(getattr(table["search"], "jaro_similarity", None))
+        assert callable(getattr(knl.get_module("search"), "jaro_similarity", None))
     else:
         assert table["index"] is None
+
+
+def test_module_table_does_not_pre_import_kernels():
+    """Only the kernels actually requested get imported."""
+    probe = (
+        "import sys\n"
+        "import kimi_cli.native_loader as knl\n"
+        "knl.get_module('index')\n"
+        "loaded = sorted(\n"
+        "    name for name in sys.modules\n"
+        "    if name.startswith('kimix_native.shell_compat')\n"
+        ")\n"
+        "print('SHELL_COMPAT' if loaded else 'NO_SHELL_COMPAT')\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    # The shell scanners are only pulled by the PARSE kernel / parser modules.
+    assert "NO_SHELL_COMPAT" in result.stdout, result.stdout
 
 
 def test_use_native_unknown_kernel_memoized():
