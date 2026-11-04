@@ -42,6 +42,7 @@ import importlib.util as _imp_util
 import os as _os
 import sys as _sys
 import types as _types
+from dataclasses import replace as _dc_replace
 
 try:
     _imp.import_module("kimix_native.shell_compat.bash_core")
@@ -443,6 +444,10 @@ def fix_bash_command(command: str) -> BashFix:
                 cmd_conditional_fixes=result.cmd_conditional_fixes,
                 native_flag_fixes=result.native_flag_fixes + original_words,
             )
+    # Pass-through identity: an unchanged command must come back as the
+    # original object (translator.render_splices), not the kernel's equal copy.
+    if result.command is not command and result.command == command:
+        result = _dc_replace(result, command=command)
     return result
 
 
@@ -467,7 +472,9 @@ def _process_unquoted(cmd: str) -> str:
     native = _native_bash_fix()
     if native is None:
         return _py_process_unquoted(cmd)
-    return native.process_unquoted(cmd)
+    fixed = native.process_unquoted(cmd)
+    # Same pass-through identity contract as fix_bash_command.
+    return cmd if fixed == cmd else fixed
 
 
 # NOTE: the reference kernel in ``shell_compat.bash_core`` is deliberately left

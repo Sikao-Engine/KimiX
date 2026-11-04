@@ -116,7 +116,14 @@ def _process_unquoted(cmd: str) -> str:
     ``-1`` on unterminated input, in which case the copy runs to the end of
     ``cmd`` verbatim, matching the legacy).  Command/backtick substitutions
     and double-quoted regions are described in the module docstring.
+
+    With no backslash the walk is a no-op: return the input object itself so
+    the caller's pass-through identity contract survives (the pipeline runs
+    this on every command, and an already compatible command must come back
+    as the same string object).
     """
+    if "\\" not in cmd:
+        return cmd
     result: list[str] = []
     length = len(cmd)
     # Word spans that are escaped spellings of ``nul`` (legacy _ESCAPED_NUL_RE);

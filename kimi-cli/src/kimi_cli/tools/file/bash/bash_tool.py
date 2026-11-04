@@ -639,7 +639,15 @@ def _data_region_spans(cmd: str) -> tuple[tuple[int, int], ...]:
 
 
 def _process_unquoted_preserving_data(cmd: str) -> str:
-    r"""Normalize unquoted backslashes in *cmd*, copying data regions verbatim."""
+    r"""Normalize unquoted backslashes in *cmd*, copying data regions verbatim.
+
+    A command with no backslash contains nothing this transform can change
+    (the data spans only protect backslashes), so return the original object:
+    the pass-through identity contract must survive the data-region split for
+    an already compatible command.
+    """
+    if "\\" not in cmd:
+        return cmd
     spans = _data_region_spans(cmd)
     if not spans:
         return _process_unquoted(cmd)
@@ -650,7 +658,8 @@ def _process_unquoted_preserving_data(cmd: str) -> str:
         out.append(cmd[start:end])
         pos = end
     out.append(_process_unquoted(cmd[pos:]))
-    return "".join(out)
+    joined = "".join(out)
+    return cmd if joined == cmd else joined
 
 
 def _prepare_bash_cmd(cmd: str) -> str:

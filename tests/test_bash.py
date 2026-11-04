@@ -4524,6 +4524,82 @@ class TestPrepareBashCmd:
 
 
 # ============================================================================
+# Pass-through identity: an unchanged command is the SAME string object
+# ============================================================================
+class TestPassThroughIdentity:
+    r"""The no-op half of the translation contract.
+
+    The Bash tool pipeline is ``_prepare_bash_cmd`` (data-region-aware
+    ``_process_unquoted``) followed by ``fix_bash_command``.  When neither
+    rule fires, the pipeline must return the ORIGINAL string object, not a
+    byte-identical re-render: ``result.command is command`` is the documented
+    no-op signal callers (and the corpus) rely on.  The compiled ``runtime_py``
+    kernel returns a freshly allocated equal string even for a no-op, so the
+    facade restores the identity at the integration point; the reference
+    emitter also returns the input directly when it contains no backslash.
+
+    ``RECORDED`` is invocation #44 of the recorded 2026-11-04 session -- the
+    one call the tool left unanswered.  It is already valid Git Bash (a brace
+    group piped to ``tail``); the failure was the tool's 30s no-output
+    background handoff, not a translation, so the fixer must leave it alone.
+    """
+
+    RECORDED = (
+        'cd "D:/TestUE" && { echo "### FOG"; python harness/bp.py run dump_material '
+        '--arg project=testue --arg asset=/TCDemoForUE5/FogGhost/Render/Tools/SkySequencer/'
+        'VirtualLayerMappingModel/Materials/M_StratifiedVolumetricClouds > '
+        '.kimix_cache/dump_fog.json 2> .kimix_cache/dump_fog.err; echo "fog exit=$?"; '
+        'echo "### SOL"; python harness/bp.py run dump_material --arg project=testue '
+        '--arg asset=/TCDemoForUE5/TCDemoForUE5/SandBox/VolumeFluid/Solutions/SkySequencer/'
+        'DensityFieldsModels/VirtualLayerMappingModel/Materials/M_StratifiedVolumetricClouds > '
+        '.kimix_cache/dump_sol.json 2> .kimix_cache/dump_sol.err; echo "sol exit=$?"; } '
+        '2>&1 | tail -6'
+    )
+
+    def test_recorded_unchanged_command_keeps_its_identity(self) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            prepared = _prepare_bash_cmd(self.RECORDED)
+        assert prepared is self.RECORDED
+        result = _fix_for_windows(prepared)
+        assert result.command is prepared
+        assert result.changed is False
+        assert result.replacements == ()
+        assert result.path_changes == ()
+        assert result.shell_wrappers == ()
+        assert result.nul_fixes == ()
+        assert result.unsupported == ()
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "echo hi",
+            "ls -la",
+            "git status --porcelain | head -20",
+            'cd "D:/TestUE" && echo "### FOG"; echo "fog exit=$?"',
+            "{ echo hi; } 2>&1 | tail -6",
+            "python - <<'PY'\nprint('hi')\nPY",
+        ],
+    )
+    def test_unchanged_shapes_keep_their_identity(self, command: str) -> None:
+        with patch("kimi_cli.tools.file.bash.bash_tool.sys.platform", "win32"):
+            prepared = _prepare_bash_cmd(command)
+        assert prepared is command
+        result = _fix_for_windows(prepared)
+        assert result.command is prepared
+
+    @pytest.mark.skipif(not BASH_AVAILABLE, reason="bash not installed")
+    def test_recorded_command_is_valid_bash(self) -> None:
+        """The pass-through is not just byte-equal: bash accepts it as-is."""
+        proc = subprocess.run(
+            [BASH_PATH, "--noprofile", "--norc", "-n", "-c", self.RECORDED],
+            capture_output=True,
+            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+        )
+        assert proc.returncode == 0, proc.stderr
+
+# ============================================================================
 # Bash.__call__ — integration tests with backslash paths on Windows
 # ============================================================================
 
