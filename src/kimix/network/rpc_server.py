@@ -15,6 +15,35 @@ from typing import Any, Callable, Optional
 from kimix.network.tcp_client import TCPClient
 from kimix.network.tcp_group_server import TcpGroupServer
 
+try:  # loguru is optional in the slim server installs
+    from loguru import logger
+except ImportError:  # pragma: no cover
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+# Frames buffered per WebSocket client before the bridge is considered wedged.
+# Each frame carries a whole JSON-RPC payload (tool output included), so an
+# unbounded buffer was the largest unbounded per-connection allocation in the
+# server.
+_WS_SEND_QUEUE_MAX = 512
+
+
+def _swallow_future_error(future: Any) -> None:
+    """Consume a ``run_coroutine_threadsafe`` result so failures stay quiet.
+
+    The bridge is best-effort: a closed loop or a closed socket must never
+    surface as an unretrieved-future warning on the TCP reader thread.
+    """
+    try:
+        if future.cancelled():
+            return
+        exc = future.exception()
+    except Exception:  # pragma: no cover - concurrent cancellation
+        return
+    if exc is not None:
+        logger.debug("WebSocket bridge callback failed: {err}", err=exc)
+
 try:
     import websockets
 except ImportError:
@@ -158,20 +187,73 @@ class JSONRPCServer:
         """Handle one WebSocket client by bridging to the TCP JSON-RPC server."""
         loop = asyncio.get_running_loop()
         tcp_client = TCPClient(self._server.host, self._server.port)
-        ws_send_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
+        ws_send_queue: asyncio.Queue[Optional[str]] = asyncio.Queue(
+            maxsize=_WS_SEND_QUEUE_MAX
+        )
+
+        state: dict[str, bool] = {"closing": False}
+
+        async def _enqueue(frame: str) -> None:
+            # Runs on the event loop: the queue is only touched from its own thread.
+            # Bounded hand-off -- a WebSocket client that stops reading must not make
+            # the bridge retain every JSON-RPC frame.  On overflow the stream is
+            # unrecoverably behind, so terminate the bridge instead of growing.
+            if state["closing"]:
+                return
+            try:
+                ws_send_queue.put_nowait(frame)
+                return
+            except asyncio.QueueFull:
+                state["closing"] = True
+            logger.warning(
+                f"WebSocket send backlog exceeded {_WS_SEND_QUEUE_MAX} frames; "
+                "closing the bridge"
+            )
+            _put_sentinel()
+            try:
+                await websocket.close()
+            except Exception:  # pragma: no cover - already closed
+                pass
+
+        def _put_sentinel() -> None:
+            """Queue the termination sentinel, dropping one frame if the ring is full."""
+            try:
+                ws_send_queue.put_nowait(None)
+            except asyncio.QueueFull:
+                try:
+                    ws_send_queue.get_nowait()
+                except asyncio.QueueEmpty:  # pragma: no cover - concurrent drain
+                    return
+                try:
+                    ws_send_queue.put_nowait(None)
+                except asyncio.QueueFull:  # pragma: no cover
+                    pass
+
+        def _dispatch(coro: Any, *, future_quiet: bool = True) -> None:
+            """Marshal *coro* onto the bridge's event loop from the TCP thread."""
+            try:
+                future = asyncio.run_coroutine_threadsafe(coro, loop)
+            except RuntimeError:
+                coro.close()  # loop already closed
+                return
+            if future_quiet:
+                future.add_done_callback(_swallow_future_error)
 
         def on_tcp_message(msg: str) -> None:
+            _dispatch(_enqueue(msg))
+
+        async def _finish() -> None:
+            # Runs on the event loop: make room for the sentinel so the forwarder
+            # always exits, then close the socket.
+            state["closing"] = True
+            _put_sentinel()
             try:
-                asyncio.run_coroutine_threadsafe(ws_send_queue.put(msg), loop)
-            except RuntimeError:
-                pass  # loop closed
+                await websocket.close()
+            except Exception:  # pragma: no cover - already closed
+                pass
 
         def on_tcp_disconnect() -> None:
-            try:
-                asyncio.run_coroutine_threadsafe(ws_send_queue.put(None), loop)
-                asyncio.run_coroutine_threadsafe(websocket.close(), loop)
-            except RuntimeError:
-                pass
+            _dispatch(_finish())
 
         tcp_client.on_message(on_tcp_message)
         tcp_client.on_disconnect(on_tcp_disconnect)
@@ -198,7 +280,9 @@ class JSONRPCServer:
         except Exception:
             pass
         finally:
-            await ws_send_queue.put(None)
+            # Never block here: the queue is bounded and the forwarder may be
+            # wedged.  ``forward_task`` is cancelled right below anyway.
+            _put_sentinel()
             forward_task.cancel()
             try:
                 await forward_task

@@ -47,11 +47,20 @@ class TestPrepareBashCommand:
         assert shell_common.prepare_bash_command("echo hi") == "echo hi"
 
     def test_windows_backslash_path_converted(self) -> None:
-        result = shell_common.prepare_bash_command(r"cat src\a.py")
+        # Only *recognized* Windows path words are rewritten (see
+        # ``TestUnquotedEscapeVsPathWord`` in ``tests/test_bash.py``): a
+        # single-backslash relative word such as ``src\a.py`` is a POSIX escape
+        # and must stay verbatim, while a multi-segment path word converts.
+        result = shell_common.prepare_bash_command(r"cat src\sub\a.py")
         if sys.platform == "win32":
-            assert "src/a.py" in result
+            assert "src/sub/a.py" in result
         else:
-            assert result == r"cat src\a.py"
+            assert result == r"cat src\sub\a.py"
+
+    def test_windows_single_backslash_escape_preserved(self) -> None:
+        # ``cat src\a.py`` asks bash for ``srca.py``; rewriting it would silently
+        # address a different file.
+        assert shell_common.prepare_bash_command(r"cat src\a.py") == r"cat src\a.py"
 
     def test_nul_redirect_rewritten(self) -> None:
         result = shell_common.prepare_bash_command("echo hi > nul")
@@ -70,8 +79,10 @@ class TestPrepareBashCommand:
         normalizing the command that follows it.
         """
         body = "nl = '\\r\\n'\n" + "nul > nul\n" + "tmp=/tmp/x\n"
-        cmd = "python - <<'EOF'\n" + body + "EOF\ncat src\\a.py\n"
-        fixed_tail = "cat src/a.py\n" if sys.platform == "win32" else "cat src\\a.py\n"
+        cmd = "python - <<'EOF'\n" + body + "EOF\ncat src\\sub\\a.py\n"
+        fixed_tail = (
+            "cat src/sub/a.py\n" if sys.platform == "win32" else "cat src\\sub\\a.py\n"
+        )
         assert shell_common.prepare_bash_command(cmd) == (
             "python - <<'EOF'\n" + body + "EOF\n" + fixed_tail
         )

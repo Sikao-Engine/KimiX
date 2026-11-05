@@ -154,10 +154,9 @@ def create_app() -> FastAPI:
         yield
         logger.info("Server shutting down, waking up SSE streams")
         for q in bus.get_all_queues():
-            try:
-                q.put_nowait(None)
-            except Exception:
-                pass
+            # ``wake_queue`` makes room for the sentinel so a client that is
+            # behind still sees a clean stream termination.
+            bus.wake_queue(q)
 
     app = FastAPI(
         title="Kimix API",

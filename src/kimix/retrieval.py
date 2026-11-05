@@ -39,6 +39,16 @@ _NATIVE_SEARCH = _native_get_module("search")
 _COMPAT_SEARCH = None
 
 
+# Bounded caches: fuzzy-matching memoisation must never grow with session
+# length.  4 k entries covers the working set of a single retrieval pass
+# (repeat queries hit; distinct pairs would thrash 64 k just as well) while
+# capping each cache well under a megabyte instead of the ~13 MB a 65 536
+# entry ring can reach.  Character classification keeps a larger cap because
+# its keys are single characters (a few bytes each).
+_SIMILARITY_CACHE_MAXSIZE = 4096
+_CHAR_CACHE_MAXSIZE = 8192
+
+
 def _compat_search():
     global _COMPAT_SEARCH
     if _COMPAT_SEARCH is None:
@@ -69,7 +79,7 @@ class NgramTokenizer:
         return unicodedata.normalize("NFKC", lowered)
 
     @staticmethod
-    @functools.lru_cache(maxsize=65536)
+    @functools.lru_cache(maxsize=_CHAR_CACHE_MAXSIZE)
     def _is_cjk(char: str) -> bool:
         cp = ord(char)
         return (
@@ -276,7 +286,7 @@ class InvertedIndex:
         return True
 
     @staticmethod
-    @functools.lru_cache(maxsize=65536)
+    @functools.lru_cache(maxsize=_SIMILARITY_CACHE_MAXSIZE)
     def _generate_deletes(term: str, max_edits: int) -> frozenset[str]:
         """Generate all unique strings obtainable by deleting up to max_edits chars."""
         if max_edits == 0 or not term:
@@ -877,7 +887,7 @@ class LevenshteinAutomaton:
         return 2
 
     @staticmethod
-    @functools.lru_cache(maxsize=65536)
+    @functools.lru_cache(maxsize=_SIMILARITY_CACHE_MAXSIZE)
     def _damerau_levenshtein(s: str, t: str) -> int:
         """Compute Damerau-Levenshtein distance between *s* and *t*."""
         # Native acceleration: kimix_native.search.damerau_levenshtein.
@@ -1208,7 +1218,7 @@ class Searcher:
 # ---------------------------------------------------------------------------
 
 
-@functools.lru_cache(maxsize=65536)
+@functools.lru_cache(maxsize=_SIMILARITY_CACHE_MAXSIZE)
 def jaro_similarity(s: str, t: str) -> float:
     """Return Jaro similarity between *s* and *t* (0.0–1.0)."""
     # Native acceleration: kimix_native.search.jaro_similarity.
@@ -1217,7 +1227,7 @@ def jaro_similarity(s: str, t: str) -> float:
     return _compat_search()._compat_jaro_similarity(s, t)
 
 
-@functools.lru_cache(maxsize=65536)
+@functools.lru_cache(maxsize=_SIMILARITY_CACHE_MAXSIZE)
 def jaro_winkler_similarity(s: str, t: str, p: float = 0.1, max_prefix: int = 4) -> float:
     """Return Jaro–Winkler similarity, boosting prefix matches."""
     # Native acceleration: kimix_native.search.jaro_winkler (kernel fixes the
@@ -1236,7 +1246,7 @@ def jaro_winkler_similarity(s: str, t: str, p: float = 0.1, max_prefix: int = 4)
     return jaro + prefix * p * (1 - jaro)
 
 
-@functools.lru_cache(maxsize=65536)
+@functools.lru_cache(maxsize=_SIMILARITY_CACHE_MAXSIZE)
 def sorensen_dice_coefficient(s: str, t: str) -> float:
     """Return Sørensen–Dice coefficient based on bigram overlap."""
     # Native acceleration: kimix_native.search.sorensen_dice.
@@ -1874,7 +1884,7 @@ def metaphone(word: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-@functools.lru_cache(maxsize=65536)
+@functools.lru_cache(maxsize=_SIMILARITY_CACHE_MAXSIZE)
 def porter_stem(word: str) -> str:
     """Simplified Porter Stemmer for English words."""
     word = word.lower()
@@ -2250,7 +2260,7 @@ class NoisyChannelSpeller:
         self._correct_cache: dict[str, str] = {}
 
     @staticmethod
-    @functools.lru_cache(maxsize=65536)
+    @functools.lru_cache(maxsize=_SIMILARITY_CACHE_MAXSIZE)
     def _edits1(word: str) -> frozenset[str]:
         letters = "abcdefghijklmnopqrstuvwxyz"
         edits: set[str] = {word}

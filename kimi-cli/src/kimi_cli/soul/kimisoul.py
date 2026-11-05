@@ -318,6 +318,18 @@ def classify_api_error(e: Exception) -> tuple[str, int | None]:
 type StepStopReason = Literal["no_tool_calls", "tool_rejected", "tool_call_repeat"]
 
 
+
+_STEER_QUEUE_MAX = 32
+"""Upper bound on queued steer messages.
+
+Steers are best-effort operator nudges consumed between steps; if the consumer
+is not draining (long tool call, paused UI) an unbounded queue would retain one
+string/ContentPart list per keystroke batch for the whole process lifetime.
+Dropping the *oldest* entry keeps the freshest intent, which matches the UI
+semantics of "the newest steer wins".
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class StepOutcome:
     stop_reason: StepStopReason
@@ -468,7 +480,9 @@ class KimiSoul:
 
         self._llm_request_recorder = LLMRequestRecorder()
         self._recorder_restored = False
-        self._steer_queue: asyncio.Queue[str | list[ContentPart]] = asyncio.Queue()
+        self._steer_queue: asyncio.Queue[str | list[ContentPart]] = asyncio.Queue(
+            maxsize=_STEER_QUEUE_MAX
+        )
         # Wake event set by ``request_steer`` so a steer can interrupt the
         # currently streaming step (see ``_agent_loop`` step race).
         self._steer_wake_event = asyncio.Event()
@@ -707,6 +721,28 @@ class KimiSoul:
             return
         await self._agent.toolset.wait_for_mcp_tools()
 
+    def _enqueue_steer(self, content: str | list[ContentPart]) -> None:
+        """Append a steer, dropping the oldest one when the ring is full.
+
+        The steer queue is a best-effort nudge channel: when the agent is stuck
+        in a long step the queue must not grow without bound, and the freshest
+        steer is the one the operator actually wants applied.
+        """
+        while True:
+            try:
+                self._steer_queue.put_nowait(content)
+                return
+            except asyncio.QueueFull:
+                try:
+                    dropped = self._steer_queue.get_nowait()
+                except asyncio.QueueEmpty:  # pragma: no cover - race, retry put
+                    continue
+                logger.warning(
+                    "Steer queue full ({maxsize}); dropped the oldest queued steer",
+                    maxsize=_STEER_QUEUE_MAX,
+                )
+                del dropped
+
     def steer(self, content: str | list[ContentPart]) -> None:
         """Queue a steer message for injection into the current turn.
 
@@ -720,7 +756,7 @@ class KimiSoul:
         if _user_input_is_empty(content):
             logger.debug("Ignoring empty steer message")
             return
-        self._steer_queue.put_nowait(content)
+        self._enqueue_steer(content)
 
     async def request_steer(self, content: str | list[ContentPart]) -> None:
         """Enqueue a steer and wake the agent loop so the currently streaming
@@ -729,7 +765,7 @@ class KimiSoul:
         if _user_input_is_empty(content):
             logger.debug("Ignoring empty steer message")
             return
-        self._steer_queue.put_nowait(content)
+        self._enqueue_steer(content)
         self._steer_wake_event.set()
 
     def is_running(self) -> bool:
@@ -802,7 +838,7 @@ class KimiSoul:
             # the second prompt raises ``RuntimeError: <asyncio.locks.Event
             # ...> is bound to a different event loop`` on its first step.
             self._steer_wake_event = asyncio.Event()
-            self._steer_queue = asyncio.Queue()
+            self._steer_queue = asyncio.Queue(maxsize=_STEER_QUEUE_MAX)
             self._run_active = True
             # Refresh OAuth tokens on each turn to avoid idle-time expirations.
             await self._runtime.oauth.ensure_fresh(self._runtime)

@@ -110,12 +110,18 @@ PHASE_NON_RESTARTABLE = "non_restartable"
 """A deterministic error (e.g. 400) must not burn the restart budget."""
 
 # ── Size caps (bytes/chars/records — debug output must stay bounded) ─────────
-_MAX_STRING_CHARS = 20_000
+# Per-string cap for the diagnostic snapshot.  The snapshot is copied into
+# memory (and then into the wire payload) on the error path, where memory is
+# already tight: the previous 400 messages x 20 000 chars could materialise
+# ~8 MB of throwaway text.  The caps below (120 x 8 000, ~1 MB worst case)
+# still show the head of every tool output that matters for diagnosis, and
+# `history_head_dropped` records what was elided.
+_MAX_STRING_CHARS = 8_000
 _MAX_SYSTEM_PROMPT_CHARS = 120_000
 _MAX_REPR_CHARS = 2_000
 _MAX_TRACEBACK_CHARS = 40_000
-_MAX_MESSAGE_PART_CHARS = 20_000
-_MAX_HISTORY_MESSAGES = 400
+_MAX_MESSAGE_PART_CHARS = 8_000
+_MAX_HISTORY_MESSAGES = 120
 _MAX_WIRE_TAIL_BYTES = 512 * 1024
 _MAX_WIRE_TAIL_RECORDS = 40
 _MAX_LOG_TAIL_BYTES = 256 * 1024

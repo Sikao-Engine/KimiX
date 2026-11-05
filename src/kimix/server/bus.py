@@ -67,6 +67,17 @@ class BusEvent:
         return f"event: message\nid: {self.id}\ndata: {self.to_json()}\n\n"
 
 
+# Upper bound on per-subscriber event backlogs.
+#
+# ``emit`` already handles ``asyncio.QueueFull`` ("SSE queue full, dropping
+# event"), but the queues were created unbounded, so that branch could never
+# fire and a stalled SSE client accumulated every event -- full tool outputs
+# included -- for the lifetime of the process.  2048 events is far above the
+# drain rate of a healthy client (it consumes continuously and only waits on
+# the socket), so reaching the cap means the client is gone or wedged.
+_ASYNC_QUEUE_MAXSIZE = 2048
+
+
 class EventBus:
     """Simple pub/sub event bus supporting both sync and async subscribers."""
 
@@ -89,12 +100,45 @@ class EventBus:
 
         return _unsub
 
-    def create_async_queue(self) -> asyncio.Queue[Optional[BusEvent]]:
-        """Create an asyncio queue that receives all events. Returns queue."""
-        q: asyncio.Queue[Optional[BusEvent]] = asyncio.Queue()
+    def create_async_queue(
+        self, maxsize: int = _ASYNC_QUEUE_MAXSIZE
+    ) -> asyncio.Queue[Optional[BusEvent]]:
+        """Create a bounded asyncio queue that receives all events.
+
+        Event ``id``s are advisory: the SSE endpoint does not replay a
+        missed range on reconnect, so a dropped event is a gap either way.
+        The bound exists purely so a stalled client cannot pin the whole
+        server's event history in memory.
+
+        Bounded on purpose: :meth:`emit` drops events for a subscriber that
+        cannot keep up (see ``_ASYNC_QUEUE_MAXSIZE``) instead of retaining them
+        forever.
+        """
+        q: asyncio.Queue[Optional[BusEvent]] = asyncio.Queue(maxsize=maxsize)
         with self._lock:
             self._async_queues.append(q)
         return q
+
+    @staticmethod
+    def wake_queue(q: asyncio.Queue[Optional[BusEvent]]) -> None:
+        """Push the ``None`` sentinel, making room first if the queue is full.
+
+        The sentinel terminates an SSE generator; it must never be lost to
+        backpressure, so the oldest pending event is discarded when needed.
+        """
+        # Bounded retries: an emit storm on another thread could otherwise
+        # keep refilling the queue under us indefinitely.
+        for _ in range(8):
+            try:
+                q.put_nowait(None)
+                return
+            except asyncio.QueueFull:
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:  # pragma: no cover - concurrent drain
+                    return
+            except Exception:  # pragma: no cover - closed loop/queue
+                return
 
     def remove_async_queue(self, q: asyncio.Queue[Optional[BusEvent]]) -> None:
         with self._lock:

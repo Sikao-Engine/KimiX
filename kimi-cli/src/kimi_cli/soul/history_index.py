@@ -140,18 +140,32 @@ class HistoryIndex:
         self._fts_stale: bool = False
         self._writes_since_merge: int = 0
 
-        # Legacy in-memory BM25 state (always initialized; used only when no
-        # db_path is configured or FTS5 is unavailable).
+        # Legacy in-memory BM25 state.  Deliberately *not* built here: importing
+        # ``kimix.retrieval`` pulls numpy + the fuzzy-matching stack (~40 MB RSS,
+        # ~0.6 s) which the production FTS5 path never touches.  The state is
+        # materialised lazily by ``_ensure_legacy_state`` on the first legacy
+        # (no ``db_path`` / FTS5-unavailable) operation.
         self._index: Any = None
         self._tokenizer: Any = None
         self._searcher: Any = None
         self._turns_list: list[dict[str, Any]] = []
         self._doc_id_counter = 0
-        self._init_legacy_state()
 
     # ------------------------------------------------------------------
     # Backend selection
     # ------------------------------------------------------------------
+    def _reset_legacy_refs(self) -> None:
+        """Drop the legacy BM25 state without importing :mod:`kimix.retrieval`.
+
+        Used by the FTS5 ``clear`` path, where the legacy objects were never
+        built; calling :meth:`_init_legacy_state` there would pay the numpy
+        import for nothing.
+        """
+        self._index = None
+        self._tokenizer = None
+        self._searcher = None
+        self._turns_list = []
+        self._doc_id_counter = 0
 
     def _init_legacy_state(self) -> None:
         from kimix.retrieval import InvertedIndex, NgramTokenizer
@@ -161,6 +175,11 @@ class HistoryIndex:
         self._searcher = None
         self._turns_list = []
         self._doc_id_counter = 0
+
+    def _ensure_legacy_state(self) -> None:
+        """Materialise the legacy BM25 state on first use (lazy import)."""
+        if self._index is None or self._tokenizer is None:
+            self._init_legacy_state()
 
     @property
     def _use_fts(self) -> bool:
@@ -351,8 +370,7 @@ class HistoryIndex:
             pass
 
     def _index_messages_legacy(self, messages: Sequence[Message]) -> None:
-        if self._index is None:
-            self._init_legacy_state()
+        self._ensure_legacy_state()
         # If the index has been finalized (e.g. after a search), rebuild it
         # from the existing turns so new documents can be added.
         if getattr(self._index, "_finalized", False):
@@ -661,8 +679,7 @@ class HistoryIndex:
                     path.unlink()
                 except OSError:
                     pass
-            self._init_legacy_state()
-            self._doc_id_counter = 0
+            self._reset_legacy_refs()
             self._fts_stale = False
             self._writes_since_merge = 0
             if self._legacy_json_path is not None and self._legacy_json_path.exists():
@@ -672,7 +689,7 @@ class HistoryIndex:
                     pass
             return
 
-        self._init_legacy_state()
+        self._reset_legacy_refs()
         if self._persist_path is not None and self._persist_path.exists():
             self._persist_path.unlink()
 

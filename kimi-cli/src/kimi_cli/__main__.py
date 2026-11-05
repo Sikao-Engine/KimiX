@@ -31,6 +31,14 @@ def main(argv: Sequence[str] | None = None) -> int | str | None:
     from kimi_cli.cli import cli
     from kimi_cli.utils.environment import GitBashNotFoundError
 
+    # The CLI owns the process: move the (large, permanent) import/config object
+    # graph into the collector's permanent generation *before* any session
+    # exists, so full collections never re-walk it while per-session objects
+    # stay collectible.  See ``kimi_cli.utils.gc_tuning``.
+    from kimi_cli.utils.gc_tuning import freeze_startup_objects
+
+    freeze_startup_objects()
+
     try:
         return cli(args=args, prog_name=_prog_name())
     except SystemExit as exc:
