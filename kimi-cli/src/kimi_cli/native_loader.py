@@ -360,8 +360,14 @@ def get_module(name: str):
     if cached is not _MISSING:
         return cached
     if not NATIVE_AVAILABLE or _shim is None:
+        # Memoize the negative result too: the runtime environment is stable,
+        # so a second lookup must not re-enter this path (and the table is the
+        # contract `tests/native/test_loader.py` checks — it grows per kernel
+        # actually requested, including the "unavailable" answers).
+        _MODULE_TABLE[name] = None
         return None
     if name in ("_native",) or name.startswith("_"):
+        _MODULE_TABLE[name] = None
         return None
     try:
         mod = importlib.import_module(f"kimix_native.{name}")

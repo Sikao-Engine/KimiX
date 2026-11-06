@@ -18,6 +18,7 @@ from kimi_cli.tools.background.utils import (
     _get_or_add_task_data,
     _get_task_data,
     _pop_task_data,
+    OutputBuffer,
     add_task,
     bounded_append,
     bounded_put,
@@ -811,6 +812,87 @@ def test_bounded_put_default_max_chunks() -> None:
     for i in range(5):
         bounded_put(q, f"c{i}")
     assert q.qsize() == 5  # well under the default 10_000 → nothing dropped
+
+
+# ---------------------------------------------------------------------------
+# OutputBuffer: the stateful twin of bounded_append (native tools.OutputRing)
+# ---------------------------------------------------------------------------
+
+_OUTPUT_BUFFER_CASES = [
+    (["abc"], 10),
+    (["", "abc"], 10),
+    (["aaaa", "bbbb"], 6),
+    (["x" * 100, "y"], 50),
+    (["中文", "内容"], 3),
+    ([f"line{i}\n" for i in range(300)], 1000),
+    (["a" * 3000], 1000),
+]
+
+
+@pytest.mark.parametrize(("chunks", "cap"), _OUTPUT_BUFFER_CASES)
+def test_output_buffer_matches_bounded_append(chunks: list[str], cap: int) -> None:
+    """OutputBuffer must produce the exact text/flags of bounded_append."""
+    buf = io.StringIO()
+    reference_flags = [bounded_append(buf, chunk, cap) for chunk in chunks]
+
+    buffer = OutputBuffer(cap)
+    flags = [buffer.write(chunk) for chunk in chunks]
+
+    assert flags == reference_flags
+    assert buffer.getvalue() == buf.getvalue()
+
+
+def test_output_buffer_truncated_flag_and_clear() -> None:
+    buffer = OutputBuffer(1000)
+    assert [buffer.write("a" * 600), buffer.write("b" * 600)] == [False, True]
+    assert buffer.truncated is True
+    value = buffer.getvalue()
+    assert value.startswith("a" * 400)
+    assert value.endswith("b" * 600)
+    assert "keeping first 400 and last 600 chars" in value
+
+    buffer.clear()
+    assert buffer.getvalue() == ""
+
+
+def test_output_buffer_reads_patched_module_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A buffer created without an explicit cap follows the module constant."""
+    monkeypatch.setattr(
+        "kimi_cli.tools.background.utils.BACKGROUND_MAX_OUTPUT_CHARS", 1000
+    )
+    buffer = OutputBuffer()
+    assert buffer.cap == 1000
+    assert buffer.write("y" * 700) is False
+
+    monkeypatch.setattr(
+        "kimi_cli.tools.background.utils.BACKGROUND_MAX_OUTPUT_CHARS", 500
+    )
+    assert buffer.write("z" * 100) is True
+    assert buffer.cap == 500
+    value = buffer.getvalue()
+    assert "keeping first 200 and last 300 chars" in value
+    assert len(value) < 700
+
+
+def test_output_buffer_close_releases_and_empties() -> None:
+    buffer = OutputBuffer(1000)
+    buffer.write("payload")
+    buffer.close()
+    assert buffer.getvalue() == ""
+
+
+def test_output_buffer_backend_selection() -> None:
+    """The ring backs the buffer exactly when the TOOLS kernel is active.
+
+    The parity assertions above therefore cover the native kernel in the
+    default run and the StringIO fallback under KIMIX_NATIVE=0.
+    """
+    from kimi_cli.native_loader import use_native
+
+    buffer = OutputBuffer(1000)
+    assert (buffer._ring is not None) == bool(use_native("TOOLS"))
 
 
 async def test_get_output_bounded_with_truncation_flag(

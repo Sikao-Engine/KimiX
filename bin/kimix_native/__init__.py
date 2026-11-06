@@ -17,9 +17,14 @@ native. This implements the report's ``--native`` / ``--python`` conformance
 strategy: every kernel must have a bit-identical Python fallback (mirrored in
 ``_compat`` modules) so ``use_native(kernel) is False`` yields identical
 behavior. Kernel names: ``TEXT``, ``INDEX``, ``SEARCH``, ``PARSE``, ``TOOLS``,
-``STREAM``, ``CODEC``, ``DIFF``, ``GLOB``, ``GREP`` and ``BASH_FIX`` (the
+``STREAM``, ``CODEC``, ``DIFF``, ``GLOB``, ``GREP``, ``BASH_FIX`` (the
 Windows Git Bash scanner, ``runtime_py.bash_fix``, used by
-``kimix_native._shell_compat``).
+``kimix_native._shell_compat``), ``SOUL`` (the arena-backed history, prune
+elision, compaction, request-builder and export kernels,
+``kimix_native.soul``) and ``SESSION`` (the serve-mode part ring / session
+table, ``kimix_native.session``). The request builder additionally honours
+``KIMIX_NATIVE_REQUEST_<PROVIDER>`` so one provider can be isolated while the
+rest stay native.
 
 The ``GREP`` kernel (``kimix_native.grep``) is special: its native engine is
 the optional ``runtime_py.grep`` submodule, so the gate additionally requires

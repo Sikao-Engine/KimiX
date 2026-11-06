@@ -749,3 +749,460 @@ class HistoryIndex:
             self._native.reset()
         else:
             self._compat.reset()
+
+
+# ---------------------------------------------------------------------------
+# Durable FTS5 backend (report C2 needs it reachable from Python)
+# ---------------------------------------------------------------------------
+# Turn blobs are packed, never list[tuple]: the append path of a prune pass
+# carries every elided turn's text, and a tuple list would rebuild the whole
+# Python object graph (report §2).
+import struct as _struct  # noqa: E402  (kept local to this section)
+
+_TURN_IN = _struct.Struct("<IdBBI")   # u32 id, f64 ts, u8 role, u8 flags, u32 len
+_HIT_OUT = _struct.Struct("<IdBBddI")  # + f64 score, f64 boosted, u32 len
+_U32 = _struct.Struct("<I")
+
+ROLE_TO_INT = {"user": 0, "assistant": 1, "tool": 2}
+INT_TO_ROLE = ("user", "assistant", "tool", "other")
+
+
+def pack_turns(turns) -> bytes:
+    """``u32 count | {u32 id, f64 ts, u8 role, u8 flags, u32 len, text}``.
+
+    ``turns`` items may be dicts (``id``/``turn_id``, ``timestamp``/``ts``,
+    ``role``, ``is_compacted``, ``text``) or 5-tuples.
+    """
+    out = bytearray(_U32.pack(len(turns)))
+    for turn in turns:
+        if isinstance(turn, dict):
+            turn_id = int(turn.get("turn_id", turn.get("id", 0)))
+            ts = float(turn.get("timestamp", turn.get("ts", 0.0)))
+            role = turn.get("role", "other")
+            role_id = ROLE_TO_INT.get(role, 3) if isinstance(role, str) else int(role)
+            flags = 1 if turn.get("is_compacted") else 0
+            text = _enc(turn.get("text") or "")
+        else:
+            turn_id, ts, role_id, flags, text = turn
+            text = _enc(text) if isinstance(text, str) else text
+        out += _TURN_IN.pack(turn_id, ts, role_id, flags, len(text))
+        out += text
+    return bytes(out)
+
+
+def unpack_turns(blob: bytes) -> list[dict]:
+    view = memoryview(blob)
+    if len(view) < 4:
+        return []
+    (count,) = _U32.unpack_from(view, 0)
+    offset = 4
+    out = []
+    for _ in range(count):
+        turn_id, ts, role_id, flags, length = _TURN_IN.unpack_from(view, offset)
+        offset += _TURN_IN.size
+        text = bytes(view[offset:offset + length])
+        offset += length
+        out.append({
+            "turn_id": turn_id,
+            "timestamp": ts,
+            "role": INT_TO_ROLE[role_id] if role_id < 4 else "other",
+            "is_compacted": bool(flags & 1),
+            "text": _dec(text),
+        })
+    return out
+
+
+def unpack_hits(blob: bytes) -> list[dict]:
+    view = memoryview(blob)
+    if len(view) < 4:
+        return []
+    (count,) = _U32.unpack_from(view, 0)
+    offset = 4
+    out = []
+    for _ in range(count):
+        (turn_id, ts, role_id, flags, score, boosted,
+         length) = _HIT_OUT.unpack_from(view, offset)
+        offset += _HIT_OUT.size
+        text = bytes(view[offset:offset + length])
+        offset += length
+        out.append({
+            "turn_id": turn_id,
+            "timestamp": ts,
+            "role": INT_TO_ROLE[role_id] if role_id < 4 else "other",
+            "is_compacted": bool(flags & 1),
+            "score": score,
+            "boosted_score": boosted,
+            "text": _dec(text),
+        })
+    return out
+
+
+def _index_native_active() -> bool:
+    return _native is not None and use_native("INDEX")
+
+
+class SqliteHistoryIndex:
+    """Durable FTS5 history index (the apsw backend of history_index.py)."""
+
+    __slots__ = ("_i", "_compat", "_path")
+
+    def __init__(self, path):
+        self._path = path
+        self._i = (
+            _native.index.SqliteHistoryIndex(path) if _index_native_active() else None
+        )
+        self._compat = _compat_SqliteHistoryIndex(path)
+
+    def open(self):
+        if self._i is not None:
+            return tuple(self._i.open())
+        return self._compat.open()
+
+    def close(self) -> None:
+        if self._i is not None:
+            self._i.close()
+        self._compat.close()
+
+    @property
+    def is_open(self) -> bool:
+        return bool(self._i.is_open) if self._i is not None else self._compat.is_open
+
+    @property
+    def fts_stale(self) -> bool:
+        return bool(self._i.fts_stale) if self._i is not None else self._compat.fts_stale
+
+    @property
+    def next_turn_id(self) -> int:
+        return int(self._i.next_turn_id) if self._i is not None else self._compat.next_turn_id
+
+    def reserve_turn_id(self) -> int:
+        return (
+            int(self._i.reserve_turn_id()) if self._i is not None
+            else self._compat.reserve_turn_id()
+        )
+
+    def turn_count(self) -> int:
+        return (
+            int(self._i.turn_count()) if self._i is not None
+            else self._compat.turn_count()
+        )
+
+    def append_turns(self, turns) -> int:
+        blob = pack_turns(turns)
+        if self._i is not None:
+            return int(self._i.append_turns_packed(blob))
+        return self._compat.append_turns_packed(blob)
+
+    def append_turns_packed(self, blob: bytes) -> int:
+        if self._i is not None:
+            return int(self._i.append_turns_packed(blob))
+        return self._compat.append_turns_packed(blob)
+
+    def insert_turn_with_id(self, turn_id: int, timestamp: float, role, text: str) -> None:
+        role_id = ROLE_TO_INT.get(role, 3) if isinstance(role, str) else int(role)
+        if self._i is not None:
+            self._i.insert_turn_with_id(int(turn_id), float(timestamp), role_id,
+                                        _enc(text))
+        else:
+            self._compat.insert_turn_with_id(turn_id, timestamp, role_id, _enc(text))
+
+    def mark_compacted(self) -> None:
+        if self._i is not None:
+            self._i.mark_compacted()
+        else:
+            self._compat.mark_compacted()
+
+    def save(self) -> None:
+        if self._i is not None:
+            self._i.save()
+        else:
+            self._compat.save()
+
+    def rebuild_fts(self) -> None:
+        if self._i is not None:
+            self._i.rebuild_fts()
+        else:
+            self._compat.rebuild_fts()
+
+    def clear(self) -> None:
+        if self._i is not None:
+            self._i.clear()
+        else:
+            self._compat.clear()
+
+    def search(self, query: str, top_k: int = 10) -> list[dict]:
+        if self._i is not None:
+            return unpack_hits(bytes(self._i.search(_enc(query), int(top_k))))
+        return self._compat.search(query, top_k)
+
+    def search_with_recency(self, query: str, top_k: int = 10,
+                            weight: float = 1.0) -> list[dict]:
+        if self._i is not None:
+            return unpack_hits(
+                bytes(self._i.search_with_recency(_enc(query), int(top_k), float(weight)))
+            )
+        return self._compat.search_with_recency(query, top_k, weight)
+
+    def get_by_id(self, turn_id: int) -> str | None:
+        if self._i is not None:
+            text = self._i.get_by_id(int(turn_id))
+            return None if text is None else _dec(text)
+        return self._compat.get_by_id(turn_id)
+
+    def non_compacted_turn_ids(self) -> list[int]:
+        from ._structure import unpack_u32
+
+        if self._i is not None:
+            return unpack_u32(bytes(self._i.non_compacted_turn_ids()))
+        return self._compat.non_compacted_turn_ids()
+
+    def bytes_owned(self) -> int:
+        return int(self._i.bytes_owned()) if self._i is not None else 0
+
+
+class _compat_SqliteHistoryIndex:
+    """Pure-Python reference for the durable backend.
+
+    The real backend is SQLite/FTS5; this mirror keeps the API (ids, compaction
+    flags, substring matching) usable when ``KIMIX_NATIVE_INDEX=0``. Scores are
+    0.0 - the BM25 ordering is the native/reference implementation's job, and
+    the parity tests compare ids, texts and flags, not scores.
+    """
+
+    __slots__ = ("_path", "_turns", "_next", "_open")
+
+    def __init__(self, path):
+        self._path = path
+        self._turns: dict[int, dict] = {}
+        self._next = 0
+        self._open = False
+
+    def open(self):
+        self._open = True
+        return True, ""
+
+    def close(self) -> None:
+        self._open = False
+
+    @property
+    def is_open(self) -> bool:
+        return self._open
+
+    @property
+    def fts_stale(self) -> bool:
+        return False
+
+    @property
+    def next_turn_id(self) -> int:
+        return self._next
+
+    def reserve_turn_id(self) -> int:
+        turn_id = self._next
+        self._next += 1
+        return turn_id
+
+    def turn_count(self) -> int:
+        return len(self._turns)
+
+    def append_turns(self, turns) -> int:
+        blob = pack_turns(turns)
+        return self.append_turns_packed(blob)
+
+    def append_turns_packed(self, blob: bytes) -> int:
+        added = 0
+        for turn in unpack_turns(blob):
+            role = turn["role"]
+            if role == "other" or not turn["text"].strip():
+                continue
+            turn = dict(turn)
+            turn["turn_id"] = self._next
+            self._next += 1
+            self._turns[turn["turn_id"]] = turn
+            added += 1
+        return added
+
+    def insert_turn_with_id(self, turn_id, timestamp, role_id, text: bytes) -> None:
+        self._turns[int(turn_id)] = {
+            "turn_id": int(turn_id),
+            "timestamp": float(timestamp),
+            "role": INT_TO_ROLE[int(role_id)] if int(role_id) < 4 else "other",
+            "is_compacted": False,
+            "text": _dec(text),
+        }
+
+    def mark_compacted(self) -> None:
+        for turn in self._turns.values():
+            turn["is_compacted"] = True
+
+    def save(self) -> None:
+        return None
+
+    def rebuild_fts(self) -> None:
+        return None
+
+    def clear(self) -> None:
+        self._turns.clear()
+        self._next = 0
+        self._open = False
+
+    def _matches(self, query: str, top_k: int) -> list[dict]:
+        needle = query.lower()
+        hits = []
+        for turn in self._turns.values():
+            if needle and needle in turn["text"].lower():
+                hit = dict(turn)
+                hit["score"] = 0.0
+                hit["boosted_score"] = 0.0
+                hits.append(hit)
+        hits.sort(key=lambda h: h["turn_id"])
+        return hits[:top_k]
+
+    def search(self, query: str, top_k: int = 10) -> list[dict]:
+        return self._matches(query, top_k)
+
+    def search_with_recency(self, query: str, top_k: int = 10,
+                            weight: float = 1.0) -> list[dict]:
+        del weight
+        return self._matches(query, top_k)
+
+    def get_by_id(self, turn_id: int) -> str | None:
+        turn = self._turns.get(int(turn_id))
+        return None if turn is None else turn["text"]
+
+    def non_compacted_turn_ids(self) -> list[int]:
+        return sorted(
+            turn_id for turn_id, turn in self._turns.items()
+            if not turn["is_compacted"]
+        )
+
+
+# ---------------------------------------------------------------------------
+# Message rows (report B2, serialisation only)
+# ---------------------------------------------------------------------------
+_ROWS_ENTRY = _struct.Struct("<II")
+
+
+def _row_json(message: dict) -> bytes:
+    """``Message.model_dump_json(exclude_none=True)`` for one message."""
+    import orjson as _orjson
+
+    from ._structure import normalize_message, part_kind as _kind
+
+    message = normalize_message(message)
+    content = message["content"]
+    if len(content) == 1 and _kind(content[0]) == 0:
+        payload = content[0].get("text") or ""
+    else:
+        payload = []
+        for part in content:
+            if _kind(part) == 1:
+                payload.append({"type": "think", "think": part.get("think") or "",
+                                "encrypted": None})
+            else:
+                payload.append(part)
+    row = {"role": message["role"], "content": payload}
+    if message.get("tool_calls"):
+        calls = []
+        for call in message["tool_calls"]:
+            function = {"name": call["function"]["name"]}
+            if call["function"].get("arguments") is not None:
+                function["arguments"] = call["function"]["arguments"]
+            calls.append({"type": "function", "id": call["id"], "function": function})
+        row["tool_calls"] = calls
+    if message.get("tool_call_id") is not None:
+        row["tool_call_id"] = message["tool_call_id"]
+    return _orjson.dumps(row)
+
+
+def _row_fts(message: dict) -> bytes:
+    from ._structure import part_kind as _kind
+
+    return _enc(
+        "\n".join(
+            part.get("text") or ""
+            for part in message.get("content") or []
+            if _kind(part) == 0
+        )
+    )
+
+
+def _compat_context_rows(history) -> bytes:
+    entries = []
+    for message in history:
+        entries.append((_row_json(message), _row_fts(message)))
+    out = bytearray(_U32.pack(len(entries)))
+    for row, fts in entries:
+        out += _ROWS_ENTRY.pack(len(row), len(fts))
+        out += row
+        out += fts
+    return bytes(out)
+
+
+def context_rows(history) -> bytes:
+    """Packed ``(json row, fts text)`` pairs for a message list."""
+    if _index_native_active():
+        from ._structure import build as _build
+
+        hist_bytes, structure = _build(list(history))
+        return bytes(_native.index.context_rows(structure, hist_bytes))
+    return _compat_context_rows(history)
+
+
+def _compat_parse_rows(blob: bytes) -> list[dict]:
+    import orjson as _orjson
+
+    from ._structure import normalize_message
+
+    view = memoryview(blob)
+    if len(view) < 4:
+        return []
+    (count,) = _U32.unpack_from(view, 0)
+    offset = 4
+    out = []
+    for _ in range(count):
+        json_len, fts_len = _ROWS_ENTRY.unpack_from(view, offset)
+        offset += _ROWS_ENTRY.size
+        row = _orjson.loads(bytes(view[offset:offset + json_len]))
+        offset += json_len + fts_len
+        if isinstance(row.get("content"), str):
+            row["content"] = [{"type": "text", "text": row["content"]}]
+        else:
+            parts = []
+            for part in row.get("content") or []:
+                if part.get("type") == "think":
+                    parts.append({"type": "think", "think": part.get("think") or ""})
+                else:
+                    parts.append({k: v for k, v in part.items() if v is not None})
+            row["content"] = parts
+        calls = []
+        for call in row.get("tool_calls") or []:
+            function = call.get("function") or {}
+            entry = {"id": call.get("id", ""), "function": {"name": function.get("name", "")}}
+            if function.get("arguments") is not None:
+                entry["function"]["arguments"] = function["arguments"]
+            calls.append(entry)
+        message = {"role": row.get("role", "user"), "content": row["content"]}
+        if calls:
+            message["tool_calls"] = calls
+        if row.get("tool_call_id") is not None:
+            message["tool_call_id"] = row["tool_call_id"]
+        out.append(normalize_message(message))
+    return out
+
+
+def parse_rows(blob: bytes, history_handle=None) -> int:
+    """Decode packed rows straight into a ``soul.History`` arena.
+
+    ``history_handle`` is a ``kimix_native.soul.History`` (its native handle is
+    used) or anything else, in which case the rows are decoded in Python and
+    returned as a list when no handle is given.
+    """
+    native = getattr(history_handle, "_h", None)
+    if _index_native_active() and native is not None:
+        return int(_native.index.parse_rows(blob, native))
+    rows = _compat_parse_rows(blob)
+    if history_handle is None:
+        return rows  # type: ignore[return-value]
+    if hasattr(history_handle, "extend"):
+        history_handle.extend(rows)
+    return len(rows)

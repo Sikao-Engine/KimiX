@@ -447,7 +447,19 @@ def _save_to_file(key: str, token: OAuthToken) -> None:
             fd = -1
             with suppress(OSError):
                 os.chmod(tmp_path, 0o600)
-            os.replace(tmp_path, path)
+            # Windows: even with the cross-process lock held, the destination
+            # can be open in another process (a concurrent reader, a
+            # virus/indexer scan) which surfaces as PermissionError
+            # (WinError 5) from os.replace.  Retry briefly instead of failing
+            # the write outright.
+            for attempt in range(40):
+                try:
+                    os.replace(tmp_path, path)
+                    break
+                except PermissionError:
+                    if attempt == 39:
+                        raise
+                    time.sleep(0.025)
         except BaseException:
             if fd >= 0:
                 with suppress(OSError):

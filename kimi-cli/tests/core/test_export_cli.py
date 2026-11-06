@@ -13,9 +13,13 @@ from typer.testing import CliRunner
 
 from kimi_cli.cli import cli
 from kimi_cli.cli.export import _format_message_timestamp
+import pendulum
+
+from kimi_cli.utils import export as export_mod
 from kimi_cli.utils.export import (
     _extract_tool_call_hint,
     _format_tool_call_md,
+    _message_to_export_dict,
 )
 from kimi_cli.metadata import load_metadata, save_metadata
 from kimi_cli.session import Session
@@ -210,3 +214,93 @@ def test_format_tool_call_md_falls_back_to_raw_args_on_stdlib_json_error() -> No
     assert "ReadFile" in md
     assert '{"path": "x"}' in md
     assert "COMMAND [ARGS]..." not in md
+
+# ---------------------------------------------------------------------------
+# Export markdown: native bridge selection (soul packed vs tools list[dict])
+# ---------------------------------------------------------------------------
+
+
+def _export_bridge_history() -> list[Message]:
+    """A history exercising think-free text, a tool call and its result."""
+    return [
+        Message(role="user", content=[TextPart(text="中文问题 with ascii")]),
+        Message(
+            role="assistant",
+            content=[TextPart(text="let me look")],
+            tool_calls=[
+                ToolCall(
+                    id="call_1",
+                    function=ToolCall.FunctionBody(
+                        name="ReadFile", arguments='{"path": "a.txt"}'
+                    ),
+                )
+            ],
+        ),
+        Message(role="tool", content=[TextPart(text="file body")], tool_call_id="call_1"),
+    ]
+
+
+def _export_bridge_opts() -> dict[str, object]:
+    return {
+        "session_id": "sess-1",
+        "exported_at": "2026-01-02T03:04:05+00:00",
+        "work_dir": "C:/work",
+        "token_count": 42,
+    }
+
+
+def test_build_export_markdown_routes_through_the_packed_soul_bridge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`build_export_markdown` must prefer soul.build_export_markdown.
+
+    The packed bridge is the reason the kernel exists (one KMB2 blob instead of
+    a per-message list[dict]); the tools list[dict] call is only the fallback
+    for KIMIX_NATIVE_SOUL=0.
+    """
+    soul_calls: list[tuple[object, object]] = []
+    tools_calls: list[tuple[object, object]] = []
+
+    class _Recorder:
+        def __init__(self, sink, payload: bytes) -> None:
+            self._sink = sink
+            self._payload = payload
+
+        def build_export_markdown(self, history, opts) -> bytes:
+            self._sink.append((history, opts))
+            return self._payload
+
+    monkeypatch.setattr(export_mod, "_NATIVE_SOUL", _Recorder(soul_calls, b"soul"))
+    monkeypatch.setattr(export_mod, "_NATIVE_TOOLS", _Recorder(tools_calls, b"tools"))
+    monkeypatch.setattr(export_mod, "_native_use_native", lambda kernel: True)
+
+    result = export_mod.build_export_markdown(
+        "sess-1", "C:/work", _export_bridge_history(), 42, pendulum.datetime(2026, 1, 2, 3, 4, 5)
+    )
+
+    assert result == "soul"
+    assert len(soul_calls) == 1
+    assert tools_calls == []
+    history_arg, opts_arg = soul_calls[0]
+    assert [m["role"] for m in history_arg] == ["user", "assistant", "tool"]
+    assert history_arg[1]["tool_calls"][0]["function"]["name"] == "ReadFile"
+    assert opts_arg["session_id"] == "sess-1"
+
+
+def test_build_export_markdown_matches_the_python_reference() -> None:
+    """The bridge the export command uses is byte-identical to the reference.
+
+    Compares the native kernel (soul, KMB2 bridge) with the shim's pure-Python
+    mirror of the same document, on the same plain-dict history.
+    """
+    soul = export_mod._NATIVE_SOUL
+    reference = getattr(export_mod._NATIVE_TOOLS, "_compat_build_export_markdown", None)
+    if soul is None or reference is None:
+        pytest.skip("native runtime unavailable; the pure-Python path is in use")
+
+    history = [_message_to_export_dict(m) for m in _export_bridge_history()]
+    opts = _export_bridge_opts()
+
+    native = soul.build_export_markdown(history, opts)
+    assert isinstance(native, bytes)  # one blob, never a per-message list
+    assert native == reference(history, opts)

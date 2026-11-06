@@ -98,6 +98,114 @@ def bounded_append(buf: io.StringIO, text: str, cap: int) -> bool:
     return True
 
 
+def _new_output_ring(cap: int):
+    """The native ``tools.OutputRing`` for *cap*, or None when unavailable."""
+    if not _native_use_native("TOOLS") or _NATIVE_TOOLS is None:
+        return None
+    factory = getattr(_NATIVE_TOOLS, "OutputRing", None)
+    if factory is None:
+        return None
+    try:
+        return factory(int(cap), 0.4)
+    except Exception:  # native failure must never break a job
+        return None
+
+
+class OutputBuffer:
+    """Bounded output buffer of one background job.
+
+    Retains at most ``cap`` characters: an overflowing write folds the text to
+    head 40 % + marker line + tail 60 %, exactly like :func:`bounded_append`.
+
+    The native ``tools.OutputRing`` owns the text when the kernel is available:
+    an append then costs O(chunk) instead of a StringIO regrowth, and an
+    overflow trims amortised instead of rewriting the whole 2 M-character
+    buffer.  The pure-Python path is ``io.StringIO`` + :func:`bounded_append`,
+    so both paths produce the same text (pinned by
+    ``tests/test_background_utils.py``).
+
+    The cap is re-read from ``BACKGROUND_MAX_OUTPUT_CHARS`` on every write so
+    the module constant stays patchable in tests.
+    """
+
+    __slots__ = ("_ring", "_buf", "_cap", "_auto_cap", "_truncated")
+
+    def __init__(self, cap: int | None = None) -> None:
+        self._auto_cap = cap is None
+        self._cap = int(BACKGROUND_MAX_OUTPUT_CHARS if cap is None else cap)
+        self._truncated = False
+        self._buf = io.StringIO()
+        self._ring = _new_output_ring(self._cap)
+
+    def write(self, text: str) -> bool:
+        """Append *text*; True when this write truncated the retained text."""
+        cap = self._cap
+        if self._auto_cap:
+            requested = int(BACKGROUND_MAX_OUTPUT_CHARS)
+            if requested != self._cap:
+                self._rebuild(requested)
+                cap = requested
+        ring = self._ring
+        if ring is not None:
+            truncated = bool(ring.append(text))
+        else:
+            truncated = bounded_append(self._buf, text, cap)
+        if truncated:
+            self._truncated = True
+        return truncated
+
+    def getvalue(self) -> str:
+        """The retained text (head + marker + tail once truncated)."""
+        ring = self._ring
+        if ring is not None:
+            return str(ring.snapshot())
+        return self._buf.getvalue()
+
+    def clear(self) -> None:
+        """Drop the retained text (a stream read that consumes its output)."""
+        ring = self._ring
+        if ring is not None:
+            ring.clear()
+        self._buf.truncate(0)
+        self._buf.seek(0)
+
+    def close(self) -> None:
+        """Release the native ring (best effort, never raises)."""
+        ring = self._ring
+        if ring is not None:
+            self._ring = None
+            closer = getattr(ring, "close", None)
+            if closer is not None:
+                try:
+                    closer()
+                except Exception:
+                    pass
+        self._buf.truncate(0)
+        self._buf.seek(0)
+
+    @property
+    def cap(self) -> int:
+        """The cap currently in force (characters)."""
+        return self._cap
+
+    @property
+    def truncated(self) -> bool:
+        """True once any write folded the retained text."""
+        return self._truncated
+
+    def _rebuild(self, cap: int) -> None:
+        """Re-create the backing store after the module cap was patched."""
+        text = self.getvalue()
+        self._cap = cap
+        self._ring = _new_output_ring(cap)
+        self._buf = io.StringIO()
+        if self._ring is not None:
+            if self._ring.append(text):
+                self._truncated = True
+        else:
+            self._buf.write(text)
+
+
 def bounded_put(q: queue.Queue[str], text: str, max_chunks: int = MAX_QUEUE_CHUNKS) -> None:
     """Put *text* on the queue, dropping the oldest chunk when it is full.
 
@@ -182,7 +290,7 @@ class BackgroundStream:
         self._cancel_requested = False
         self._success = False
         self._exit_code: int | None = None
-        self._output = io.StringIO()
+        self._output = OutputBuffer()
         self._output_truncated = False
         self._last_output_time = time.monotonic()
         self._completed_event = threading.Event()
@@ -330,7 +438,7 @@ class BackgroundStream:
                 chunk = self._queue.get_nowait()
             except queue.Empty:
                 break
-            if bounded_append(self._output, chunk, BACKGROUND_MAX_OUTPUT_CHARS):
+            if self._output.write(chunk):
                 self._output_truncated = True
             new_data = True
         if new_data:
@@ -353,7 +461,7 @@ class BackgroundStream:
                     chunk = self._queue.get_nowait()
                 except queue.Empty:
                     break
-                if bounded_append(self._output, chunk, BACKGROUND_MAX_OUTPUT_CHARS):
+                if self._output.write(chunk):
                     self._output_truncated = True
                 new_data = True
             if new_data:
@@ -364,8 +472,7 @@ class BackgroundStream:
     async def pop_output(self) -> str:
         output = await self.get_output()
         if not self.final_output:
-            self._output.truncate(0)
-            self._output.seek(0)
+            self._output.clear()
         return output
 
     async def get_queue(self) -> queue.Queue[str] | None:
@@ -505,8 +612,7 @@ class BackgroundStream:
         # wants a later job_output read to retain the complete final result.
         completed = self._completed_event.is_set() or not await self.thread_is_alive()
         if not self.final_output and not (preserve_on_completion and completed):
-            self._output.truncate(0)
-            self._output.seek(0)
+            self._output.clear()
 
         return output, matched, elapsed
 

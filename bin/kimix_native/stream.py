@@ -42,6 +42,27 @@ _ANSI_ESCAPE_RE = _re.compile(
     r")"
 )
 
+# A trailing prefix of an escape sequence that a later chunk could still
+# complete: ESC alone, an ESC[ with only parameter/intermediate bytes so far, or
+# an OSC/DCS-style introducer without its terminator yet. The streaming mirror
+# must hold such a tail back instead of stripping a *part* of it (the whole-buffer
+# reference resolves the sequence when its terminator finally arrives).
+_ANSI_CSI_PREFIX_RE = _re.compile(r"\x1B\[[0-?]*[ -/]*\Z")
+# The body may also end with a lone ESC: that is the first half of the
+# "ESC \\" terminator and must be held until the next chunk decides it.
+_ANSI_STR_PREFIX_RE = _re.compile(r"\x1B[\]P^_][^\x07\x1B]*(?:\x1B)?\Z")
+
+
+def _ansi_tail_is_incomplete(tail: str) -> bool:
+    if not tail or tail[0] != "\x1b":
+        return False
+    if tail == "\x1b":
+        return True
+    if _ANSI_CSI_PREFIX_RE.match(tail) is not None:
+        return True
+    return _ANSI_STR_PREFIX_RE.match(tail) is not None
+
+
 
 # ---------------------------------------------------------------------------
 # _compat — exact mirrors of the Python reference implementations
@@ -170,6 +191,7 @@ class _CompatLineProcessor:
         self._fold_col = fold_col
         self._line_buf = ""  # current (possibly partial) line, no terminator
         self._pending_cr = False  # saw '\r', waiting to see if '\n' follows
+        self._ansi_tail = ""  # trailing, still-incomplete escape sequence
         self._lines: list[str] = []  # buffered raw lines for dedup modes
         self._bytes = 0
         self._cps = 0
@@ -182,9 +204,43 @@ class _CompatLineProcessor:
             chunk = bytes(chunk).decode("utf-8", "surrogatepass")
         chunk = str(chunk)
         if self._strip_ansi:
-            chunk = _ANSI_ESCAPE_RE.sub("", chunk)
+            data = self._ansi_tail + chunk
+            self._ansi_tail = ""
+            # Scan escape sequences left to right exactly like the regex's
+            # global substitution, but stop at the first one that is still an
+            # incomplete prefix: it belongs to a later chunk, so it is HELD
+            # rather than half-stripped (a lone ESC P would otherwise lose its
+            # introducer and leak the DCS body into the output).
+            pieces: list[str] = []
+            last = 0
+            pos = 0
+            while True:
+                esc = data.find("\x1b", pos)
+                if esc < 0:
+                    break
+                # An INCOMPLETE trailing sequence must be decided before the
+                # regex is consulted: the regex would happily match the two-char
+                # alternative of "ESC ]" and lose the OSC introducer, whereas the
+                # whole-buffer reference waits for the terminator.
+                if _ansi_tail_is_incomplete(data[esc:]):
+                    pieces.append(data[last:esc])
+                    self._ansi_tail = data[esc:]
+                    last = len(data)
+                    break
+                match = _ANSI_ESCAPE_RE.match(data, esc)
+                if match is not None:
+                    pieces.append(data[last:esc])
+                    last = pos = match.end()
+                    continue
+                pos = esc + 1
+            pieces.append(data[last:])
+            chunk = "".join(pieces)
+        return self._consume(chunk)
+
+    def _consume(self, text: str) -> list[str]:
+        """Feed already-ANSI-stripped text through the line state machine."""
         out: list[str] = []
-        for ch in chunk:
+        for ch in text:
             if self._pending_cr:
                 self._pending_cr = False
                 if ch == "\n":
@@ -205,6 +261,15 @@ class _CompatLineProcessor:
 
     def flush(self) -> list[str]:
         out: list[str] = []
+        if self._strip_ansi and self._ansi_tail:
+            # An escape sequence that never completed stays verbatim, exactly
+            # like the whole-buffer reference leaves it - so it goes straight
+            # into the line state machine instead of through feed(), which would
+            # defer it again.
+            tail = _ANSI_ESCAPE_RE.sub("", self._ansi_tail)
+            self._ansi_tail = ""
+            if tail:
+                out += self._consume(tail)
         # Resolve trailing state: a pending lone CR at EOF terminates the
         # line; otherwise emit the final unterminated line if it has content.
         if self._pending_cr:

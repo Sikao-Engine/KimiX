@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 
 # Resolved once at import time (stable runtime: result never changes).
 _NATIVE_TOOLS = _native_get_module("tools")
+_NATIVE_SOUL = _native_get_module("soul")
 
 # ---------------------------------------------------------------------------
 # Export helpers
@@ -325,16 +326,21 @@ def build_export_markdown(
     now: pendulum.DateTime,
 ) -> str:
     """Build the full export markdown string."""
-    # Native acceleration: kimix_native.tools.build_export_markdown. The
-    # native kernel consumes plain-dict history (message-view bridge via
-    # _messages_to_dicts below); pydantic validation stays in Python.
+    # Native acceleration. `soul.build_export_markdown` packs the history into
+    # the KMB2 span tables once (one bytearray, one struct.pack_into per record)
+    # and crosses the boundary with two `bytes`; `tools.build_export_markdown`
+    # is the older list[dict] bridge, kept as the fallback so a soul regression
+    # can be isolated with KIMIX_NATIVE_SOUL=0. Both run the same C++ builder.
+    opts = {
+        "session_id": session_id,
+        "exported_at": now.isoformat(timespec="seconds"),
+        "work_dir": work_dir,
+        "token_count": token_count,
+    }
+    if _native_use_native("SOUL") and _NATIVE_SOUL is not None:
+        history_dicts = [_message_to_export_dict(m) for m in history]
+        return _NATIVE_SOUL.build_export_markdown(history_dicts, opts).decode("utf-8")
     if _native_use_native("TOOLS") and _NATIVE_TOOLS is not None:
-        opts = {
-            "session_id": session_id,
-            "exported_at": now.isoformat(timespec="seconds"),
-            "work_dir": work_dir,
-            "token_count": token_count,
-        }
         history_dicts = [_message_to_export_dict(m) for m in history]
         return _NATIVE_TOOLS.build_export_markdown(history_dicts, opts).decode("utf-8")
     lines: list[str] = [

@@ -27,10 +27,13 @@ async def test_zero_inactivity_timeout_waits_for_silent_completion() -> None:
         return True, 0
 
     await stream.start(worker, lambda: None)
+    # Budget generously: under a full-suite run the loop can be starved for
+    # longer than the worker's 0.8s sleep, so a 2s budget made this test give
+    # up before it ever observed the worker as finished.
     completed, _elapsed, inactivity_timed_out = (
-        await stream.wait_with_inactivity_timeout(timeout=2, inactivity_timeout=0)
+        await stream.wait_with_inactivity_timeout(timeout=10, inactivity_timeout=0)
     )
-    await stream.wait(timeout=2)
+    await stream.wait(timeout=10)
 
     assert completed
     assert not inactivity_timed_out

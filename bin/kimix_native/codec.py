@@ -386,3 +386,152 @@ def build_sse_frame(event_name: str, data_json: bytes, id: int = 0) -> bytes:
     if _USE:
         return bytes(_native.codec.build_sse_frame(event_name, bytes(data_json), int(id)))
     return _compat_build_sse_frame(event_name, data_json, id)
+
+
+# ---------------------------------------------------------------------------
+# A4: bounded event ring + outbound delta frame
+# ---------------------------------------------------------------------------
+# The wire pipeline used to allocate a pydantic model, a model_dump_json()
+# string and a queue entry per streamed delta (130.1 B peak per delta, 628 KB
+# live after 5 000). ``EventRing`` keeps already-serialized FRAMES under a byte
+# budget and hands a batch back as ONE bytes object; ``delta_frame`` builds the
+# outbound envelope bytes without a model at all.
+
+
+class EventRing:
+    """Bounded byte ring of serialized wire frames (drop-oldest)."""
+
+    __slots__ = ("_r", "_compat")
+
+    def __init__(self, capacity_bytes: int = 1 << 20):
+        self._r = (
+            _native.codec.EventRing(int(capacity_bytes))
+            if (_native is not None and use_native("CODEC"))
+            else None
+        )
+        self._compat = _compat_EventRing(int(capacity_bytes))
+
+    def push(self, frame: bytes) -> bool:
+        if self._r is not None:
+            return bool(self._r.push(frame))
+        return self._compat.push(frame)
+
+    def pop_batch(self, max_items: int = 64) -> bytes:
+        if self._r is not None:
+            return bytes(self._r.pop_batch(int(max_items)))
+        return self._compat.pop_batch(int(max_items))
+
+    def size(self) -> int:
+        return int(self._r.size()) if self._r is not None else self._compat.size()
+
+    def pending_bytes(self) -> int:
+        return (
+            int(self._r.pending_bytes()) if self._r is not None
+            else self._compat.pending_bytes()
+        )
+
+    def dropped(self) -> int:
+        return int(self._r.dropped()) if self._r is not None else self._compat.dropped()
+
+    def capacity_bytes(self) -> int:
+        return (
+            int(self._r.capacity_bytes()) if self._r is not None
+            else self._compat.capacity_bytes()
+        )
+
+    def bytes_owned(self) -> int:
+        return int(self._r.bytes_owned()) if self._r is not None else 0
+
+    def clear(self) -> None:
+        if self._r is not None:
+            self._r.clear()
+        self._compat.clear()
+
+    def pop(self, max_items: int = 64) -> list[bytes]:
+        """Decode one batch into a list of frames (convenience wrapper)."""
+        return decode_batch(self.pop_batch(max_items))
+
+
+class _compat_EventRing:
+    """Pure-Python mirror: deque of frames under the same byte budget."""
+
+    __slots__ = ("_frames", "_capacity", "_bytes", "_dropped")
+
+    def __init__(self, capacity_bytes: int = 1 << 20):
+        from collections import deque
+
+        self._frames = deque()
+        self._capacity = int(capacity_bytes)
+        self._bytes = 0
+        self._dropped = 0
+
+    def push(self, frame: bytes) -> bool:
+        if len(frame) > self._capacity:
+            return False
+        while self._frames and self._bytes + len(frame) > self._capacity:
+            self._bytes -= len(self._frames.popleft())
+            self._dropped += 1
+        self._frames.append(bytes(frame))
+        self._bytes += len(frame)
+        return True
+
+    def pop_batch(self, max_items: int = 64) -> bytes:
+        import struct
+
+        frames = []
+        while self._frames and len(frames) < max_items:
+            frame = self._frames.popleft()
+            self._bytes -= len(frame)
+            frames.append(frame)
+        out = bytearray(struct.pack("<I", len(frames)))
+        for frame in frames:
+            out += struct.pack("<I", len(frame))
+            out += frame
+        return bytes(out)
+
+    def size(self) -> int:
+        return len(self._frames)
+
+    def pending_bytes(self) -> int:
+        return self._bytes
+
+    def dropped(self) -> int:
+        return self._dropped
+
+    def capacity_bytes(self) -> int:
+        return self._capacity
+
+    def clear(self) -> None:
+        self._frames.clear()
+        self._bytes = 0
+
+
+def decode_batch(packed: bytes) -> list[bytes]:
+    """Split a ``u32 count | (u32 len | frame)*`` batch (memoryview walk)."""
+    import struct
+
+    view = memoryview(packed)
+    if len(view) < 4:
+        return []
+    (count,) = struct.unpack_from("<I", view, 0)
+    offset = 4
+    frames = []
+    for _ in range(count):
+        if offset + 4 > len(view):
+            break
+        (length,) = struct.unpack_from("<I", view, offset)
+        offset += 4
+        frames.append(bytes(view[offset:offset + length]))
+        offset += length
+    return frames
+
+
+def delta_frame(kind: str, payload_json: bytes) -> bytes:
+    """Outbound envelope bytes: ``{"type": kind, "payload": <json>}``.
+
+    Identical to ``serialize_envelope`` but documented as the delta path: no
+    pydantic model is built first.
+    """
+    if _native is not None and use_native("CODEC"):
+        return bytes(_native.codec.delta_frame(kind, payload_json))
+    return _compat_serialize_envelope(kind, payload_json)
