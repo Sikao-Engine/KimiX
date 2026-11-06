@@ -10,6 +10,8 @@ import orjson
 
 from kimix.ui.printing import print_info, print_success, print_warning
 
+from .utils import _input
+
 # NOTE: keep the provider templates below in sync with the matching example
 # configs under ``docs/`` (kimi.json, deepseek.json, minimax.json).
 deepseek_default_config = '''
@@ -107,13 +109,13 @@ def _save_config(config: dict[str, Any]) -> None:
 
 def _ask(prompt: str, default: str) -> str:
     print_info(f"{prompt} [{default}]: ", end="")
-    value = input().strip()
+    value = _input().strip()
     return value if value else default
 
 
 def _ask_template() -> str:
     print_info("Select provider template ('kimi', 'deepseek' or 'minimax') [kimi]: ", end="")
-    choice = input().strip().lower()
+    choice = _input().strip().lower()
     if choice == 'deepseek':
         return deepseek_default_config
     if choice == 'minimax':
@@ -147,11 +149,11 @@ def _ask_api_key() -> str:
         print_info("API key already set in environment variable KIMIX_API_KEY.")
         skip = True
     print_info("Enter API key (usually required, or set KIMI_API_KEY/KIMIX_API_KEY env var): ", end="")
-    value = input().strip()
+    value = _input().strip()
     if not skip and not value:
         print_warning("API key is usually required. Press Enter again to skip.")
         print_info("Enter API key: ", end="")
-        value = input().strip()
+        value = _input().strip()
     return value
 
 
@@ -244,7 +246,7 @@ def _ask_sub_role(default: str = "sub_agent") -> str:
 
 def _ask_sub_provider(defaults: dict[str, Any] | None = None) -> dict[str, Any] | None:
     print_info("Configure a sub-agent provider? (y/n)")
-    v = input().strip().lower()
+    v = _input().strip().lower()
     if v != 'y':
         return None
 
@@ -314,7 +316,7 @@ def _first_sub_provider(config: dict[str, Any]) -> dict[str, Any] | None:
 
 def init(initialize: bool = True) -> None:
     if not initialize:
-        v = input('default config not found, initialize? you can use /init any time. (y/n)').strip().lower() 
+        v = _input('default config not found, initialize? you can use /init any time. (y/n)').strip().lower() 
         initialize = v == 'y' or not v
     template = default_config
     if initialize:

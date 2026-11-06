@@ -893,6 +893,44 @@ def lock_planner_session_read_only(session: Session) -> None:
         runtime.read_only = True
 
 
+async def _ask_user(question: str) -> str | None:
+    """Ask *question* through the CLI's keyboard-input funnel (``_input``).
+
+    ``kimix.cli_impl.utils._input`` is the CLI's single stdin entry point: the
+    interactive CLI keeps a daemon thread blocked in ``input()`` for the whole
+    process lifetime (``CLIIPCServer.read_input`` starts ``kimix-local-input``)
+    and that thread consumes every typed line. Reading through it — instead of
+    a second, independent ``input()`` — pops the very same queue (terminal
+    *and* ``kimix connect`` input), so the answer actually arrives. Outside the
+    CLI (embedded use, tests) ``_input`` falls back to ``input()``.
+
+    ``None`` means the answer can never arrive (EOF or Ctrl+C): the caller has
+    to abort instead of looping on an empty channel. The question goes through
+    the same stream as every other CLI prompt (and is flushed before blocking),
+    so it is always visible before the terminal waits for input.
+    """
+    from kimix.cli_impl.utils import _input
+
+    base._stream.colorful_print_word(
+        f"{question}\n",
+        fg=Color.BRIGHT_YELLOW,
+        styles=[Style.BOLD],
+        require_new_line=True,
+        flush=True,
+    )
+    try:
+        return await asyncio.to_thread(_input)
+    except (EOFError, KeyboardInterrupt):
+        base._stream.colorful_print_word(
+            "\nNo answer received, plan mode ended without implementing the plan.\n",
+            fg=Color.BRIGHT_RED,
+            styles=[Style.BOLD],
+            require_new_line=True,
+            flush=True,
+        )
+        return None
+
+
 async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md") -> None:
     import kimi_cli.tools.note as note
 
@@ -1002,19 +1040,29 @@ async def prompt_plan_async(requirement: str, plan_file: str | Path = "plan.md")
         )
         _open_plan_file(plan_file)
 
-        # Review loop: let the user approve or request revisions
+        # Review loop: let the user approve or request revisions.
+        #
+        # Both questions are asked through ``_ask_user`` (the CLI's input
+        # reader), never through a bare ``input()``: the CLI already owns the
+        # terminal with its own reader thread, so a second ``input()`` would
+        # never see the typed answer — the question stayed on screen and the
+        # flow hung until the user gave up.
         execute_plan = True
         while True:
-            user_input = await asyncio.to_thread(
-                input, "Do you want to implement the plan? (y/n): "
-            )
+            user_input = await _ask_user("Do you want to implement the plan? (y/n): ")
+            if user_input is None:
+                execute_plan = False
+                break
             if user_input.strip().lower() == "y":
                 break
 
             # User wants to revise the plan — get feedback and loop back to planner
-            feedback = await asyncio.to_thread(
-                input, "Please describe the changes you want (/quit to give up): "
+            feedback = await _ask_user(
+                "Please describe the changes you want (/quit to give up): "
             )
+            if feedback is None:
+                execute_plan = False
+                break
             feedback = feedback.strip()
             if not feedback:
                 continue

@@ -26,30 +26,62 @@ _active_ipc_server: CLIIPCServer | None = None
 
 
 def _set_active_ipc_server(ipc_server: CLIIPCServer | None) -> None:
-    """Share the server's input multiplexer with slash-command prompts."""
+    """Publish the process's IPC input server to every ``_input`` caller."""
     global _active_ipc_server
     _active_ipc_server = ipc_server
 
 
 def _input(
-    text: str,
-    text_arr: list[str],
+    text: str = "",
+    text_arr: list[str] | None = None,
     ipc_server: CLIIPCServer | None = None,
 ) -> str:
-    """Read queued, terminal, or IPC input without blocking either input source.
+    """The CLI's one and only keyboard-input entry point.
 
-    Keyboard input is only accepted while the CLI window is idle: the IPC
-    server drops keystrokes typed while it is busy (agent streaming or
-    processing), so a busy window never captures input meant for later.
+    Every interactive prompt — the CLI loop, slash commands, the ``/plan``
+    review questions, ``/init``, the connect and SSE clients — reads through
+    this function, so the process has exactly one stdin consumer. That matters
+    because the CLI starts a daemon thread blocked in ``input()`` for the whole
+    session (``CLIIPCServer.read_input`` → ``kimix-local-input``): a second,
+    independent ``input()`` would write its prompt through the raw stdio path
+    and then never receive the typed line, because that thread already took it.
+
+    Parameters
+    ----------
+    text:
+        Prompt printed (and flushed) before reading; empty prints nothing.
+    text_arr:
+        Pre-queued lines: the next one is returned without touching the
+        terminal (multi-line commands, scripted tests).
+    ipc_server:
+        Server to read from; defaults to the process-wide active one so
+        ``kimix connect`` input reaches every prompt.
+
+    Keyboard input is only accepted while the CLI window is idle: while the
+    window is busy (agent streaming/processing) the IPC server pauses its
+    reader thread and mutes the terminal, so a busy window never captures
+    keystrokes meant for later. Asking a question is exactly the moment the
+    window has to be idle, so this lifts the busy mark (and restores it) around
+    the blocking read instead of waiting for an answer nobody can type.
     """
     if text_arr:
         return text_arr.pop(0)
     if text:
         print(text, end="", flush=True)
-    active_server = ipc_server or _active_ipc_server
-    if active_server is not None:
-        return active_server.read_input()
-    return input()
+
+    server = ipc_server if ipc_server is not None else _active_ipc_server
+    if server is None:
+        return input()
+
+    resume_busy = None
+    if getattr(server, "busy", False):
+        server.set_busy(False)
+        resume_busy = server.set_busy
+    try:
+        return server.read_input()
+    finally:
+        if resume_busy is not None:
+            resume_busy(True)
 
 
 def _split_text(lines: list[str], command_map: set[str] | None = None) -> list[str]:

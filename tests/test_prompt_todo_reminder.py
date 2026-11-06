@@ -652,7 +652,7 @@ def test_prompt_plan_async_prompts_execution_agent(tmp_path: Path, monkeypatch: 
     # ``os.startfile`` only exists on Windows; create it so the code under
     # test can be exercised on any platform.
     monkeypatch.setattr(prompt_mod.os, "startfile", lambda _path: None, raising=False)
-    monkeypatch.setattr("builtins.input", lambda _: "y")
+    monkeypatch.setattr("builtins.input", lambda *_a, **_k: "y")
 
     asyncio.run(prompt_mod.prompt_plan_async("test requirement", plan_file))
 
@@ -704,7 +704,7 @@ def test_prompt_plan_async_falls_back_to_main_provider_without_sub_providers(tmp
     monkeypatch.setattr(prompt_mod, "close_session_async", fake_close_session_async)
     monkeypatch.setattr(prompt_mod, "prompt_async", fake_prompt_async)
     monkeypatch.setattr(prompt_mod.os, "startfile", lambda _path: None, raising=False)
-    monkeypatch.setattr("builtins.input", lambda _: "y")
+    monkeypatch.setattr("builtins.input", lambda *_a, **_k: "y")
 
     # No sub-providers configured at all — only a main provider.
     main_provider = {
@@ -753,7 +753,7 @@ def test_prompt_plan_async_uses_planner_sub_provider_when_present(tmp_path: Path
     monkeypatch.setattr(prompt_mod, "close_session_async", fake_close_session_async)
     monkeypatch.setattr(prompt_mod, "prompt_async", fake_prompt_async)
     monkeypatch.setattr(prompt_mod.os, "startfile", lambda _path: None, raising=False)
-    monkeypatch.setattr("builtins.input", lambda _: "y")
+    monkeypatch.setattr("builtins.input", lambda *_a, **_k: "y")
 
     planner_provider = {
         "model": "planner-model",

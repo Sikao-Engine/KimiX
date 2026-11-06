@@ -245,7 +245,7 @@ def _connect_cli(connect: str) -> None:
             print(_CONNECT_BANNER, flush=True)
             while True:
                 try:
-                    message = input()
+                    message = _input()
                 except (EOFError, KeyboardInterrupt):
                     print_success("\nbye.")
                     break

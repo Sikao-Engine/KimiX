@@ -12,6 +12,8 @@ from typing import Any, TextIO
 from kimix.ui.printing import print_error, print  # noqa: F811 - use ui.printing.print for flush support
 from kimix.server.client import KimixAsyncClient, MessagePart, parse_event, EventType, SSEEvent
 
+from .utils import _input
+
 def _fmt_arg(s: str, max_len: int = 120) -> str:
     """Truncate long arguments, keeping head and tail."""
     if len(s) <= max_len:
@@ -179,7 +181,7 @@ async def _sse_cli_main(host: str, port: int, debug: bool = False) -> None:
 
     while True:
         try:
-            text = input("> ")
+            text = _input("> ")
         except (EOFError, KeyboardInterrupt):
             break
 

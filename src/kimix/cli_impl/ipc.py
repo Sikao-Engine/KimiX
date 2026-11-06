@@ -450,7 +450,24 @@ class CLIIPCServer:
                     _flush_stdin()
                     _set_stdin_echo(True)
 
+    @property
+    def busy(self) -> bool:
+        """Whether the CLI window is currently marked busy.
+
+        In-band confirmation prompts (``prompt_plan_async``'s review loop) ask
+        the user a question while the window is otherwise processing; they use
+        this to know whether the reader thread has to be un-paused first.
+        """
+        return self._busy.is_set()
+
     def _read_local_input(self) -> None:
+        """The process's only terminal reader, feeding ``utils._input``.
+
+        Every CLI prompt reads through ``utils._input``: the first caller
+        starts this thread, which owns stdin for the rest of the session and
+        queues each line. Nothing else may call ``input()`` — a second reader
+        would lose the typed line (and leave its prompt unanswered).
+        """
         while not self._closed.is_set():
             if self._busy.is_set():
                 # The CLI window is busy: do not accept keyboard input.
@@ -459,6 +476,13 @@ class CLIIPCServer:
             try:
                 line = input()
             except BaseException as error:
+                # The reader is the CLI's only stdin consumer, so a dead reader
+                # (EOF, Ctrl+C at a confirmation prompt, a failed read) must not
+                # leave the CLI permanently unreadable. Free the reader slot
+                # *before* handing the error over: the waiter that receives it
+                # may immediately ask for another line and has to be able to
+                # start a fresh reader. The old one never reads stdin again.
+                self._local_input_started = False
                 self._inputs.put(error)
                 return
             if self._busy.is_set():
@@ -467,15 +491,19 @@ class CLIIPCServer:
                 continue
             self._inputs.put(line)
 
-    def read_input(self) -> str:
+    def _start_local_input(self) -> None:
         with self._local_input_lock:
-            if not self._local_input_started:
-                self._local_input_started = True
-                threading.Thread(
-                    target=self._read_local_input,
-                    name="kimix-local-input",
-                    daemon=True,
-                ).start()
+            if self._local_input_started:
+                return
+            self._local_input_started = True
+            threading.Thread(
+                target=self._read_local_input,
+                name="kimix-local-input",
+                daemon=True,
+            ).start()
+
+    def read_input(self) -> str:
+        self._start_local_input()
         value = self._inputs.get()
         if isinstance(value, BaseException):
             raise value

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import io
+import queue
 import subprocess
 import sys
 import threading
@@ -506,3 +508,158 @@ def test_close_restores_terminal_echo(
     server.close()
 
     assert ("echo", True) in calls
+
+
+def test_busy_property_reflects_window_state(tmp_path: Path) -> None:
+    """Confirmation prompts ask the server whether the window is idle."""
+    server = _make_server(tmp_path)
+    assert server.busy is False
+    server.set_busy(True)
+    assert server.busy is True
+    server.set_busy(False)
+    assert server.busy is False
+
+
+def test_reader_slot_is_freed_before_the_error_is_delivered(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The dead reader must free its slot *before* the waiter can wake up.
+
+    Otherwise the next ``read_input`` still sees ``_local_input_started`` set,
+    starts no reader at all and blocks forever on a queue nobody fills — which
+    is exactly what a Ctrl+C at the ``/plan`` confirmation would do.
+    """
+    server = _make_server(tmp_path)
+    state_when_queued: list[bool] = []
+
+    class _ProbeQueue(queue.Queue):
+        def put(self, item: object, *args: object, **kwargs: object) -> None:
+            state_when_queued.append(server._local_input_started)
+            super().put(item, *args, **kwargs)  # type: ignore[arg-type]
+
+    probe: queue.Queue = _ProbeQueue()
+    server._inputs = probe  # type: ignore[assignment]
+    server._local_input_started = True
+
+    def failing_input() -> str:
+        raise EOFError("stdin closed")
+
+    monkeypatch.setattr("builtins.input", failing_input)
+    server._read_local_input()
+
+    assert state_when_queued == [False]
+    queued = probe.get_nowait()
+    assert isinstance(queued, EOFError)
+
+
+def test_read_input_starts_a_fresh_reader_after_a_failed_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """One EOF/Ctrl+C must not make the CLI permanently unreadable."""
+    server = _make_server(tmp_path)
+    answers = [EOFError("stdin closed"), "typed again"]
+
+    def fake_input() -> str:
+        answer = answers.pop(0)
+        if isinstance(answer, BaseException):
+            raise answer
+        return answer
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    with pytest.raises(EOFError):
+        server.read_input()
+    assert server.read_input() == "typed again"
+
+
+class _BusyServer:
+    """Stand-in for ``CLIIPCServer`` that records busy transitions."""
+
+    def __init__(self, answer: str = "answer", *, busy: bool = False) -> None:
+        self.answer = answer
+        self.busy = busy
+        self.busy_calls: list[bool] = []
+        self.reads = 0
+
+    def read_input(self) -> str:
+        self.reads += 1
+        return self.answer
+
+    def set_busy(self, busy: bool) -> None:
+        self.busy = busy
+        self.busy_calls.append(busy)
+
+
+def test_input_returns_queued_lines_without_touching_the_terminal(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Queued command text is consumed first (multi-line commands, scripts)."""
+    server = _BusyServer()
+    monkeypatch.setattr("builtins.input", lambda *a, **k: pytest.fail("read the terminal"))
+    queued = ["first", "second"]
+
+    assert utils._input("", queued, server) == "first"
+    assert utils._input("", queued, server) == "second"
+    assert queued == []
+    assert server.reads == 0
+    assert capsys.readouterr().out == ""
+
+
+def test_input_lifts_and_restores_a_busy_window(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A busy window pauses its reader: asking a question must un-pause it."""
+    server = _BusyServer(busy=True)
+
+    assert utils._input("ask? ", [], server) == "answer"
+
+    assert server.busy_calls == [False, True]
+    assert server.busy is True
+    assert capsys.readouterr().out == "ask? "
+
+
+def test_input_leaves_an_idle_window_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    server = _BusyServer()
+
+    assert utils._input("", [], server) == "answer"
+    assert server.busy_calls == []
+
+
+def test_input_falls_back_to_the_terminal_without_a_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Embedded use (no IPC server) still reads the plain terminal."""
+    monkeypatch.setattr(utils, "_active_ipc_server", None)
+    monkeypatch.setattr("builtins.input", lambda: "typed")
+
+    assert utils._input() == "typed"
+
+
+def test_only_the_input_funnel_reads_the_keyboard() -> None:
+    """Every CLI prompt must go through ``kimix.cli_impl.utils._input``.
+
+    One stdin consumer is a hard invariant: the CLI owns the terminal with its
+    ``kimix-local-input`` reader thread, so any other ``input()`` call silently
+    loses the typed line — its question stays on screen and the flow hangs
+    (exactly what happened to the ``/plan`` review questions).
+    """
+    allowed = {
+        "src/kimix/cli_impl/ipc.py",  # the terminal reader thread itself
+        "src/kimix/cli_impl/utils.py",  # _input's no-server fallback
+    }
+    repo_root = Path(__file__).resolve().parents[1]
+    src_root = repo_root / "src" / "kimix"
+    offenders: list[str] = []
+    for path in sorted(src_root.rglob("*.py")):
+        relative = path.relative_to(repo_root).as_posix()
+        if relative in allowed:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "input"
+            ):
+                offenders.append(f"{relative}:{node.lineno}")
+    assert offenders == [], f"bare input() outside the CLI input funnel: {offenders}"
