@@ -48,7 +48,7 @@ High-level guide to `kimix.utils`, `kimix.base`, the full public API of `src/kim
 
 ## Prompt String Utilities (`kimix.utils.prompt_str`)
 
-- `escape_file_paths(text, *, max_chars=0, max_repeat=100, truncate_msg="", case_mode="")` — backtick-wraps legal paths, strips invalid unicode/invisible chars, NFKC, emoji, repeated punctuation; preserves code blocks/quotes/URLs/fractions/dates.
+- `escape_file_paths(text, *, max_chars=0, max_repeat=100, truncate_msg="", case_mode="")` — backtick-wraps legal paths, strips invalid Unicode/unsafe invisible chars, NFKC, repeated punctuation; preserves emoji, valid special characters, code blocks/quotes/URLs/fractions/dates.
 - `clean_text(text, keep_newlines=True)` — remove zero-width/control chars, NFC-normalize.
 
 ## Windows Environment

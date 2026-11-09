@@ -69,7 +69,9 @@ def _compat_estimate(text: str) -> int:
 
 # Zero-width / invisible format chars removed by clean_text step 1.
 _ZERO_WIDTH = frozenset(
-    [0x200B, 0x200C, 0x200D, 0x2060, 0x00AD, 0xFEFF, 0x200E, 0x200F]
+    # ZWNJ/ZWJ (200C/200D) are deliberately preserved: they carry meaning in
+    # several writing systems and join emoji sequences.
+    [0x200B, 0x2060, 0x00AD, 0xFEFF, 0x200E, 0x200F]
     + list(range(0x202A, 0x202F))  # \u202a-\u202e
     + list(range(0x2066, 0x206A))  # \u2066-\u2069
 )
@@ -111,18 +113,6 @@ def _compat_strip_noncharacters(text: str) -> str:
     )
 
 
-def _compat_strip_pua(text: str) -> str:
-    return "".join(
-        ch
-        for ch in text
-        if not (
-            0xE000 <= ord(ch) <= 0xF8FF
-            or 0xF0000 <= ord(ch) <= 0xFFFFD
-            or 0x100000 <= ord(ch) <= 0x10FFFD
-        )
-    )
-
-
 def _compat_dedupe_repeats(text: str, max_repeat: int = 100) -> str:
     """Mirror of safety_check.py::_dedupe_repeats (run-collapse)."""
     if max_repeat <= 0:
@@ -152,8 +142,8 @@ def _compat_sanitize_for_tokenizer(
         text = str(text)
     text = _compat_strip_surrogates(text)
     text = _compat_strip_noncharacters(text)
-    text = _compat_strip_pua(text)
-    text = text.replace("\ufffd", "")
+    # PUA glyphs and U+FFFD are valid Unicode and can carry useful terminal /
+    # decoding information.  Do not silently discard them.
     text = _compat_clean_text(text, keep_newlines=True)
     text = _compat_dedupe_repeats(text, max_repeat=max_repeat)
     if max_chars > 0 and len(text) > max_chars:
@@ -199,11 +189,31 @@ def is_cjk_text(text: str, threshold: float = 0.15) -> bool:
     return _native.text.is_cjk_text(text.encode("utf-8", "surrogatepass"), threshold)
 
 
+def _needs_lossless_text_compat(text: str) -> bool:
+    """Whether the compiled legacy kernel would drop valid, useful characters."""
+    if text.isascii():
+        return False
+    if "\u200c" in text or "\u200d" in text:
+        return True
+    return any(
+        (cp := ord(ch)) == 0xFFFD
+        or 0xE000 <= cp <= 0xF8FF
+        or 0xF0000 <= cp <= 0xFFFFD
+        or 0x100000 <= cp <= 0x10FFFD
+        for ch in text
+    )
+
+
 def clean_text(text: str, keep_newlines: bool = True) -> str:
     """Mirror of safety_check.py::clean_text (zero-width, controls, NFC,
     strip)."""
     s = text if isinstance(text, str) else str(text)
-    if not use_native("TEXT") or _native is None:
+    if (
+        not use_native("TEXT")
+        or _native is None
+        or "\u200c" in s
+        or "\u200d" in s
+    ):
         return _compat_clean_text(s, keep_newlines)
     data = s.encode("utf-8", "surrogatepass")
     out = _native.text.clean_text(data, keep_newlines)
@@ -224,7 +234,7 @@ def sanitize_for_tokenizer(
     survived) -> sanitize_post_nfc.
     """
     s = text if isinstance(text, str) else str(text)
-    if not use_native("TEXT") or _native is None:
+    if not use_native("TEXT") or _native is None or _needs_lossless_text_compat(s):
         return _compat_sanitize_for_tokenizer(
             s, max_chars=max_chars, max_repeat=max_repeat, truncate_msg=truncate_msg
         )

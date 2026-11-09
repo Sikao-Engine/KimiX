@@ -610,8 +610,8 @@ kaos_path = make_kaos_dir("./my_folder")
 from kimix.utils.prompt_str import escape_file_paths, clean_text
 
 # Sanitize prompt text: detect file paths and wrap in backticks,
-# strip invalid unicode surrogates/noncharacters/PUA, remove invisible chars,
-# normalize Unicode (NFKC), convert full-width to half-width, remove emojis,
+# strip invalid Unicode surrogates/noncharacters and unsafe invisible chars,
+# normalize Unicode (NFKC), convert full-width to half-width, preserve emoji/PUA,
 # collapse repeated punctuation, dedupe long character runs, and normalize whitespace.
 # Paths already inside quotes/backticks/brackets, URLs, pure fractions and bare dates
 # are left untouched; markdown fenced/inline code is preserved verbatim.

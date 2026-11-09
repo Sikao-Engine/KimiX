@@ -27,10 +27,12 @@ def clean_text(text: str, keep_newlines: bool = True) -> str:
     Remove invisible/hidden characters from text.
 
     Targets:
-    - Zero-width characters (\u200b, \u200c, \u200d, \ufeff, \u2060, etc.)
+    - Zero-width padding (\u200b, \ufeff, \u2060, etc.)
     - PDF/Word hidden format characters
     - Most C0/C1 control characters
     - Soft hyphens, directional marks, override chars
+
+    Semantic joiners (ZWNJ/ZWJ) and variation selectors are preserved.
 
     Args:
         text: Raw input string.
@@ -62,12 +64,13 @@ def sanitize_for_tokenizer(
     1. Coerce to ``str``.
     2. Remove surrogates (U+D800-U+DFFF) – invalid Unicode scalars.
     3. Remove noncharacters (U+FDD0-U+FDEF, U+FFFE, U+FFFF, …).
-    4. Remove Private Use Area (PUA) glyphs – tokenizers have no vocab for them.
-    5. Collapse consecutive replacement chars (U+FFFD).
-    6. Run :func:`clean_text` (zero-width chars, controls, NFC).
-    7. Collapse extreme character repetition (e.g. ``"A" * 10_000``).
-    8. Truncate to *max_chars* if > 0.
-    9. Strip leading/trailing whitespace.
+    4. Run :func:`clean_text` (unsafe invisible chars, controls, NFC).
+    5. Collapse extreme character repetition (e.g. ``"A" * 10_000``).
+    6. Truncate to *max_chars* if > 0.
+    7. Strip leading/trailing whitespace.
+
+    Valid emoji, ZWJ/ZWNJ sequences, private-use glyphs, and U+FFFD are
+    preserved because they can carry meaningful content.
 
     Args:
         text: Raw input.

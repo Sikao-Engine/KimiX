@@ -322,6 +322,23 @@ def _looks_like_readfile_text(text: str) -> bool:
     return substantial > 0 and numbered == substantial
 
 
+def _prefilter_tool_result_text(text: str, tool_name: str) -> str:
+    """Apply KimiX's stricter prefilter to arbitrary process output.
+
+    ``kimi-cli-x`` can also be installed without the outer ``kimix`` package;
+    in that configuration the existing general sanitizer remains the fallback.
+    The import is local to avoid a ``kimix.utils`` / ``KimiToolset`` import
+    cycle during application startup.
+    """
+    try:
+        from kimix.utils.prompt_str import prefilter_tool_result
+    except ModuleNotFoundError as exc:
+        if exc.name and (exc.name == "kimix" or exc.name.startswith("kimix.")):
+            return text
+        raise
+    return prefilter_tool_result(text, tool_name=tool_name)
+
+
 def _sanitize_tool_output_text(text: str) -> str:
     """Sanitize tool-output text without eating the first line's padding.
 
@@ -1822,18 +1839,26 @@ class KimiToolset:
                         )
 
                     ret = await tool.call(repaired_arguments)
+                    ret.message = _prefilter_tool_result_text(ret.message, tool_name)
+                    if ret.is_error and not ret.message:
+                        # ToolResult's message converter otherwise falls back to
+                        # the unfiltered display brief for an empty error message.
+                        ret.message = "Tool call failed; its message was not text-safe."
                     if isinstance(ret.output, str):
+                        ret.output = _prefilter_tool_result_text(ret.output, tool_name)
                         ret.output = _sanitize_tool_output_text(ret.output)
                     elif isinstance(ret.output, list):
                         sanitized_parts: list[ContentPart] = []
                         for part in ret.output:
                             if isinstance(part, TextPart):
-                                cleaned = sanitize_for_tokenizer(part.text)
+                                cleaned = _prefilter_tool_result_text(part.text, tool_name)
+                                cleaned = sanitize_for_tokenizer(cleaned)
                                 if cleaned:
                                     part.text = cleaned
                                     sanitized_parts.append(part)
                             elif isinstance(part, ThinkPart):
-                                cleaned = sanitize_for_tokenizer(part.think)
+                                cleaned = _prefilter_tool_result_text(part.think, tool_name)
+                                cleaned = sanitize_for_tokenizer(cleaned)
                                 if cleaned:
                                     part.think = cleaned
                                     sanitized_parts.append(part)
@@ -1970,7 +1995,9 @@ class KimiToolset:
                     )
                     return ToolResult(
                         tool_call_id=tool_call.id,
-                        return_value=ToolRuntimeError(str(e)),
+                        return_value=ToolRuntimeError(
+                            _prefilter_tool_result_text(str(e), tool_name)
+                        ),
                     )
 
                 tool_elapsed = time.monotonic() - t0

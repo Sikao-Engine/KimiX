@@ -1,9 +1,13 @@
 """Tests for prompt_str utilities."""
 
 from unittest.mock import patch
+
+import pytest
+
 from kimix.utils.prompt_str import (
-    escape_file_paths,
     clean_text,
+    escape_file_paths,
+    prefilter_tool_result,
 )
 
 
@@ -27,13 +31,13 @@ class TestEscapeFilePaths:
         text = "hello\ud800world"
         assert escape_file_paths(text) == "helloworld"
 
-    def test_replacement_chars_removed(self):
+    def test_replacement_chars_preserved(self):
         text = "hello\ufffdworld"
-        assert escape_file_paths(text) == "helloworld"
+        assert escape_file_paths(text) == text
 
-    def test_pua_removed(self):
+    def test_pua_preserved(self):
         text = "hello\ue000world"
-        assert escape_file_paths(text) == "helloworld"
+        assert escape_file_paths(text) == text
 
     def test_noncharacters_removed(self):
         text = "hello\ufdd0world"
@@ -116,13 +120,12 @@ class TestEscapeFilePaths:
     def test_empty_string(self):
         assert escape_file_paths("") == ""
 
-    def test_symbols_removed_by_default(self):
+    def test_punctuation_normalized_and_emoji_preserved(self):
         text = "hello!!!??? 😀 world"
         result = escape_file_paths(text)
         assert "!!!" not in result
         assert "???" not in result
-        assert "😀" not in result
-        assert result == "hello! world"
+        assert result == "hello! 😀 world"
 
     def test_encoding_normalized_by_default(self):
         text = "ＡＩ hello"
@@ -147,7 +150,7 @@ class TestEscapeFilePaths:
     def test_combined_normalization(self):
         text = "  Hello    World!!! 😀  \n\n  "
         result = escape_file_paths(text, case_mode="lower")
-        assert result == "hello world!"
+        assert result == "hello world! 😀"
 
     @patch("kimix.utils.prompt_str.Path.exists", return_value=True)
     def test_path_escape_with_whitespace_collapsed(self, mock_exists):
@@ -170,7 +173,7 @@ class TestEscapeFilePaths:
     def test_all_normalizations_together(self):
         text = "  HELLO    WORLD!!! 😀  \n\n  "
         result = escape_file_paths(text, case_mode="lower")
-        assert result == "hello world!"
+        assert result == "hello world! 😀"
 
     def test_empty_string_with_case_mode(self):
         assert escape_file_paths("", case_mode="lower") == ""
@@ -184,12 +187,10 @@ class TestEscapeFilePaths:
         result = escape_file_paths(text)
         assert result == "price is 123"
 
-    def test_zero_width_removed_via_symbols(self):
+    def test_zero_width_space_removed_but_zwnj_preserved(self):
         text = "hello\u200b\u200c world"
         result = escape_file_paths(text)
-        assert "\u200b" not in result
-        assert "\u200c" not in result
-        assert result == "hello world"
+        assert result == "hello\u200c world"
 
     def test_tabs_collapsed(self):
         text = "a\t\t\tb"
@@ -221,7 +222,7 @@ class TestEscapeFilePaths:
         text = "Check  src/kimix/utils.py   for  details!!! 😀 "
         result = escape_file_paths(text, case_mode="lower")
         assert "`src/kimix/utils.py`" in result
-        assert result == "check `src/kimix/utils.py` for details!"
+        assert result == "check `src/kimix/utils.py` for details! 😀"
 
     def test_code_block_preserved_with_all_normalizations(self):
         text = "```python\n  x = 1\n```\n  HELLO    WORLD!!! 😀  "
@@ -230,10 +231,10 @@ class TestEscapeFilePaths:
         assert "hello world!" in result
 
     def test_inline_code_preserved_with_all_normalizations(self):
-        text = "`  HELLO  `   WORLD!!! 😀"
+        text = "`  HELLO  ` WORLD!!! 😀"
         result = escape_file_paths(text, case_mode="lower")
         assert "`  HELLO  `" in result
-        assert "world!" in result
+        assert result.endswith("world! 😀")
 
     def test_dedupe_repeats_with_whitespace_collapsed(self):
         text = "A" * 200 + "    " + "B" * 200
@@ -256,17 +257,18 @@ class TestEscapeFilePaths:
         assert escape_file_paths("深度学习") == "深度学习"
 
     def test_chinese_with_emoji(self):
-        # Regression: CJK chars must NOT be swallowed by _EMOJI_RE.
         text = "你好😀世界"
-        result = escape_file_paths(text)
-        assert "😀" not in result
-        assert result == "你好世界"
+        assert escape_file_paths(text) == text
+
+    def test_emoji_sequences_and_valid_special_characters_preserved(self):
+        text = "family 👨\u200d👩\u200d👧 keycap 1\ufe0f\u20e3 Powerline \ue0b0 replacement \ufffd"
+        assert escape_file_paths(text) == text
 
 
 class TestCleanText:
-    def test_remove_zero_width(self):
+    def test_remove_invisible_padding_but_preserve_joiners(self):
         text = "a\u200bb\u200cc\u200dd\ufeffe"
-        assert clean_text(text) == "abcde"
+        assert clean_text(text) == "ab\u200cc\u200dde"
 
     def test_keep_newlines(self):
         text = "a\nb\tc"
@@ -275,6 +277,34 @@ class TestCleanText:
     def test_remove_newlines(self):
         text = "a\nb\tc"
         assert clean_text(text, keep_newlines=False) == "abc"
+
+
+class TestToolResultPrefilter:
+    @pytest.mark.parametrize(
+        "tool_name",
+        ("bash", "pwsh", "PowerShell", "python", "Run", "job_output", "sh", "shell"),
+    )
+    def test_process_tools_strip_tokenizer_hostile_unicode(self, tool_name):
+        text = "  before\x00\ud800\ufdd0\ue000\u0378\u061c\ufffd😀 after\t\n"
+
+        result = prefilter_tool_result(text, tool_name=tool_name)
+
+        # Only NUL, the surrogate, and the noncharacter are removed.  All
+        # valid/special content, including emoji and PUA glyphs, survives.
+        assert result == "  before\ue000\u0378\u061c\ufffd😀 after\t\n"
+        result.encode("utf-8")
+
+    def test_non_process_tools_are_unchanged(self):
+        text = "keep 😀 \u0378 \ud800 \x00 exactly"
+        assert prefilter_tool_result(text, tool_name="read") == text
+
+    def test_process_text_layout_and_normal_unicode_are_preserved(self):
+        text = "  中文\tＡＩ\nsecond line\r\n"
+        assert prefilter_tool_result(text, tool_name="bash") == text
+
+    def test_process_prefilter_is_idempotent(self):
+        once = prefilter_tool_result("a😀\u0378b\x00", tool_name="python")
+        assert prefilter_tool_result(once, tool_name="python") == once == "a😀\u0378b"
 
 
 class TestCodePlaceholders:

@@ -33,10 +33,12 @@ def clean_text(text: str, keep_newlines: bool = True) -> str:
     """Remove invisible/hidden characters from text.
 
     Targets:
-    - Zero-width characters (\u200b, \u200c, \u200d, \ufeff, \u2060, etc.)
+    - Zero-width padding (\u200b, \ufeff, \u2060, etc.)
     - PDF/Word hidden format characters
     - Most C0/C1 control characters
     - Soft hyphens, directional marks, override chars
+
+    Semantic joiners (ZWNJ/ZWJ) and variation selectors are preserved.
     """
     if not isinstance(text, str):
         text = str(text)
@@ -49,25 +51,58 @@ def clean_text(text: str, keep_newlines: bool = True) -> str:
 
 
 def _strip_invalid_unicode(text: str) -> str:
-    """Remove surrogates, noncharacters, PUA, and replacement chars in one pass."""
+    """Remove only lone surrogates and Unicode noncharacters.
+
+    Private-use characters, U+FFFD, emoji, and format characters are valid
+    Unicode and may carry meaning; they must not be silently discarded.
+    """
     result: list[str] = []
     append = result.append
     for ch in text:
         cp = ord(ch)
-        # Surrogates
         if 0xD800 <= cp <= 0xDFFF:
             continue
-        # Replacement char
-        if cp == 0xFFFD:
-            continue
-        # Noncharacters
         if 0xFDD0 <= cp <= 0xFDEF or (cp & 0xFFFF) in (0xFFFE, 0xFFFF):
-            continue
-        # PUA
-        if 0xE000 <= cp <= 0xF8FF or 0xF0000 <= cp <= 0xFFFFD or 0x100000 <= cp <= 0x10FFFD:
             continue
         append(ch)
     return "".join(result)
+
+
+# Tools that can return arbitrary process output.  Unlike ordinary structured
+# tool results, that output can contain binary decode artifacts and Unicode
+# code points which some provider tokenizers reject.
+_TOOL_RESULT_PREFILTER_TOOLS = frozenset({
+    "bash",
+    "job_output",
+    "powershell",
+    "pwsh",
+    "python",
+    "run",
+    "sh",
+    "shell",
+})
+
+
+def prefilter_tool_result(text: str, *, tool_name: str) -> str:
+    """Remove tokenizer-hostile characters from arbitrary process output.
+
+    This is an opt-in, tool-aware *prefilter*: callers should still apply
+    ``sanitize_for_tokenizer`` afterwards for whitespace, repeat, and size
+    handling.  Non-process tools are returned unchanged.
+
+    Only malformed Unicode (lone surrogates/noncharacters) and C0/C1 control
+    characters other than tabs/newlines are removed.  Valid emoji, private-use
+    glyphs, replacement markers, format controls, and unassigned code points
+    are left untouched.  No path escaping, case conversion, or whitespace
+    normalization is done here.
+    """
+    if tool_name.casefold() not in _TOOL_RESULT_PREFILTER_TOOLS:
+        return text
+
+    text = _strip_invalid_unicode(text)
+    return "".join(
+        ch for ch in text if ch in "\t\n\r" or unicodedata.category(ch) != "Cc"
+    )
 
 
 _DEDUPE_CACHE: dict[int, re.Pattern[str]] = {}
@@ -199,7 +234,6 @@ def _sanitize_text(text: str) -> str:
     # From remove_meaningless_symbols
     trans = str.maketrans("", "", _ZW_CHARS)
     text = text.translate(trans)
-    text = _remove_emoji(text)
     text = _REPEAT_PUNCT_RE.sub(r"\1", text)
     # From remove_redundant_whitespace – keep newlines, collapse horizontal
     # whitespace only.
@@ -261,60 +295,16 @@ def escape_file_paths(
 
 # ---- helpers for text cleaning ----
 
-def _remove_emoji(text: str) -> str:
-    """Remove emoji characters using rich's emoji codepoint database.
-
-    Uses a lazily-built ``str.translate()`` table from
-    ``rich._emoji_codes.EMOJI``, covering all named emoji, regional
-    indicators, skin-tone modifiers, VS-16, and ZWJ — so multi-codepoint
-    sequences (flags, ZWJ families, skin-tone variants) are fully removed.
-
-    More maintainable than a hardcoded regex — the codepoint set auto-updates
-    when rich is upgraded.
-    """
-    if not text:
-        return text
-    if _EMOJI_TRANSLATE is None:
-        _init_emoji_translate()
-    return text.translate(_EMOJI_TRANSLATE)
-
-
-_EMOJI_TRANSLATE: dict[int, None] | None = None
-
-
-def _init_emoji_translate() -> None:
-    """Build the emoji-strip translate table from rich's emoji database.
-
-    Only codepoints >= 0x2000 are included to avoid stripping ASCII digits,
-    ``#``, ``*``, ``©``, ``®`` (which appear as base chars for keycap/sequence
-    emoji in rich's data but must not be removed from general text).
-    """
-    global _EMOJI_TRANSLATE
-    from rich._emoji_codes import EMOJI
-    codepoints: set[int] = set()
-    for char in EMOJI.values():
-        for c in char:
-            cp = ord(c)
-            if cp >= 0x2000:
-                codepoints.add(cp)
-    _EMOJI_TRANSLATE = {cp: None for cp in codepoints}
-
 _PUNCT_CHARS = r"!?.。，,、;；:：…~～·\"\"''（）()【】\[\]{}《》<>「」『』〖〗｛｝［］\\|｜—–―"
 _REPEAT_PUNCT_RE = re.compile(
     r"([" + _PUNCT_CHARS + r"])"
     r"[" + _PUNCT_CHARS + r"]{2,}"
 )
 
-_ZW_CHARS = "".join(
-    chr(c)
-    for c in (
-        0x200B, 0x200C, 0x200D, 0xFEFF, 0x2060, 0x00AD,
-        0x034F, 0x180B, 0x180C, 0x180D,
-        0xFE00, 0xFE01, 0xFE02, 0xFE03, 0xFE04, 0xFE05,
-        0xFE06, 0xFE07, 0xFE08, 0xFE09, 0xFE0A, 0xFE0B,
-        0xFE0C, 0xFE0D, 0xFE0E, 0xFE0F,
-    )
-)
+# Only remove invisible characters that do not contribute to grapheme
+# formation.  ZWNJ/ZWJ, combining grapheme joiners, and variation selectors
+# are valid, meaningful components of text and emoji sequences.
+_ZW_CHARS = "".join(chr(c) for c in (0x200B, 0xFEFF, 0x2060, 0x00AD))
 
 
 def _extract_code(text: str) -> tuple[str, list[tuple[str, str]]]:

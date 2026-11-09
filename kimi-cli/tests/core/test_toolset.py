@@ -1112,6 +1112,25 @@ class _EchoTool(CallableTool2[DummyParams]):
         return ToolOk(output=params.value)
 
 
+class _BashEchoTool(_EchoTool):
+    name: str = "bash"
+
+    async def __call__(self, params: DummyParams) -> ToolReturnValue:
+        return ToolOk(output=params.value, message=params.value)
+
+
+class _BashPartEchoTool(_BashEchoTool):
+    async def __call__(self, params: DummyParams) -> ToolReturnValue:
+        return ToolOk(output=[TextPart(text=params.value)], message=params.value)
+
+
+class _BashRuntimeErrorTool(_EchoTool):
+    name: str = "bash"
+
+    async def __call__(self, params: DummyParams) -> ToolReturnValue:
+        raise RuntimeError(params.value)
+
+
 def test_max_output_bytes_fallback_without_runtime():
     """Without a runtime the byte budget falls back to the original 128 KiB."""
     ts = KimiToolset()
@@ -1230,6 +1249,53 @@ async def test_small_string_output_is_returned_normally():
     assert isinstance(result, asyncio.Task)
     tr = await result
     assert tr.return_value.output == small_output
+
+
+async def test_process_output_and_message_receive_unicode_prefilter():
+    ts = KimiToolset()
+    ts.add(_BashEchoTool())
+    hostile = "before😀👨\u200d👩\u200d👧\ue0b0\u0378\ud800\ufdd0after"
+    preserved = "before😀👨\u200d👩\u200d👧\ue0b0\u0378after"
+
+    tr = await _call_echo(ts, "bash", hostile, "tc-bash-prefilter")
+
+    assert tr.return_value.output == preserved
+    assert tr.return_value.message == preserved
+    tr.return_value.output.encode("utf-8")
+    tr.return_value.message.encode("utf-8")
+
+
+async def test_process_content_parts_receive_unicode_prefilter():
+    ts = KimiToolset()
+    ts.add(_BashPartEchoTool())
+
+    tr = await _call_echo(ts, "bash", "before😀\u0378after", "tc-bash-part-prefilter")
+
+    assert isinstance(tr.return_value.output, list)
+    assert len(tr.return_value.output) == 1
+    part = tr.return_value.output[0]
+    assert isinstance(part, TextPart)
+    assert part.text == "before😀\u0378after"
+
+
+async def test_non_process_output_does_not_receive_process_prefilter():
+    ts = KimiToolset()
+    ts.add(_EchoTool())
+    output = "before😀\u0378after"
+
+    tr = await _call_echo(ts, "EchoTool", output, "tc-echo-no-prefilter")
+
+    assert tr.return_value.output == output
+
+
+async def test_process_runtime_error_message_receives_unicode_prefilter():
+    ts = KimiToolset()
+    ts.add(_BashRuntimeErrorTool())
+
+    tr = await _call_echo(ts, "bash", "failure😀\u0378", "tc-bash-error-prefilter")
+
+    assert tr.return_value.is_error
+    assert tr.return_value.message == "Error running tool: failure😀\u0378"
 
 
 class _PartEchoTool(CallableTool2[DummyParams]):
