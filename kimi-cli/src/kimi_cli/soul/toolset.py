@@ -126,6 +126,8 @@ _READ_ONLY_BLOCKED_TOOLS: frozenset[str] = frozenset({
     "interrupt_agent",
     "workflow",
     "job_output",
+    "computer_use",
+    "browser_use",
 })
 """Tools that are forbidden when read_only=True."""
 

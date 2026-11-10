@@ -12,6 +12,8 @@ dependencies = [
     "typer>=0.24.1",
     "loguru>=0.6.0",
     "pillow>=12.2.0",
+    "playwright>=1.55.0",
+    "pywinauto>=0.6.9; sys_platform == 'win32'",
     "pyyaml>=6.0.3",
     "rich>=14.3.3",
     "streamingjson==0.0.5",
