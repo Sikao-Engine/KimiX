@@ -120,12 +120,19 @@ async def test_live_chromium_session_snapshot_input_tabs_and_screenshot(
             await tool(BrowserParams(action="navigate", session="live-test", url=url))
         )
         assert navigated["title"] == "Kimi browser fixture"
+        assert navigated["url"].startswith("data:text/html,[")
+        assert "never-expose-this" not in navigated["url"]
         snapshot = _payload(await tool(BrowserParams(action="snapshot", session="live-test")))
         name = next(item for item in snapshot["elements"] if item.get("name") == "name")
         password = next(
             item for item in snapshot["elements"] if item.get("input_type") == "password"
         )
+        assert name["label"] == "Name"
+        assert name["input_type"] == "text"
+        assert name["role"] == "text"
+        assert name["value"] == ""
         assert password["label"] == "[password field]"
+        assert password["value"] is None
         assert all(item["label"] != "Hidden" for item in snapshot["elements"])
         filled = _payload(
             await tool(
@@ -141,6 +148,9 @@ async def test_live_chromium_session_snapshot_input_tabs_and_screenshot(
         assert filled["verified"] is True
 
         snapshot = _payload(await tool(BrowserParams(action="snapshot", session="live-test")))
+        name = next(item for item in snapshot["elements"] if item.get("name") == "name")
+        assert name["label"] == "Name"
+        assert name["value"] == "Windows"
         button = next(item for item in snapshot["elements"] if item["tag"] == "button")
         await tool(
             BrowserParams(
@@ -151,7 +161,11 @@ async def test_live_chromium_session_snapshot_input_tabs_and_screenshot(
             )
         )
         extracted = _payload(
-            await tool(BrowserParams(action="extract", session="live-test", selector="#result"))
+            await tool(
+                BrowserParams(
+                    action="extract", session="live-test", selector="#result", attribute="text"
+                )
+            )
         )
         assert extracted["values"] == ["Hello Windows"]
 
@@ -166,7 +180,25 @@ async def test_live_chromium_session_snapshot_input_tabs_and_screenshot(
         )
         tabs = _payload(await tool(BrowserParams(action="list_tabs", session="live-test")))
         assert tabs["tab_count"] == 2
-        await tool(BrowserParams(action="close_tab", session="live-test", tab=2))
+        await tool(
+            BrowserParams(
+                action="new_tab",
+                session="live-test",
+                url="data:text/html,<title>Third</title>",
+            )
+        )
+        closed_background = _payload(
+            await tool(BrowserParams(action="close_tab", session="live-test", tab=2))
+        )
+        assert closed_background["title"] == "Third"
+        assert closed_background["tab_count"] == 2
+
+        # Simulate page script/user closing only the active tab. The next tool
+        # call must recover to the original tab without recreating the context.
+        await tool._manager.sessions["live-test"].page.close()
+        tabs = _payload(await tool(BrowserParams(action="list_tabs", session="live-test")))
+        assert tabs["tab_count"] == 1
+        assert tabs["tabs"][0]["title"] == "Kimi browser fixture"
     finally:
         result = await tool(BrowserParams(action="close", session="live-test"))
         assert not isinstance(result, ToolError), result.message

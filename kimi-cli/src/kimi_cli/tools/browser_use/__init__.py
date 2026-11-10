@@ -72,6 +72,7 @@ _MUTATING_ACTIONS = frozenset(
     }
 )
 _VERIFY_ACTIONS = frozenset({"click", "type", "press", "evaluate", "scroll"})
+_SNAPSHOT_INVALIDATING_ACTIONS = _MUTATING_ACTIONS - {"close"} | {"switch_tab", "wait"}
 _SESSION_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
 
@@ -105,7 +106,11 @@ class Params(BaseModel):
         default=None, description="Optional JSON-serializable argument for evaluate."
     )
     attribute: str | None = Field(
-        default=None, description="For extract: return this attribute instead of inner text."
+        default=None,
+        description=(
+            "For extract: return an HTML attribute such as href instead of inner text. "
+            "The convenience value 'text' is equivalent to omitting this field."
+        ),
     )
     all_matches: bool = Field(
         default=False, description="For extract: return up to max_items matches."
@@ -179,7 +184,10 @@ class BrowserUse(CallableTool2[Params]):
         "KIMI_ALLOW_PRIVATE_URLS=true. "
         "This is not a network sandbox: scripts and pages can make subsequent requests. Do not "
         "enter credentials or perform purchases/permission changes unless explicitly requested. "
-        "After verify_fresh_state or a timeout, inspect a fresh snapshot before any retry."
+        "Extract returns inner text by default; set attribute only for an actual HTML attribute "
+        "such as href (attribute='text' is also accepted as a text-extraction alias). After "
+        "verify_fresh_state or a timeout, inspect fresh state with a snapshot or targeted "
+        "extraction before any retry."
     )
     params: type[Params] = Params
 
@@ -371,14 +379,23 @@ class BrowserUse(CallableTool2[Params]):
                     if params.action == "wait"
                     else params.timeout
                 )
-                summary, image = await asyncio.wait_for(
-                    self._dispatch(params, state), timeout=timeout
-                )
+                try:
+                    summary, image = await asyncio.wait_for(
+                        self._dispatch(params, state), timeout=timeout
+                    )
+                finally:
+                    # A timed-out mutation may still have changed the page. Never
+                    # leave element handles available for a blind retry.
+                    if params.action in _SNAPSHOT_INVALIDATING_ACTIONS:
+                        await self._manager.invalidate_snapshot(state)
                 state.last_used = time.monotonic()
                 summary.update({"ok": True, "action": params.action})
                 if params.action in _VERIFY_ACTIONS:
                     summary.setdefault("verdict", "verify_fresh_state")
-                    summary["next_step"] = "Take a fresh snapshot before repeating input."
+                    summary["next_step"] = (
+                        "Inspect fresh state with a snapshot or targeted extraction before "
+                        "repeating input."
+                    )
                 if image is not None:
                     path = screenshot_path(self._session.dir, "browser_use", params.session)
                     return image_tool_ok(summary, image, path, include_image=self._include_images())

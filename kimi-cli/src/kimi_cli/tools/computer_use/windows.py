@@ -98,6 +98,8 @@ class CaptureResult:
     png_data: bytes | None
     elements: list[UIElement]
     truncated: bool = False
+    requested_mode: CaptureMode | None = None
+    warnings: list[str] = field(default_factory=list)
 
     def summary(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -115,6 +117,16 @@ class CaptureResult:
             "elements": [element.as_dict(self.origin) for element in self.elements[:100]],
             "truncated": self.truncated or len(self.elements) > 100,
         }
+        if self.requested_mode is not None and self.requested_mode != self.mode:
+            result["requested_mode"] = self.requested_mode
+            result["degraded"] = True
+            result["next_step"] = (
+                "Continue with mode='ax' on a specific window. app='screen' requires image "
+                "capture in every mode; use list_windows once to choose a window_id. "
+                "list_apps only groups those same windows and cannot reveal new targets."
+            )
+        if self.warnings:
+            result["warnings"] = self.warnings
         if self.png_data is not None:
             result["coordinate_system"] = (
                 "Coordinates supplied to actions are relative to this screenshot's top-left."
@@ -229,7 +241,9 @@ class WindowsComputerBackend:
                     continue
                 title = self._title(window)
                 left, top, right, bottom = self._rectangle(window)
-                if not title and right <= left:
+                if right <= left or bottom <= top:
+                    # A visible UIA window with empty bounds cannot be captured
+                    # or targeted; omit it rather than returning an unusable ID.
                     continue
                 pid = int(window.process_id())
                 windows.append(
@@ -313,7 +327,12 @@ class WindowsComputerBackend:
                     "No active interactive Windows desktop is available.", "no_interactive_desktop"
                 ) from exc
         selector = f"app={app!r}, pid={pid}, window_id={window_id}"
-        raise ComputerBackendError(f"No visible window matches {selector}.", "window_not_found")
+        raise ComputerBackendError(
+            f"No visible window matches {selector}. If current list_windows output has no "
+            "match, do not repeat equivalent discovery calls; use a listed window or report "
+            "that the target is unavailable.",
+            "window_not_found",
+        )
 
     @staticmethod
     def _read_value(control: Any) -> str | None:
@@ -407,7 +426,15 @@ class WindowsComputerBackend:
         window_id: int | None = None,
     ) -> CaptureResult:
         if app and app.lower() == "screen":
-            image = ImageGrab.grab(all_screens=True)
+            try:
+                image = ImageGrab.grab(all_screens=True)
+            except OSError as exc:
+                raise ComputerBackendError(
+                    f"Full-screen image capture is unavailable: {exc}. app='screen' requires "
+                    "image capture in every mode, including mode='ax'. Use list_windows once, "
+                    "then capture a specific window_id with mode='ax' instead.",
+                    "screen_capture_unavailable",
+                ) from exc
             user32 = ctypes.windll.user32
             origin = (int(user32.GetSystemMetrics(76)), int(user32.GetSystemMetrics(77)))
             self._target = None
@@ -435,14 +462,26 @@ class WindowsComputerBackend:
             raise ComputerBackendError(
                 "The target window has no visible bounds.", "window_not_visible"
             )
+        requested_mode = mode
+        warnings: list[str] = []
         elements: list[UIElement] = []
         truncated = False
         if mode in {"som", "ax"}:
             elements, truncated = self._collect_elements(window)
         image: Image.Image | None = None
         if mode in {"som", "vision"}:
-            image = ImageGrab.grab(bbox=rect, all_screens=True)
-            if mode == "som":
+            try:
+                image = ImageGrab.grab(bbox=rect, all_screens=True)
+            except OSError as exc:
+                # Screen imaging can be unavailable in RDP, locked, or otherwise
+                # non-interactive sessions while UIA remains fully functional.
+                warnings.append(
+                    f"Screenshot capture failed ({exc}); returned accessibility elements only."
+                )
+                if mode == "vision":
+                    elements, truncated = self._collect_elements(window)
+                mode = "ax"
+            if image is not None and mode == "som":
                 self._draw_overlay(image, elements, (rect[0], rect[1]))
         self._target = window
         self._elements = elements
@@ -465,6 +504,8 @@ class WindowsComputerBackend:
             png_data=self._png(image) if image is not None else None,
             elements=elements,
             truncated=truncated,
+            requested_mode=requested_mode if requested_mode != mode else None,
+            warnings=warnings,
         )
 
     def capture_current(self, mode: CaptureMode) -> CaptureResult:
@@ -476,6 +517,13 @@ class WindowsComputerBackend:
             pid=int(self._target.process_id()),
             window_id=self._window_id(self._target),
         )
+
+    def invalidate_snapshot(self) -> None:
+        """Invalidate element IDs and coordinates after a mutation or uncertain outcome."""
+        self._elements = []
+        self._snapshot_id = ""
+        self._capture_origin = (0, 0)
+        self._capture_size = (0, 0)
 
     def _element(self, index: int, snapshot_id: str | None) -> UIElement:
         if not self._snapshot_id or not self._elements:
@@ -495,8 +543,11 @@ class WindowsComputerBackend:
             )
         element = self._elements[index - 1]
         try:
-            if element.control.element_info.handle is None:
-                raise ValueError("detached element")
+            # Many valid UIA elements (including taskbar buttons) are virtual and
+            # have no native HWND. Visibility checks detect detachment without
+            # incorrectly rejecting those controls.
+            if not element.control.is_visible():
+                raise ValueError("element is no longer visible")
         except Exception as exc:
             raise ComputerBackendError(
                 "The UI element is no longer available. Capture fresh state.", "stale_element"
@@ -528,9 +579,30 @@ class WindowsComputerBackend:
             self._target.set_focus()
             time.sleep(0.08)
         except Exception as exc:
+            detail = str(exc).strip() or "Windows returned no error details"
+            if "no active desktop" in detail.lower():
+                raise ComputerBackendError(
+                    "Windows foreground input requires an active interactive desktop.",
+                    "no_interactive_desktop",
+                ) from exc
             raise ComputerBackendError(
-                f"Could not focus the sticky window: {exc}", "focus_failed"
+                f"Could not focus the captured sticky window: {type(exc).__name__}: {detail}",
+                "focus_failed",
             ) from exc
+
+    @staticmethod
+    def _toggle_state(control: Any) -> bool | None:
+        """Read UIA TogglePattern state without making it an action prerequisite."""
+        try:
+            return bool(control.get_toggle_state())
+        except Exception:
+            return None
+
+    @staticmethod
+    def _toggle(control: Any) -> tuple[bool | None, bool | None]:
+        before = WindowsComputerBackend._toggle_state(control)
+        control.toggle()
+        return before, WindowsComputerBackend._toggle_state(control)
 
     def click(
         self,
@@ -555,15 +627,26 @@ class WindowsComputerBackend:
                     "button, double-click, or modifier input.",
                     "background_unavailable",
                 )
+            toggle_states: tuple[bool | None, bool | None] | None = None
             try:
                 if selected.role in _INVOKE_ROLES:
-                    selected.control.invoke()
-                    path = "uia_invoke"
+                    try:
+                        invoke_pattern = selected.control.iface_invoke
+                    except Exception:
+                        if selected.role not in {"Button", "SplitButton"}:
+                            raise
+                        # Windows 11 Start and other shell buttons expose
+                        # TogglePattern instead of InvokePattern.
+                        toggle_states = self._toggle(selected.control)
+                        path = "uia_toggle"
+                    else:
+                        invoke_pattern.Invoke()
+                        path = "uia_invoke"
                 elif selected.role in _SELECT_ROLES:
                     selected.control.select()
                     path = "uia_select"
                 elif selected.role == "CheckBox":
-                    selected.control.toggle()
+                    toggle_states = self._toggle(selected.control)
                     path = "uia_toggle"
                 else:
                     raise ComputerBackendError(
@@ -579,16 +662,54 @@ class WindowsComputerBackend:
                     f"retry: {exc}",
                     "background_action_failed",
                 ) from exc
+            label = selected.label or selected.role
+            message = f"Invoked element {selected.index} ({label})."
+            if toggle_states is not None and selected.role != "CheckBox":
+                message = (
+                    f"Sent a UIA toggle to element {selected.index} ({label}); the visible UI "
+                    "outcome remains unverified."
+                )
+            verified: bool | None = None
+            meta: dict[str, Any] = {
+                "element": selected.index,
+                "delivery_mode": delivery_mode,
+            }
+            if toggle_states is not None:
+                before, after = toggle_states
+                state_changed = before is not None and after is not None and before != after
+                # A checkbox's toggle state is its semantic value. For buttons
+                # such as Start it is only diagnostic: a changed button state
+                # does not prove that a menu/window opened or became actionable.
+                if selected.role == "CheckBox":
+                    verified = state_changed
+                meta.update(
+                    {"toggle_state_before": before, "toggle_state_after": after}
+                )
+                if selected.role != "CheckBox":
+                    meta["next_step"] = (
+                        "UIA toggle state is not proof of a visible UI transition. Capture "
+                        "fresh state; if the intended UI is unavailable, use another supported "
+                        "path or report the limitation instead of repeating this toggle."
+                    )
+                if before is not None and after is not None and before == after:
+                    verified = False
+                    message = (
+                        f"Sent a UIA toggle to element {selected.index} ({label}), but its "
+                        "reported toggle state did not change."
+                    )
             return ActionResult(
                 action="click",
-                message=f"Invoked element {selected.index} ({selected.label or selected.role}).",
+                message=message,
                 path=path,
-                meta={"element": selected.index, "delivery_mode": delivery_mode},
+                verified=verified,
+                effect="confirmed" if verified else "unverifiable",
+                meta=meta,
             )
 
         from pywinauto import keyboard, mouse
 
-        self._foreground_target()
+        # A pointer click establishes its own target/focus. Requiring SetFocus
+        # first breaks valid clicks on shell windows and across integrity levels.
         if selected is not None:
             x, y, width, height = selected.bounds
             absolute = (x + width // 2, y + height // 2)

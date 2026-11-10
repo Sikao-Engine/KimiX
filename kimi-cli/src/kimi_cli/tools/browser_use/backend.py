@@ -38,20 +38,32 @@ _SNAPSHOT_SCRIPT = r"""({selector, limit}) => {
             const style = window.getComputedStyle(element);
             if (style.visibility === 'hidden' || box.width <= 0 || box.height <= 0) continue;
             const tag = element.tagName.toLowerCase();
-            const inputType = (element.getAttribute('type') || '').toLowerCase();
+            // HTMLInputElement.type reflects the default 'text' type and
+            // normalizes invalid/missing values; the raw attribute does not.
+            const inputType = tag === 'input'
+                ? String(element.type || 'text').toLowerCase()
+                : (element.getAttribute('type') || '').toLowerCase();
             const password = tag === 'input' && inputType === 'password';
+            const associatedLabels = Array.from(element.labels || [])
+                .map(label => label.innerText || label.textContent || '')
+                .join(' ');
+            const hasValue = !password && ['input', 'textarea', 'select'].includes(tag);
+            const value = hasValue ? String(element.value) : '';
             const raw = element.getAttribute('aria-label')
+                || associatedLabels
                 || element.getAttribute('placeholder')
                 || element.innerText
                 || element.getAttribute('alt')
-                || ((!password && 'value' in element) ? String(element.value) : '')
-                || '';
+                || element.getAttribute('title')
+                || element.getAttribute('name')
+                || value;
             selected.push({element, details: {
                 tag,
                 role: element.getAttribute('role') || inputType || tag,
                 label: password
                     ? '[password field]'
                     : raw.replace(/\s+/g, ' ').trim().slice(0, 500),
+                value: hasValue ? value.slice(0, 500) : null,
                 name: element.getAttribute('name'),
                 input_type: inputType || null,
                 bounds: [
@@ -184,6 +196,15 @@ class BrowserManager:
             existing.last_used = time.monotonic()
             return existing
         if existing is not None:
+            # A page script or the user may close only the active tab. Preserve
+            # the isolated context and its other tabs instead of destroying them.
+            remaining = [page for page in existing.context.pages if not page.is_closed()]
+            if remaining:
+                existing.page = remaining[-1]
+                existing.page.set_default_timeout(self.config.timeout_ms)
+                await self._clear_snapshot(existing)
+                existing.last_used = time.monotonic()
+                return existing
             await self._close_session(existing)
 
         try:
@@ -200,6 +221,10 @@ class BrowserManager:
             raise BrowserBackendError(
                 f"Could not create browser session: {exc}", "session_create_failed"
             ) from exc
+
+    async def invalidate_snapshot(self, state: BrowserSession) -> None:
+        """Invalidate element handles after a mutation, including uncertain outcomes."""
+        await self._clear_snapshot(state)
 
     async def _clear_snapshot(self, state: BrowserSession) -> None:
         # Invalidate the snapshot before awaiting cleanup so no caller can observe
@@ -470,6 +495,10 @@ class BrowserManager:
         all_matches: bool,
         max_items: int,
     ) -> dict[str, Any]:
+        # Models commonly request attribute='text' when they want inner text.
+        # Treat it as an explicit alias rather than returning a missing HTML
+        # attribute and forcing a second extraction call.
+        attribute = None if attribute == "text" else attribute
         page = state.page
         truncated = False
         if selector is None:
@@ -536,9 +565,12 @@ class BrowserManager:
             target = pages[tab - 1]
         await target.close()
         await self._clear_snapshot(state)
-        remaining = state.context.pages
-        state.page = remaining[-1] if remaining else await state.context.new_page()
-        state.page.set_default_timeout(self.config.timeout_ms)
+        # Closing a background tab must not unexpectedly switch the active page.
+        # Select a fallback only when the active page itself was closed.
+        if state.page.is_closed():
+            remaining = [page for page in state.context.pages if not page.is_closed()]
+            state.page = remaining[-1] if remaining else await state.context.new_page()
+            state.page.set_default_timeout(self.config.timeout_ms)
         return await self.info(state)
 
     async def list_tabs(self, state: BrowserSession) -> dict[str, Any]:

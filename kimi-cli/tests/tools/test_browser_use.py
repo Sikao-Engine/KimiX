@@ -35,6 +35,7 @@ def _tool(runtime: Any, session: Any, manager: Any) -> BrowserUse:
 
 
 def test_browser_schema_rejects_ambiguous_or_incomplete_actions() -> None:
+    assert "snapshot or targeted extraction" in BrowserUse.description
     with pytest.raises(ValidationError, match="navigate requires url"):
         Params(action="navigate")
     with pytest.raises(ValidationError, match="exactly one"):
@@ -72,6 +73,17 @@ def test_redirected_page_url_redacts_sensitive_query() -> None:
     )
 
 
+def test_data_url_output_is_compact_and_does_not_echo_markup() -> None:
+    output = url_for_output(
+        "data:text/html,<title>Fixture</title><input value='sensitive-form-value'>"
+    )
+
+    assert output.startswith("data:text/html,[")
+    assert output.endswith(" characters omitted]")
+    assert "sensitive-form-value" not in output
+    assert len(output) < 60
+
+
 def test_truncated_automation_output_remains_valid_json() -> None:
     result = json_text({"value": "x" * (MAX_RESULT_CHARS + 100)})
     payload = orjson.loads(result)
@@ -85,12 +97,29 @@ async def test_navigate_validates_once_then_uses_normalized_url(runtime: Any, se
     state = SimpleNamespace(last_used=0.0)
     manager.get_session = AsyncMock(return_value=state)
     manager.navigate = AsyncMock(return_value={"url": "about:blank", "title": ""})
+    manager.invalidate_snapshot = AsyncMock()
     tool = _tool(runtime, session, manager)
     result = await tool(Params(action="navigate", url="about:blank"))
     assert isinstance(result, ToolOk)
     manager.navigate.assert_awaited_once_with(state, "about:blank", "domcontentloaded")
     tool._approval.request.assert_awaited_once()
     assert tool._approval.request.await_args.args[1] == "browser_use:navigate"
+
+
+async def test_verify_action_allows_targeted_extraction_as_fresh_state(
+    runtime: Any, session: Any
+) -> None:
+    manager = MagicMock()
+    manager.get_session = AsyncMock(return_value=SimpleNamespace(last_used=0.0))
+    manager.click = AsyncMock(return_value={})
+    manager.invalidate_snapshot = AsyncMock()
+
+    result = await _tool(runtime, session, manager)(
+        Params(action="click", selector="#go")
+    )
+
+    assert isinstance(result, ToolOk)
+    assert "snapshot or targeted extraction" in orjson.loads(result.output)["next_step"]
 
 
 async def test_snapshot_is_read_only_and_does_not_request_approval(
@@ -104,6 +133,7 @@ async def test_snapshot_is_read_only_and_does_not_request_approval(
     assert isinstance(result, ToolOk)
     assert orjson.loads(result.output)["snapshot_id"] == "abc"
     tool._approval.request.assert_not_awaited()
+    manager.invalidate_snapshot.assert_not_called()
 
 
 async def test_close_does_not_start_a_browser(runtime: Any, session: Any) -> None:
@@ -139,12 +169,14 @@ async def test_timeout_is_unknown_and_action_is_not_replayed(runtime: Any, sessi
         return {}
 
     manager.navigate = AsyncMock(side_effect=slow_navigate)
+    manager.invalidate_snapshot = AsyncMock()
     result = await _tool(runtime, session, manager)(
         Params(action="navigate", url="about:blank", timeout=1)
     )
     assert isinstance(result, ToolError)
     assert "timeout_outcome_unknown" in result.message
     assert manager.navigate.await_count == 1
+    manager.invalidate_snapshot.assert_awaited_once_with(manager.get_session.return_value)
 
 
 def _browser_state(page: Any) -> Any:
@@ -155,6 +187,89 @@ def _browser_state(page: Any) -> Any:
         snapshot_id="",
         elements=[],
     )
+
+
+async def test_closed_active_tab_preserves_remaining_context() -> None:
+    manager = BrowserManager(BrowserConfig())
+    closed = MagicMock()
+    closed.is_closed.return_value = True
+    remaining = MagicMock()
+    remaining.is_closed.return_value = False
+    context = MagicMock()
+    context.pages = [remaining]
+    state = SimpleNamespace(
+        name="test",
+        context=context,
+        page=closed,
+        snapshot_id="old",
+        elements=[],
+        last_used=0.0,
+    )
+    manager.sessions["test"] = state
+    manager.close_idle_sessions = AsyncMock()
+    browser = MagicMock()
+    manager._ensure_browser = AsyncMock(return_value=browser)
+
+    result = await manager.get_session("test")
+
+    assert result is state
+    assert state.page is remaining
+    remaining.set_default_timeout.assert_called_once_with(manager.config.timeout_ms)
+    context.close.assert_not_called()
+    browser.new_context.assert_not_called()
+    assert state.snapshot_id == ""
+
+
+async def test_close_background_tab_preserves_active_page() -> None:
+    active = MagicMock()
+    active.is_closed.return_value = False
+    active.title = AsyncMock(return_value="Active")
+    active.url = "about:blank#active"
+    background = MagicMock()
+    background.is_closed.return_value = False
+    context = MagicMock()
+    context.pages = [active, background]
+
+    async def close_background() -> None:
+        background.is_closed.return_value = True
+        context.pages = [active]
+
+    background.close = AsyncMock(side_effect=close_background)
+    state = _browser_state(active)
+    state.context = context
+    manager = BrowserManager(BrowserConfig())
+
+    result = await manager.close_tab(state, 2)
+
+    assert state.page is active
+    assert result["title"] == "Active"
+    active.set_default_timeout.assert_not_called()
+    context.new_page.assert_not_called()
+
+
+async def test_close_active_tab_selects_last_remaining_page() -> None:
+    active = MagicMock()
+    active.is_closed.return_value = False
+    remaining = MagicMock()
+    remaining.is_closed.return_value = False
+    remaining.title = AsyncMock(return_value="Remaining")
+    remaining.url = "about:blank#remaining"
+    context = SimpleNamespace(pages=[active, remaining])
+
+    async def close_active() -> None:
+        active.is_closed.return_value = True
+        context.pages = [remaining]
+
+    active.close = AsyncMock(side_effect=close_active)
+    state = _browser_state(active)
+    state.context = context
+    manager = BrowserManager(BrowserConfig())
+
+    result = await manager.close_tab(state, 1)
+
+    assert state.page is remaining
+    assert result["title"] == "Remaining"
+    remaining.set_default_timeout.assert_called_once_with(manager.config.timeout_ms)
 
 
 async def test_snapshot_batches_dom_metadata_and_handle_discovery() -> None:
@@ -218,6 +333,21 @@ async def test_extract_batches_matches_in_one_locator_evaluation() -> None:
     locator.evaluate_all.assert_awaited_once()
     locator.count.assert_not_called()
     locator.nth.assert_not_called()
+
+
+async def test_extract_text_attribute_is_an_inner_text_alias() -> None:
+    page = MagicMock()
+    page.url = "about:blank"
+    page.title = AsyncMock(return_value="Fixture")
+    locator = MagicMock()
+    locator.evaluate_all = AsyncMock(return_value={"values": ["Hello"], "truncated": False})
+    page.locator = MagicMock(return_value=locator)
+    manager = BrowserManager(BrowserConfig())
+
+    result = await manager.extract(_browser_state(page), "#result", "text", False, 20)
+
+    assert result["values"] == ["Hello"]
+    assert locator.evaluate_all.await_args.args[1]["attribute"] is None
 
 
 async def test_clear_snapshot_invalidates_before_disposing_handles() -> None:

@@ -16,6 +16,9 @@ def url_for_output(url: str) -> str:
     """Remove credential-bearing query/fragment data before reporting a page URL."""
     try:
         parsed = urlsplit(url)
+        if parsed.scheme.lower() == "data":
+            media_type = parsed.path.partition(",")[0] or "text/plain"
+            return f"data:{media_type},[{len(url)} characters omitted]"
         if "@" in parsed.netloc:
             return urlunsplit(
                 (parsed.scheme, parsed.netloc.rsplit("@", 1)[-1], parsed.path, "", "")
