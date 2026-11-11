@@ -9,9 +9,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 from jinja2 import Environment as JinjaEnvironment
 from jinja2 import FileSystemLoader, StrictUndefined, TemplateError, UndefinedError
-from kaos.path import KaosPath
-from kosong.tooling import Toolset
 
+from kaos.path import KaosPath
 from kimi_cli.agentspec import load_agent_spec
 from kimi_cli.approval_runtime import ApprovalRuntime
 from kimi_cli.auth.oauth import OAuthManager
@@ -22,7 +21,9 @@ from kimi_cli.llm import LLM
 from kimi_cli.notifications import NotificationManager
 from kimi_cli.session import Session
 from kimi_cli.skill import (
+    ScopedSkillsRoot,
     Skill,
+    SkillRootsLoader,
     discover_skills_from_roots,
     format_skills_for_prompt,
     index_skills,
@@ -39,6 +40,7 @@ from kimi_cli.utils.logging import logger
 from kimi_cli.utils.path import is_within_directory
 from kimi_cli.vfs import VFS
 from kimi_cli.wire.root_hub import RootWireHub
+from kosong.tooling import Toolset
 
 if TYPE_CHECKING:
     from fastmcp.mcp_config import MCPConfig
@@ -74,6 +76,8 @@ class Runtime:
     skills: dict[str, Skill]
     additional_dirs: list[KaosPath]
     skills_dirs: list[KaosPath]
+    skill_roots_loader: SkillRootsLoader | None = None
+    """Resolve current skill roots when the skill tool refreshes its index."""
     subagent_store: SubagentStore | None = None
     approval_runtime: ApprovalRuntime | None = None
     root_wire_hub: RootWireHub | None = None
@@ -118,13 +122,17 @@ class Runtime:
     ) -> Runtime:
         environment = await Environment.detect()
 
+        async def load_skill_roots() -> list[ScopedSkillsRoot]:
+            return await resolve_skills_roots(
+                session.work_dir,
+                skills_dirs=skills_dirs,
+                merge_brands=config.merge_all_available_skills,
+                extra_skill_dirs=config.extra_skill_dirs or None,
+            )
+
         # Discover and format skills (grouped by scope for the system prompt).
-        scoped_roots = await resolve_skills_roots(
-            session.work_dir,
-            skills_dirs=skills_dirs,
-            merge_brands=config.merge_all_available_skills,
-            extra_skill_dirs=config.extra_skill_dirs or None,
-        )
+        # Keep the loader so the skill tool can also find roots created later.
+        scoped_roots = await load_skill_roots()
         # Canonicalize so symlinked skill directories match resolved paths
         skills_roots_canonical = [s.root.canonical() for s in scoped_roots]
         skills = await discover_skills_from_roots(scoped_roots)
@@ -201,6 +209,7 @@ class Runtime:
             skills_dirs=[
                 r for r in skills_roots_canonical if not is_within_directory(r, session.work_dir)
             ],
+            skill_roots_loader=load_skill_roots,
             subagent_store=SubagentStore(session),
             approval_runtime=ApprovalRuntime(),
             root_wire_hub=RootWireHub(),
@@ -231,6 +240,7 @@ class Runtime:
             # Share the same list reference so /add-dir mutations propagate to all agents
             additional_dirs=self.additional_dirs,
             skills_dirs=self.skills_dirs,
+            skill_roots_loader=self.skill_roots_loader,
             subagent_store=self.subagent_store,
             approval_runtime=self.approval_runtime,
             root_wire_hub=self.root_wire_hub,

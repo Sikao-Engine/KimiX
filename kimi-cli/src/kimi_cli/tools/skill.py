@@ -2,8 +2,9 @@
 
 The system prompt lists available skills as name + description only (no file
 paths). This tool lets the model fetch the full skill document on demand:
-look the requested name up in ``Runtime.skills`` (keyed by normalized name)
-and return the raw markdown of the skill's ``SKILL.md`` file.
+refresh ``Runtime.skills`` from its discovery roots, look the requested name up
+by normalized name, and return the raw markdown of the skill's ``SKILL.md``
+file. Filesystem metadata caching avoids reparsing unchanged skill directories.
 
 When the name is empty, the tool returns the list of skills available at the
 current work directory (name + description, grouped by scope), rendered the
@@ -15,8 +16,15 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from kimi_cli.skill import (
+    Skill,
+    SkillDiscoveryCache,
+    SkillRootsLoader,
+    format_skills_for_prompt,
+    index_skills,
+    normalize_skill_name,
+)
 from kimi_cli.soul.agent import Runtime
-from kimi_cli.skill import Skill, format_skills_for_prompt, normalize_skill_name
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
 _MAX_SKILL_MD_BYTES = 65536
@@ -52,8 +60,24 @@ class SkillTool(CallableTool2[Params]):
     def __init__(self, runtime: Runtime) -> None:
         super().__init__()
         self._skills: dict[str, Skill] = runtime.skills
+        # Lightweight runtimes used by embedders may only provide the startup
+        # snapshot. Full CLI runtimes also provide a loader for dynamic discovery.
+        self._skill_roots_loader: SkillRootsLoader | None = getattr(
+            runtime, "skill_roots_loader", None
+        )
+        self._discovery_cache = SkillDiscoveryCache()
+
+    async def _refresh_skills(self) -> None:
+        if self._skill_roots_loader is None:
+            return
+        roots = await self._skill_roots_loader()
+        skills = await self._discovery_cache.discover(roots)
+        # Preserve the dictionary identity: subagent runtimes share this index.
+        self._skills.clear()
+        self._skills.update(index_skills(skills))
 
     async def __call__(self, params: Params) -> ToolReturnValue:
+        await self._refresh_skills()
         if not params.name.strip():
             return ToolOk(
                 output=format_skills_for_prompt(self._skills.values()),

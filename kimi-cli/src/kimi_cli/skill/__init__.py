@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from stat import S_ISDIR
 from typing import Literal, cast
+
+from pydantic import BaseModel, ConfigDict, Field
 
 from kaos import get_current_kaos
 from kaos.local import local_kaos
 from kaos.path import KaosPath
-from pydantic import BaseModel, ConfigDict, Field
-
 from kimi_cli import logger
 from kimi_cli.utils.frontmatter import parse_frontmatter
 
@@ -35,6 +37,10 @@ class ScopedSkillsRoot:
 
     root: KaosPath
     scope: SkillScope
+
+
+type SkillRootsLoader = Callable[[], Awaitable[list[ScopedSkillsRoot]]]
+"""Resolve the current roots, including directories created after startup."""
 
 
 def get_builtin_skills_dir() -> Path:
@@ -535,6 +541,110 @@ async def discover_skills(
         )
 
     return sorted(skills_by_name.values(), key=lambda s: s.name)
+
+
+type _PathMarker = tuple[int, int, int, int, float, float]
+"""Metadata used to detect changes without rereading a skill document."""
+
+
+type _PathMarkers = dict[str, _PathMarker | None]
+
+
+@dataclass(frozen=True, slots=True)
+class _SkillRootCacheEntry:
+    skills: list[Skill]
+    markers: _PathMarkers
+
+
+async def _path_marker(path: KaosPath) -> _PathMarker:
+    """Return metadata that changes when a file or directory is modified."""
+    stat = await path.stat()
+    return (
+        stat.st_mode,
+        stat.st_ino,
+        stat.st_dev,
+        stat.st_size,
+        stat.st_mtime,
+        stat.st_ctime,
+    )
+
+
+async def _skill_tree_markers(skills_dir: KaosPath) -> _PathMarkers | None:
+    """Snapshot metadata for the two directory levels used by skill discovery.
+
+    Root entries detect added, removed, and flat-file skills. Per-skill directory
+    markers detect a new SKILL.md in an existing directory, while SKILL.md file
+    markers detect in-place edits. No file contents are read here.
+    """
+    markers: _PathMarkers = {}
+    try:
+        markers[str(skills_dir)] = await _path_marker(skills_dir)
+        async for entry in skills_dir.iterdir():
+            marker = await _path_marker(entry)
+            markers[str(entry)] = marker
+            if not S_ISDIR(marker[0]):
+                continue
+            skill_md = entry / "SKILL.md"
+            try:
+                markers[str(skill_md)] = await _path_marker(skill_md)
+            except OSError:
+                # Keep missing files in the snapshot. Comparing path keys and
+                # None markers detects creation even on filesystems whose
+                # directory timestamps are too coarse to change immediately.
+                markers[str(skill_md)] = None
+    except OSError:
+        # Do not cache a partial snapshot. The next call must retry discovery.
+        return None
+    return markers
+
+
+class SkillDiscoveryCache:
+    """Cache discovered skills until their file or directory metadata changes.
+
+    Each call compares the direct directory listing and file metadata instead
+    of rereading and parsing every skill. Comparing path keys as well as marker
+    values also handles filesystems with coarse directory timestamps. A dirty
+    root is rediscovered independently, so a change in one skills directory
+    does not invalidate the other roots.
+    """
+
+    def __init__(self) -> None:
+        self._entries: dict[tuple[str, SkillScope], _SkillRootCacheEntry] = {}
+        self._lock = asyncio.Lock()
+
+    async def discover(
+        self,
+        scoped_roots: Iterable[ScopedSkillsRoot],
+    ) -> list[Skill]:
+        """Return current skills, rescanning only roots whose markers changed."""
+        async with self._lock:
+            roots = list(scoped_roots)
+            active_keys = {(str(scoped.root), scoped.scope) for scoped in roots}
+            self._entries = {
+                key: entry for key, entry in self._entries.items() if key in active_keys
+            }
+
+            skills_by_name: dict[str, Skill] = {}
+            for scoped in roots:
+                for skill in await self._discover_root(scoped):
+                    skills_by_name.setdefault(normalize_skill_name(skill.name), skill)
+            return sorted(skills_by_name.values(), key=lambda s: s.name)
+
+    async def _discover_root(self, scoped: ScopedSkillsRoot) -> list[Skill]:
+        key = (str(scoped.root), scoped.scope)
+        cached = self._entries.get(key)
+        if cached is not None:
+            current_markers = await _skill_tree_markers(scoped.root)
+            if current_markers is not None and current_markers == cached.markers:
+                return cached.skills
+
+        skills = await discover_skills(scoped.root, scope=scoped.scope)
+        markers = await _skill_tree_markers(scoped.root)
+        if markers is None:
+            self._entries.pop(key, None)
+        else:
+            self._entries[key] = _SkillRootCacheEntry(skills=skills, markers=markers)
+        return skills
 
 
 _DESCRIPTION_FALLBACK_MAX_LEN = 240
