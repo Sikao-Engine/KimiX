@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock
 import pytest
 from kosong.chat_provider import (
     APIConnectionError,
+    APIEmptyResponseError,
     APIStatusError,
+    ChatProviderError,
     StreamedMessagePart,
     ThinkingEffort,
     TokenUsage,
@@ -24,10 +26,17 @@ from kimi_cli.llm import LLM
 from kimi_cli.soul import SessionRestartRequired, run_soul
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
-from kimi_cli.soul.kimisoul import KimiSoul, _RETRY_WAIT
+from kimi_cli.soul.kimisoul import (
+    KimiSoul,
+    _RETRY_WAIT,
+    classify_api_error,
+    is_rate_limit_error,
+)
 from kimi_cli.utils.aioqueue import QueueShutDown
 from kimi_cli.wire import Wire
 from kimi_cli.wire.types import StepBegin, StepRetry
+
+import kimi_cli.soul.kimisoul as kimisoul_module
 
 
 class StaticStreamedMessage:
@@ -543,3 +552,208 @@ def test_non_api_error_uses_default_backoff() -> None:
     state = _FakeRetryState(attempt_number=1, exception=err)
     wait = _RETRY_WAIT(state)
     assert 0.3 <= wait <= 0.8
+
+
+# ---------------------------------------------------------------------------
+# Provider-agnostic throttling handling ("Too many requests")
+# ---------------------------------------------------------------------------
+
+_THROTTLING_PAYLOAD = (
+    "{'request_id': 'fo365898-0o4d-432c-b74a-3f6e19f229c3', "
+    "'code': 'Throttling', 'message': 'An error occurred in model serving, "
+    "error message is: [Too many requests.]'}"
+)
+"""The payload reported by the gateway that originally killed the turn.
+
+It carries no HTTP status code and is surfaced by kosong as a plain
+``ChatProviderError`` (an in-stream SSE error event converted by
+``convert_error``), so the step retry loop never saw a 429.
+"""
+
+
+class ThrottlingChatProviderErrorProvider:
+    """Raises a status-less throttling ``ChatProviderError`` for N attempts."""
+
+    name = "throttling-chat-provider-error"
+
+    def __init__(self, *, failures: int = 1) -> None:
+        self.generate_attempts = 0
+        self.failures = failures
+
+    @property
+    def model_name(self) -> str:
+        return "throttling-chat-provider-error"
+
+    @property
+    def thinking_effort(self) -> ThinkingEffort | None:
+        return None
+
+    async def generate(
+        self,
+        system_prompt: str,
+        tools: Sequence[Tool],
+        history: Sequence[Message],
+    ) -> StaticStreamedMessage:
+        self.generate_attempts += 1
+        if self.generate_attempts <= self.failures:
+            raise ChatProviderError(_THROTTLING_PAYLOAD)
+        return StaticStreamedMessage([TextPart(text="throttle recovered")])
+
+    def with_thinking(self, effort: ThinkingEffort) -> Self:
+        return self
+
+
+class NonThrottlingChatProviderErrorProvider:
+    """Raises a deterministic ``ChatProviderError`` (must never be retried)."""
+
+    name = "non-throttling-chat-provider-error"
+
+    def __init__(self) -> None:
+        self.generate_attempts = 0
+
+    @property
+    def model_name(self) -> str:
+        return "non-throttling-chat-provider-error"
+
+    @property
+    def thinking_effort(self) -> ThinkingEffort | None:
+        return None
+
+    async def generate(
+        self,
+        system_prompt: str,
+        tools: Sequence[Tool],
+        history: Sequence[Message],
+    ) -> StaticStreamedMessage:
+        self.generate_attempts += 1
+        raise ChatProviderError("Invalid request: messages[0].role is missing")
+
+    def with_thinking(self, effort: ThinkingEffort) -> Self:
+        return self
+
+
+def _zero_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Skip the (multi-second) rate-limit backoff so tests stay fast."""
+    from tenacity import wait_none
+
+    monkeypatch.setattr(kimisoul_module, "_RETRY_WAIT", wait_none())
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        # Status-less throttling payload (in-stream SSE error event).
+        ChatProviderError(_THROTTLING_PAYLOAD),
+        # Gateway that reports throttling with a non-429 status.
+        APIStatusError(400, _THROTTLING_PAYLOAD),
+        # Canonical 429.
+        APIStatusError(429, "Too many requests"),
+    ],
+    ids=["statusless-payload", "400-throttling", "429"],
+)
+def test_is_rate_limit_error_recognizes_throttling(error: BaseException) -> None:
+    assert is_rate_limit_error(error) is True
+
+
+def test_is_rate_limit_error_sees_through_the_cause_chain() -> None:
+    wrapper = ChatProviderError("Error: upstream failure")
+    wrapper.__cause__ = APIStatusError(429, "Too many requests")
+    assert is_rate_limit_error(wrapper) is True
+
+
+def test_is_rate_limit_error_rejects_non_throttling_errors() -> None:
+    assert is_rate_limit_error(APIStatusError(400, "invalid request: bad tool schema")) is False
+    assert is_rate_limit_error(ChatProviderError("Invalid API key")) is False
+    assert is_rate_limit_error(APIConnectionError("connection reset")) is False
+    assert is_rate_limit_error(None) is False
+
+
+def test_is_retryable_error_covers_statusless_throttling() -> None:
+    assert KimiSoul._is_retryable_error(ChatProviderError(_THROTTLING_PAYLOAD)) is True
+    assert KimiSoul._is_retryable_error(APIStatusError(400, _THROTTLING_PAYLOAD)) is True
+    # Deterministic errors stay non-retryable.
+    assert KimiSoul._is_retryable_error(ChatProviderError("Invalid API key")) is False
+    assert KimiSoul._is_retryable_error(APIStatusError(400, "invalid request")) is False
+    # The pre-existing set keeps working.
+    assert KimiSoul._is_retryable_error(APIStatusError(503, "unavailable")) is True
+    assert KimiSoul._is_retryable_error(APIEmptyResponseError("think only")) is True
+
+
+def test_classify_api_error_labels_throttling_payloads_as_rate_limit() -> None:
+    assert classify_api_error(APIStatusError(400, _THROTTLING_PAYLOAD)) == ("rate_limit", 400)
+    assert classify_api_error(ChatProviderError(_THROTTLING_PAYLOAD)) == ("rate_limit", None)
+
+
+@pytest.mark.asyncio
+async def test_step_retries_throttling_chat_provider_error(
+    runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A "Too many requests" payload must be retried instead of failing the turn."""
+    _zero_wait(monkeypatch)
+    runtime.config.loop_control.max_retries_per_step = 3
+    provider = ThrottlingChatProviderErrorProvider(failures=2)
+    llm = LLM(chat_provider=provider, max_context_size=100_000, capabilities=set())
+    soul, context = _make_soul(runtime, llm, tmp_path)
+    seen: list[object] = []
+
+    await run_soul(
+        soul,
+        "trigger throttling retry",
+        lambda wire: _collect_ui_messages(wire, seen),
+        asyncio.Event(),
+    )
+
+    assert provider.generate_attempts == 3
+    assert context.history[-1].extract_text(" ").strip() == "throttle recovered"
+    retries = [msg for msg in seen if isinstance(msg, StepRetry)]
+    assert [retry.next_attempt for retry in retries] == [2, 3]
+    assert all(retry.status_code is None for retry in retries)
+
+
+@pytest.mark.asyncio
+async def test_step_throttling_exhaustion_requests_session_restart(
+    runtime: Runtime, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once the retry budget is spent the turn restarts instead of dying outright."""
+    _zero_wait(monkeypatch)
+    runtime.config.loop_control.max_retries_per_step = 2
+    provider = ThrottlingChatProviderErrorProvider(failures=99)
+    llm = LLM(chat_provider=provider, max_context_size=100_000, capabilities=set())
+    soul, _ = _make_soul(runtime, llm, tmp_path)
+
+    with pytest.raises(SessionRestartRequired) as exc_info:
+        await run_soul(soul, "trigger throttling exhaustion", _drain_ui_messages, asyncio.Event())
+
+    assert provider.generate_attempts == 2
+    assert "[rate limited]" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_step_non_rate_limit_chat_provider_error_is_not_retried(
+    runtime: Runtime, tmp_path: Path
+) -> None:
+    runtime.config.loop_control.max_retries_per_step = 5
+    provider = NonThrottlingChatProviderErrorProvider()
+    llm = LLM(chat_provider=provider, max_context_size=100_000, capabilities=set())
+    soul, _ = _make_soul(runtime, llm, tmp_path)
+
+    with pytest.raises(ChatProviderError):
+        await run_soul(soul, "trigger fatal provider error", _drain_ui_messages, asyncio.Event())
+
+    assert provider.generate_attempts == 1
+
+
+def test_rate_limit_wait_uses_rate_limit_budget_for_statusless_throttling() -> None:
+    state = _FakeRetryState(attempt_number=1, exception=ChatProviderError(_THROTTLING_PAYLOAD))
+    wait = _RETRY_WAIT(state)
+    # Rate-limit budget (initial 1.0s + up to 1.0s jitter), not the 0.3-0.8s
+    # default budget used for ordinary transient errors.
+    assert 1.0 <= wait <= 2.0
+
+
+def test_rate_limit_wait_honors_retry_after_down_the_cause_chain() -> None:
+    cause = APIStatusError(429, "rate limited", headers={"retry-after": "7"})
+    wrapper = ChatProviderError("Error: rate limited")
+    wrapper.__cause__ = cause
+    state = _FakeRetryState(attempt_number=1, exception=wrapper)
+    assert _RETRY_WAIT(state) == 7.0

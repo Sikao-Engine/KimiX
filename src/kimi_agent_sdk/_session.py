@@ -49,7 +49,16 @@ def _is_restartable_error(original_error: BaseException | None) -> bool:
         # keep the traditional restart behavior.
         return True
     if isinstance(original_error, APIStatusError):
-        return original_error.status_code in _RESTARTABLE_STATUS_CODES
+        if original_error.status_code in _RESTARTABLE_STATUS_CODES:
+            return True
+        # A throttling payload may arrive with a non-429 status (some gateways
+        # answer 400/403/500 with ``{"code": "Throttling", ...}``). The soul
+        # already retried it, so restarting on a fresh provider is the right
+        # next step rather than surfacing a transient failure to the user.
+        # Imported lazily to keep the SDK import graph free of kimisoul.
+        from kimi_cli.soul.kimisoul import is_rate_limit_error
+
+        return is_rate_limit_error(original_error)
     # Connection errors, timeouts, and other transient failures: restart.
     return True
 

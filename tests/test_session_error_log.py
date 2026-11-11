@@ -252,3 +252,36 @@ async def test_prompt_non_restartable_records_snapshot(
     # No "Connection lost" wire noise for deterministic errors.
     texts = [m.text for m in messages if isinstance(m, TextPart)]
     assert not any("Connection lost" in t for t in texts)
+
+
+# ---------------------------------------------------------------------------
+# Rate-limit classification feeds the restart decision
+# ---------------------------------------------------------------------------
+
+_THROTTLING_BODY = (
+    "{'request_id': 'fo365898-0o4d-432c-b74a-3f6e19f229c3', "
+    "'code': 'Throttling', 'message': 'An error occurred in model serving, "
+    "error message is: [Too many requests.]'}"
+)
+
+
+def test_is_restartable_error_treats_throttling_payloads_as_transient() -> None:
+    """A non-429 "Too many requests" body must not be treated as deterministic."""
+    from kimi_agent_sdk._session import _is_restartable_error
+
+    assert _is_restartable_error(APIStatusError(429, "Too many requests")) is True
+    assert _is_restartable_error(APIStatusError(400, _THROTTLING_BODY)) is True
+    assert _is_restartable_error(APIStatusError(500, _THROTTLING_BODY)) is True
+    # Deterministic client errors stay non-restartable.
+    assert _is_restartable_error(APIStatusError(400, "invalid request")) is False
+    assert _is_restartable_error(APITimeoutError("Request timed out")) is True
+    assert _is_restartable_error(None) is True
+
+
+def test_error_log_restartable_mirrors_throttling_detection() -> None:
+    from kimi_cli.soul.error_log import _restartable
+
+    assert _restartable(APIStatusError(429, "Too many requests")) is True
+    assert _restartable(APIStatusError(400, _THROTTLING_BODY)) is True
+    assert _restartable(APIStatusError(400, "invalid request")) is False
+    assert _restartable(None) is None

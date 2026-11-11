@@ -240,8 +240,111 @@ def _message_has_reasoning(message: Message | None) -> bool:
     )
 
 
+_RATE_LIMIT_MESSAGE_MARKERS: tuple[str, ...] = (
+    "too many requests",
+    "rate limit",
+    "rate-limit",
+    "rate_limit",
+    "ratelimit",
+    "throttl",  # throttle / throttled / throttling
+    "quota exceeded",
+    "quota_exceeded",
+    "requests per minute",
+    "reqs per minute",
+    "rpm limit",
+    "qps limit",
+    "overloaded",
+)
+"""Case-insensitive payload markers that identify a rate-limit / throttling
+response, independently of the transport that reported it.
+
+Backends disagree on how they report "slow down": a gateway may answer with an
+HTTP status other than 429 (400/403/500) and a body such as
+``{"request_id": "...", "code": "Throttling", "message": "An error occurred in
+model serving, error message is: [Too many requests.]"}``, while a streaming
+backend delivers the same payload as an in-stream SSE error event that
+``kosong`` surfaces as a plain ``ChatProviderError``.  Neither carries status
+429, so both used to escape :meth:`KimiSoul._is_retryable_error` and killed the
+whole turn on the first occurrence.  Matching the payload text keeps the retry
+decision correct no matter which layer produced the error.
+"""
+
+_MAX_ERROR_CHAIN_DEPTH = 5
+"""How many ``__cause__``/``__context__`` links to inspect when classifying."""
+
+
+def _error_chain(error: BaseException | None) -> list[BaseException]:
+    """Return *error* plus its ``__cause__`` / ``__context__`` chain.
+
+    Cycle-safe and depth-bounded: provider errors are frequently re-raised
+    (``raise ChatProviderError(...) from exc``), so the original status code or
+    payload often lives one or two links down.
+    """
+    chain: list[BaseException] = []
+    seen: set[int] = set()
+    current = error
+    while current is not None and len(chain) < _MAX_ERROR_CHAIN_DEPTH:
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        chain.append(current)
+        current = current.__cause__ or current.__context__
+    return chain
+
+
+def _status_code_of(error: BaseException) -> int | None:
+    """Best-effort HTTP status code of *error* (``None`` when absent)."""
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(error, "status", None)
+    if status is None:
+        return None
+    try:
+        return int(status)
+    except (TypeError, ValueError):
+        return None
+
+
+def _retry_after_seconds(error: BaseException | None) -> float | None:
+    """Return the ``Retry-After`` hint carried anywhere in *error*'s chain."""
+    for candidate in _error_chain(error):
+        value = getattr(candidate, "retry_after", None)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def is_rate_limit_error(error: BaseException | None) -> bool:
+    """Return ``True`` when *error* is (or wraps) a rate-limit response.
+
+    A rate limit is recognized either by the canonical ``429`` status code or
+    by a throttling marker in the message (see
+    :data:`_RATE_LIMIT_MESSAGE_MARKERS`).  The exception chain is inspected so
+    a wrapper such as ``ChatProviderError("Error: ...")`` raised ``from`` an
+    ``APIStatusError(429, ...)`` is still classified correctly.
+    """
+    if error is None:
+        return False
+    for candidate in _error_chain(error):
+        if _status_code_of(candidate) == 429:
+            return True
+        message = str(candidate).lower()
+        if any(marker in message for marker in _RATE_LIMIT_MESSAGE_MARKERS):
+            return True
+    return False
+
+
 class _RateLimitAwareWait(wait_base):
-    """Tenacity wait callable that honors ``Retry-After`` for 429 responses."""
+    """Tenacity wait callable that honors ``Retry-After`` for rate limits.
+
+    Rate-limit (429 / throttling payload) retries use a longer, independent
+    backoff budget than ordinary transient errors, because a provider that is
+    rejecting requests needs time to drain rather than a fast retry.
+    """
 
     def __init__(
         self,
@@ -265,9 +368,10 @@ class _RateLimitAwareWait(wait_base):
     def __call__(self, retry_state: RetryCallState) -> float:
         attempt = retry_state.attempt_number
         exception = retry_state.outcome.exception() if retry_state.outcome else None
-        if isinstance(exception, APIStatusError) and exception.status_code == 429:
-            if exception.retry_after is not None:
-                return float(min(exception.retry_after, self.max_retry_after))
+        if is_rate_limit_error(exception):
+            retry_after = _retry_after_seconds(exception)
+            if retry_after is not None:
+                return float(min(retry_after, self.max_retry_after))
             return min(
                 self.rate_limit_initial * (2 ** (attempt - 1))
                 + random.uniform(0, self.rate_limit_jitter),
@@ -297,6 +401,11 @@ def classify_api_error(e: Exception) -> tuple[str, int | None]:
             return "rate_limit", status_code
         if status in (401, 403):
             return "auth", status_code
+        if is_rate_limit_error(e):
+            # Non-429 status carrying a throttling payload (see
+            # ``is_rate_limit_error``): the step retry loop treats it as a
+            # transient rate limit, so reports/snapshots must agree.
+            return "rate_limit", status_code
         if status >= 500:
             return "5xx_server", status_code
         if 400 <= status < 500:
@@ -312,6 +421,10 @@ def classify_api_error(e: Exception) -> tuple[str, int | None]:
         return "timeout", None
     if isinstance(e, APIEmptyResponseError):
         return "empty_response", None
+    if is_rate_limit_error(e):
+        # Throttling delivered as a plain ``ChatProviderError`` (e.g. an
+        # in-stream error event with no HTTP status attached).
+        return "rate_limit", None
     return "other", None
 
 
@@ -1544,8 +1657,20 @@ class KimiSoul:
                 stop_reason="no_tool_calls",
                 assistant_message=Message(role="assistant", content=[]),
             )
-        except (APIStatusError, APIConnectionError, APITimeoutError) as e:
+        except Exception as e:
             # All retries exhausted for persistent API errors.
+            #
+            # Only transient failures reach the recovery path below:
+            # ``APIStatusError`` / ``APIConnectionError`` / ``APITimeoutError``
+            # (the historical set) plus anything whose payload says "rate
+            # limited" — a throttling response delivered as an in-stream SSE
+            # error event, with a non-429 status, or leaked by the SDK as a
+            # plain ``ChatProviderError``.  Every deterministic failure
+            # (invalid request, missing API key, loop-detected, cancellation,
+            # ...) re-sending cannot fix, so it keeps propagating as before.
+            transient = isinstance(e, (APIStatusError, APIConnectionError, APITimeoutError))
+            if not transient and not is_rate_limit_error(e):
+                raise
             # Phase 4: context-overflow recovery loop (DSH port). A
             # provider-confirmed context-window-exceeded error force-compacts the
             # context and retries the step instead of immediately interrupting
@@ -1624,9 +1749,11 @@ class KimiSoul:
             # Existing generic handling: interrupt the session and restart with
             # the same user input.
             recovery_exhausted = getattr(e, "_kimi_recovery_exhausted", False)
+            rate_limited = is_rate_limit_error(e)
             restart_reason = (
                 f"Step {self._current_step_no}: {type(e).__name__}"
                 + (f" (status={e.status_code})" if isinstance(e, APIStatusError) else "")
+                + (" [rate limited]" if rate_limited else "")
                 + (" [connection recovery exhausted]" if recovery_exhausted else "")
                 + " — retries exhausted, restarting session"
             )
@@ -1642,6 +1769,7 @@ class KimiSoul:
                     "step_no": self._current_step_no,
                     "step_attempt": step_attempt,
                     "max_retries_per_step": max_attempts,
+                    "rate_limited": rate_limited,
                     "connection_recovery_exhausted": recovery_exhausted,
                     "context_overflow_retries_remaining": overflow_state.remaining,
                     "history_length_for_llm": len(effective_history),
@@ -2165,13 +2293,22 @@ class KimiSoul:
             return not bool(getattr(exception, "_kimi_recovery_exhausted", False))
         if isinstance(exception, APIEmptyResponseError):
             return True
-        return isinstance(exception, APIStatusError) and exception.status_code in (
+        if isinstance(exception, APIStatusError) and exception.status_code in (
+            408,  # Request Timeout
             429,  # Too Many Requests
             500,  # Internal Server Error
             502,  # Bad Gateway
             503,  # Service Unavailable
             504,  # Gateway Timeout
-        )
+            529,  # Site Overloaded (Anthropic-style capacity error)
+        ):
+            return True
+        # Provider-agnostic throttling fallback (see ``is_rate_limit_error``):
+        # some backends report a rate limit with a non-429 status or deliver it
+        # as a generic ``ChatProviderError`` (in-stream SSE error payload).
+        # Without this the very first "Too many requests" aborted the turn
+        # instead of being retried with backoff.
+        return is_rate_limit_error(exception)
 
     async def _run_with_connection_recovery(
         self,

@@ -377,7 +377,13 @@ def _restartable(error: BaseException | None) -> bool | None:
     if error is None:
         return None
     if isinstance(error, APIStatusError):
-        return error.status_code in frozenset({408, 429, 500, 502, 503, 504})
+        if error.status_code in frozenset({408, 429, 500, 502, 503, 504}):
+            return True
+        # Non-429 throttling payloads are retried by the soul and worth a
+        # restart too; import lazily because kimisoul imports this module.
+        from kimi_cli.soul.kimisoul import is_rate_limit_error
+
+        return is_rate_limit_error(error)
     return None
 
 
