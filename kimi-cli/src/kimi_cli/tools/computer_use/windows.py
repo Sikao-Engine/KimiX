@@ -52,14 +52,30 @@ _INTERACTIVE_ROLES = frozenset(
 )
 _INVOKE_ROLES = frozenset({"Button", "Hyperlink", "MenuItem", "SplitButton"})
 _SELECT_ROLES = frozenset({"ListItem", "RadioButton", "TabItem", "TreeItem"})
+_NO_INTERACTIVE_DESKTOP_MESSAGE = (
+    "Windows foreground input is unavailable because this process has no active interactive "
+    "desktop. No input was sent and the current snapshot remains valid; do not try another "
+    "foreground action in this session. Use supported UIA background actions or run from an "
+    "interactive desktop session."
+)
 
 
 class ComputerBackendError(RuntimeError):
     """An expected desktop error with a stable machine-readable code."""
 
-    def __init__(self, message: str, code: str = "desktop_error") -> None:
+    def __init__(
+        self,
+        message: str,
+        code: str = "desktop_error",
+        *,
+        preserve_snapshot: bool = False,
+    ) -> None:
         super().__init__(message)
         self.code = code
+        # Opt in only when the backend can prove that no input or UI mutation
+        # occurred. background_unavailable is reserved for delivery/capability
+        # validation before an action; every other failure defaults to conservative.
+        self.preserve_snapshot = preserve_snapshot or code == "background_unavailable"
 
 
 @dataclass(slots=True)
@@ -111,6 +127,7 @@ class CaptureResult:
             "window_title": self.window_title,
             "window_id": self.window_id,
             "pid": self.pid,
+            "capture_origin": list(self.origin),
             "width": self.width,
             "height": self.height,
             "element_count": len(self.elements),
@@ -127,10 +144,14 @@ class CaptureResult:
             )
         if self.warnings:
             result["warnings"] = self.warnings
+        result["coordinate_system"] = (
+            "Element bounds and action coordinates are relative to capture_origin, the "
+            "captured area's top-left."
+        )
         if self.png_data is not None:
-            result["coordinate_system"] = (
-                "Coordinates supplied to actions are relative to this screenshot's top-left."
-            )
+            result["coordinate_system"] += " Coordinates are relative to the included screenshot."
+        else:
+            result["coordinate_system"] += " No screenshot is included in this capture mode."
         return result
 
 
@@ -328,9 +349,10 @@ class WindowsComputerBackend:
                 ) from exc
         selector = f"app={app!r}, pid={pid}, window_id={window_id}"
         raise ComputerBackendError(
-            f"No visible window matches {selector}. If current list_windows output has no "
-            "match, do not repeat equivalent discovery calls; use a listed window or report "
-            "that the target is unavailable.",
+            f"No visible window matches {selector}. The sticky target and any existing snapshot "
+            "are unchanged: omit app/pid/window_id to inspect that target, or choose a current "
+            "list_windows entry. Do not repeat equivalent discovery calls; if current output has "
+            "no match, use a listed window or report that the target is unavailable.",
             "window_not_found",
         )
 
@@ -525,16 +547,22 @@ class WindowsComputerBackend:
         self._capture_origin = (0, 0)
         self._capture_size = (0, 0)
 
+    def _validate_snapshot_id(self, snapshot_id: str | None) -> None:
+        if snapshot_id is not None and snapshot_id != self._snapshot_id:
+            raise ComputerBackendError(
+                "The supplied snapshot ID is no longer current because an intervening action "
+                "or capture invalidated it. Capture fresh state and use its new element IDs, "
+                "coordinates, and snapshot_id; do not replay the old input.",
+                "stale_snapshot",
+                preserve_snapshot=True,
+            )
+
     def _element(self, index: int, snapshot_id: str | None) -> UIElement:
+        self._validate_snapshot_id(snapshot_id)
         if not self._snapshot_id or not self._elements:
             raise ComputerBackendError(
                 "No element snapshot exists. Call capture with mode='som' or mode='ax' first.",
                 "snapshot_required",
-            )
-        if snapshot_id is not None and snapshot_id != self._snapshot_id:
-            raise ComputerBackendError(
-                "The element belongs to an old snapshot. Capture fresh state before acting.",
-                "stale_snapshot",
             )
         if index < 1 or index > len(self._elements):
             raise ComputerBackendError(
@@ -554,7 +582,10 @@ class WindowsComputerBackend:
             ) from exc
         return element
 
-    def _absolute_coordinate(self, coordinate: tuple[int, int]) -> tuple[int, int]:
+    def _absolute_coordinate(
+        self, coordinate: tuple[int, int], snapshot_id: str | None = None
+    ) -> tuple[int, int]:
+        self._validate_snapshot_id(snapshot_id)
         if self._capture_size == (0, 0):
             raise ComputerBackendError(
                 "Capture a target before using coordinates.", "snapshot_required"
@@ -568,14 +599,42 @@ class WindowsComputerBackend:
             )
         return (self._capture_origin[0] + x, self._capture_origin[1] + y)
 
-    def _foreground_target(self) -> None:
+    @staticmethod
+    def _foreground_window_id() -> int:
+        user32 = ctypes.windll.user32
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        return int(user32.GetForegroundWindow() or 0)
+
+    @staticmethod
+    def _require_interactive_desktop() -> None:
+        """Preflight foreground input without moving the pointer or changing focus."""
+        user32 = ctypes.windll.user32
+        user32.OpenInputDesktop.restype = wintypes.HANDLE
+        user32.OpenInputDesktop.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        user32.CloseDesktop.restype = wintypes.BOOL
+        user32.CloseDesktop.argtypes = [wintypes.HANDLE]
+        # DESKTOP_READOBJECTS is sufficient to establish whether this thread can
+        # open the current input desktop. Never upgrade to a writable request.
+        desktop = user32.OpenInputDesktop(0, False, 0x0001)
+        if not desktop:
+            raise ComputerBackendError(
+                _NO_INTERACTIVE_DESKTOP_MESSAGE,
+                "no_interactive_desktop",
+                preserve_snapshot=True,
+            )
+        user32.CloseDesktop(desktop)
+
+    def _foreground_target(self, *, desktop_prechecked: bool = False) -> None:
         if self._target is None:
             raise ComputerBackendError(
                 "Capture or focus a window before foreground input.", "target_required"
             )
+        if not desktop_prechecked:
+            self._require_interactive_desktop()
         try:
-            if self._target.is_minimized():
-                self._target.restore()
+            # UIAWrapper.set_focus() already restores minimized windows and
+            # tolerates shell windows without WindowPattern. A separate
+            # is_minimized() probe rejects those windows before SetFocus().
             self._target.set_focus()
             time.sleep(0.08)
         except Exception as exc:
@@ -589,6 +648,19 @@ class WindowsComputerBackend:
                 f"Could not focus the captured sticky window: {type(exc).__name__}: {detail}",
                 "focus_failed",
             ) from exc
+        foreground = self._foreground_window_id()
+        expected = self._window_id(self._target)
+        if foreground != expected:
+            detail = (
+                "Windows reports no active foreground window"
+                if foreground == 0
+                else f"another window is foreground (hwnd={foreground}, expected={expected})"
+            )
+            raise ComputerBackendError(
+                f"Could not focus the captured sticky window: {detail}. No keyboard input was "
+                "sent; inspect fresh state before choosing another target.",
+                "focus_failed",
+            )
 
     @staticmethod
     def _toggle_state(control: Any) -> bool | None:
@@ -682,14 +754,14 @@ class WindowsComputerBackend:
                 # does not prove that a menu/window opened or became actionable.
                 if selected.role == "CheckBox":
                     verified = state_changed
-                meta.update(
-                    {"toggle_state_before": before, "toggle_state_after": after}
-                )
+                meta.update({"toggle_state_before": before, "toggle_state_after": after})
                 if selected.role != "CheckBox":
                     meta["next_step"] = (
                         "UIA toggle state is not proof of a visible UI transition. Capture "
-                        "fresh state; if the intended UI is unavailable, use another supported "
-                        "path or report the limitation instead of repeating this toggle."
+                        "fresh state before further input; omit app/pid/window_id to inspect "
+                        "the same sticky window, and use list_windows only when looking for a "
+                        "different window. If the intended UI remains unavailable, use another "
+                        "supported path or report the limitation instead of repeating this toggle."
                     )
                 if before is not None and after is not None and before == after:
                     verified = False
@@ -714,9 +786,12 @@ class WindowsComputerBackend:
             x, y, width, height = selected.bounds
             absolute = (x + width // 2, y + height // 2)
         elif coordinate is not None:
-            absolute = self._absolute_coordinate(coordinate)
+            absolute = self._absolute_coordinate(coordinate, snapshot_id)
         else:
             raise ComputerBackendError("click requires element or coordinate.", "target_required")
+        # Validate elements/coordinates first, then check before pressing modifiers:
+        # even a key-down is a mutation and would make snapshot preservation unsafe.
+        self._require_interactive_desktop()
         key_codes = {
             "ctrl": "LCONTROL",
             "control": "LCONTROL",
@@ -735,6 +810,20 @@ class WindowsComputerBackend:
                 mouse.double_click(button=button, coords=absolute)
             else:
                 mouse.click(button=button, coords=absolute)
+        except RuntimeError as exc:
+            # pywinauto's SetCursorPos wrapper raises this exact error before
+            # mouse_event. With no held modifiers, no input has been sent, so
+            # the same UIA snapshot is safe to reuse for a background action.
+            inactive_desktop = (
+                "no active desktop required for moving mouse cursor" in str(exc).lower()
+            )
+            if not held and inactive_desktop:
+                raise ComputerBackendError(
+                    _NO_INTERACTIVE_DESKTOP_MESSAGE,
+                    "no_interactive_desktop",
+                    preserve_snapshot=True,
+                ) from exc
+            raise
         finally:
             for key_code in reversed(held):
                 keyboard.send_keys("{" + key_code + " up}")
@@ -773,6 +862,28 @@ class WindowsComputerBackend:
             effect="confirmed" if verified else "unverifiable",
             meta={"element": element, "readback": readback},
         )
+
+    @staticmethod
+    def _send_keys(keys: str, **kwargs: Any) -> None:
+        from pywinauto import keyboard
+
+        try:
+            keyboard.send_keys(keys, **kwargs)
+        except RuntimeError as exc:
+            blocked = re.fullmatch(
+                r"SendInput\(\) inserted only 0 out of \d+ keyboard events",
+                str(exc).strip(),
+            )
+            if blocked:
+                raise ComputerBackendError(
+                    "Windows blocked every event in this foreground keyboard call "
+                    "(SendInput inserted 0 events). No keyboard events were inserted by this "
+                    "call, although window focus may already have changed. Inspect fresh state "
+                    "and use supported UIA background input instead of retrying foreground "
+                    "keyboard delivery in this session.",
+                    "input_blocked",
+                ) from exc
+            raise
 
     def type_text(
         self,
@@ -813,15 +924,13 @@ class WindowsComputerBackend:
                 meta={"element": element, "characters": len(text)},
             )
 
-        from pywinauto import keyboard
-
+        selected = self._element(element, snapshot_id) if element is not None else None
         self._foreground_target()
-        if element is not None:
-            selected = self._element(element, snapshot_id)
+        if selected is not None:
             selected.control.set_focus()
         escapes = {"{": "{{}", "}": "{}}", "^": "{^}", "%": "{%}", "+": "{+}", "~": "{~}"}
         literal = "".join(escapes.get(character, character) for character in text)
-        keyboard.send_keys(literal, with_spaces=True, with_newlines=True, pause=0.005)
+        self._send_keys(literal, with_spaces=True, with_newlines=True, pause=0.005)
         return ActionResult(
             action="type",
             message=f"Sent {len(text)} characters as foreground keyboard input.",
@@ -829,10 +938,8 @@ class WindowsComputerBackend:
         )
 
     def key(self, keys: str) -> ActionResult:
-        from pywinauto import keyboard
-
         self._foreground_target()
-        keyboard.send_keys(self.to_pywinauto_keys(keys), pause=0.02)
+        self._send_keys(self.to_pywinauto_keys(keys), pause=0.02)
         return ActionResult(
             action="key",
             message=f"Sent foreground key combination {keys}.",
@@ -844,11 +951,16 @@ class WindowsComputerBackend:
         direction: Literal["up", "down", "left", "right"],
         amount: int,
         coordinate: tuple[int, int] | None,
+        *,
+        snapshot_id: str | None = None,
     ) -> ActionResult:
         from pywinauto import mouse
 
+        self._validate_snapshot_id(snapshot_id)
+        coords = (
+            self._absolute_coordinate(coordinate, snapshot_id) if coordinate is not None else None
+        )
         self._foreground_target()
-        coords = self._absolute_coordinate(coordinate) if coordinate is not None else None
         button = {"up": "wheel", "down": "wheel", "left": "left_scroll", "right": "right_scroll"}[
             direction
         ]
@@ -870,12 +982,19 @@ class WindowsComputerBackend:
             path="win32_mouse_wheel",
         )
 
-    def drag(self, start: tuple[int, int], end: tuple[int, int], duration: float) -> ActionResult:
+    def drag(
+        self,
+        start: tuple[int, int],
+        end: tuple[int, int],
+        duration: float,
+        *,
+        snapshot_id: str | None = None,
+    ) -> ActionResult:
         from pywinauto import mouse
 
+        absolute_start = self._absolute_coordinate(start, snapshot_id)
+        absolute_end = self._absolute_coordinate(end, snapshot_id)
         self._foreground_target()
-        absolute_start = self._absolute_coordinate(start)
-        absolute_end = self._absolute_coordinate(end)
         mouse.press(coords=absolute_start)
         try:
             steps = max(2, int(duration / 0.02))
@@ -895,13 +1014,24 @@ class WindowsComputerBackend:
             path="win32_mouse",
         )
 
-    def focus_app(self, app: str, raise_window: bool) -> ActionResult:
-        window = self._resolve_window(app=app)
+    def focus_app(
+        self,
+        app: str | None,
+        raise_window: bool,
+        *,
+        pid: int | None = None,
+        window_id: int | None = None,
+    ) -> ActionResult:
+        window = self._resolve_window(app=app, pid=pid, window_id=window_id)
+        if raise_window:
+            # Refuse an unavailable input desktop before replacing the sticky
+            # target or discarding a still-reusable snapshot.
+            self._require_interactive_desktop()
         self._target = window
         self._elements = []
         self._snapshot_id = ""
         if raise_window:
-            self._foreground_target()
+            self._foreground_target(desktop_prechecked=True)
         return ActionResult(
             action="focus_app",
             message=(

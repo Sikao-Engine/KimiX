@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import io
 from types import SimpleNamespace
 from typing import Any
@@ -63,9 +64,15 @@ def _tool(runtime: Any, session: Any, backend: Any) -> ComputerUse:
     return ComputerUse(runtime, _approval(), session, backend=backend)
 
 
+def _allow_foreground(monkeypatch: pytest.MonkeyPatch, backend: WindowsComputerBackend) -> None:
+    """Reach the post-preflight behavior under test on a headless test host."""
+    monkeypatch.setattr(backend, "_require_interactive_desktop", MagicMock())
+
+
 def test_action_specific_schema_validation() -> None:
     assert "list_apps only groups the same visible windows" in ComputerUse.description
     assert "app='screen', which requires imaging in every mode" in ComputerUse.description
+    assert "do not retry foreground delivery in that session" in ComputerUse.description
     with pytest.raises(ValidationError, match="requires element or coordinate"):
         Params(action="click")
     with pytest.raises(ValidationError, match="set_value requires"):
@@ -74,6 +81,15 @@ def test_action_specific_schema_validation() -> None:
         Params(action="drag", from_element=1, from_coordinate=(0, 0), to_element=2)
     with pytest.raises(ValidationError, match="existing sticky target"):
         Params(action="type", text="hello", app="notepad")
+    with pytest.raises(ValidationError, match="existing sticky target"):
+        Params(action="key", keys="win", window_id=99)
+    with pytest.raises(ValidationError, match="existing sticky target"):
+        Params(action="click", element=1, pid=42)
+    with pytest.raises(ValidationError, match="focus_app requires app, pid, or window_id"):
+        Params(action="focus_app")
+    with pytest.raises(ValidationError, match="focus_app requires app, pid, or window_id"):
+        Params(action="focus_app", app="")
+    assert Params(action="focus_app", window_id=99).app is None
 
 
 def test_key_translation_is_explicit() -> None:
@@ -92,7 +108,24 @@ async def test_ax_capture_returns_relative_element_coordinates(runtime: Any, ses
     assert isinstance(result, ToolOk)
     payload = orjson.loads(result.output)
     assert payload["elements"][0]["bounds"] == [10, 20, 30, 20]
+    assert payload["capture_origin"] == [100, 200]
+    assert "relative to capture_origin" in payload["coordinate_system"]
+    assert "No screenshot is included" in payload["coordinate_system"]
     assert "screenshot_path" not in payload
+
+
+async def test_focus_app_forwards_exact_window_selectors(runtime: Any, session: Any) -> None:
+    backend = MagicMock()
+    backend.focus_app.return_value = ActionResult(
+        "focus_app", "focused", "uia_window", verified=True, effect="confirmed"
+    )
+
+    result = await _tool(runtime, session, backend)(
+        Params(action="focus_app", pid=6224, window_id=65850, raise_window=True)
+    )
+
+    assert isinstance(result, ToolOk)
+    backend.focus_app.assert_called_once_with(None, True, pid=6224, window_id=65850)
 
 
 async def test_background_click_has_action_scoped_approval(runtime: Any, session: Any) -> None:
@@ -131,14 +164,205 @@ async def test_mutation_invalidates_desktop_snapshot_before_reuse(
     first = await tool(params)
 
     assert isinstance(first, ToolOk)
+    assert orjson.loads(first.output)["snapshot_id"] is None
     assert backend._elements == []
     assert backend._snapshot_id == ""
     assert backend._capture_origin == (0, 0)
     assert backend._capture_size == (0, 0)
     second = await tool(params)
     assert isinstance(second, ToolError)
-    assert "snapshot_required" in second.message
+    assert "stale_snapshot" in second.message
+    assert "snapshot_required" not in second.message
+    assert "intervening action" in second.message
     control.iface_invoke.Invoke.assert_called_once_with()
+
+
+async def test_inactive_desktop_click_preserves_snapshot_for_background_retry(
+    runtime: Any, session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pywinauto import mouse
+
+    backend = WindowsComputerBackend()
+    _allow_foreground(monkeypatch, backend)
+    control = MagicMock()
+    control.is_visible.return_value = True
+    element = UIElement(
+        index=1,
+        role="Button",
+        label="Start",
+        bounds=(0, 0, 40, 40),
+        pid=42,
+        window_id=99,
+        control=control,
+    )
+    backend._elements = [element]
+    backend._snapshot_id = "fresh"
+    backend._capture_origin = (10, 20)
+    backend._capture_size = (100, 100)
+    monkeypatch.setattr(
+        mouse,
+        "click",
+        MagicMock(
+            side_effect=RuntimeError("There is no active desktop required for moving mouse cursor!")
+        ),
+    )
+    tool = _tool(runtime, session, backend)
+
+    failed = await tool(
+        Params(
+            action="click",
+            element=1,
+            snapshot_id="fresh",
+            delivery_mode="foreground",
+        )
+    )
+
+    assert isinstance(failed, ToolError)
+    assert "no_interactive_desktop" in failed.message
+    assert "snapshot remains valid" in failed.message
+    assert backend._elements == [element]
+    assert backend._snapshot_id == "fresh"
+    assert backend._capture_origin == (10, 20)
+    assert backend._capture_size == (100, 100)
+
+    # This is the exact retry from the live transcript, now without a redundant
+    # recapture between the failed foreground attempt and background UIA.
+    retried = await tool(Params(action="click", element=1, snapshot_id="fresh"))
+    assert isinstance(retried, ToolOk)
+    control.iface_invoke.Invoke.assert_called_once_with()
+    assert backend._snapshot_id == ""
+
+
+async def test_inactive_desktop_type_preflight_preserves_snapshot_and_skips_focus(
+    runtime: Any, session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pywinauto import keyboard
+
+    backend = WindowsComputerBackend()
+    backend._target = MagicMock()
+    backend._snapshot_id = "fresh"
+    backend._capture_origin = (10, 20)
+    backend._capture_size = (100, 100)
+    user32 = MagicMock()
+    user32.OpenInputDesktop.return_value = 0
+    monkeypatch.setattr(ctypes.windll, "user32", user32)
+    send_keys = MagicMock()
+    monkeypatch.setattr(keyboard, "send_keys", send_keys)
+
+    failed = await _tool(runtime, session, backend)(
+        Params(action="type", text="notepad", delivery_mode="foreground")
+    )
+
+    assert isinstance(failed, ToolError)
+    assert "no_interactive_desktop" in failed.message
+    assert "snapshot remains valid" in failed.message
+    assert "do not try another foreground action" in failed.message
+    backend._target.set_focus.assert_not_called()
+    send_keys.assert_not_called()
+    user32.CloseDesktop.assert_not_called()
+    assert backend._snapshot_id == "fresh"
+    assert backend._capture_origin == (10, 20)
+    assert backend._capture_size == (100, 100)
+
+
+def test_interactive_desktop_probe_closes_read_only_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user32 = MagicMock()
+    user32.OpenInputDesktop.return_value = 123
+    monkeypatch.setattr(ctypes.windll, "user32", user32)
+
+    WindowsComputerBackend._require_interactive_desktop()
+
+    user32.OpenInputDesktop.assert_called_once_with(0, False, 0x0001)
+    user32.CloseDesktop.assert_called_once_with(123)
+
+
+async def test_background_unavailable_preserves_snapshot_for_supported_action(
+    runtime: Any, session: Any
+) -> None:
+    backend = WindowsComputerBackend()
+    control = MagicMock()
+    control.is_visible.return_value = True
+    element = UIElement(
+        index=1,
+        role="Button",
+        label="Start",
+        bounds=(0, 0, 40, 40),
+        pid=42,
+        window_id=99,
+        control=control,
+    )
+    backend._elements = [element]
+    backend._snapshot_id = "fresh"
+    backend._capture_origin = (10, 20)
+    backend._capture_size = (100, 100)
+    tool = _tool(runtime, session, backend)
+
+    refused = await tool(Params(action="key", keys="win", delivery_mode="background"))
+
+    assert isinstance(refused, ToolError)
+    assert "background_unavailable" in refused.message
+    assert "snapshot remains valid" in refused.message
+    assert backend._elements == [element]
+    assert backend._snapshot_id == "fresh"
+    assert backend._capture_origin == (10, 20)
+    assert backend._capture_size == (100, 100)
+
+    supported = await tool(Params(action="click", element=1, snapshot_id="fresh"))
+    assert isinstance(supported, ToolOk)
+    control.iface_invoke.Invoke.assert_called_once_with()
+    assert backend._snapshot_id == ""
+
+
+async def test_modified_inactive_desktop_click_still_invalidates_snapshot(
+    runtime: Any, session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pywinauto import keyboard, mouse
+
+    backend = WindowsComputerBackend()
+    _allow_foreground(monkeypatch, backend)
+    control = MagicMock()
+    control.is_visible.return_value = True
+    backend._elements = [
+        UIElement(
+            index=1,
+            role="Button",
+            label="Start",
+            bounds=(0, 0, 40, 40),
+            pid=42,
+            window_id=99,
+            control=control,
+        )
+    ]
+    backend._snapshot_id = "fresh"
+    backend._capture_origin = (10, 20)
+    backend._capture_size = (100, 100)
+    monkeypatch.setattr(keyboard, "send_keys", MagicMock())
+    monkeypatch.setattr(
+        mouse,
+        "click",
+        MagicMock(
+            side_effect=RuntimeError("There is no active desktop required for moving mouse cursor!")
+        ),
+    )
+
+    result = await _tool(runtime, session, backend)(
+        Params(
+            action="click",
+            element=1,
+            snapshot_id="fresh",
+            delivery_mode="foreground",
+            modifiers=["ctrl"],
+        )
+    )
+
+    assert isinstance(result, ToolError)
+    assert "no_interactive_desktop" in result.message
+    assert backend._elements == []
+    assert backend._snapshot_id == ""
+    assert backend._capture_origin == (0, 0)
+    assert backend._capture_size == (0, 0)
 
 
 async def test_stale_snapshot_is_an_error_and_not_replayed(runtime: Any, session: Any) -> None:
@@ -204,7 +428,94 @@ def test_missing_window_error_discourages_redundant_discovery() -> None:
         backend._resolve_window(app="missing.exe")
 
     assert caught.value.code == "window_not_found"
-    assert "do not repeat equivalent discovery calls" in str(caught.value)
+    assert "do not repeat equivalent discovery calls" in str(caught.value).lower()
+    assert "omit app/pid/window_id" in str(caught.value)
+    assert "sticky target and any existing snapshot are unchanged" in str(caught.value)
+
+
+async def test_repeated_window_listing_explicitly_reports_no_change(
+    runtime: Any, session: Any
+) -> None:
+    backend = MagicMock()
+    windows = [{"window_id": 99, "title": "Fixture", "pid": 42}]
+    backend.list_windows.side_effect = [windows, windows, []]
+    tool = _tool(runtime, session, backend)
+
+    first = await tool(Params(action="list_windows"))
+    second = await tool(Params(action="list_windows"))
+    changed = await tool(Params(action="list_windows"))
+
+    assert isinstance(first, ToolOk)
+    assert "unchanged_from_previous" not in orjson.loads(first.output)
+    repeated = orjson.loads(second.output)
+    assert repeated["unchanged_from_previous"] is True
+    assert repeated["intervening_activity_count"] == 0
+    assert "no intervening desktop action or wait" in repeated["next_step"]
+    assert "choose a listed target or report" in repeated["next_step"]
+    assert orjson.loads(changed.output)["unchanged_from_previous"] is False
+
+
+async def test_window_listing_distinguishes_ineffective_intervening_action(
+    runtime: Any, session: Any
+) -> None:
+    backend = MagicMock()
+    windows = [{"window_id": 99, "title": "Fixture", "pid": 42}]
+    backend.list_windows.return_value = windows
+    backend.click.return_value = ActionResult("click", "invoked", "uia_invoke")
+    tool = _tool(runtime, session, backend)
+
+    await tool(Params(action="list_windows"))
+    action = await tool(Params(action="click", element=1))
+    repeated = await tool(Params(action="list_windows"))
+
+    assert isinstance(action, ToolOk)
+    assert orjson.loads(action.output)["snapshot_id"] is None
+    payload = orjson.loads(repeated.output)
+    assert payload["unchanged_from_previous"] is True
+    assert payload["intervening_activity_count"] == 1
+    assert "unchanged despite 1 completed desktop action" in payload["next_step"]
+    assert "did not produce a newly discoverable window" in payload["next_step"]
+    assert "Do not repeat the same action/discovery cycle" in payload["next_step"]
+
+
+async def test_list_apps_is_explicitly_not_a_new_discovery_path(runtime: Any, session: Any) -> None:
+    backend = MagicMock()
+    backend.list_apps.return_value = [{"pid": 42, "app": "fixture.exe"}]
+
+    result = await _tool(runtime, session, backend)(Params(action="list_apps"))
+
+    assert isinstance(result, ToolOk)
+    payload = orjson.loads(result.output)
+    assert "only regroups currently visible top-level windows" in payload["discovery_scope"]
+    assert (
+        "cannot reveal targets or processes omitted by list_windows" in payload["discovery_scope"]
+    )
+
+
+async def test_repeated_app_listing_reports_redundant_derived_discovery(
+    runtime: Any, session: Any
+) -> None:
+    backend = MagicMock()
+    apps = [{"pid": 42, "app": "fixture.exe", "window_ids": [99]}]
+    backend.list_apps.return_value = apps
+    backend.click.return_value = ActionResult("click", "invoked", "uia_invoke")
+    tool = _tool(runtime, session, backend)
+
+    await tool(Params(action="list_apps"))
+    await tool(Params(action="click", element=1))
+    repeated = await tool(Params(action="list_apps"))
+    polled = await tool(Params(action="list_apps"))
+
+    payload = orjson.loads(repeated.output)
+    assert payload["unchanged_from_previous"] is True
+    assert payload["intervening_activity_count"] == 1
+    assert "derived app list is unchanged despite 1" in payload["next_step"]
+    assert "cannot reveal targets or processes omitted by list_windows" in payload["next_step"]
+    assert "Do not repeat app discovery" in payload["next_step"]
+    polled_payload = orjson.loads(polled.output)
+    assert polled_payload["intervening_activity_count"] == 0
+    assert "no intervening desktop action or wait" in polled_payload["next_step"]
+    assert "Do not repeat list_apps" in polled_payload["next_step"]
 
 
 async def test_successful_action_can_include_fresh_screenshot(runtime: Any, session: Any) -> None:
@@ -219,7 +530,11 @@ async def test_successful_action_can_include_fresh_screenshot(runtime: Any, sess
     text = next(part.text for part in result.output if isinstance(part, TextPart))
     payload = orjson.loads(text.splitlines()[0])
     path = payload["screenshot_path"]
+    assert payload["snapshot_id"] == "snapshot-1"
     assert payload["follow_up_capture"]["snapshot_id"] == "snapshot-1"
+    assert "already included in follow_up_capture" in payload["next_step"]
+    assert "use its snapshot_id" in payload["next_step"]
+    assert not payload["next_step"].startswith("Capture fresh state")
     assert Image.open(path).size == (40, 30)
 
 
@@ -248,6 +563,7 @@ def test_foreground_double_click_uses_public_mouse_api_and_releases_modifiers(
     from pywinauto import keyboard, mouse
 
     backend = WindowsComputerBackend()
+    _allow_foreground(monkeypatch, backend)
     backend._target = MagicMock()
     backend._target.is_minimized.return_value = False
     backend._capture_origin = (10, 20)
@@ -273,9 +589,7 @@ def test_foreground_double_click_uses_public_mouse_api_and_releases_modifiers(
     ]
 
 
-async def test_no_active_desktop_is_a_specific_input_error(
-    runtime: Any, session: Any
-) -> None:
+async def test_no_active_desktop_is_a_specific_input_error(runtime: Any, session: Any) -> None:
     backend = MagicMock()
     backend.click.side_effect = RuntimeError(
         "There is no active desktop required for moving mouse cursor!"
@@ -365,6 +679,7 @@ def test_background_button_click_uses_toggle_when_invoke_is_unsupported() -> Non
     assert result.meta["toggle_state_after"] is True
     assert result.summary()["verdict"] == "verify_fresh_state"
     assert "not proof of a visible UI transition" in result.summary()["next_step"]
+    assert "omit app/pid/window_id" in result.summary()["next_step"]
 
 
 def test_checkbox_toggle_state_change_is_verified() -> None:
@@ -426,6 +741,86 @@ def test_background_coordinate_click_is_refused() -> None:
     assert caught.value.code == "background_unavailable"
 
 
+def test_stale_coordinate_snapshot_is_rejected_before_foreground_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = WindowsComputerBackend()
+    backend._snapshot_id = "new"
+    backend._capture_origin = (10, 20)
+    backend._capture_size = (100, 100)
+    foreground = MagicMock()
+    monkeypatch.setattr(backend, "_foreground_target", foreground)
+
+    with pytest.raises(ComputerBackendError) as caught:
+        backend.scroll("down", 3, (5, 6), snapshot_id="old")
+    assert caught.value.code == "stale_snapshot"
+    assert caught.value.preserve_snapshot is True
+    foreground.assert_not_called()
+
+    with pytest.raises(ComputerBackendError) as caught:
+        backend.drag((5, 6), (7, 8), 0.2, snapshot_id="old")
+    assert caught.value.code == "stale_snapshot"
+    foreground.assert_not_called()
+
+
+async def test_stale_coordinate_request_preserves_newer_snapshot(
+    runtime: Any, session: Any
+) -> None:
+    backend = WindowsComputerBackend()
+    backend._snapshot_id = "new"
+    backend._capture_origin = (10, 20)
+    backend._capture_size = (100, 100)
+
+    result = await _tool(runtime, session, backend)(
+        Params(
+            action="click",
+            coordinate=(5, 6),
+            snapshot_id="old",
+            delivery_mode="foreground",
+        )
+    )
+
+    assert isinstance(result, ToolError)
+    assert "stale_snapshot" in result.message
+    assert "any existing current snapshot remains valid" in result.message
+    assert backend._snapshot_id == "new"
+    assert backend._capture_origin == (10, 20)
+    assert backend._capture_size == (100, 100)
+
+
+async def test_stale_request_without_snapshot_has_conditional_preservation_message(
+    runtime: Any, session: Any
+) -> None:
+    backend = WindowsComputerBackend()
+
+    result = await _tool(runtime, session, backend)(
+        Params(
+            action="click",
+            coordinate=(5, 6),
+            snapshot_id="invented",
+            delivery_mode="foreground",
+        )
+    )
+
+    assert isinstance(result, ToolError)
+    assert "stale_snapshot" in result.message
+    assert "any existing current snapshot remains valid" in result.message
+    assert "the current snapshot remains valid" not in result.message
+
+
+def test_stale_foreground_element_is_rejected_before_focus() -> None:
+    backend = WindowsComputerBackend()
+    backend._snapshot_id = "new"
+    backend._elements = []
+    backend._target = MagicMock()
+
+    with pytest.raises(ComputerBackendError) as caught:
+        backend.type_text("text", element=1, delivery_mode="foreground", snapshot_id="old")
+
+    assert caught.value.code == "stale_snapshot"
+    backend._target.set_focus.assert_not_called()
+
+
 def test_matching_sticky_window_avoids_desktop_enumeration() -> None:
     backend = WindowsComputerBackend()
     window = MagicMock()
@@ -457,8 +852,58 @@ def test_changed_window_selector_still_enumerates() -> None:
     assert backend._resolve_window(pid=42, window_id=99) is replacement
 
 
-def test_focus_failure_preserves_exception_type_and_empty_detail() -> None:
+def test_focus_app_resolves_all_supplied_window_selectors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     backend = WindowsComputerBackend()
+    _allow_foreground(monkeypatch, backend)
+    window = MagicMock()
+    window.handle = 65850
+    window.process_id.return_value = 6224
+    resolve = MagicMock(return_value=window)
+    monkeypatch.setattr(backend, "_resolve_window", resolve)
+    monkeypatch.setattr(backend, "_foreground_target", MagicMock())
+
+    result = backend.focus_app(None, True, pid=6224, window_id=65850)
+
+    resolve.assert_called_once_with(app=None, pid=6224, window_id=65850)
+    backend._foreground_target.assert_called_once_with(desktop_prechecked=True)
+    assert result.verified is True
+    assert result.meta["window_id"] == 65850
+
+
+def test_focus_app_preflight_preserves_previous_target_and_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = WindowsComputerBackend()
+    previous_target = MagicMock()
+    replacement = MagicMock()
+    backend._target = previous_target
+    backend._snapshot_id = "fresh"
+    backend._capture_origin = (10, 20)
+    backend._capture_size = (100, 100)
+    monkeypatch.setattr(backend, "_resolve_window", MagicMock(return_value=replacement))
+    user32 = MagicMock()
+    user32.OpenInputDesktop.return_value = 0
+    monkeypatch.setattr(ctypes.windll, "user32", user32)
+
+    with pytest.raises(ComputerBackendError) as caught:
+        backend.focus_app(None, True, window_id=99)
+
+    assert caught.value.code == "no_interactive_desktop"
+    assert caught.value.preserve_snapshot is True
+    assert backend._target is previous_target
+    assert backend._snapshot_id == "fresh"
+    assert backend._capture_origin == (10, 20)
+    assert backend._capture_size == (100, 100)
+    replacement.set_focus.assert_not_called()
+
+
+def test_focus_failure_preserves_exception_type_and_empty_detail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = WindowsComputerBackend()
+    _allow_foreground(monkeypatch, backend)
     backend._target = MagicMock()
     backend._target.is_minimized.return_value = False
     backend._target.set_focus.side_effect = RuntimeError()
@@ -468,6 +913,79 @@ def test_focus_failure_preserves_exception_type_and_empty_detail() -> None:
 
     assert caught.value.code == "focus_failed"
     assert "RuntimeError: Windows returned no error details" in str(caught.value)
+
+
+def test_foreground_target_defers_shell_minimization_to_pywinauto(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = WindowsComputerBackend()
+    _allow_foreground(monkeypatch, backend)
+    backend._target = MagicMock()
+    backend._target.handle = 99
+    backend._target.is_minimized.side_effect = RuntimeError("redundant probe must not run")
+    monkeypatch.setattr(backend, "_foreground_window_id", MagicMock(return_value=99))
+
+    backend._foreground_target()
+
+    backend._target.set_focus.assert_called_once_with()
+    backend._target.is_minimized.assert_not_called()
+
+
+def test_keyboard_input_requires_the_actual_foreground_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pywinauto import keyboard
+
+    backend = WindowsComputerBackend()
+    _allow_foreground(monkeypatch, backend)
+    backend._target = MagicMock()
+    backend._target.handle = 99
+    backend._target.is_minimized.return_value = False
+    foreground = MagicMock(return_value=0)
+    monkeypatch.setattr(backend, "_foreground_window_id", foreground)
+    send_keys = MagicMock()
+    monkeypatch.setattr(keyboard, "send_keys", send_keys)
+
+    with pytest.raises(ComputerBackendError) as caught:
+        backend.key("a")
+
+    assert caught.value.code == "focus_failed"
+    assert "no active foreground window" in str(caught.value)
+    assert "No keyboard input was sent" in str(caught.value)
+    send_keys.assert_not_called()
+
+    foreground.return_value = 99
+    backend._foreground_target()
+
+
+async def test_zero_event_sendinput_is_blocked_input_not_unknown(
+    runtime: Any, session: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pywinauto import keyboard
+
+    backend = WindowsComputerBackend()
+    monkeypatch.setattr(backend, "_foreground_target", MagicMock())
+    backend._snapshot_id = "fresh"
+    backend._capture_origin = (10, 20)
+    backend._capture_size = (100, 100)
+    send_keys = MagicMock(
+        side_effect=RuntimeError("SendInput() inserted only 0 out of 2 keyboard events")
+    )
+    monkeypatch.setattr(keyboard, "send_keys", send_keys)
+
+    result = await _tool(runtime, session, backend)(
+        Params(action="type", text="notepad", delivery_mode="foreground")
+    )
+
+    assert isinstance(result, ToolError)
+    assert "input_blocked" in result.message
+    assert "outcome_unknown" not in result.message
+    assert "No keyboard events were inserted" in result.message
+    assert "instead of retrying foreground keyboard delivery" in result.message
+    send_keys.assert_called_once()
+    assert backend._snapshot_id == ""
+    assert backend._capture_origin == (0, 0)
+    assert backend._capture_size == (0, 0)
 
 
 def test_window_listing_omits_visible_windows_with_empty_bounds() -> None:

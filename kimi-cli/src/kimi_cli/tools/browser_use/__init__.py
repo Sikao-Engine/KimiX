@@ -94,7 +94,13 @@ class Params(BaseModel):
     snapshot_id: str | None = Field(
         default=None, description="Optional snapshot guard; stale IDs are refused."
     )
-    text: str | None = Field(default=None, description="Literal text for fill/type.")
+    text: str | None = Field(
+        default=None,
+        description=(
+            "Literal text for fill/type, preserved exactly including leading/trailing whitespace. "
+            "Copy the requested text without adding whitespace."
+        ),
+    )
     key: str | None = Field(
         default=None, description="Playwright key such as Enter, Tab, Escape, or Control+a."
     )
@@ -185,7 +191,9 @@ class BrowserUse(CallableTool2[Params]):
         "This is not a network sandbox: scripts and pages can make subsequent requests. Do not "
         "enter credentials or perform purchases/permission changes unless explicitly requested. "
         "Extract returns inner text by default; set attribute only for an actual HTML attribute "
-        "such as href (attribute='text' is also accepted as a text-extraction alias). After "
+        "such as href (attribute='text' is also accepted as a text-extraction alias). Fill/type "
+        "text is literal, including whitespace; fill's verified flag compares the browser value "
+        "only against the supplied text argument, not against the user's intended text. After "
         "verify_fresh_state or a timeout, inspect fresh state with a snapshot or targeted "
         "extraction before any retry."
     )
@@ -392,6 +400,9 @@ class BrowserUse(CallableTool2[Params]):
                 summary.update({"ok": True, "action": params.action})
                 if params.action in _VERIFY_ACTIONS:
                     summary.setdefault("verdict", "verify_fresh_state")
+                if summary.get("verdict") == "verify_fresh_state":
+                    # Fill performs its own readback and is not in _VERIFY_ACTIONS,
+                    # but an absent/mismatched readback needs the same safe guidance.
                     summary["next_step"] = (
                         "Inspect fresh state with a snapshot or targeted extraction before "
                         "repeating input."

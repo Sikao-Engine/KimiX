@@ -36,6 +36,11 @@ def _tool(runtime: Any, session: Any, manager: Any) -> BrowserUse:
 
 def test_browser_schema_rejects_ambiguous_or_incomplete_actions() -> None:
     assert "snapshot or targeted extraction" in BrowserUse.description
+    assert "not against the user's intended text" in BrowserUse.description
+    assert (
+        "Copy the requested text without adding whitespace"
+        in Params.model_fields["text"].description
+    )
     with pytest.raises(ValidationError, match="navigate requires url"):
         Params(action="navigate")
     with pytest.raises(ValidationError, match="exactly one"):
@@ -106,6 +111,46 @@ async def test_navigate_validates_once_then_uses_normalized_url(runtime: Any, se
     assert tool._approval.request.await_args.args[1] == "browser_use:navigate"
 
 
+async def test_fill_forwards_literal_whitespace_without_trimming(
+    runtime: Any, session: Any
+) -> None:
+    manager = MagicMock()
+    state = SimpleNamespace(last_used=0.0)
+    manager.get_session = AsyncMock(return_value=state)
+    manager.fill = AsyncMock(return_value={"verified": True, "verdict": "done"})
+    manager.invalidate_snapshot = AsyncMock()
+    text = " Hello from browser_use "
+
+    result = await _tool(runtime, session, manager)(
+        Params(action="fill", selector="#message", text=text)
+    )
+
+    assert isinstance(result, ToolOk)
+    manager.fill.assert_awaited_once_with(state, None, "#message", None, text)
+    payload = orjson.loads(result.output)
+    assert payload["verified"] is True
+    assert "next_step" not in payload
+
+
+async def test_unverified_fill_requires_fresh_state_before_repeating_input(
+    runtime: Any, session: Any
+) -> None:
+    manager = MagicMock()
+    manager.get_session = AsyncMock(return_value=SimpleNamespace(last_used=0.0))
+    manager.fill = AsyncMock(return_value={"verified": False, "verdict": "verify_fresh_state"})
+    manager.invalidate_snapshot = AsyncMock()
+
+    result = await _tool(runtime, session, manager)(
+        Params(action="fill", selector="#message", text="expected")
+    )
+
+    assert isinstance(result, ToolOk)
+    payload = orjson.loads(result.output)
+    assert payload["verified"] is False
+    assert payload["verdict"] == "verify_fresh_state"
+    assert "snapshot or targeted extraction" in payload["next_step"]
+
+
 async def test_verify_action_allows_targeted_extraction_as_fresh_state(
     runtime: Any, session: Any
 ) -> None:
@@ -114,9 +159,7 @@ async def test_verify_action_allows_targeted_extraction_as_fresh_state(
     manager.click = AsyncMock(return_value={})
     manager.invalidate_snapshot = AsyncMock()
 
-    result = await _tool(runtime, session, manager)(
-        Params(action="click", selector="#go")
-    )
+    result = await _tool(runtime, session, manager)(Params(action="click", selector="#go"))
 
     assert isinstance(result, ToolOk)
     assert "snapshot or targeted extraction" in orjson.loads(result.output)["next_step"]

@@ -164,11 +164,16 @@ class Params(BaseModel):
             raise ValueError("key requires keys.")
         if self.action == "set_value" and (self.element is None or self.value is None):
             raise ValueError("set_value requires element and value.")
-        if self.action == "focus_app" and not self.app:
-            raise ValueError("focus_app requires app.")
-        if self.action not in {"capture", "focus_app"} and self.app is not None:
+        if self.action == "focus_app" and (
+            not self.app and self.pid is None and self.window_id is None
+        ):
+            raise ValueError("focus_app requires app, pid, or window_id.")
+        if self.action not in {"capture", "focus_app"} and any(
+            selector is not None for selector in (self.app, self.pid, self.window_id)
+        ):
             raise ValueError(
-                "app selects a capture/focus target; input uses the existing sticky target."
+                "app, pid, and window_id select capture/focus targets; input uses the "
+                "existing sticky target."
             )
         return self
 
@@ -180,9 +185,16 @@ class ComputerUse(CallableTool2[Params]):
         "and keyboard. Start with capture(mode='som'), then prefer a fresh element index over "
         "coordinates. Background input is supported only where a UIA pattern can address the "
         "element; foreground input moves the real cursor/focus and requires separate approval. "
-        "Every mutating action requires approval. After an unverified action, capture fresh state "
-        "and never blindly retry. If that fresh state is unchanged, use a different supported "
-        "delivery path or report the limitation instead of repeating the same background action. "
+        "A no_interactive_desktop error applies to every foreground mouse/keyboard/focus "
+        "action; do not retry foreground delivery in that session. "
+        "Every mutating action requires approval. Every completed mutation invalidates prior "
+        "element IDs and coordinates; list_windows/list_apps do not refresh them. After an "
+        "action, capture with no app/pid/window_id selector to reinspect the same sticky window; "
+        "prefer capture_after=true when immediate inspection is needed. Never reuse a snapshot "
+        "after an intervening mutation. After any other unverified action, capture fresh "
+        "state and never blindly retry. If that fresh state is unchanged, use a different "
+        "supported delivery path or report the limitation instead of repeating the same "
+        "background action. "
         "If screen imaging is unavailable, window captures may degrade to accessibility-only "
         "mode with an explicit warning; continue with mode='ax' on a specific window rather than "
         "retrying app='screen', which requires imaging in every mode. Use list_windows for "
@@ -209,6 +221,11 @@ class ComputerUse(CallableTool2[Params]):
         self._session = session
         self._backend = backend if backend is not None else WindowsComputerBackend()
         self._lock = asyncio.Lock()
+        self._activity_count = 0
+        self._last_window_list: list[dict[str, Any]] | None = None
+        self._last_window_list_activity = 0
+        self._last_app_list: list[dict[str, Any]] | None = None
+        self._last_app_list_activity = 0
 
     def _include_images(self) -> bool:
         llm = self._runtime.llm
@@ -282,7 +299,9 @@ class ComputerUse(CallableTool2[Params]):
             coordinate = params.coordinate
             if params.element is not None:
                 coordinate = self._backend.element_center(params.element, params.snapshot_id)
-            return self._backend.scroll(params.direction, params.amount, coordinate)
+            return self._backend.scroll(
+                params.direction, params.amount, coordinate, snapshot_id=params.snapshot_id
+            )
         if params.action == "drag":
             if params.delivery_mode != "foreground":
                 raise ComputerBackendError(
@@ -295,10 +314,14 @@ class ComputerUse(CallableTool2[Params]):
             if params.to_element is not None:
                 end = self._backend.element_center(params.to_element, params.snapshot_id)
             assert start is not None and end is not None
-            return self._backend.drag(start, end, params.duration)
+            return self._backend.drag(start, end, params.duration, snapshot_id=params.snapshot_id)
         if params.action == "focus_app":
-            assert params.app is not None
-            return self._backend.focus_app(params.app, params.raise_window)
+            return self._backend.focus_app(
+                params.app,
+                params.raise_window,
+                pid=params.pid,
+                window_id=params.window_id,
+            )
         raise ComputerBackendError(f"Unsupported action {params.action}.", "unsupported_action")
 
     def _capture_result(self, capture: CaptureResult) -> ToolOk:
@@ -310,7 +333,9 @@ class ComputerUse(CallableTool2[Params]):
 
     async def __call__(self, params: Params) -> ToolReturnValue:
         if params.action == "wait":
-            await asyncio.sleep(params.seconds)
+            async with self._lock:
+                await asyncio.sleep(params.seconds)
+                self._activity_count += 1
             return ToolOk(
                 output=json_text(
                     {"ok": True, "action": "wait", "seconds": params.seconds, "verdict": "done"}
@@ -332,19 +357,85 @@ class ComputerUse(CallableTool2[Params]):
                         else self._backend.list_windows
                     )
                     values = await asyncio.to_thread(method)
-                    return ToolOk(
-                        output=json_text({"ok": True, "action": params.action, "items": values}),
-                        brief=params.action,
-                    )
+                    summary: dict[str, Any] = {
+                        "ok": True,
+                        "action": params.action,
+                        "items": values,
+                    }
+                    if params.action == "list_windows":
+                        if self._last_window_list is not None:
+                            unchanged = values == self._last_window_list
+                            activity_count = self._activity_count - self._last_window_list_activity
+                            summary["unchanged_from_previous"] = unchanged
+                            summary["intervening_activity_count"] = activity_count
+                            if unchanged and activity_count:
+                                summary["next_step"] = (
+                                    "The visible top-level window list is unchanged despite "
+                                    f"{activity_count} completed desktop action(s) or wait(s) "
+                                    "since the previous listing. The intervening activity did "
+                                    "not produce a newly discoverable window. Do not repeat the "
+                                    "same action/discovery cycle; use a different supported path "
+                                    "or target, or report that the required window is unavailable."
+                                )
+                            elif unchanged:
+                                summary["next_step"] = (
+                                    "The window list is identical to the previous list_windows "
+                                    "result, with no intervening desktop action or wait. Do not "
+                                    "repeat discovery; choose a listed target or report that the "
+                                    "required window is unavailable."
+                                )
+                        self._last_window_list = values
+                        self._last_window_list_activity = self._activity_count
+                    else:
+                        summary["discovery_scope"] = (
+                            "list_apps only regroups currently visible top-level windows; it "
+                            "cannot reveal targets or processes omitted by list_windows."
+                        )
+                        if self._last_app_list is not None:
+                            unchanged = values == self._last_app_list
+                            activity_count = self._activity_count - self._last_app_list_activity
+                            summary["unchanged_from_previous"] = unchanged
+                            summary["intervening_activity_count"] = activity_count
+                            if unchanged and activity_count:
+                                summary["next_step"] = (
+                                    "The derived app list is unchanged despite "
+                                    f"{activity_count} completed desktop action(s) or wait(s) "
+                                    "since the previous listing. Repeating list_apps cannot "
+                                    "reveal targets or processes omitted by list_windows. Do not "
+                                    "repeat app discovery or guess unlisted process names; choose "
+                                    "a listed window or report that the required target is "
+                                    "unavailable."
+                                )
+                            elif unchanged:
+                                summary["next_step"] = (
+                                    "The derived app list is identical to the previous list_apps "
+                                    "result, with no intervening desktop action or wait. Do not "
+                                    "repeat list_apps or use it to guess unlisted process names; "
+                                    "choose a listed window or report that the required target is "
+                                    "unavailable."
+                                )
+                        self._last_app_list = values
+                        self._last_app_list_activity = self._activity_count
+                    return ToolOk(output=json_text(summary), brief=params.action)
 
                 try:
                     action_result = await asyncio.to_thread(self._action, params)
-                finally:
-                    # Any mutation or uncertain outcome makes element IDs and
-                    # screenshot-relative coordinates stale. Keep the sticky
-                    # window so capture_after can still inspect fresh state.
+                except ComputerBackendError as exc:
+                    if not exc.preserve_snapshot:
+                        self._backend.invalidate_snapshot()
+                    raise
+                except BaseException:
+                    # Unknown failures and cancellation may race with a worker
+                    # thread that has already mutated the UI.
+                    self._backend.invalidate_snapshot()
+                    raise
+                else:
+                    # A completed mutation makes element IDs and coordinates
+                    # stale. Keep the sticky window for capture_after.
+                    self._activity_count += 1
                     self._backend.invalidate_snapshot()
                 summary = action_result.summary()
+                summary["snapshot_id"] = None
                 if params.capture_after:
                     try:
                         capture = await asyncio.to_thread(
@@ -360,7 +451,14 @@ class ComputerUse(CallableTool2[Params]):
                             "inspect fresh state before any further input."
                         )
                     else:
+                        summary["snapshot_id"] = capture.snapshot_id
                         summary["follow_up_capture"] = capture.summary()
+                        summary["next_step"] = (
+                            "Fresh state is already included in follow_up_capture; use its "
+                            "snapshot_id and any element IDs for the next action. If the "
+                            "intended UI is in another window, inspect that target instead of "
+                            "recapturing this one."
+                        )
                         if capture.png_data is not None:
                             path = screenshot_path(self._session.dir, "computer_use")
                             return image_tool_ok(
@@ -376,7 +474,10 @@ class ComputerUse(CallableTool2[Params]):
                     if params.action == "capture"
                     else "Desktop action refused"
                 )
-                return automation_error(str(exc), brief, code=exc.code)
+                message = str(exc)
+                if exc.preserve_snapshot and "snapshot remains valid" not in message:
+                    message += " No UI input was sent; any existing current snapshot remains valid."
+                return automation_error(message, brief, code=exc.code)
             except Exception as exc:
                 logger.exception("Unexpected computer_use failure")
                 if params.action == "capture":
