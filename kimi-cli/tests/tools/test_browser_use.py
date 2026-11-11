@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from collections import deque
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -31,6 +32,9 @@ def _approval() -> MagicMock:
 
 
 def _tool(runtime: Any, session: Any, manager: Any) -> BrowserUse:
+    # A mocked manager still carries the launch/origin policy the tool reads.
+    if not isinstance(getattr(manager, "config", None), BrowserConfig):
+        manager.config = BrowserConfig()
     return BrowserUse(runtime, _approval(), session, manager=manager)
 
 
@@ -229,6 +233,10 @@ def _browser_state(page: Any) -> Any:
         page=page,
         snapshot_id="",
         elements=[],
+        borrowed_context=False,
+        console=deque(maxlen=5),
+        network_failures=deque(maxlen=5),
+        wired=[],
     )
 
 
@@ -240,14 +248,10 @@ async def test_closed_active_tab_preserves_remaining_context() -> None:
     remaining.is_closed.return_value = False
     context = MagicMock()
     context.pages = [remaining]
-    state = SimpleNamespace(
-        name="test",
-        context=context,
-        page=closed,
-        snapshot_id="old",
-        elements=[],
-        last_used=0.0,
-    )
+    state = _browser_state(closed)
+    state.context = context
+    state.snapshot_id = "old"
+    state.last_used = 0.0
     manager.sessions["test"] = state
     manager.close_idle_sessions = AsyncMock()
     browser = MagicMock()

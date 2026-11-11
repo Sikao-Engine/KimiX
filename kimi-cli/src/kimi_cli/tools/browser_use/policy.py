@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from kimi_cli.tools.web.url_safety import (
@@ -96,3 +97,130 @@ async def validate_navigation_url(url: str) -> str:
             "unsafe_url",
         )
     return normalized
+
+
+_CDP_SCHEMES = frozenset({"http", "https", "ws", "wss"})
+_LOOPBACK_HOSTS = frozenset({"localhost", "localhost.", "::1", "0:0:0:0:0:0:0:1"})
+
+
+def is_loopback_host(host: str) -> bool:
+    """Return True only for names the local machine resolves to itself."""
+    normalized = host.strip().strip("[]").rstrip(".").lower()
+    if not normalized:
+        return False
+    if normalized in _LOOPBACK_HOSTS:
+        return True
+    # 127.0.0.0/8 is loopback in its entirety, not just 127.0.0.1.
+    return normalized.startswith("127.")
+
+
+def validate_cdp_url(url: str, *, allow_remote: bool = False) -> str:
+    """Validate a CDP endpoint before connecting.
+
+    A remote debugging port has **no authentication**: any client that can reach it
+    can open pages, run script and read every cookie of every logged-in tab in that
+    profile.  Loopback is therefore enforced unless the operator opted out, because
+    a documentation warning cannot be enforced and this one can.
+    """
+    raw = url.strip()
+    if not raw:
+        raise BrowserPolicyError("cdp_url must not be empty.", "invalid_cdp_url")
+    try:
+        parsed = urlsplit(raw)
+        host = parsed.hostname or ""
+    except ValueError as exc:
+        raise BrowserPolicyError(f"Invalid CDP endpoint: {exc}", "invalid_cdp_url") from exc
+    if parsed.scheme.lower() not in _CDP_SCHEMES:
+        raise BrowserPolicyError(
+            "cdp_url must be an http(s):// or ws(s):// endpoint, for example "
+            "http://127.0.0.1:9222.",
+            "invalid_cdp_url",
+        )
+    if parsed.username is not None or parsed.password is not None:
+        raise BrowserPolicyError(
+            "CDP endpoints containing userinfo credentials are refused.", "secret_in_url"
+        )
+    if not host:
+        raise BrowserPolicyError("cdp_url must include a host.", "invalid_cdp_url")
+    if allow_remote or is_loopback_host(host):
+        return raw
+    raise BrowserPolicyError(
+        f"CDP endpoint host {host!r} is not loopback. Remote debugging ports are "
+        "unauthenticated: anyone who can reach the port can drive the browser and read every "
+        "logged-in cookie in that profile. Publish the port on 127.0.0.1 and reach it through "
+        "an SSH tunnel, or accept the risk explicitly with browser_use.allow_remote_cdp=true "
+        "(environment: KIMI_BROWSER_ALLOW_REMOTE_CDP=1).",
+        "cdp_remote_refused",
+    )
+
+
+_DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
+
+
+def origin_of(url: str) -> str | None:
+    """Return ``scheme://host[:port]`` with default ports elided, or None."""
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname
+    except ValueError:
+        return None
+    if not host:
+        return None
+    scheme = parsed.scheme.lower()
+    port = parsed.port
+    suffix = f":{port}" if port and port != _DEFAULT_PORTS.get(scheme) else ""
+    return f"{scheme}://{host.lower()}{suffix}"
+
+
+def origin_pattern_matches(pattern: str, url: str) -> bool:
+    """Match one ``allowed_origins``/``blocked_origins`` entry against a URL.
+
+    Accepted forms: ``*`` (everything), ``scheme://host[:port]`` (exact origin),
+    ``*.example.com`` (apex plus subdomains) and ``example.com`` (exact host).
+    """
+    candidate = pattern.strip().lower()
+    if not candidate:
+        return False
+    if candidate == "*":
+        return True
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").lower()
+    except ValueError:
+        return False
+    if "://" in candidate:
+        # Normalise both sides so ":443" and a bare origin compare equal.
+        return origin_of(url) == origin_of(candidate)
+    if candidate.startswith("*."):
+        base = candidate[2:]
+        return host == base or host.endswith("." + base)
+    return host == candidate
+
+
+def enforce_origin_policy(
+    url: str,
+    *,
+    allowed: Sequence[str] = (),
+    blocked: Sequence[str] = (),
+) -> None:
+    """Apply the operator's origin lists to a top-level navigation target.
+
+    These lists are a convenience filter, **not** a security boundary: they do not
+    follow redirects, subresources or popups.  Real destination control comes from
+    network egress policy and environment isolation.
+    """
+    destination = origin_of(url) or url
+    for pattern in blocked:
+        if origin_pattern_matches(pattern, url):
+            raise BrowserPolicyError(
+                f"{destination} is blocked by browser_use.blocked_origins ({pattern!r}).",
+                "origin_blocked",
+            )
+    if not allowed:
+        return
+    if not any(origin_pattern_matches(pattern, url) for pattern in allowed):
+        raise BrowserPolicyError(
+            f"{destination} is not in browser_use.allowed_origins "
+            f"({', '.join(allowed)}). Add the origin or clear the list.",
+            "origin_blocked",
+        )

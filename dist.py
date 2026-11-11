@@ -30,7 +30,9 @@ Usage::
     python dist.py --platform win  # build only dist/win
     python dist.py --platform ubuntu
     python dist.py --clean         # wipe the target bundle dir(s) first
-    python dist.py --with-playwright   # also bundle chromium (large; optional)
+    python dist.py                     # bundles chromium for browser_use (default)
+    python dist.py --no-playwright     # skip chromium (smaller; browser_use then
+                                       # needs a system Chrome/Edge)
 
 The ``ubuntu`` target can be built two ways:
 
@@ -489,6 +491,9 @@ setlocal
 set "KIMIX_HOME=%~dp0"
 if not defined KIMIX_NATIVE_PATH set "KIMIX_NATIVE_PATH=%KIMIX_HOME%bin"
 set "PATH=%KIMIX_HOME%bundled\bin;%PATH%"
+rem Playwright browsers bundled at package time live here; without this
+rem the runtime would look in %LOCALAPPDATA%\ms-playwright and find nothing.
+if not defined PLAYWRIGHT_BROWSERS_PATH if exist "%KIMIX_HOME%pw-browsers" set "PLAYWRIGHT_BROWSERS_PATH=%KIMIX_HOME%pw-browsers"
 
 rem Bootstrap rg/rtk into the shared kimi bin dir (offline copy, only if missing).
 if not exist "%USERPROFILE%\.kimi\bin" mkdir "%USERPROFILE%\.kimi\bin" >NUL 2>&1
@@ -510,6 +515,11 @@ set -e
 KIMIX_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export KIMIX_NATIVE_PATH="${KIMIX_NATIVE_PATH:-$KIMIX_HOME/bin}"
 export PATH="$KIMIX_HOME/bundled/bin:$PATH"
+# Playwright browsers bundled at package time live here; without this
+# the runtime would look in ~/.cache/ms-playwright and find nothing.
+if [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ] && [ -d "$KIMIX_HOME/pw-browsers" ]; then
+    export PLAYWRIGHT_BROWSERS_PATH="$KIMIX_HOME/pw-browsers"
+fi
 
 # Bootstrap rg/rtk into the shared kimi bin dir (offline copy, only if missing).
 SHARE_BIN="${KIMI_SHARE_DIR:-$HOME/.kimi}/bin"
@@ -699,8 +709,8 @@ def build_via_wsl(args: argparse.Namespace) -> None:
     child_args = ["-e", "python3", win_path_to_wsl(Path(__file__)), "--platform", "ubuntu"]
     if args.clean:
         child_args.append("--clean")
-    if args.with_playwright:
-        child_args.append("--with-playwright")
+    if not args.with_playwright:
+        child_args.append("--no-playwright")
     log(f"re-executing in WSL: wsl {' '.join(child_args)}")
     rc = subprocess.run([wsl, *child_args]).returncode
     if rc != 0:
@@ -718,10 +728,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--clean", action="store_true", help="wipe the target bundle dir first")
     parser.add_argument(
-        "--with-playwright",
-        action="store_true",
-        help="also bundle the chromium browser for the web-fetch playwright fallback (large)",
+        "--no-playwright",
+        dest="with_playwright",
+        action="store_false",
+        help="skip bundling the Chromium browser that browser_use and the fetch fallback need",
     )
+    parser.add_argument(
+        "--with-playwright",
+        dest="with_playwright",
+        action="store_true",
+        help=argparse.SUPPRESS,  # accepted for backwards compatibility
+    )
+    parser.set_defaults(with_playwright=True)
     return parser.parse_args(argv)
 
 

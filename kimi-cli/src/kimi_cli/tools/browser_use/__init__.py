@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from pathlib import Path
 from typing import Any, Literal
 
 import regex as re
@@ -29,7 +30,11 @@ from kimi_cli.tools.browser_use.backend import (
     BrowserSession,
     WaitUntil,
 )
-from kimi_cli.tools.browser_use.policy import BrowserPolicyError, validate_navigation_url
+from kimi_cli.tools.browser_use.policy import (
+    BrowserPolicyError,
+    enforce_origin_policy,
+    validate_navigation_url,
+)
 from kosong.tooling import CallableTool2, ToolOk, ToolReturnValue
 
 BrowserAction = Literal[
@@ -39,6 +44,8 @@ BrowserAction = Literal[
     "fill",
     "type",
     "press",
+    "select",
+    "upload",
     "extract",
     "evaluate",
     "screenshot",
@@ -61,6 +68,8 @@ _MUTATING_ACTIONS = frozenset(
         "fill",
         "type",
         "press",
+        "select",
+        "upload",
         "evaluate",
         "new_tab",
         "close_tab",
@@ -90,6 +99,12 @@ class Params(BaseModel):
     )
     element: int | None = Field(
         default=None, ge=1, description="1-based element index from the latest snapshot."
+    )
+    x: int | None = Field(
+        default=None, ge=0, le=100_000, description="Viewport X for a coordinate click."
+    )
+    y: int | None = Field(
+        default=None, ge=0, le=100_000, description="Viewport Y for a coordinate click."
     )
     snapshot_id: str | None = Field(
         default=None, description="Optional snapshot guard; stale IDs are refused."
@@ -122,6 +137,20 @@ class Params(BaseModel):
         default=False, description="For extract: return up to max_items matches."
     )
     max_items: int = Field(default=20, ge=1, le=100, description="Extraction result cap.")
+    fields: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "For extract: record shape as {key: 'selector'} or {key: 'selector|attribute'}, "
+            "with '@self' for the record element. Returns one object per match."
+        ),
+    )
+    main_content: bool = Field(
+        default=False,
+        description="For extract: return main article text instead of the whole page.",
+    )
+    format: Literal["text", "html"] = Field(
+        default="text", description="For extract: return plain text or raw HTML."
+    )
     tab: int | None = Field(default=None, ge=1, description="1-based tab index.")
     button: Literal["left", "right", "middle"] = Field(default="left", description="Click button.")
     click_count: int = Field(default=1, ge=1, le=3, description="Number of clicks.")
@@ -134,6 +163,19 @@ class Params(BaseModel):
     amount: int = Field(default=600, ge=1, le=5000, description="Scroll delta in CSS pixels.")
     seconds: float = Field(
         default=1.0, ge=0, le=30, description="Wait duration, at most 30 seconds."
+    )
+    condition: str | None = Field(
+        default=None,
+        description="For wait: JavaScript predicate polled until truthy; approval required.",
+    )
+    wait_state: Literal["attached", "detached", "hidden", "visible"] = Field(
+        default="visible", description="For wait with selector: state to wait for."
+    )
+    values: list[str] | None = Field(
+        default=None, description="For select: option values or labels to choose."
+    )
+    paths: list[str] | None = Field(
+        default=None, description="For upload: workspace file paths, at most 10."
     )
     delay_ms: int = Field(default=0, ge=0, le=100, description="Delay between typed characters.")
     full_page: bool = Field(
@@ -157,8 +199,27 @@ class Params(BaseModel):
             )
         if self.action == "navigate" and not self.url:
             raise ValueError("navigate requires url.")
-        if self.action in {"click", "fill"} and (self.element is None) == (self.selector is None):
+        if self.action == "click" and (self.x is None) != (self.y is None):
+            raise ValueError("click requires both x and y, or neither.")
+        if self.action == "click":
+            targets = int(self.element is not None) + int(self.selector is not None)
+            if targets > 1:
+                raise ValueError("click requires exactly one of element or selector.")
+            coordinates = int(self.x is not None and self.y is not None)
+            if targets + coordinates != 1:
+                raise ValueError(
+                    "click requires exactly one of element, selector, or both x and y."
+                )
+        if self.action in {"fill", "select", "upload"} and (
+            (self.element is None) == (self.selector is None)
+        ):
             raise ValueError(f"{self.action} requires exactly one of element or selector.")
+        if self.action == "select" and not self.values:
+            raise ValueError("select requires values.")
+        if self.action == "upload" and not self.paths:
+            raise ValueError("upload requires paths.")
+        if self.fields is not None and self.selector is None:
+            raise ValueError("fields extraction requires selector.")
         if self.action == "type" and self.element is not None and self.selector is not None:
             raise ValueError("type accepts at most one of element or selector.")
         if self.action in {"fill", "type"} and self.text is None:
@@ -194,8 +255,13 @@ class BrowserUse(CallableTool2[Params]):
         "such as href (attribute='text' is also accepted as a text-extraction alias). Fill/type "
         "text is literal, including whitespace; fill's verified flag compares the browser value "
         "only against the supplied text argument, not against the user's intended text. After "
-        "verify_fresh_state or a timeout, inspect fresh state with a snapshot or targeted "
-        "extraction before any retry."
+        "text is literal, including whitespace; fill's verified flag compares the browser value "
+        "only against the supplied text argument, not against the user's intended text. select "
+        "chooses dropdown options and upload attaches workspace files; both need approval and "
+        "uploads stay inside the workspace. Without a usable element, click accepts x/y "
+        "viewport pixels. wait takes text or a JS predicate. extract returns text, HTML, main "
+        "article text (main_content), or records shaped by fields=. Verify a result with a "
+        "snapshot or targeted extraction before any retry."
     )
     params: type[Params] = Params
 
@@ -224,15 +290,53 @@ class BrowserUse(CallableTool2[Params]):
             value = section.get(name, default)
             return max(low, min(high, value)) if isinstance(value, int) else default
 
+        def flag(name: str, default: bool) -> bool:
+            # Only real booleans count: the strings "false"/"0" must not enable a
+            # switch, which `bool("false")` would do.
+            value = section.get(name, default)
+            return value if isinstance(value, bool) else default
+
+        def env_flag(name: str) -> bool:
+            return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+        def strings(name: str, limit: int) -> tuple[str, ...]:
+            value = section.get(name)
+            if not isinstance(value, list):
+                return ()
+            items = [str(item).strip() for item in value]
+            return tuple(item for item in items if item)[:limit]
+
         executable = section.get("executable_path")
+        channel = section.get("channel") or os.environ.get("KIMI_BROWSER_CHANNEL")
         cdp_url = section.get("cdp_url") or os.environ.get("KIMI_BROWSER_CDP_URL")
+        storage_state = section.get("storage_state") or os.environ.get("KIMI_BROWSER_STORAGE_STATE")
+        storage_path: Path | None = None
+        if storage_state:
+            storage_path = Path(str(storage_state))
+            if not storage_path.is_absolute():
+                storage_path = self._session.dir / storage_path
         return BrowserConfig(
-            headed=bool(section.get("headed", False)),
+            headed=flag("headed", False),
             executable_path=str(executable) if executable else None,
+            channel=str(channel) if channel else None,
             cdp_url=str(cdp_url) if cdp_url else None,
             timeout_ms=integer("timeout_ms", 30_000, 1_000, 120_000),
             inactivity_timeout=float(integer("inactivity_timeout", 300, 30, 3600)),
             max_elements=integer("max_elements", 100, 1, 500),
+            launch_timeout_ms=integer("launch_timeout_ms", 15_000, 3_000, 120_000),
+            launch_budget=float(integer("launch_budget", 40, 5, 300)),
+            max_launch_attempts=integer("max_launch_attempts", 6, 1, 12),
+            sandbox=flag("sandbox", True),
+            viewport_width=integer("viewport_width", 1280, 320, 3840),
+            viewport_height=integer("viewport_height", 900, 240, 2160),
+            extra_args=strings("extra_args", 20),
+            allow_remote_cdp=flag("allow_remote_cdp", False)
+            or env_flag("KIMI_BROWSER_ALLOW_REMOTE_CDP"),
+            reuse_default_context=flag("reuse_default_context", False),
+            storage_state=str(storage_path) if storage_path else None,
+            allowed_origins=strings("allowed_origins", 50),
+            blocked_origins=strings("blocked_origins", 50),
+            console_events=integer("console_events", 5, 0, 50),
         )
 
     def _include_images(self) -> bool:
@@ -240,17 +344,34 @@ class BrowserUse(CallableTool2[Params]):
         return bool(llm and "image_in" in llm.capabilities)
 
     async def _approve(self, params: Params) -> ToolReturnValue | None:
-        if params.action not in _MUTATING_ACTIONS:
+        # A JS predicate in wait executes page script, so it needs the same gate as
+        # evaluate even though wait itself is read-only.
+        if params.action not in _MUTATING_ACTIONS and not (
+            params.action == "wait" and params.condition
+        ):
             return None
         description = f"Perform browser action {params.action} in session {params.session!r}."
         if params.action in {"navigate", "new_tab"} and params.url:
             description = f"Open {params.url} in browser session {params.session!r}."
+        if params.action == "upload" and params.paths:
+            description = (
+                f"Upload {len(params.paths)} file(s) ({', '.join(params.paths[:3])}) "
+                f"in browser session {params.session!r}."
+            )
         result = await self._approval.request(
             self.name, f"browser_use:{params.action}", description
         )
         if not result:
             return result.rejection_error()
         return None
+
+    def _work_dir(self) -> Path | None:
+        """Local workspace root; uploads are confined to it."""
+        try:
+            raw = str(self._runtime.builtin_args.KIMI_WORK_DIR)
+        except Exception:
+            return None
+        return Path(raw) if raw.strip() else None
 
     async def _dispatch(
         self, params: Params, state: BrowserSession
@@ -267,6 +388,9 @@ class BrowserUse(CallableTool2[Params]):
                 {"ctrl": "Control", "shift": "Shift", "alt": "Alt", "meta": "Meta"}[item]
                 for item in params.modifiers
             ]
+            position = (
+                (params.x, params.y) if params.x is not None and params.y is not None else None
+            )
             return (
                 await manager.click(
                     state,
@@ -276,6 +400,7 @@ class BrowserUse(CallableTool2[Params]):
                     params.button,
                     params.click_count,
                     modifiers,
+                    position,
                 ),
                 None,
             )
@@ -308,10 +433,42 @@ class BrowserUse(CallableTool2[Params]):
                 ),
                 None,
             )
+        if action == "select":
+            assert params.values is not None
+            return (
+                await manager.select(
+                    state,
+                    params.element,
+                    params.selector,
+                    params.snapshot_id,
+                    params.values,
+                ),
+                None,
+            )
+        if action == "upload":
+            assert params.paths is not None
+            return (
+                await manager.upload(
+                    state,
+                    params.element,
+                    params.selector,
+                    params.snapshot_id,
+                    params.paths,
+                    self._work_dir(),
+                ),
+                None,
+            )
         if action == "extract":
             return (
                 await manager.extract(
-                    state, params.selector, params.attribute, params.all_matches, params.max_items
+                    state,
+                    params.selector,
+                    params.attribute,
+                    params.all_matches,
+                    params.max_items,
+                    fields=params.fields,
+                    main_content=params.main_content,
+                    content_format=params.format,
                 ),
                 None,
             )
@@ -319,7 +476,9 @@ class BrowserUse(CallableTool2[Params]):
             assert params.script is not None
             return await manager.evaluate(state, params.script, params.argument), None
         if action == "screenshot":
-            summary, data = await manager.screenshot(state, params.full_page)
+            summary, data = await manager.screenshot(
+                state, params.full_page, params.element, params.selector, params.snapshot_id
+            )
             return summary, data
         if action == "new_tab":
             return await manager.new_tab(state, params.url, params.wait_until), None
@@ -331,7 +490,19 @@ class BrowserUse(CallableTool2[Params]):
         if action == "list_tabs":
             return await manager.list_tabs(state), None
         if action == "wait":
-            return await manager.wait(state, params.seconds, params.selector), None
+            conditional = bool(params.text or params.condition or params.selector)
+            return (
+                await manager.wait(
+                    state,
+                    params.seconds,
+                    params.selector,
+                    text=params.text,
+                    condition=params.condition,
+                    wait_state=params.wait_state,
+                    timeout_ms=int(params.timeout * 1000) if conditional else None,
+                ),
+                None,
+            )
         if action == "scroll":
             assert params.direction is not None
             return (
@@ -346,7 +517,6 @@ class BrowserUse(CallableTool2[Params]):
                 None,
             )
         if action in {"back", "forward", "reload"}:
-            assert action != "close"  # Narrow the consolidated action for static checking.
             return await manager.history(state, action, params.wait_until), None
         raise BrowserBackendError(f"Unsupported browser action {action}.", "unsupported_action")
 
@@ -354,9 +524,16 @@ class BrowserUse(CallableTool2[Params]):
         try:
             if params.action in {"navigate", "new_tab"} and params.url:
                 normalized = await validate_navigation_url(params.url)
+                enforce_origin_policy(
+                    normalized,
+                    allowed=self._manager.config.allowed_origins,
+                    blocked=self._manager.config.blocked_origins,
+                )
                 params = params.model_copy(update={"url": normalized})
         except BrowserPolicyError as exc:
-            return automation_error(str(exc), "Browser navigation refused", code=exc.code)
+            return automation_error(
+                str(exc), "Browser navigation refused", code=exc.code, retryable=False
+            )
 
         async with self._lock:
             rejected = await self._approve(params)
@@ -412,7 +589,9 @@ class BrowserUse(CallableTool2[Params]):
                     return image_tool_ok(summary, image, path, include_image=self._include_images())
                 return ToolOk(output=json_text(summary), brief=f"Browser {params.action} completed")
             except BrowserBackendError as exc:
-                return automation_error(str(exc), "Browser action refused", code=exc.code)
+                return automation_error(
+                    str(exc), "Browser action refused", code=exc.code, retryable=exc.retryable
+                )
             except TimeoutError, PlaywrightTimeoutError:
                 return automation_error(
                     "Browser action timed out. Its outcome may be unknown; inspect the current "

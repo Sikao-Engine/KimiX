@@ -61,10 +61,22 @@ def screenshot_path(root: Path, category: str, session_name: str = "default") ->
     return directory / f"{uuid.uuid4().hex}.png"
 
 
-def automation_error(message: str, brief: str, *, code: str | None = None) -> ToolError:
-    """Build a consistent error, optionally with a machine-readable code."""
+def automation_error(
+    message: str,
+    brief: str,
+    *,
+    code: str | None = None,
+    retryable: bool | None = None,
+) -> ToolError:
+    """Build a consistent error with an optional code and retry disposition.
+
+    ``retryable`` is omitted when the outcome is genuinely unknown, so a model never
+    reads a guess as permission to replay a non-idempotent action.
+    """
     if code:
         message = f"{message}\nerror_code: {code}"
+    if retryable is not None:
+        message = f"{message}\nretryable: {'true' if retryable else 'false'}"
     return ToolError(message=redact_sensitive_output(message), brief=brief)
 
 
