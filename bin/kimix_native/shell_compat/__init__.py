@@ -22,6 +22,13 @@ Layout (facade vs implementation):
                       wrapper-operand, runtime-reparse and shell-unwrap rules.
   cmd_translator      cmd.exe ``@`` / ``if`` / ``for`` translations and the
                       jump refusals.
+  cmd_script_paths    relative-path repair inside a ``cmd /c`` command
+                      string (``cmd /c tools/build.bat`` -> ``cmd /c
+                      "tools\\build.bat"``): cmd.exe splits its command string at
+                      ``/``, so a POSIX-spelled relative path is read as a switch,
+                      and the quoted rewrite keeps bash from eating the backslashes.
+  native_flags        doubled-slash flag repair for native Windows tools
+                      (``msiexec //a`` -> ``msiexec /a``).
   heredoc             heredoc trailing-operator repair plus the IR event model.
   translator          the ordered Git Bash compatibility translator: the single
                       ``translate`` orchestration entry, the ``EditPlan`` render
@@ -53,6 +60,10 @@ convenience; it is intentionally NOT the full historical surface.
 
 from __future__ import annotations
 
+from kimix_native.shell_compat.cmd_script_paths import (  # noqa: F401
+    cmd_script_path_edits,
+    cmd_script_path_fix,
+)
 from kimix_native.shell_compat.bash_core import (  # noqa: F401
     BashFix,
     _apply_heredoc_operator_move,

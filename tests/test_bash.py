@@ -1039,6 +1039,91 @@ class TestBashFixNativeSlashFlags:
         assert "//qb" in result.native_flag_fixes
 
 
+
+
+class TestBashFixCmdScriptPaths:
+    """Relative paths inside a ``cmd``/``cmd.exe`` ``/c`` command string.
+
+    cmd.exe splits its command string at every ``/``: ``cmd /c tools/build.bat``
+    is read as the program ``tools`` plus the switch ``/build.bat``, so the batch
+    script never runs ("'.kimix_cache' is not recognized as an internal or external
+    command").  The fixer rewrites the words cmd.exe must resolve as paths to
+    their quoted backslash spelling.  Git Bash removes bare backslashes as
+    escapes, so the quotes are what make the spelling survive to cmd.exe.
+    """
+
+    @pytest.mark.parametrize(
+        ("source", "expected", "fixes"),
+        [
+            # cmd's program token: the reported failure shape.
+            (
+                "cmd /c tools/build.bat dxc",
+                'cmd /c "tools\\build.bat" dxc',
+                ("tools/build.bat",),
+            ),
+            (
+                "cmd.exe /c .kimix_cache/tools/build.bat dxc",
+                'cmd.exe /c ".kimix_cache\\tools\\build.bat" dxc',
+                (".kimix_cache/tools/build.bat",),
+            ),
+            # The recorded session command.
+            (
+                "cd /d/DirectXShaderCompiler && cmd.exe /c .kimix_cache/tools/build.bat dxc 2>&1 | tail -25",
+                'cd D:/DirectXShaderCompiler && cmd.exe /c ".kimix_cache\\tools\\build.bat" dxc 2>&1 | tail -25',
+                (".kimix_cache/tools/build.bat",),
+            ),
+            # ``//c`` workaround spelling: the flag pass normalizes it first.
+            ("cmd //c tools/build.bat", 'cmd /c "tools\\build.bat"', ("tools/build.bat",)),
+            # A path-taking cmd builtin operand.
+            ("cmd /c call tools/run.cmd", 'cmd /c call "tools\\run.cmd"', ("tools/run.cmd",)),
+            # An already-double-quoted operand is rewritten inside its quotes.
+            (
+                'cmd /c "./tools/build.bat" dxc',
+                'cmd /c ".\\tools\\build.bat" dxc',
+                ('"./tools/build.bat"',),
+            ),
+        ],
+    )
+    def test_cmd_script_relative_path_rewritten(
+        self, source: str, expected: str, fixes: tuple[str, ...]
+    ) -> None:
+        result = _fix_for_windows(source)
+        assert result.command == expected
+        assert result.cmd_path_fixes == fixes
+        assert result.changed
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            # A quoted command STRING is already cmd syntax.
+            r'cmd /c "tools\build.bat dxc"',
+            # Data words and switches are not paths.
+            "cmd /c echo a/b",
+            "cmd /?",
+            "cmd /c dir /s /b",
+            # Drive-absolute paths: cmd.exe resolves forward slashes there.
+            "cmd /c C:/dev/x/y.bat",
+            # Runtime expansions and globs cannot be re-emitted statically.
+            r"cmd /c %~dp0tools\build.bat",
+            "cmd /c tools/*.bat",
+            # bash-only single-quote quoting: the quotes would reach cmd.exe.
+            "cmd /c 'a b/c.bat'",
+            # The cmd word is an ARGUMENT here, not the command word.
+            "echo cmd /c tools/build.bat",
+        ],
+    )
+    def test_cmd_script_path_passthrough(self, command: str) -> None:
+        assert _fix_for_windows(command) == BashFix(command)
+
+    def test_cmd_script_windows_spelling_is_requoted(self) -> None:
+        # ``.\tools\g.bat`` looks right, but bash removes the backslashes
+        # as escapes, so the word is re-emitted quoted for cmd.exe.
+        result = _fix_for_windows(r"cmd.exe /c .\tools\g.bat dxc")
+        assert result.command == 'cmd.exe /c ".\\tools\\g.bat" dxc'
+        assert result.cmd_path_fixes == ("./tools/g.bat",)
+        # The earlier forward-slash path note no longer describes the command.
+        assert result.path_changes == ()
+
 class TestBashFixCommandPositions:
     @pytest.mark.parametrize(
         ("source", "expected"),

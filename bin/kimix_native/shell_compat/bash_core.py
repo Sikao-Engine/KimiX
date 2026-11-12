@@ -698,7 +698,15 @@ class BashFix:
     path conversion, so the ``//x`` workaround spelling reaches the tool
     verbatim and is rejected as an invalid switch (see
     :mod:`kimix_native.shell_compat.native_flags` for the tool table and
-    the conservative rewrite policy).  ``cmd_conditional_fixes``
+    the conservative rewrite policy).
+    ``cmd_path_fixes`` records each relative path word inside a
+    ``cmd``/``cmd.exe`` ``/c``/``/k`` command string that was rewritten from
+    the POSIX spelling to the backslash spelling cmd.exe resolves
+    (``cmd /c tools/build.bat`` -> ``cmd /c "tools\\build.bat"``; cmd.exe
+    splits its command string at ``/``, so the POSIX spelling is read as a
+    switch, and the rewrite is quoted because bash removes bare backslashes —
+    see :mod:`kimix_native.shell_compat.cmd_script_paths`).
+    ``cmd_conditional_fixes``
     records the original keyword region of each cmd.exe control-flow construct
     that was translated to a bash equivalent by the scanner (see
     ``_try_cmd_if`` / ``_try_cmd_for`` / ``_try_at_prefix``): ``if [not] exist
@@ -720,6 +728,7 @@ class BashFix:
     unsupported: tuple[str, ...] = ()
     cmd_conditional_fixes: tuple[str, ...] = ()
     native_flag_fixes: tuple[str, ...] = ()
+    cmd_path_fixes: tuple[str, ...] = ()
 
     @property
     def changed(self) -> bool:
@@ -731,6 +740,7 @@ class BashFix:
             or bool(self.nul_fixes)
             or bool(self.cmd_conditional_fixes)
             or bool(self.native_flag_fixes)
+            or bool(self.cmd_path_fixes)
         )
 
     @property
@@ -785,6 +795,15 @@ class BashFix:
                 f"{words} to single-slash spellings (MSYS path conversion is "
                 "disabled in this shell, so `//x` would reach the tool "
                 "verbatim and be rejected — use `/x`)."
+            )
+        if self.cmd_path_fixes:
+            words = ", ".join(f"`{word}`" for word in self.cmd_path_fixes)
+            parts.append(
+                "Rewrote relative path(s) in a `cmd /c` command string to "
+                f"the quoted backslash form cmd.exe resolves: {words} (cmd.exe "
+                "splits its command string at `/`, so the POSIX spelling "
+                "would be read as a switch; the quotes keep bash from eating "
+                "the backslashes)."
             )
         return " ".join(parts)
 

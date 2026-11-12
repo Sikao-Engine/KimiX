@@ -92,6 +92,8 @@ def test_build_prompt_includes_fixer_path_and_architecture():
         'fallback_data.py',
         'unquoted.py',
         'native_flags.py',
+        'cmd_script_paths.py',
+        'post_passes.py',
     ):
         assert module in prompt, f'architecture map is missing {module}'
 

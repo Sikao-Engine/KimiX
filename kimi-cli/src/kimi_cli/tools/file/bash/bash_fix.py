@@ -72,6 +72,23 @@ recognized) are repaired to ``/flag``; quoted, escaped, expansion-bearing
 and UNC-looking words pass through byte-for-byte.  See
 ``kimix_native.shell_compat.native_flags``.
 
+Relative paths inside a ``cmd``/``cmd.exe`` ``/c``/``/k`` command string are
+rewritten to the backslash spelling cmd.exe resolves: cmd.exe splits its
+command string at every ``/``, so ``cmd /c tools/build.bat dxc`` is read as the
+program ``tools`` plus the switch ``/build.bat`` and fails with "not recognized
+as an internal or external command".  The rewrite is emitted inside double
+quotes (``cmd /c "tools\\build.bat" dxc``) because bash removes bare backslashes
+as escapes before cmd.exe ever sees them.  The repair covers cmd's program token, an
+explicit relative path (``./x``), a word with an executable/script extension
+(``.bat``, ``.cmd``, ``.exe``, ...), and the operand of a path-taking cmd
+builtin (``call``/``start``/``cd``/``dir``/``type``/``del``/``copy``/...), and it
+also converts BACK the Windows spelling that the backslash normalization above
+turned into POSIX form (``cmd /c .\\tools\\build.bat``) — a round-tripped word is
+not reported as a change.  Switches, drive-absolute paths (``C:/x``, which
+cmd.exe does resolve), single-quoted words, quoted command strings, and words
+with backslashes/expansions/globs pass through byte-for-byte.  See
+``kimix_native.shell_compat.cmd_script_paths``.
+
 Windows-style null-device redirections are rewritten to ``/dev/null``: any
 output/redirection target whose literal value is the bare word ``nul`` —
 plain (``> nul``), backslash-escaped (``> \\nul``, ``> n\\ul``), ANSI-C
@@ -173,4 +190,5 @@ def fix_bash_command(command: str) -> BashFix:
         unsupported=tuple(getattr(result, "unsupported", ())),
         cmd_conditional_fixes=tuple(getattr(result, "cmd_conditional_fixes", ())),
         native_flag_fixes=tuple(getattr(result, "native_flag_fixes", ())),
+        cmd_path_fixes=tuple(getattr(result, "cmd_path_fixes", ())),
     )

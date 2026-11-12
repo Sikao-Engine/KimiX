@@ -1009,6 +1009,7 @@ def _bash_ir_fix(command: str) -> dict[str, Any] | None:
         'unsupported': list(getattr(fix, 'unsupported', ()) or ()),
         'cmd_conditional_fixes': list(getattr(fix, 'cmd_conditional_fixes', ()) or ()),
         'native_flag_fixes': list(getattr(fix, 'native_flag_fixes', ()) or ()),
+        'cmd_path_fixes': list(getattr(fix, 'cmd_path_fixes', ()) or ()),
     }
 
 
@@ -1145,6 +1146,11 @@ Bash fixer (the translation engine, **this is the file to review**):
   - `fallback_data.py` — guarded fallback bodies and unsupported-command reasons.
   - `unquoted.py` — `_process_unquoted` (unquoted `\\` -> `/`).
   - `native_flags.py` — doubled-slash flag repair (`msiexec //a` -> `/a`).
+  - `cmd_script_paths.py` — relative paths inside a `cmd`/`cmd.exe` `/c`/`/k`
+ command string (`cmd /c tools/build.bat` -> `cmd /c "tools\build.bat"`).
+  - `post_passes.py` — the Windows-only post-passes (`native_flags` then
+ `cmd_script_paths`) applied to the shared `BashFix` so the compiled kernel and
+ the pure-Python reference stay byte-equal.
   - `{pwsh_fix_path}` (and `pwsh_transform.py`) — the PowerShell siblings; out of scope here.
 
 Consumers (how the fixer is reached from a tool call):
@@ -1169,7 +1175,8 @@ The pipeline is a **lossless tolerant IR**: `lexer` turns the source into tokens
 with exact quote/expansion boundaries; `parser` builds IR nodes that reference
 source spans (never copies), so `render_source()` is byte-identical; the rule
 modules (`paths`, `wrappers`, `cmd_translator`, `heredoc`, `fallback_data`,
-`native_flags`) make per-rule decisions over those nodes and emit `Edit` splices
+`native_flags`, `cmd_script_paths`) make per-rule decisions over those nodes
+and emit `Edit` splices
 in original-source coordinates; `translator.EditPlan` collects the splices
 (rejecting overlaps), renders them once, and prepends the fallback prefix only
 when a fallback was actually registered.  `bash_core._BashFixScanner` is the
@@ -1191,12 +1198,15 @@ only verified compatibility cases may produce an edit or a guarded fallback.
    calls `_shell_compat.fix_bash_command()`.
 4. The facade delegates to the native kernel when the compiled runtime is active,
    otherwise to the pure-Python reference in `shell_compat`; the two must stay
-   byte-equal.  The facade then applies the doubled-slash flag post-pass.
+byte-equal.  The facade then applies the Windows-only post-passes over that
+ value (`post_passes.windows_post_passes`: doubled-slash flags, then cmd.exe
+ command-string paths).
 5. `shell_compat.translator.translate()` drives the reader, collects the edits,
    renders them, adds the fallback prefix, and finally applies the heredoc
    trailing-operator repair.
 6. `BashFix(command, replacements, path_changes, shell_wrappers, nul_fixes,
-   unsupported, cmd_conditional_fixes, native_flag_fixes)` is returned;
+ unsupported, cmd_conditional_fixes, native_flag_fixes, cmd_path_fixes)` is
+ returned;
    `unsupported` non-empty means the command has no faithful Git-Bash equivalent
    and the tool refuses it with the recorded reason.
 7. The tool executes the prepared command via `bash -c` and wraps stdout/stderr

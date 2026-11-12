@@ -120,6 +120,10 @@ from kimix_native.shell_compat.native_flags import (  # noqa: F401
     native_flag_fix,
 )
 
+from kimix_native.shell_compat.post_passes import (  # noqa: F401
+    windows_post_passes,
+)
+
 from kimix_native.shell_compat.bash_core import (  # noqa: F401
     BashFix,
     _ARITHMETIC_SPECIAL_RE,
@@ -425,25 +429,15 @@ def fix_bash_command(command: str) -> BashFix:
             unsupported=tuple(unsupported),
             cmd_conditional_fixes=tuple(cmd_conditional_fixes),
         )
-    # Doubled-slash flag repair (``msiexec //a`` -> ``msiexec /a``) runs as a
-    # post-pass over the shared BashFix value so BOTH the compiled kernel and
-    # the pure-Python reference apply it exactly once and stay byte-equal.
-    # The C++ kernel cannot be extended from this repository; the facade is
-    # the single integration point.  Windows-only, no-op everywhere else.
-    if _sys.platform == "win32" and "//" in result.command:
-        flag_fix = native_flag_fix(result.command)
-        if flag_fix is not None:
-            fixed_command, original_words = flag_fix
-            result = BashFix(
-                command=fixed_command,
-                replacements=result.replacements,
-                path_changes=result.path_changes,
-                shell_wrappers=result.shell_wrappers,
-                nul_fixes=result.nul_fixes,
-                unsupported=result.unsupported,
-                cmd_conditional_fixes=result.cmd_conditional_fixes,
-                native_flag_fixes=result.native_flag_fixes + original_words,
-            )
+    # Windows-only post-passes over the SHARED result: the doubled-slash flag
+    # repair (`msiexec //a` -> `msiexec /a`) and the cmd.exe command-string
+    # path repair (`cmd /c tools/build.bat` -> `cmd /c "tools\build.bat"`).
+    # They live in `shell_compat.post_passes` so this facade stays small, and
+    # they run for BOTH engines (compiled kernel and pure-Python reference),
+    # which keeps them byte-equal by construction: the C++ port cannot be
+    # extended from this repository, so the facade is the single integration
+    # point.  Windows-only; a no-op (same object) everywhere else.
+    result = windows_post_passes(result)
     # Pass-through identity: an unchanged command must come back as the
     # original object (translator.render_splices), not the kernel's equal copy.
     if result.command is not command and result.command == command:

@@ -142,6 +142,7 @@ def test_bashfix_is_frozen_dataclass_with_exact_positional_order() -> None:
         # Appended after the original fields, so every pre-existing positional
         # construction (and the kimi-cli layer's keyword calls) stays valid.
         "native_flag_fixes",
+        "cmd_path_fixes",
     ]
 
 
@@ -156,6 +157,7 @@ def test_bashfix_defaults_are_empty_tuples() -> None:
         == fx.unsupported
         == fx.cmd_conditional_fixes
         == fx.native_flag_fixes
+        == fx.cmd_path_fixes
         == ()
     )
     # .changed excludes an unsupported-only refusal.
@@ -163,6 +165,7 @@ def test_bashfix_defaults_are_empty_tuples() -> None:
     assert BashFix("x", unsupported=("goto",)).changed is False
     assert BashFix("x", nul_fixes=("nul",)).changed is True
     assert BashFix("x", native_flag_fixes=("//a",)).changed is True
+    assert BashFix("x", cmd_path_fixes=("a/b.bat",)).changed is True
     with pytest.raises(dataclasses.FrozenInstanceError):
         fx.command = "y"  # type: ignore[misc]
 
