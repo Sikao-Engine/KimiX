@@ -27,6 +27,14 @@ Layout (facade vs implementation):
                       "tools\\build.bat"``): cmd.exe splits its command string at
                       ``/``, so a POSIX-spelled relative path is read as a switch,
                       and the quoted rewrite keeps bash from eating the backslashes.
+                      Also the shared traversal (``for_each_cmd_command_string``)
+                      every cmd command-string rule visits.
+  cmd_command_string  bash-quoting repair of the same command string: ONE
+                      bash-quoted word with ``\\"`` escapes
+                      (``cmd /c "\\"prog\\" args"``) -> the cmd-level words it
+                      described (``cmd /c "prog" args``), because the shell hands
+                      a ``"`` inside a Bash word to cmd.exe as a literal
+                      backslash + quote.
   native_flags        doubled-slash flag repair for native Windows tools
                       (``msiexec //a`` -> ``msiexec /a``).
   heredoc             heredoc trailing-operator repair plus the IR event model.
@@ -60,6 +68,10 @@ convenience; it is intentionally NOT the full historical surface.
 
 from __future__ import annotations
 
+from kimix_native.shell_compat.cmd_command_string import (  # noqa: F401
+    cmd_command_string_edits,
+    cmd_command_string_fix,
+)
 from kimix_native.shell_compat.cmd_script_paths import (  # noqa: F401
     cmd_script_path_edits,
     cmd_script_path_fix,

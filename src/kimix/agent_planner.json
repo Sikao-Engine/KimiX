@@ -13,6 +13,7 @@
       "kimi_cli.tools.note:edit_plan",
       "kimi_cli.tools.skill:skill",
       "kimi_cli.tools.background:job_output",
+      "kimi_cli.tools.broadcast:Broadcast",
       "kimi_cli.tools.research:research"
     ]
   }

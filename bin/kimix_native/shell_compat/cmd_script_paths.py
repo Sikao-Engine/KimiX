@@ -102,11 +102,18 @@ and the fallback prelude of every command that needed one contains a ``case``.
 Those words are regrouped into command regions at the operator gaps between
 their spans (the parser drops the operator from the child list), so
 ``rev C:/a && cmd /c z/w.bat`` is repaired inside its prelude-wrapped form too.
+
+The traversal itself (:func:`for_each_cmd_command_string`) is shared: it is the
+one place that knows which command contexts hold a cmd.exe command string (and
+which are data), and each rule is a visitor over the words after the run
+switch.  :mod:`kimix_native.shell_compat.cmd_command_string` (the bash-quoting
+repair of the same command string) uses the same walk, so both rules always
+agree on what a command string IS.
 """
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 try:  # pragma: no cover - both spellings are stdlib-compatible
     import regex as re
@@ -211,6 +218,7 @@ _DRIVE_ABSOLUTE_RE = re.compile(r"^[A-Za-z]:[/\\]")
 __all__ = [
     "cmd_script_path_edits",
     "cmd_script_path_fix",
+    "for_each_cmd_command_string",
     "path_changes_after_cmd_repair",
 ]
 
@@ -401,36 +409,50 @@ def _walk_command_string(words: object, source: str, edits: List[Edit]) -> None:
             edits.append((word.span.start, word.span.end, replacement))
 
 
-def _command_edits(
+#: Visitor called once per cmd.exe command string, in source order, with the IR
+#: words AFTER the ``/c``/``/k`` run switch and the source string their spans
+#: index into.  Shared by every ``cmd`` command-string rule (this module's path
+#: repair and :mod:`kimix_native.shell_compat.cmd_command_string`): the
+#: traversal (plain / keyword-wrapped / degraded tilings, expansions, stop
+#: rules) is one piece of knowledge, the rules are the visitors.
+CommandStringHandler = Callable[[List[object], str], None]
+
+
+def _command_words(
     command_word: object,
     arguments: object,
     source: str,
-    edits: List[Edit],
-) -> None:
-    """Emit the path splices of one cmd.exe command node."""
+) -> Optional[List[object]]:
+    """The command-string words of one ``cmd`` node, or ``None``.
+
+    ``None`` means the node is not a ``cmd``/``cmd.exe`` run form (no
+    ``/c``/``/k`` switch) and therefore has no command string to visit.
+    """
     raw = source[command_word.span.start : command_word.span.end]
-    name = _tool_name(raw, command_word.literal_value)
-    if name != "cmd":
-        return
+    if _tool_name(raw, command_word.literal_value) != "cmd":
+        return None
     start = _command_string_start(arguments, source)
     if start is None:
-        return
-    _walk_command_string(list(arguments)[start:], source, edits)
+        return None
+    return list(arguments)[start:]
 
 
-def _handle_command(command: object, source: str, edits: List[Edit]) -> None:
-    """Apply the rule to one COMMAND node (plain or keyword-wrapped shape)."""
+def _handle_command(command: object, source: str, handler: CommandStringHandler) -> None:
+    """Visit the command string(s) of one COMMAND node (any tiling shape)."""
     word = getattr(command, "command_word", None)
     if word is None:
         return
-    _command_edits(word, command.arguments, source, edits)
+    words = _command_words(word, command.arguments, source)
+    if words is not None:
+        handler(words, source)
     raw = source[word.span.start : word.span.end]
     name = _tool_name(raw, word.literal_value)
     if name in _CONDITION_KEYWORDS and command.arguments:
         # ``if cmd /c x.bat; then ...`` is tiled as word ``if`` + arguments,
         # the first of which is the real command word.
-        first = command.arguments[0]
-        _command_edits(first, command.arguments[1:], source, edits)
+        inner = _command_words(command.arguments[0], command.arguments[1:], source)
+        if inner is not None:
+            handler(inner, source)
 
 
 def _degraded_words(node: object) -> Optional[List[object]]:
@@ -469,23 +491,28 @@ def _degraded_regions(words: List[object], source: str) -> List[List[object]]:
     return regions
 
 
-def _walk_degraded(words: List[object], source: str, edits: List[Edit]) -> None:
-    """Apply the rule to a degraded (bare-WORD) command container."""
+def _walk_degraded(
+    words: List[object],
+    source: str,
+    handler: CommandStringHandler,
+) -> None:
+    """Visit the command string(s) of a degraded (bare-WORD) container."""
     for region in _degraded_regions(words, source):
         if not region:
             continue
         command_word, arguments = region[0], region[1:]
-        raw = source[command_word.span.start : command_word.span.end]
-        name = _tool_name(raw, command_word.literal_value)
-        if name != "cmd":
-            continue
-        start = _command_string_start(arguments, source)
-        if start is not None:
-            _walk_command_string(arguments[start:], source, edits)
+        found = _command_words(command_word, arguments, source)
+        if found is not None:
+            handler(found, source)
 
 
-def _walk(node: object, source: str, edits: List[Edit], depth: int) -> None:
-    """Collect cmd.exe path splices from *node*'s command contexts.
+def _walk(
+    node: object,
+    source: str,
+    handler: CommandStringHandler,
+    depth: int,
+) -> None:
+    """Visit every cmd.exe command string reachable from *node*.
 
     Mirrors ``native_flags._walk``: COMMAND nodes are handled, ``EXPANSION``
     child scripts are entered (same source string), embedded quoted scripts /
@@ -499,19 +526,19 @@ def _walk(node: object, source: str, edits: List[Edit], depth: int) -> None:
 
     kind = node.kind
     if kind == NodeKind.COMMAND:
-        _handle_command(node, source, edits)
+        _handle_command(node, source, handler)
         for expansion in getattr(node, "expansions", ()) or ():
-            _walk(expansion, source, edits, depth + 1)
+            _walk(expansion, source, handler, depth + 1)
         return
     if kind in (NodeKind.PIPELINE, NodeKind.COMMAND_LIST):
         words = _degraded_words(node)
         if words is not None:
-            _walk_degraded(words, source, edits)
+            _walk_degraded(words, source, handler)
             return
     if kind == NodeKind.EXPANSION:
         child = getattr(node, "child", None)
         if child is not None:
-            _walk(child, source, edits, depth + 1)
+            _walk(child, source, handler, depth + 1)
         return
     if kind in (NodeKind.EMBEDDED, NodeKind.HEREDOC, NodeKind.RAW):
         # Embedded quoted scripts index a DIFFERENT (standalone) source string;
@@ -519,10 +546,31 @@ def _walk(node: object, source: str, edits: List[Edit], depth: int) -> None:
         return
     for attr in ("children", "commands"):
         for child in getattr(node, attr, ()) or ():
-            _walk(child, source, edits, depth + 1)
+            _walk(child, source, handler, depth + 1)
     if kind == NodeKind.COMPOUND:
         for _part_name, part in getattr(node, "parts", ()) or ():
-            _walk(part, source, edits, depth + 1)
+            _walk(part, source, handler, depth + 1)
+
+
+def for_each_cmd_command_string(source: str, handler: CommandStringHandler) -> None:
+    """Call *handler(words, source)* for every cmd.exe command string in *source*.
+
+    The shared entry point of the ``cmd`` command-string rules: cheap gates
+    first (``cmd`` substring + word-boundary regex), then the tolerant parser
+    and one IR walk.  *words* are the IR words AFTER the ``/c``/``/k`` run
+    switch, in source order; their spans index into *source*.  Nothing is
+    raised: without the package's parser the walk is skipped (pass-through).
+    """
+    if not source or "cmd" not in source.lower():
+        return
+    if _CMD_GATE_RE.search(source) is None:
+        return
+    try:
+        from kimix_native.shell_compat.parser import parse
+    except ImportError:  # pragma: no cover - package half-installed
+        return
+    script = parse(source)
+    _walk(script, source, handler, 0)
 
 
 def cmd_script_path_edits(source: str) -> List[Edit]:
@@ -532,17 +580,12 @@ def cmd_script_path_edits(source: str) -> List[Edit]:
     disjoint).  An empty list means the source needs no repair — the caller
     must then keep the original string object.
     """
-    if not source or "cmd" not in source.lower():
-        return []
-    if _CMD_GATE_RE.search(source) is None:
-        return []
-    try:
-        from kimix_native.shell_compat.parser import parse
-    except ImportError:  # pragma: no cover - package half-installed
-        return []
-    script = parse(source)
     edits: List[Edit] = []
-    _walk(script, source, edits, 0)
+
+    def handler(words: List[object], src: str) -> None:
+        _walk_command_string(words, src, edits)
+
+    for_each_cmd_command_string(source, handler)
     return edits
 
 

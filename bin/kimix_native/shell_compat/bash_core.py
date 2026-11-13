@@ -706,6 +706,14 @@ class BashFix:
     splits its command string at ``/``, so the POSIX spelling is read as a
     switch, and the rewrite is quoted because bash removes bare backslashes —
     see :mod:`kimix_native.shell_compat.cmd_script_paths`).
+    ``cmd_command_string_fixes`` records each ``cmd``/``cmd.exe`` ``/c``/``/k``
+    command string that was spelled as ONE bash-quoted word with ``\\"``
+    escapes (``cmd /c "\\"prog\\" args"``) and was re-split into the cmd-level
+    words it described (``cmd /c "prog" args``); the recorded word is the
+    command string's PROGRAM token, i.e. the one cmd.exe could not resolve
+    before the repair (the shell escapes a ``"`` inside a Bash word to
+    ``\\"`` on the Windows command line, where cmd.exe reads it as a literal
+    backslash — see :mod:`kimix_native.shell_compat.cmd_command_string`).
     ``cmd_conditional_fixes``
     records the original keyword region of each cmd.exe control-flow construct
     that was translated to a bash equivalent by the scanner (see
@@ -729,6 +737,7 @@ class BashFix:
     cmd_conditional_fixes: tuple[str, ...] = ()
     native_flag_fixes: tuple[str, ...] = ()
     cmd_path_fixes: tuple[str, ...] = ()
+    cmd_command_string_fixes: tuple[str, ...] = ()
 
     @property
     def changed(self) -> bool:
@@ -741,6 +750,7 @@ class BashFix:
             or bool(self.cmd_conditional_fixes)
             or bool(self.native_flag_fixes)
             or bool(self.cmd_path_fixes)
+            or bool(self.cmd_command_string_fixes)
         )
 
     @property
@@ -804,6 +814,18 @@ class BashFix:
                 "splits its command string at `/`, so the POSIX spelling "
                 "would be read as a switch; the quotes keep bash from eating "
                 "the backslashes)."
+            )
+        if self.cmd_command_string_fixes:
+            words = ", ".join(
+                f"`{word}`" for word in self.cmd_command_string_fixes
+            )
+            parts.append(
+                "Re-split the quoted `cmd /c` command string into separate "
+                f"words: {words} (bash hands a `\"` inside one word to "
+                "cmd.exe as a literal backslash + quote, so cmd.exe could "
+                "not resolve the program; separate words let the shell "
+                "quote each argument for cmd.exe — write the command string "
+                "as plain words from the start)."
             )
         return " ".join(parts)
 

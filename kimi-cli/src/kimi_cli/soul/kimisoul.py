@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+import anyio
 import kosong
 import tenacity
 from kosong import StepResult
@@ -94,6 +95,13 @@ from kimi_cli.soul.message import (
 )
 from kimi_cli.soul import slash as soul_slash
 from kimi_cli.soul.toolset import KimiToolset
+from kimi_cli.tools.broadcast.bus import (
+    BroadcastBus,
+    BroadcastError,
+    is_local_publish,
+    now_ms,
+)
+from kimi_cli.tools.broadcast.format import format_broadcast_batch
 from kimi_cli.tools.todo import Todo, TodoList
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.export import perform_export
@@ -442,6 +450,25 @@ Dropping the *oldest* entry keeps the freshest intent, which matches the UI
 semantics of "the newest steer wins".
 """
 
+_BROADCAST_POLL_INTERVAL_S = 3.0
+"""Minimum seconds between two broadcast-bus operations of a running soul.
+
+The read -> re-format -> steer cycle is throttled by a background poller
+instead of running once per turn/step: a long turn then still picks up sibling
+messages promptly, and a burst of turns cannot hammer the shared database.  The
+throttle is anchored to the previous poll, so the first tick of a new turn runs
+immediately when the last poll is older than this interval.
+"""
+
+_BROADCAST_SAFETY_TOKENS = 2048
+"""Context headroom kept free when sizing one broadcast injection."""
+
+_BROADCAST_BUDGET_DIVISOR = 4
+"""A broadcast injection may never claim more than 1/N of the context window."""
+
+_BROADCAST_MAX_BUDGET_TOKENS = 8000
+"""Absolute cap on the token budget of one broadcast injection."""
+
 
 @dataclass(frozen=True, slots=True)
 class StepOutcome:
@@ -644,6 +671,28 @@ class KimiSoul:
             cache_loss_penalty=self._loop_control.prune_cache_loss_penalty,
         )
         self._recently_restored_refs: set[str] = set()
+
+        # Cross-process broadcast bus (``broadcast`` tool).  Every agent process
+        # in this work directory shares ``.kimix_cache/_broadcast.db``;
+        # ``_broadcast_last_time`` is this session's read cursor and starts at
+        # session-creation time so a fresh session only receives what other
+        # agents publish from now on.  The cursor is a millisecond epoch key and
+        # the bus keys are strictly increasing, so ``time >= cursor`` never
+        # misses a message and only needs one rowid range scan per poll.
+        self._broadcast_bus = BroadcastBus(work_dir=agent.runtime.session.work_dir)
+        self._broadcast_last_time: int = now_ms()
+        self._broadcast_poll_interval: float = _BROADCAST_POLL_INTERVAL_S
+        self._broadcast_task: asyncio.Task[None] | None = None
+        # Cursor value from before the first steered-but-not-yet-consumed batch,
+        # used to rewind instead of losing messages when a turn ends early.
+        self._broadcast_cursor_backup: int | None = None
+        # Monotonic timestamp of the last poll cycle; the 3s throttle is
+        # anchored to it, so a turn starting after an idle stretch reads the
+        # backlog right away (see ``_broadcast_poll_loop``).
+        self._broadcast_last_poll_at: float = 0.0
+        self._broadcast_delivered: int = 0
+        self._broadcast_polls: int = 0
+        self._broadcast_pruned: int = self._prune_broadcast_history()
 
         self._compact_cache_dir: list[Path] = []
         self._finalizer = weakref.finalize(
@@ -914,6 +963,213 @@ class KimiSoul:
             raise LLMNotSupported(self._runtime.llm, list(missing_caps))
         await self._context.append_message(message)
 
+    # ------------------------------------------------------------------
+    # Cross-process broadcast bus (``broadcast`` tool)
+    # ------------------------------------------------------------------
+    # The tool only writes; a running soul polls the shared database and steers
+    # what other *processes* published into its own context.  Everything here is
+    # failure-isolated: a broken/locked/deleted bus must never break a turn.
+    def _prune_broadcast_history(self) -> int:
+        """Drop broadcast messages older than the retention window.
+
+        Called once per session start so the shared file cannot grow forever.
+        """
+        try:
+            removed = self._broadcast_bus.prune()
+        except Exception as exc:  # noqa: BLE001 — pruning must never break init
+            logger.warning(
+                "Failed to prune broadcast history at {path}: {err}",
+                path=self._broadcast_bus.path,
+                err=exc,
+            )
+            return 0
+        if removed:
+            logger.debug(
+                "Pruned {count} broadcast message(s) older than {days} day(s)",
+                count=removed,
+                days=self._broadcast_bus.retention_ms // 86_400_000,
+            )
+        return removed
+
+    def _broadcast_token_budget(self) -> int:
+        """Tokens one broadcast injection may use without risking an overflow."""
+        llm = self._runtime.llm
+        if llm is None:
+            return 0
+        max_context = int(llm.max_context_size or 0)
+        if max_context <= 0:
+            return 0
+        headroom = (
+            max_context
+            - self._context.token_count_with_pending
+            - max(_BROADCAST_SAFETY_TOKENS, max_context // 20)
+        )
+        return max(
+            0,
+            min(headroom, max_context // _BROADCAST_BUDGET_DIVISOR, _BROADCAST_MAX_BUDGET_TOKENS),
+        )
+
+    async def _broadcast_poll_once(self) -> int:
+        """Read new broadcast messages and steer them into this session.
+
+        One tick = read the database, re-format the batch (bounded by the token
+        budget) and hand it to the steer queue.  The read cursor only advances
+        once the batch was handed over, so a failed or deferred tick is simply
+        retried.
+
+        Returns:
+            The number of messages consumed from the bus.  Messages that did not
+            fit the token budget are counted too: the block summarises them as
+            omitted (see :func:`~kimi_cli.tools.broadcast.format.format_broadcast_batch`)
+            and the cursor moves past them.
+        """
+        self._broadcast_polls += 1
+        cursor = self._broadcast_last_time
+        try:
+            # SQLite may wait on another process' write lock; keep that off the
+            # event loop so a busy database cannot stall a streaming step.
+            messages = await anyio.to_thread.run_sync(
+                self._broadcast_bus.read_since, cursor
+            )
+        except BroadcastError as exc:
+            logger.warning("Broadcast poll skipped: {err}", err=exc)
+            return 0
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — the bus must never break a turn
+            logger.exception("Broadcast poll failed unexpectedly")
+            return 0
+        if not messages:
+            return 0
+
+        next_cursor = messages[-1].time + 1
+        # Skip this process' own publishes: an agent must not read its own
+        # broadcast back (that would also loop: publish -> steer -> reply ->
+        # publish -> ...).
+        foreign = [
+            message
+            for message in messages
+            if not is_local_publish(message.time, self._broadcast_bus.path)
+        ]
+        if not foreign:
+            self._broadcast_last_time = next_cursor
+            return 0
+
+        budget = self._broadcast_token_budget()
+        text = format_broadcast_batch(
+            foreign, token_budget=budget, count_tokens=count_tokens
+        )
+        if text is None:
+            # No room in the context right now (or not even the header fits):
+            # leave the cursor alone so the batch is retried after compaction
+            # frees space, and let retention prune it if it never does.
+            logger.debug(
+                "Broadcast batch of {count} message(s) deferred (token budget {budget})",
+                count=len(foreign),
+                budget=budget,
+            )
+            return 0
+
+        # ``_enqueue_steer`` drops the *oldest* queued steer when the ring is
+        # full, and the cursor would already be past this batch — so defer
+        # instead of risking a silently lost broadcast.
+        if self._steer_queue.full():
+            logger.debug(
+                "Broadcast batch of {count} message(s) deferred (steer queue full)",
+                count=len(foreign),
+            )
+            return 0
+
+        # Remember the cursor of the oldest undelivered batch so a turn that
+        # ends before the loop consumes the steer can rewind instead of losing
+        # the messages (``_restore_broadcast_cursor_if_unconsumed``).
+        if self._steer_queue.empty():
+            self._broadcast_cursor_backup = None
+        if self._broadcast_cursor_backup is None:
+            self._broadcast_cursor_backup = cursor
+        self.steer(text)
+        self._broadcast_last_time = next_cursor
+        self._broadcast_delivered += len(foreign)
+        logger.debug(
+            "Steered {count} broadcast message(s) into the session",
+            count=len(foreign),
+        )
+        return len(foreign)
+
+    def _start_broadcast_poller(self) -> None:
+        """Start the background poller for this run (no-op when already running).
+
+        Subagents share their parent's work directory *and* process, so only the
+        root soul of a process consumes the bus — otherwise one message would be
+        injected once per sibling context.
+        """
+        if not self.is_root:
+            return
+        if self._broadcast_poll_interval <= 0 or self._runtime.llm is None:
+            return
+        task = self._broadcast_task
+        if task is not None and not task.done():
+            return
+        self._broadcast_task = asyncio.create_task(
+            self._broadcast_poll_loop(), name="kimi-broadcast-poller"
+        )
+
+    async def _broadcast_poll_loop(self) -> None:
+        """Poll the shared bus at most once every ``_broadcast_poll_interval``.
+
+        The wait is anchored to the *previous* poll, not to the loop start: a
+        turn that begins after an idle stretch reads the backlog immediately
+        (so the model sees it in its first request of the turn) while a rapid
+        sequence of turns still cannot poll the database more often than the
+        configured interval.
+        """
+        interval = self._broadcast_poll_interval
+        try:
+            while True:
+                remaining = interval - (time.monotonic() - self._broadcast_last_poll_at)
+                if remaining > 0:
+                    await asyncio.sleep(remaining)
+                # Stamp before the work so a failing database is not hammered.
+                self._broadcast_last_poll_at = time.monotonic()
+                try:
+                    await self._broadcast_poll_once()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # noqa: BLE001 — the poller outlives failures
+                    logger.exception("Broadcast poll tick failed")
+        except asyncio.CancelledError:
+            raise
+
+    async def _stop_broadcast_poller(self) -> None:
+        """Cancel the background poller and wait for it to settle."""
+        task, self._broadcast_task = self._broadcast_task, None
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    def _restore_broadcast_cursor_if_unconsumed(self) -> None:
+        """Re-deliver broadcast messages the agent loop never consumed.
+
+        ``_agent_loop`` discards stale steers on turn init, so a broadcast
+        enqueued just before the turn ended would be dropped.  Rewinding the
+        read cursor re-reads it on the next run; a duplicate is cheaper than a
+        lost message.
+        """
+        backup = self._broadcast_cursor_backup
+        self._broadcast_cursor_backup = None
+        if backup is None or self._steer_queue.empty():
+            return
+        if backup < self._broadcast_last_time:
+            logger.debug(
+                "Broadcast steer was not consumed; rewinding read cursor "
+                "{new_cursor} -> {backup}",
+                new_cursor=self._broadcast_last_time,
+                backup=backup,
+            )
+            self._broadcast_last_time = backup
+
 
     @property
     def available_slash_commands(self) -> list[soul_slash.SlashCommandInfo]:
@@ -971,6 +1227,8 @@ class KimiSoul:
             turn_finished = True
         finally:
             self._run_active = False
+            await self._stop_broadcast_poller()
+            self._restore_broadcast_cursor_if_unconsumed()
             if turn_started and not turn_finished:
                 wire_send(TurnEnd())
 
@@ -1015,6 +1273,14 @@ class KimiSoul:
         # Reset the wake event so a steer arriving later in this turn can
         # interrupt a streaming step.
         self._steer_wake_event.clear()
+
+        # Cross-process broadcast: poll the shared bus while this turn runs
+        # (throttled to ``_broadcast_poll_interval``, never per step/turn).
+        # Started *after* the stale-steer drain on purpose: the poller's first
+        # tick may fire immediately (a backlog is delivered with no extra wait),
+        # and a steer queued before this point would be discarded as stale —
+        # while the read cursor had already moved past it.
+        self._start_broadcast_poller()
 
         # ── 1a. MCP deferred loading ──────────────────────────────────────────
         if isinstance(self._agent.toolset, KimiToolset):
@@ -2217,6 +2483,13 @@ class KimiSoul:
 
     async def close(self) -> None:
         """Persist state and delete rotated compaction export files/context before process exit."""
+        # Stop the broadcast poller and release the shared bus connection first:
+        # nothing else in the teardown path may wait on a database handle.
+        with suppress(Exception):
+            await self._stop_broadcast_poller()
+        with suppress(Exception):
+            self._broadcast_bus.close()
+
         # Persist any turns indexed since the last explicit save.
         try:
             self._history_index.save()

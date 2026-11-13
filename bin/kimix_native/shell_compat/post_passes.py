@@ -20,6 +20,13 @@ express:
 ``native_flags``
     doubled-slash switches of native Windows tools (``msiexec //a`` ->
     ``msiexec /a``).
+``cmd_command_string``
+    a ``cmd``/``cmd.exe`` command string spelled as ONE bash-quoted word with
+    ``\"`` escapes (``cmd /c "\"prog\" args"``) is re-split into the cmd-level
+    words it described (``cmd /c "prog" args``): the shell hands a ``"``
+    inside a Bash word to ``cmd.exe`` as a literal backslash + quote, so
+    cmd.exe could never resolve the program.  Runs BEFORE the path rule so the
+    path rule sees plain words.
 ``cmd_script_paths``
     relative paths inside a ``cmd``/``cmd.exe`` ``/c``/``/k`` command string
     (``cmd /c tools/build.bat`` -> ``cmd /c "tools\build.bat"``), which cmd.exe
@@ -28,8 +35,10 @@ express:
 
 Order matters: the doubled-slash repair runs FIRST so the classic Git Bash
 workaround spelling ``cmd //c ...`` has become ``cmd /c ...`` before the
-command-string rule looks for the run switch (it accepts both spellings, but
-the normalized form is the one users see in the final command).
+command-string rules look for the run switch (they accept both spellings, but
+the normalized form is the one users see in the final command), and the
+bash-quoting repair runs before the path repair so the path rule sees the
+words the author meant instead of one opaque command string.
 
 Both passes are pure functions of the command text and preserve the
 byte-for-byte contract: when a pass changes nothing the SAME ``BashFix`` object
@@ -61,6 +70,9 @@ def windows_post_passes(
     Windows-only behaviour is unit-testable on any host.  On a non-Windows
     platform the value is returned unchanged (the same object).
     """
+    from kimix_native.shell_compat.cmd_command_string import (
+        cmd_command_string_fix,
+    )
     from kimix_native.shell_compat.cmd_script_paths import (
         cmd_script_path_fix,
         path_changes_after_cmd_repair,
@@ -77,6 +89,17 @@ def windows_post_passes(
                 result,
                 command=fixed,
                 native_flag_fixes=result.native_flag_fixes + words,
+            )
+    if "cmd" in result.command.lower() and '"' in result.command:
+        string_fix = cmd_command_string_fix(result.command)
+        if string_fix is not None:
+            fixed, programs = string_fix
+            result = replace(
+                result,
+                command=fixed,
+                cmd_command_string_fixes=(
+                    result.cmd_command_string_fixes + programs
+                ),
             )
     if "cmd" in result.command.lower():
         cmd_fix = cmd_script_path_fix(result.command)

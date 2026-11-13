@@ -191,4 +191,7 @@ def fix_bash_command(command: str) -> BashFix:
         cmd_conditional_fixes=tuple(getattr(result, "cmd_conditional_fixes", ())),
         native_flag_fixes=tuple(getattr(result, "native_flag_fixes", ())),
         cmd_path_fixes=tuple(getattr(result, "cmd_path_fixes", ())),
+        cmd_command_string_fixes=tuple(
+            getattr(result, "cmd_command_string_fixes", ())
+        ),
     )

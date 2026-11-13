@@ -1010,6 +1010,9 @@ def _bash_ir_fix(command: str) -> dict[str, Any] | None:
         'cmd_conditional_fixes': list(getattr(fix, 'cmd_conditional_fixes', ()) or ()),
         'native_flag_fixes': list(getattr(fix, 'native_flag_fixes', ()) or ()),
         'cmd_path_fixes': list(getattr(fix, 'cmd_path_fixes', ()) or ()),
+        'cmd_command_string_fixes': list(
+            getattr(fix, 'cmd_command_string_fixes', ()) or ()
+        ),
     }
 
 
@@ -1199,14 +1202,15 @@ only verified compatibility cases may produce an edit or a guarded fallback.
 4. The facade delegates to the native kernel when the compiled runtime is active,
    otherwise to the pure-Python reference in `shell_compat`; the two must stay
 byte-equal.  The facade then applies the Windows-only post-passes over that
- value (`post_passes.windows_post_passes`: doubled-slash flags, then cmd.exe
- command-string paths).
+ value (`post_passes.windows_post_passes`: doubled-slash flags, then the
+ cmd.exe command-string quoting repair, then command-string paths).
 5. `shell_compat.translator.translate()` drives the reader, collects the edits,
    renders them, adds the fallback prefix, and finally applies the heredoc
    trailing-operator repair.
 6. `BashFix(command, replacements, path_changes, shell_wrappers, nul_fixes,
- unsupported, cmd_conditional_fixes, native_flag_fixes, cmd_path_fixes)` is
- returned;
+   unsupported, cmd_conditional_fixes, native_flag_fixes, cmd_path_fixes,
+   cmd_command_string_fixes)` is
+   returned;
    `unsupported` non-empty means the command has no faithful Git-Bash equivalent
    and the tool refuses it with the recorded reason.
 7. The tool executes the prepared command via `bash -c` and wraps stdout/stderr
