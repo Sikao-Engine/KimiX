@@ -10,6 +10,7 @@ from openai.types.chat import (
     ChatCompletion,
     ChatCompletionChunk,
     ChatCompletionMessageParam,
+    ChatCompletionToolParam,
 )
 
 from kosong.chat_provider import (
@@ -18,7 +19,6 @@ from kosong.chat_provider import (
     ThinkingEffort,
 )
 from kosong.chat_provider.openai_common import (
-    convert_invalid_json_error,
     CommonGenerationKwargs,
     OpenAICompatibleProviderMixin,
     OpenAICompatibleStreamedMessage,
@@ -26,12 +26,15 @@ from kosong.chat_provider.openai_common import (
     clamp_max_tokens,
     clamp_thinking_effort,
     convert_error,
+    convert_invalid_json_error,
     extract_reasoning_from_content,
     is_effectively_empty_content_parts,
+    looks_like_gemini_backend,
     maybe_log_reasoning_content_error,  # noqa: F401
     reasoning_effort_to_thinking_effort,
     thinking_effort_to_reasoning_effort,
     tool_to_openai,
+    tool_to_openai_gemini,
 )
 from kosong.contrib.chat_provider.common import (
     ToolMessageConversion,
@@ -115,6 +118,7 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
         openai_settings: dict[str, Any] | None = None,
         tool_message_conversion: ToolMessageConversion | None = None,
         supported_efforts: set[ThinkingEffort] | None = None,
+        gemini_schema_compat: bool | None = None,
         **client_kwargs: Any,
     ):
         """
@@ -130,6 +134,12 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
 
         ``supported_efforts`` restricts the thinking-effort levels this model accepts.
         When omitted, all levels (``low`` through ``max``) are allowed.
+
+        ``gemini_schema_compat`` forces (or disables) the Gemini tool-schema patch. Gemini
+        rejects array schemas that omit ``items`` — a shape Pydantic emits for tuple
+        parameters — and that restriction survives OpenAI-compatible proxies in front of it.
+        When omitted, it is auto-detected from the model name and base URL (see
+        :func:`looks_like_gemini_backend`), leaving every non-Gemini payload byte-identical.
         """
         self._init_openai_client(api_key=api_key, base_url=base_url, client_kwargs=client_kwargs)
         """The underlying `AsyncOpenAI` client."""
@@ -137,6 +147,11 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
         self.stream = stream
         self._reasoning_effort: ReasoningEffort | Omit = omit
         self._reasoning_key = reasoning_key
+        self._gemini_schema_compat = (
+            looks_like_gemini_backend(model=model, base_url=base_url)
+            if gemini_schema_compat is None
+            else gemini_schema_compat
+        )
         self._supported_efforts = (
             frozenset(supported_efforts)
             if supported_efforts is not None
@@ -248,7 +263,7 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=(tool_to_openai(tool) for tool in tools),
+                tools=(self._convert_tool(tool) for tool in tools),
                 stream=self.stream,
                 stream_options={"include_usage": True} if self.stream else omit,
                 reasoning_effort=reasoning_effort,
@@ -312,6 +327,19 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
         if self._reasoning_effort is not omit:
             model_parameters["reasoning_effort"] = self._reasoning_effort
         return model_parameters
+
+    def _convert_tool(self, tool: Tool) -> ChatCompletionToolParam:
+        """Convert a Kosong tool to the Chat Completions tool format.
+
+        Gemini-backed endpoints (native or behind a proxy) reject array parameter
+        schemas without ``items`` — the shape Pydantic emits for tuple fields —
+        so the schema is patched in-place-free when ``gemini_schema_compat`` is on.
+        Other providers receive the untouched schema, keeping their wire payloads
+        byte-identical.
+        """
+        if not self._gemini_schema_compat:
+            return tool_to_openai(tool)
+        return tool_to_openai_gemini(tool)
 
     def _convert_message(self, message: Message) -> ChatCompletionMessageParam:
         """Convert a Kosong message to OpenAI message."""

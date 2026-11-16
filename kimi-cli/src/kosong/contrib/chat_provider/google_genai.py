@@ -65,6 +65,7 @@ from kosong.message import (
 )
 from kosong.tooling import Tool as KosongTool
 from kosong.tooling import ToolReturnValue
+from kosong.utils.jsonschema import JsonDict, ensure_array_items
 
 if TYPE_CHECKING:
 
@@ -385,12 +386,17 @@ def tool_to_google_genai(tool: KosongTool) -> Tool:
     # Pydantic validation (extra='forbid') which rejects standard JSON Schema
     # metadata fields like $schema, $id, $comment, examples, etc.
     # This is the SDK's official way to pass raw JSON Schema directly to the API.
+    #
+    # Gemini's `Schema` proto requires every array schema to carry `items`; a
+    # bare `{"type": "array"}` or a `prefixItems`-only tuple (what Pydantic emits
+    # for `tuple[int, int]`) is rejected with
+    # `...any_of[0].items: missing field.` — so patch the schema first.
     return Tool(
         function_declarations=[
             FunctionDeclaration(
                 name=tool.name,
                 description=tool.description,
-                parameters_json_schema=tool.parameters,
+                parameters_json_schema=ensure_array_items(cast(JsonDict, tool.parameters)),
             )
         ]
     )

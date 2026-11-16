@@ -29,12 +29,11 @@ from kosong.chat_provider import (
     ThinkingEffort,
 )
 from kosong.chat_provider.openai_common import (
-    convert_invalid_json_error,
     clamp_max_tokens,
     clamp_thinking_effort,
     convert_error,
+    convert_invalid_json_error,
     reasoning_effort_to_thinking_effort,
-    tool_to_openai,
 )
 from kosong.contrib.chat_provider.common import normalize_history
 from kosong.contrib.chat_provider.openai_legacy import OpenAILegacy, OpenAILegacyStreamedMessage
@@ -141,7 +140,7 @@ class ThinkingControlledOpenAIProvider(CompatibleOpenAIProvider):
             response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=(tool_to_openai(tool) for tool in tools),
+                tools=(self._convert_tool(tool) for tool in tools),
                 stream=self.stream,
                 stream_options={"include_usage": True} if self.stream else omit,
                 reasoning_effort=reasoning_effort,

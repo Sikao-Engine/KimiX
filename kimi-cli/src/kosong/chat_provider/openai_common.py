@@ -48,6 +48,7 @@ from kosong.message import (
     ToolCallPart,
 )
 from kosong.tooling import Tool
+from kosong.utils.jsonschema import JsonDict, ensure_array_items
 
 
 class CommonGenerationKwargs(TypedDict, total=False):
@@ -585,6 +586,58 @@ def tool_to_openai(tool: Tool) -> ChatCompletionToolParam:
             "parameters": tool.parameters,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Gemini schema compatibility
+# ---------------------------------------------------------------------------
+
+#: Hosts that serve Gemini directly (the native ``google_genai`` endpoint and
+#: Vertex AI). Requests to these inherit Gemini's protobuf ``Schema``
+#: restrictions regardless of which client/wire format reaches them.
+_GEMINI_BASE_URL_HINTS: tuple[str, ...] = (
+    "gemini",
+    "generativelanguage.googleapis.com",
+    "aiplatform.googleapis.com",
+)
+
+
+def looks_like_gemini_backend(model: str | None, base_url: str | None) -> bool:
+    """Best-effort detection of a Gemini-backed OpenAI-compatible endpoint.
+
+    Gemini's tool-schema validation is stricter than every other mainstream
+    provider (see :func:`kosong.utils.jsonschema.ensure_array_items`), and it is
+    reachable through more than one door: the native ``google_genai`` provider,
+    Google's OpenAI-compatible endpoint, and third-party gateways/proxies that
+    translate OpenAI requests into ``GenerateContentRequest``. The proxies are
+    indistinguishable from any other OpenAI-compatible endpoint except by model
+    name and URL, so both are inspected:
+
+    - the model name contains ``gemini`` (e.g. ``gemini-2.5-pro``,
+      ``models/gemini-3-pro``, ``google/gemini-4-hydrogen``);
+    - the base URL points at Gemini (``generativelanguage.googleapis.com``,
+      ``aiplatform.googleapis.com``) or says ``gemini`` itself.
+
+    Callers may always override the guess explicitly.
+    """
+    if "gemini" in (model or "").lower():
+        return True
+    base_url_lower = (base_url or "").lower()
+    return any(hint in base_url_lower for hint in _GEMINI_BASE_URL_HINTS)
+
+
+def tool_to_openai_gemini(tool: Tool) -> ChatCompletionToolParam:
+    """Convert a tool to OpenAI tool format with Gemini-compatible schemas.
+
+    Gemini rejects ``GenerateContent`` requests whose array schemas omit
+    ``items`` (``...any_of[0].items: missing field.``), which is exactly what
+    Pydantic emits for tuple parameters. Everything else is forwarded verbatim.
+    """
+    converted = tool_to_openai(tool)
+    parameters = converted["function"].get("parameters")
+    if isinstance(parameters, dict):
+        converted["function"]["parameters"] = ensure_array_items(cast(JsonDict, parameters))
+    return converted
 
 
 def apply_generation_kwargs(self: Any, *, attr: str = "_generation_kwargs", **kwargs: Any) -> Any:

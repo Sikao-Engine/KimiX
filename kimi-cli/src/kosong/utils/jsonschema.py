@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Callable
 from typing import cast
 
 import regex as re
@@ -218,6 +219,132 @@ def ensure_property_types(schema: JsonDict) -> JsonDict:
     return result
 
 
+def ensure_array_items(schema: JsonDict) -> JsonDict:
+    """Return a deep copy of ``schema`` where every array schema declares
+    ``items``.
+
+    Google's Gemini API converts tool parameter schemas into the ``Schema``
+    protobuf, and that conversion *requires* an ``items`` sub-schema whenever a
+    node declares ``type: "array"``. A schema that only constrains positions
+    (``prefixItems``) or nothing at all is valid JSON Schema and is accepted by
+    OpenAI, Anthropic and Moonshot, but Gemini rejects the whole
+    ``GenerateContent`` request with HTTP 400 and, per array property::
+
+        * GenerateContentRequest.tools[0].function_declarations[15].parameters
+          .properties[coordinate].any_of[0].items: missing field.
+
+    Pydantic emits that shape for fixed-length tuples::
+
+        coordinate: tuple[int, int] | None
+
+        {"anyOf": [{"type": "array", "prefixItems": [{"type": "integer"},
+                    {"type": "integer"}], "maxItems": 2, "minItems": 2},
+                   {"type": "null"}]}
+
+    Gemini has no ``prefixItems`` (the keyword is silently dropped), so the
+    synthesized ``items`` is also the only positional type information the model
+    ever sees — it is derived from the existing position schemas so tuple
+    parameters keep advertising their element type:
+
+    - identical position schemas → that schema;
+    - same ``type`` on every position → ``{"type": <type>}``;
+    - mixing ``integer``/``number`` → ``{"type": "number"}``;
+    - otherwise (mixed types, or positions without a plain ``type``) →
+      ``{"anyOf": [{"type": ...}, ...]}``;
+    - no position information at all (bare ``{"type": "array"}``) → ``{}``,
+      which Gemini accepts and which keeps the array unconstrained.
+
+    Draft-7 tuple form (``items`` given as an array of schemas) is collapsed the
+    same way, because Gemini requires ``items`` to be a single schema object.
+    The input schema is never mutated — tool parameter schemas are shared across
+    providers in a session.
+    """
+    result: JsonDict = copy.deepcopy(schema)
+    _fix_array_items(result)
+    return result
+
+
+def _declares_array(node: JsonDict) -> bool:
+    """Whether ``node`` declares an array type (``"array"`` or a type list)."""
+    node_type = node.get("type")
+    if node_type == "array":
+        return True
+    return isinstance(node_type, list) and "array" in node_type
+
+
+def _unify_item_schemas(schemas: list[JsonType]) -> JsonDict:
+    """Derive one ``items`` schema from several position schemas."""
+    candidates = [schema for schema in schemas if isinstance(schema, dict)]
+    if not candidates:
+        return {}
+    first = cast(JsonDict, candidates[0])
+    if all(candidate == first for candidate in candidates[1:]):
+        return copy.deepcopy(first)
+    types: list[str] = []
+    for candidate in candidates:
+        item_type = cast(JsonDict, candidate).get("type")
+        if not isinstance(item_type, str):
+            # A position schema without a plain `type` (an enum, a `$ref`, a
+            # nested combinator, ...) cannot be folded into one item type
+            # without guessing, so keep the synthesized items unconstrained.
+            return {}
+        if item_type not in types:
+            types.append(item_type)
+    if len(types) == 1:
+        return {"type": types[0]}
+    if set(types) <= {"integer", "number"}:
+        # ``integer`` is a subset of ``number``.
+        return {"type": "number"}
+    return {"anyOf": [{"type": item_type} for item_type in sorted(types)]}
+
+
+def _fix_array_items(node: JsonType) -> None:
+    """Give ``node`` (and every child schema) an ``items`` sub-schema if it is
+    an array schema without one."""
+    if not isinstance(node, dict):
+        return
+    node = cast(JsonDict, node)
+    if _declares_array(node):
+        items = node.get("items")
+        if isinstance(items, list):
+            node["items"] = _unify_item_schemas(items)
+        elif not isinstance(items, dict):
+            prefix_items = node.get("prefixItems")
+            if isinstance(prefix_items, list) and prefix_items:
+                node["items"] = _unify_item_schemas(prefix_items)
+            else:
+                node["items"] = {}
+    _walk_child_schemas(node, _fix_array_items)
+
+
+def _walk_child_schemas(node: JsonDict, visit: Callable[[JsonType], None]) -> None:
+    """Call ``visit`` on every child schema nested directly under ``node``.
+
+    The child-schema positions are taken from :data:`_CHILD_SCHEMA_SLOTS`, so
+    every normalizer built on top of this helper walks the same keyword set.
+    Non-schema values (e.g. a stray string in ``properties``) are skipped.
+    """
+    for key, kind, _parent_type in _CHILD_SCHEMA_SLOTS:
+        value = node.get(key)
+        if kind == "single":
+            if isinstance(value, dict):
+                visit(value)
+        elif kind == "array":
+            if isinstance(value, list):
+                for item in value:
+                    visit(item)
+        elif kind == "map":
+            if isinstance(value, dict):
+                for item in value.values():
+                    visit(item)
+        else:  # schema-or-array
+            if isinstance(value, dict):
+                visit(value)
+            elif isinstance(value, list):
+                for item in value:
+                    visit(item)
+
+
 def _recurse_schema(node: JsonType) -> None:
     """Walk into child-schema positions under ``node`` and normalize them.
 
@@ -225,25 +352,7 @@ def _recurse_schema(node: JsonType) -> None:
     """
     if not isinstance(node, dict):
         return
-    for key, kind, _parent_type in _CHILD_SCHEMA_SLOTS:
-        value = node.get(key)
-        if kind == "single":
-            if isinstance(value, dict):
-                _normalize_property(value)
-        elif kind == "array":
-            if isinstance(value, list):
-                for item in value:
-                    _normalize_property(item)
-        elif kind == "map":
-            if isinstance(value, dict):
-                for item in value.values():
-                    _normalize_property(item)
-        else:  # schema-or-array
-            if isinstance(value, dict):
-                _normalize_property(value)
-            elif isinstance(value, list):
-                for item in value:
-                    _normalize_property(item)
+    _walk_child_schemas(cast(JsonDict, node), _normalize_property)
 
 
 def _normalize_property(node: JsonType) -> None:
