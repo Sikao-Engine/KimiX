@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import random
+import sys
 import regex as re
 import time
 import uuid
@@ -30,7 +31,11 @@ from tenacity.wait import wait_base
 
 from kimi_cli.background import build_active_task_snapshot
 from kimi_cli.hooks.engine import HookEngine
-from kimi_cli.llm import ModelCapability
+from kimi_cli.llm import (
+    ModelCapability,
+    effective_max_output_tokens,
+    output_token_kwarg_name,
+)
 from kimi_cli.notifications import (
     NotificationView,
     build_notification_message,
@@ -49,7 +54,6 @@ from kimi_cli.soul import (
 from kimi_cli.session_state import TodoItemState
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.compaction import (
-    SAFETY_MARGIN_TOKENS,
     CompactionOptions,
     CompactionResult,
     CompactMode,
@@ -58,7 +62,11 @@ from kimi_cli.soul.compaction import (
     SurfaceChangedError,
     adaptive_preserve_depth,
     estimate_text_tokens,
-    should_auto_compact,
+)
+from kimi_cli.soul.context_budget import (
+    compaction_threshold,
+    output_budget_is_wasteful,
+    resolve_max_output_tokens,
 )
 from kimi_cli.soul.compaction_ledger import CompactionLedger
 from kimi_cli.soul.stream_filter import (
@@ -106,7 +114,11 @@ from kimi_cli.tools.todo import Todo, TodoList
 from kimi_cli.tools.utils import ToolRejectedError
 from kimi_cli.utils.export import perform_export
 from kimi_cli.utils.logging import logger
-from kimi_cli.utils.tokens import count_message_tokens, count_tokens
+from kimi_cli.utils.tokens import (
+    count_message_tokens,
+    count_tokens,
+    estimate_request_overhead,
+)
 from kimi_cli.wire.file import WireFile
 from kimi_cli.wire.types import (
     CompactionBegin,
@@ -521,6 +533,15 @@ def _compaction_export_missing(prompt: str, work_dir: Any) -> bool:
     return False
 
 
+_COMPACTION_MIN_PROGRESS_RATIO: float = 0.10
+"""Minimum relative reduction for a compaction to count as progress.
+
+A compaction that leaves the context above the threshold *and* cuts less than
+this fraction is treated as "no progress": the next attempt escalates and the
+auto path is eventually suppressed instead of repeating the same call.
+"""
+
+
 class KimiSoul:
     """The soul of Kimi Code CLI."""
 
@@ -695,6 +716,13 @@ class KimiSoul:
         self._broadcast_pruned: int = self._prune_broadcast_history()
 
         self._compact_cache_dir: list[Path] = []
+        # Auto-compaction hysteresis: a compaction that does not bring the
+        # context below the threshold (or does not cut it by at least
+        # ``_COMPACTION_MIN_PROGRESS_RATIO``) must not be retried blindly.
+        self._compaction_no_progress: int = 0
+        self._last_auto_compaction_step: int = -1
+        self._compaction_suppressed_logged: bool = False
+        self._output_budget_warned: bool = False
         self._finalizer = weakref.finalize(
             self,
             KimiSoul._sync_cleanup,
@@ -703,17 +731,129 @@ class KimiSoul:
             self._anonymous,
         )
 
-    def _tool_call_buffer_tokens(self) -> int:
-        """Return the dynamic per-tool output budget in tokens.
+    def _compaction_threshold(self) -> int:
+        """Return the token count at which auto-compaction must run.
 
-        Used to reserve enough headroom for a tool result before the next
-        compaction decision.
+        The threshold is usage-independent (output reserve + free-space floors
+        vs. the policy ratio), so it can be computed once per step and reused
+        for the pruning comparison and the post-compaction progress check.
+        Without an LLM there is no window to fill: never trigger.
         """
-        if not isinstance(self._agent.toolset, KimiToolset) or self._runtime.llm is None:
-            return 0
-        return self._agent.toolset.estimate_tool_output_token_budget(
-            self._runtime.llm.max_context_size,
-            self._context.token_count_with_pending,
+        llm = self._runtime.llm
+        if llm is None:
+            return sys.maxsize
+        return compaction_threshold(
+            llm.max_context_size,
+            trigger_ratio=self._loop_control.compaction_trigger_ratio,
+            reserved_context_size=self._loop_control.reserved_context_size,
+            max_tokens=self._effective_max_output_tokens(),
+        )
+
+    def _maybe_warn_output_budget(self) -> None:
+        """Warn once when ``max_tokens`` reserves more than half the window."""
+        if self._output_budget_warned:
+            return
+        self._output_budget_warned = True
+        llm = self._runtime.llm
+        if llm is None:
+            return
+        max_tokens = self._effective_max_output_tokens()
+        if not output_budget_is_wasteful(max_tokens, llm.max_context_size):
+            return
+        logger.warning(
+            "max_tokens ({max_tokens}) reserves more than half of the "
+            "{window}-token context window, so the conversation is compacted "
+            "early; consider a smaller max_tokens to use more of the window",
+            max_tokens=resolve_max_output_tokens(max_tokens, llm.max_context_size),
+            window=llm.max_context_size,
+        )
+
+    def _reset_compaction_progress(self) -> None:
+        """Re-arm auto-compaction (the context fell below the threshold)."""
+        self._compaction_no_progress = 0
+        self._compaction_suppressed_logged = False
+
+    def _auto_compaction_allowed(self, step_no: int) -> bool:
+        """Whether auto-compaction may run now (no-progress hysteresis)."""
+        streak = self._compaction_no_progress
+        if streak == 0:
+            return True
+        if streak >= self._loop_control.compaction_max_attempts_without_progress:
+            return False
+        return (
+            step_no - self._last_auto_compaction_step
+            >= self._loop_control.compaction_cooldown_steps
+        )
+
+    def _auto_compaction_options(self) -> CompactionOptions:
+        """Options for the next auto-compaction; escalates after no progress."""
+        if self._compaction_no_progress == 0:
+            return CompactionOptions()
+        # A previous attempt did not free enough context: summarise harder and
+        # keep less of the tail verbatim instead of repeating the same call.
+        return CompactionOptions(
+            avoid_cascade=True,
+            mode=CompactMode.AGGRESSIVE,
+            preserve_depth_override=1,
+        )
+
+    def _record_auto_compaction(
+        self, step_no: int, before: int, after: int, threshold: int
+    ) -> None:
+        """Update the no-progress streak after an auto-compaction."""
+        self._last_auto_compaction_step = step_no
+        reduced = before > 0 and after <= before * (1 - _COMPACTION_MIN_PROGRESS_RATIO)
+        if after < threshold or reduced:
+            self._compaction_no_progress = 0
+            self._compaction_suppressed_logged = False
+            logger.debug(
+                "Auto-compaction progress: {before} -> {after} tokens (threshold {threshold})",
+                before=before,
+                after=after,
+                threshold=threshold,
+            )
+            return
+        self._compaction_no_progress += 1
+        logger.warning(
+            "Auto-compaction made no progress ({before} -> {after} tokens, "
+            "threshold {threshold}, streak {streak})",
+            before=before,
+            after=after,
+            threshold=threshold,
+            streak=self._compaction_no_progress,
+        )
+
+    def _effective_max_output_tokens(self) -> int | None:
+        """Return the completion-token cap the next request will actually use.
+
+        ``config.max_tokens`` is only the configured budget: providers inject
+        their own default when it is unset, and ``_before_step_retry_sleep``
+        raises the live cap by 1.5x per think-only retry without touching the
+        config. Reserving from the config alone would under-estimate the
+        request's output need, so prefer the live provider value.
+        """
+        llm = self._runtime.llm
+        if llm is None:
+            return None
+        live = effective_max_output_tokens(llm.chat_provider)
+        if live is not None:
+            return live
+        return self._runtime.config.max_tokens
+
+    def _estimate_context_tokens(self, system_prompt: str | None) -> int:
+        """Estimate the rebuilt context as the provider will bill it.
+
+        The message history plus the non-history part of every request
+        (system prompt and tool schemas) — tool schemas live outside the
+        history, so counting only messages would under-report usage and
+        delay the next auto-compaction.
+        """
+        return estimate_text_tokens(
+            self._context.history, model=self.model_name
+        ) + estimate_request_overhead(
+            system_prompt,
+            getattr(self._agent.toolset, "tools", []),
+            model=self.model_name,
         )
 
     @property
@@ -1324,29 +1464,23 @@ class KimiSoul:
 
             try:
                 # ── 2c. Context Compaction ──────────────────────────────────────
-                # Check if pruning can free enough space to avoid compaction
-                _should_compact = should_auto_compact(
-                    self._context.token_count_with_pending,
-                    self._runtime.llm.max_context_size,
-                    trigger_ratio=self._loop_control.compaction_trigger_ratio,
-                    reserved_context_size=self._loop_control.reserved_context_size,
-                    max_tokens=self._runtime.config.max_tokens,
-                    tool_call_buffer_tokens=self._tool_call_buffer_tokens(),
-                    safety_margin_tokens=SAFETY_MARGIN_TOKENS,
-                )
+                # ``compaction_threshold`` is usage-independent (output reserve +
+                # free-space floors vs. the policy ratio), so it is computed once per
+                # step and reused for the pruning comparison and the progress check.
+                llm = self._runtime.llm
+                compaction_limit = self._compaction_threshold()
+                tokens_now = self._context.token_count_with_pending
+                self._maybe_warn_output_budget()
+                if tokens_now < compaction_limit:
+                    # The context is comfortable again (compaction, pruning or /clear):
+                    # re-arm the auto path so a future no-progress streak can escalate.
+                    self._reset_compaction_progress()
+                _should_compact = tokens_now >= compaction_limit
                 if _should_compact and self._loop_control.context_pruning_enabled:
-                    # Estimate tokens after pruning — skip compaction only when
-                    # pruning brings the *full* next-request input back below the
-                    # auto-compaction thresholds (in particular below the
-                    # reserved-output boundary ``max_context_size -
-                    # max(tool_call_buffer_tokens, reserved_context_size,
-                    # max_tokens + safety_margin_tokens)``: the point at
-                    # which ``input_token_size >= context_token_size -
-                    # max_output_token_size`` would hold and input + output would
-                    # no longer fit in the context window). Comparing against the
-                    # ratio threshold alone could skip compaction while the input
-                    # is still at/over the boundary and overflow the window.
-                    llm = self._runtime.llm
+                    # Estimate tokens after pruning — skip compaction only when pruning
+                    # brings the *full* next-request input below the compaction threshold
+                    # (input + max output must fit the window; the ratio alone is not
+                    # enough).
                     model_name = llm.chat_provider.model_name if llm else None
                     estimated = self._pruner.estimate_after_prune(
                         self._context.history,
@@ -1358,36 +1492,30 @@ class KimiSoul:
                         model=model_name,
                     )
                     # ``estimate_after_prune`` counts message content only, while
-                    # ``token_count_with_pending`` (used by the trigger above)
-                    # also carries the system prompt and tool schemas. Add that
-                    # non-history overhead back so the comparison uses the same
-                    # basis as the trigger check.
+                    # ``token_count_with_pending`` also carries the system prompt and tool
+                    # schemas. Add that non-history overhead back so the comparison uses
+                    # the same basis as the trigger check.
                     current_history_tokens = count_message_tokens(
                         self._context.history, model=model_name
                     )
-                    overhead = max(
-                        0, self._context.token_count_with_pending - current_history_tokens
-                    )
-                    if not should_auto_compact(
-                        estimated + overhead,
-                        self._runtime.llm.max_context_size,
-                        trigger_ratio=self._loop_control.compaction_trigger_ratio,
-                        reserved_context_size=self._loop_control.reserved_context_size,
-                        max_tokens=self._runtime.config.max_tokens,
-                        tool_call_buffer_tokens=self._tool_call_buffer_tokens(),
-                        safety_margin_tokens=SAFETY_MARGIN_TOKENS,
-                    ):
+                    overhead = max(0, tokens_now - current_history_tokens)
+                    if estimated + overhead < compaction_limit:
                         # Pruning will free enough space — skip compaction
                         _should_compact = False
                         logger.debug(
-                            "Pruning estimated to free enough space ({est} tokens, overhead={overhead}), skipping compaction",
+                            "Pruning estimated to free enough space "
+                            "({est} tokens, overhead={overhead}), skipping compaction",
                             est=estimated,
                             overhead=overhead,
                         )
-                if _should_compact:
-                    logger.info("Context too long, compacting...")
+                if _should_compact and self._auto_compaction_allowed(step_no):
+                    logger.info(
+                        "Context too long ({tokens} >= {limit} tokens), compacting...",
+                        tokens=tokens_now,
+                        limit=compaction_limit,
+                    )
                     try:
-                        await self.compact_context()
+                        await self.compact_context(options=self._auto_compaction_options())
                     except Exception as compact_err:
                         logger.error(
                             "Context compaction failed at step {step_no}: {error_type}: {error}",
@@ -1396,6 +1524,33 @@ class KimiSoul:
                             error=compact_err,
                         )
                         raise
+                    self._record_auto_compaction(
+                        step_no,
+                        tokens_now,
+                        self._context.token_count_with_pending,
+                        compaction_limit,
+                    )
+                elif _should_compact:
+                    # Suppressed: repeated compaction without progress costs a full LLM
+                    # call each step. The overflow recovery path still force-compacts if
+                    # the provider rejects the request. Log the transition once per
+                    # episode, then stay at debug level to avoid per-step log spam.
+                    if not self._compaction_suppressed_logged:
+                        self._compaction_suppressed_logged = True
+                        logger.warning(
+                            "Auto-compaction suppressed after {streak} attempt(s) "
+                            "without progress ({tokens} >= {limit} tokens)",
+                            streak=self._compaction_no_progress,
+                            tokens=tokens_now,
+                            limit=compaction_limit,
+                        )
+                    else:
+                        logger.debug(
+                            "Auto-compaction still suppressed "
+                            "({tokens} >= {limit} tokens)",
+                            tokens=tokens_now,
+                            limit=compaction_limit,
+                        )
 
                 # ── 2d. Step Execution ──────────────────────────────────────────
                 # Race the step against the steer wake event so a steer can
@@ -1871,8 +2026,7 @@ class KimiSoul:
                     # Only set the token-limit key the provider understands:
                     # - openai-responses / google_genai -> max_output_tokens
                     # - everything else                 -> max_tokens
-                    _output_token_providers = frozenset({"openai-responses", "google_genai"})
-                    _token_key = "max_output_tokens" if chat_provider.name in _output_token_providers else "max_tokens"
+                    _token_key = output_token_kwarg_name(chat_provider)
                     current = getattr(chat_provider, '_generation_kwargs', {}).get(_token_key) or 8192
                     new_max = int(current * 1.5)
                     logger.info(
@@ -2196,6 +2350,10 @@ class KimiSoul:
         """
 
         chat_provider = self._runtime.llm.chat_provider if self._runtime.llm is not None else None
+        if manual or trigger_override is not None:
+            # A user-requested or overflow-forced compaction is a different
+            # mechanism, not a retry: re-arm the automatic path.
+            self._reset_compaction_progress()
 
         # Phase 4: the wire/ledger trigger. ``trigger_override`` (used by the
         # overflow recovery branch) wins; otherwise derive from ``manual``.
@@ -2391,18 +2549,13 @@ class KimiSoul:
 
             # (Post-compaction state-restore message removed: recall is archive-only.)
 
-            # Recompute the token estimate from the rebuilt context so it reflects
-            # the checkpoint marker, preserved messages, compaction summary, and any
-            # active-task snapshot. Also account for the system prompt, because the
-            # pre-compaction usage snapshots that callers compare against also
-            # include the system prompt.
-            estimated_token_count = estimate_text_tokens(
-                self._context.history, model=self.model_name
-            )
-            if system_prompt_text:
-                estimated_token_count += count_tokens(
-                    system_prompt_text, model=self.model_name
-                )
+            # Recompute the token estimate from the rebuilt context so it
+            # reflects the checkpoint marker, preserved messages, compaction
+            # summary, and any active-task snapshot. Count the system prompt and
+            # the tool schemas too: every request carries them, and the
+            # pre-compaction usage snapshots this value is compared against
+            # include both.
+            estimated_token_count = self._estimate_context_tokens(system_prompt_text)
 
             # Estimate token count so context_usage is not reported as 0%
             await self._context.update_token_count(estimated_token_count)

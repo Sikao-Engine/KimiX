@@ -17,6 +17,11 @@ import kimi_cli.prompts as prompts
 from kimi_cli.llm import LLM
 from kimi_cli.session_state import TodoItemState, format_todo_injection
 from kimi_cli.soul.compaction_ledger import CompactionLedger, CompactionRecord
+from kimi_cli.soul.context_budget import (
+    MAX_POLICY_FREE_RATIO,
+    MIN_FREE_CONTEXT_RATIO,
+    compaction_threshold,
+)
 from kimi_cli.soul.llm_request_recorder import LLMRequestRecorder
 from kimi_cli.soul.message import system
 from kimi_cli.soul.stream_filter import _EmptyPartFilteredChatProvider
@@ -236,10 +241,6 @@ def _detect_cascade_depth(messages: Sequence[Message]) -> int:
     return depth
 
 
-SAFETY_MARGIN_TOKENS: int = 1024
-"""Extra tokens reserved for unforeseen growth (tool metadata, formatting, etc.)."""
-
-
 def should_auto_compact(
     token_count: int,
     max_context_size: int,
@@ -247,38 +248,36 @@ def should_auto_compact(
     trigger_ratio: float,
     reserved_context_size: int,
     max_tokens: int | None = None,
-    tool_call_buffer_tokens: int = 0,
-    safety_margin_tokens: int = SAFETY_MARGIN_TOKENS,
+    safety_margin_tokens: int | None = None,
+    min_free_context_ratio: float = MIN_FREE_CONTEXT_RATIO,
+    max_policy_free_ratio: float = MAX_POLICY_FREE_RATIO,
 ) -> bool:
     """Determine whether auto-compaction should be triggered.
 
-    Returns True when either condition is met (whichever fires first):
-    - Ratio-based: token_count >= max_context_size * trigger_ratio
-    - Reserved-based: token_count + effective_reserved >= max_context_size
+    Equivalent to ``token_count >= compaction_threshold(...)``; see
+    :mod:`kimi_cli.soul.context_budget` for the policy.
 
-    ``effective_reserved`` follows the context budget formula:
+    The threshold is ``min(max_context_size * trigger_ratio,
+    max_context_size - reserve)``, where ``reserve`` is usage-independent:
 
-        Reserved Token = max(Tool Call Buffer, Reserved Context, Max Output Token + Safety Margin)
+    * the request's own output budget plus a window-scaled safety margin,
+    * the configured ``reserved_context_size`` clamped to a fraction of the
+      window, and
+    * a proportional free-space floor,
 
-    i.e. ``max(tool_call_buffer_tokens, reserved_context_size,
-    (max_tokens or 0) + safety_margin_tokens)``. Only the *largest* single
-    reservation counts — reservations are no longer summed, so a large per-tool
-    output buffer no longer shrinks the usable input window to a small fraction
-    of the context. The result is capped at ``max_context_size -
-    reserved_context_size`` so at least ``reserved_context_size`` tokens always
-    remain available for input; the configuration stays usable even when the
-    configured output budget is pathologically large for the model. When
-    ``max_tokens`` is ``None`` it is treated as 0.
+    never more than the window. Tool-result growth is *not* part of the
+    reserve: it is bounded where it is produced (tool output is truncated to
+    what still fits after the reserve) and re-checked at the next step, so the
+    reservation cannot shrink as the context fills.
     """
-    output_size = (max_tokens or 0) + safety_margin_tokens
-    reserved = max(tool_call_buffer_tokens, reserved_context_size, output_size)
-    # Cap the reservation so the configuration is always usable: at least
-    # ``reserved_context_size`` tokens must remain available for input.
-    min_input_room = max(0, max_context_size - reserved_context_size)
-    effective_reserved = min(reserved, min_input_room)
-    return (
-        token_count >= max_context_size * trigger_ratio
-        or token_count + effective_reserved >= max_context_size
+    return token_count >= compaction_threshold(
+        max_context_size,
+        trigger_ratio=trigger_ratio,
+        reserved_context_size=reserved_context_size,
+        max_tokens=max_tokens,
+        safety_margin_tokens=safety_margin_tokens,
+        min_free_context_ratio=min_free_context_ratio,
+        max_policy_free_ratio=max_policy_free_ratio,
     )
 
 

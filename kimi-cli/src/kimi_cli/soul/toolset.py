@@ -45,6 +45,7 @@ from kosong.utils.typing import JsonType
 
 from kimi_cli import logger
 from kimi_cli.exception import InvalidToolError, MCPRuntimeError
+from kimi_cli.soul.context_budget import context_reserve, safety_margin_for_window
 from kimi_cli.hooks.engine import HookEngine
 from kimi_cli.native_loader import get_compat as _native_get_compat
 from kimi_cli.tools import RETIRED_TODO_TOOL_NAMES
@@ -94,7 +95,6 @@ print_tool_func = print
 _DEFAULT_TOOL_OUTPUT_MAX_BYTES = 128 << 10  # 128 KiB fallback
 _TOOL_OUTPUT_BYTES_PER_TOKEN = 4  # conservative UTF-8 bytes/token estimate
 _TOOL_OUTPUT_CONTEXT_FRACTION = 0.5  # budget derived from total context size
-_TOOL_OUTPUT_REMAINING_FRACTION = 0.9  # must stay strictly below remaining context
 
 # ── Oversized-output dumps ─────────────────────────────────────────────────
 # When a tool output exceeds the per-call byte budget, the full output is
@@ -1316,6 +1316,25 @@ class KimiToolset:
         """Set a callback that returns the current context token count."""
         self._context_token_provider = provider
 
+    def _context_reserve_tokens(self, max_context_size: int) -> int:
+        """Tokens this session must keep free (compaction reserve policy).
+
+        Mirrors :func:`kimi_cli.soul.context_budget.context_reserve` using the
+        live configuration, so tool output and the compaction trigger share one
+        policy instead of two competing ones.
+        """
+        config = getattr(self._runtime, "config", None)
+        if config is None:
+            return safety_margin_for_window(max_context_size)
+        loop_control = getattr(config, "loop_control", None)
+        return context_reserve(
+            max_context_size,
+            reserved_context_size=int(
+                getattr(loop_control, "reserved_context_size", 0) or 0
+            ),
+            max_tokens=getattr(config, "max_tokens", None),
+        )
+
     def _estimate_tool_output_byte_budget(
         self,
         max_context_size: int,
@@ -1324,17 +1343,25 @@ class KimiToolset:
         """Estimate the per-tool output budget in bytes.
 
         The budget is the more restrictive of:
-          - a fraction of the model's total context size,
-          - a fraction of the currently remaining context tokens, and
-          - an absolute byte ceiling.
+        - a fraction of the model's total context size,
+        - what still fits after the compaction reserve (output budget, safety
+          margin and free-space floors), and
+        - an absolute byte ceiling.
+
+        Bounding the result by ``remaining - reserve`` is what keeps a single
+        tool result from invalidating the compaction guard: the reserve never
+        depends on the current usage, so it cannot shrink as the context fills.
         """
         total_budget_bytes = int(
             max_context_size * _TOOL_OUTPUT_BYTES_PER_TOKEN * _TOOL_OUTPUT_CONTEXT_FRACTION
         )
-        remaining_tokens = max(0, max_context_size - current_tokens)
-        remaining_budget_bytes = int(
-            remaining_tokens * _TOOL_OUTPUT_BYTES_PER_TOKEN * _TOOL_OUTPUT_REMAINING_FRACTION
+        remaining_tokens = max(
+            0,
+            max_context_size
+            - current_tokens
+            - self._context_reserve_tokens(max_context_size),
         )
+        remaining_budget_bytes = remaining_tokens * _TOOL_OUTPUT_BYTES_PER_TOKEN
         return max(
             0,
             min(total_budget_bytes, remaining_budget_bytes, _DEFAULT_TOOL_OUTPUT_MAX_BYTES),

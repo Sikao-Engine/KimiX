@@ -94,6 +94,47 @@ class LLM:
         return self.chat_provider.model_name
 
 
+_OUTPUT_TOKEN_PROVIDERS: frozenset[str] = frozenset({"openai-responses", "google_genai"})
+"""Providers that name the completion-token cap ``max_output_tokens``.
+
+All other providers use ``max_tokens``.
+"""
+
+_OUTPUT_TOKEN_KWARGS: tuple[str, ...] = ("max_output_tokens", "max_tokens")
+"""Generation-kwarg keys that cap completion tokens, most specific first."""
+
+
+def output_token_kwarg_name(chat_provider: ChatProvider) -> str:
+    """Return the generation-kwarg key that caps completion tokens."""
+    name = getattr(chat_provider, "name", "")
+    return "max_output_tokens" if name in _OUTPUT_TOKEN_PROVIDERS else "max_tokens"
+
+
+def effective_max_output_tokens(chat_provider: ChatProvider) -> int | None:
+    """Return the completion-token cap the *next* request will actually use.
+
+    ``config.max_tokens`` is only the configured value: the live cap lives in
+    the provider's generation kwargs and can drift from the configuration.
+    ``KimiSoul._before_step_retry_sleep`` raises it (x1.5 per think-only retry)
+    without touching the config, and providers inject their own default when no
+    budget is configured. Reading the live value keeps the compaction
+    reservation in sync with what the provider is really asked for.
+
+    Returns ``None`` when the provider exposes no cap at all (callers resolve it
+    with :func:`kimi_cli.soul.compaction.resolve_max_output_tokens`).
+    """
+    generation_kwargs = getattr(chat_provider, "_generation_kwargs", None)
+    if isinstance(generation_kwargs, dict):
+        for key in _OUTPUT_TOKEN_KWARGS:
+            value = generation_kwargs.get(key)
+            if isinstance(value, int) and value > 0:
+                return value
+    completion_cap = getattr(chat_provider, "max_completion_tokens", None)
+    if isinstance(completion_cap, int) and completion_cap > 0:
+        return completion_cap
+    return None
+
+
 class LoopDetectedError(ChatProviderError):
     """Raised when the LLM stream repeats a single character or word too many times."""
 

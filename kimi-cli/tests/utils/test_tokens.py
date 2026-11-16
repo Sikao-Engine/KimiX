@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import orjson
 import pytest
-from kosong.message import Message
 
 from kimi_cli.utils.tokens import (
     _estimate_chars_tokens,
     _is_cjk_text,
     count_message_tokens,
     count_tokens,
+    count_tool_tokens,
+    estimate_request_overhead,
 )
 from kimi_cli.wire.types import TextPart
+from kosong.message import Message
+from kosong.tooling import Tool
 
 
 class TestIsCjkText:
@@ -135,3 +139,74 @@ class TestBackwardsCompatibility:
         new_estimate = count_tokens(text)
         diff = abs(new_estimate - old_estimate) / old_estimate
         assert diff <= 0.05
+
+
+def _tool(name: str = "probe", description: str = "d" * 400) -> Tool:
+    return Tool(
+        name=name,
+        description=description,
+        parameters={
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    )
+
+
+class TestCountToolTokens:
+    """Tool schemas are request input but live outside the message history."""
+
+    def test_empty_toolset_costs_nothing(self):
+        assert count_tool_tokens([]) == 0
+        assert count_tool_tokens(()) == 0
+
+    def test_schema_is_counted(self):
+        assert count_tool_tokens([_tool()]) > 0
+
+    def test_more_tools_cost_more(self):
+        one = count_tool_tokens([_tool("a")])
+        three = count_tool_tokens([_tool("a"), _tool("b"), _tool("c")])
+        assert three > one
+
+    def test_longer_descriptions_cost_more(self):
+        short = count_tool_tokens([_tool(description="x")])
+        long = count_tool_tokens([_tool(description="x" * 4_000)])
+        assert long > short
+
+    def test_count_matches_the_serialized_schemas(self):
+        tool = _tool()
+        expected = count_tokens(
+            orjson.dumps([tool.model_dump(exclude_none=True)]).decode()
+        )
+        assert count_tool_tokens([tool]) == expected
+
+    def test_broken_serialization_falls_back_to_the_tool_name(self):
+        class Broken:
+            name = "broken-tool"
+
+            def model_dump(self, **kwargs):
+                raise TypeError("boom")
+
+        assert count_tool_tokens([Broken()]) > 0
+
+
+class TestEstimateRequestOverhead:
+    """The non-history part of a request: system prompt + tool schemas."""
+
+    def test_nothing_to_count(self):
+        assert estimate_request_overhead(None, []) == 0
+
+    def test_system_prompt_only(self):
+        prompt = "You are a helpful agent."
+        assert estimate_request_overhead(prompt, []) == count_tokens(prompt)
+
+    def test_tools_only(self):
+        tools = [_tool()]
+        assert estimate_request_overhead(None, tools) == count_tool_tokens(tools)
+
+    def test_prompt_and_tools_add_up(self):
+        tools = [_tool()]
+        prompt = "You are a helpful agent."
+        assert estimate_request_overhead(prompt, tools) == (
+            count_tokens(prompt) + count_tool_tokens(tools)
+        )

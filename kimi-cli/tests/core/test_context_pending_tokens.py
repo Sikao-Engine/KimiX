@@ -341,12 +341,12 @@ async def test_grow_context_cycle(tmp_path: Path) -> None:
 
     # Without pending: 840K < 850K → no compaction (BUG: actual is ~855K)
     assert not should_auto_compact(
-        ctx.token_count, max_context, trigger_ratio=0.85, reserved_context_size=50_000
+        ctx.token_count, max_context, trigger_ratio=0.85, reserved_context_size=50_000, max_tokens=0
     )
 
     # With pending: 840K + 15K = 855K ≥ 850K → triggers compaction (FIXED)
     assert should_auto_compact(
-        ctx.token_count_with_pending, max_context, trigger_ratio=0.85, reserved_context_size=50_000
+        ctx.token_count_with_pending, max_context, trigger_ratio=0.85, reserved_context_size=50_000, max_tokens=0
     )
 
 

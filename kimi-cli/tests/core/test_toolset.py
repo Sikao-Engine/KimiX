@@ -1152,9 +1152,9 @@ def test_max_output_bytes_with_partial_context():
         runtime=_MockRuntime(1_048_576),
         context_token_provider=lambda: 1_020_000,
     )
-    # total_budget = int(1048576 * 4 * 0.5) = 2097152
-    # remaining_budget = int((1048576 - 1020000) * 4 * 0.9) = 102873
-    assert ts._get_max_output_bytes() == 102_873
+    # reserve = safety margin = max(4096, 2% of 1048576) = 20972
+    # remaining_budget = (1048576 - 1020000 - 20972) * 4 = 30416
+    assert ts._get_max_output_bytes() == 30_416
 
 
 def test_max_output_bytes_near_full_context():
@@ -1163,8 +1163,8 @@ def test_max_output_bytes_near_full_context():
         runtime=_MockRuntime(131_072),
         context_token_provider=lambda: 130_000,
     )
-    # remaining_budget = int((131072 - 130000) * 4 * 0.9) = 3859
-    assert ts._get_max_output_bytes() == 3_859
+    # remaining after the 4096-token margin is negative: nothing may be emitted
+    assert ts._get_max_output_bytes() == 0
 
 
 def test_max_output_bytes_absolute_ceiling():
@@ -1179,11 +1179,11 @@ def test_set_context_token_provider_overrides_provider():
         runtime=_MockRuntime(1_048_576),
         context_token_provider=lambda: 1_020_000,
     )
-    assert ts._get_max_output_bytes() == 102_873
+    assert ts._get_max_output_bytes() == 30_416
 
     ts.set_context_token_provider(lambda: 1_046_528)
-    # remaining_budget = int((1048576 - 1046528) * 4 * 0.9) = 7372
-    assert ts._get_max_output_bytes() == 7_372
+    # remaining after the margin is negative: no room for tool output at all
+    assert ts._get_max_output_bytes() == 0
 
 
 def test_estimate_tool_output_token_budget_matches_byte_budget():
@@ -1198,8 +1198,10 @@ def test_estimate_tool_output_token_budget_matches_byte_budget():
     # remaining_budget_bytes = int((131072 - 65536) * 4 * 0.9) = 235929 -> capped -> tokens = 32768
     assert ts.estimate_tool_output_token_budget(131_072, 65_536) == 32_768
 
-    # Near-full context: remaining-context term dominates.
-    assert ts.estimate_tool_output_token_budget(131_072, 130_000) == 964
+    # Near-full context: nothing fits after the safety margin, so the tool must
+    # not produce output at all (the old 0.9 * remaining formula still emitted
+    # 964 tokens here, which pushed the next request past the window).
+    assert ts.estimate_tool_output_token_budget(131_072, 130_000) == 0
 
     # Very large context: default ceiling applies.
     assert ts.estimate_tool_output_token_budget(1_048_576, 0) == 32_768

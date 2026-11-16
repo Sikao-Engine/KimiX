@@ -263,25 +263,39 @@ class LoopControl(BaseModel):
 expected. Set to 0 to disable auto-restart entirely.
 Default is 3."""
     reserved_context_size: int = Field(default=75_000, ge=1000)
-    """Reserved token count for the compaction trigger, also the input floor.
+    """Policy floor for free context space, used by the compaction trigger.
 
-    The reserved space follows the context budget formula
-    ``max(tool_call_buffer_tokens, reserved_context_size, max_tokens +
-    safety_margin_tokens)`` (Safety Margin is 4096) — only the *largest* single
-    reservation counts, so a large per-tool output buffer does not shrink the
-    usable input window. ``reserved_context_size`` therefore acts both as the
-    default reservation when no output budget / tool buffer is configured, and
-    as a cap: if the computed reservation would leave less than
-    ``reserved_context_size`` tokens for input, it is capped at
-    ``max_context_size - reserved_context_size``. Default is 75000."""
+    The reservation that must stay free before the next request is
+    ``max(output budget + safety margin, this floor, 5% of the window)``, never
+    more than the window. The output budget is a *hard* constraint, this value
+    is a preference. Because it is an absolute number it is clamped to 25% of
+    the window — 75K is 37% of a 200K window but 7% of a 1M one, and an
+    unclamped floor would silently make ``compaction_trigger_ratio`` inert on
+    large windows. Tool-result growth is bounded where it is produced (tool
+    output is truncated to what fits after the reserve) instead of being
+    reserved here. Default is 75000."""
+
     compaction_trigger_ratio: float = Field(default=0.8, ge=0.5, le=0.99)
     """Context usage ratio threshold for auto-compaction. Default is 0.8 (80%).
 
-    Auto-compaction triggers when ``context_tokens >= max_context_size *
-    compaction_trigger_ratio`` or when ``context_tokens + reserved_output_budget
-    >= max_context_size``, where ``reserved_output_budget = min(max(
-    tool_call_buffer_tokens, reserved_context_size, max_tokens +
-    safety_margin_tokens), max_context_size - reserved_context_size)``."""
+    Auto-compaction triggers at ``min(max_context_size *
+    compaction_trigger_ratio, max_context_size - reserve)``: the ratio is the
+    policy ceiling on usage, the reserve is the hard output constraint, and
+    whichever is earlier wins. See ``reserved_context_size`` for the reserve
+    derivation. The ratio only binds when the reserve leaves more than
+    ``(1 - compaction_trigger_ratio)`` of the window free, so both knobs stay
+    meaningful across window sizes."""
+
+    compaction_cooldown_steps: int = Field(default=3, ge=0)
+    """Steps to wait before retrying auto-compaction after an attempt that made
+    no progress (the context stayed above the threshold and shrank by less than
+    10%). Prevents paying for a full summarisation call on every step.
+    Default is 3."""
+
+    compaction_max_attempts_without_progress: int = Field(default=2, ge=1, le=10)
+    """Consecutive no-progress compactions after which auto-compaction is
+    suppressed until the context drops below the threshold again. The
+    provider-overflow recovery path still force-compacts. Default is 2."""
 
     # ── Context-overflow recovery (DSH port) ──────────────────────────────
     context_overflow_retries: int = Field(default=1, ge=0, le=5)

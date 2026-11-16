@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+import orjson
+
 from kimi_cli.native_loader import (
     get_compat as _native_get_compat,
     get_module as _native_get_module,
@@ -24,6 +26,7 @@ def _compat_text():
 
 if TYPE_CHECKING:
     from kosong.message import Message
+    from kosong.tooling import Tool
 
 
 def _is_cjk_text(text: str, threshold: float = 0.15) -> bool:
@@ -82,3 +85,35 @@ def count_message_tokens(messages: Sequence[Message], model: str | None = None) 
             if isinstance(part, TextPart):
                 total += count_tokens(part.text, model=model)
     return total
+
+
+def count_tool_tokens(tools: Sequence[Tool], model: str | None = None) -> int:
+    """Estimate the token cost of the tool schemas sent with every request.
+
+    Tool definitions are part of the request's input but live outside the
+    message history, so :func:`count_message_tokens` never sees them. They are
+    serialized the same way a provider sends them (JSON) and counted as one
+    blob; an empty/missing toolset costs nothing.
+    """
+    if not tools:
+        return 0
+    try:
+        payload = orjson.dumps([tool.model_dump(exclude_none=True) for tool in tools]).decode()
+    except Exception:  # noqa: BLE001 - counting must never break the caller
+        payload = " ".join(str(getattr(tool, "name", "")) for tool in tools)
+    return count_tokens(payload, model=model)
+
+
+def estimate_request_overhead(
+    system_prompt: str | None,
+    tools: Sequence[Tool],
+    model: str | None = None,
+) -> int:
+    """Estimate the non-history part of a request (system prompt + tool schemas).
+
+    Providers bill the system prompt and the tool schemas on every request, so
+    any token count that must match the provider-reported usage has to include
+    them on top of :func:`count_message_tokens`.
+    """
+    overhead = count_tokens(system_prompt, model=model) if system_prompt else 0
+    return overhead + count_tool_tokens(tools, model=model)
