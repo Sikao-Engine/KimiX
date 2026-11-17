@@ -19,10 +19,12 @@ from kosong.chat_provider import (
     ThinkingEffort,
 )
 from kosong.chat_provider.openai_common import (
+    GEMINI_SKIP_THOUGHT_SIGNATURE,
     CommonGenerationKwargs,
     OpenAICompatibleProviderMixin,
     OpenAICompatibleStreamedMessage,
     apply_generation_kwargs,
+    apply_tool_call_extras,
     clamp_max_tokens,
     clamp_thinking_effort,
     convert_error,
@@ -379,6 +381,34 @@ class OpenAILegacy(OpenAICompatibleProviderMixin):
         else:
             message.content = visible_content
         dumped_message = message.model_dump(exclude_none=True)
+        # Tool-call extras are a kosong-side container, not an OpenAI wire field.
+        # Replay their captured provider payload (Gemini's
+        # ``extra_content.google.thought_signature``) verbatim and drop the
+        # container itself so strict backends never see ``extras``.
+        dumped_tool_calls = dumped_message.get("tool_calls")
+        if isinstance(dumped_tool_calls, list) and message.tool_calls:
+            for index, (dumped_tool_call, tool_call) in enumerate(
+                zip(dumped_tool_calls, message.tool_calls, strict=False)
+            ):
+                if not isinstance(dumped_tool_call, dict):
+                    continue
+                dumped_tool_call.pop("extras", None)
+                apply_tool_call_extras(dumped_tool_call, tool_call.extras)
+                if (
+                    index == 0
+                    and self._gemini_schema_compat
+                    and "extra_content" not in dumped_tool_call
+                ):
+                    # Gemini validates the first function call of a model turn.
+                    # Histories written before signatures were captured (or
+                    # imported from another provider) have none, so replay the
+                    # documented placeholder instead of failing the request.
+                    # Sibling parallel calls inherit the turn's signature.
+                    dumped_tool_call["extra_content"] = {
+                        "google": {
+                            "thought_signature": GEMINI_SKIP_THOUGHT_SIGNATURE,
+                        }
+                    }
         if (
             message.role == "assistant"
             and message.tool_calls

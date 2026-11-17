@@ -25,7 +25,7 @@ from openai.types.chat import (
     ChatCompletionToolParam,
 )
 from openai.types.completion_usage import CompletionUsage
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from typing_extensions import TypedDict
 
 from kosong.chat_provider import (
@@ -601,6 +601,11 @@ _GEMINI_BASE_URL_HINTS: tuple[str, ...] = (
     "aiplatform.googleapis.com",
 )
 
+#: Documented Gemini placeholder for function calls that were not produced by
+#: Gemini itself (e.g. legacy sessions or cross-provider history). It skips
+#: signature validation without inventing a cryptographic signature.
+GEMINI_SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
+
 
 def looks_like_gemini_backend(model: str | None, base_url: str | None) -> bool:
     """Best-effort detection of a Gemini-backed OpenAI-compatible endpoint.
@@ -873,12 +878,94 @@ def is_effectively_empty_content_parts(content: Sequence[ContentPart]) -> bool:
     return True
 
 
+def _jsonable(value: Any) -> Any:
+    """Convert a provider-specific extra field into plain JSON-serializable data."""
+    if isinstance(value, BaseModel):
+        return value.model_dump(exclude_none=True)
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    return value
+
+
+def extract_tool_call_extras(tool_call: Any) -> dict[str, Any] | None:
+    """Capture opaque provider fields that must be replayed with a tool call.
+
+    Gemini 3 requires the ``thought_signature`` it attaches to every function
+    call to be echoed back on the next request; without it the API rejects the
+    whole history with ``Function call is missing a thought_signature``.  The
+    OpenAI-compatible wire format carries the signature in
+    ``tool_call.extra_content.google.thought_signature`` (see
+    https://ai.google.dev/gemini-api/docs/thought-signatures), while some
+    proxies flatten it to a top-level ``tool_call.thought_signature``.  Both
+    shapes are normalized to the standard ``extra_content`` form so the
+    provider can put them back verbatim.
+
+    Returns ``None`` when the tool call carries no replayable extra data.
+    """
+
+    def _get(name: str) -> Any:
+        if isinstance(tool_call, Mapping):
+            return tool_call.get(name)
+        return getattr(tool_call, name, None)
+
+    extras: dict[str, Any] = {}
+    extra_content = _jsonable(_get("extra_content"))
+    # Only Gemini's ``google`` extension needs replaying here. Copying every
+    # provider's opaque extra_content would change non-Gemini payloads without
+    # any benefit, so leave other extensions untouched.
+    if (
+        isinstance(extra_content, dict)
+        and isinstance(extra_content.get("google"), dict)
+        and extra_content["google"]
+    ):
+        extras["extra_content"] = extra_content
+
+    signature = _get("thought_signature")
+    if isinstance(signature, str) and signature:
+        normalized = extras.setdefault("extra_content", {})
+        if isinstance(normalized.get("google"), dict):
+            normalized["google"].setdefault("thought_signature", signature)
+        else:
+            normalized["google"] = {"thought_signature": signature}
+
+    return extras or None
+
+
+def apply_tool_call_extras(tool_call: dict[str, Any], extras: Mapping[str, Any] | None) -> None:
+    """Write captured tool-call extras back into an OpenAI wire payload.
+
+    ``extra_content`` is the documented OpenAI-compatible carrier for Gemini
+    thought signatures and is echoed verbatim.  A top-level
+    ``thought_signature`` entry (older captured data) is folded into
+    ``extra_content.google`` instead of being sent as an unknown field.
+    """
+    if not extras:
+        return
+
+    extra_content = extras.get("extra_content")
+    if isinstance(extra_content, Mapping) and extra_content:
+        tool_call["extra_content"] = dict(extra_content)
+
+    signature = extras.get("thought_signature")
+    if isinstance(signature, str) and signature:
+        normalized = tool_call.setdefault("extra_content", {})
+        if isinstance(normalized, dict):
+            google = normalized.get("google")
+            if isinstance(google, dict):
+                google.setdefault("thought_signature", signature)
+            else:
+                normalized["google"] = {"thought_signature": signature}
+
+
 class BufferedChatCompletionToolCall(TypedDict, total=False):
     """Per-stream-index buffering state for streamed tool-call deltas."""
 
     id: str | None
     arguments: str
     emitted: bool
+    extras: dict[str, Any]
 
 
 def convert_chat_completion_stream_tool_call(
@@ -903,6 +990,7 @@ def convert_chat_completion_stream_tool_call(
     arguments = function.arguments
     has_name = isinstance(name, str) and len(name) > 0
     has_arguments = isinstance(arguments, str) and len(arguments) > 0
+    extras = extract_tool_call_extras(tool_call)
 
     if stream_index is None:
         if has_name:
@@ -910,6 +998,7 @@ def convert_chat_completion_stream_tool_call(
                 ToolCall(
                     id=tool_call.id or str(uuid.uuid4()),
                     function=ToolCall.FunctionBody(name=name, arguments=arguments),
+                    extras=extras,
                 )
             ]
         if has_arguments:
@@ -921,6 +1010,10 @@ def convert_chat_completion_stream_tool_call(
         buffered = BufferedChatCompletionToolCall(id=None, arguments="", emitted=False)
     if tool_call.id is not None:
         buffered["id"] = tool_call.id
+    if extras:
+        # The signature normally arrives in the same delta as the function name,
+        # but buffer it anyway so a split first chunk still round-trips.
+        buffered["extras"] = {**buffered.get("extras", {}), **extras}
 
     if not buffered["emitted"]:
         if not has_name:
@@ -942,6 +1035,7 @@ def convert_chat_completion_stream_tool_call(
             ToolCall(
                 id=buffered["id"] or tool_call.id or str(uuid.uuid4()),
                 function=ToolCall.FunctionBody(name=name, arguments=initial_arguments),
+                extras=buffered.get("extras"),
             )
         ]
 
@@ -1066,6 +1160,7 @@ class OpenAICompatibleStreamedMessage(BaseStreamedMessage):
                             name=tool_call.function.name,
                             arguments=tool_call.function.arguments,
                         ),
+                        extras=extract_tool_call_extras(tool_call),
                     )
 
     # -- streaming conversion -------------------------------------------------
