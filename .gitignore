@@ -18,6 +18,9 @@ node_modules/
 # The pure-Python shim package bin/kimix_native/ IS tracked (re-included).
 bin/*
 !bin/kimix_native/
+# Corpus run artifacts (scripts/broswer_use_corpus.py default --out-dir)
+browser_use_result/
+
 # Test-generated artifacts
 tests/test_result.txt
 tests/output.md

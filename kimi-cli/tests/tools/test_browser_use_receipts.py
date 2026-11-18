@@ -455,6 +455,88 @@ async def test_extract_fields_receipt_reports_the_match_count() -> None:
     assert result["matches"] == 4
 
 
+async def test_extract_fields_all_null_is_an_error_not_an_empty_success() -> None:
+    """Live corpus item #1: the worker pointed `selector` at the leaf element it
+    wanted to read, so every field resolved to null and the call looked like a
+    successful extract with no data - one wasted call, then a corrected one."""
+    from kimi_cli.tools.browser_use.backend import BrowserBackendError
+
+    page = _page(url="http://127.0.0.1:1/", title="Site")
+    locator = MagicMock()
+    locator.evaluate_all = AsyncMock(
+        return_value={
+            "values": [{"name": None, "slots": None}],
+            "truncated": False,
+            "matches": 1,
+        }
+    )
+    page.locator = MagicMock(return_value=locator)
+    manager = BrowserManager(BrowserConfig())
+
+    with pytest.raises(BrowserBackendError) as excinfo:
+        await manager.extract(
+            _state(page),
+            "[data-testid='review-name']",
+            None,
+            False,
+            10,
+            fields={"name": "@self", "slots": "[data-testid='review-slots']"},
+        )
+
+    assert excinfo.value.code == "fields_not_found"
+    assert excinfo.value.retryable is True
+    assert "record container" in str(excinfo.value)
+
+
+async def test_extract_fields_keeps_a_partially_null_record() -> None:
+    page = _page(url="https://a.test/", title="A")
+    locator = MagicMock()
+    locator.evaluate_all = AsyncMock(
+        return_value={
+            "values": [{"name": "Ash Glaze", "slots": None}],
+            "truncated": False,
+            "matches": 1,
+        }
+    )
+    page.locator = MagicMock(return_value=locator)
+    manager = BrowserManager(BrowserConfig())
+
+    result = await manager.extract(
+        _state(page), ".card", None, False, 10, fields={"name": "h2", "slots": ".slots"}
+    )
+
+    assert result["records"] == [{"name": "Ash Glaze", "slots": None}]
+
+
+async def test_extract_fields_without_a_selector_uses_the_whole_document() -> None:
+    """Live corpus item #3: the worker asked for several labelled values in one
+    ``extract`` call with ``fields`` but no ``selector`` and lost the call to the
+    old "fields extraction requires selector" validation error."""
+    page = _page(url="https://a.test/", title="A")
+    locator = MagicMock()
+    locator.evaluate_all = AsyncMock(
+        return_value={
+            "values": [{"total": "7", "count": "4 of 7 segments"}],
+            "truncated": False,
+            "matches": 1,
+        }
+    )
+    page.locator = MagicMock(return_value=locator)
+    manager = BrowserManager(BrowserConfig())
+
+    result = await manager.extract(
+        _state(page),
+        None,
+        None,
+        False,
+        10,
+        fields={"total": '[data-testid="stat-total"]', "count": '[data-testid="queue-count"]'},
+    )
+
+    page.locator.assert_called_once_with("html")
+    assert result["records"] == [{"total": "7", "count": "4 of 7 segments"}]
+
+
 async def test_a_missing_selector_fails_fast_instead_of_timing_out() -> None:
     """Live: `select` against a page without a <select> burned ~45 s and returned
     `timeout_outcome_unknown` for a statically absent element."""
@@ -531,3 +613,13 @@ def test_evaluate_is_not_in_the_input_verify_set() -> None:
     assert "evaluate" not in _VERIFY_ACTIONS
     # Still treated as potentially mutating for snapshot invalidation.
     assert "evaluate" in _SNAPSHOT_INVALIDATING_ACTIONS
+
+
+def test_snapshot_script_and_description_expose_stable_selectors_when_present() -> None:
+    script = backend_module._SNAPSHOT_SCRIPT
+    assert "data-testid" in script
+    assert "details.data_testid" in script
+    assert "details.id" in script
+    assert "details.disabled" in script
+    assert "data_testid" in BrowserUse.description
+    assert "disabled" in BrowserUse.description

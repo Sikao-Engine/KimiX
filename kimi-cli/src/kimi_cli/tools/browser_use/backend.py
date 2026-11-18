@@ -68,7 +68,10 @@ _SNAPSHOT_SCRIPT = r"""({selector, limit}) => {
                 || element.getAttribute('title')
                 || element.getAttribute('name')
                 || value;
-            selected.push({element, details: {
+            const id = element.id ? String(element.id).slice(0, 200) : '';
+            const testid = element.getAttribute('data-testid');
+            const disabled = Boolean(element.disabled);
+            const details = {
                 tag,
                 role: element.getAttribute('role') || inputType || tag,
                 label: password
@@ -82,7 +85,11 @@ _SNAPSHOT_SCRIPT = r"""({selector, limit}) => {
                     Math.round(box.x), Math.round(box.y),
                     Math.round(box.width), Math.round(box.height),
                 ],
-            }});
+            };
+            if (id) details.id = id;
+            if (testid) details.data_testid = String(testid).slice(0, 200);
+            if (disabled) details.disabled = true;
+            selected.push({element, details});
         } catch {
             // The page may mutate an individual node during discovery.
         }
@@ -1209,16 +1216,34 @@ class BrowserManager:
         page = state.page
         truncated = False
         if fields is not None:
-            if selector is None:
-                raise BrowserBackendError(
-                    "extract with fields requires a selector that identifies the records.",
-                    "target_required",
-                    retryable=True,
-                )
-            payload = await page.locator(selector).evaluate_all(
+            # ``selector`` names the record container; without one the whole
+            # document is the single record, so a call may collect several
+            # labelled values from different corners of the page in one round
+            # trip.  A live worker asked for exactly that and lost a call to the
+            # old "fields requires selector" validation error.
+            container = selector or "html"
+            payload = await page.locator(container).evaluate_all(
                 _FIELDS_SCRIPT, {"fields": fields, "limit": max_items}
             )
             records = payload["values"]
+            # ``selector`` picks the record container; each field selector is
+            # resolved *inside* that element.  A live worker pointed the record
+            # selector at the very element it wanted to read, so every field
+            # came back null and the call looked like a successful extract with
+            # no data (it cost a second, corrected call).  All-null across
+            # every record means nothing resolved at all: say so.
+            if fields and records and all(
+                value is None for record in records for value in record.values()
+            ):
+                raise BrowserBackendError(
+                    "extract with fields matched the record containers but every field "
+                    "resolved to null: field selectors are resolved *inside* `selector` "
+                    "(the record container; the whole document when it is omitted - use "
+                    "'@self' for the container itself, or drop fields= to read the "
+                    "element's text).",
+                    "fields_not_found",
+                    retryable=True,
+                )
             result = await self.info(state)
             result.update(
                 {

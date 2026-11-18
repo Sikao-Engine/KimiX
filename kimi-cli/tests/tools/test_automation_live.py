@@ -108,10 +108,11 @@ async def test_live_chromium_session_snapshot_input_tabs_and_screenshot(
     tool = BrowserUse(runtime, _approval(), session)
     html = """
         <title>Kimi browser fixture</title>
-        <label>Name <input id='name' name='name'></label>
+        <label>Name <input id='name' name='name' data-testid='name-input'></label>
         <input type='password' value='never-expose-this'>
         <button hidden>Hidden</button>
-        <button id='go' onclick="document.querySelector('#result').textContent = 'Hello ' + document.querySelector('#name').value">Go</button>
+        <button id='go' data-testid='go-btn' onclick="document.querySelector('#result').textContent = 'Hello ' + document.querySelector('#name').value">Go</button>
+        <button id='nope' disabled>Disabled</button>
         <div id='result'></div>
     """
     url = "data:text/html," + quote(html)
@@ -127,12 +128,19 @@ async def test_live_chromium_session_snapshot_input_tabs_and_screenshot(
         password = next(
             item for item in snapshot["elements"] if item.get("input_type") == "password"
         )
+        disabled_btn = next(item for item in snapshot["elements"] if item.get("id") == "nope")
         assert name["label"] == "Name"
+        assert name["id"] == "name"
+        assert name["data_testid"] == "name-input"
+        assert "disabled" not in name
         assert name["input_type"] == "text"
         assert name["role"] == "text"
         assert name["value"] == ""
         assert password["label"] == "[password field]"
         assert password["value"] is None
+        assert "id" not in password
+        assert "data_testid" not in password
+        assert disabled_btn["disabled"] is True
         assert all(item["label"] != "Hidden" for item in snapshot["elements"])
         filled = _payload(
             await tool(

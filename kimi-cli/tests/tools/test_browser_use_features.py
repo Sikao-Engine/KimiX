@@ -639,14 +639,19 @@ async def test_extract_fields_returns_one_record_per_match() -> None:
     assert "querySelector" in script
 
 
-async def test_extract_fields_requires_a_record_selector() -> None:
+async def test_extract_fields_without_selector_reads_the_whole_document() -> None:
+    page = _page()
+    locator = MagicMock()
+    locator.evaluate_all = AsyncMock(
+        return_value={"values": [{"t": "x"}], "truncated": False, "matches": 1}
+    )
+    page.locator = MagicMock(return_value=locator)
     manager = BrowserManager(BrowserConfig())
 
-    with pytest.raises(BrowserBackendError) as caught:
-        await manager.extract(_state(_page()), None, None, True, 10, fields={"t": "@self"})
+    result = await manager.extract(_state(page), None, None, True, 10, fields={"t": "@self"})
 
-    assert caught.value.code == "target_required"
-    assert caught.value.retryable is True
+    page.locator.assert_called_once_with("html")
+    assert result["records"] == [{"t": "x"}]
 
 
 async def test_extract_main_content_and_html_modes() -> None:
@@ -733,9 +738,10 @@ def test_params_require_action_specific_inputs() -> None:
         Params(action="select", selector="#size")
     with pytest.raises(ValidationError, match="upload requires paths"):
         Params(action="upload", selector="#file")
-    with pytest.raises(ValidationError, match="fields extraction requires selector"):
-        Params(action="extract", fields={"t": "@self"})
-
+    # ``fields`` without ``selector`` is legal: the whole document is the single
+    # record container.  A live worker used that shape to read several labelled
+    # values in one call and must not lose the call to argument validation.
+    assert Params(action="extract", fields={"t": "@self"}).fields == {"t": "@self"}
     assert Params(action="select", selector="#size", values=["s"]).values == ["s"]
     assert Params(action="upload", selector="#file", paths=["a.png"]).paths == ["a.png"]
 

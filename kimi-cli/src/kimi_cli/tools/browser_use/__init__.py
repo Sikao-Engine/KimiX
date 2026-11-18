@@ -222,8 +222,6 @@ class Params(BaseModel):
             raise ValueError("select requires values.")
         if self.action == "upload" and not self.paths:
             raise ValueError("upload requires paths.")
-        if self.fields is not None and self.selector is None:
-            raise ValueError("fields extraction requires selector.")
         if self.action == "type" and self.element is not None and self.selector is not None:
             raise ValueError("type accepts at most one of element or selector.")
         if self.action in {"fill", "type"} and self.text is None:
@@ -276,7 +274,8 @@ class BrowserUse(CallableTool2[Params]):
             "the receipt describes "
             "the page as it was at that instant. A selector that matches nothing fails fast "
             "with `element_not_found` instead of waiting out the action timeout; snapshot "
-            "reports `checked` for form controls and extract attribute='value' reads the live "
+            "reports `checked` for form controls (plus `id`, `data_testid`, and `disabled` when "
+            "present) and extract attribute='value' reads the live "
             "form value. A mutation nulls `snapshot_id`, so an index-based call then answers "
             "`snapshot_required`; `stale_element` means the handle itself detached."
     )
