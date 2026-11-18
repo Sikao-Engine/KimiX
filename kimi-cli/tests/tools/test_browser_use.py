@@ -349,6 +349,7 @@ async def test_snapshot_batches_dom_metadata_and_handle_discovery() -> None:
     result = await manager.snapshot(state)
 
     assert result["element_count"] == 2
+    assert result["element_total"] == 3
     assert result["elements"][1] == {
         "element": 2,
         "tag": "input",

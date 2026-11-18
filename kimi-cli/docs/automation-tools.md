@@ -57,7 +57,10 @@ actions should use a fresh `snapshot`.
 
 Addressing is three-tiered. Element indices from `snapshot` are primary and are
 guarded by `snapshot_id`; a stale index fails with `stale_element` instead of
-clicking the wrong thing. `selector` (CSS/text/xpath) is the second tier. When
+clicking the wrong thing. `selector` (CSS/text/xpath) is the second tier; a
+selector that matches nothing fails immediately with `element_not_found` instead
+of waiting out the action timeout, and `snapshot` reports `checked` for form
+controls so a radio/checkbox state is visible. When
 neither reaches the target - canvas widgets, closed shadow roots, cross-origin
 frames - `click` accepts viewport `x`/`y` in CSS pixels, the same coordinate
 system `snapshot` reports, with modifiers held and released around the click.
@@ -67,14 +70,25 @@ reach `wait_state` (attached/visible/hidden/detached), waits for `text` to becom
 visible, or polls a JavaScript `condition` until it is truthy. A predicate runs
 page script, so it requires approval like `evaluate`.
 
-`extract` returns `values` (text or one attribute), `records` shaped by `fields`
+`extract` returns `values` (text or one attribute; `attribute='value'` on a form
+control reads its live value, not the default HTML attribute), `records` shaped by `fields`
 (`{"title": "h2", "href": "a|href"}`, with `@self` for the record element) so one
 call yields schema-shaped rows, `main_content` (largest link-sparse text block,
 for article reading), or raw HTML with `format="html"`.
 
-Every result is a state receipt and, when the page produced any, includes the
-recent console errors/warnings and failed requests for the active page (bounded
-to `console_events` entries, URLs redacted). Errors carry a machine-readable
+Every result is a state receipt: `url`, `title`, `tab` (the 1-based index of the
+active tab), and `tab_count`, so a tab switch needs no extra `list_tabs` call.
+The `url`/`title` pair is always taken from one document - `press`/`click` may
+commit a navigation, so the pair is re-read when the tab moves during the receipt
+- and `click`/`press` accept `wait_until` to wait out the navigation they trigger
+instead of reporting the page as it was mid-action. `fill` echoes the read-back
+`value` next to `verified`, `wait` reports how long it actually waited (`elapsed`),
+`scroll` reports the offsets it reached, and `truncated: true` means the snapshot
+element list or the extract result list hit its cap - `snapshot` adds
+`element_total` and `extract` adds `matches`, so a capped list is distinguishable
+from an empty one. When the page produced any, a receipt also
+includes the recent console errors/warnings and failed requests for the active page
+(bounded to `console_events` entries, URLs redacted). Errors carry a machine-readable
 `error_code` plus `retryable: true|false` so a model can tell "take a fresh
 snapshot and retry" from "this will never work"; timeouts deliberately omit the
 flag because their outcome is unknown.

@@ -98,7 +98,6 @@ from kimi_cli.soul.message import (
     normalize_history,
     strip_system_reminders,
     system,
-    system_reminder,
     tool_result_to_message,
 )
 from kimi_cli.soul import slash as soul_slash
@@ -164,6 +163,29 @@ rarely needed.
 # text-only progress summary.
 _MAX_LOOP_RECOVERY_ROUNDS = 3
 _LOOP_RECOVERY_TEXT_MARKER = "[loop-recovery]"
+_VERIFICATION_GATE_MARKER = "[verification-gate]"
+#: Appended to a request (and to the stored context) when the history would
+#: otherwise end on an assistant turn. Some strict backends reject such a
+#: request outright — Gemini answers ``Requests ending with a model turn are
+#: not supported.`` — so a lost in-turn continuation (see
+#: ``_make_verification_gate_prompt``) must never surface as a provider error.
+_MODEL_TAIL_CONTINUATION = (
+    "[continuation] Continue the current task. The previous turn ended without a"
+    " pending user request. Reply with a plain-text summary of what is done, or"
+    " continue the remaining work — do not repeat a completed action."
+)
+
+
+def _make_verification_gate_prompt(gate_text: str) -> str:
+    """Wrap verification-gate findings in a real user message.
+
+    The result is a plain-text user message (never ``<system-reminder>``) so
+    ``strip_system_reminders`` cannot remove it before the next LLM step — the
+    same rule the loop-recovery prompt follows. Reminder-wrapped nudges were
+    dropped in ``_step``, which made the gate a no-op and left the request
+    ending on the assistant turn (rejected with 400 by strict providers).
+    """
+    return f"{_VERIFICATION_GATE_MARKER} {gate_text}"
 
 
 def _make_loop_recovery_prompt(
@@ -1645,10 +1667,23 @@ class KimiSoul:
                 ):
                     gate_msg = await self._verification_gate.check(self)
                     if gate_msg is not None:
+                        # The nudge MUST be a real user message (a plain
+                        # ``TextPart``), never a ``<system-reminder>``:
+                        # ``_step`` begins with ``strip_system_reminders``,
+                        # which deletes reminder-only messages *before* the LLM
+                        # sees them (2e.2). Wrapping the nudge in a reminder
+                        # therefore made it a silent no-op and left the request
+                        # history ending on the assistant turn — strict
+                        # providers reject that outright (Gemini:
+                        # "Requests ending with a model turn are not
+                        # supported."). Same rule as the loop-recovery prompt
+                        # above (see ``_make_loop_recovery_prompt``).
                         await self._context.append_message(
                             Message(
                                 role="user",
-                                content=[TextPart(text=system_reminder(gate_msg).text)],
+                                content=[
+                                    TextPart(text=_make_verification_gate_prompt(gate_msg))
+                                ],
                             )
                         )
                         continue  # do not end the turn; force another step
@@ -1968,6 +2003,19 @@ class KimiSoul:
         # 2e.4. HISTORY NORMALIZATION
         # ═══════════════════════════════════════════════════════════════════════
         effective_history = normalize_history(history_for_llm)
+
+        # ═══════════════════════════════════════════════════════════════════════
+        # 2e.4.0. PROVIDER-SAFETY: NEVER END THE REQUEST ON A MODEL TURN
+        # ═══════════════════════════════════════════════════════════════════════
+        # Every in-turn continuation is supposed to append a *real* user
+        # message before the next step (see ``_make_loop_recovery_prompt`` and
+        # ``_make_verification_gate_prompt``). If one is ever lost — a stripped
+        # ``<system-reminder>``, a future gate, an interrupted injection — the
+        # request would end on the assistant turn, which strict backends reject
+        # outright (Gemini: "Requests ending with a model turn are not
+        # supported."). Repair it here, at the single funnel every request goes
+        # through, so no caller can turn a lost nudge into a hard provider 400.
+        effective_history = await self._repair_model_tail(effective_history)
 
         # ═══════════════════════════════════════════════════════════════════════
         # 2e.4. LLM CALL WITH RETRY
@@ -2294,6 +2342,39 @@ class KimiSoul:
         if result.tool_calls:
             return None
         return StepOutcome(stop_reason="no_tool_calls", assistant_message=result.message)
+
+    async def _repair_model_tail(self, history: list[Message]) -> list[Message]:
+        """Ensure the request history never ends on an assistant turn.
+
+        Strict providers reject a request whose last message is a model turn
+        (Gemini: ``Requests ending with a model turn are not supported.``).
+        In-turn continuations are supposed to append a real user message first;
+        this guard catches a lost one instead of surfacing a hard 400.
+
+        The continuation is appended to the session context as well, so the
+        persisted conversation matches exactly what the model was sent.
+        """
+        if not history:
+            return history
+        last = history[-1]
+        if last.role != "assistant":
+            return history
+        if last.tool_calls:
+            # An assistant turn carrying tool calls is completed by its tool
+            # result messages; appending a user message here would split the
+            # pair instead of repairing anything.
+            logger.warning(
+                "Request history ends on an assistant tool-call message without "
+                "tool results; leaving the pairing untouched"
+            )
+            return history
+        logger.warning(
+            "Request history ends on an assistant turn; appending a continuation "
+            "user message so strict providers accept the request"
+        )
+        continuation = Message(role="user", content=[TextPart(text=_MODEL_TAIL_CONTINUATION)])
+        await self._context.append_message(continuation)
+        return [*history, continuation]
 
     async def _grow_context(self, result: StepResult, tool_results: list[ToolResult]):
         logger.debug("Growing context with result: {result}", result=result)

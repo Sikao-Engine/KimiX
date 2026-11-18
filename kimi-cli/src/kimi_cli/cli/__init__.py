@@ -253,6 +253,16 @@ def kimi(
 
     init_process_name("Kimi Code")
 
+    # Windows-only, process-wide: CPython's proactor transport prints
+    # "Exception in callback _ProactorBasePipeTransport._call_connection_lost"
+    # + ConnectionResetError (WinError 10054) whenever a peer resets a socket
+    # while it is being closed (killed sub-process, dropped keep-alive HTTP
+    # connection, session-server bridge teardown, session teardown). Demote
+    # exactly that pair to a debug log before any loop exists.
+    from kimi_cli.utils.asyncio_noise import suppress_proactor_reset_noise
+
+    suppress_proactor_reset_noise()
+
     if ctx.invoked_subcommand is not None:
         return  # skip rest if a subcommand is invoked
 

@@ -461,7 +461,9 @@ async def test_timeouts_stay_undetermined(runtime: Any, session: Any) -> None:
 
 
 def _page_with_locator(page: Any, target: Any) -> Any:
-    page.locator = MagicMock(return_value=SimpleNamespace(first=target))
+    page.locator = MagicMock(
+        return_value=SimpleNamespace(first=target, count=AsyncMock(return_value=1))
+    )
     return page
 
 

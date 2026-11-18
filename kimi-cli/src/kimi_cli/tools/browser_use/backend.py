@@ -22,6 +22,8 @@ from playwright.async_api import (
     Playwright,
     async_playwright,
 )
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from kimi_cli import logger
 from kimi_cli.tools.browser_use.discovery import clean_executable_path, discover_browsers
@@ -75,6 +77,7 @@ _SNAPSHOT_SCRIPT = r"""({selector, limit}) => {
                 value: hasValue ? value.slice(0, 500) : null,
                 name: element.getAttribute('name'),
                 input_type: inputType || null,
+                checked: typeof element.checked === 'boolean' ? element.checked : null,
                 bounds: [
                     Math.round(box.x), Math.round(box.y),
                     Math.round(box.width), Math.round(box.height),
@@ -100,6 +103,10 @@ _FIELDS_SCRIPT = r"""(elements, {fields, limit}) => {
             ? element
             : element.querySelector(selector);
         if (!target) return null;
+        const control = ['input', 'textarea', 'select'].includes(target.tagName.toLowerCase());
+        if (attribute === 'value' && control) {
+            return String(target.value);
+        }
         if (attribute) return target.getAttribute(attribute);
         return String(target.innerText ?? target.textContent ?? '')
             .replace(/\s+/g, ' ')
@@ -113,6 +120,7 @@ _FIELDS_SCRIPT = r"""(elements, {fields, limit}) => {
             return record;
         }),
         truncated: elements.length > limit,
+        matches: elements.length,
     };
 }"""
 
@@ -404,6 +412,78 @@ def _record_request_failure(state: BrowserSession, request: Any) -> None:
             "reason": reason[:200],
         }
     )
+
+
+_NAVIGATION_SETTLE_TIMEOUT_MS = 3_000
+_TITLE_SETTLE_TIMEOUT_MS = 2_000
+_TITLE_POLL_INTERVAL_S = 0.05
+_SCROLL_SETTLE_TIMEOUT_S = 0.6
+_SCROLL_INITIAL_DELAY_S = 0.08
+_SCROLL_POLL_INTERVAL_S = 0.05
+
+
+async def _await_navigation(page: Page, wait_until: WaitUntil | None, timeout_ms: int) -> None:
+    """Wait out a navigation the action triggered, when the caller asked for it.
+
+    ``press``/``click`` may navigate. Without a requested state the receipt
+    describes the page as it was at that instant (and says so with
+    ``verdict: verify_fresh_state``); with one, the destination document is
+    settled first, so the receipt is about the page the action reached.
+
+    The wait is best effort and tightly bounded: a form submit whose navigation
+    never commits made an unbounded wait turn a successful ``press`` into
+    ``timeout_outcome_unknown``, so the budget here is a settle timeout, never the
+    action timeout, and no failure of the wait can fail the action.
+    """
+    if wait_until is None:
+        return
+    with contextlib.suppress(TimeoutError, PlaywrightTimeoutError, PlaywrightError):
+        await page.wait_for_load_state(
+            wait_until, timeout=min(timeout_ms, _NAVIGATION_SETTLE_TIMEOUT_MS)
+        )
+
+
+async def _sample_scroll(page: Page) -> dict[str, Any] | None:
+    """Read the window scroll offset, or ``None`` when the page cannot answer."""
+    try:
+        sample = await page.evaluate(
+            "() => ({x: Math.round(window.scrollX), y: Math.round(window.scrollY)})"
+        )
+    except (PlaywrightError, TypeError):
+        return None
+    return sample if isinstance(sample, dict) else None
+
+
+def _active_tab(state: BrowserSession) -> int | None:
+    """1-based index of the page a receipt describes (same numbering as list_tabs)."""
+    for index, page in enumerate(state.context.pages, start=1):
+        if page is state.page:
+            return index
+    return None
+
+
+async def _document_state(page: Page, timeout_ms: int) -> tuple[str, str]:
+    """Return a ``(url, title)`` pair that belongs to one document.
+
+    Receipts are evidence, so the two fields must not contradict each other.
+    ``page.url`` is local but ``page.title()`` is a round trip: a navigation that
+    commits in between produced a live receipt reading ``url=.../Web_browser``
+    with ``title="Loading https://..."`` -- the url of the old page and the title
+    of the next one. The url is therefore read again after the title and the pair
+    is discarded when the tab moved on. An empty title on a real page is polled
+    (a just-committed document has not parsed its ``<head>`` yet) up to a bounded
+    budget, so a slow page costs a little latency instead of a blank field.
+    """
+    deadline = time.monotonic() + min(timeout_ms, _TITLE_SETTLE_TIMEOUT_MS) / 1000
+    while True:
+        url = url_for_output(page.url)
+        title = await page.title()
+        settled = url_for_output(page.url) == url
+        if settled and (title or url in ("", "about:blank")):
+            return url, title
+        if time.monotonic() >= deadline:
+            return (url, title) if settled else (url_for_output(page.url), title)
+        await asyncio.sleep(_TITLE_POLL_INTERVAL_S)
 
 
 class BrowserManager:
@@ -796,17 +876,20 @@ class BrowserManager:
         await self._stop_browser()
 
     @staticmethod
-    def page_info(state: BrowserSession) -> dict[str, Any]:
+    def page_info(
+        state: BrowserSession, *, url: str | None = None, title: str = ""
+    ) -> dict[str, Any]:
         return {
             "session": state.name,
-            "url": url_for_output(state.page.url),
-            "title": "",
+            "url": url_for_output(state.page.url) if url is None else url,
+            "title": title,
+            "tab": _active_tab(state),
             "tab_count": len(state.context.pages),
         }
 
     async def info(self, state: BrowserSession) -> dict[str, Any]:
-        result = self.page_info(state)
-        result["title"] = await state.page.title()
+        url, title = await _document_state(state.page, self.config.timeout_ms)
+        result = self.page_info(state, url=url, title=title)
         result["snapshot_id"] = state.snapshot_id or None
         result.update(self.launcher_info())
         # Reported only when present: a healthy page must not pay tokens for an
@@ -871,6 +954,7 @@ class BrowserManager:
                     {"element": index, **detail} for index, detail in enumerate(details, start=1)
                 ],
                 "element_count": len(kept),
+                "element_total": total_count,
                 "truncated": total_count > self.config.max_elements,
                 "coordinate_system": "Bounds are CSS pixels relative to the page viewport.",
             }
@@ -917,7 +1001,19 @@ class BrowserManager:
         assert selector is not None
         if len(selector) > 4000:
             raise BrowserBackendError("Selector is too long.", "invalid_selector")
-        return state.page.locator(selector).first
+        locator = state.page.locator(selector)
+        # Fail fast on a statically absent target: without this check Playwright
+        # waits out the full action timeout and the tool reports
+        # `timeout_outcome_unknown` for what is really a missing element (a live
+        # corpus run burned ~45 s on `select` against a page with no <select>).
+        if await locator.count() == 0:
+            raise BrowserBackendError(
+                f"No element matches the selector {selector!r}. Take a fresh snapshot or pick "
+                "another selector; do not repeat the same call.",
+                "element_not_found",
+                retryable=True,
+            )
+        return locator.first
 
     async def navigate(
         self, state: BrowserSession, url: str, wait_until: WaitUntil
@@ -937,9 +1033,12 @@ class BrowserManager:
         click_count: int,
         modifiers: list[str],
         position: tuple[int, int] | None = None,
+        *,
+        wait_until: WaitUntil | None = None,
     ) -> dict[str, Any]:
         if position is not None:
             await self._click_at(state, position, button, click_count, modifiers)
+            await _await_navigation(state.page, wait_until, self.config.timeout_ms)
             await self._clear_snapshot(state)
             return await self.info(state)
         target = await self._target(state, element, selector, snapshot_id)
@@ -949,6 +1048,7 @@ class BrowserManager:
             modifiers=modifiers,
             timeout=self.config.timeout_ms,
         )
+        await _await_navigation(state.page, wait_until, self.config.timeout_ms)
         await self._clear_snapshot(state)
         return await self.info(state)
 
@@ -1043,6 +1143,8 @@ class BrowserManager:
         await self._clear_snapshot(state)
         result = await self.info(state)
         verified = value == text if value is not None else None
+        # Echo the read-back: `verified` alone is unverifiable from the receipt.
+        result["value"] = value
         result["verified"] = verified
         result["verdict"] = "done" if verified else "verify_fresh_state"
         return result
@@ -1076,12 +1178,15 @@ class BrowserManager:
         selector: str | None,
         snapshot_id: str | None,
         key: str,
+        *,
+        wait_until: WaitUntil | None = None,
     ) -> dict[str, Any]:
         if element is None and selector is None:
             await state.page.keyboard.press(key)
         else:
             target = await self._target(state, element, selector, snapshot_id)
             await target.press(key, timeout=self.config.timeout_ms)
+        await _await_navigation(state.page, wait_until, self.config.timeout_ms)
         await self._clear_snapshot(state)
         return await self.info(state)
 
@@ -1113,8 +1218,15 @@ class BrowserManager:
             payload = await page.locator(selector).evaluate_all(
                 _FIELDS_SCRIPT, {"fields": fields, "limit": max_items}
             )
+            records = payload["values"]
             result = await self.info(state)
-            result.update({"records": payload["values"], "truncated": payload["truncated"]})
+            result.update(
+                {
+                    "records": records,
+                    "matches": int(payload.get("matches", len(records))),
+                    "truncated": payload["truncated"],
+                }
+            )
             return result
         if main_content:
             payload = await page.evaluate(_MAIN_CONTENT_SCRIPT, 50_000)
@@ -1124,6 +1236,7 @@ class BrowserManager:
                 {
                     "main_content": text,
                     "characters": int(payload["chars"]),
+                    "matches": 1,
                     "truncated": int(payload["chars"]) > len(text),
                     "container": bool(payload["container"]),
                 }
@@ -1132,24 +1245,34 @@ class BrowserManager:
         if content_format == "html":
             html = await page.locator(selector or "body").first.inner_html()
             result = await self.info(state)
-            result.update({"html": html, "truncated": False})
+            result.update({"html": html, "matches": 1, "truncated": False})
             return result
+        matches = 1
         if selector is None:
             values = [(await page.locator("body").inner_text())[:50_000]]
         else:
             payload = await page.locator(selector).evaluate_all(
                 """(elements, {attribute, limit}) => ({
-                    values: elements.slice(0, limit).map(element => attribute
-                        ? element.getAttribute(attribute)
-                        : String(element.innerText || '').slice(0, 50000)),
+                    values: elements.slice(0, limit).map(element => {
+                        if (!attribute) return String(element.innerText || '').slice(0, 50000);
+                        const control = ['input', 'textarea', 'select'].includes(
+                            element.tagName.toLowerCase());
+                        return attribute === 'value' && control
+                            ? String(element.value)
+                            : element.getAttribute(attribute);
+                    }),
                     truncated: elements.length > limit,
+                    matches: elements.length,
                 })""",
                 {"attribute": attribute, "limit": max_items if all_matches else 1},
             )
             values = payload["values"]
             truncated = payload["truncated"]
+            matches = int(payload.get("matches", len(values)))
         result = await self.info(state)
-        result.update({"values": values, "truncated": truncated})
+        # `matches` separates "nothing matched" from "matched, but the value is
+        # empty", which `values: []` alone could not (reported by a live judge).
+        result.update({"values": values, "matches": matches, "truncated": truncated})
         return result
 
     async def evaluate(self, state: BrowserSession, script: str, argument: Any) -> dict[str, Any]:
@@ -1157,7 +1280,8 @@ class BrowserManager:
         await self._clear_snapshot(state)
         result = await self.info(state)
         result["value"] = value
-        result["verdict"] = "verify_fresh_state"
+        # No verdict: `evaluate` is not input, so "verify before repeating input"
+        # was noise (reported as a defect by a live corpus run and its judge twice).
         return result
 
     async def screenshot(
@@ -1254,6 +1378,7 @@ class BrowserManager:
         # by ``seconds``.  Conflating the two would turn "wait up to 45s for text"
         # into a one-second wait.
         bounded = max(1, int(timeout_ms)) if timeout_ms is not None else max(1, int(seconds * 1000))
+        started = time.monotonic()
         matched = "elapsed"
         if condition is not None:
             await state.page.wait_for_function(condition, timeout=bounded)
@@ -1268,8 +1393,12 @@ class BrowserManager:
             matched = "selector"
         else:
             await asyncio.sleep(seconds)
+        waited_s = time.monotonic() - started
         result = await self.info(state)
         result["waited"] = matched
+        # The mechanism alone left a "record waited/elapsed" instruction with no
+        # duration to record, so the elapsed time is part of the receipt.
+        result["elapsed"] = round(waited_s, 3)
         return result
 
     async def scroll(
@@ -1281,6 +1410,7 @@ class BrowserManager:
         selector: str | None,
         snapshot_id: str | None,
     ) -> dict[str, Any]:
+        target: Any = None
         if element is not None or selector is not None:
             target = await self._target(state, element, selector, snapshot_id)
             await target.scroll_into_view_if_needed(timeout=self.config.timeout_ms)
@@ -1289,11 +1419,49 @@ class BrowserManager:
                 await state.page.mouse.move(
                     box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
                 )
+        else:
+            # `mouse.wheel` scrolls whatever sits under the cursor; at (0, 0) that is
+            # often a fixed header, which swallowed a live run's scroll (y stayed 0).
+            viewport = state.page.viewport_size or {"width": 1280, "height": 900}
+            await state.page.mouse.move(viewport["width"] / 2, viewport["height"] / 2)
         dx = amount if direction == "right" else -amount if direction == "left" else 0
         dy = amount if direction == "down" else -amount if direction == "up" else 0
         await state.page.mouse.wheel(dx, dy)
         await self._clear_snapshot(state)
-        return await self.info(state)
+        result = await self.info(state)
+        result.update({"scroll": await self._scroll_offsets(state, target)})
+        return result
+
+    @staticmethod
+    async def _scroll_offsets(state: BrowserSession, target: Any) -> dict[str, Any]:
+        """The scroll position a wheel action reached (window and, if addressed, its element).
+
+        A live corpus run had to spend an extra ``evaluate`` to confirm a scroll
+        because the receipt only carried a verdict. The position is sampled until
+        it stops moving, because Chrome animates wheel scrolling: reading once
+        right after the wheel still shows the old offset.
+        """
+        offsets: dict[str, Any] = {}
+        # The wheel is dispatched asynchronously: a read in the same tick still
+        # shows the old offset, and two such reads look "stable".
+        await asyncio.sleep(_SCROLL_INITIAL_DELAY_S)
+        window = await _sample_scroll(state.page)
+        deadline = time.monotonic() + _SCROLL_SETTLE_TIMEOUT_S
+        while window is not None and time.monotonic() < deadline:
+            previous, window = window, await _sample_scroll(state.page)
+            if window is None or window == previous:
+                break
+            await asyncio.sleep(_SCROLL_POLL_INTERVAL_S)
+        if window is not None:
+            offsets["window"] = window
+        if target is not None:
+            with contextlib.suppress(PlaywrightError, TypeError):
+                inner = await target.evaluate(
+                    "(el) => ({x: Math.round(el.scrollLeft), y: Math.round(el.scrollTop)})"
+                )
+                if isinstance(inner, dict):
+                    offsets["element"] = inner
+        return offsets
 
     async def history(
         self,

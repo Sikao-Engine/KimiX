@@ -69,9 +69,30 @@ def _install_daemon_executor(loop: asyncio.AbstractEventLoop) -> None:
         pass
 
 
+def _install_reset_noise_filter(loop: asyncio.AbstractEventLoop) -> None:
+    """Keep Windows' proactor connection-reset noise off the session loop.
+
+    The LSP-bridge client opens a TCP connection per file-tool call; when the
+    peer is gone (the bridge sub-process died, the session is being torn down,
+    a keep-alive HTTP connection was dropped), CPython's
+    ``_ProactorBasePipeTransport._call_connection_lost`` shuts a dead socket
+    down and raises ``ConnectionResetError: [WinError 10054]`` *inside a loop
+    callback*, so ``prompt()`` prints an "Exception in callback ..." traceback
+    that no caller can catch. ``kimi_cli.utils.asyncio_noise`` demotes exactly
+    that callback/exception pair to a debug log.
+    """
+    try:
+        from kimi_cli.utils.asyncio_noise import install_proactor_reset_filter
+
+        install_proactor_reset_filter(loop)
+    except Exception:  # pragma: no cover - cleanup noise must never break a loop
+        pass
+
+
 def _new_loop() -> asyncio.AbstractEventLoop:
     loop = asyncio.new_event_loop()
     _install_daemon_executor(loop)
+    _install_reset_noise_filter(loop)
     return loop
 
 

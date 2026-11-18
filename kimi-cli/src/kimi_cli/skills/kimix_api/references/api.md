@@ -1062,7 +1062,9 @@ def system_reminder(message: str) -> TextPart:
 ### Delivery in `KimiSoul`
 Before each LLM step (`KimiSoul._step`):
 1. `strip_system_reminders()` removes stale `<system-reminder>` user messages from previous steps/turns (reminders are ephemeral: one fresh copy per step, never accumulated).
-2. The verification gate (`LoopControl.verification_gate_enabled`) and pending notifications may append further reminder messages when they fire.
+2. The verification gate (`LoopControl.verification_gate_enabled`) appends its nudge as a **real user message** — never a `<system-reminder>`, which step 1 would delete before the model ever saw it — and only when the turn can actually satisfy it (skipped for read-only runtimes such as the plan-mode planner, and when the toolset has no shell/todo tool to verify with). Pending notifications may append further reminder messages when they fire.
+
+A request must never end on an assistant turn: strict backends reject it (Gemini answers `Requests ending with a model turn are not supported.`). `KimiSoul._repair_model_tail` (called right before every LLM step) appends a continuation user message if history would end that way, so a lost in-turn continuation can never surface as a provider 400.
 Adjacent user messages are later merged by `normalize_history()` (`kimi_cli/soul/message.py`) for the API call — but system-reminder and notification messages are never merged, so the request-time message boundary matches storage and the provider prefix cache stays stable.
 ## Context Pruning (Smart History Removal)
 

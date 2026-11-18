@@ -492,6 +492,64 @@ async def _run(args: argparse.Namespace) -> None:
             await server.wait_closed()
 
 
+# ── proactor reset-noise filter (stdlib only) ────────────────────────────────
+# This server must stay importable under *any* interpreter (no ``kimi_cli``
+# import, see the module docstring), so it cannot use the shared implementation
+# in ``kimi_cli/utils/asyncio_noise.py``. Keep the matcher in sync with it: the
+# only thing dropped is a connection-reset ``OSError`` raised *inside*
+# ``_ProactorBasePipeTransport._call_connection_lost`` (CPython gh-83413) —
+# i.e. the "Exception in callback ... / ConnectionResetError: [WinError 10054]"
+# traceback printed when a client disconnects abruptly.
+_LOST_CALLBACK = "_ProactorBasePipeTransport._call_connection_lost"
+_RESET_WINERRORS = frozenset({10053, 10054})
+
+
+def _is_winsock_reset(exception: BaseException) -> bool:
+    """True when *exception* reports a "peer is gone" winsock code."""
+    winerror = getattr(exception, "winerror", None)
+    if winerror is not None:
+        return winerror in _RESET_WINERRORS
+    errno = getattr(exception, "errno", None)
+    if errno is not None:
+        return errno in _RESET_WINERRORS
+    return sys.platform == "win32"
+
+
+def _is_reset_teardown_noise(context: Any) -> bool:
+    exception = context.get("exception") if isinstance(context, dict) else None
+    if not isinstance(exception, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+        return False
+    if not _is_winsock_reset(exception):
+        return False
+    handle = context.get("handle")
+    callback = getattr(handle, "_callback", None)
+    name = getattr(callback, "__qualname__", None) or getattr(callback, "__name__", "")
+    if name:
+        return name.endswith(_LOST_CALLBACK)
+    message = context.get("message")
+    return isinstance(message, str) and _LOST_CALLBACK in message
+
+
+def _install_reset_noise_filter(loop: asyncio.AbstractEventLoop) -> None:
+    """Demote the proactor connection-reset teardown traceback to a debug log."""
+    previous = loop.get_exception_handler()
+
+    def _handler(loop_: asyncio.AbstractEventLoop, context: Any) -> None:
+        if _is_reset_teardown_noise(context):
+            print(
+                "kimix_lsp: ignored proactor connection-reset teardown noise",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
+        if previous is not None:
+            previous(loop_, context)
+        else:
+            loop_.default_exception_handler(context)
+
+    loop.set_exception_handler(_handler)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="kimix_lsp",
@@ -514,7 +572,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(_run(args))
+        # ``asyncio.Runner`` (not ``asyncio.run``) so the filter is attached to
+        # the very loop that serves the bridge, before it serves anything.
+        with asyncio.Runner() as runner:
+            _install_reset_noise_filter(runner.get_loop())
+            runner.run(_run(args))
 
 
 if __name__ == "__main__":

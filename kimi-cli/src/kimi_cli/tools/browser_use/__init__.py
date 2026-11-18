@@ -80,7 +80,7 @@ _MUTATING_ACTIONS = frozenset(
         "close",
     }
 )
-_VERIFY_ACTIONS = frozenset({"click", "type", "press", "evaluate", "scroll"})
+_VERIFY_ACTIONS = frozenset({"click", "type", "press", "scroll"})
 _SNAPSHOT_INVALIDATING_ACTIONS = _MUTATING_ACTIONS - {"close"} | {"switch_tab", "wait"}
 _SESSION_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
@@ -181,8 +181,12 @@ class Params(BaseModel):
     full_page: bool = Field(
         default=False, description="Capture the full page instead of viewport only."
     )
-    wait_until: WaitUntil = Field(
-        default="domcontentloaded", description="Navigation readiness condition."
+    wait_until: WaitUntil | None = Field(
+        default=None,
+        description=(
+            "Navigation readiness condition: navigate/new_tab/back/forward/reload default to "
+            "domcontentloaded; click/press wait only when this is set."
+        ),
     )
     timeout: float = Field(
         default=45.0,
@@ -254,14 +258,27 @@ class BrowserUse(CallableTool2[Params]):
         "Extract returns inner text by default; set attribute only for an actual HTML attribute "
         "such as href (attribute='text' is also accepted as a text-extraction alias). Fill/type "
         "text is literal, including whitespace; fill's verified flag compares the browser value "
-        "only against the supplied text argument, not against the user's intended text. After "
-        "text is literal, including whitespace; fill's verified flag compares the browser value "
-        "only against the supplied text argument, not against the user's intended text. select "
-        "chooses dropdown options and upload attaches workspace files; both need approval and "
-        "uploads stay inside the workspace. Without a usable element, click accepts x/y "
-        "viewport pixels. wait takes text or a JS predicate. extract returns text, HTML, main "
-        "article text (main_content), or records shaped by fields=. Verify a result with a "
-        "snapshot or targeted extraction before any retry."
+        "only against the supplied text argument, not against the user's intended text, and the "
+        "receipt echoes that read-back value. select reports the option values it chose and "
+        "upload attaches workspace files; both need approval and uploads stay inside the "
+        "workspace. Every receipt carries url, title, tab (1-based index of the active tab) and "
+        "tab_count, so a tab switch needs no extra list_tabs call (indices renumber when a tab "
+            "closes, and the close_tab receipt names the tab that takes over); truncated:true "
+            "means the "
+        "snapshot element list or the extract result list hit its cap (snapshot reports "
+            "`element_total`, extract reports `matches`, so an empty list is distinguishable "
+            "from a capped one); wait reports elapsed and "
+            "scroll reports the offsets it reached. Without a usable element "
+        "click accepts x/y viewport pixels. wait takes text or a JS predicate. extract returns "
+        "text, HTML, main article text (main_content), or records shaped by fields=. Verify a "
+        "result with a snapshot or targeted extraction before any retry. click/press accept "
+            "wait_until to wait out the navigation they trigger (bounded, best effort); without it "
+            "the receipt describes "
+            "the page as it was at that instant. A selector that matches nothing fails fast "
+            "with `element_not_found` instead of waiting out the action timeout; snapshot "
+            "reports `checked` for form controls and extract attribute='value' reads the live "
+            "form value. A mutation nulls `snapshot_id`, so an index-based call then answers "
+            "`snapshot_required`; `stale_element` means the handle itself detached."
     )
     params: type[Params] = Params
 
@@ -380,7 +397,9 @@ class BrowserUse(CallableTool2[Params]):
         manager = self._manager
         if action == "navigate":
             assert params.url is not None
-            return await manager.navigate(state, params.url, params.wait_until), None
+            return await manager.navigate(
+                state, params.url, params.wait_until or "domcontentloaded"
+            ), None
         if action == "snapshot":
             return await manager.snapshot(state), None
         if action == "click":
@@ -401,6 +420,7 @@ class BrowserUse(CallableTool2[Params]):
                     params.click_count,
                     modifiers,
                     position,
+                    wait_until=params.wait_until,
                 ),
                 None,
             )
@@ -429,7 +449,12 @@ class BrowserUse(CallableTool2[Params]):
             assert params.key is not None
             return (
                 await manager.press(
-                    state, params.element, params.selector, params.snapshot_id, params.key
+                    state,
+                    params.element,
+                    params.selector,
+                    params.snapshot_id,
+                    params.key,
+                    wait_until=params.wait_until,
                 ),
                 None,
             )
@@ -481,7 +506,9 @@ class BrowserUse(CallableTool2[Params]):
             )
             return summary, data
         if action == "new_tab":
-            return await manager.new_tab(state, params.url, params.wait_until), None
+            return await manager.new_tab(
+                state, params.url, params.wait_until or "domcontentloaded"
+            ), None
         if action == "switch_tab":
             assert params.tab is not None
             return await manager.switch_tab(state, params.tab), None
@@ -517,7 +544,9 @@ class BrowserUse(CallableTool2[Params]):
                 None,
             )
         if action in {"back", "forward", "reload"}:
-            return await manager.history(state, action, params.wait_until), None
+            return await manager.history(
+                state, action, params.wait_until or "domcontentloaded"
+            ), None
         raise BrowserBackendError(f"Unsupported browser action {action}.", "unsupported_action")
 
     async def __call__(self, params: Params) -> ToolReturnValue:

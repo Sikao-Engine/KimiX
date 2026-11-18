@@ -976,6 +976,9 @@ def main(argv: list[str] | None = None) -> None:
         "--root", default=None, metavar="PATH",
         help="Confine read_file/write_file paths to this directory (default: no limit).",
     )
+    from kimi_cli.utils.asyncio_noise import suppress_proactor_reset_noise
+
+    suppress_proactor_reset_noise()
     args = parser.parse_args(argv)
     with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(_run(args))

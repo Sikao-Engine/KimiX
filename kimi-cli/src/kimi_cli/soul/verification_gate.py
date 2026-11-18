@@ -111,6 +111,13 @@ class VerificationGate:
 
     async def check(self, soul: KimiSoul) -> str | None:
         """Return a nudge text if the turn must continue, else ``None``."""
+        # Read-only runtimes (the plan-mode planner) have no verification duty:
+        # their deliverable is a written plan, and they cannot run tests. The
+        # check below would otherwise fire on every ``write_plan`` turn and
+        # force an extra turn after the planner already answered.
+        if getattr(getattr(soul, "runtime", None), "read_only", False) is True:
+            return None
+
         self._sync_turn(soul)
         if self._nudges >= self._max_nudges:
             return None
@@ -134,7 +141,7 @@ class VerificationGate:
         # Condition 2: edits this turn but no verification-class call.
         turn_history = self._current_turn_history(soul)
         has_edits, has_verification = self._classify_turn_tool_calls(turn_history)
-        if has_edits and not has_verification:
+        if has_edits and not has_verification and self._can_verify(soul):
             reasons.append(
                 "You modified code this turn but ran no verification "
                 "(no tests/check commands). "
@@ -151,3 +158,21 @@ class VerificationGate:
             + "\n\nAddress the findings above, then finish. "
             f"(nudge {self._nudges}/{self._max_nudges} this turn)"
         )
+
+    @staticmethod
+    def _can_verify(soul: KimiSoul) -> bool:
+        """Whether the turn *could* satisfy a verification nudge.
+
+        Nudging an agent whose toolset has no shell/todo tool to "run the
+        project's tests" is unactionable — it can only answer, so the nudge
+        buys an extra turn and no verification (the plan-mode planner is the
+        canonical case). Only an inspectable tool table that lacks every
+        verification tool disables the nudge; an unknown one keeps the
+        previous behaviour.
+        """
+        toolset = getattr(getattr(soul, "agent", None), "toolset", None)
+        tools = getattr(toolset, "tools", None)
+        if not isinstance(tools, (list, tuple)):
+            return True
+        names = {name for tool in tools if isinstance(name := getattr(tool, "name", None), str)}
+        return bool(names & VERIFICATION_TOOL_HINTS)

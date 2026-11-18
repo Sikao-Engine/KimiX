@@ -11,6 +11,7 @@ the ``--clean`` teardown on every real run.
 
 try:
     import uvloop
+
     uvloop.install()
 except ImportError:
     pass
@@ -22,6 +23,17 @@ lazy from .core import _run_cli
 
 
 def cli() -> None:
+    try:
+        # Windows-only, process-wide: demote CPython's proactor
+        # connection-reset teardown noise (``WinError 10054`` printed as
+        # "Exception in callback _ProactorBasePipeTransport._call_connection_lost")
+        # to a debug log. Installed before any loop exists so uvicorn's and the
+        # session loop are both covered.
+        from kimi_cli.utils.asyncio_noise import suppress_proactor_reset_noise
+
+        suppress_proactor_reset_noise()
+    except Exception:  # pragma: no cover - noise filtering must never block start-up
+        pass
     try:
         _run_cli()
     finally:

@@ -735,6 +735,41 @@ Contract:
 
 ---
 
+### 9.1 Windows: proactor `ConnectionResetError` noise on teardown
+
+The bridge opens a fresh TCP connection per file-tool call and closes it right
+after the reply, so a peer that is already gone (a session-server child killed
+during teardown, a dropped connection) is normal. On Windows, CPython's proactor
+transport shuts the dead socket down inside a loop callback:
+
+```python
+# asyncio/proactor_events.py — _ProactorBasePipeTransport._call_connection_lost
+if hasattr(self._sock, 'shutdown') and self._sock.fileno() != -1:
+    self._sock.shutdown(socket.SHUT_RDWR)   # raises ConnectionResetError (10054)
+```
+
+Because it runs *inside a callback*, no caller's `try/except` around
+`client.close()` can see it; the default exception handler prints
+
+```
+Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+...
+ConnectionResetError: [WinError 10054] 远程主机强迫关闭了一个现有的连接。
+```
+
+The socket is already dead — the shutdown is best-effort cleanup (CPython
+gh-83413). Every process entry point therefore installs
+`kimi_cli.utils.asyncio_noise.suppress_proactor_reset_noise()`, which demotes
+**only** that callback/exception pair (connection-reset family + `WSAECONNRESET`
+/ `WSAECONNABORTED` + `_ProactorBasePipeTransport._call_connection_lost`) to a
+debug log; every other asyncio exception is reported unchanged. A custom server
+that owns its loop should call
+`kimi_cli.utils.asyncio_noise.install_proactor_reset_filter(loop)` — or inline
+the stdlib-only equivalent that `tools/kimix_lsp.py` uses, since that script may
+run under an interpreter without `kimi_cli` — to stay quiet.
+
+---
+
 ## 10. Writing your own server
 
 Anything that speaks the protocol above works; the easiest route is to reuse

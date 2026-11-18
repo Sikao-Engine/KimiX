@@ -44,7 +44,9 @@ def _user(text: str) -> Message:
 
 
 def _reminder(text: str) -> Message:
-    return Message(role="user", content=[TextPart(text=f"<system-reminder>\n{text}\n</system-reminder>")])
+    return Message(
+        role="user", content=[TextPart(text=f"<system-reminder>\n{text}\n</system-reminder>")]
+    )
 
 
 def _assistant_call(tool_name: str, args: dict[str, Any]) -> Message:
@@ -154,7 +156,7 @@ async def test_max_nudges_cap() -> None:
     soul = _make_soul(todos=[_todo("task A", "pending")])
     assert await gate.check(soul) is not None  # nudge 1
     assert await gate.check(soul) is not None  # nudge 2
-    assert await gate.check(soul) is None      # released
+    assert await gate.check(soul) is None  # released
 
 
 async def test_nudges_reset_on_new_turn() -> None:
@@ -180,3 +182,81 @@ def test_kimisoul_constructs_gate(runtime: Runtime, tmp_path) -> None:
     )
     soul = KimiSoul(agent, context=Context(file_backend=tmp_path / "history.jsonl"))
     assert soul._verification_gate._max_nudges == soul._loop_control.verification_gate_max_nudges
+
+
+# ---------------------------------------------------------------------------
+# Read-only (plan mode) and verification-incapable toolsets
+# ---------------------------------------------------------------------------
+
+
+async def test_read_only_runtime_never_nudges() -> None:
+    """Plan-mode sessions have no verification duty.
+
+    Their deliverable is a written plan and they cannot run tests, so a nudge
+    would only buy an extra turn *after* the planner already answered (it used
+    to end in a 400 from strict providers).
+    """
+    history = [
+        _user("write a plan"),
+        _assistant_call("write_plan", {"plan": "# plan"}),
+        Message(role="assistant", content=[TextPart(text="plan saved")]),
+    ]
+    soul = _make_soul(history=history, todos=[_todo("task A", "pending")])
+    soul.runtime.read_only = True
+    gate = VerificationGate(max_nudges=2)
+    assert await gate.check(soul) is None
+
+
+async def test_toolset_without_verification_tool_skips_edit_nudge() -> None:
+    """ "Run the tests" is unactionable without a shell/todo tool."""
+    history = [
+        _user("write a plan"),
+        _assistant_call("write_plan", {"plan": "# plan"}),
+        Message(role="assistant", content=[TextPart(text="plan saved")]),
+    ]
+    soul = _make_soul(history=history)
+    soul.agent.toolset.tools = [
+        SimpleNamespace(name="read"),
+        SimpleNamespace(name="write_plan"),
+    ]
+    gate = VerificationGate(max_nudges=2)
+    assert await gate.check(soul) is None
+
+
+async def test_verification_capable_toolset_keeps_edit_nudge() -> None:
+    history = [
+        _user("implement the feature"),
+        _assistant_call("write", {"path": "a.py", "content": "x"}),
+        Message(role="assistant", content=[TextPart(text="done")]),
+    ]
+    soul = _make_soul(history=history)
+    soul.agent.toolset.tools = [SimpleNamespace(name="read"), SimpleNamespace(name="bash")]
+    gate = VerificationGate(max_nudges=2)
+    msg = await gate.check(soul)
+    assert msg is not None
+    assert "no verification" in msg
+
+
+async def test_empty_tool_table_skips_edit_nudge() -> None:
+    """A toolset with no tools at all cannot verify either."""
+    history = [
+        _user("implement the feature"),
+        _assistant_call("write", {"path": "a.py", "content": "x"}),
+        Message(role="assistant", content=[TextPart(text="done")]),
+    ]
+    soul = _make_soul(history=history)
+    soul.agent.toolset.tools = []
+    gate = VerificationGate(max_nudges=2)
+    assert await gate.check(soul) is None
+
+
+async def test_unknown_tool_table_keeps_edit_nudge() -> None:
+    """Never silently disable the gate when the tool table is unreadable."""
+    history = [
+        _user("implement the feature"),
+        _assistant_call("write", {"path": "a.py", "content": "x"}),
+        Message(role="assistant", content=[TextPart(text="done")]),
+    ]
+    soul = _make_soul(history=history)  # MagicMock toolset -> unknown tools
+    gate = VerificationGate(max_nudges=2)
+    assert await gate.check(soul) is not None

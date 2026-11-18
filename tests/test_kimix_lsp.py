@@ -26,6 +26,7 @@ import importlib.util
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -335,3 +336,67 @@ async def test_e2e_sdk_lifecycle_with_config_entry(tmp_path: Path) -> None:
     finally:
         await stop_server_processes(servers)
     assert not any(s is srv for s in get_live_server_processes())
+
+
+# ---------------------------------------------------------------------------
+# Proactor reset-noise filter (stdlib-only copy inside tools/kimix_lsp.py)
+# ---------------------------------------------------------------------------
+
+
+def _transport_callback():
+    """A callback whose qualname is the proactor transport's close callback."""
+
+    def _call_connection_lost(*args: Any) -> None:  # pragma: no cover - never run
+        pass
+
+    _call_connection_lost.__qualname__ = "_ProactorBasePipeTransport._call_connection_lost"
+    return _call_connection_lost
+
+
+def _reset_context(exception: BaseException, callback: Any) -> dict[str, Any]:
+    return {
+        "message": f"Exception in callback {callback.__qualname__}()",
+        "exception": exception,
+        "handle": SimpleNamespace(_callback=callback),
+    }
+
+
+def test_lsp_reset_noise_matcher_stays_in_sync_with_kimi_cli() -> None:
+    """The stdlib-only copy in the tool must classify exactly like the shared one.
+
+    ``tools/kimix_lsp.py`` may not import ``kimi_cli`` (it must run under any
+    interpreter), so it carries its own matcher; this guard keeps the two from
+    drifting apart.
+    """
+    from kimi_cli.utils.asyncio_noise import is_proactor_reset_noise
+
+    transport_callback = _transport_callback()
+
+    def _other_callback(*args: Any) -> None:  # pragma: no cover - never run
+        pass
+
+    contexts = [
+        _reset_context(
+            ConnectionResetError(10054, "远程主机强迫关闭了一个现有的连接。"), transport_callback
+        ),
+        _reset_context(ConnectionAbortedError(10053, "aborted"), transport_callback),
+        _reset_context(ConnectionResetError(10061, "refused"), transport_callback),
+        _reset_context(ValueError("boom"), transport_callback),
+        _reset_context(ConnectionResetError(10054, "reset"), _other_callback),
+        {"message": "Exception in callback _ProactorBasePipeTransport._call_connection_lost()"},
+        {"exception": "not-an-exception"},
+        {},
+    ]
+    for context in contexts:
+        assert kimix_lsp._is_reset_teardown_noise(context) == is_proactor_reset_noise(context), (
+            context
+        )
+
+
+def test_lsp_installs_the_reset_noise_filter() -> None:
+    loop = asyncio.new_event_loop()
+    try:
+        kimix_lsp._install_reset_noise_filter(loop)
+        assert loop.get_exception_handler() is not None
+    finally:
+        loop.close()
