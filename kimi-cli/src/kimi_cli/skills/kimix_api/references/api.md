@@ -256,6 +256,7 @@ SystemPromptType.TrivialSubAgent  # Read-only sub-agent (rejects write/edit task
 SystemPromptType.Supervisor       # Supervisor agent (outlines, decomposes, dispatches, tracks, verifies)
 SystemPromptType.Reader           # Read-only agent for retrieval/analysis tasks
 SystemPromptType.SwarmLeader      # Swarm orchestrator (parallelizes a request via the workflow tool)
+SystemPromptType.BrowserUse       # Browser-only agent (only the browser_use tool; manifest agent_browser_use.json)
 
 # Role-prompt rules per type (built into get_system_prompt):
 # - TodoMaker: "Plan only. Do not implement." — records plans via write_plan/edit_plan, cannot write files or run commands
@@ -265,10 +266,15 @@ SystemPromptType.SwarmLeader      # Swarm orchestrator (parallelizes a request v
 # - Supervisor: outline → decompose → dispatch → track → accept/inquire/correct → verify
 # - SwarmLeader: splits a request into homogeneous sub-tasks and dispatches via `workflow` with
 #                subagent_type (coder/explore/plan), a prompt_template containing {{item}}, and items
+# - BrowserUse: only `browser_use` — refuses commands, file changes, code, plans, todo tracking;
+#   when the tool itself fails (launch/session error, policy refusal, approval rejection,
+#   retryable: false) it reports the error_code and gives up instead of retrying
 
 # Build a custom system prompt callback
 class MyCallback(SystemPromptCallback):
     role_callback = lambda role, items: items.append("Custom rule here")
+    # replaces the fully assembled prompt instead of extending it: (role, prompt) -> prompt
+    prompt_override = lambda role, prompt: prompt + "\nExtra block"
 
 # Get the system prompt callable for Session.create
 # Returns Callable[[BuiltinSystemPromptArgs], str]

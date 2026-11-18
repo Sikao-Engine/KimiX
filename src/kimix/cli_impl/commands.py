@@ -887,7 +887,7 @@ Every builtin tool and the exact file where its implementation lives:
 ## Architecture map (source of truth)
 - System prompt: `{system_prompt_path}` — builds the per-role system prompt as
   `{{TOOL_CONVENTIONS}}{{AGENT_ROLE}}:{{NUMBERED}}{{AGENTS_MD}}{{SKILLS}}`; roles via
-  `SystemPromptType` (Worker/TodoMaker/Thinker/TrivialSubAgent/Supervisor/Reader/SwarmLeader);
+  `SystemPromptType` (Worker/TodoMaker/Thinker/TrivialSubAgent/Supervisor/Reader/SwarmLeader/BrowserUse);
   `get_system_prompt()` returns a per-runtime builder, picks the active shell, enforces
   `max_system_prompt_tokens`.
 - Worker tool manifest: `{worker_agent_json}` — the exact tool list for the worker agent

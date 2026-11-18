@@ -24,7 +24,8 @@ High-level guide to `kimix.utils`, `kimix.base`, the full public API of `src/kim
 
 ## System Prompt Types (`kimix.utils.system_prompt`)
 
-`SystemPromptType.Worker/TodoMaker/Thinker/TrivialSubAgent/Supervisor/Reader/SwarmLeader`; build prompts via `get_system_prompt(yolo, work_dir, extra_system_prompt, agent_role, max_system_prompt_tokens)` returning a callable `(runtime, is_compacting=False, compact_export_path=None) -> str`; customize with `SystemPromptCallback.role_callback`.
+`SystemPromptType.Worker/TodoMaker/Thinker/TrivialSubAgent/Supervisor/Reader/SwarmLeader/BrowserUse`; build prompts via `get_system_prompt(yolo, work_dir, extra_system_prompt, agent_role, max_system_prompt_tokens)` returning a callable `(runtime, is_compacting=False, compact_export_path=None) -> str`; customize with `SystemPromptCallback.role_callback` (append bullets) or
+`SystemPromptCallback.prompt_override` (replace the whole assembled prompt, e.g. to make one document the entire system prompt).
 
 ## Colorful Printing (`kimix.base`)
 

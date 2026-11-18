@@ -964,9 +964,11 @@ class Session:
             output = Path(output_path).expanduser()
             if not output.is_absolute():
                 output = default_dir / output
-            # If path ends with a separator or is an existing directory, treat as directory
+            # If path ends with a separator or is an existing directory, treat as directory.
+            # Compare the *string* form: ``output_path`` may be a Path, and a Path is
+            # never equal to its own str (that made every Path look like a directory).
             path_str = str(output_path).rstrip("/\\")
-            if output_path != path_str or output.is_dir():
+            if str(output_path) != path_str or output.is_dir():
                 output = output / default_name
         else:
             output = default_dir / default_name
