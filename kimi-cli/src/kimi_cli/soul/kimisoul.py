@@ -157,7 +157,7 @@ rarely needed.
 """
 
 # Bounded recovery budget for repeated-tool-call force-stops.  When the
-# toolset's cycle / streak / different-args loop detectors fire, we do NOT
+# toolset's identical-call cycle / streak detectors fire, we do NOT
 # end the turn silently (that would drop the user's request).  Instead we
 # feed the model up to this many plain-user recovery prompts that restate
 # the top-level requirement and demand either a different action or a
@@ -1654,8 +1654,8 @@ class KimiSoul:
                         continue  # do not end the turn; force another step
 
                 # ── 2g-ii. Loop-recovery gate (repeated tool calls) ──────────
-                # When the toolset's cycle / streak / different-args loop
-                # detectors fire we must NOT end the turn silently: the user's
+                # When the toolset's identical-call cycle / streak detectors
+                # fire we must NOT end the turn silently: the user's
                 # request would be dropped with no answer.  Feed the model a
                 # bounded number of plain-user recovery prompts that restate
                 # the top-level requirement.  Only after the budget is
@@ -2279,7 +2279,16 @@ class KimiSoul:
             # an alternative approach instead of terminating immediately.
             return StepOutcome(stop_reason="tool_rejected", assistant_message=result.message)
 
-        if isinstance(self._agent.toolset, KimiToolset) and self._agent.toolset.force_stop_turn:
+        toolset = self._agent.toolset
+        if (
+            isinstance(toolset, KimiToolset)
+            and toolset.force_stop_turn
+            and toolset.force_stop_reason in ("adjacent-repeat", "cycle-repeat")
+        ):
+            # These detectors match the complete (tool name, canonical arguments)
+            # key. Ignore different-args overuse here: those calls are distinct
+            # operations and must be allowed to continue (its warnings still reach
+            # the model through tool results).
             return StepOutcome(stop_reason="tool_call_repeat", assistant_message=result.message)
 
         if result.tool_calls:

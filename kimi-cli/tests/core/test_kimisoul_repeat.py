@@ -5,9 +5,6 @@ from pathlib import Path
 from typing import Self
 
 import pytest
-from kosong.chat_provider import StreamedMessagePart, ThinkingEffort, TokenUsage
-from kosong.message import Message, ToolCall
-from kosong.tooling import CallableTool2, Tool, ToolOk, ToolReturnValue
 from pydantic import BaseModel
 
 import kimi_cli.soul.kimisoul as kimisoul_module
@@ -17,9 +14,13 @@ from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
 from kimi_cli.soul.toolset import (
     _CYCLE_FORCE_STOP,
+    _DIFF_ARGS_HARD_STOP_START,
     _REPEAT_FORCE_STOP_STREAK,
     KimiToolset,
 )
+from kosong.chat_provider import StreamedMessagePart, ThinkingEffort, TokenUsage
+from kosong.message import Message, TextPart, ToolCall
+from kosong.tooling import CallableTool2, Tool, ToolOk, ToolReturnValue
 
 
 class _Params(BaseModel):
@@ -79,9 +80,15 @@ class _RepeatChatProvider:
 
     name = "repeat"
 
-    def __init__(self, cycle: Sequence[tuple[str, str]] | None = None) -> None:
+    def __init__(
+        self,
+        cycle: Sequence[tuple[str, str]] | None = None,
+        *,
+        finish_after: int | None = None,
+    ) -> None:
         self._n = 0
         self._cycle: Sequence[tuple[str, str]] = cycle or [("ToolA", '{"value":"x"}')]
+        self._finish_after = finish_after
         self._histories: list[list[Message]] = []
 
     @property
@@ -99,6 +106,8 @@ class _RepeatChatProvider:
         history: Sequence[Message],
     ) -> _RepeatStream:
         self._histories.append(list(history))
+        if self._finish_after is not None and self._n >= self._finish_after:
+            return _RepeatStream([TextPart(text="finished")])
         name, arguments = self._cycle[self._n % len(self._cycle)]
         self._n += 1
         tc = ToolCall(
@@ -175,6 +184,45 @@ async def test_turn_force_stops_on_adjacent_identical_calls(
     assert "Original request: go" in text
     # The loop is caught at the consecutive-streak guard, then recovery runs.
     assert outcome.step_count >= _REPEAT_FORCE_STOP_STREAK
+
+
+@pytest.mark.asyncio
+async def test_turn_allows_same_tool_with_different_arguments(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Different arguments are distinct work, even past the overuse ceiling."""
+    toolset = KimiToolset()
+    toolset.add(_DummyTool())
+    call_count = _DIFF_ARGS_HARD_STOP_START
+    provider = _RepeatChatProvider(
+        [("ToolA", f'{{"value":"{i}"}}') for i in range(call_count)],
+        finish_after=call_count,
+    )
+    llm = LLM(
+        chat_provider=provider,
+        max_context_size=100_000,
+        capabilities=set(),
+    )
+    soul = _make_soul(runtime, llm, toolset, tmp_path)
+    wire_messages: list[object] = []
+    monkeypatch.setattr(kimisoul_module, "wire_send", wire_messages.append)
+
+    outcome = await soul._turn(Message(role="user", content="inspect every item"))
+
+    assert outcome.stop_reason == "no_tool_calls"
+    assert outcome.final_message is not None
+    assert outcome.final_message.extract_text(" ") == "finished"
+    assert toolset._tool_call_counts["ToolA"] == call_count
+    assert not any(
+        "Recovering from repeated tool calls" in getattr(message, "text", "")
+        for message in wire_messages
+    )
+    assert not any(
+        "[loop-recovery]" in message.extract_text(" ")
+        for message in soul.context.history
+    )
 
 
 @pytest.mark.asyncio
