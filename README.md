@@ -8,7 +8,7 @@
 python install.py
 ```
 
-`install.py` handles the whole setup: dependency sync, native runtime download, and tool registration.
+`install.py` handles the whole setup: dependency sync, native runtime download, and tool registration. On Windows it also makes sure PowerShell 7.x (`pwsh`) is available — via `winget`, or by unpacking the latest GitHub release into `~/.kimi/bin`.
 
 > **Note:** This repo supports not only KIMI LLM but also various API keys! Like OpenAI, Anthropic, etc. Default config templates are in `docs/`; use `kimix --config=xx.json` after setup.
 

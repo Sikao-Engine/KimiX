@@ -332,13 +332,19 @@ def _provider_key(provider_dict: dict[str, Any]) -> tuple:
 def _get_active_provider_dict(session: Session) -> dict[str, Any] | None:
     """Return the provider_dict currently active on the session.
 
-    Reads from session custom_data; falls back to base._default_provider.
+    Reads from session custom_data, then session custom_config, then
+    falls back to base._default_provider.
     """
     data = session.get_custom_data() if hasattr(session, "get_custom_data") else None
     if data is not None:
         active = data.get("_active_provider_dict")
         if active is not None:
             return active
+    custom_config = session.get_custom_config() if hasattr(session, "get_custom_config") else None
+    if custom_config is not None:
+        configured = custom_config.get("provider_dict")
+        if configured is not None:
+            return configured
     return base._default_provider
 
 
@@ -353,14 +359,17 @@ async def _switch_session_provider(
     session: Session,
     provider_dict: dict[str, Any],
 ) -> bool:
-    """Swap the session's runtime LLM to a backup provider.
+    """Switch the session to a backup provider and resume the session with it.
 
-    Builds a new LLM from *provider_dict*, closes the previous chat provider's
-    HTTP client (prevents resource leaks), and assigns the new LLM onto
-    ``session._cli.soul.runtime.llm``. Also updates ``custom_config`` so
-    sub-agents spawned later inherit the backup provider.
+    Builds a new Config + LLM from *provider_dict*, updates ``custom_config``
+    and active-provider tracking, and — when the session supports ``_restart``
+    (a real SDK ``Session``) — updates ``_create_kwargs`` and restarts the
+    session with ``resumed=True`` so context, state, and wire history are
+    preserved under the new provider. For lightweight test doubles without
+    ``_restart``, closes the old chat provider and swaps ``runtime.llm`` /
+    ``runtime.config`` in place.
 
-    Returns True if the swap succeeded, False if the LLM could not be built.
+    Returns True if the switch succeeded, False if the LLM could not be built.
     """
     from kimix.utils.config import _create_config
     from kimi_cli.llm import create_llm
@@ -395,7 +404,32 @@ async def _switch_session_provider(
     if new_llm is None:
         return False
 
-    # Close the old chat provider's HTTP client
+    # Update custom_config so sub-agent spawning and session restarts pick up
+    # the new provider (drop any stale primary chat_provider override).
+    custom_config = session.get_custom_config() if hasattr(session, "get_custom_config") else None
+    if custom_config is not None:
+        custom_config["provider_dict"] = provider_dict
+        custom_config.pop("chat_provider", None)
+
+    # Track active provider for subsequent prompts and restarts
+    _set_active_provider_dict(session, provider_dict)
+
+    restart_fn = getattr(session, "_restart", None)
+    if callable(restart_fn):
+        create_kwargs = getattr(session, "_create_kwargs", None)
+        if isinstance(create_kwargs, dict):
+            create_kwargs["config"] = cfg
+            create_kwargs["llm"] = None
+            create_kwargs["model_name"] = None
+        try:
+            await restart_fn(config=cfg, llm=new_llm, model_name=None)
+            return True
+        except Exception as exc:
+            from kimix.ui.printing import print_debug
+
+            print_debug(f"Session._restart during backup failover failed ({exc}); falling back to in-place swap")
+
+    # In-place fallback (for mock sessions without _restart or if _restart failed)
     old_llm = getattr(runtime, "llm", None)
     if old_llm is not None:
         old_provider = getattr(old_llm, "chat_provider", None)
@@ -406,16 +440,12 @@ async def _switch_session_provider(
             except Exception:
                 pass
 
-    # Swap the LLM in place
     runtime.llm = new_llm
-
-    # Update custom_config so sub-agent spawning picks up the new provider
-    custom_config = session.get_custom_config() if hasattr(session, "get_custom_config") else None
-    if custom_config is not None:
-        custom_config["provider_dict"] = provider_dict
-
-    # Track active provider for subsequent prompts
-    _set_active_provider_dict(session, provider_dict)
+    if hasattr(runtime, "config"):
+        runtime.config = cfg
+    ctx = getattr(soul, "_context", None)
+    if ctx is not None and hasattr(ctx, "model_name"):
+        ctx.model_name = new_llm.model_name
     return True
 
 
@@ -590,7 +620,9 @@ async def _run_single_prompt(
         primary_exc = exc
 
     # ── Phase B: Try backup providers ──
-    backups = base.get_default_sub_providers_by_role("backup")
+    from kimix.utils.config import get_backup_providers
+
+    backups = get_backup_providers()
     if not backups:
         # No backups configured — propagate the primary failure.
         if primary_exc is not None:
@@ -607,7 +639,7 @@ async def _run_single_prompt(
         if session._cancel_event is not None and session._cancel_event.is_set():
             return False
 
-        # Switch the session's LLM to this backup provider
+        # Switch the session's LLM to this backup provider and resume
         switched = await _switch_session_provider(session, backup)
         if not switched:
             continue
@@ -631,7 +663,10 @@ async def _run_single_prompt(
             return True  # backup succeeded — session stays on this provider
         except KeyboardInterrupt:
             return False
-        except (asyncio.TimeoutError, TimeoutError):
+        except RunCancelled:
+            return False
+        except (asyncio.TimeoutError, TimeoutError) as te:
+            last_error = te
             # This backup timed out — try the next backup if deadline allows
             if deadline is not None and (deadline - time.monotonic()) <= 0:
                 break  # no time left

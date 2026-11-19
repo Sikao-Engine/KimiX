@@ -32,7 +32,7 @@ _prompt_semaphore = asyncio.Semaphore(5)
 
 # Status codes that justify an automatic session restart: transient server or
 # rate-limit failures where retrying with a fresh provider may succeed.
-_RESTARTABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+_RESTARTABLE_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504, 529})
 
 
 def _is_restartable_error(original_error: BaseException | None) -> bool:

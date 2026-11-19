@@ -486,12 +486,16 @@ def _kimix_base_download_url(
     return f"{KIMIX_BASE_RELEASE_URL}/{_kimix_base_archive_name(os_name, arch, version)}"
 
 
-def _download_request(url: str, extra_headers: dict[str, str] | None = None) -> "urllib.request.Request":
+def _download_request(
+    url: str,
+    extra_headers: dict[str, str] | None = None,
+    method: str | None = None,
+) -> "urllib.request.Request":
     """Build an HTTP request with the installer's User-Agent."""
     headers = {"User-Agent": "kimi-agent-install/1.0"}
     if extra_headers:
         headers.update(extra_headers)
-    return urllib.request.Request(url, headers=headers)
+    return urllib.request.Request(url, headers=headers, method=method)
 
 
 def _download_once(
@@ -635,6 +639,436 @@ def _extract_zip(archive: Path, dest: Path) -> None:
         ) from exc
     except OSError as exc:
         raise RuntimeError(f"Failed to extract {archive.name}") from exc
+
+
+# ---------------------------------------------------------------------------
+# PowerShell 7 (``pwsh``) — required by the Windows shell tools
+# ---------------------------------------------------------------------------
+#
+# ``kimi_cli`` drives agent shell commands through PowerShell 7 on Windows;
+# Windows PowerShell 5.1 (``powershell.exe``) lacks the operators and native
+# error handling the generated commands rely on.  The installer therefore makes
+# a 7.x ``pwsh`` available:
+#
+#   1. already installed (``PATH``, ``C:\Program Files\PowerShell\7`` or the
+#      shared ``bin`` directory) -> nothing to do;
+#   2. ``winget install --id Microsoft.PowerShell --source winget`` -> the
+#      official package installs and registers ``pwsh.exe`` itself;
+#   3. winget missing/failed -> download the latest release ``.zip`` from GitHub
+#      and unpack it into the shared ``bin`` directory (``<share>/bin``), which
+#      is the directory the kimi shell tools already put first on their PATH.
+
+POWERSHELL_MIN_MAJOR = 7
+# Used when the newest release cannot be resolved (GitHub API rate limit, a
+# blocked ``api.github.com``, ...).  Verified to exist:
+# https://github.com/PowerShell/PowerShell/releases/download/v7.7.0/PowerShell-7.7.0-win-x64.zip
+POWERSHELL_FALLBACK_VERSION = "7.7.0"
+POWERSHELL_RELEASES_LATEST_URL = "https://github.com/PowerShell/PowerShell/releases/latest"
+POWERSHELL_API_LATEST_URL = "https://api.github.com/repos/PowerShell/PowerShell/releases/latest"
+POWERSHELL_RELEASE_DOWNLOAD_URL = (
+    "https://github.com/PowerShell/PowerShell/releases/download/v{version}"
+    "/PowerShell-{version}-win-{arch}.zip"
+)
+# The GUI-less archive is ~115 MB, so give the transfer and the MSI room.
+POWERSHELL_DOWNLOAD_TIMEOUT = 900.0
+POWERSHELL_DOWNLOAD_ATTEMPTS = 3
+WINGET_POWERSHELL_INSTALL_TIMEOUT = 900.0
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse to follow redirects so the ``Location`` header stays readable."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        return None
+
+
+def _parse_version(text: str) -> tuple[int, int, int] | None:
+    """Extract ``(major, minor, patch)`` from *text* (first ``X.Y[.Z]``)."""
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", text or "")
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+
+
+def _format_version(version: tuple[int, int, int]) -> str:
+    """Render a ``(major, minor, patch)`` tuple as ``X.Y.Z``."""
+    return ".".join(str(part) for part in version)
+
+
+def _powershell_arch() -> str:
+    """Map :func:`platform.machine` to the PowerShell release asset arch."""
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        return "x64"
+    if machine in ("aarch64", "arm64"):
+        return "arm64"
+    if machine in ("x86", "i386", "i686"):
+        return "x86"
+    raise RuntimeError(f"Unsupported architecture for PowerShell 7: {platform.machine()}")
+
+
+def _powershell_archive_name(version: str, arch: str) -> str:
+    """Return the release asset name (``PowerShell-<version>-win-<arch>.zip``)."""
+    return f"PowerShell-{version}-win-{arch}.zip"
+
+
+def _powershell_download_url(version: str, arch: str) -> str:
+    """Return the release download URL for *version* and *arch*."""
+    return POWERSHELL_RELEASE_DOWNLOAD_URL.format(version=version, arch=arch)
+
+
+def _powershell_install_dir() -> Path:
+    """Directory the zip fallback unpacks into (the shared ``bin`` directory).
+
+    ``_shared_bin_path("pwsh.exe")`` names the executable, so its parent is the
+    directory that has to receive the whole distribution — ``pwsh.exe`` plus its
+    sibling ``*.dll`` files and ``Modules`` tree.
+    """
+    return _shared_bin_path("pwsh.exe").parent
+
+
+def _powershell_candidate_paths() -> list[Path]:
+    """Return well-known ``pwsh.exe`` locations, most authoritative first.
+
+    ``PATH`` wins so an MSI/Store install is preferred, then the versioned
+    ``PowerShell\7`` install directories, then the shared ``bin`` directory
+    used by the zip fallback.
+    """
+    candidates: list[Path] = []
+    if on_path := shutil.which("pwsh.exe") or shutil.which("pwsh"):
+        candidates.append(Path(on_path))
+    candidates.append(Path(r"C:\Program Files\PowerShell\7\pwsh.exe"))
+    candidates.append(Path(r"C:\Program Files (x86)\PowerShell\7\pwsh.exe"))
+    candidates.append(_shared_bin_path("pwsh.exe"))
+    return candidates
+
+
+def _powershell_version(binary: Path, timeout: float = 30.0) -> tuple[int, int, int] | None:
+    """Return the version reported by ``binary --version``, or None."""
+    try:
+        result = subprocess.run(
+            [str(binary), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        return None
+    return _parse_version(result.stdout or result.stderr or "")
+
+
+def _is_app_execution_alias(path: Path) -> bool:
+    """Return True for Store *app execution alias* stubs (0-byte reparse points).
+
+    Running such a stub without the backing package launches the Microsoft
+    Store, so it must never be probed like a real executable.
+    """
+    try:
+        return path.is_file() and path.stat().st_size == 0
+    except OSError:
+        return False
+
+
+def _find_powershell7() -> tuple[Path, tuple[int, int, int]] | None:
+    """Return the first usable PowerShell 7+ executable, or None.
+
+    Each existing candidate is asked for its version (``pwsh --version``), so a
+    legacy 5.1 install or a stale binary cannot satisfy the check.
+    """
+    seen: set[str] = set()
+    for candidate in _powershell_candidate_paths():
+        try:
+            key = os.path.normcase(os.path.abspath(candidate))
+        except (OSError, ValueError):
+            key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not candidate.is_file() or _is_app_execution_alias(candidate):
+            continue
+        version = _powershell_version(candidate)
+        if version is None:
+            continue
+        if version[0] >= POWERSHELL_MIN_MAJOR:
+            return candidate, version
+        print(
+            f"⚠️  Found {candidate} but it reports PowerShell "
+            f"{_format_version(version)}; PowerShell {POWERSHELL_MIN_MAJOR}.x or "
+            "newer is required."
+        )
+    return None
+
+
+def _refresh_windows_path_from_registry() -> None:
+    """Append ``PATH`` entries from the Windows registry to this process.
+
+    ``winget`` updates the *persistent* environment, so a freshly installed
+    ``pwsh.exe`` is invisible to ``shutil.which`` inside the already-running
+    installer.  Existing entries keep their order (and therefore their
+    precedence); only missing ones are appended.
+    """
+    if sys.platform != "win32":
+        return
+    current = os.environ.get("PATH", "")
+    known = {
+        os.path.normcase(os.path.normpath(os.path.expandvars(entry.strip())))
+        for entry in current.split(os.pathsep)
+        if entry.strip()
+    }
+    extra: list[str] = []
+    for hive, sub_key in (("user", _USER_PATH_REG_KEY), ("system", _SYSTEM_PATH_REG_KEY)):
+        value, _ = _read_registry_path(hive, sub_key)
+        for entry in (value or "").split(os.pathsep):
+            entry = entry.strip()
+            if not entry:
+                continue
+            expanded = os.path.expandvars(entry)
+            key = os.path.normcase(os.path.normpath(expanded))
+            if key in known:
+                continue
+            known.add(key)
+            extra.append(expanded)
+    if extra:
+        os.environ["PATH"] = (
+            os.pathsep.join([current, *extra]) if current else os.pathsep.join(extra)
+        )
+
+
+def _powershell_latest_version_from_redirect() -> str | None:
+    """Resolve the newest release from the ``releases/latest`` redirect.
+
+    Preferred over the REST API: no authentication and no rate limit.
+    """
+    request = _download_request(POWERSHELL_RELEASES_LATEST_URL, method="HEAD")
+    opener = urllib.request.build_opener(_NoRedirectHandler())
+    location: str | None = None
+    try:
+        with opener.open(request, timeout=30) as response:
+            location = response.headers.get("Location")
+    except urllib.error.HTTPError as exc:
+        # A 3xx surfaces here because redirects are deliberately not followed.
+        location = exc.headers.get("Location") if exc.headers else None
+    if not location:
+        return None
+    match = re.search(r"/tag/v?(\d+\.\d+\.\d+)", location)
+    return match.group(1) if match else None
+
+
+def _powershell_latest_version_from_api() -> str | None:
+    """Resolve the newest release version through the GitHub REST API."""
+    with urllib.request.urlopen(
+        _download_request(POWERSHELL_API_LATEST_URL), timeout=30
+    ) as response:
+        release = json.loads(response.read().decode("utf-8"))
+    tag = release.get("tag_name") if isinstance(release, dict) else None
+    if not isinstance(tag, str):
+        return None
+    version = _parse_version(tag)
+    return _format_version(version) if version else None
+
+
+def _powershell_latest_version() -> str:
+    """Resolve the latest PowerShell release version (e.g. ``7.7.0``)."""
+    for resolver in (
+        _powershell_latest_version_from_redirect,
+        _powershell_latest_version_from_api,
+    ):
+        try:
+            version = resolver()
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+            print(f"   ⚠️  {resolver.__name__} failed: {exc}")
+            continue
+        if version:
+            return version
+    print(
+        "   ⚠️  Could not resolve the latest PowerShell release; "
+        f"falling back to {POWERSHELL_FALLBACK_VERSION}."
+    )
+    return POWERSHELL_FALLBACK_VERSION
+
+
+def _download_powershell_archive(url: str, dest: Path) -> None:
+    """Download the PowerShell release zip, retrying transient failures.
+
+    Raises urllib.error.HTTPError / urllib.error.URLError on failure (the HTTP
+    status is authoritative, e.g. 404 for a release without that asset).
+    """
+    backoff = 1.0
+    last_error: Exception | None = None
+    for attempt in range(1, POWERSHELL_DOWNLOAD_ATTEMPTS + 1):
+        if attempt == 1:
+            print(f"   Downloading {url}")
+        else:
+            print(f"   Retry {attempt}/{POWERSHELL_DOWNLOAD_ATTEMPTS} ...")
+        try:
+            _download_once(url, dest, timeout=POWERSHELL_DOWNLOAD_TIMEOUT)
+            return
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            print(f"   ⚠️  Download attempt {attempt}/{POWERSHELL_DOWNLOAD_ATTEMPTS} failed: {exc}")
+            if attempt < POWERSHELL_DOWNLOAD_ATTEMPTS:
+                time.sleep(backoff)
+                backoff *= 2
+    if last_error is None:
+        last_error = urllib.error.URLError(f"failed to download {url}")
+    raise last_error
+
+
+def _ensure_shared_bin_on_path(bin_dir: Path) -> bool:
+    """Make *bin_dir* reachable through ``PATH`` so ``pwsh`` resolves by name.
+
+    On Windows the per-user ``Path`` is updated (no admin rights needed);
+    elsewhere a hint is printed because the installer never edits shell
+    profiles.  Returns True when the directory is reachable.
+    """
+    if os.name == "nt":
+        return _register_tool_bin_on_windows_path(
+            bin_dir, purpose="so 'pwsh' works from any directory"
+        )
+    return _report_tool_bin_not_on_path(bin_dir)
+
+
+def _install_powershell_from_github() -> bool:
+    """Download the latest PowerShell release zip and unpack it into ``bin``.
+
+    The archive is extracted into :func:`_powershell_install_dir`, i.e. the
+    shared ``bin`` directory, so ``pwsh.exe`` lands exactly at
+    ``_shared_bin_path("pwsh.exe")`` next to the runtime files it needs.
+
+    Returns True when a working PowerShell 7.x was installed.
+    """
+    try:
+        arch = _powershell_arch()
+    except RuntimeError as exc:
+        print(f"⚠️  {exc}")
+        return False
+
+    install_dir = _powershell_install_dir()
+    versions = [_powershell_latest_version()]
+    if POWERSHELL_FALLBACK_VERSION not in versions:
+        versions.append(POWERSHELL_FALLBACK_VERSION)
+
+    for version in versions:
+        url = _powershell_download_url(version, arch)
+        print(f"\n▶ Downloading PowerShell {version} ({arch}) from GitHub ...")
+        with tempfile.TemporaryDirectory(prefix="kimi-pwsh-") as tmp_dir:
+            archive = Path(tmp_dir) / _powershell_archive_name(version, arch)
+            try:
+                _download_powershell_archive(url, archive)
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+                print(f"   ⚠️  Could not download {url}: {exc}")
+                continue
+            print(f"▶ Unpacking PowerShell into {install_dir} ...")
+            try:
+                install_dir.mkdir(parents=True, exist_ok=True)
+                _extract_zip(archive, install_dir)
+            except (RuntimeError, OSError) as exc:
+                print(f"   ⚠️  Could not unpack the archive: {exc}")
+                continue
+
+        pwsh = _shared_bin_path("pwsh.exe")
+        installed = _powershell_version(pwsh)
+        if installed is None or installed[0] < POWERSHELL_MIN_MAJOR:
+            print(f"   ⚠️  {pwsh} was not usable after unpacking.")
+            continue
+        print(f"✅ PowerShell {_format_version(installed)} unpacked into {install_dir} ({pwsh}).")
+        _ensure_shared_bin_on_path(install_dir)
+        return True
+
+    print("⚠️  Could not install PowerShell 7 from GitHub.")
+    return False
+
+
+def _install_powershell_with_winget() -> bool:
+    """Install PowerShell 7 through winget (the default, quickest path)."""
+    if not command_exists("winget"):
+        print("⏭️  winget is not available on this system.")
+        return False
+
+    command = [
+        "winget",
+        "install",
+        "--id",
+        "Microsoft.PowerShell",
+        "--source",
+        "winget",
+        "--accept-package-agreements",
+        "--accept-source-agreements",
+    ]
+    print(f"\n▶ {' '.join(command)} ...")
+    try:
+        result = subprocess.run(command, check=False, timeout=WINGET_POWERSHELL_INSTALL_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        print("   ⚠️  winget timed out.")
+        return False
+    except (OSError, ValueError) as exc:
+        print(f"   ⚠️  Could not run winget: {exc}")
+        return False
+    if result.returncode != 0:
+        print(f"   ⚠️  winget exited with code {result.returncode}.")
+        return False
+
+    # winget only updates the persistent environment: refresh this process so the
+    # freshly installed pwsh.exe is discoverable without a shell restart.
+    _refresh_windows_path_from_registry()
+    found = _find_powershell7()
+    if found is None:
+        print("   ⚠️  winget reported success but no PowerShell 7.x executable was found.")
+        return False
+    path, version = found
+    print(f"✅ PowerShell {_format_version(version)} installed at {path}.")
+    return True
+
+
+def _install_powershell() -> tuple[bool, bool]:
+    """Check for and install PowerShell 7.x (``pwsh``) on Windows.
+
+    Tries winget first and falls back to unpacking the latest GitHub release zip
+    into the shared ``bin`` directory.  Non-Windows platforms are a no-op.
+
+    Returns (was_installed, should_restart_shell).
+    """
+    if sys.platform != "win32":
+        return False, False
+
+    found = _find_powershell7()
+    if found is not None:
+        path, version = found
+        print(f"✅ PowerShell {_format_version(version)} is already installed ({path}), skipping.")
+        return False, False
+
+    print(
+        "\n⚠️  PowerShell 7.x (pwsh) was not found; Windows PowerShell 5.1 "
+        "(powershell.exe) is not a substitute."
+    )
+    if not _ask_yes_no("Install PowerShell 7.x?"):
+        print("⏭️  Skipping PowerShell installation.")
+        return False, False
+
+    installed = _install_powershell_with_winget()
+    if not installed:
+        print(
+            "\n⚠️  winget could not install PowerShell 7; downloading the latest release instead ..."
+        )
+        installed = _install_powershell_from_github()
+    if not installed:
+        print(
+            "⚠️  PowerShell 7 was not installed (non-fatal).\n"
+            "   Install it manually: https://github.com/PowerShell/PowerShell/releases"
+        )
+        return False, False
+    return True, True
 
 
 def _unlink_with_retry(path: Path, attempts: int = 5, delay: float = 1.0) -> None:
@@ -994,7 +1428,9 @@ def _broadcast_environment_change() -> bool:
         return False
 
 
-def _register_tool_bin_on_windows_path(bin_dir: Path) -> bool:
+def _register_tool_bin_on_windows_path(
+    bin_dir: Path, purpose: str = "so 'kimix' works from any directory"
+) -> bool:
     """Make sure *bin_dir* is on the persistent Windows ``Path``.
 
     Both the per-user and the machine-wide ``Path`` are inspected (a shell
@@ -1016,7 +1452,7 @@ def _register_tool_bin_on_windows_path(bin_dir: Path) -> bool:
         print(f"✅ {bin_dir} is already provided by the system PATH, skipping.")
         return True
 
-    print(f"\n▶ Registering {bin_dir} in your user PATH so 'kimix' works from any directory ...")
+    print(f"\n▶ Registering {bin_dir} in your user PATH {purpose} ...")
     if not _append_to_user_path(bin_dir):
         print(
             "⚠️  Could not update the user PATH automatically.\n"
@@ -1363,12 +1799,21 @@ def main(argv: list[str] | None = None) -> int:
 
     # 2. Optional binary installations (before uv sync so they are available)
     coreutils_installed, cu_restart = _install_coreutils()
+    # PowerShell 7 is the shell the Windows tools drive, so it is checked before
+    # anything that may shell out to it.
+    pwsh_installed, pwsh_restart = _install_powershell()
     rg_installed, rg_restart = _install_ripgrep()
     rtk_installed, rtk_restart = _install_rtk()
     git_installed, git_restart = _install_git()
 
-    any_binary_installed = coreutils_installed or git_installed or rg_installed or rtk_installed
-    needs_restart = cu_restart or git_restart or rg_restart or rtk_restart
+    any_binary_installed = (
+        coreutils_installed
+        or pwsh_installed
+        or git_installed
+        or rg_installed
+        or rtk_installed
+    )
+    needs_restart = cu_restart or pwsh_restart or git_restart or rg_restart or rtk_restart
 
     if any_binary_installed and needs_restart:
         print(

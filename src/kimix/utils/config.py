@@ -16,10 +16,22 @@ from . import _globals
 _REQUIRED_PROVIDER_KEYS: tuple[str, ...] = ("type", "max_context_size", "model", "url")
 
 
+# Canonical sub-provider role names.
+# - ``sub_agent``: default role for the Agent / subagent tool and summarization
+# - ``planner``: dedicated role for /plan mode
+# - ``researcher``: read-only child session for the research tool
+# - ``backup``: failover role used when the main agent LLM provider fails after
+#   retries (switches to backup provider and resumes the session)
+_BACKUP_ROLE: str = "backup"
+SUB_PROVIDER_ROLES: tuple[str, ...] = ("sub_agent", "planner", "researcher", _BACKUP_ROLE)
+
+
 # Priority for picking a sub_provider as the main provider when root lacks 'model'.
 # Earlier values in the tuple have higher priority.
 # "researcher" is deliberately last: a researcher sub-provider must never
 # become the main-provider fallback ahead of the general-purpose roles.
+# "backup" is intentionally excluded: a backup provider is reserved solely for
+# main-provider failover and must never become the initial primary provider.
 _SUB_PROVIDER_PICK_PRIORITY: tuple[str | None, ...] = (None, "sub_agent", "planner", "researcher")
 
 
@@ -35,6 +47,10 @@ _ROLE_DEFAULT_AGENT_FILES: dict[str, str] = {
 # Keys that identify a specific provider entry and must never be inherited
 # from the top-level config into sub-providers.
 _SUB_PROVIDER_NO_INHERIT_KEYS: frozenset[str] = frozenset({"model", "model_name", "name", "role"})
+
+# Provider-specific auth/transport keys that must not be inherited when a
+# sub-provider explicitly declares a different ``type`` than the root config.
+_CROSS_TYPE_NO_INHERIT_KEYS: frozenset[str] = frozenset({"oauth", "openai_settings"})
 
 
 # Key marking a sub-provider entry as a link to another JSON config file, e.g.
@@ -69,9 +85,15 @@ def _inherit_sub_provider_defaults(
     if not defaults:
         return
 
+    main_type = config_data.get("type")
+
     def _fill(entry: Any) -> None:
         if isinstance(entry, dict):
+            entry_type = entry.get("type")
+            cross_type = bool(main_type and entry_type and entry_type != main_type)
             for key, value in defaults.items():
+                if cross_type and key in _CROSS_TYPE_NO_INHERIT_KEYS:
+                    continue
                 entry.setdefault(key, value)
 
     for src in (sub_provider, sub_providers):
@@ -243,6 +265,11 @@ def sub_provider_differs(role: str = "sub_agent", main_provider: Any = None) -> 
     if not isinstance(main, dict):
         return False
     return is_different_provider(sub_provider, main)
+
+
+def get_backup_providers() -> list[dict[str, Any]]:
+    """Return all configured ``backup`` sub-providers in declaration order."""
+    return base.get_default_sub_providers_by_role(_BACKUP_ROLE)
 
 
 # ── Sub-provider JSON links ────────────────────────────────────────────────

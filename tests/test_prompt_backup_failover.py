@@ -132,7 +132,7 @@ def _suppress_output(monkeypatch: Any) -> list[str]:
 
 def _suppress_print_agent_json(monkeypatch: Any) -> None:
     """Patch the stream-print helpers used inside _run_prompt_attempts."""
-    monkeypatch.setattr(prompt_mod, "print_agent_json", lambda *a, **k: None)
+    monkeypatch.setattr(prompt_mod, "print_agent_json", AsyncMock())
     monkeypatch.setattr(prompt_mod, "print_agent_json_flush_text", lambda *a, **k: None)
 
 
@@ -293,7 +293,8 @@ class TestNormalizeSubProviders:
 async def test_failover_to_backup_succeeds(monkeypatch: Any) -> None:
     """Primary fails (all retries exhausted), backup succeeds."""
     _suppress_output(monkeypatch)
-    _suppress_print_agent_json(monkeypatch)
+    monkeypatch.setattr(prompt_mod, "print_agent_json", AsyncMock())
+    monkeypatch.setattr(prompt_mod, "print_agent_json_flush_text", lambda *a, **k: None)
     _mock_sleep(monkeypatch)
 
     monkeypatch.setattr(base, "_default_sub_providers", [_make_backup("backup-1", "https://b1")])
@@ -393,8 +394,310 @@ async def test_multiple_backup_iteration_order(monkeypatch: Any) -> None:
     )
     assert result is True
     assert len(mocks["created_llms"]) == 2
-    assert session._runtime.llm is mocks["created_llms"][-1]
-    assert session.get_custom_data()["_active_provider_dict"]["model"] == "backup-2"
+
+
+# ---------------------------------------------------------------------------
+# Config contract for `backup` role
+# ---------------------------------------------------------------------------
+
+
+class TestBackupConfigContract:
+    def test_backup_in_sub_provider_roles_and_excluded_from_pick_priority(self) -> None:
+        assert "backup" in config_mod.SUB_PROVIDER_ROLES
+        assert "backup" not in config_mod._SUB_PROVIDER_PICK_PRIORITY
+
+    def test_backup_never_picked_as_main_when_root_lacks_model(self) -> None:
+        config_data: dict[str, Any] = {}
+        sub_providers = [_make_backup("backup-only", "https://backup")]
+        config_mod._pick_main_from_sub_providers(config_data, None, sub_providers)
+        assert "model" not in config_data
+
+    def test_get_backup_providers_returns_all_backups(self, monkeypatch: Any) -> None:
+        backups = [_make_backup("b1", "https://b1"), _make_backup("b2", "https://b2")]
+        monkeypatch.setattr(
+            base,
+            "_default_sub_providers",
+            [{"role": "sub_agent", "model": "s", "type": "kimi", "url": "u"}, *backups],
+        )
+        assert [p["model"] for p in config_mod.get_backup_providers()] == ["b1", "b2"]
+
+    def test_cross_type_backup_does_not_inherit_oauth_or_openai_settings(self) -> None:
+        root = {
+            "type": "kimi",
+            "model": "kimi-for-coding",
+            "url": "https://api.kimi.com/v1",
+            "max_context_size": 256000,
+            "oauth": {"storage": "file", "key": "oauth/kimi-code"},
+            "openai_settings": {"reasoning_effort": "high"},
+        }
+        backup = {
+            "role": "backup",
+            "type": "openai_legacy",
+            "model": "gpt-4o",
+            "url": "https://api.openai.com/v1",
+            "max_context_size": 128000,
+            "api_key": "sk-oai",
+        }
+        config_mod._inherit_sub_provider_defaults(root, None, [backup])
+        assert "oauth" not in backup
+        assert "openai_settings" not in backup
+
+
+# ---------------------------------------------------------------------------
+# HTTP non-200 errors (400, 429, 5xx, etc.) trigger backup failover
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [400, 403, 404, 422, 429, 500, 502, 503, 504, 529])
+async def test_http_non_200_errors_switch_to_backup(
+    monkeypatch: Any, status_code: int
+) -> None:
+    """Any non-200 APIStatusError from primary switches to the backup provider."""
+    from kosong.chat_provider import APIStatusError
+
+    printed = _suppress_output(monkeypatch)
+    _suppress_print_agent_json(monkeypatch)
+    _mock_sleep(monkeypatch)
+
+    monkeypatch.setattr(base, "_default_sub_providers", [_make_backup("backup-1", "https://b1")])
+    _set_primary(monkeypatch)
+    mocks = _patch_config_and_llm(monkeypatch)
+
+    # First call (primary) raises APIStatusError; second call (backup) succeeds.
+    session = FailoverFakeSession(
+        exc_fn=_exc_until(1, APIStatusError(status_code, f"http {status_code}"))
+    )
+
+    result = await prompt_mod._run_single_prompt(
+        session, "hi", output_function=None, cancel_callable=None,
+        merge_wire_messages=False, info_print=False,
+    )
+    assert result is True
+    assert len(mocks["created_llms"]) == 1
+    assert session.get_custom_data()["_active_provider_dict"]["model"] == "backup-1"
+    assert any("Switching to backup provider: backup-1" in m for m in printed)
+
+
+# ---------------------------------------------------------------------------
+# RunCancelled during backup must not cascade to next backup
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_cancelled_during_backup_returns_false_without_cascade(
+    monkeypatch: Any,
+) -> None:
+    from kimi_cli.soul import RunCancelled
+    from kosong.chat_provider import APIStatusError
+
+    _suppress_output(monkeypatch)
+    _suppress_print_agent_json(monkeypatch)
+    _mock_sleep(monkeypatch)
+
+    backups = [_make_backup("backup-1", "https://b1"), _make_backup("backup-2", "https://b2")]
+    monkeypatch.setattr(base, "_default_sub_providers", backups)
+    _set_primary(monkeypatch)
+    mocks = _patch_config_and_llm(monkeypatch)
+
+    def _exc_fn(count: int) -> Exception | None:
+        if count == 1:
+            return APIStatusError(503, "primary unavailable")
+        return RunCancelled()
+
+    session = FailoverFakeSession(exc_fn=_exc_fn)
+
+    result = await prompt_mod._run_single_prompt(
+        session, "hi", output_function=None, cancel_callable=None,
+        merge_wire_messages=False, info_print=False,
+    )
+    assert result is False
+    # Stopped after backup-1 was cancelled; never tried backup-2.
+    assert len(mocks["created_llms"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# Real Session._restart() resume with backup provider
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_switch_provider_restarts_and_resumes_real_sdk_session(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
+    """When Session._restart exists, failover updates _create_kwargs and resumes."""
+    from dataclasses import dataclass, field
+    from pathlib import Path
+    from kaos.path import KaosPath
+    from kimi_cli.wire.types import TextPart
+    from kosong.chat_provider import APIStatusError
+    import kimi_agent_sdk._session as sdk_session_mod
+    from kimi_agent_sdk._session import Session
+
+    _suppress_output(monkeypatch)
+    _suppress_print_agent_json(monkeypatch)
+    _mock_sleep(monkeypatch)
+
+    work_dir = KaosPath.unsafe_from_local_path(Path(tmp_path))
+    session_dir = Path(tmp_path) / "sessions" / "s_failover"
+    session_dir.mkdir(parents=True)
+    context_file = session_dir / "context.jsonl"
+    context_file.write_text('{"role": "user", "content": "prior context"}\n', encoding="utf-8")
+    (session_dir / "state.json").write_text("{}", encoding="utf-8")
+
+    @dataclass
+    class _FakeWireFile:
+        path: Path
+
+    @dataclass
+    class _FakeCLISession:
+        work_dir: KaosPath
+        session_id: str
+        context_file: Path
+        dir: Path
+        wire_file: _FakeWireFile
+        custom_data: dict[str, Any] = field(default_factory=dict)
+        custom_config: dict[str, Any] = field(default_factory=dict)
+
+        @property
+        def id(self) -> str:
+            return self.session_id
+
+        async def close_context_db(self) -> None:
+            pass
+
+    @dataclass
+    class _FakeAgent:
+        toolset: Any = None
+
+    @dataclass
+    class _FakeRuntime:
+        llm: Any
+        oauth: Any = None
+
+    @dataclass
+    class _FakeSoul:
+        agent: _FakeAgent
+        _runtime: _FakeRuntime
+
+        async def close(self) -> None:
+            pass
+
+    created_configs: list[Any] = []
+    resumed_flags: list[bool] = []
+    old_chat_provider = MagicMock()
+    old_chat_provider.aclose = AsyncMock()
+    old_llm = MagicMock()
+    old_llm.chat_provider = old_chat_provider
+
+    class _FakeCLI:
+        calls: int = 0
+
+        def __init__(self, cli_session: _FakeCLISession, llm: Any = None) -> None:
+            self.session = cli_session
+            self.soul = _FakeSoul(agent=_FakeAgent(), _runtime=_FakeRuntime(llm=llm or old_llm))
+
+        async def run(self, user_input: Any, cancel_event: Any, *, merge_wire_messages: bool = False) -> Any:
+            _FakeCLI.calls += 1
+            # Fail all primary attempts (initial + max_restarts=3 => 4 calls),
+            # then succeed once switched & resumed onto the backup provider.
+            if _FakeCLI.calls <= 4:
+                from kimi_cli.soul import SessionRestartRequired
+
+                raise SessionRestartRequired("429 on primary", original_error=APIStatusError(429, "rate limit"))
+            yield TextPart(text="resumed on backup")
+
+    cli_session = _FakeCLISession(
+        work_dir=work_dir,
+        session_id="s_failover",
+        context_file=context_file,
+        dir=session_dir,
+        wire_file=_FakeWireFile(session_dir / "wire.jsonl"),
+        custom_config={"chat_provider": old_chat_provider, "provider_dict": {"model": "primary"}},
+    )
+
+    async def fake_find(wd: Any, sid: str, _sessions_dir: Any = None) -> _FakeCLISession:
+        return cli_session
+
+    async def fake_create(cs: _FakeCLISession, **kwargs: Any) -> _FakeCLI:
+        created_configs.append(kwargs.get("config"))
+        resumed_flags.append(bool(kwargs.get("resumed")))
+        return _FakeCLI(cs, llm=kwargs.get("llm"))
+
+    monkeypatch.setattr(sdk_session_mod.CliSession, "find", classmethod(lambda cls, *a, **kw: fake_find(*a, **kw)))
+    monkeypatch.setattr(sdk_session_mod.KimiCLI, "create", classmethod(lambda cls, *a, **kw: fake_create(a[0], **kw)))
+
+    primary_cfg = MagicMock()
+    session = Session(_FakeCLI(cli_session))
+    session._create_kwargs = {"config": primary_cfg, "model_name": "primary", "llm": None, "yolo": True}
+
+    backup = _make_backup("backup-1", "https://b1")
+    monkeypatch.setattr(base, "_default_sub_providers", [backup])
+    _set_primary(monkeypatch)
+    mocks = _patch_config_and_llm(monkeypatch)
+
+    result = await prompt_mod._run_single_prompt(
+        session, "continue", output_function=None, cancel_callable=None,
+        merge_wire_messages=False, info_print=False,
+    )
+
+    assert result is True
+    assert _FakeCLI.calls == 5
+    # Session._restart was used to resume the session with resumed=True and backup config
+    assert resumed_flags and all(resumed_flags)
+    assert created_configs[-1] is mocks["cfg"].return_value[0]
+    assert session._create_kwargs["config"] is mocks["cfg"].return_value[0]
+    assert session._create_kwargs["llm"] is None
+    assert session._create_kwargs["model_name"] is None
+    assert session.get_custom_config()["provider_dict"]["model"] == "backup-1"
+    assert "chat_provider" not in session.get_custom_config()
+    assert session.get_custom_data()["_active_provider_dict"]["model"] == "backup-1"
+    assert "prior context" in context_file.read_text(encoding="utf-8")
+    old_chat_provider.aclose.assert_awaited()
+
+
+# ---------------------------------------------------------------------------
+# SessionManager.prompt backup failover (kimix serve)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_manager_prompt_switches_to_backup_and_resumes(
+    tmp_path: Any, monkeypatch: Any
+) -> None:
+    from kimi_cli.wire.types import TextPart
+    from kosong.chat_provider import APIStatusError
+    from kimix.server.session_manager import SessionManager
+
+    monkeypatch.chdir(tmp_path)
+    backup = _make_backup("backup-srv", "https://b-srv")
+    monkeypatch.setattr(base, "_default_sub_providers", [backup])
+    _set_primary(monkeypatch)
+    mocks = _patch_config_and_llm(monkeypatch)
+
+    calls = 0
+
+    class _ServerFakeSession(FailoverFakeSession):
+        async def prompt(self, prompt_str: str, *, merge_wire_messages: bool = False) -> Any:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise APIStatusError(429, "server rate limited")
+            yield TextPart(text="recovered via backup")
+
+    sdk_session = _ServerFakeSession()
+    monkeypatch.setattr("kimix.server.session_manager._create_session_async", AsyncMock(return_value=sdk_session))
+    manager = SessionManager()
+    info = await manager.create_session(title="Failover test")
+
+    result = await manager.prompt(info.id, "hello")
+
+    assert calls == 2
+    assert len(mocks["created_llms"]) == 1
+    assert sdk_session.get_custom_data()["_active_provider_dict"]["model"] == "backup-srv"
+    text_parts = [p["text"] for p in result["parts"] if p.get("type") == "text"]
+    assert any("recovered via backup" in t for t in text_parts)
+    assert sdk_session._runtime.llm is mocks["created_llms"][-1]
 
 
 # ---------------------------------------------------------------------------

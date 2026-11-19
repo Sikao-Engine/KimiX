@@ -6,7 +6,7 @@
 python install.py
 ```
 
-`install.py` 会完成全部安装流程：同步依赖、下载原生运行时、注册命令行工具等。
+`install.py` 会完成全部安装流程：同步依赖、下载原生运行时、注册命令行工具等。在 Windows 上还会检查 PowerShell 7.x（`pwsh`）：优先通过 `winget` 安装，失败则下载 GitHub 最新版并解压到 `~/.kimi/bin`。
 
 注意！这个仓库不止支持 KIMI LLM，支持各类 API Key! 如 OpenAI, Anthropic 等。各类默认 config 模板在 `docs/`, 配置后通过 `kimix --config=xx.json` 即可使用 !
 
