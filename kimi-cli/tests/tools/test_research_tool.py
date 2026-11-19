@@ -181,6 +181,46 @@ async def test_foreground_researcher_sub_provider_wins_and_chat_provider_inherit
     assert calls[0]["chat_provider"] is tool._session.custom_config["chat_provider"]
 
 
+async def test_foreground_researcher_provider_marks_child_weaker(tmp_path, monkeypatch):
+    """A researcher sub-provider naming another model marks the child weaker.
+
+    The child's Reader prompt then tells it to give up on tasks beyond it and
+    to report what the parent has to review.
+    """
+    parent_provider = {
+        "type": "openai",
+        "model": "big-model",
+        "url": "https://llm.example.com/v1",
+    }
+    tool = _make_tool(tmp_path, config={"provider_dict": parent_provider})
+    calls = _patch_create_session(monkeypatch)
+    _record_closed(monkeypatch)
+    _patch_prompt(monkeypatch, text="ok")
+    researcher = dict(parent_provider, role="researcher", model="small-model")
+    monkeypatch.setattr(kimix_base, "get_default_sub_provider", lambda role: researcher)
+    result = await tool(ResearchParams(query="deep dive"))
+    assert not result.is_error
+    assert calls[0]["weaker_provider"] is True
+
+
+async def test_foreground_researcher_on_the_same_provider_stays_unmarked(tmp_path, monkeypatch):
+    """A researcher entry pointing at the parent's own model changes nothing."""
+    parent_provider = {
+        "type": "openai",
+        "model": "big-model",
+        "url": "https://llm.example.com/v1",
+    }
+    tool = _make_tool(tmp_path, config={"provider_dict": parent_provider})
+    calls = _patch_create_session(monkeypatch)
+    _record_closed(monkeypatch)
+    _patch_prompt(monkeypatch, text="ok")
+    researcher = dict(parent_provider, role="researcher")
+    monkeypatch.setattr(kimix_base, "get_default_sub_provider", lambda role: researcher)
+    result = await tool(ResearchParams(query="deep dive"))
+    assert not result.is_error
+    assert calls[0]["weaker_provider"] is False
+
+
 async def test_foreground_empty_query_is_rejected(tmp_path):
     tool = _make_tool(tmp_path)
     result = await tool(ResearchParams(query="   "))

@@ -17,7 +17,12 @@ from kimix.ui.stream import percentage_and_token
 from . import _globals
 from .config import _create_config, load_config_json
 from .event_loop import run_on_event_loop
-from .system_prompt import SystemPromptCallback, SystemPromptType, get_system_prompt
+from .system_prompt import (
+    AGENT_TYPE_MANIFESTS,
+    SystemPromptCallback,
+    SystemPromptType,
+    get_system_prompt,
+)
 
 
 _shutdown_hook_registered = False
@@ -95,6 +100,23 @@ def _ensure_skill_dirs(skill_dirs: Any) -> list[KaosPath]:
     return [make_kaos_dir(skill_dirs)]
 
 
+def _resolve_agent_file(agent_file: Optional[Path], agent_type: SystemPromptType) -> Path:
+    """Resolve the session manifest for a prompt type.
+
+    An explicit ``agent_file`` always wins (relative paths resolve against the
+    builtin manifest directory). Otherwise a type with a pinned manifest - see
+    ``AGENT_TYPE_MANIFESTS`` - gets that manifest, so a prompt can never be
+    paired with a toolset it does not describe. Everything else keeps the
+    default worker manifest.
+    """
+    if agent_file is None:
+        manifest = AGENT_TYPE_MANIFESTS.get(agent_type)
+        return (base._default_agent_file_dir / manifest
+                if manifest is not None else base._default_agent_file)
+    path = agent_file if type(agent_file) is Path else Path(agent_file)
+    return path if path.is_absolute() else base._default_agent_file_dir / path
+
+
 async def _create_session_async(
     session_id: Optional[str] = None,
     work_dir: Optional[KaosPath] = None,
@@ -108,6 +130,7 @@ async def _create_session_async(
     extra_system_prompt: SystemPromptCallback | None = None,
     anonymous: bool = False,
     custom_data: dict[str, Any] | None = None,
+    weaker_provider: bool = False,
 ) -> Session:
     # create cache dir
     if work_dir:
@@ -117,13 +140,7 @@ async def _create_session_async(
         work_dir = KaosPath('.')
     cfg, provider_dict = _create_config(provider_dict)
     session = None
-    if agent_file is None:
-        agent_file = base._default_agent_file
-    else:
-        if type(agent_file) is not Path:
-            agent_file = Path(agent_file)
-        if not agent_file.is_absolute():
-            agent_file = base._default_agent_file_dir / agent_file
+    agent_file = _resolve_agent_file(agent_file, agent_type)
     skills_dirs = _ensure_skill_dirs(
         skills_dir) if skills_dir is not None else base.get_skill_dirs()
     # Parse .kimix/config.json once (cached inside load_config_json) and hand
@@ -136,6 +153,7 @@ async def _create_session_async(
             extra_system_prompt=extra_system_prompt,
             agent_role=agent_type,
             max_system_prompt_tokens=cfg.loop_control.max_system_prompt_tokens,
+            weaker_provider=weaker_provider,
         )
     if resume and session_id is not None:
         session = await Session.resume(
@@ -199,6 +217,7 @@ def create_session(
     extra_system_prompt: SystemPromptCallback | None = None,
     anonymous: bool = False,
     custom_data: dict[str, Any] | None = None,
+    weaker_provider: bool = False,
 ) -> Session:
     return run_on_event_loop(_create_session_async(
         session_id=session_id,
@@ -213,6 +232,7 @@ def create_session(
         extra_system_prompt=extra_system_prompt,
         anonymous=anonymous,
         custom_data=custom_data,
+        weaker_provider=weaker_provider,
     ))
 
 

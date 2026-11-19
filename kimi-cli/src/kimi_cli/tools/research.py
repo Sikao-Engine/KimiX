@@ -55,6 +55,7 @@ from kimi_cli.tools.subagent import (
     _forget_child_session_record,
     _register_child_session,
     _session_work_dir,
+    _weaker_provider,
 )
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
@@ -213,6 +214,10 @@ class Research(CallableTool2):
                 CACHE_ONLY_WRITE_KEY: True,
                 CACHE_WRITTEN_FILES_KEY: written,
             },
+            # A differently-configured researcher provider is taken to be the
+            # cheaper model: its prompt then says to give up on tasks beyond it
+            # and to hand back its doubts for review.
+            weaker_provider=_weaker_provider(self._session, "researcher"),
         )
         child_id = _cli_session_id(child)
         # Fail closed: the child owns write/edit, so it MUST be confined to its

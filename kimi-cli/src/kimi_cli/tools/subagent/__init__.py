@@ -24,7 +24,7 @@ from kimi_cli.tools.prompt_common import accepts_alias_text
 # and the ``kimi_agent_sdk`` ``Session`` / ``_sdk_sessions_dir`` helpers are
 # imported lazily inside the functions that use them.  ``SdkSession`` appears
 # only in (string) annotations under ``from __future__ import annotations``.
-from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
+from kosong.tooling import CallableTool2, Tool, ToolError, ToolOk, ToolReturnValue
 
 from .store import AgentSessionEntry, AgentSessionStore, ConversationTurn
 
@@ -677,6 +677,38 @@ class _AgentConversationCollector:
         return "".join(output_parts)
 
 
+def _weaker_provider(session: Any, role: str = "sub_agent") -> bool:
+    """True when the child for *role* runs a different LLM than *session* itself.
+
+    ``kimix`` registers the configured sub-providers on ``kimix.base`` and the
+    per-session provider on ``custom_config``; a sub-provider entry naming a
+    different model/endpoint than this session's provider means the child runs
+    on a cheaper, less capable model (see ``kimix.utils.config``). A session
+    carrying an explicit ``chat_provider`` hands that same object to its
+    children, so the model is identical whatever the provider dict says.
+    Never raises: an unreadable config means "cannot tell", reported as False.
+    """
+    try:
+        from kimix.utils.config import sub_provider_differs
+
+        custom_config = getattr(session, "custom_config", None) or {}
+        if custom_config.get("chat_provider") is not None:
+            return False
+        return sub_provider_differs(role, custom_config.get("provider_dict"))
+    except Exception:
+        return False
+
+
+# Appended to the tool description when the child runs on a weaker provider: the
+# parent must know it cannot assume the sub-agent's knowledge or correctness.
+_WEAKER_PROVIDER_NOTE = (
+    " NOTE: subagents here run on a different, weaker model than yours, so they "
+    "know less than you do — the prompt must carry every fact, path and "
+    "constraint they need. They may also fail to finish or return subtly wrong "
+    "work, so always review and verify their output before relying on it."
+)
+
+
 class Agent(CallableTool2):
     name: str = "subagent"
     description: str = (
@@ -707,6 +739,30 @@ class Agent(CallableTool2):
         super().__init__()
         self._session = session
         self._semaphore = asyncio.Semaphore(8)
+        # Pristine definition (the class description) plus, once the config says
+        # the child runs on a weaker provider, a cached copy carrying the
+        # warning. See :meth:`base`.
+        self._plain_base: Tool = self._base
+        self._weaker_base: Tool | None = None
+
+    @property
+    def base(self) -> Tool:
+        """Tool definition, warning the parent when the child is a weaker model.
+
+        The provider decision is final only after the toolset (and thus this
+        tool) exists — ``kimix`` sets the session provider right after creating
+        the session — so the warning is resolved when the definition is read
+        (once per model request) rather than in ``__init__``.
+        """
+        if not _weaker_provider(self._session):
+            return self._plain_base
+        if self._weaker_base is None:
+            self._weaker_base = self._plain_base.model_copy(
+                update={
+                    "description": self._plain_base.description + _WEAKER_PROVIDER_NOTE
+                }
+            )
+        return self._weaker_base
 
     # NOTE: there is deliberately no ``__del__`` here.  The sub-agent sessions
     # belong to the *parent session*, not to this tool object: throwaway
@@ -1202,6 +1258,10 @@ class Agent(CallableTool2):
             chat_provider=chat_provider,
             resume=True,
             anonymous=anonymous,
+            # A differently-configured sub-agent provider is taken to be the
+            # cheaper model: tell the child in its prompt to give up on tasks
+            # beyond it and to hand back its doubts for review.
+            weaker_provider=_weaker_provider(self._session),
         )
 
         sub_custom_config = session.get_custom_config()

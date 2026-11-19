@@ -185,6 +185,66 @@ def _pick_main_from_sub_providers(
         )
 
 
+# ── Sub-provider identity: is the child on a different LLM? ────────────────
+#
+# A sub-provider entry may point at a cheaper model than the main agent:
+# smaller weights, less knowledge, weaker reasoning, more likely to fail. Tools
+# that delegate work to a child session compare the two providers here, warn
+# the parent agent in their tool description, and seed the child's system
+# prompt with the resulting capability gap.
+
+
+_PROVIDER_ENDPOINT_KEYS: tuple[str, ...] = ("url", "base_url")
+
+
+def provider_identity(provider: Any) -> tuple[str, str, str]:
+    """Return the ``(type, model, endpoint)`` identity of a provider entry.
+
+    Two entries with the same identity name the same LLM, so a sub-provider with
+    a different identity is a different (usually cheaper, weaker) model. A
+    missing or malformed entry yields empty components instead of raising.
+    """
+    if not isinstance(provider, dict):
+        return ("", "", "")
+    endpoint = ""
+    for key in _PROVIDER_ENDPOINT_KEYS:
+        value = provider.get(key)
+        if value:
+            endpoint = str(value).strip().rstrip("/").lower()
+            break
+    return (
+        str(provider.get("type") or "").strip().lower(),
+        str(provider.get("model") or "").strip(),
+        endpoint,
+    )
+
+
+def is_different_provider(a: Any, b: Any) -> bool:
+    """True when *a* and *b* describe different LLMs (see :func:`provider_identity`)."""
+    return provider_identity(a) != provider_identity(b)
+
+
+def sub_provider_differs(role: str = "sub_agent", main_provider: Any = None) -> bool:
+    """True when the sub-provider for *role* runs a different LLM than the main agent.
+
+    Args:
+        role: Sub-provider role to look up (default: the sub-agent role).
+        main_provider: The main agent's provider entry; defaults to the
+            process-wide one (``base._default_provider``).
+
+    Returns:
+        ``False`` when the role has no sub-provider or when either side is
+        unknown -- "no comparison possible" is not evidence of a weaker model.
+    """
+    sub_provider = base.get_default_sub_provider(role)
+    if not isinstance(sub_provider, dict):
+        return False
+    main = main_provider if main_provider is not None else base._default_provider
+    if not isinstance(main, dict):
+        return False
+    return is_different_provider(sub_provider, main)
+
+
 # ── Sub-provider JSON links ────────────────────────────────────────────────
 #
 # A sub-provider entry may point at another JSON config file instead of

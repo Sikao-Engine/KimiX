@@ -47,6 +47,15 @@ This session is read-only: directly refuse command execution, file changes, or i
 Only report files are writable: `write`/`edit` take a plain relative path and save it under `.kimix_cache/`; absolute paths and other folders are refused.
 Return concise, evidence-based findings with file paths or URLs; summarize large sources and note omissions.
 ''',
+    'sp_browser_use_items': '''\
+Only `browser_use`: this session drives a browser and nothing else.
+Directly refuse other requests (commands, file changes, code, plans, todo tracking, research needing another tool); do not attempt them.
+snapshot first, then element indices; every mutation invalidates them, so re-snapshot or use a selector for the next action.
+Evidence only: quote page title, URL, and visible text; never invent page content.
+If `browser_use` itself fails (launch/session error, policy refusal, approval rejection, retryable: false), report the error_code and give up — no retries, no workarounds.
+Stop when the objective is done: the caller sees only your final, self-contained message.
+Report what you actually did: name every step you did not run (including a call budget you exhausted) and mark the result partial; never claim completion for work you skipped.
+''',
     'sp_supervisor_items': '''\
 Delegate, don't implement: outline goals, constraints, acceptance criteria.
 Decompose into non-overlapping tasks; serial if same output.
@@ -63,6 +72,12 @@ Dispatch and summarize only. If not parallelizable, explain why and stop.
     'sp_agent_md': '{name}:\n```\n{content}\n```\n',
     'sp_read_agents_md': 'Read {names} before work.\n',
     'sp_skills': 'Skills:\n{skills}\n',
+    'sp_weaker_provider_items': '''\
+Your model is weaker than the parent agent's: this task may exceed your capability.
+If it is clearly too difficult, give up early and report what is missing; never fake completion.
+Trust the prompt and the files provided over your own knowledge, which may be incomplete or outdated.
+Close with the unverified points and potential defects, and tell the parent agent to review them.
+''',
 }
 
 # Optional worker clauses, substituted into ``sp_worker_optional`` per role.
@@ -122,11 +137,26 @@ class SystemPromptType(Enum):
     Supervisor = 4
     Reader = 5
     SwarmLeader = 6
+    BrowserUse = 7
+
+
+# Prompt types whose toolset is fixed by a dedicated agent manifest, relative to
+# ``kimix.base._default_agent_file_dir``. A type listed here gets that manifest
+# from ``create_session(agent_type=...)`` when the caller passes no ``agent_file``,
+# so the prompt and the tools it describes cannot drift apart.
+AGENT_TYPE_MANIFESTS: dict[SystemPromptType, str] = {
+    SystemPromptType.BrowserUse: 'agent_browser_use.json',
+}
 
 
 class SystemPromptCallback:
     # called in role
     role_callback: Callable[[SystemPromptType, list[str]], None] | None = None
+    # Replaces the fully assembled prompt (role line, bullets, AGENTS.md, skills)
+    # instead of extending it. Signature: ``(agent_type, prompt) -> prompt``.
+    # Used by sessions whose whole system prompt is one external document, e.g.
+    # a corpus driver feeding a single .md file to a tool-less context.
+    prompt_override: Callable[[SystemPromptType, str], str] | None = None
 
 
 def get_system_prompt(
@@ -135,7 +165,15 @@ def get_system_prompt(
         extra_system_prompt: SystemPromptCallback | None = None,
         agent_role: SystemPromptType = SystemPromptType.Worker,
         max_system_prompt_tokens: int = 4_000,
+        weaker_provider: bool = False,
 ) -> Callable[[BuiltinSystemPromptArgs], str]:
+    """Build the system-prompt factory for a session.
+
+    ``weaker_provider`` marks a child session whose provider is configured
+    differently from its parent's (see ``kimix.utils.config.sub_provider_differs``):
+    the delegated-role prompts then tell the model that the task may be beyond
+    it, that giving up beats guessing, and that the parent must review its work.
+    """
     work_dir_path = Path(str(work_dir)) if work_dir is not None else Path(
         os.curdir)
     # Resolved lazily inside the prompt function: the files may be created after
@@ -181,6 +219,11 @@ def get_system_prompt(
         if extra_system_prompt and extra_system_prompt.role_callback:
             extra_system_prompt.role_callback(agent_role, items)
 
+        def weaker_provider_items() -> None:
+            """Warn a delegated child whose provider is weaker than its parent's."""
+            if weaker_provider:
+                items.extend(_load_items('sp_weaker_provider_items'))
+
         match agent_role:
             case SystemPromptType.Worker:
                 worker_logic("Software engineer assistant")
@@ -195,12 +238,20 @@ def get_system_prompt(
             case SystemPromptType.TrivialSubAgent:
                 worker_logic("Sub-agent of a software engineer assistant", True)
                 items.append(_WORKER_OPTIONAL_CLAUSES['TRIVIAL'])
+                weaker_provider_items()
+            case SystemPromptType.BrowserUse:
+                # Single-tool browser worker: the manifest
+                # (agent_browser_use.json) fixes the toolset, so neither
+                # AGENTS.md nor skills are injected.
+                role_doc = "Browser automation agent"
+                items.extend(_load_items('sp_browser_use_items'))
             case SystemPromptType.Reader:
                 # Read-only research subagent: no AGENTS.md / skills injection —
                 # the toolset is fixed by the agent manifest (agent_readonly.json).
                 role_doc = "Read-only research subagent"
                 items.append(_WORKER_OPTIONAL_CLAUSES['SUBAGENT'])
                 items.extend(_load_items('sp_reader_items'))
+                weaker_provider_items()
             case SystemPromptType.Supervisor:
                 use_agent_md = True
                 use_skills = True
@@ -279,6 +330,10 @@ def get_system_prompt(
             AGENTS_MD=agent_md_doc,
             SKILLS=skill_doc,
         ).strip()
+        if extra_system_prompt and extra_system_prompt.prompt_override:
+            overridden = extra_system_prompt.prompt_override(agent_role, prompt)
+            if isinstance(overridden, str):
+                prompt = overridden.strip()
         return prompt
 
     return system_prompt_func
