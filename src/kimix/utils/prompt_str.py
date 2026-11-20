@@ -1,8 +1,21 @@
-"""Utilities for prompt string manipulation."""
+"""Utilities for prompt string manipulation.
+
+The only text policy in this module is *character validity*: drop characters a
+provider tokenizer cannot encode (lone surrogates, Unicode noncharacters,
+invisible padding such as zero-width spaces, and C0/C1 control characters).
+
+Prompt text arrives from users, from tool results, and from raw process output,
+so every transformation that rewrites meaning is deliberately absent: no case
+folding, no NFKC (``µm`` became ``μm``, full-width ASCII became half-width), no
+Traditional → Simplified rewriting, no punctuation-run collapsing, no
+whitespace squeezing, no run de-duplication, and no code-block masking kept
+only to protect those passes.  Each of them silently corrupted content the
+model was meant to see verbatim (JSON tails, CSS selector lists, hashes,
+corpus notes that quote rendered strings).
+"""
 
 import regex as re
 import unicodedata
-import uuid as _uuid
 from pathlib import Path
 
 from kimi_cli.native_loader import (
@@ -105,20 +118,6 @@ def prefilter_tool_result(text: str, *, tool_name: str) -> str:
     )
 
 
-_DEDUPE_CACHE: dict[int, re.Pattern[str]] = {}
-
-
-def _dedupe_repeats(text: str, max_repeat: int = 100) -> str:
-    """Collapse runs of a single character longer than *max_repeat*."""
-    if max_repeat <= 0:
-        return text
-    pattern = _DEDUPE_CACHE.get(max_repeat)
-    if pattern is None:
-        pattern = re.compile(r"(.)\1{" + str(max_repeat) + r",}")
-        _DEDUPE_CACHE[max_repeat] = pattern
-    return pattern.sub(lambda m: m.group(1) * max_repeat, text)
-
-
 # Factored out the common suffix so the alternation is shorter and the regex
 # engine only compiles/evaluates the character class once.
 _PATH_RE = re.compile(
@@ -218,48 +217,34 @@ class _Replacer:
         return f"`{path.replace('\\', '/')}`{trailing}"
 
 
-def _sanitize_text(text: str) -> str:
-    """Apply normalize_encoding, remove_meaningless_symbols, and
-    remove_redundant_whitespace with a single code-block extraction.
-    """
-    text, placeholders = _extract_code(text)
-
-    # From normalize_encoding — NFKC converts full-width ASCII (U+FF01-U+FF5E)
-    # to half-width (U+0021-U+007E) and full-width space (U+3000) to regular space.
-    text = unicodedata.normalize("NFKC", text)
-
-    # Traditional to Simplified (optional, lazy) — only imported when used.
-    text = _to_simplified(text)
-
-    # From remove_meaningless_symbols
-    trans = str.maketrans("", "", _ZW_CHARS)
-    text = text.translate(trans)
-    text = _REPEAT_PUNCT_RE.sub(r"\1", text)
-    # From remove_redundant_whitespace – keep newlines, collapse horizontal
-    # whitespace only.
-    text = re.sub(r"[^\S\n]+", " ", text)
-    text = text.strip()
-    return _restore_code(text, placeholders)
-
-
 def escape_file_paths(
     text: str,
     *,
     max_chars: int = 0,
-    max_repeat: int = 100,
     truncate_msg: str = "",
-    case_mode: str = "",
 ) -> str:
-    """Detect legal file paths in *text* and wrap each one in backticks,
-    then sanitize the result to prevent ``tokenization failed`` errors.
+    """Wrap the legal file paths in *text* in backticks, then drop only
+    characters that can make a tokenizer fail.
 
-    Paths that are already wrapped in quotes or backticks are left untouched.
-    URLs, pure fractions and bare dates are ignored.
+    The character pass removes lone surrogates, Unicode noncharacters,
+    invisible padding (zero-width spaces, soft hyphens, bidi marks) and C0/C1
+    control characters — nothing else.  Case, wording, punctuation runs,
+    whitespace, Unicode form (NFKC is *not* applied), Traditional Chinese, and
+    code blocks all reach the model exactly as given; rewriting them changed
+    meaning.
 
-    This function also merges the behavior of *remove_meaningless_symbols*,
-    *normalize_encoding*, and *remove_redundant_whitespace*.
-    *case_mode* can be set to ``'lower'`` or ``'title'`` to apply
-    `normalize_case` as well.
+    Paths already inside quotes/backticks/brackets or fenced code are left
+    untouched; URLs, pure fractions and bare dates are ignored.
+
+    Args:
+        text: Raw prompt or tool-result text.
+        max_chars: Optional hard limit for the returned text (0 = no limit).
+            Truncation is always explicit, never a silent side effect.
+        truncate_msg: Optional suffix kept instead of the truncated tail when
+            *max_chars* is hit.
+
+    Returns:
+        The text with invalid characters removed.
     """
     if not isinstance(text, str):
         text = str(text)
@@ -268,21 +253,10 @@ def escape_file_paths(
     if "/" in text or "\\" in text:
         text = _PATH_RE.sub(_Replacer(text), text)
 
-    # Sanitize for tokenizer
+    # Character validity only — no normalization, no case/punctuation/spacing
+    # policy: the text must keep its original meaning.
     text = _strip_invalid_unicode(text)
     text = clean_text(text, keep_newlines=True)
-    text = _dedupe_repeats(text, max_repeat=max_repeat)
-
-    # Merge additional text normalizations with single code-block extraction
-    text = _sanitize_text(text)
-
-    if case_mode:
-        text, placeholders = _extract_code(text)
-        if case_mode == "lower":
-            text = text.lower()
-        elif case_mode == "title":
-            text = text.title()
-        text = _restore_code(text, placeholders)
 
     if max_chars > 0 and len(text) > max_chars:
         text = text[:max_chars]
@@ -291,70 +265,3 @@ def escape_file_paths(
                 text = text[: max_chars - len(truncate_msg)] + truncate_msg
 
     return text.strip()
-
-
-# ---- helpers for text cleaning ----
-
-_PUNCT_CHARS = r"!?.。，,、;；:：…~～·\"\"''（）()【】\[\]{}《》<>「」『』〖〗｛｝［］\\|｜—–―"
-_REPEAT_PUNCT_RE = re.compile(
-    r"([" + _PUNCT_CHARS + r"])"
-    r"[" + _PUNCT_CHARS + r"]{2,}"
-)
-
-# Only remove invisible characters that do not contribute to grapheme
-# formation.  ZWNJ/ZWJ, combining grapheme joiners, and variation selectors
-# are valid, meaningful components of text and emoji sequences.
-_ZW_CHARS = "".join(chr(c) for c in (0x200B, 0xFEFF, 0x2060, 0x00AD))
-
-
-def _extract_code(text: str) -> tuple[str, list[tuple[str, str]]]:
-    """Extract markdown fenced code blocks and inline code into placeholders.
-
-    Returns ``(text, [(token, original), ...])`` where each ``token`` is a
-    unique digit-only null-delimited string (UUID-derived) that survives the
-    normalization passes (NFKC, case folds, whitespace collapse) without
-    colliding with real content.
-    """
-    pairs: list[tuple[str, str]] = []
-
-    def _repl(m: re.Match[str]) -> str:
-        token = f"\x00{_uuid.uuid4().int:032d}\x00"
-        pairs.append((token, m.group(0)))
-        return token
-
-    text = re.sub(r"```[\s\S]*?```", _repl, text)
-    text = re.sub(r"`[^`]*`", _repl, text)
-    return text, pairs
-
-
-def _restore_code(text: str, placeholders: list[tuple[str, str]]) -> str:
-    """Restore placeholders to original code blocks."""
-    for token, original in placeholders:
-        text = text.replace(token, original, 1)
-    return text
-
-
-_opencc_converter = None
-_opencc_checked = False
-
-
-def _to_simplified(text: str) -> str:
-    """Convert Traditional → Simplified Chinese when ``opencc`` is installed.
-
-    Lazily probes the optional dependency once per process (module-level flag),
-    avoiding a try/except import on every sanitize call when it is not present.
-    """
-    global _opencc_converter, _opencc_checked
-    if not _opencc_checked:
-        _opencc_checked = True
-        try:
-            import opencc  # type: ignore[import-not-found]
-
-            _opencc_converter = opencc.OpenCC("t2s")
-        except ImportError:
-            _opencc_converter = None
-    if _opencc_converter is not None:
-        return _opencc_converter.convert(text)
-    return text
-
-

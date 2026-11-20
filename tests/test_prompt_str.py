@@ -1,9 +1,16 @@
-"""Tests for prompt_str utilities."""
+"""Tests for prompt_str utilities.
+
+The contract under test: this module removes *invalid characters* only.  It must
+never rewrite the meaning of a prompt or a tool result, so case, Unicode width,
+punctuation runs, whitespace, Traditional Chinese, and long character runs all
+survive verbatim.
+"""
 
 from unittest.mock import patch
 
 import pytest
 
+from kimix.utils.prompt import prepare_prompt_text
 from kimix.utils.prompt_str import (
     clean_text,
     escape_file_paths,
@@ -11,25 +18,50 @@ from kimix.utils.prompt_str import (
 )
 
 
-class TestEscapeFilePaths:
-    """Tests for escape_file_paths with merged normalizations."""
+class TestPreparePromptText:
+    """The prompt text that reaches the model: verbatim mode vs the tokenizer pass."""
 
-    def test_no_paths_no_slashes(self):
-        text = "hello world"
-        assert escape_file_paths(text) == "hello world"
+    def test_verbatim_mode_keeps_the_text_byte_exact(self):
+        # A corpus note quotes the exact strings an app renders.  NFKC rewrote
+        # MICRO SIGN to GREEK SMALL LETTER MU, so the worker compared the note's
+        # ``μm`` against a page that renders ``µm`` - a harness-made mismatch.
+        note = 'PASS if [data-testid=err] reads "0.50 µm or less.", then click [data-testid=go]'
+        assert prepare_prompt_text("  " + note + "  ", sanitize=False) == note
 
-    def test_zero_width_chars_removed(self):
-        text = "hello\u200bworld"
-        assert escape_file_paths(text) == "helloworld"
+    def test_sanitize_mode_does_not_rewrite_the_wording(self):
+        # Sanitizing may only drop tokenizer-hostile characters; width, case,
+        # spacing and punctuation reach the model as typed.
+        assert prepare_prompt_text("  ＡＩ  x!!!  ") == "ＡＩ  x!!!"
 
-    def test_zero_width_chars_removed_with_spaces(self):
-        text = "hello \u200b world"
-        # clean_text removes zwj, then remove_redundant_whitespace collapses spaces
-        assert escape_file_paths(text) == "hello world"
+    def test_sanitize_mode_drops_invalid_characters(self):
+        assert prepare_prompt_text("hello\x00\ud800\u200bworld") == "helloworld"
+
+    def test_sanitize_mode_keeps_the_micro_sign(self):
+        assert prepare_prompt_text("0.50 µm or less") == "0.50 µm or less"
+
+
+class TestInvalidCharacterRemoval:
+    """The only policy this module applies."""
 
     def test_surrogates_removed(self):
-        text = "hello\ud800world"
-        assert escape_file_paths(text) == "helloworld"
+        assert escape_file_paths("hello\ud800world") == "helloworld"
+
+    def test_noncharacters_removed(self):
+        assert escape_file_paths("hello\ufdd0world") == "helloworld"
+        assert escape_file_paths("hello\ufffeworld") == "helloworld"
+
+    def test_control_chars_removed(self):
+        assert escape_file_paths("hello\x00\x07world") == "helloworld"
+        assert escape_file_paths("hello\x85world") == "helloworld"  # C1 control
+
+    def test_zero_width_padding_removed(self):
+        assert escape_file_paths("hello\u200bworld") == "helloworld"
+        assert escape_file_paths("hello\ufeff\u2060world") == "helloworld"
+        assert escape_file_paths("hello\u00adworld") == "helloworld"  # soft hyphen
+
+    def test_zero_width_removal_does_not_squeeze_spaces(self):
+        # Removing the invisible chars must not collapse the spaces around them.
+        assert escape_file_paths("hello \u200b \u200b world") == "hello   world"
 
     def test_replacement_chars_preserved(self):
         text = "hello\ufffdworld"
@@ -39,56 +71,116 @@ class TestEscapeFilePaths:
         text = "hello\ue000world"
         assert escape_file_paths(text) == text
 
-    def test_noncharacters_removed(self):
-        text = "hello\ufdd0world"
-        assert escape_file_paths(text) == "helloworld"
+    def test_emoji_and_variation_selectors_preserved(self):
+        text = "family 👨\u200d👩\u200d👧 keycap 1\ufe0f\u20e3 Powerline \ue0b0"
+        assert escape_file_paths(text) == text
 
-    def test_control_chars_removed(self):
-        text = "hello\x00world"
-        assert escape_file_paths(text) == "helloworld"
+    def test_zwj_zwnj_preserved(self):
+        text = "می\u200cخواهم a\u200db"
+        assert escape_file_paths(text) == text
 
-    def test_nfc_normalization(self):
-        # e + combining acute -> é
+    def test_canonical_composition_from_clean_text(self):
+        # clean_text NFC-composes; canonical equivalence keeps the meaning.
         text = "hello\u0065\u0301world"
         assert escape_file_paths(text) == "hello\u00e9world"
 
-    def test_dedupe_repeats(self):
-        text = "A" * 200
-        result = escape_file_paths(text, max_repeat=100)
-        assert len(result) == 100
-        assert result == "A" * 100
-
-    def test_max_chars_truncate(self):
-        text = "hello world"
-        assert escape_file_paths(text, max_chars=5) == "hello"
-
-    def test_max_chars_with_truncate_msg(self):
-        text = "hello world"
-        result = escape_file_paths(text, max_chars=10, truncate_msg="...")
-        assert result == "hello w..."
-
-    def test_strip_whitespace(self):
-        text = "  hello world  \n"
-        assert escape_file_paths(text) == "hello world"
+    def test_newlines_and_tabs_kept(self):
+        assert escape_file_paths("a\tb\nc\r\nd") == "a\tb\nc\r\nd"
 
     def test_non_string_input(self):
         assert escape_file_paths(123) == "123"
 
+
+class TestNoMeaningRewrites:
+    """Content a prompt carries must reach the model byte-exact."""
+
+    def test_repeated_punctuation_is_preserved(self):
+        for text in (
+            "stop!!!!! now",
+            "really????????",
+            "wait。。。。。。 next",
+            "再想想，，，，，",
+            "a!?!? b",
+            "---",
+            "=========",
+        ):
+            assert escape_file_paths(text) == text
+
+    def test_mixed_punctuation_syntax_is_preserved(self):
+        for text in (
+            "select [data-testid='board-zone'], then extract [data-testid='count'].",
+            'fields={"count": "[data-testid=station-count]", "first": "row"}, done',
+            "|---|---|\n| a | b |",
+            "path: C:\\dev\\x, next: `a`, then )]} stop",
+        ):
+            assert escape_file_paths(text) == text
+
+    def test_full_width_forms_are_not_rewritten(self):
+        # NFKC used to fold these; the model must see what the user typed.
+        for text in ("ＡＩ hello", "price is １２３", "ＡＢＣ　ＤＥＦ", "ｈｅｌｌｏ"):
+            assert escape_file_paths(text) == text
+
+    def test_case_is_never_folded(self):
+        for text in ("Hello World", "HELLO WORLD", "iPhone 15 Pro", "ß"):
+            assert escape_file_paths(text) == text
+
+    def test_traditional_chinese_is_not_converted(self):
+        text = "繁體中文與臺灣"
+        assert escape_file_paths(text) == text
+
+    def test_long_character_runs_are_preserved(self):
+        # Hashes, ASCII art, separators and base64 blobs are data, not noise.
+        text = "A" * 200 + " " + "-" * 120
+        assert escape_file_paths(text) == text
+
+    def test_horizontal_whitespace_is_not_squeezed(self):
+        for text in ("hello  world", "a\t\t\tb", "x   y", "1.  step"):
+            assert escape_file_paths(text) == text
+
+    def test_blank_line_runs_are_preserved(self):
+        text = "line1\n\n\nline2"
+        assert escape_file_paths(text) == text
+
+    def test_fenced_code_block_verbatim(self):
+        text = "```python\n  x = 1  #  HELLO\n```\nplain"
+        assert escape_file_paths(text) == text
+
+    def test_inline_code_verbatim(self):
+        text = "hello `  WORLD  ` and `x!!!`"
+        assert escape_file_paths(text) == text
+
+    def test_lossy_parameters_are_gone(self):
+        # The policy knobs were removed with the policies they controlled.
+        with pytest.raises(TypeError):
+            escape_file_paths("Hello World", case_mode="lower")  # type: ignore[call-arg]
+        with pytest.raises(TypeError):
+            escape_file_paths("A" * 200, max_repeat=50)  # type: ignore[call-arg]
+
+
+class TestEscapeFilePaths:
+    """Path detection and backtick wrapping."""
+
+    def test_no_paths_no_slashes(self):
+        assert escape_file_paths("hello world") == "hello world"
+
+    def test_empty_string(self):
+        assert escape_file_paths("") == ""
+
+    def test_strip_whitespace(self):
+        assert escape_file_paths("  hello world  \n") == "hello world"
+
     @patch("kimix.utils.prompt_str.Path.exists", return_value=True)
     def test_escapes_real_path(self, mock_exists):
         text = "check src/kimix/utils.py for details"
-        result = escape_file_paths(text)
-        assert "`src/kimix/utils.py`" in result
+        assert escape_file_paths(text) == "check `src/kimix/utils.py` for details"
 
     @patch("kimix.utils.prompt_str.Path.exists", return_value=False)
     def test_does_not_escape_nonexistent_path(self, mock_exists):
         text = "check /nonexistent/path.py for details"
-        result = escape_file_paths(text)
-        assert "`/nonexistent/path.py`" not in result
-        assert result == "check /nonexistent/path.py for details"
+        assert escape_file_paths(text) == text
 
     @patch("kimix.utils.prompt_str.Path.exists", return_value=True)
-    def test_path_escaping_plus_sanitization(self, mock_exists):
+    def test_path_escaping_plus_character_removal(self, mock_exists):
         text = "check src/kimix/utils.py\u200b for details"
         result = escape_file_paths(text)
         assert "`src/kimix/utils.py`" in result
@@ -101,168 +193,43 @@ class TestEscapeFilePaths:
         assert '`src/kimix/utils.py`' not in result
         assert '"src/kimix/utils.py"' in result
 
-    def test_url_ignored(self):
-        text = "visit https://example.com/path"
-        assert escape_file_paths(text) == "visit https://example.com/path"
-
-    def test_fraction_ignored(self):
-        text = "the ratio is 3/4"
-        assert escape_file_paths(text) == "the ratio is 3/4"
-
-    def test_date_ignored(self):
-        text = "today is 2024/01/15"
-        assert escape_file_paths(text) == "today is 2024/01/15"
-
-    def test_newlines_preserved(self):
-        text = "line1\nline2"
-        assert escape_file_paths(text) == "line1\nline2"
-
-    def test_empty_string(self):
-        assert escape_file_paths("") == ""
-
-    def test_punctuation_normalized_and_emoji_preserved(self):
-        text = "hello!!!??? 😀 world"
-        result = escape_file_paths(text)
-        assert "!!!" not in result
-        assert "???" not in result
-        assert result == "hello! 😀 world"
-
-    def test_encoding_normalized_by_default(self):
-        text = "ＡＩ hello"
-        result = escape_file_paths(text)
-        assert result == "AI hello"
-
-    def test_whitespace_collapsed_by_default(self):
-        text = "hello    world\n\n\nfoo"
-        result = escape_file_paths(text)
-        assert result == "hello world\n\n\nfoo"
-
-    def test_case_mode_lower(self):
-        text = "Hello World"
-        result = escape_file_paths(text, case_mode="lower")
-        assert result == "hello world"
-
-    def test_case_mode_title(self):
-        text = "hello world"
-        result = escape_file_paths(text, case_mode="title")
-        assert result == "Hello World"
-
-    def test_combined_normalization(self):
-        text = "  Hello    World!!! 😀  \n\n  "
-        result = escape_file_paths(text, case_mode="lower")
-        assert result == "hello world! 😀"
+    @patch("kimix.utils.prompt_str.Path.exists", return_value=True)
+    def test_paths_in_fenced_code_unchanged(self, mock_exists):
+        text = "```\nsrc/kimix/utils.py\n```"
+        assert escape_file_paths(text) == text
 
     @patch("kimix.utils.prompt_str.Path.exists", return_value=True)
-    def test_path_escape_with_whitespace_collapsed(self, mock_exists):
+    def test_path_layout_is_preserved(self, mock_exists):
         text = "1.check src/kimix/utils.py\n2.for details"
         result = escape_file_paths(text)
-        assert "`src/kimix/utils.py`" in result
-        assert "  " not in result
+        assert result == "1.check `src/kimix/utils.py`\n2.for details"
 
-    def test_code_blocks_preserved(self):
-        text = "```python\n  x = 1\n```\nhello    world"
-        result = escape_file_paths(text)
-        assert "```python\n  x = 1\n```" in result
-        assert "hello world" in result
-
-    def test_inline_code_preserved(self):
-        text = "hello `  world  ` foo"
-        result = escape_file_paths(text)
-        assert result == "hello `  world  ` foo"
-
-    def test_all_normalizations_together(self):
-        text = "  HELLO    WORLD!!! 😀  \n\n  "
-        result = escape_file_paths(text, case_mode="lower")
-        assert result == "hello world! 😀"
-
-    def test_empty_string_with_case_mode(self):
-        assert escape_file_paths("", case_mode="lower") == ""
-
-    def test_non_string_with_case_mode(self):
-        result = escape_file_paths(123, case_mode="title")
-        assert result == "123"
-
-    def test_fullwidth_digits_normalized(self):
-        text = "price is １２３"
-        result = escape_file_paths(text)
-        assert result == "price is 123"
-
-    def test_zero_width_space_removed_but_zwnj_preserved(self):
-        text = "hello\u200b\u200c world"
-        result = escape_file_paths(text)
-        assert result == "hello\u200c world"
-
-    def test_tabs_collapsed(self):
-        text = "a\t\t\tb"
-        result = escape_file_paths(text)
-        assert result == "a b"
-
-    def test_case_mode_invalid(self):
-        text = "Hello World"
-        result = escape_file_paths(text, case_mode="invalid")
-        assert result == "Hello World"
-
-    def test_max_chars_with_merged_normalization(self):
-        text = "  HELLO    WORLD  "
-        result = escape_file_paths(text, case_mode="lower", max_chars=8)
-        assert result == "hello wo"
-
-    def test_max_chars_truncate_msg_with_merged(self):
-        text = "  HELLO    WORLD  "
-        result = escape_file_paths(
-            text,
-            case_mode="lower",
-            max_chars=10,
-            truncate_msg="...",
-        )
-        assert result == "hello w..."
-
-    @patch("kimix.utils.prompt_str.Path.exists", return_value=True)
-    def test_path_escape_with_all_normalizations(self, mock_exists):
-        text = "Check  src/kimix/utils.py   for  details!!! 😀 "
-        result = escape_file_paths(text, case_mode="lower")
-        assert "`src/kimix/utils.py`" in result
-        assert result == "check `src/kimix/utils.py` for details! 😀"
-
-    def test_code_block_preserved_with_all_normalizations(self):
-        text = "```python\n  x = 1\n```\n  HELLO    WORLD!!! 😀  "
-        result = escape_file_paths(text, case_mode="lower")
-        assert "```python\n  x = 1\n```" in result
-        assert "hello world!" in result
-
-    def test_inline_code_preserved_with_all_normalizations(self):
-        text = "`  HELLO  ` WORLD!!! 😀"
-        result = escape_file_paths(text, case_mode="lower")
-        assert "`  HELLO  `" in result
-        assert result.endswith("world! 😀")
-
-    def test_dedupe_repeats_with_whitespace_collapsed(self):
-        text = "A" * 200 + "    " + "B" * 200
-        result = escape_file_paths(text, max_repeat=50)
-        assert result == "A" * 50 + " " + "B" * 50
-
-    def test_fraction_ignored_after_normalization(self):
-        text = "ratio 3/4 and 5/6"
-        result = escape_file_paths(text)
-        assert result == "ratio 3/4 and 5/6"
-
-    def test_date_ignored_after_normalization(self):
-        text = "date 2024/01/15 and 01/02/2024"
-        result = escape_file_paths(text)
-        assert result == "date 2024/01/15 and 01/02/2024"
-
-    def test_chinese_chars_preserved(self):
-        assert escape_file_paths("你好") == "你好"
-        assert escape_file_paths("今天天气很好") == "今天天气很好"
-        assert escape_file_paths("深度学习") == "深度学习"
-
-    def test_chinese_with_emoji(self):
-        text = "你好😀世界"
+    def test_url_ignored(self):
+        text = "visit https://example.com/path"
         assert escape_file_paths(text) == text
 
-    def test_emoji_sequences_and_valid_special_characters_preserved(self):
-        text = "family 👨\u200d👩\u200d👧 keycap 1\ufe0f\u20e3 Powerline \ue0b0 replacement \ufffd"
+    def test_fraction_ignored(self):
+        assert escape_file_paths("the ratio is 3/4") == "the ratio is 3/4"
+
+    def test_date_ignored(self):
+        assert escape_file_paths("today is 2024/01/15") == "today is 2024/01/15"
+
+
+class TestTruncation:
+    """Size limiting happens only when the caller asks for it."""
+
+    def test_no_implicit_limit(self):
+        text = "A" * 5000
         assert escape_file_paths(text) == text
+
+    def test_max_chars_truncate(self):
+        assert escape_file_paths("hello world", max_chars=5) == "hello"
+
+    def test_max_chars_with_truncate_msg(self):
+        assert escape_file_paths("hello world", max_chars=10, truncate_msg="...") == "hello w..."
+
+    def test_truncate_msg_longer_than_limit_is_ignored(self):
+        assert escape_file_paths("hello world", max_chars=2, truncate_msg="...") == "he"
 
 
 class TestCleanText:
@@ -305,41 +272,3 @@ class TestToolResultPrefilter:
     def test_process_prefilter_is_idempotent(self):
         once = prefilter_tool_result("a😀\u0378b\x00", tool_name="python")
         assert prefilter_tool_result(once, tool_name="python") == once == "a😀\u0378b"
-
-
-class TestCodePlaceholders:
-    """UUID-based placeholders survive normalization and restore verbatim."""
-
-    def test_extract_restore_roundtrip(self):
-        from kimix.utils.prompt_str import _extract_code, _restore_code
-
-        text = "```python\n  x = 1\n```\n`inline` and plain"
-        masked, pairs = _extract_code(text)
-        assert "```" not in masked
-        assert "`inline`" not in masked
-        assert len(pairs) == 2
-        # Tokens are unique, digit-only, and null-delimited (case-stable).
-        tokens = [t for t, _ in pairs]
-        assert len(set(tokens)) == len(tokens)
-        assert all(t.startswith("\x00") and t.endswith("\x00") for t in tokens)
-        assert all(t[1:-1].isdigit() for t in tokens)
-        assert _restore_code(masked, pairs) == text
-
-    def test_placeholders_survive_case_title(self):
-        from kimix.utils.prompt_str import _extract_code, _restore_code
-
-        text = "`hello` world"
-        masked, pairs = _extract_code(text)
-        titled = masked.title()
-        assert _restore_code(titled, pairs) == "`hello` World"
-
-    def test_placeholders_do_not_collide_with_counter_scheme(self):
-        from kimix.utils.prompt_str import _extract_code, _restore_code
-
-        # Multiple blocks produce distinct tokens even with the same content.
-        text = "`same`\n`same`"
-        masked, pairs = _extract_code(text)
-        tokens = [t for t, _ in pairs]
-        assert len(set(tokens)) == 2
-        assert _restore_code(masked, pairs) == text
-

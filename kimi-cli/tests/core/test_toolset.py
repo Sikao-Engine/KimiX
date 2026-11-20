@@ -75,6 +75,17 @@ class DummyToolC(CallableTool2[DummyParams]):
         return ToolOk(output="long")
 
 
+class DummyBrowserUseTool(CallableTool2[DummyParams]):
+    """Stands in for the real ``browser_use`` tool: identical calls are clicks."""
+
+    name: str = "browser_use"
+    description: str = "Drive a browser"
+    params: type[DummyParams] = DummyParams
+
+    async def __call__(self, params: DummyParams) -> ToolReturnValue:
+        return ToolOk(output="clicked")
+
+
 def _make_toolset() -> KimiToolset:
     ts = KimiToolset()
     ts.add(DummyToolA())
@@ -953,6 +964,51 @@ async def test_interleaved_ab_cycle_is_punished():
     assert "already ran earlier this turn" in outputs[3]
     assert "'ToolA' repeated 4 times in a cycle" in outputs[7]
     assert ts.force_stop_turn is True
+
+
+async def test_action_tools_are_not_punished_as_an_interleaved_cycle():
+    """Identical ``browser_use`` calls are real clicks, not a repeated reasoning step.
+
+    A GUI task legitimately clicks the same control twice (a toggle, an increment, a
+    retried submit), and the note may interleave those with other calls.  Counting
+    them as a cycle injected "This tool call already ran earlier this turn" into
+    receipts that were ``ok:true`` and had executed - a live browser_use corpus run
+    reported exactly that contradiction.
+    """
+    ts = KimiToolset()
+    ts.add(DummyBrowserUseTool())
+    ts.add(DummyToolB())
+    click = _call_args("same-selector")
+    previous: list[tuple[str, str]] = []
+    outputs: list[str] = []
+    step = 0
+    for i in range(5):
+        for tool, args in (("browser_use", click), ("ToolB", _call_args(f"b{i}"))):
+            step += 1
+            ts.begin_step(previous, step_no=step, turn_id="turn-action")
+            result = ts.handle(
+                ToolCall(id=f"a{step}", function=ToolCall.FunctionBody(name=tool, arguments=args))
+            )
+            assert isinstance(result, asyncio.Task)
+            tr = await result
+            outputs.append(tr.return_value.output)  # type: ignore[arg-type]
+            previous = ts.end_step()
+
+    assert ts.force_stop_turn is False  # no force stop from the cycle detector
+    click_key = next(key for key in ts._call_key_counts if key[0] == "browser_use")
+    assert ts._call_key_counts[click_key] == 5  # counted, just not punished
+    assert not any("already ran earlier this turn" in text for text in outputs)
+    assert not any("repeated in a cycle" in text for text in outputs)
+
+
+def test_action_tool_detection_matches_the_tool_and_its_dotted_spelling():
+    from kimi_cli.soul.toolset import _is_action_tool
+
+    assert _is_action_tool("browser_use")
+    assert _is_action_tool("computer_use")
+    assert _is_action_tool("kimi_cli.tools.browser_use:browser_use")
+    assert not _is_action_tool("ToolA")
+    assert not _is_action_tool("read")
 
 
 async def test_cycle_force_stop_reports_reason_and_key():

@@ -681,6 +681,25 @@ async def _run_single_prompt(
     if primary_exc is not None:
         raise primary_exc
     return False
+def prepare_prompt_text(prompt_str: str, *, sanitize: bool = True) -> str:
+    """The text actually sent for a user prompt.
+
+    ``sanitize`` runs :func:`escape_file_paths`, which wraps detected file paths
+    in backticks and removes only characters a tokenizer cannot encode (lone
+    surrogates, Unicode noncharacters, invisible padding, C0/C1 controls).  It
+    does not normalize Unicode, fold case, or collapse whitespace and
+    punctuation, so the wording reaches the model unchanged; a caller that owns
+    byte-exact text can still pass ``sanitize=False`` to skip the path wrapping
+    as well.
+    """
+    text = prompt_str.strip()
+    if not sanitize:
+        return text
+    from kimix.utils.prompt_str import escape_file_paths
+
+    return escape_file_paths(text)
+
+
 async def prompt_async(
     prompt_str: str,
     session: Session | None = None,
@@ -694,8 +713,8 @@ async def prompt_async(
     export_todo_list_path: Path | None = None,
     format_output: bool = False,
     timeout: float | None = None,
+    sanitize: bool = True,
 ) -> None:
-    from kimix.utils.prompt_str import escape_file_paths
 
     if export_todo_list_path is not None and export_todo_list_path.suffix.lower() != ".json":
         base.print_error(
@@ -707,8 +726,7 @@ async def prompt_async(
     if session is None:
         session = await _create_default_session_async()
         close_session_after_prompt = False
-    prompt_str = prompt_str.strip()
-    prompt_str = escape_file_paths(prompt_str)
+    prompt_str = prepare_prompt_text(prompt_str, sanitize=sanitize)
     if len(prompt_str) > 65536:  # too long, save to file
         name, new_id = _export_to_temp_file(key=None, content=prompt_str)
         prompt_str = f"read and execute: `{name}`"
@@ -843,6 +861,7 @@ def prompt(
     export_todo_list_path: Path | None = None,
     format_output: bool = False,
     timeout: float | None = None,
+    sanitize: bool = True,
 ) -> None:
     # Run on the process event loop instead of a throw-away ``asyncio.run`` loop:
     # the session keeps living across conversations, so closing the loop after
@@ -862,6 +881,7 @@ def prompt(
             export_todo_list_path=export_todo_list_path,
             format_output=format_output,
             timeout=timeout,
+            sanitize=sanitize,
         ))
 
 

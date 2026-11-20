@@ -616,22 +616,20 @@ kaos_path = make_kaos_dir("./my_folder")
 from kimix.utils.prompt_str import escape_file_paths, clean_text
 
 # Sanitize prompt text: detect file paths and wrap in backticks,
-# strip invalid Unicode surrogates/noncharacters and unsafe invisible chars,
-# normalize Unicode (NFKC), convert full-width to half-width, preserve emoji/PUA,
-# collapse repeated punctuation, dedupe long character runs, and normalize whitespace.
-# Paths already inside quotes/backticks/brackets, URLs, pure fractions and bare dates
-# are left untouched; markdown fenced/inline code is preserved verbatim.
+# Sanitize prompt text: detect file paths and wrap in backticks, then remove only
+# characters a tokenizer cannot encode (lone surrogates, Unicode noncharacters,
+# invisible padding, C0/C1 control chars).  Case, spacing, punctuation runs,
+# Traditional Chinese, full-width forms and long character runs are preserved:
+# the text must reach the model with its original meaning.
+# Paths already inside quotes/backticks/brackets or fenced code, URLs, pure
+# fractions and bare dates are left untouched.
 safe_text = escape_file_paths(
     raw_text,
-    max_chars=0,           # Optional (keyword-only): truncate after N chars (0 = no limit)
-    max_repeat=100,        # Optional (keyword-only): collapse repeated char runs longer than N
-    truncate_msg="",       # Optional (keyword-only): suffix when truncating
-    case_mode="",          # Optional (keyword-only): "lower" or "title" — applies to non-code text
+    max_chars=0,  # Optional (keyword-only): hard limit for the returned text (0 = no limit)
+    truncate_msg="",  # Optional (keyword-only): suffix kept instead of the truncated tail
 )
-# case_mode="lower"/"title" runs str.lower()/str.title() outside code blocks.
-# When the optional `opencc` package is installed, Traditional → Simplified
-# conversion is also applied during sanitization.
-
+# No NFKC, no case folding, no whitespace/ punctuation collapsing, no run
+# de-duplication, no Traditional → Simplified conversion, no opencc dependency.
 # Clean invisible/hidden characters from text
 # Targets zero-width chars, control chars, soft hyphens, directional marks.
 cleaned = clean_text(text, keep_newlines=True)  # keep_newlines=False strips \n\r\t too

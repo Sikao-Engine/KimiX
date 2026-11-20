@@ -980,6 +980,24 @@ def _make_cycle_reminder_text_2(tool_name: str, cycle_count: int) -> str:
     )
 
 
+# Tools whose identical repeated calls are legitimate *actions*, not a reasoning
+# loop: clicking the same GUI control twice is a real user action (a toggle, an
+# increment, a retry of a rejected submit), so ``browser_use``/``computer_use``
+# traffic interleaves identical calls by design.  Counting those as an
+# interleaved cycle injected "This tool call already ran earlier this turn" into
+# receipts that were ``ok:true`` and had in fact executed (observed live in a
+# browser_use corpus run, where it contradicted the run's own evidence).  The
+# adjacent-streak ladder, the per-tool ceiling and the turn-total nudge still
+# bound a genuinely stuck GUI loop.
+_ACTION_TOOL_NAMES: frozenset[str] = frozenset({"browser_use", "computer_use"})
+
+
+def _is_action_tool(tool_name: str) -> bool:
+    """True for tools whose repeated identical calls are side effects, not loops."""
+    leaf = tool_name.replace(":", ".").rsplit(".", 1)[-1]
+    return leaf in _ACTION_TOOL_NAMES
+
+
 
 _DIFF_ARGS_REMINDER_TEXT_1 = (
     "\n\n<system-reminder>\n"
@@ -1715,8 +1733,13 @@ class KimiToolset:
             # ``A(x) -> B(x) -> C(x) -> A(x) -> ...`` never trips it even though the
             # identical call keeps running.  When this exact call reappears while
             # the consecutive streak is not itself growing, punish it on its own
-            # occurrence count for the turn.
-            if cycle_count >= _CYCLE_REMINDER_START and repeat_count <= 1:
+            # occurrence count for the turn.  Action tools are exempt: their
+            # identical repeats are real clicks, not a repeated reasoning step.
+            if (
+                not _is_action_tool(tool_name)
+                and cycle_count >= _CYCLE_REMINDER_START
+                and repeat_count <= 1
+            ):
                 cycle_reminder = (
                     _make_cycle_reminder_text_2(tool_name, cycle_count)
                     if cycle_count >= _CYCLE_REMINDER_2_START
