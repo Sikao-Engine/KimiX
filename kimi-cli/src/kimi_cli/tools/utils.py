@@ -43,7 +43,7 @@ def _annotation_accepts_str(annotation: Any) -> bool:
     """Return True when a plain ``str`` value already satisfies *annotation*.
 
     ``str``, ``Optional[str]`` and unions that list ``str`` as a member (e.g.
-    ``str | list[str]`` on the ``subagent`` ``prompt`` field) all accept a bare
+    ``str | None`` on the ``subagent`` ``session_id`` field) all accept a bare
     string. Such fields must never be JSON-repaired: the string value is valid
     input, and parsing it as JSON would corrupt legitimate text that merely
     starts with ``[`` or ``{``. Fields that do not accept strings (pure
@@ -62,8 +62,8 @@ def repair_tool_arguments(
     """Repair JSON-string values in tool arguments based on the params schema.
 
     Only fields whose annotation *accepts* a plain ``str`` (``str``, optional
-    str, or a union listing str, e.g. the subagent's ``str | list[str]``
-    ``prompt``) are left untouched; fields that demand a non-string shape
+    str, or another union listing str) are left untouched; fields that demand a
+    non-string shape
     (lists, dicts) are candidates for JSON-string repair when the value looks
     like JSON.
 

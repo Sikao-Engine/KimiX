@@ -214,10 +214,14 @@ def test_list_param_for_bash_still_extracted() -> None:
     path.unlink()
 
 
-def test_subagent_batch_prompts_still_pass_through() -> None:
-    """``subagent`` list prompts are valid multi-dispatch input."""
+def test_subagent_list_prompts_are_malformed() -> None:
+    """``subagent`` accepts one string prompt, never a list of prompts."""
     prompts = ["first sub-task", "second sub-task"]
-    assert _extract_and_save_long_param({"prompt": prompts}, "subagent") is None
+    saved = _extract_and_save_long_param({"prompt": prompts}, "subagent")
+    assert saved is not None
+    path = Path(saved["prompt"])
+    assert path.read_text(encoding="utf-8") == "\n".join(prompts)
+    path.unlink()
 
 
 def test_write_content_with_escaped_newlines_still_extracted() -> None:

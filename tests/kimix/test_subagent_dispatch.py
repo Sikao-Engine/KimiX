@@ -1,21 +1,14 @@
-"""Multi-dispatch tests for the ``subagent`` tool.
+"""Single-dispatch and concurrent-call tests for the ``subagent`` tool.
 
-The ``subagent`` tool accepts ``prompt`` as ``str | list[str]`` and
-``session_id`` as ``str | list[str | None] | None``.  A list prompt dispatches
-N subagents in one call, and every run blocks until its own result file is
-written (there is no background mode).  These probes cover:
+Every tool call accepts exactly one string prompt and creates or resumes exactly
+one sub-agent.  Multiple tasks require separate tool calls; independent calls
+may still run concurrently.  These probes cover:
 
-* param validation (count match, bare-string rejection, duplicate ids, schema
-  key set after removing ``description``/``context_files``/``context_data``);
-* batch dispatch (N concurrent prompts, N distinct output files, one result per
-  run) and the single-string path's unchanged extras shape;
-* partial / all-fail aggregation;
-* mixed resume (existing id + fresh) in one batch;
-* preparation-phase failure (``@missing.md``) aborting before any prompt;
-* **parallel dispatch**, the case that used to fail: several concurrent
-  ``subagent`` calls (or a batch) never drive one session twice, never close a
-  session another run is using, and never leak a closed session's opaque
-  ``SessionStateError`` into the parent's result.
+* scalar parameter validation and the single-run result shape;
+* one session creation and one prompt per call;
+* preparation failure before any session is created;
+* **parallel dispatch through separate calls**, including the one-run-per-session
+  guard and LRU eviction protection for running sessions.
 
 Style mirrors ``test_agent_gate.py``: patch ``kimix.utils._create_session_async``
 / ``prompt_async`` / ``close_session_async`` and drive ``Agent`` directly.
@@ -106,7 +99,7 @@ def _clean_agent_registries():
 # ---------------------------------------------------------------------------
 # 1. Param validation
 # ---------------------------------------------------------------------------
-async def test_param_single_string_still_valid() -> None:
+def test_param_single_string_still_valid() -> None:
     p = SubAgentParams(prompt="x")
     assert p.prompt == "x"
     assert p.session_id is None
@@ -114,49 +107,25 @@ async def test_param_single_string_still_valid() -> None:
     assert SubAgentParams(**{"task": "y"}).prompt == "y"
 
 
-async def test_param_list_prompt_and_session_id_rules() -> None:
-    # None session_id -> all fresh.
-    assert SubAgentParams(prompt=["a", "b"]).session_id is None
-    # Matching-length id list (mix of resume + None) is valid.
-    p = SubAgentParams(prompt=["a", "b"], session_id=["s1", None])
-    assert p.session_id == ["s1", None]
-    # One-element list allowed; behaves like batch-of-1.
-    assert SubAgentParams(prompt=["a"], session_id=[None]).prompt == ["a"]
+@pytest.mark.parametrize("prompt", [[], ["one"], ["one", "two"]])
+def test_param_list_prompt_is_rejected(prompt: list[str]) -> None:
+    with pytest.raises(ValidationError, match="Input should be a valid string"):
+        SubAgentParams(prompt=prompt)
+    with pytest.raises(ValidationError, match="Input should be a valid string"):
+        SubAgentParams(**{"task": prompt})
 
 
-async def test_param_empty_list_prompt_raises() -> None:
-    with pytest.raises(ValidationError, match="must not be empty"):
-        SubAgentParams(prompt=[])
+@pytest.mark.parametrize("session_id", [[], ["s1"], ["s1", None]])
+def test_param_list_session_id_is_rejected(session_id: list[str | None]) -> None:
+    with pytest.raises(ValidationError, match="Input should be a valid string"):
+        SubAgentParams(prompt="one", session_id=session_id)
 
 
-async def test_param_mismatched_count_raises() -> None:
-    with pytest.raises(ValidationError, match="count"):
-        SubAgentParams(prompt=["a", "b"], session_id=["only"])
-    with pytest.raises(ValidationError):
-        SubAgentParams(prompt=["a", "b"], session_id=["s1", "s2", "s3"])
-
-
-async def test_param_bare_string_session_with_list_raises() -> None:
-    with pytest.raises(ValidationError, match="ambiguous"):
-        SubAgentParams(prompt=["a", "b"], session_id="s1")
-
-
-async def test_param_duplicate_ids_raise() -> None:
-    with pytest.raises(ValidationError, match="duplicate"):
-        SubAgentParams(prompt=["a", "b"], session_id=["dup", "dup"])
-
-
-async def test_param_list_session_with_string_prompt_raises() -> None:
-    with pytest.raises(ValidationError, match="not a list"):
-        SubAgentParams(prompt="single", session_id=["s1", None])
-
-
-async def test_param_str_stays_str_in_union() -> None:
-    # A JSON string that is just text must never coerce to a list.
+def test_param_str_stays_str() -> None:
     assert SubAgentParams.model_validate_json('{"prompt": "x"}').prompt == "x"
 
 
-async def test_param_dump_key_set_has_no_background_flag() -> None:
+def test_param_dump_key_set_has_no_background_flag() -> None:
     keys = set(SubAgentParams(prompt="x").model_dump())
     assert keys == {
         "prompt",
@@ -173,211 +142,34 @@ async def test_param_dump_key_set_has_no_background_flag() -> None:
     assert "context_data" not in keys
 
 
-async def test_split_params_shapes() -> None:
-    # Single string -> one run, singular session_id preserved.
-    runs = SubAgentParams(prompt="x", session_id="s1")._split_params()
-    assert len(runs) == 1
-    assert runs[0].prompt == "x"
-    assert runs[0].session_id == "s1"
-    # List -> N runs sharing the scalar options.
-    runs = SubAgentParams(
-        prompt=["a", "b", "c"],
-        session_id=[None, "s2", None],
-        close_session=False,
-        return_history=True,
-        history_format="markdown",
-        inherit_context=True,
-    )._split_params()
-    assert [r.prompt for r in runs] == ["a", "b", "c"]
-    assert [r.session_id for r in runs] == [None, "s2", None]
-    assert all(r.close_session is False for r in runs)
-    assert all(r.return_history is True for r in runs)
-    assert all(r.history_format == "markdown" for r in runs)
-    assert all(r.inherit_context is True for r in runs)
+def test_param_schema_exposes_no_array_prompt_or_session() -> None:
+    properties = SubAgentParams.model_json_schema()["properties"]
+    assert properties["prompt"]["type"] == "string"
+    assert properties["session"]["anyOf"] == [{"type": "string"}, {"type": "null"}]
+
+
+def test_tool_description_requires_one_subagent_per_call() -> None:
+    assert "exactly one subagent" in Agent.description
+    assert "separate tool calls" in Agent.description
 
 
 # ---------------------------------------------------------------------------
-# 2. Batch dispatch
+# 2. One call creates and prompts one sub-agent
 # ---------------------------------------------------------------------------
-async def test_batch_dispatches_every_prompt(tmp_path: Path) -> None:
-    parent = _parent("fg-parent", work_dir=KaosPath(str(tmp_path)))
-    seen: list[tuple[str, Any]] = []
-    with (
-        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt(seen)),
-        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
-    ):
-        mc.side_effect = lambda **kw: _sub_session(kw["session_id"])
-        result = await Agent(parent)(
-            SubAgentParams(prompt=["one", "two", "three"])
-        )
-
-    assert result.is_error is False
-    assert result.extras["status"] == "completed"
-    ids = result.extras["session_ids"]
-    assert len(ids) == 3
-    assert len(set(ids)) == 3  # distinct sessions
-    # Every prompt reached its own session.
-    assert {p for p, _ in seen} == {"one", "two", "three"}
-    assert len({id(s) for _, s in seen}) == 3
-    for sid in ids:
-        assert f"Session ID: {sid}" in result.output
-    # Per-run output files exist and are distinct.
-    files = result.extras["output_files"]
-    assert len(files) == 3
-    assert len(set(files)) == 3
-    for f in files:
-        assert Path(f).exists() or (tmp_path / Path(f)).exists()
-    # Every run released its claim, so the ids can be resumed later.
-    assert _active_runs == {}
-
-
-async def test_batch_runs_concurrently(tmp_path: Path) -> None:
-    """All runs of a batch are in flight at the same time, not serialized."""
-    parent = _parent("conc-parent", work_dir=KaosPath(str(tmp_path)))
-    in_flight = 0
-    peak = 0
-    release = asyncio.Event()
-
-    async def gated_prompt(*, prompt_str: str, output_function: Any = None, **kw: Any) -> None:
-        nonlocal in_flight, peak
-        in_flight += 1
-        peak = max(peak, in_flight)
-        try:
-            if in_flight >= 3:
-                release.set()
-            await asyncio.wait_for(release.wait(), timeout=5)
-        finally:
-            in_flight -= 1
-        if output_function is not None:
-            output_function("ok", MessageType.Text)
-
-    with (
-        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.utils.prompt_async", side_effect=gated_prompt),
-        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
-    ):
-        mc.side_effect = lambda **kw: _sub_session(kw["session_id"])
-        result = await Agent(parent)(SubAgentParams(prompt=["a", "b", "c"]))
-
-    assert result.is_error is False
-    assert peak == 3  # all three prompts overlapped
-
-
-# ---------------------------------------------------------------------------
-# 3. Partial failure
-# ---------------------------------------------------------------------------
-async def test_batch_partial_failure(tmp_path: Path) -> None:
-    parent = _parent("partial-parent", work_dir=KaosPath(str(tmp_path)))
-
-    async def flaky(*, prompt_str: str, output_function: Any = None, **kwargs: Any) -> None:
-        if prompt_str == "boom":
-            raise RuntimeError("child exploded")
-        if output_function is not None:
-            output_function("ok", MessageType.Text)
-
-    with (
-        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.utils.prompt_async", side_effect=flaky),
-        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
-    ):
-        mc.side_effect = lambda **kw: _sub_session(kw["session_id"])
-        result = await Agent(parent)(SubAgentParams(prompt=["fine", "boom", "also"]))
-
-    assert result.is_error is False  # partial success still a ToolOk
-    assert result.extras["status"] == "partial"
-    ids = result.extras["session_ids"]
-    assert len(ids) == 3
-    failures = result.extras["failures"]
-    assert len(failures) == 1
-    assert failures[0]["index"] == 1
-    assert failures[0]["session_id"] == ids[1]
-    assert "child exploded" in failures[0]["message"]
-    # The successful ids are still returned (not lost).
-    assert ids[0] in result.output and ids[2] in result.output
-    # A failed run must not keep its session claimed.
-    assert _active_runs == {}
-
-
-# ---------------------------------------------------------------------------
-# 4. All-fail -> ToolError keeps all ids
-# ---------------------------------------------------------------------------
-async def test_batch_all_fail_is_error(tmp_path: Path) -> None:
-    parent = _parent("allfail-parent", work_dir=KaosPath(str(tmp_path)))
-
-    async def always_raises(*, prompt_str: str, **kwargs: Any) -> None:
-        raise RuntimeError(f"nope:{prompt_str}")
-
-    with (
-        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.utils.prompt_async", side_effect=always_raises),
-        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
-    ):
-        mc.side_effect = lambda **kw: _sub_session(kw["session_id"])
-        result = await Agent(parent)(SubAgentParams(prompt=["a", "b"]))
-
-    assert result.is_error is True
-    assert len(result.extras["session_ids"]) == 2
-    assert "nope:a" in result.message and "nope:b" in result.message
-
-
-# ---------------------------------------------------------------------------
-# 5. Mixed resume in one batch
-# ---------------------------------------------------------------------------
-async def test_batch_mixed_resume_reuses_existing_session() -> None:
-    parent = _parent("mix-parent")
-    existing = _sub_session("keep-me")
-    _get_store(parent).put(
-        AgentSessionEntry(
-            session=existing,
-            session_id="keep-me",
-            created_at=time.time(),
-            last_accessed=time.time(),
-            conversation_history=[],
-            total_turns=1,
-            is_active=True,
-            state="completed",
-        )
-    )
+async def test_single_string_extras_unchanged() -> None:
+    parent = _parent("compat-parent")
     captured: list[str] = []
     with (
         patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
         patch("kimix.utils.prompt_async", side_effect=_capturing_prompt_texts(captured)),
         patch("kimix.utils.close_session_async", new_callable=AsyncMock),
     ):
-        mc.side_effect = lambda **kw: _sub_session(kw["session_id"])
-        result = await Agent(parent)(
-            SubAgentParams(
-                prompt=["resume it", "fresh one"],
-                session_id=["keep-me", None],
-            )
-        )
-
-    assert result.is_error is False
-    ids = result.extras["session_ids"]
-    assert ids[0] == "keep-me"  # resumed
-    assert ids[1] != "keep-me"  # fresh uuid
-    # Only the fresh run created a session; the resumed id was reused.
-    created_ids = [c.kwargs["session_id"] for c in mc.await_args_list]
-    assert "keep-me" not in created_ids
-    assert ids[1] in created_ids
-
-
-# ---------------------------------------------------------------------------
-# 6. Compat: single string unchanged
-# ---------------------------------------------------------------------------
-async def test_single_string_extras_unchanged() -> None:
-    parent = _parent("compat-parent")
-    with (
-        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
-        patch("kimix.utils.prompt_async", side_effect=_capturing_prompt_texts([])),
-        patch("kimix.utils.close_session_async", new_callable=AsyncMock),
-    ):
         mc.return_value = _sub_session()
         result = await Agent(parent)(SubAgentParams(prompt="solo"))
 
     assert result.is_error is False
-    # Singular ``session_id`` key retained; ``session_ids`` NOT present.
+    assert captured == ["solo"]
+    assert mc.await_count == 1
     assert "session_id" in result.extras
     assert "session_ids" not in result.extras
     assert result.extras["status"] == "closed"
@@ -386,55 +178,34 @@ async def test_single_string_extras_unchanged() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 7. Prep-phase failure aborts the whole batch before any prompt
+# 3. Prep-phase failure happens before session creation
 # ---------------------------------------------------------------------------
-async def test_batch_prep_failure_launches_nothing(
+async def test_missing_prompt_file_launches_nothing(
     monkeypatch, tmp_path: Path
 ) -> None:
     work = tmp_path / "work"
     work.mkdir()
-    (work / "here.md").write_text("present", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     parent = _parent("abort-parent", work_dir=KaosPath(str(work)))
 
-    created: list[str] = []
-    closed: list[Any] = []
-
-    async def fake_create(**kw: Any) -> MagicMock:
-        created.append(kw["session_id"])
-        return _sub_session(kw["session_id"])
-
-    async def fake_close(session: Any) -> None:
-        closed.append(session)
-
     with (
-        patch("kimix.utils._create_session_async", side_effect=fake_create),
+        patch("kimix.utils._create_session_async", new_callable=AsyncMock) as mc,
         patch("kimix.utils.prompt_async", new_callable=AsyncMock) as mp,
-        patch("kimix.utils.close_session_async", side_effect=fake_close),
+        patch("kimix.utils.close_session_async", new_callable=AsyncMock) as close,
     ):
-        result = await Agent(parent)(
-            SubAgentParams(prompt=["@here.md", "@missing.md"])
-        )
+        result = await Agent(parent)(SubAgentParams(prompt="@missing.md"))
 
     assert result.is_error is True
     assert result.brief == "Failed to create sub-agent session"
-    # The offending prompt index is named.
-    assert "prompt 1" in result.message
-    # Nothing ran.
+    assert "prompt file not found" in result.message
+    mc.assert_not_awaited()
     mp.assert_not_awaited()
-    # The successful sibling's fresh session was rolled back, leaving no live
-    # or resumable sub-agent behind.
-    assert len(created) == 1
-    assert len(closed) == 1
-    assert _get_store(parent).get(created[0]) is None
-    assert created[0] not in agent_mod._agent_sessions
-    assert created[0] not in agent_mod._agent_entries
-    # Nor is its run claim left behind.
-    assert created[0] not in _active_runs
+    close.assert_not_awaited()
+    assert _active_runs == {}
 
 
 # ---------------------------------------------------------------------------
-# 8. Parallel dispatch: one session, one run
+# 4. Parallel dispatch: one session, one run
 # ---------------------------------------------------------------------------
 async def test_parallel_calls_with_same_session_id_reject_the_loser(
     tmp_path: Path,
@@ -620,15 +391,12 @@ async def test_eviction_stops_when_every_session_is_busy(
     assert set(store.entries) == {"busy-a", "busy-b"}
 
 
-async def test_store_without_a_busy_hook_still_evicts_the_lru(
-    tmp_path: Path,
-) -> None:
+async def test_store_without_a_busy_hook_still_evicts_the_lru() -> None:
     """Control probe: without the claim the LRU session *is* evicted.
 
     The tool's store asks the module whether a run drives an id; a bare store
     (no hook) has no such knowledge, which is exactly the pre-fix behaviour.
     """
-    parent = _parent("control-parent", work_dir=KaosPath(str(tmp_path)))
     store = agent_mod.AgentSessionStore()  # no is_busy hook
     store.MAX_SESSIONS = 2
     for offset, sid in enumerate(("lru-id", "other-id")):
@@ -653,9 +421,3 @@ async def test_store_without_a_busy_hook_still_evicts_the_lru(
     assert store.get("lru-id") is None
     assert store.get("other-id") is not None
     agent_mod._release_session_run("lru-id", claim)
-
-
-async def test_batch_duplicate_session_id_is_rejected_up_front() -> None:
-    """A batch may not target one session twice — validation, not a hang."""
-    with pytest.raises(ValidationError, match="duplicate"):
-        SubAgentParams(prompt=["a", "b"], session_id=["same", "same"])

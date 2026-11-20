@@ -592,32 +592,35 @@ class TestIntegration:
         saved = _extract_and_save_long_param(args, "write")
         assert saved is None, "Normal content should not be extracted"
 
-# ── subagent batch list prompt ──────────────────────────────────────────────
+# ── subagent list prompt ────────────────────────────────────────────────────
 
 
-class TestSubagentBatchListPrompt:
-    """A ``subagent`` prompt may now be a list of strings (multi-dispatch).
+class TestSubagentListPrompt:
+    """A ``subagent`` call accepts one string prompt, never a list.
 
-    A list of plain strings is *valid* tool input and must reach the tool
-    untouched (no extraction).  A list containing non-strings, a dict, or an
-    empty list stays malformed and is still extracted.
+    Every list shape is malformed input and is extracted so the caller can
+    retry with one ``@file`` prompt; no list can dispatch multiple subagents.
     """
 
-    def test_short_string_list_not_extracted(self):
+    def test_short_string_list_extracted(self):
         args = {"prompt": ["task a", "task b"]}
-        assert _extract_and_save_long_param(args, "subagent") is None
+        saved = _extract_and_save_long_param(args, "subagent")
+        assert saved is not None and "prompt" in saved
 
-    def test_long_string_list_not_extracted(self):
+    def test_long_string_list_extracted(self):
         args = {"prompt": ["x" * 300, "y" * 300]}
-        assert _extract_and_save_long_param(args, "subagent") is None
+        saved = _extract_and_save_long_param(args, "subagent")
+        assert saved is not None and "prompt" in saved
 
-    def test_task_alias_string_list_not_extracted(self):
+    def test_task_alias_string_list_extracted(self):
         args = {"task": ["do this", "do that"]}
-        assert _extract_and_save_long_param(args, "subagent") is None
+        saved = _extract_and_save_long_param(args, "subagent")
+        assert saved is not None and "task" in saved
 
-    def test_single_element_string_list_not_extracted(self):
+    def test_single_element_string_list_extracted(self):
         args = {"prompt": ["just one task"]}
-        assert _extract_and_save_long_param(args, "subagent") is None
+        saved = _extract_and_save_long_param(args, "subagent")
+        assert saved is not None and "prompt" in saved
 
     def test_empty_list_still_extracted(self):
         args = {"prompt": []}
@@ -630,7 +633,6 @@ class TestSubagentBatchListPrompt:
         assert saved is not None and "prompt" in saved
 
     def test_list_extraction_still_works_for_other_tools(self):
-        # bash keeps the old list-joined behavior (no batch semantics there).
         args = {"command": ["echo a", "echo b"]}
         saved = _extract_and_save_long_param(args, "bash")
         assert saved is not None and "command" in saved

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import orjson
-from pydantic import AliasChoices, BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field
 
 from kaos.path import KaosPath
 from kimi_cli.session import Session
@@ -40,7 +40,7 @@ _agent_entries: dict[str, AgentSessionEntry] = {}
 # finishing run closes the session, leave the other with the opaque
 # ``SessionStateError("Session is closed")``.  A claim is taken when the run is
 # prepared (before any prompt starts) and released when it finishes, so a
-# parallel dispatch — batch or several concurrent ``subagent`` tool calls — that
+# parallel dispatch through several concurrent ``subagent`` tool calls that
 # targets one session id twice fails fast with a clear message instead of
 # corrupting both runs.  A plain dict is enough: every claim/release happens on
 # the single event loop without an intervening await.
@@ -432,29 +432,23 @@ def _output_message(session_id: str, saved: str) -> str:
 class SubAgentParams(BaseModel):
     model_config = {"populate_by_name": True}
 
-    prompt: str | list[str] = Field(
+    prompt: str = Field(
         validation_alias=AliasChoices("prompt", "task"),
         description=(
-            "The complete, self-contained task for the subagent. "
-            "Inline text, or @path to read the task from a file. "
-            "Pass a list of prompts to dispatch multiple subagents in one call; "
-            "one session id is returned per prompt. "
+            "The complete, self-contained task for one subagent. Inline text, "
+            "or @path to read the task from a file. Only one prompt is allowed "
+            "per tool call; use separate calls to delegate multiple tasks. "
             + accepts_alias_text("prompt", "task", word=False)
         ),
     )
-    session_id: str | list[str | None] | None = Field(
+    session_id: str | None = Field(
         default=None,
         alias="session",  # common LLM variant
         description=(
             "Session ID to resume an existing sub-agent session. Sub-agent "
             "sessions are scratch: one created here is anonymous, so its dir is "
             "deleted on close and the id then resumes from a fresh conversation. "
-            "When ``prompt`` is a list of N prompts, this may be a list of N "
-            "entries (``None`` = a fresh session for that prompt; a string = "
-            "resume that session) or ``None`` (all N sessions are fresh); a "
-            "bare string with a list prompt is rejected.  One session id can "
-            "only be driven by one run at a time, so a batch may not target the "
-            "same id twice. "
+            "One session id can only be driven by one run at a time. "
             + accepts_alias_text("session_id", "session", word=False)
         ),
     )
@@ -482,82 +476,9 @@ class SubAgentParams(BaseModel):
             "For a NEW session, initialize it by copying the parent session's "
             "context (conversation history so far) into the sub-agent's id, like "
             "the CLI `/store`+`/load`, and resume from that copy. Ignored when "
-            "`session_id` resolves to an active session (reused as-is). In batch "
-            "mode each new session copies the parent snapshot independently."
+            "`session_id` resolves to an active session (reused as-is)."
         ),
     )
-
-    @model_validator(mode="after")
-    def _check_batch_shape(self) -> SubAgentParams:
-        """Enforce the single-vs-batch ``prompt`` / ``session_id`` contract.
-
-        A string ``prompt`` is a single run (``session_id`` is a string or None).
-        A list ``prompt`` is a batch: ``session_id`` must be None (all fresh) or
-        a list of the same count (each entry None = fresh, str = resume). A bare
-        string with a list prompt, a mismatched-length list, or duplicate resume
-        ids are rejected here, before any session is touched.
-        """
-        prompt = self.prompt
-        if isinstance(prompt, str):
-            # Single run: session_id must not be a list.
-            if isinstance(self.session_id, list):
-                raise ValueError(
-                    "session_id must be a string or null for a single prompt, "
-                    "not a list; pass a list of prompts for batch dispatch"
-                )
-            return self
-        # Batch mode (prompt is a list of strings).
-        if not prompt:
-            raise ValueError("prompt list must not be empty")
-        if isinstance(self.session_id, str):
-            raise ValueError(
-                "session_id must be a list of the same length as the prompt "
-                "list (or null); a bare string is ambiguous for a batch"
-            )
-        if self.session_id is not None:
-            if len(self.session_id) != len(prompt):
-                raise ValueError(
-                    f"session_id count ({len(self.session_id)}) must match "
-                    f"prompt count ({len(prompt)})"
-                )
-            seen: set[str] = set()
-            for sid in self.session_id:
-                if sid is None:
-                    continue
-                if sid in seen:
-                    raise ValueError(
-                        f"duplicate session_id {sid!r} in batch: two concurrent "
-                        "runs cannot share one session"
-                    )
-                seen.add(sid)
-        return self
-
-    def _split_params(self) -> list[SubAgentParams]:
-        """Normalize into N single-run param objects.
-
-        A string ``prompt`` yields a one-element list (the single-run path). A
-        list ``prompt`` yields one param per element; ``close_session``,
-        ``return_history``, ``history_format`` and ``inherit_context`` are
-        shared across all runs. Each returned object has a string ``prompt`` and
-        a string-or-None ``session_id`` so ``_prepare_run``/``_execute`` are
-        reused unchanged.
-        """
-        shared: dict[str, Any] = {
-            "close_session": self.close_session,
-            "return_history": self.return_history,
-            "history_format": self.history_format,
-            "inherit_context": self.inherit_context,
-        }
-        if isinstance(self.prompt, str):
-            return [SubAgentParams(prompt=self.prompt, session_id=self.session_id, **shared)]
-        session_ids: list[str | None] = (
-            list(self.session_id) if isinstance(self.session_id, list)
-            else [None] * len(self.prompt)
-        )
-        return [
-            SubAgentParams(prompt=p, session_id=s, **shared)
-            for p, s in zip(self.prompt, session_ids, strict=False)
-        ]
 
 
 @dataclass
@@ -566,8 +487,7 @@ class _PreparedRun:
 
     ``params.close_session`` already holds the *effective* value, and
     ``claim`` is this run's reservation of ``session_id`` (see
-    :func:`_claim_session_run`) — released when the run finishes, or by
-    ``_rollback_prepared`` when the dispatch never launched it.
+    :func:`_claim_session_run`), released when the run finishes.
     """
 
     params: SubAgentParams
@@ -718,16 +638,11 @@ class Agent(CallableTool2):
         "context. The result is written to `.kimix_cache/temp_<session_id>.md` "
         "and only that path is returned, so read the file for the details; the "
         "run does not see this conversation, so give it a complete standalone "
-        "prompt. "
-        "Pass `prompt` as a list of strings to dispatch multiple subagents in "
-        "one call; one session id is returned per prompt. With a list prompt, "
-        "`session_id` may be null (all fresh sessions) or a list of the same "
-        "count whose entries are a session id to resume or null for a new one. "
-        "Every run blocks until its result is written to "
-        "`.kimix_cache/temp_<session_id>.md`, and only that path is returned. "
-        "Runs of one call are executed concurrently, but one session id is "
-        "driven by one run at a time, so the same id cannot appear twice in a "
-        "batch. A session kept open with `close_session: false` stays resumable "
+        "prompt. Each tool call creates or resumes exactly one subagent; to "
+        "delegate multiple tasks, make separate tool calls. Every run blocks "
+        "until its result is written to `.kimix_cache/temp_<session_id>.md`, "
+        "and only that path is returned. One session id is driven by one run at "
+        "a time. A session kept open with `close_session: false` stays resumable "
         "via subagent(session_id='<id>', ...). Sub-agents belong to the "
         "session that spawned them: closing or clearing that session closes "
         "them all and deletes their scratch dirs, so ids work only while the "
@@ -782,10 +697,6 @@ class Agent(CallableTool2):
                 message='Recursive sub-agent call detected',
                 brief='sub-agent recursively'
             )
-        # A list prompt dispatches several subagents in one call; a string
-        # prompt keeps the exact single-run code path, output and extras shape.
-        if isinstance(params.prompt, list):
-            return await self._dispatch_batch(params)
         try:
             async with self._semaphore:
                 prepared = await self._prepare_run(params)
@@ -796,142 +707,6 @@ class Agent(CallableTool2):
                 brief="Failed to create sub-agent session",
             )
         return await self._execute(prepared)
-
-    async def _dispatch_batch(self, params: SubAgentParams) -> ToolReturnValue:
-        """Dispatch N runs in one call and return one combined result.
-
-        Every run's ``_prepare_run`` (the part that can fail synchronously) is
-        awaited first, bounded by the per-run semaphore; only when all of them
-        succeed is anything prompted. This mirrors the single-run contract that
-        a session-creation / ``@file`` / busy-session error surfaces here as a
-        ``ToolError`` before any prompt is started. A one-element list behaves
-        like a batch of one but still returns the list-shaped ``session_ids``
-        extras.
-        """
-        runs = params._split_params()
-
-        async def _prepare_indexed(index: int, run: SubAgentParams):
-            try:
-                async with self._semaphore:
-                    prepared = await self._prepare_run(run)
-                return ("ok", index, prepared)
-            except Exception as exc:
-                return ("prep-error", index, str(exc))
-
-        outcomes = await asyncio.gather(
-            *(_prepare_indexed(i, r) for i, r in enumerate(runs))
-        )
-        failures = [x for x in outcomes if x[0] == "prep-error"]
-        prepared = [x[2] for x in outcomes if x[0] == "ok"]
-        if failures:
-            # Fail fast: name the offending prompts and launch nothing. Sessions
-            # a *successful* sibling already created are rolled back so a
-            # failed batch leaves no orphaned live sub-agent sessions behind.
-            await self._rollback_prepared(prepared)
-            detail = "; ".join(
-                f"prompt {index}: {message}" for _, index, message in failures
-            )
-            return ToolError(
-                output="",
-                message=detail,
-                brief="Failed to create sub-agent session",
-            )
-
-        return await self._dispatch_batch_foreground(params, prepared)
-
-    async def _rollback_prepared(self, prepared: list[_PreparedRun]) -> None:
-        """Best-effort cleanup of prepared-but-unlaunched batch runs.
-
-        A batch that fails preparation mid-way may already have created live
-        sessions for its successful siblings. Close the freshly created ones
-        (resumed sessions belong to their owners), release their run claims and
-        forget every bookkeeping record, so the failed dispatch leaves no
-        orphaned sessions or held claims. Never raises: cleanup must not mask
-        the preparation error.
-        """
-        from kimix.utils import close_session_async
-
-        for run in prepared:
-            try:
-                _release_session_run(run.session_id, run.claim)
-                if not run.is_reused:
-                    await close_session_async(run.session)
-                _forget_child_session_record(run.session_id)
-            except Exception:
-                pass
-
-    async def _dispatch_batch_foreground(
-        self, params: SubAgentParams, prepared: list[_PreparedRun]
-    ) -> ToolReturnValue:
-        """Await every run concurrently and combine their results."""
-        # ``_execute`` never raises (it catches its own errors and returns a
-        # ToolOk/ToolError), so gathering without return_exceptions is safe.
-        results: list[ToolReturnValue] = list(
-            await asyncio.gather(*(self._execute(run) for run in prepared))
-        )
-        session_ids: list[str] = []
-        output_files: list[str] = []
-        output_blocks: list[str] = []
-        histories: list[Any] = []
-        turn_count = 0
-        failures: list[dict[str, Any]] = []
-        for index, (run, result) in enumerate(zip(prepared, results, strict=False)):
-            extras = getattr(result, "extras", None) or {}
-            session_ids.append(run.session_id)
-            saved = str(extras.get("output_file") or "")
-            if saved:
-                output_files.append(saved)
-            turn_count += int(extras.get("turn_count", 0) or 0)
-            if params.return_history and "conversation_history" in extras:
-                histories.append(extras["conversation_history"])
-            output = str(getattr(result, "output", "") or "")
-            if result.is_error:
-                message = str(getattr(result, "message", "") or "")
-                failures.append(
-                    {"index": index, "session_id": run.session_id, "message": message}
-                )
-                output_blocks.append(f"prompt {index} failed: {message}\n{output}".strip())
-            else:
-                output_blocks.append(output)
-        combined = "\n\n".join(block for block in output_blocks if block)
-
-        if failures:
-            extras_all: dict[str, Any] = {
-                "session_ids": session_ids,
-                "output_files": output_files,
-                "turn_count": turn_count,
-                "failures": failures,
-            }
-            if params.return_history:
-                extras_all["conversation_history"] = histories
-            if len(failures) == len(results):
-                # All runs failed: surface an error but keep every id so the
-                # model knows which sessions exist.
-                result_err = ToolError(
-                    output=combined,
-                    message="; ".join(f["message"] for f in failures),
-                    brief="sub-agent tasks failed",
-                )
-                result_err.extras = extras_all
-                return result_err
-            result_ok = ToolOk(output=combined, brief="Some sub-agent tasks failed")
-            result_ok.extras = {**extras_all, "status": "partial"}
-            return result_ok
-
-        result_ok = ToolOk(
-            output=combined, brief="Sub-agent tasks completed"
-        )
-        batch_extras: dict[str, Any] = {
-            "session_ids": session_ids,
-            "output_files": output_files,
-            "status": "completed",
-            "turn_count": turn_count,
-        }
-        if params.return_history:
-            batch_extras["conversation_history"] = histories
-        result_ok.extras = batch_extras
-        return result_ok
-
 
     async def _prepare_run(self, params: SubAgentParams) -> _PreparedRun:
         """Resolve the target session, claim it, and build the effective prompt.
@@ -981,8 +756,8 @@ class Agent(CallableTool2):
         # to any prompt error by cancelling the session — aborting the sibling
         # run, whose session is then closed by the finishing run, leaving the
         # loser with an opaque "Session is closed".  The ``_cancel_event`` check
-        # above cannot see that race: in a parallel dispatch every run is
-        # prepared (and its session resolved) before any of them starts.
+        # above cannot see every race between concurrent tool calls preparing
+        # and starting their runs.
         try:
             claim = _claim_session_run(session_id)
         except RuntimeError:
@@ -1016,8 +791,8 @@ class Agent(CallableTool2):
             # A session that was closed between preparation and this point (an
             # ``interrupt_agent`` on a queued run, or a parent-close cascade)
             # cannot be prompted: the SDK would raise the opaque
-            # ``SessionStateError("Session is closed")``.  Report it as the
-            # interruption it is, and let the sibling runs of a batch proceed.
+            # ``SessionStateError("Session is closed")``. Report it as the
+            # interruption it is instead of attempting the prompt.
             if _session_is_closed(session):
                 return ToolError(
                     output="",

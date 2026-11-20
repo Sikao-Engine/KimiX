@@ -2646,7 +2646,7 @@ def _prompt_subagent(ctx: _ReflectionContext) -> _PromptBody:
     tests = ', '.join(
         str(path)
         for path in (
-            ctx.test('kimix', 'test_subagent_batch.py'),
+            ctx.test('kimix', 'test_subagent_dispatch.py'),
             ctx.test('kimix', 'test_subagent_interrupt_race.py'),
             ctx.test('kimix', 'test_subagent_anonymous_session.py'),
             ctx.test('kimix', 'test_agent_conversation.py'),
@@ -2659,13 +2659,12 @@ Sub-agent tool (**the orchestration to review**):
 - `{tool_path}` — `Agent(CallableTool2)`, `name = "subagent"`,
   `SubAgentParams` (`prompt`/`task` alias, `session_id`/`session` alias,
   `close_session`, `return_history`, `history_format`, `inherit_context`),
-  `_check_batch_shape`, `_split_params`, `_PreparedRun`.
+  `_PreparedRun`. Each call accepts one string prompt and one optional session id.
 - Lifecycle helpers: `_claim_session_run`, `_release_session_run`,
   `_abandon_unlaunched`, `_prepare_run`, `_resolve_prompt` (`@file` prompts),
   `_resolve_session`, `_inherit_parent_context`, `_execute`,
   `_AgentConversationCollector`, `_write_subagent_output`, `_output_message`,
-  `_build_extras`, `_update_store`, `_dispatch_batch`,
-  `_dispatch_batch_foreground`, `_rollback_prepared`.
+  `_build_extras`, `_update_store`.
 - Registries: `_agent_entries`, `_agent_sessions`, `_child_sessions`,
   `_active_runs`; teardown via `_ensure_close_hook_registered`,
   `_on_parent_session_closed`, `_destroy_child_sessions_async`.
@@ -2679,8 +2678,8 @@ Sub-agent tool (**the orchestration to review**):
 - `{tool_pairing}` — the balanced-cut rule: a sub-agent turn is one tool call
   plus one tool result, never split across a compaction boundary.
 
-Tests: `{tests}` — batching, interrupt races, anonymous sessions, conversation
-history formats and the output-file contract.
+Tests: `{tests}` — single and parallel dispatch, interrupt races, anonymous
+sessions, conversation history formats and the output-file contract.
 
 ## 2. Architecture in one paragraph
 Three module-level registries (`_agent_entries`, `_agent_sessions`,
@@ -2697,8 +2696,8 @@ parent context; the parent only sees the tool result plus the file path.
 
 ## 3. Workflow of one `subagent` tool call
 1. `Agent.__call__` rejects recursion through
-   `session.custom_config["is_sub_agent"]`; a list prompt -> `_dispatch_batch`,
-   a string prompt -> acquire the semaphore (limit 8) -> `_prepare_run`.
+   `session.custom_config["is_sub_agent"]`, then acquires the semaphore
+   (limit 8) and calls `_prepare_run` for its one prompt.
 2. `_prepare_run`: `_session_work_dir` -> `_resolve_prompt` (`@file` inlined) ->
    prompts over 100 KB are spilled to a script file ("read the task from ...")
    -> `_resolve_session`.
@@ -2719,20 +2718,19 @@ parent context; the parent only sees the tool result plus the file path.
 6. Error branch: close the child (`close_session_async` + `store.close` +
    unregister entry/session/child) then return `ToolError`; `finally` always
    releases the run claim.
-7. Batch: prepare all with `asyncio.gather`; any preparation failure ->
-   `_rollback_prepared`; `_dispatch_batch_foreground` merges `output_files`,
-   `turn_count`, failures and `extras["status"] = completed | partial`.
+7. Multiple tasks require separate tool calls; independent calls can run in
+   parallel, but each call returns only its own singular `session_id` extras.
 
 ## 4. What to review (invariants a correct `subagent` call must keep)
-- **One run per session id**: claim before any prompt, release in `finally`; a
-  duplicate resume id in one batch must be rejected by `_check_batch_shape`.
+- **One run per session id**: claim before any prompt and release in `finally`;
+  concurrent calls targeting the same id must fail fast.
 - **Never prompt a closed session**: `_session_is_closed` must stay
   duck-typed (`getattr(session, "_closed", False) is True`).
 - **No orphan on preparation errors**: prompt resolution precedes session
-  creation, and rollback/abandon only close sessions created here
+  creation, and abandonment only closes sessions created here
   (`is_reused is False`).
-- **Failures still report**: a failed run returns its `session_id` and
-  `output_files`; all-failed batches return `ToolError` with extras.
+- **Failures still report**: a failed run returns its singular `session_id` and
+  `output_file` in extras.
 - **Output is file-only**: `_output_file_name` flattens ids to
   `[A-Za-z0-9._-]` and caps length, so path traversal stays impossible.
 - **Store must not resurrect a closed session**: `was_closed` and the
@@ -2746,13 +2744,13 @@ parent context; the parent only sees the tool result plus the file path.
   out-of-band file path (`{tool_pairing}`); do not stream the transcript inline.'''
     verify = f'''- Reproduce the identity/wiring surface:
   `{ctx.python_path} -c "from kimi_cli.tools.subagent import Agent, _claim_session_run, SubAgentParams; print(Agent.name, list(SubAgentParams.model_fields))"`.
-- Replay a batch with fake sessions and assert: claims released, child sessions
-  closed exactly once, `output_files` present on both success and failure.
-- Add a regression case to `{ctx.test('kimix', 'test_subagent_batch.py')}` or
+- Replay one call with a fake session and assert: exactly one prompt, claims
+  released, the child closed exactly once, and `output_file` in extras.
+- Add a regression case to `{ctx.test('kimix', 'test_subagent_dispatch.py')}` or
   `{ctx.test('kimix', 'test_subagent_interrupt_race.py')}`.
 - Run `uv run tools/syntax_check.py <file> [<file> ...]` on every edited Python
   file, then
-  `uv run pytest {ctx.test('kimix', 'test_subagent_batch.py')} {ctx.test('kimix', 'test_subagent_interrupt_race.py')} -x -q`.'''
+  `uv run pytest {ctx.test('kimix', 'test_subagent_dispatch.py')} {ctx.test('kimix', 'test_subagent_interrupt_race.py')} -x -q`.'''
     return _PromptBody(
         sections=sections,
         verify=verify,
@@ -2769,7 +2767,7 @@ def _prompt_list_agents(ctx: _ReflectionContext) -> _PromptBody:
     tests = ', '.join(
         str(path)
         for path in (
-            ctx.test('kimix', 'test_subagent_batch.py'),
+            ctx.test('kimix', 'test_subagent_dispatch.py'),
             ctx.test('kimix', 'test_subagent_interrupt_race.py'),
             ctx.test('kimix', 'test_agent_conversation.py'),
         )
@@ -2820,11 +2818,11 @@ discoverable so `subagent(session_id=...)` can continue them.
   store.'''
     verify = f'''- Reproduce the store view with a fake session:
   `{ctx.python_path} -c "from kimi_cli.tools.subagent import AgentList, AgentListParams; print(AgentList.name, list(AgentListParams.model_fields))"`.
-- Add a regression case to `{ctx.test('kimix', 'test_subagent_batch.py')}` that
+- Add a regression case to `{ctx.test('kimix', 'test_subagent_dispatch.py')}` that
   closes a session and asserts it disappears from the listing.
 - Run `uv run tools/syntax_check.py <file> [<file> ...]` on every edited Python
   file, then
-  `uv run pytest {ctx.test('kimix', 'test_subagent_batch.py')} -x -q`.'''
+  `uv run pytest {ctx.test('kimix', 'test_subagent_dispatch.py')} -x -q`.'''
     return _PromptBody(sections=sections, verify=verify)
 
 
