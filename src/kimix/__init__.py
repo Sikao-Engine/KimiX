@@ -22,7 +22,25 @@ from __future__ import annotations
 
 import importlib
 import sys
+import warnings
 from typing import Any
+
+# ``requests`` imports ``urllib3.contrib.socks`` at module import time (tiktoken
+# and trafilatura pull ``requests`` in), and urllib3 2.x warns
+# ``DependencyWarning: SOCKS support in urllib3 requires the installation of
+# optional dependencies: specifically, PySocks`` whenever PySocks is absent.
+# PySocks is a declared dependency ("pysocks" in pyproject.toml); this filter only
+# silences the fallback case (e.g. an environment installed with an older
+# kimi-cli-x, or a pip run that could not fetch PySocks) so it cannot pollute the
+# CLI output.  ``python -W default`` still shows it.
+warnings.filterwarnings(
+    "ignore",
+    message=(
+        r"SOCKS support in urllib3 requires the installation of optional "
+        r"dependencies.*"
+    ),
+    category=Warning,
+)
 
 # ---------------------------------------------------------------------------
 # Static export map: historical name -> module that provides it.

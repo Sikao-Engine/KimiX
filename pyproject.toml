@@ -23,6 +23,12 @@ dependencies = [
     "fastapi>=0.133.1",
     "uvicorn>=0.41.0",
     "httpx>=0.28.1",
+    # urllib3's SOCKS support (imported by ``requests``, which tiktoken /
+    # trafilatura pull in) warns "SOCKS support in urllib3 requires the
+    # installation of optional dependencies: specifically, PySocks" on every
+    # import when PySocks is missing.  Declaring it keeps runtime output clean
+    # and makes ``socks5://`` proxies work for requests-based code paths.
+    "pysocks>=1.7.1",
     "orjson>=3.11.9",
     "pydantic>=2.13.4",
     "opencc-python-reimplemented>=0.1.7",

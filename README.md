@@ -10,6 +10,19 @@ python install.py
 
 `install.py` handles the whole setup: dependency sync, native runtime download, and tool registration. On Windows it also makes sure PowerShell 7.x (`pwsh`) is available — via `winget`, or by unpacking the latest GitHub release into `~/.kimi/bin`.
 
+If `uv sync` cannot reach a package index (a mirror answers `403 Forbidden`, or
+`pypi.org` aborts the TLS handshake), the installer probes the well-known PyPI
+endpoints and retries the sync/tool install against every reachable one, then
+falls back to a lock-only and finally a cache-only sync. Override it when you
+know which index works in your network:
+
+```bash
+python install.py --index-url https://pypi.tuna.tsinghua.edu.cn/simple  # alias: --mirror
+python install.py --offline                 # reuse the uv cache, no network
+python install.py --insecure-host mirrors.aliyun.com  # corporate MITM proxy
+python install.py --no-index-fallback       # never probe/retry other mirrors
+```
+
 > **Note:** This repo supports not only KIMI LLM but also various API keys! Like OpenAI, Anthropic, etc. Default config templates are in `docs/`; use `kimix --config=xx.json` after setup.
 
 ![teasor](kimix_en.png)

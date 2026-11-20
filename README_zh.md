@@ -8,6 +8,15 @@ python install.py
 
 `install.py` 会完成全部安装流程：同步依赖、下载原生运行时、注册命令行工具等。在 Windows 上还会检查 PowerShell 7.x（`pwsh`）：优先通过 `winget` 安装，失败则下载 GitHub 最新版并解压到 `~/.kimi/bin`。
 
+如果 `uv sync` 无法访问包索引（镜像返回 `403 Forbidden`，或 `pypi.org` 的 TLS 握手被中断），安装脚本会自动探测常用的 PyPI 镜像，并依次用可用索引重试依赖同步与工具安装，最后还会退回到仅用 lock 文件、以及仅用本地缓存的同步方式。如果你知道自己网络下哪个索引可用，可以直接指定：
+
+```bash
+python install.py --index-url https://pypi.tuna.tsinghua.edu.cn/simple  # 别名: --mirror
+python install.py --offline                 # 只用 uv 本地缓存，不联网
+python install.py --insecure-host mirrors.aliyun.com  # 公司 MITM 代理环境
+python install.py --no-index-fallback       # 不探测/重试其他镜像
+```
+
 注意！这个仓库不止支持 KIMI LLM，支持各类 API Key! 如 OpenAI, Anthropic 等。各类默认 config 模板在 `docs/`, 配置后通过 `kimix --config=xx.json` 即可使用 !
 
 ![teasor](kimix_zh.png)

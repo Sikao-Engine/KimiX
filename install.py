@@ -16,7 +16,10 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import NamedTuple
 
 
 def _get_rg_version() -> str:
@@ -89,10 +92,20 @@ def _ask_yes_no(prompt: str, default: bool = True) -> bool:
     return answer in ("y", "yes")
 
 
-def run_command(cmd: list[str], description: str) -> bool:
+def run_command(
+    cmd: list[str],
+    description: str,
+    env: dict[str, str] | None = None,
+) -> bool:
+    """Run *cmd*, returning True on exit code 0.
+
+    *env* replaces the child environment (pass ``None`` to inherit).  The
+    installer uses it to strip index overrides or to request the OS certificate
+    store for a single retry without mutating ``os.environ``.
+    """
     print(f"\n▶ {description} ...")
     try:
-        result = subprocess.run(cmd, check=False)
+        result = subprocess.run(cmd, check=False, env=env)
         if result.returncode != 0:
             print(f"\n❌ Command failed: {' '.join(cmd)}")
             return False
@@ -101,8 +114,7 @@ def run_command(cmd: list[str], description: str) -> bool:
     except Exception as e:
         print(f"\n❌ Error running command: {' '.join(cmd)}")
         print(f"   Details: {e}")
-    except (subprocess.TimeoutExpired, OSError, ValueError):
-        return None
+        return False
 
 
 def _install_coreutils() -> tuple[bool, bool]:
@@ -327,12 +339,272 @@ def _install_rtk() -> tuple[bool, bool]:
         return False, False
 
 
-def _install_uv() -> bool:
+# ---------------------------------------------------------------------------
+# Package-index fallbacks (PyPI mirrors) for uv / pip
+# ---------------------------------------------------------------------------
+# Every network step of the installer (``uv sync``, ``uv tool install`` and the
+# ``pip install uv`` bootstrap) needs a reachable PyPI index.  The project
+# declares ``mirrors.aliyun.com`` as its default index, and real installs fail
+# when that mirror answers ``403 Forbidden`` (throttling / region rules) or when
+# ``pypi.org`` aborts the TLS handshake behind a filtering proxy — the exact
+# errors reported by users.  Instead of failing the whole install, the installer
+# probes the well-known PyPI endpoints over HTTP and retries the command against
+# every reachable one, then falls back to a resolve-free (``--frozen``) and
+# finally a cache-only (``--offline``) sync.
+_UV_PYPI_INDEX = "https://pypi.org/simple"
+_INDEX_PROBE_TIMEOUT = 6.0
+# How many mirrors a single fallback stage will try before giving up (keeps the
+# worst case — every index broken — under a couple of minutes).
+_MAX_INDEX_FALLBACKS = 4
+
+# (display name, simple-index URL); the declared order is the fallback order.
+# Official PyPI comes first (most complete), then the mirrors most used in the
+# networks where pypi.org is filtered.
+_UV_INDEX_MIRRORS: tuple[tuple[str, str], ...] = (
+    ("PyPI", _UV_PYPI_INDEX),
+    ("Tsinghua TUNA", "https://pypi.tuna.tsinghua.edu.cn/simple"),
+    ("USTC", "https://mirrors.ustc.edu.cn/pypi/simple"),
+    ("Tencent Cloud", "https://mirrors.cloud.tencent.com/pypi/simple"),
+    ("Huawei Cloud", "https://repo.huaweicloud.com/repository/pypi/simple"),
+    ("BFSU", "https://mirrors.bfsu.edu.cn/pypi/web/simple"),
+    ("Aliyun", "https://mirrors.aliyun.com/pypi/simple"),
+    ("Douban", "https://pypi.doubanio.com/simple"),
+)
+
+# Environment variables that would otherwise override or duplicate an index
+# passed explicitly by the installer.
+_UV_INDEX_ENV_VARS = (
+    "UV_INDEX",
+    "UV_INDEX_URL",
+    "UV_DEFAULT_INDEX",
+    "UV_EXTRA_INDEX_URL",
+)
+
+# Hosts the user explicitly allowed to skip TLS verification (``--insecure-host``);
+# applied to uv (``--allow-insecure-host``) and pip (``--trusted-host``).
+_INSECURE_HOSTS: list[str] = []
+
+# Cached reachability probe result (None = not probed yet in this process).
+_INDEX_PROBE_CACHE: list[tuple[str, str]] | None = None
+
+
+class _UvAttempt(NamedTuple):
+    """One ``uv`` command line tried by the installer."""
+
+    description: str
+    args: list[str]
+    clear_index_env: bool = False
+    system_certs: bool = False
+    index_ref: tuple[str, str] | None = None
+
+
+def _normalize_index(url: str) -> str:
+    """Return a comparable form of an index URL (trailing slash / case blind)."""
+    return url.strip().rstrip("/").lower()
+
+
+def _uv_insecure_args() -> list[str]:
+    """Return ``--allow-insecure-host`` flags for the user-provided hosts."""
+    args: list[str] = []
+    for host in _INSECURE_HOSTS:
+        args.extend(["--allow-insecure-host", host])
+    return args
+
+
+def _run_env(*, clear_index_env: bool = False, system_certs: bool = False) -> dict[str, str]:
+    """Return the child environment for a ``uv`` / ``pip`` invocation.
+
+    *clear_index_env* drops the ``UV_*`` index variables so the index passed on
+    the command line is the only candidate.  *system_certs* asks uv to trust the
+    OS certificate store instead of its bundled webpki roots — required behind
+    corporate TLS-interception proxies, where the bundled roots do not match.
+    Both spellings (``UV_SYSTEM_CERTS`` / the older ``UV_NATIVE_TLS``) are set so
+    every uv vintage honours the request.
+    """
+    env = dict(os.environ)
+    if system_certs:
+        env["UV_SYSTEM_CERTS"] = "1"
+        env["UV_NATIVE_TLS"] = "1"
+    if clear_index_env:
+        for name in _UV_INDEX_ENV_VARS:
+            env.pop(name, None)
+    return env
+
+
+def _index_probe_url(index_url: str) -> str:
+    """Return the URL used to probe *index_url*."""
+    return index_url.rstrip("/") + "/pip/"
+
+
+def _probe_index(index_url: str, timeout: float = _INDEX_PROBE_TIMEOUT) -> bool:
+    """Return True when *index_url* is reachable over the network.
+
+    The probe answers "can this host be talked to at all?" — DNS, TCP and TLS
+    must work.  HTTP status codes are deliberately not interpreted strictly:
+    mirrors throttle the probe path (aliyun answers ``403`` to some clients while
+    serving uv fine), so any status below 500 still proves the route works.
+    Server errors (5xx) mean the index itself is broken, and connection-level
+    failures (TLS handshake aborts, timeouts, DNS errors) mean it is unreachable.
+    """
+    url = _index_probe_url(index_url)
+    headers = {"User-Agent": "kimi-agent-install/1.0"}
+    for method in ("HEAD", "GET"):
+        try:
+            request = urllib.request.Request(url, headers=headers, method=method)
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                status = int(getattr(response, "status", 0) or response.getcode() or 0)
+                return status < 500
+        except urllib.error.HTTPError as exc:
+            # The host answered, so TCP/TLS work; only a 5xx means it is broken.
+            return exc.code < 500
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            # Some mirrors drop ``HEAD``: retry once with ``GET`` before writing
+            # the index off.
+            continue
+    return False
+
+
+def _probe_indexes(
+    candidates: Sequence[tuple[str, str]] | None = None,
+    timeout: float = _INDEX_PROBE_TIMEOUT,
+) -> list[tuple[str, str]]:
+    """Probe *candidates* concurrently, returning the reachable ones in order."""
+    pool_candidates = list(_UV_INDEX_MIRRORS if candidates is None else candidates)
+    if not pool_candidates:
+        return []
+
+    results: dict[str, bool] = {}
+    with ThreadPoolExecutor(max_workers=min(8, len(pool_candidates))) as executor:
+        futures = {
+            executor.submit(_probe_index, url, timeout): url for _, url in pool_candidates
+        }
+        for future in as_completed(futures):
+            url = futures[future]
+            try:
+                results[url] = bool(future.result())
+            except Exception:  # pragma: no cover - a probe must never break install
+                results[url] = False
+    return [(name, url) for name, url in pool_candidates if results.get(url)]
+
+
+def _reachable_indexes(
+    *,
+    refresh: bool = False,
+    candidates: Sequence[tuple[str, str]] | None = None,
+) -> list[tuple[str, str]]:
+    """Return the reachable PyPI endpoints, probing at most once per run."""
+    global _INDEX_PROBE_CACHE
+    if _INDEX_PROBE_CACHE is None or refresh:
+        pending = list(_UV_INDEX_MIRRORS if candidates is None else candidates)
+        print("🔎 Probing package indexes: " + ", ".join(name for name, _ in pending))
+        _INDEX_PROBE_CACHE = _probe_indexes(candidates)
+        if _INDEX_PROBE_CACHE:
+            print("   ✅ Reachable: " + ", ".join(name for name, _ in _INDEX_PROBE_CACHE))
+        else:
+            print("   ⚠️  No package index answered the reachability probe.")
+    return list(_INDEX_PROBE_CACHE)
+
+
+def _reset_index_probe_cache() -> None:
+    """Forget the probe result (used by tests and by ``--index-url`` runs)."""
+    global _INDEX_PROBE_CACHE
+    _INDEX_PROBE_CACHE = None
+
+
+def _print_index_hint(index: tuple[str, str]) -> None:
+    """Tell the user which mirror rescued the install and how to pin it."""
+    name, url = index
+    shown = url if name == url else f"{name} ({url})"
+    print(f"\n💡 Dependencies were resolved through {shown}.")
+    print("   If your default index keeps failing, pin this one:")
+    print(f"     uv sync --default-index {url}")
+    print(f"     UV_DEFAULT_INDEX={url}")
+
+
+def _print_index_troubleshooting() -> None:
+    """Print the actionable summary shown when every index attempt failed."""
+    mirrors = "\n".join(
+        f"        python install.py --index-url {url}   # {name}"
+        for name, url in _UV_INDEX_MIRRORS[1:4]
+    )
+    print(
+        "\n❌ Every package-index attempt failed.\n"
+        "   The machine cannot reach a PyPI index (or a proxy is intercepting TLS).\n"
+        "   Things to try, in order:\n"
+        "   1. Pick a mirror that works in your network:\n"
+        f"{mirrors}\n"
+        "   2. Behind a proxy: set HTTPS_PROXY / HTTP_PROXY and NO_PROXY for internal\n"
+        "      hosts (PowerShell: $env:HTTPS_PROXY=\"http://host:port\").\n"
+        "   3. Corporate TLS interception: re-run with --insecure-host <mirror-host>\n"
+        "      (or run `uv sync --system-certs` manually).\n"
+        "   4. Already synced once: python install.py --offline (uses the uv cache only).\n"
+        "   5. Skip mirror probing: python install.py --no-index-fallback\n"
+    )
+
+
+def _pip_preamble_candidates() -> list[list[str]]:
+    """Return the pip command lines to try, most specific first."""
+    candidates: list[list[str]] = [[sys.executable, "-m", "pip"]]
+    for name in ("pip3", "pip"):
+        # Skip pip executables that are not on PATH (sys.executable always exists).
+        if shutil.which(name) is not None:
+            candidates.append([name])
+    return candidates
+
+
+def _pip_install_packages(
+    packages: Sequence[str],
+    description: str,
+    *,
+    index_url: str | None = None,
+    extra_args: Sequence[str] = (),
+    use_mirrors: bool = True,
+) -> bool:
+    """``pip install`` *packages*, retrying over the same mirrors as uv.
+
+    The TLS failures seen with ``pip install uv`` (``SSL: UNEXPECTED_EOF``)
+    happen before any uv code runs, so the bootstrap needs the same index
+    fallback as the sync itself.
+    """
+    indexes: list[tuple[str, str | None]] = []
+    if index_url:
+        indexes.append((f"index {index_url}", index_url))
+    indexes.append(("default index", None))
+    if use_mirrors:
+        for mirror_name, mirror_url in _reachable_indexes():
+            if index_url and _normalize_index(index_url) == _normalize_index(mirror_url):
+                continue
+            indexes.append((f"mirror {mirror_name}", mirror_url))
+            if len(indexes) >= _MAX_INDEX_FALLBACKS:
+                break
+
+    for index_name, candidate_url in indexes:
+        for preamble in _pip_preamble_candidates():
+            cmd = [
+                *preamble,
+                "install",
+                *packages,
+                "--timeout",
+                "30",
+                "--disable-pip-version-check",
+            ]
+            if candidate_url:
+                cmd += ["--index-url", candidate_url]
+            for host in _INSECURE_HOSTS:
+                cmd += ["--trusted-host", host]
+            cmd += list(extra_args)
+            if run_command(cmd, f"{description} ({index_name})"):
+                return True
+    return False
+
+
+def _install_uv(index_url: str | None = None, *, use_mirrors: bool = True) -> bool:
     """Ensure ``uv`` is available, installing it with pip if necessary.
 
     Detection order:
     1. ``uv`` already on PATH -> done.
-    2. ``<current python> -m pip install uv`` (falls back to ``pip3`` / ``pip``).
+    2. ``<current python> -m pip install uv`` (falls back to ``pip3`` / ``pip``),
+       retried against every reachable PyPI mirror.
     3. Re-check PATH after installation.
 
     Returns True if uv is (or became) available.
@@ -342,27 +614,12 @@ def _install_uv() -> bool:
 
     print("⚠️  'uv' is not installed. Trying 'pip install uv' ...")
 
-    candidates: list[list[str]] = [
-        [sys.executable, "-m", "pip", "install", "uv"],
-        ["pip3", "install", "uv"],
-        ["pip", "install", "uv"],
-    ]
-
-    installed = False
-    for cmd in candidates:
-        # Skip pip executables that are not on PATH (sys.executable always exists).
-        if cmd[0] != sys.executable and shutil.which(cmd[0]) is None:
-            continue
-        print(f"▶ Running: {' '.join(cmd)}")
-        try:
-            result = subprocess.run(cmd, check=False)
-        except (OSError, ValueError) as e:
-            print(f"   Could not run it: {e}")
-            continue
-        if result.returncode == 0:
-            installed = True
-            break
-        print(f"   Command failed (exit code {result.returncode}).")
+    installed = _pip_install_packages(
+        ["uv"],
+        "Installing uv with pip",
+        index_url=index_url,
+        use_mirrors=use_mirrors,
+    )
 
     if not installed:
         print(
@@ -1721,17 +1978,15 @@ def _force_remove_kimix_executable(bin_dir: Path | None = None) -> bool:
     return not remaining
 
 
-def _sync_dependencies_with_uv() -> bool:
-    """Sync dependencies, recreating stale Windows venv scripts on failure."""
-    command = ["uv", "sync"]
-    if run_command(command, "Syncing dependencies with uv"):
-        return True
+def _repair_stale_venv_scripts(project_dir: Path) -> None:
+    """Drop venv scripts left behind by a since-removed interpreter.
 
-    # A venv created by a since-removed Python installation retains the old
-    # interpreter path in pyvenv.cfg.  uv then fails while querying the venv
-    # before it can repair it.  Removing only Scripts lets uv rebuild the venv
-    # without unnecessarily discarding the rest of the project environment.
-    scripts_dir = Path(__file__).resolve().parent / ".venv" / "Scripts"
+    A venv created by a since-removed Python installation retains the old
+    interpreter path in pyvenv.cfg.  uv then fails while querying the venv
+    before it can repair it.  Removing only Scripts lets uv rebuild the venv
+    without unnecessarily discarding the rest of the project environment.
+    """
+    scripts_dir = project_dir / ".venv" / "Scripts"
     print(f"\n⚠️  uv sync failed. Removing stale virtual environment scripts: {scripts_dir}")
     try:
         shutil.rmtree(scripts_dir)
@@ -1741,21 +1996,234 @@ def _sync_dependencies_with_uv() -> bool:
     except OSError as exc:
         print(f"⚠️  Could not remove {scripts_dir}: {exc}")
 
-    return run_command(command, "Retrying dependency sync with uv")
+
+def _uv_sync_index_attempts(
+    *,
+    index_url: str | None = None,
+    reachable: Sequence[tuple[str, str]] = (),
+) -> list[_UvAttempt]:
+    """Post-repair ``uv sync`` attempts: the default index, then every mirror."""
+    attempts: list[_UvAttempt] = []
+    insecure = _uv_insecure_args()
+
+    def add(
+        description: str,
+        extra: Sequence[str],
+        *,
+        clear_index_env: bool = False,
+        index_ref: tuple[str, str] | None = None,
+    ) -> None:
+        attempts.append(
+            _UvAttempt(
+                description,
+                ["uv", "sync", *extra, *insecure],
+                clear_index_env,
+                False,
+                index_ref,
+            )
+        )
+
+    add("Retrying dependency sync with uv", [])
+    if index_url:
+        add(
+            f"Retrying dependency sync with uv (index: {index_url})",
+            ["--default-index", index_url],
+            clear_index_env=True,
+            index_ref=(index_url, index_url),
+        )
+    seen = {_normalize_index(url) for url in ([index_url] if index_url else [])}
+    for name, url in list(reachable)[:_MAX_INDEX_FALLBACKS]:
+        if _normalize_index(url) in seen:
+            continue
+        seen.add(_normalize_index(url))
+        add(
+            f"Retrying dependency sync with uv (mirror: {name})",
+            ["--default-index", url],
+            clear_index_env=True,
+            index_ref=(name, url),
+        )
+    return attempts
 
 
-def _install_tool_with_uv() -> bool:
-    """Install the editable tool, refreshing a stale uv before one retry."""
-    command = ["uv", "tool", "install", "-e", "."]
-    if run_command(command, "Installing tool in editable mode"):
+def _uv_sync_recovery_attempts(
+    *,
+    reachable: Sequence[tuple[str, str]] = (),
+    lockfile_present: bool = False,
+) -> list[_UvAttempt]:
+    """Last-resort ``uv sync`` attempts: OS certs, lock-only, cache-only."""
+    attempts: list[_UvAttempt] = []
+    insecure = _uv_insecure_args()
+    seen: set[str] = set()
+    for name, url in list(reachable)[:_MAX_INDEX_FALLBACKS]:
+        if _normalize_index(url) in seen:
+            continue
+        seen.add(_normalize_index(url))
+        attempts.append(
+            _UvAttempt(
+                f"Retrying dependency sync with uv (mirror: {name}, OS certificate store)",
+                ["uv", "sync", "--default-index", url, *insecure],
+                True,
+                True,
+                (name, url),
+            )
+        )
+
+    if lockfile_present:
+        frozen_args = ["uv", "sync", "--frozen"]
+        frozen_index: tuple[str, str] | None = None
+        if reachable:
+            frozen_index = (reachable[0][0], reachable[0][1])
+            frozen_args += ["--default-index", reachable[0][1]]
+        attempts.append(
+            _UvAttempt(
+                "Retrying dependency sync with uv (lock file only, --frozen)",
+                [*frozen_args, *insecure],
+                bool(frozen_index),
+                False,
+                frozen_index,
+            )
+        )
+
+    attempts.append(
+        _UvAttempt(
+            "Retrying dependency sync with uv from the local cache (--offline)",
+            ["uv", "sync", "--offline", *insecure],
+        )
+    )
+    return attempts
+
+
+def _sync_dependencies_with_uv(
+    index_url: str | None = None,
+    *,
+    offline: bool = False,
+    use_mirrors: bool = True,
+) -> bool:
+    """Sync dependencies, retrying across package indexes and cache-only modes.
+
+    A plain ``uv sync`` (or the index the user passed) is always tried first so
+    a healthy network behaves exactly as before.  Only when that fails does the
+    installer repair the venv, probe the mirror list and retry against every
+    reachable endpoint — from some networks ``pypi.org`` aborts the TLS
+    handshake while every mirror works, and from others a single mirror answers
+    ``403 Forbidden`` while PyPI is fine.
+    """
+    insecure = _uv_insecure_args()
+    project_dir = Path(__file__).resolve().parent
+
+    if offline:
+        return run_command(
+            ["uv", "sync", "--offline", *insecure],
+            "Syncing dependencies with uv from the local cache (--offline)",
+            env=_run_env(),
+        )
+
+    if index_url and run_command(
+        ["uv", "sync", "--default-index", index_url, *insecure],
+        f"Syncing dependencies with uv (index: {index_url})",
+        env=_run_env(clear_index_env=True),
+    ):
         return True
 
-    print("\n⚠️  Tool installation failed. Reinstalling uv with pip before retrying ...")
-    reinstall_command = [sys.executable, "-m", "pip", "install", "--upgrade", "uv"]
-    if not run_command(reinstall_command, "Reinstalling uv with pip"):
+    if run_command(
+        ["uv", "sync", *insecure],
+        "Syncing dependencies with uv",
+        env=_run_env(),
+    ):
+        return True
+
+    _repair_stale_venv_scripts(project_dir)
+
+    reachable = _reachable_indexes() if use_mirrors else []
+    attempts = _uv_sync_index_attempts(index_url=index_url, reachable=reachable)
+    attempts += _uv_sync_recovery_attempts(
+        reachable=reachable,
+        lockfile_present=(project_dir / "uv.lock").is_file(),
+    )
+    for attempt in attempts:
+        if run_command(
+            attempt.args,
+            attempt.description,
+            env=_run_env(
+                clear_index_env=attempt.clear_index_env,
+                system_certs=attempt.system_certs,
+            ),
+        ):
+            if attempt.index_ref:
+                _print_index_hint(attempt.index_ref)
+            return True
+
+    _print_index_troubleshooting()
+    return False
+
+
+def _install_tool_with_uv(
+    index_url: str | None = None,
+    *,
+    offline: bool = False,
+    use_mirrors: bool = True,
+) -> bool:
+    """Install the editable tool, retrying across package indexes.
+
+    The retry order mirrors ``_sync_dependencies_with_uv``: the configured index
+    first, then every reachable mirror, then the uv cache; a stale uv is only
+    reinstalled with pip after all network attempts failed.
+    """
+    insecure = _uv_insecure_args()
+    command = ["uv", "tool", "install", "-e", ".", *insecure]
+
+    if offline:
+        ok = run_command(
+            [*command, "--offline"],
+            "Installing tool in editable mode from the local cache (--offline)",
+            env=_run_env(),
+        )
+        if not ok:
+            print("\n💔 The tool could not be installed from the uv cache.")
+        return ok
+
+    if index_url and run_command(
+        [*command, "--default-index", index_url],
+        f"Installing tool in editable mode (index: {index_url})",
+        env=_run_env(clear_index_env=True),
+    ):
+        return True
+
+    if run_command(command, "Installing tool in editable mode", env=_run_env()):
+        return True
+
+    reachable = _reachable_indexes() if use_mirrors else []
+    for name, url in reachable:
+        if index_url and _normalize_index(index_url) == _normalize_index(url):
+            continue
+        if run_command(
+            [*command, "--default-index", url],
+            f"Installing tool in editable mode (mirror: {name})",
+            env=_run_env(clear_index_env=True),
+        ):
+            _print_index_hint((name, url))
+            return True
+
+    if run_command(
+        [*command, "--offline"],
+        "Installing tool in editable mode from the local cache (--offline)",
+        env=_run_env(),
+    ):
+        return True
+
+    print(
+        "\n⚠️  Tool installation failed on every package index. "
+        "Reinstalling uv with pip before retrying ..."
+    )
+    if not _pip_install_packages(
+        ["--upgrade", "uv"],
+        "Reinstalling uv with pip",
+        index_url=index_url,
+        use_mirrors=use_mirrors,
+    ):
         return False
 
-    return run_command(command, "Retrying tool installation in editable mode")
+    return run_command(command, "Retrying tool installation in editable mode", env=_run_env())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1771,10 +2239,54 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Automatically answer 'yes' to all prompts.",
     )
+    parser.add_argument(
+        "--index-url",
+        "--mirror",
+        dest="index_url",
+        metavar="URL",
+        default=None,
+        help=(
+            "Prefer this PyPI-compatible index, e.g. "
+            "https://pypi.tuna.tsinghua.edu.cn/simple (alias: --mirror). "
+            "The other mirrors are still tried when it fails."
+        ),
+    )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Sync/install from the local uv cache only (no network access).",
+    )
+    parser.add_argument(
+        "--no-index-fallback",
+        dest="no_index_fallback",
+        action="store_true",
+        help="Do not probe or retry alternative PyPI mirrors when an index fails.",
+    )
+    parser.add_argument(
+        "--insecure-host",
+        dest="insecure_hosts",
+        action="append",
+        default=[],
+        metavar="HOST",
+        help=(
+            "Allow TLS verification to be skipped for HOST (uv: "
+            "--allow-insecure-host, pip: --trusted-host). Repeatable. Use it for "
+            "corporate MITM proxies whose CA uv does not trust."
+        ),
+    )
     args = parser.parse_args(argv)
     if args.yes:
         _ASSUME_YES = True
         print("🟢 '-y' detected: automatically accepting all prompts.")
+    if args.insecure_hosts:
+        _INSECURE_HOSTS.extend(args.insecure_hosts)
+        print(f"🔓 TLS verification disabled for host(s): {', '.join(args.insecure_hosts)}")
+    if args.index_url:
+        print(f"🧭 Preferring package index: {args.index_url}")
+    if args.offline:
+        print("📴 Offline mode: only the local uv/pip cache will be used.")
+
+    use_mirrors = not args.no_index_fallback
 
     # 1. Check if python or uv exists
     has_python = command_exists("python") or command_exists("python3")
@@ -1789,7 +2301,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if not has_uv:
-        has_uv = _install_uv()
+        if args.offline:
+            print(
+                "⚠️  Offline mode was requested but uv is missing; "
+                "it can only be installed from the network or a local wheel."
+            )
+        has_uv = _install_uv(args.index_url, use_mirrors=use_mirrors)
 
     if not has_uv:
         print(
@@ -1824,10 +2341,16 @@ def main(argv: list[str] | None = None) -> int:
 
     # 3. Run uv sync
     if _ask_yes_no("Sync dependencies with uv?"):
-        if not _sync_dependencies_with_uv():
+        if not _sync_dependencies_with_uv(
+            args.index_url,
+            offline=args.offline,
+            use_mirrors=use_mirrors,
+        ):
             print(
                 "\n💔 Oops! Something went wrong while syncing dependencies.\n"
                 "   Please check the error messages above and try again.\n"
+                "   If your network blocks PyPI, retry with a mirror:\n"
+                "     python install.py --index-url https://pypi.tuna.tsinghua.edu.cn/simple\n"
                 "   If the issue persists, you may need to install dependencies manually."
             )
             return 1
@@ -1854,7 +2377,11 @@ def main(argv: list[str] | None = None) -> int:
                 "   close every kimix process and re-run, or use "
                 "`uv tool install -e . --force`."
             )
-        if not _install_tool_with_uv():
+        if not _install_tool_with_uv(
+            args.index_url,
+            offline=args.offline,
+            use_mirrors=use_mirrors,
+        ):
             print(
                 "\n💔 Oops! Something went wrong while installing the tool.\n"
                 "   Please check the error messages above and try again.\n"
