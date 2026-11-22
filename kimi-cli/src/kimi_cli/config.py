@@ -628,6 +628,10 @@ class Config(BaseModel):
     )
     default_thinking: bool = Field(default=False, description="Default thinking mode")
     default_yolo: bool = Field(default=False, description="Default yolo (auto-approve) mode")
+    subagent: bool = Field(
+        default=True,
+        description="Whether subagent tools are enabled for this session",
+    )
     default_editor: str = Field(
         default="",
         description="Default external editor command (e.g. 'vim', 'code --wait')",

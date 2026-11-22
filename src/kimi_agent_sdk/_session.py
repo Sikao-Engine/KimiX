@@ -174,14 +174,22 @@ def _sdk_sessions_dir(work_dir: KaosPath) -> Path:
     return Path(str(work_dir)) / KIMIX_CACHE_DIR_NAME
 
 
-def _make_custom_config(config_json: dict[str, Any] | None) -> dict[str, Any]:
-    """Build the session's ``custom_config`` from an explicitly provided dict.
+def _make_custom_config(
+    config_json: dict[str, Any] | None,
+    config: Config | Path | None = None,
+) -> dict[str, Any]:
+    """Build the session's ``custom_config`` from its explicit configuration.
 
     The config dict is parsed by the caller (see
     :func:`kimix.utils.config.load_config_json`) and wrapped under the
-    ``config_json`` key, matching the shape tools expect.
+    ``config_json`` key, matching the shape tools expect.  A typed ``Config``
+    supplies defaults for session-scoped tool options without mutating the
+    caller's cached JSON dictionary.
     """
-    return {"config_json": config_json if isinstance(config_json, dict) else {}}
+    resolved = config_json if isinstance(config_json, dict) else {}
+    if isinstance(config, Config) and "subagent" not in resolved:
+        resolved = {**resolved, "subagent": config.subagent}
+    return {"config_json": resolved}
 
 
 async def _start_configured_servers(
@@ -722,7 +730,7 @@ class Session:
         cli_session = await CliSession.create(
             work_dir_path, session_id, _sessions_dir=_sdk_sessions_dir(work_dir_path)
         )
-        custom_config = _make_custom_config(config_json)
+        custom_config = _make_custom_config(config_json, config)
         cli_session.custom_config = custom_config
         llm: LLM | None = None
         chat_provider: ChatProvider | None = custom_arguments.pop("chat_provider", None)
@@ -836,7 +844,7 @@ class Session:
             cli_session = await CliSession.find(work_dir, session_id, _sessions_dir=sessions_dir)
         if cli_session is None:
             return None
-        custom_config = _make_custom_config(config_json)
+        custom_config = _make_custom_config(config_json, config)
         cli_session.custom_config = custom_config
         llm: LLM | None = None
         chat_provider: ChatProvider | None = custom_arguments.pop("chat_provider", None)

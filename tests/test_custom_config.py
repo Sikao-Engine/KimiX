@@ -502,6 +502,58 @@ class TestSessionConfigLoading:
             "config_json": {"forbidden_commands": ["rm"]}
         }
 
+    async def test_create_passes_typed_subagent_option_to_tools(
+        self, tmp_path: Path, mock_cli_setup: MagicMock
+    ) -> None:
+        from kimi_cli.config import Config
+
+        config_json = {"protected_write_paths": ["secret"]}
+        sdk_session = await Session.create(
+            work_dir=KaosPath(str(tmp_path)),
+            config=Config(subagent=False),
+            config_json=config_json,
+        )
+
+        assert sdk_session._cli.session.custom_config == {
+            "config_json": {
+                "protected_write_paths": ["secret"],
+                "subagent": False,
+            }
+        }
+        assert config_json == {"protected_write_paths": ["secret"]}
+
+    async def test_resume_passes_typed_subagent_option_to_tools(
+        self, tmp_path: Path, mock_cli_setup: MagicMock
+    ) -> None:
+        from kimi_cli.config import Config
+
+        sdk_session = await Session.resume(
+            work_dir=KaosPath(str(tmp_path)),
+            session_id="test-id",
+            config=Config(subagent=False),
+            config_json={},
+        )
+
+        assert sdk_session is not None
+        assert sdk_session._cli.session.custom_config == {
+            "config_json": {"subagent": False}
+        }
+
+    async def test_explicit_json_subagent_option_wins_over_typed_default(
+        self, tmp_path: Path, mock_cli_setup: MagicMock
+    ) -> None:
+        from kimi_cli.config import Config
+
+        sdk_session = await Session.create(
+            work_dir=KaosPath(str(tmp_path)),
+            config=Config(subagent=False),
+            config_json={"subagent": True},
+        )
+
+        assert sdk_session._cli.session.custom_config == {
+            "config_json": {"subagent": True}
+        }
+
     async def test_create_rejects_non_dict_config_json(
         self, tmp_path: Path, mock_cli_setup: MagicMock
     ) -> None:

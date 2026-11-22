@@ -47,6 +47,7 @@ Available commands:
   {colorful_text('/txt', fg=Color.YELLOW)} - Input multiple line text
   {colorful_text('/init', fg=Color.YELLOW)} - Initialize default LLM config
   {colorful_text('/compact', fg=Color.YELLOW)} - Compact conversation context
+  {colorful_text('/subagent:<on|off>', fg=Color.YELLOW)} - Enable or disable subagent tools in this session
   {colorful_text('/continue', fg=Color.YELLOW)} - Let the agent continue its unfinished work in the current session
   {colorful_text('/export:<path>', fg=Color.YELLOW)}  - Export session messages to file
   {colorful_text('/resume:<id>', fg=Color.YELLOW)} - Close current session and resume a session by ID

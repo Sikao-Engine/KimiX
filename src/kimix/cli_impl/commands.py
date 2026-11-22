@@ -82,6 +82,44 @@ def _cmd_compact(task_split: list[str], text_arr: list[str]) -> tuple[None, bool
     compact_default_context()
     return None, False
 
+
+def _cmd_subagent(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
+    """Enable or disable subagent tools in the current session."""
+    if len(task_split) != 2 or task_split[1].strip().lower() not in ('on', 'off'):
+        print_error('Command must be /subagent:on or /subagent:off')
+        return None, False
+    session = get_default_session()
+    if session is None:
+        print_error('No active session. Start a conversation first.')
+        return None, False
+
+    enabled = task_split[1].strip().lower() == 'on'
+    try:
+        custom_config = session.get_custom_config()
+        if custom_config is None:
+            raise RuntimeError('Session configuration is unavailable')
+        config_json = custom_config.get('config_json')
+        if not isinstance(config_json, dict):
+            config_json = {}
+            custom_config['config_json'] = config_json
+        config_json['subagent'] = enabled
+
+        runtime_config = session._cli.soul.agent.runtime.config
+        runtime_config.subagent = enabled
+        # Preserve the session-local override across subsequent restarts too.
+        session._create_kwargs['config'] = runtime_config
+        # Constructors gate these tools, so reload the toolset without losing
+        # the current conversation or persisted session state.
+        run_on_event_loop(session._restart())
+    except Exception as e:
+        print_error(f'Failed to update subagent tools: {e}')
+        return None, False
+
+    state = 'enabled' if enabled else 'disabled'
+    print_success(f'Subagent tools {state} for this session.')
+    return None, False
+
+
 def _cmd_export(task_split: list[str], text_arr: list[str]) -> tuple[None, bool]:
     session = get_default_session()
     if session is None:
@@ -3517,6 +3555,7 @@ _command_map = {
     'file': _cmd_file,
     'plan': _cmd_plan,
     'compact': _cmd_compact,
+    'subagent': _cmd_subagent,
     'continue': _cmd_continue,
     'export': _cmd_export,
     'resume': _cmd_resume,

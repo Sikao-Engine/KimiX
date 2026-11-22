@@ -12,7 +12,9 @@ import orjson
 from pydantic import AliasChoices, BaseModel, Field
 
 from kaos.path import KaosPath
+from kimi_cli.config import Config
 from kimi_cli.session import Session
+from kimi_cli.tools import SkipThisTool
 from kimi_cli.tools.common import _create_script_file, _display_temp_path
 from kimi_cli.tools.prompt_common import accepts_alias_text
 
@@ -629,6 +631,21 @@ _WEAKER_PROVIDER_NOTE = (
 )
 
 
+def _skip_if_subagent_disabled(session: Session, config: Config | None) -> None:
+    """Skip every subagent tool when disabled for this session.
+
+    Workspace JSON takes precedence over the typed CLI config.  Missing values
+    preserve the historical default of enabling subagents.
+    """
+    custom_config = getattr(session, "custom_config", None) or {}
+    config_json = custom_config.get("config_json", {})
+    if not isinstance(config_json, dict):
+        config_json = {}
+    default_enabled = config.subagent if config is not None else True
+    if config_json.get("subagent", default_enabled) is False:
+        raise SkipThisTool()
+
+
 class Agent(CallableTool2):
     name: str = "subagent"
     description: str = (
@@ -650,8 +667,9 @@ class Agent(CallableTool2):
     )
     params: type[SubAgentParams] = SubAgentParams
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, config: Config | None = None):
         super().__init__()
+        _skip_if_subagent_disabled(session, config)
         self._session = session
         self._semaphore = asyncio.Semaphore(8)
         # Pristine definition (the class description) plus, once the config says
@@ -1206,8 +1224,9 @@ class AgentList(CallableTool2):
     )
     params: type[BaseModel] = AgentListParams
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, config: Config | None = None):
         super().__init__()
+        _skip_if_subagent_disabled(session, config)
         self._session = session
 
     async def __call__(self, params: AgentListParams) -> ToolReturnValue:
@@ -1242,8 +1261,9 @@ class AgentClose(CallableTool2):
     )
     params: type[BaseModel] = AgentCloseParams
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, config: Config | None = None):
         super().__init__()
+        _skip_if_subagent_disabled(session, config)
         self._session = session
 
     async def __call__(self, params: AgentCloseParams) -> ToolReturnValue:
