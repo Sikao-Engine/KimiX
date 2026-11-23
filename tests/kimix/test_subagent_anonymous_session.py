@@ -242,9 +242,8 @@ async def test_subagent_session_dir_removed_while_a_file_is_locked(
 ) -> None:
     """Integration: a file still held at close time does not leak the dir.
 
-    Windows scenario the SDK has to absorb: the session's ``context.db`` is
-    still locked (aiosqlite worker thread winding down, anti-virus scan, a tool
-    that has not released the file). ``shutil.rmtree(..., ignore_errors=True)``
+    Windows scenario the SDK has to absorb: the session's ``context.jsonl`` is
+still locked (an anti-virus scan or a tool that has not released the file).
     then fails silently and, before the SDK retried/escalated, the whole
     sub-agent directory — plus its half-deleted contents — stayed behind.
     """
@@ -256,7 +255,7 @@ async def test_subagent_session_dir_removed_while_a_file_is_locked(
 
     async def create_and_lock(**kwargs: Any) -> Any:
         session = await real_create_session(**kwargs)
-        locked = _cache_dir(parent_session.work_dir, kwargs["session_id"]) / "context.db"
+        locked = _cache_dir(parent_session.work_dir, kwargs["session_id"]) / "context.jsonl"
         handle = open(locked, "rb")  # no FILE_SHARE_DELETE on Windows
         handles.append(handle)
         threading.Timer(0.3, handle.close).start()

@@ -699,8 +699,7 @@ class BashParams(BaseModel):
         default="",
         alias="command",  # LLM can use "command" instead of "cmd"
         description=(
-            "Bash command or session input; may be a path to an existing `.sh` "
-            "script file (e.g. `scripts/deploy.sh`), executed via bash. "
+            "Bash command, session input, or path to an existing `.sh` file. "
             + accepts_alias_text("cmd", "command", word=False)
         ),
     )
@@ -843,6 +842,28 @@ class Bash(CallableTool2[BashParams]):
             brief="Blocked (self-kill guard)",
         )
 
+    @staticmethod
+    def _resolve_script_file(command: str) -> str | ToolError:
+        """Read an existing ``.sh`` path; return other input as command text.
+
+        File contents go through the same policy checks and compatibility
+        preparation as inline commands. Interactive continuation input is not
+        passed here because it is a shell fragment, not a new program.
+        """
+        if not command.lower().endswith(".sh"):
+            return command
+        path = Path(command)
+        if not path.is_file():
+            return command
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as e:
+            return ToolError(
+                output="",
+                message=f"Failed to read Bash script `{command}`: {e}",
+                brief="Script read failed",
+            )
+
     async def __call__(self, params: BashParams) -> ToolReturnValue:
         """Execute the bash command via the system bash executable.
 
@@ -852,6 +873,12 @@ class Bash(CallableTool2[BashParams]):
         Returns:
             ToolOk on success, ToolError on failure or timeout.
         """
+        if params.task_id is None:
+            command = self._resolve_script_file(params.cmd)
+            if isinstance(command, ToolError):
+                return command
+            params = params.model_copy(update={"cmd": command})
+
         # Hardline safety floor: never spawn a process for destructive commands.
         blocked = self._hardline_blocked(params.cmd)
         if blocked is not None:

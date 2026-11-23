@@ -19,6 +19,8 @@ def test_sync_cleanup_anonymous_removes_all_cache_files(tmp_path: Path) -> None:
         f.write_text("export")
     context_file = tmp_path / "context.jsonl"
     context_file.write_text("context")
+    history_file = tmp_path / "history.jsonl"
+    history_file.write_text("history")
 
     KimiSoul._sync_cleanup(
         compact_cache_paths=files,
@@ -29,6 +31,7 @@ def test_sync_cleanup_anonymous_removes_all_cache_files(tmp_path: Path) -> None:
     for f in files:
         assert not f.exists()
     assert not context_file.exists()
+    assert not history_file.exists()
 
 
 def test_sync_cleanup_non_anonymous_does_nothing(tmp_path: Path) -> None:
@@ -65,6 +68,8 @@ async def test_close_anonymous_removes_session_cache_files(tmp_path: Path) -> No
 
     context_file = tmp_path / "context.jsonl"
     context_file.write_text("context")
+    history_file = tmp_path / "history.jsonl"
+    history_file.write_text("history")
 
     soul._anonymous = True
     soul._compact_cache_dir = export_files[:]
@@ -80,4 +85,5 @@ async def test_close_anonymous_removes_session_cache_files(tmp_path: Path) -> No
     for f in export_files:
         assert not f.exists()
     assert not context_file.exists()
+    assert not history_file.exists()
     soul._finalizer.detach.assert_called_once_with()

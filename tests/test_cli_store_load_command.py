@@ -56,7 +56,6 @@ def _fake_session(
                 id=session_id,
                 title="Test Session",
                 updated_at=time.time(),
-                close_context_db=AsyncMock(),
                 is_empty=lambda: empty,
             ),
             soul=SimpleNamespace(

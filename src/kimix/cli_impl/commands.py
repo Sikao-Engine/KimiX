@@ -180,7 +180,6 @@ async def _release_session_resources(session: Any) -> None:
             await soul.close()
         except Exception:
             pass
-    await session._cli.session.close_context_db()
     try:
         await session._close_chat_provider()
     except Exception:
@@ -783,7 +782,7 @@ def _context_is_non_empty(session: Any) -> bool:
             return True
     except Exception:
         pass
-    try:  # fallback: kimi_cli Session.is_empty() (wire file / context.db / context.jsonl)
+    try:  # fallback: kimi_cli Session.is_empty() (wire file / active context.jsonl)
         cli_session = session._cli.session
         is_empty = getattr(cli_session, 'is_empty', None)
         if callable(is_empty) and not is_empty():
@@ -937,7 +936,7 @@ Every builtin tool and the exact file where its implementation lives:
   - agent.py — Runtime + BuiltinSystemPromptArgs; loads AGENTS.md, skills, additional dirs
   - kimisoul.py — main agent loop: step/turn lifecycle, retries, auto-compaction, reminders
   - compaction.py — context compaction (modes, adaptive preserve depth, auto-trigger)
-  - context.py / context_db.py / context_records.py — context storage (JSONL/SQLite + migration), records
+  - context.py / jsonl_io.py / context_records.py — append-only JSONL context storage and records
   - context_pruning.py — smart history removal (Tier A ephemeral / B elision / C micro-compress)
   - message.py — message helpers + `<system-reminder>` tags + history normalization
   - verification_gate.py — soul-layer verification nudges for todos/code edits

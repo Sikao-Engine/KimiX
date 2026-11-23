@@ -1,12 +1,14 @@
-"""Tests for kimi_cli.soul.history_index — BM25 index over conversation turns."""
+"""Append-only JSONL HistoryIndex correctness and instrumentation tests."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+import orjson
 from kosong.message import Message
 
 from kimi_cli.soul.history_index import HistoryIndex
+from kimi_cli.soul import jsonl_search
 from kimi_cli.wire.types import TextPart
 
 
@@ -14,292 +16,228 @@ def _msg(role: str, text: str) -> Message:
     return Message(role=role, content=[TextPart(text=text)])
 
 
-class TestHistoryIndex:
-    def test_search_empty_index(self):
-        idx = HistoryIndex()
-        assert idx.search("anything") == []
+def _records(path: Path) -> list[dict]:
+    return [orjson.loads(line) for line in path.read_bytes().splitlines() if line.strip()]
 
-    def test_index_and_search(self):
-        idx = HistoryIndex()
-        idx.index_messages([_msg("user", "How do I compile Python?")])
-        idx.index_messages([_msg("assistant", "Use pyinstaller or cx_Freeze.")])
 
-        results = idx.search("compile Python", top_k=2)
-        # Only the user message should match the query
-        assert len(results) == 1
-        assert results[0]["role"] == "user"
-        assert "compile Python" in results[0]["text"]
-
-    def test_skips_system_and_tool_roles(self):
-        idx = HistoryIndex()
-        idx.index_messages([
-            Message(role="system", content=[TextPart(text="System prompt")]),
-            _msg("user", "Hello"),
-        ])
-        assert len(idx._turns) == 1
-        assert idx._turns[0]["role"] == "user"
-
-    def test_skips_empty_messages(self):
-        idx = HistoryIndex()
-        idx.index_messages([_msg("user", "   ")])
-        assert len(idx._turns) == 0
-
-    def test_mark_compacted(self):
-        idx = HistoryIndex()
-        idx.index_messages([_msg("user", "Question 1")])
-        idx.mark_compacted()
-        idx.index_messages([_msg("user", "Question 2")])
-
-        assert idx._turns[0]["is_compacted"] is True
-        assert idx._turns[1]["is_compacted"] is False
-
-    def test_max_turns_bound(self):
-        idx = HistoryIndex()
-        for i in range(510):
-            idx.index_messages([_msg("user", f"Message {i}")])
-        assert len(idx._turns) == 500
-
-    def test_persistence_roundtrip(self, tmp_path: Path):
-        persist_path = tmp_path / "history.json"
-        idx = HistoryIndex(persist_path=persist_path)
-        # Index at least 2 docs so BM25 stop-word pruning doesn't remove all terms
-        idx.index_messages([_msg("user", "Persistent question")])
-        idx.index_messages([_msg("assistant", "Unrelated answer about Java")])
-        idx.save()
-
-        idx2 = HistoryIndex(persist_path=persist_path)
-        assert idx2.load() is True
-        assert len(idx2._turns) == 2
-        assert idx2._turns[0]["text"] == "Persistent question"
-
-        # Search should work after reload
-        results = idx2.search("persistent", top_k=1)
-        assert len(results) == 1
-        assert results[0]["text"] == "Persistent question"
-
-    def test_clear(self, tmp_path: Path):
-        persist_path = tmp_path / "history.json"
-        idx = HistoryIndex(persist_path=persist_path)
-        idx.index_messages([_msg("user", "To be cleared")])
-        idx.save()
-        idx.clear()
-
-        assert len(idx._turns) == 0
-        assert not persist_path.exists()
-
-    def test_load_missing_file(self):
-        idx = HistoryIndex(persist_path=Path("/nonexistent/path.json"))
-        assert idx.load() is False
-
-    def test_search_filters_by_compacted(self):
-        idx = HistoryIndex()
-        idx.index_messages([_msg("user", "First question about Python")])
-        idx.mark_compacted()
-        idx.index_messages([_msg("user", "Second question about Java")])
-
-        results = idx.search("Python", top_k=3)
-        compacted = [r for r in results if r.get("is_compacted")]
-        assert len(compacted) >= 1
-        assert compacted[0]["text"] == "First question about Python"
-
-    def test_search_returns_verbatim(self):
-        idx = HistoryIndex()
-        text = "The exact original text must be preserved."
-        msgs = [
-            Message(role="user", content=[TextPart(text=text)]),
-            Message(role="assistant", content=[TextPart(text="Something completely different.")]),
+def test_in_memory_search_and_role_filtering() -> None:
+    idx = HistoryIndex()
+    assert idx.search("anything") == []
+    idx.index_messages(
+        [
+            Message(role="system", content=[TextPart(text="not indexed")]),
+            _msg("user", "How do I compile Python?"),
+            _msg("assistant", "Use pyinstaller."),
+            _msg("tool", "compiler finished"),
         ]
-        idx.index_messages(msgs)
-        results = idx.search("original text", top_k=1)
-        assert len(results) >= 1
-        assert results[0]["text"] == text
+    )
+    assert [turn["role"] for turn in idx._turns] == ["user", "assistant", "tool"]
+    results = idx.search("compile Python", top_k=2)
+    assert len(results) == 1
+    assert results[0]["role"] == "user"
+    idx.close()
 
-    def _make(self, tmp_path: Path, name: str = "history.db") -> HistoryIndex:
-        idx = HistoryIndex(db_path=tmp_path / name)
-        idx.load()
-        return idx
 
-    def test_load_returns_false_when_missing(self, tmp_path: Path):
-        idx = HistoryIndex(db_path=tmp_path / "missing.db")
-        assert idx.load() is False
-        idx.close()
+def test_empty_text_is_not_indexed() -> None:
+    idx = HistoryIndex()
+    idx.index_messages([_msg("user", " "), _msg("assistant", "")])
+    assert idx._turns == []
 
-    def test_search_over_500_turns(self, tmp_path: Path):
-        idx = self._make(tmp_path)
-        for i in range(510):
-            idx.index_messages([_msg("user", f"Message {i} about sqlite")])
-        assert len(idx._turns) == 510
-        results = idx.search("sqlite", top_k=3)
-        assert len(results) == 3
-        idx.close()
 
-    def test_search_returns_verbatim(self, tmp_path: Path):
-        idx = self._make(tmp_path)
-        text = "The exact original text must be preserved."
-        msgs = [
-            Message(role="user", content=[TextPart(text=text)]),
-            Message(role="assistant", content=[TextPart(text="Something completely different.")]),
-        ]
-        idx.index_messages(msgs)
-        results = idx.search("original text", top_k=1)
-        assert len(results) >= 1
-        assert results[0]["text"] == text
-        idx.close()
+def test_no_500_turn_cap_in_memory_or_durable(tmp_path: Path) -> None:
+    path = tmp_path / "history.jsonl"
+    idx = HistoryIndex(jsonl_path=path)
+    assert idx.load() is False
+    idx.index_messages([_msg("user", f"Message {i} about sqlite") for i in range(510)])
+    assert len(idx._turns) == 510
+    assert len(idx.search("sqlite", top_k=3)) == 3
+    idx.close()
 
-    def test_skips_system_and_empty(self, tmp_path: Path):
-        idx = self._make(tmp_path)
-        idx.index_messages([
-            Message(role="system", content=[TextPart(text="System prompt")]),
-            _msg("user", "   "),
-            _msg("user", "Hello"),
-        ])
-        assert len(idx._turns) == 1
-        assert idx._turns[0]["role"] == "user"
-        idx.close()
+    reopened = HistoryIndex(jsonl_path=path)
+    assert reopened.load() is True
+    assert len(reopened._turns) == 510
+    assert reopened.search("Message 0", top_k=1)[0]["turn_id"] == 0
+    reopened.close()
 
-    def test_mark_compacted_and_search(self, tmp_path: Path):
-        idx = self._make(tmp_path)
-        idx.index_messages([_msg("user", "First question about Python")])
-        idx.mark_compacted()
-        idx.index_messages([_msg("user", "Second question about Java")])
 
-        assert idx._turns[0]["is_compacted"] is True
-        assert idx._turns[1]["is_compacted"] is False
-        results = idx.search("Python", top_k=3)
-        compacted = [r for r in results if r.get("is_compacted")]
-        assert len(compacted) >= 1
-        assert compacted[0]["text"] == "First question about Python"
-        idx.close()
+def test_dense_records_and_prefix_survive_save_close(tmp_path: Path) -> None:
+    path = tmp_path / "history.jsonl"
+    idx = HistoryIndex(persist_path=path)
+    idx.index_messages([_msg("user", "中文\nCaseSensitive"), _msg("assistant", "answer")])
+    prefix = path.read_bytes()
+    idx.save()
+    idx.close()
+    idx.close()
+    assert path.read_bytes() == prefix
+    lines = path.read_bytes().splitlines()
+    assert len(lines) == 2
+    for line in lines:
+        assert line == orjson.dumps(orjson.loads(line))
+        record = orjson.loads(line)
+        assert set(record) == {"turn_id", "role", "text", "timestamp", "is_compacted"}
+    assert lines[0].find("中文".encode()) >= 0
 
-    def test_cjk_search_trigram(self, tmp_path: Path):
-        idx = self._make(tmp_path)
-        idx.index_messages([
-            _msg("user", "关于Python安装和配置"),
-            _msg("assistant", "日本語の検索テストです"),
-        ])
-        results = idx.search("日本語", top_k=3)
-        assert any("日本語" in r["text"] for r in results)
-        results = idx.search("配置", top_k=3)
-        assert any("配置" in r["text"] for r in results)
-        idx.close()
 
-    def test_lone_cjk_char_uses_like_fallback(self, tmp_path: Path):
-        idx = self._make(tmp_path)
-        idx.index_messages([_msg("user", "日本語のテストです")])
-        results = idx.search("日", top_k=3)
-        assert any("日本語" in r["text"] for r in results)
-        idx.close()
+def test_compaction_markers_replay_before_and_after_new_appends(tmp_path: Path) -> None:
+    path = tmp_path / "history.jsonl"
+    idx = HistoryIndex(jsonl_path=path)
+    idx.index_messages([_msg("user", "first python")])
+    idx.mark_compacted()
+    first_boundary = path.read_bytes()
+    idx.index_messages([_msg("assistant", "second python")])
+    idx.mark_compacted()
+    idx.index_messages([_msg("tool", "third python")])
+    idx.close()
+    assert path.read_bytes().startswith(first_boundary)
 
-    def test_like_fallback_escapes_wildcards(self, tmp_path: Path):
-        idx = self._make(tmp_path)
-        idx.index_messages([_msg("user", "progress is 50% done")])
-        # '%' is preserved for CJK-ish LIKE; for Latin the sanitizer strips it,
-        # so search for the literal phrase instead.
-        results = idx.search("50 done", top_k=3)
-        assert any("50% done" in r["text"] for r in results)
-        idx.close()
+    reopened = HistoryIndex(jsonl_path=path)
+    reopened.load()
+    assert [turn["is_compacted"] for turn in reopened._turns] == [True, True, False]
+    assert [r["is_compacted"] for r in reopened.search("python", top_k=3)] == [True, True, False]
+    assert [r["role"] for r in _records(path) if r["role"] == "_compacted"] == ["_compacted", "_compacted"]
+    reopened.close()
 
-    def test_persistence_reopen(self, tmp_path: Path):
-        db_path = tmp_path / "history.db"
-        idx = HistoryIndex(db_path=db_path)
-        assert idx.load() is False
-        idx.index_messages([_msg("user", "Persistent question")])
-        idx.index_messages([_msg("assistant", "Unrelated answer about Java")])
-        idx.mark_compacted()
-        idx.save()
-        idx.close()
 
-        idx2 = HistoryIndex(db_path=db_path)
-        assert idx2.load() is True
-        assert len(idx2._turns) == 2
-        assert idx2._turns[0]["text"] == "Persistent question"
-        results = idx2.search("persistent", top_k=1)
-        assert len(results) == 1
-        assert results[0]["is_compacted"] is True
-        idx2.close()
+def test_clear_appends_reset_and_allows_repeated_ids_across_generations(tmp_path: Path) -> None:
+    path = tmp_path / "history.jsonl"
+    idx = HistoryIndex(jsonl_path=path)
+    idx.index_messages([_msg("user", "old")])
+    original = path.read_bytes()
+    idx.clear()
+    assert path.exists()
+    assert path.read_bytes() == original + b'{"role":"_reset"}\n'
+    assert idx._turns == []
+    idx.index_messages([_msg("user", "fresh")])
+    assert idx._turns[0]["turn_id"] == 0
+    idx.close()
 
-    def test_legacy_json_migration(self, tmp_path: Path):
-        import orjson
+    reopened = HistoryIndex(jsonl_path=path)
+    reopened.load()
+    assert len(reopened._turns) == 1
+    assert reopened._turns[0]["text"] == "fresh"
+    assert reopened._turns[0]["turn_id"] == 0
+    assert reopened.search("old") == []
+    reopened.clear()
+    reopened.index_messages([_msg("user", "third")])
+    reopened.close()
+    third = HistoryIndex(jsonl_path=path)
+    third.load()
+    assert [turn["text"] for turn in third._turns] == ["third"]
+    third.close()
 
-        legacy = tmp_path / "history_index" / "sess.json"
-        legacy.parent.mkdir(parents=True)
-        turns = [
-            {"turn_id": 0, "role": "user", "text": "Old question", "timestamp": 100.0, "is_compacted": False},
-            {"turn_id": 1, "role": "assistant", "text": "Old answer", "timestamp": 101.0, "is_compacted": True},
-        ]
-        legacy.write_text(orjson.dumps({"doc_id_counter": 2, "turns": turns}).decode(), encoding="utf-8")
 
-        db_path = tmp_path / "history.db"
-        idx = HistoryIndex(db_path=db_path, legacy_json_path=legacy)
-        assert idx.load() is True
-        assert len(idx._turns) == 2
-        assert idx._turns[1]["is_compacted"] is True
-        assert not legacy.exists()  # renamed to .bak
-        assert legacy.with_suffix(".json.bak").exists()
-        results = idx.search("old question", top_k=1)
-        assert len(results) == 1
-        idx.close()
+def test_legacy_whole_file_json_migration_preserves_turns(tmp_path: Path) -> None:
+    legacy = tmp_path / "history_index" / "sess.json"
+    legacy.parent.mkdir(parents=True)
+    turns = [
+        {"turn_id": 4, "role": "user", "text": "Old question", "timestamp": 100.0, "is_compacted": False},
+        {"turn_id": 7, "role": "assistant", "text": "Old answer", "timestamp": 101.0, "is_compacted": True},
+    ]
+    legacy.write_bytes(orjson.dumps({"doc_id_counter": 8, "turns": turns}))
+    path = tmp_path / "history.jsonl"
+    idx = HistoryIndex(jsonl_path=path, legacy_json_path=legacy)
+    assert idx.load() is True
+    assert idx._turns == turns
+    assert not legacy.exists()
+    assert legacy.with_suffix(".json.bak").exists()
+    assert idx.search("old question", top_k=1)[0]["turn_id"] == 4
+    idx.index_messages([_msg("user", "next")])
+    assert idx._turns[-1]["turn_id"] == 8
+    idx.close()
 
-    def test_clear_removes_db(self, tmp_path: Path):
-        db_path = tmp_path / "history.db"
-        idx = HistoryIndex(db_path=db_path)
-        idx.load()
-        idx.index_messages([_msg("user", "To be cleared")])
-        assert db_path.exists()
-        idx.clear()
-        assert not db_path.exists()
-        assert len(idx._turns) == 0
-        # Index works again after clear (fresh empty schema)
-        idx.index_messages([_msg("user", "Fresh start")])
-        assert len(idx._turns) == 1
-        idx.close()
 
-    def test_rebuild_fts_recovers_corrupt_index(self, tmp_path: Path):
-        idx = HistoryIndex(db_path=tmp_path / "history.db")
-        idx.load()
-        idx.index_messages([_msg("user", "Question about sqlite")])
-        # Corrupt: drop the unicode61 index
-        idx._ensure_conn().execute("DROP TABLE turns_fts")
-        results = idx.search("sqlite", top_k=3)
-        assert len(results) == 1  # LIKE fallback still answers
-        assert idx._fts_stale is True
+def test_legacy_empty_json_migration(tmp_path: Path) -> None:
+    legacy = tmp_path / "old.json"
+    legacy.write_bytes(orjson.dumps({"turns": []}))
+    path = tmp_path / "history.jsonl"
+    idx = HistoryIndex(jsonl_path=path, legacy_json_path=legacy)
+    assert idx.load() is True
+    assert path.exists()
+    assert idx._turns == []
+    idx.close()
 
-        idx.rebuild_fts()
-        assert idx._fts_stale is False
-        results = idx.search("sqlite", top_k=3)
-        assert len(results) == 1  # FTS restored
-        idx.close()
 
-    def test_stale_marker_persisted(self, tmp_path: Path):
-        db_path = tmp_path / "history.db"
-        idx = HistoryIndex(db_path=db_path)
-        idx.load()
-        idx.index_messages([_msg("user", "stale marker test about sqlite")])
-        idx._ensure_conn().execute("DROP TABLE turns_fts")
-        idx.search("sqlite", top_k=3)  # sets stale marker
-        idx.close()
+def test_existing_jsonl_takes_precedence_over_legacy_json(tmp_path: Path) -> None:
+    legacy = tmp_path / "old.json"
+    legacy.write_bytes(orjson.dumps({"turns": [{"turn_id": 9, "role": "user", "text": "old", "timestamp": 1.0}]}))
+    path = tmp_path / "history.jsonl"
+    path.write_bytes(orjson.dumps({"turn_id": 0, "role": "user", "text": "canonical", "timestamp": 2.0, "is_compacted": False}, option=orjson.OPT_APPEND_NEWLINE))
+    idx = HistoryIndex(jsonl_path=path, legacy_json_path=legacy)
+    assert idx.load() is True
+    assert [turn["text"] for turn in idx._turns] == ["canonical"]
+    assert legacy.exists()
+    idx.close()
 
-        idx2 = HistoryIndex(db_path=db_path)
-        idx2.load()
-        assert idx2._fts_stale is True
-        # Searches go straight to LIKE while stale
-        results = idx2.search("sqlite", top_k=3)
-        assert len(results) == 1
-        idx2.close()
 
-    def test_incremental_merge_no_error(self, tmp_path: Path):
-        from kimi_cli.soul.history_index import _FTS_MERGE_INTERVAL
+def test_malformed_tail_and_interior_records_are_skipped(tmp_path: Path) -> None:
+    path = tmp_path / "history.jsonl"
+    path.write_bytes(
+        orjson.dumps({"turn_id": 0, "role": "user", "text": "before", "timestamp": 1.0, "is_compacted": False}, option=orjson.OPT_APPEND_NEWLINE)
+        + b'not json\n'
+        + orjson.dumps({"turn_id": 1, "role": "assistant", "text": "after", "timestamp": 2.0, "is_compacted": False}, option=orjson.OPT_APPEND_NEWLINE)
+        + b'{"turn_id":2,"role":"user","text":'
+    )
+    original = path.read_bytes()
+    idx = HistoryIndex(jsonl_path=path)
+    assert idx.load() is True
+    assert [turn["text"] for turn in idx._turns] == ["before", "after"]
+    assert path.read_bytes() == original
+    idx.index_messages([_msg("user", "new")])
+    assert path.read_bytes().startswith(original)
+    assert idx._turns[-1]["turn_id"] == 2
+    idx.close()
 
-        idx = HistoryIndex(db_path=tmp_path / "history.db")
-        idx.load()
-        for i in range(_FTS_MERGE_INTERVAL + 10):
-            idx.index_messages([_msg("user", f"merge message {i} about sqlite")])
-        results = idx.search("sqlite", top_k=3)
-        assert len(results) == 3
-        assert idx._writes_since_merge == 10  # reset after merge fired
-        idx.close()
 
-    def test_rebuild_fts_with_legacy_mode_is_noop(self, tmp_path: Path):
-        idx = HistoryIndex(persist_path=tmp_path / "history.json")
-        idx.rebuild_fts()  # must not raise
-        idx.close()
+def test_verbatim_case_and_cjk_short_literal_search(tmp_path: Path) -> None:
+    idx = HistoryIndex(jsonl_path=tmp_path / "history.jsonl")
+    idx.index_messages([_msg("user", "The Exact Original 50% 日本語"), _msg("assistant", "other")])
+    assert idx.search("exact original")[0]["text"] == "The Exact Original 50% 日本語"
+    assert idx.search("日本語")[0]["turn_id"] == 0
+    assert idx.search("日")[0]["turn_id"] == 0
+    assert idx.search("50%")[0]["turn_id"] == 0
+    idx.close()
+
+
+def test_warm_search_performs_no_file_open_or_read(tmp_path: Path, monkeypatch) -> None:
+    path = tmp_path / "history.jsonl"
+    idx = HistoryIndex(jsonl_path=path)
+    idx.index_messages([_msg("user", "warm python search")])
+    idx.load()
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("warm search touched the filesystem")
+
+    monkeypatch.setattr(Path, "open", forbidden)
+    assert idx.search("python", top_k=1)[0]["text"] == "warm python search"
+    assert idx.search("p", top_k=1) == []  # Latin terms remain exact token matches
+    idx.close()
+
+
+def test_incremental_append_does_not_rebuild_old_postings(tmp_path: Path, monkeypatch) -> None:
+    idx = HistoryIndex(jsonl_path=tmp_path / "history.jsonl")
+    idx.index_messages([_msg("user", "old python"), _msg("assistant", "other answer")])
+    old_postings = idx._engine._postings["python"]
+    calls: list[str] = []
+    real_tokenize = jsonl_search.tokenize
+
+    def recording_tokenize(text: str) -> list[str]:
+        calls.append(text)
+        return real_tokenize(text)
+
+    monkeypatch.setattr(jsonl_search, "tokenize", recording_tokenize)
+    idx.index_messages([_msg("user", "new python")])
+    assert calls == ["new python"]
+    assert idx._engine._postings["python"] is old_postings
+    assert old_postings[0] == 1
+    assert idx._engine.add_turn_calls == 3
+    idx.close()
+
+
+def test_missing_file_contract_and_in_memory_clear() -> None:
+    idx = HistoryIndex()
+    assert idx.load() is False
+    idx.index_messages([_msg("user", "temporary")])
+    idx.clear()
+    assert idx._turns == []
+    idx.index_messages([_msg("user", "fresh")])
+    assert idx._turns[0]["turn_id"] == 0

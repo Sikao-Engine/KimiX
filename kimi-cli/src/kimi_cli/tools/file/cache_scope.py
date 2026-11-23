@@ -24,7 +24,7 @@ the artifacts the child produced back to the calling agent.  Recording is
 best-effort and must never fail a write.
 
 The per-session subdirectory matters: ``.kimix_cache`` also holds session state
-(``<session id>/context.db``) and tool temp files (``tmp_<pid>/``).  A model
+(``<session id>/context.jsonl``) and tool temp files (``tmp_<pid>/``).  A model
 that writes ``report.md`` must not be able to clobber those, and two parallel
 research runs must not overwrite each other's reports.
 """

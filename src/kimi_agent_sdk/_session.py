@@ -271,17 +271,10 @@ class Session:
     def _register_shutdown_cleanup(self) -> None:
         """Register process-shutdown cleanup for an anonymous session.
 
-        When a process is killed by ``KeyboardInterrupt`` (Ctrl+C) while a
-        prompt is running, the event-loop task that owns this session is left
-        suspended, so ``Session.__del__`` may never run.  The soul's aiosqlite
-        worker thread then keeps ``context.db`` locked and — being a
-        non-daemon thread blocked on its work queue — also blocks
-        ``threading._shutdown()`` at interpreter exit, hanging the process.
-
-        ``threading._register_atexit`` callbacks are the only hooks that run
-        *before* non-daemon threads are joined, so the registered callback
-        stops the aiosqlite worker thread there (releasing the SQLite file
-        handles) and then deletes the session directory.
+        When Ctrl+C interrupts a prompt, its event-loop task may remain
+        suspended and ``Session.__del__`` may never run.  The early shutdown
+        callback synchronously releases retained JSONL handles and then deletes
+        an anonymous session directory.
         """
         if not self._anonymous or self._shutdown_cleanup is not None:
             return
@@ -300,8 +293,8 @@ class Session:
     def _close_storage_sync(self) -> None:
         """Stop the soul's storage backends synchronously (best-effort).
 
-        Closes the aiosqlite context worker thread and the FTS5 history index
-        without touching the session directory; used by the destructor paths and
+        Closes retained context/history JSONL handles without touching the
+        session directory; used by the destructor paths and
         by :meth:`close_sync` for sessions whose files must survive.
         Never raises.
         """
@@ -317,8 +310,7 @@ class Session:
                     close_sync()
                 except Exception:
                     pass
-            # Close the FTS5 history index (apsw connection) so history.db is
-            # not locked during the synchronous session-dir removal.
+            # Release history.jsonl before synchronous session-dir removal.
             history_index = getattr(soul, "_history_index", None)
             close_index = getattr(history_index, "close", None)
             if close_index is not None:
@@ -332,10 +324,8 @@ class Session:
 
         Never raises: this runs from ``__del__`` and the process-shutdown
         callback where an exception would only be printed and ignored anyway.
-        Closing the aiosqlite worker thread synchronously is required on
-        Windows — the open ``context.db`` handle otherwise makes
-        ``shutil.rmtree`` fail silently and the anonymous session directory
-        survives a ``KeyboardInterrupt``-killed process.
+        Synchronous JSONL close prevents an open context handle from making
+        ``shutil.rmtree`` leave an anonymous directory behind on Windows.
         """
         cli = getattr(self, "_cli", None)
         if cli is None:
@@ -385,7 +375,7 @@ class Session:
         """Clear the session by removing the context file and re-creating the CLI.
 
         This cancels any ongoing prompt, cleans up tool resources, deletes the
-        session's context file (``context.db`` or ``context.jsonl``), and
+        session's ``context.jsonl`` file, and
         re-creates the underlying CLI with the same session ID and original
         creation parameters.
 
@@ -400,9 +390,8 @@ class Session:
         self._done = False  # a cleared session has no completed work
         await self._cleanup_tools()
         await self._close_chat_provider()
-        # Close the KimiSoul's context storage (aiosqlite worker thread)
-        # before deleting files. On Windows the SQLite database file stays
-        # locked while the connection is open, causing PermissionError.
+        # Close retained context/history JSONL handles before deleting files;
+        # Windows otherwise rejects removal with PermissionError.
         soul = getattr(self._cli, "soul", None)
         if soul is not None:
             try:
@@ -410,21 +399,11 @@ class Session:
             except Exception:
                 pass
 
-        # Close the session's ContextDB before deleting files
-        await self._cli.session.close_context_db()
-
         work_dir = self._cli.session.work_dir
         session_id = self._cli.session.id
         context_file = self._cli.session.context_file
         if context_file.exists():
             context_file.unlink()
-        # Clean up SQLite WAL/SHM companion files
-        if context_file.suffix == ".db":
-            for companion_suffix in (".db-wal", ".db-shm"):
-                companion = context_file.with_suffix(companion_suffix)
-                if companion.exists():
-                    companion.unlink()
-
         # Clear persisted tool state (e.g. todos) and wire history
         session_dir = self._cli.session.dir
         state_file = session_dir / "state.json"
@@ -464,18 +443,13 @@ class Session:
             self._cancel_event.set()
         await self._cleanup_tools()
         await self._close_chat_provider()
-        # Close the KimiSoul's context storage (aiosqlite worker thread)
-        # before recreating the CLI. On Windows the SQLite database file stays
-        # locked while the connection is open, causing PermissionError.
+        # Close retained context/history JSONL handles before recreating the CLI.
         soul = getattr(self._cli, "soul", None)
         if soul is not None:
             try:
                 await soul.close()
             except Exception:
                 pass
-
-        # Close the session's ContextDB before reloading the session object.
-        await self._cli.session.close_context_db()
 
         work_dir = self._cli.session.work_dir
         session_id = self._cli.session.id
@@ -527,20 +501,14 @@ class Session:
                 self._cancel_event.set()
             await self._cleanup_tools()
             await self._close_chat_provider()
-            # Close the KimiSoul's context storage (and any other resources it
-            # holds) before renaming the session directory.  On Windows the
-            # aiosqlite worker thread keeps the SQLite database file locked
-            # while the connection is open, which would otherwise make
-            # os.rename() fail with PermissionError.
+            # Close retained JSONL handles before renaming the session directory;
+            # Windows otherwise rejects os.rename() with PermissionError.
             soul = getattr(self._cli, "soul", None)
             if soul is not None:
                 try:
                     await soul.close()
                 except Exception:
                     pass
-            # Also close the CLI session's own cached ContextDB, if any.
-            await self._cli.session.close_context_db()
-
             old_session_id = self._cli.session.id
             cli_session = await CliSession.rename(
                 work_dir, old_session_id, new_session_id, _sessions_dir=sessions_dir
@@ -1195,11 +1163,11 @@ class Session:
         ``CliSession.delete`` removes the tree with a single
         ``shutil.rmtree(..., ignore_errors=True)``, which reports nothing when a
         file inside is still held and silently leaves a half-deleted directory
-        behind — on Windows that is exactly what a just-stopped aiosqlite worker
-        thread, an anti-virus scan or a tool that has not released a file does.
-        Verify the result and fall back to the synchronous deleter, which stops
-        the aiosqlite worker thread (``ContextDB.stop_sync``) and retries for a
-        couple of seconds.  Never raises: callers are teardown paths.
+behind — on Windows that is exactly what an anti-virus scan or a tool that
+has not released a JSONL file does.
+Verify the result and fall back to the synchronous deleter, which closes
+retained JSONL handles and retries for a couple of seconds.  Never raises:
+callers are teardown paths.
         """
         cli = getattr(self, "_cli", None)
         cli_session = getattr(cli, "session", None)
@@ -1228,7 +1196,7 @@ class Session:
 
         This cancels any ongoing prompt and cleans up tool resources.
         For anonymous sessions (created or resumed without a session_id),
-        this also deletes the session's context file (context.db or context.jsonl)
+        this also deletes the session's context.jsonl file
         and state.json files.
 
         Teardown is ordered so that the anonymous session directory is always
@@ -1264,8 +1232,8 @@ class Session:
                 if failure is None:
                     failure = exc
 
-        # Close the underlying KimiSoul so its context storage backend
-        # (aiosqlite worker thread) is shut down before process exit.
+            # Close the underlying KimiSoul so retained JSONL handles are
+            # released before process exit.
         soul = getattr(self._cli, "soul", None)
         if soul is not None:
             try:
@@ -1321,8 +1289,8 @@ def _build_shutdown_cleanup(session: Session) -> Any:
     """Build the process-shutdown callback for an anonymous session.
 
     The closure intentionally keeps a strong reference to the session so the
-    soul's aiosqlite storage stays alive (and can be stopped synchronously)
-    until ``threading._shutdown`` runs the callback.  The callback is a no-op
+soul's JSONL storage stays alive (and can be closed synchronously)
+until the process-shutdown callback runs.
     once the session has been renamed to a named session, and ``delete_sync``
     tolerates a missing directory, so it is safe after a normal ``close()``.
     """

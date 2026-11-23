@@ -189,7 +189,7 @@ because the native contracts do not match the app's data model bit-for-bit:
 | app code | native shim | reason |
 |---|---|---|
 | `InvertedIndex` internals (`retrieval.py`) | `index.InvertedIndex` | the app's `finalize()` prunes stop-ngrams (threshold-based) by default; the native index has no pruning; `save`/`load` formats (file vs KNIDX1 blob) and forward-index APIs differ. The shim class is exposed but not wired. |
-| `kimi_cli/soul/history_index.py` | `index.HistoryIndex` | depends on the app InvertedIndex + Searcher (pruning) and persists JSON turn metadata; native persists a KNHIX1 blob. The shim class is exposed but not wired. |
+| `kimi_cli/soul/history_index.py` | `index.HistoryIndex` | the app uses append-only dense JSONL plus a pure-Python postings/BM25 fallback with verbatim full-history retention; the native class has a 500-turn cap and normalized-text-only storage. The shim class remains exposed but is not wired. |
 | `BM25Scorer` internals | `search.bm25_*` | already numpy-vectorized; function contracts (postings arrays vs lists) differ; negligible gain. The shim functions are exposed but not wired. |
 | `SimHash._compute`/`MinHash._compute` | `search.simhash`/`minhash` | the native kernels use a fixed XXH3-64 seed contract; the app uses `xxhash.xxh64` — outputs would CHANGE (behavior break). The shim functions are exposed but not wired. |
 | `mmr_rerank`/`xquad_rerank` | `search.mmr_rerank`/`xquad_rerank` | the native API consumes a precomputed sim_matrix and returns indices; the app derives Jaccard sets from the forward index (contract mismatch). The shim functions are exposed but not wired. |

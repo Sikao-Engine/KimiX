@@ -226,8 +226,7 @@ class PowershellParams(BaseModel):
         default="",
         validation_alias=AliasChoices("command", "cmd"),
         description=(
-            "PowerShell command, or path to an existing `.ps1` script file, "
-            "executed via PowerShell. "
+            "PowerShell command or path to an existing `.ps1` file. "
             + accepts_alias_text("command", "cmd", word=False)
         ),
     )
@@ -402,6 +401,28 @@ class Powershell(CallableTool2[PowershellParams]):
             brief="Blocked (self-kill guard)",
         )
 
+    @staticmethod
+    def _resolve_script_file(command: str) -> str | ToolError:
+        """Read an existing ``.ps1`` path; return other input as command text.
+
+        File contents go through the same policy checks and compatibility
+        preparation as inline commands. Interactive continuation input is not
+        passed here because it is a shell fragment, not a new program.
+        """
+        if not command.lower().endswith(".ps1"):
+            return command
+        path = Path(command)
+        if not path.is_file():
+            return command
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as e:
+            return ToolError(
+                output="",
+                message=f"Failed to read PowerShell script `{command}`: {e}",
+                brief="Script read failed",
+            )
+
     async def __call__(self, params: PowershellParams) -> ToolReturnValue:
         """Execute the PowerShell command via the system PowerShell executable.
 
@@ -411,6 +432,12 @@ class Powershell(CallableTool2[PowershellParams]):
         Returns:
             ToolOk on success, ToolError on failure or timeout.
         """
+        if params.task_id is None:
+            command = self._resolve_script_file(params.command)
+            if isinstance(command, ToolError):
+                return command
+            params = params.model_copy(update={"command": command})
+
         # Hardline safety floor: never spawn a process for destructive commands.
         blocked = self._hardline_blocked(params.command)
         if blocked is not None:

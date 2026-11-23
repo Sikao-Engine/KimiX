@@ -194,8 +194,7 @@ def _client_cli_loop(ipc_server: CLIIPCServer) -> None:
             traceback.print_exc()
             print_error(str(e))
 
-    # Clean up the session's resources (aiosqlite background thread, etc.)
-    # so they do not block Python's threading._shutdown() on interpreter exit.
+    # Release retained JSONL handles and other session resources at exit.
     session = get_default_session()
     if session is not None:
         # Save final session state to _cli_sessions before closing

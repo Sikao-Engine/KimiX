@@ -51,7 +51,7 @@ def pytest_configure(config: Any) -> None:
     """Register custom markers used across the kimi-cli test suite."""
     config.addinivalue_line(
         "markers",
-        "benchmark: performance smoke tests for the FTS5 adoption plan "
+        "benchmark: performance smoke tests for JSONL context/history storage "
         "(skip by default with '-m \"not benchmark\"')",
     )
 

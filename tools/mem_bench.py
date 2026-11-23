@@ -1807,47 +1807,50 @@ def _steer_queue_retention() -> dict[str, Any]:
 
 @case(
     "session_context",
-    "Session + ContextDB: 500 messages written, read back, measured",
+    "Session + append-only Context JSONL: 500 messages written/restored/measured",
     preload=_preload_soul_runtime,
 )
 def case_session_context() -> dict[str, Any]:
     ensure_import_paths()
-    from kosong.message import Message, TextPart as KosongTextPart
-
-    from kimi_cli.soul.context_db import ContextDB
+    from kimi_cli.soul.context import Context
 
     messages_total = 500
     batch = 10
 
     with temp_env("membench_session_") as (tmpdir, work):
         runtime, config, session = build_runtime(tmpdir, work)
-        db_path = tmpdir / "session" / "context.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        db = ContextDB(db_path)
+        context_path = tmpdir / "session" / "context.jsonl"
+        context_path.parent.mkdir(parents=True, exist_ok=True)
+        context = Context.from_file_backend(context_path)
         history, _ = make_history(n_turns=messages_total // 4, output_chars=2500)
 
         async def workload() -> dict[str, Any]:
-            await db.initialize()
-            await db.set_system_prompt("You are Kimi.")
+            await context.restore()
+            await context.write_system_prompt("You are Kimi.")
             write_ms: list[float] = []
             for start in range(0, messages_total, batch):
                 chunk = history[start : start + batch]
                 if not chunk:
                     break
                 started = time.perf_counter()
-                await db.append_messages(chunk)
+                await context.append_message(chunk)
                 write_ms.append((time.perf_counter() - started) * 1000)
-            written = await db.get_message_count()
+            written = await context.storage.get_message_count()
+            await context.close()
+
+            restored = Context.from_file_backend(context_path)
             read_started = time.perf_counter()
-            loaded = await db.get_messages()
+            await restored.restore()
             read_ms = (time.perf_counter() - read_started) * 1000
-            paged = await db.get_messages(limit=50)
+            loaded = list(restored.history)
+            paged = await restored.storage.get_messages(limit=50)
             per_message = [deep_size(message) for message in loaded[:50]]
             first_payload = deep_size(loaded[0]) if loaded else 0
+            await restored.close()
             return {
                 "written": written,
                 "loaded": len(loaded),
-                "read_ms": round(read_ms, 2),
+                "cold_restore_ms": round(read_ms, 2),
                 "write_ms_avg": round(sum(write_ms) / max(1, len(write_ms)), 3),
                 "write_ms_max": round(max(write_ms) if write_ms else 0.0, 3),
                 "loaded_deep_bytes": deep_size(loaded),
@@ -1856,29 +1859,32 @@ def case_session_context() -> dict[str, Any]:
                     sum(per_message) / max(1, len(per_message)), 1
                 ),
                 "per_message_deep_bytes_first": first_payload,
-                "loads_entire_history": len(loaded) == written,
+                "loads_entire_active_history": len(loaded) == written,
                 "text_identity_preserved": _text_identity_ratio(loaded),
                 "loaded_keep": loaded,
             }
 
         result = asyncio.run(workload())
         loaded = result.pop("loaded_keep")
-        disk = _sqlite_disk_report(db_path)
+        disk_files = _file_sizes(context_path)
+        disk = {
+            "files": disk_files,
+            "total_bytes": sum(disk_files.values()),
+        }
         method_costs = _measure_methods()
         metrics = {
             **result,
-            "sqlite": disk,
+            "jsonl": disk,
             "session_deep_bytes": deep_size(session),
             "runtime_deep_bytes": deep_size(runtime),
-            "db_object_deep_bytes": deep_size(db),
+            "context_object_deep_bytes": deep_size(context),
             "method_costs": method_costs,
         }
-        asyncio.run(db.close())
     return {
         "metrics": metrics,
-        "keep": [loaded, db],
+        "keep": [loaded, context],
         "notes": [
-            "get_messages() re-parses every row into fresh pydantic Message objects (no cache).",
+            "Cold restore replays JSONL into the active message cache; subsequent getters are cached.",
             "per_message_deep_bytes_* includes the pydantic Message + TextPart + str payload.",
         ],
     }
@@ -1920,60 +1926,6 @@ def _measure_methods(_unused: Any = None) -> list[dict[str, Any]]:
         ]
     except Exception as exc:  # noqa: BLE001
         return [{"error": f"{type(exc).__name__}: {exc}"}]
-
-
-def _sqlite_disk_report(db_path: Path, *, checkpoint: bool = True) -> dict[str, Any]:
-    """On-disk cost of a SQLite DB (files before/after a WAL checkpoint)."""
-    before = _file_sizes(db_path)
-    pages = None
-    table_bytes: dict[str, int] = {}
-    if checkpoint:
-        try:
-            import apsw
-
-            conn = apsw.Connection(str(db_path))
-            try:
-                cursor = conn.cursor()
-                try:
-                    cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-                except Exception:
-                    pass
-                try:
-                    pages = int(cursor.execute("PRAGMA page_count").fetchone()[0])
-                except Exception:
-                    pages = None
-                try:
-                    names = [
-                        row[0]
-                        for row in cursor.execute(
-                            "SELECT name FROM sqlite_master "
-                            "WHERE type IN ('table','index') ORDER BY name"
-                        ).fetchall()
-                    ]
-                    stat_cursor = conn.cursor()
-                    for name in names:
-                        try:
-                            row = stat_cursor.execute(
-                                "SELECT SUM(pgsize) FROM dbstat WHERE name = ?", (name,)
-                            ).fetchone()
-                            table_bytes[name] = int(row[0]) if row and row[0] else 0
-                        except Exception:
-                            table_bytes[name] = 0
-                except Exception:
-                    pass
-            finally:
-                conn.close()
-        except Exception as exc:  # noqa: BLE001
-            table_bytes = {"error": 0}
-            del exc
-    after = _file_sizes(db_path)
-    return {
-        "files": after,
-        "total_bytes": sum(after.values()),
-        "wal_bytes_before_checkpoint": sum(before.values()) - after.get(db_path.name, 0),
-        "page_count": pages,
-        "dbstat_bytes": table_bytes,
-    }
 
 
 def _file_sizes(db_path: Path) -> dict[str, int]:
@@ -2238,26 +2190,27 @@ def case_compaction() -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Case 8 — history_index_fts
+# Case 8 — history_index_jsonl
 # --------------------------------------------------------------------------- #
 
 @case(
-    "history_index_fts",
-    "HistoryIndex/FTS5 over 500 messages: memory + on-disk size",
+    "history_index_jsonl",
+    "HistoryIndex JSONL/postings over 500 messages: cold load + warm search + disk",
     preload=_preload_history_index,
 )
-def case_history_index_fts() -> dict[str, Any]:
+def case_history_index_jsonl() -> dict[str, Any]:
     ensure_import_paths()
     from kimi_cli.soul.history_index import HistoryIndex
 
     history, _ = make_history(n_turns=125, tools_per_turn=2, output_chars=2500)
 
     with temp_env("membench_history_") as (tmpdir, work):
-        db_path = tmpdir / "history" / "history.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
+        jsonl_path = tmpdir / "history" / "history.jsonl"
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
         init_started = time.perf_counter()
-        index = HistoryIndex(db_path=db_path)
+        index = HistoryIndex(jsonl_path=jsonl_path)
         init_ms = (time.perf_counter() - init_started) * 1000
+        index.load()
 
         index_started = time.perf_counter()
         index.index_messages(history)
@@ -2265,75 +2218,49 @@ def case_history_index_fts() -> dict[str, Any]:
         search_started = time.perf_counter()
         hits = index.search("module", top_k=5)
         search_ms = (time.perf_counter() - search_started) * 1000
+        cjk_started = time.perf_counter()
         cjk_hits = index.search("模块", top_k=3)
+        cjk_ms = (time.perf_counter() - cjk_started) * 1000
         index.save()
+        index.close()
 
-        legacy_state = {
-            "turns_list_len": len(index._turns_list),
-            "turns_list_bytes": deep_size(index._turns_list),
-            "inverted_index_bytes": deep_size(index._index),
-            "tokenizer_bytes": deep_size(index._tokenizer),
-            "index_deep_bytes": deep_size(index),
-            "uses_fts": bool(index._use_fts),
+        cold_started = time.perf_counter()
+        reopened = HistoryIndex(jsonl_path=jsonl_path)
+        reopened.load()
+        cold_load_ms = (time.perf_counter() - cold_started) * 1000
+        state = {
+            "turn_count": reopened._engine.turn_count,
+            "turns_bytes": deep_size(reopened._turns),
+            "postings_bytes": deep_size(reopened._engine._postings),
+            "engine_deep_bytes": deep_size(reopened._engine),
+            "index_deep_bytes": deep_size(reopened),
+            "backend": "jsonl-postings",
         }
-        disk = _sqlite_disk_report(db_path)
+        disk_files = _file_sizes(jsonl_path)
+        disk = {"files": disk_files, "total_bytes": sum(disk_files.values())}
         metrics = {
             "messages_indexed": len(history),
             "init_ms": round(init_ms, 2),
             "index_ms": round(index_ms, 2),
-            "search_ms": round(search_ms, 2),
+            "cold_load_ms": round(cold_load_ms, 2),
+            "warm_search_ms": round(search_ms, 2),
+            "warm_cjk_ms": round(cjk_ms, 2),
             "hits": len(hits),
             "cjk_hits": len(cjk_hits),
-            "legacy_state": legacy_state,
+            "state": state,
             "disk": disk,
             "bytes_per_message_on_disk": round(
                 disk["total_bytes"] / max(1, len(history)), 1
             ),
         }
-        index.close()
-
-        # --- ContextDB side: sqlite table + FTS5 index for the same history ---
-        context_metrics = _context_db_index_report(tmpdir / "contextdb", history)
-        metrics["context_db"] = context_metrics
+        reopened.close()
     return {
         "metrics": metrics,
         "notes": [
-            "HistoryIndex always builds the legacy BM25 InvertedIndex + NgramTokenizer "
-            "(kimix.retrieval import) even when the FTS5 backend is used.",
-            "context_db.* covers ContextDB's messages table + FTS5 virtual table/triggers.",
+            "Cold load streams JSONL and rebuilds postings once; warm searches use cached memory only.",
+            "Turn text remains verbatim and independent of normalized search tokens.",
         ],
     }
-
-
-def _context_db_index_report(root: Path, history: Sequence[Any]) -> dict[str, Any]:
-    """Memory + disk cost of ContextDB's messages table + FTS5 index."""
-    from kimi_cli.soul.context_db import ContextDB
-
-    root.mkdir(parents=True, exist_ok=True)
-    db_path = root / "context.db"
-    db = ContextDB(db_path)
-
-    async def workload() -> dict[str, Any]:
-        await db.initialize()
-        await db.append_messages(list(history))
-        search_started = time.perf_counter()
-        hits = await db.search_messages("module", limit=20)
-        search_ms = (time.perf_counter() - search_started) * 1000
-        count = await db.get_message_count()
-        return {
-            "messages": count,
-            "search_hits": len(hits),
-            "search_ms": round(search_ms, 2),
-            "result_deep_bytes": deep_size(hits),
-            "deep_bytes": deep_size(db),
-            "keep": hits,
-        }
-
-    result = asyncio.run(workload())
-    hits = result.pop("keep")
-    asyncio.run(db.close())
-    del hits
-    return {**result, "disk": _sqlite_disk_report(db_path)}
 
 
 # --------------------------------------------------------------------------- #

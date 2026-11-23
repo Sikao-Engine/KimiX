@@ -18,12 +18,29 @@ class UsageRecord(BaseModel):
 
     role: Literal["_usage"]
     token_count: int
+    # Legacy input omitted the mapping and acquired its replay position.
+    message_count: int | None = None
 
 
 class CheckpointRecord(BaseModel):
     model_config = ConfigDict(strict=True)
 
     role: Literal["_checkpoint"]
+    id: int
+    # Legacy input omitted the mapping and acquired its replay position.
+    message_count: int | None = None
+
+
+class ResetRecord(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    role: Literal["_reset"]
+
+
+class RevertRecord(BaseModel):
+    model_config = ConfigDict(strict=True)
+
+    role: Literal["_revert"]
     id: int
 
 

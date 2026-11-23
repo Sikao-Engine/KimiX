@@ -16,9 +16,8 @@ _default_role: Any = None
 _live_sessions: list[Session] = []
 """Sessions created through kimix.utils.session that are still open.
 
-Used by the interpreter-shutdown hook to close them (terminating non-daemon
-background threads such as aiosqlite's connection worker) before
-``threading._shutdown`` tries to join those threads."""
+Used by the interpreter-shutdown hook to close retained JSONL handles and
+other resources before process teardown."""
 
 
 def _track_session(session: Session) -> None:
@@ -78,8 +77,8 @@ def _refresh_cli_sessions(work_dir: KaosPath) -> None:
     """Lightweight sync scan of sessions directory under work_dir.
 
     Lists subdirectories in the sessions directory, reads state.json for
-    custom_title (fallback "Untitled"), and stats context.db / context.jsonl
-    for updated_at. Does NOT call CliSession.list() — pure filesystem + JSON.
+    custom_title (fallback "Untitled"), and stats context.jsonl for updated_at.
+    Does NOT call CliSession.list() — pure filesystem + JSON.
     """
     metadata = load_metadata()
     work_dir_meta = metadata.get_work_dir_meta(work_dir.canonical())
@@ -107,13 +106,9 @@ def _refresh_cli_sessions(work_dir: KaosPath) -> None:
             except Exception:
                 pass
 
-        # Get updated_at from context.db or context.jsonl mtime
         updated_at = 0.0
-        db_file = path / "context.db"
         jsonl_file = path / "context.jsonl"
-        if db_file.exists():
-            updated_at = db_file.stat().st_mtime
-        elif jsonl_file.exists():
+        if jsonl_file.exists():
             updated_at = jsonl_file.stat().st_mtime
 
         _add_cli_session(session_id, title, updated_at)

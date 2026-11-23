@@ -58,7 +58,7 @@ async def test_create_uses_sessions_dir_override(
 
     assert session.sessions_dir_override == sessions_dir
     assert session.dir == sessions_dir / "sess-1"
-    assert (sessions_dir / "sess-1" / "context.db").exists()
+    assert (sessions_dir / "sess-1" / "context.jsonl").exists()
     assert session.wire_file.path == sessions_dir / "sess-1" / "wire.jsonl"
     # Nothing should be created in the default share-dir location.
     assert not (isolated_share_dir / "sessions").exists()
@@ -71,7 +71,7 @@ async def test_create_default_location_is_work_dir_cache(
 
     assert session.sessions_dir_override is None
     assert session.dir == Path(str(work_dir)) / KIMIX_CACHE_DIR_NAME / "sess-1"
-    assert (Path(str(work_dir)) / KIMIX_CACHE_DIR_NAME / "sess-1" / "context.db").exists()
+    assert (Path(str(work_dir)) / KIMIX_CACHE_DIR_NAME / "sess-1" / "context.jsonl").exists()
     # The share dir must not be involved at all.
     assert not (isolated_share_dir / "sessions").exists()
 
@@ -168,7 +168,7 @@ async def test_rename_with_sessions_dir_override(
     assert renamed.id == "sess-2"
     assert renamed.sessions_dir_override == sessions_dir
     assert renamed.dir == sessions_dir / "sess-2"
-    assert (sessions_dir / "sess-2" / "context.db").exists()
+    assert (sessions_dir / "sess-2" / "context.jsonl").exists()
     assert not (sessions_dir / "sess-1").exists()
 
     # The renamed session is also visible without the override (same root).
@@ -185,8 +185,8 @@ async def test_copy_with_sessions_dir_override(
     copied = await Session.copy(work_dir, "sess-1", "sess-2", _sessions_dir=sessions_dir)
     assert copied.id == "sess-2"
     assert copied.sessions_dir_override == sessions_dir
-    assert (sessions_dir / "sess-2" / "context.db").exists()
-    assert (sessions_dir / "sess-1" / "context.db").exists()
+    assert (sessions_dir / "sess-2" / "context.jsonl").exists()
+    assert (sessions_dir / "sess-1" / "context.jsonl").exists()
 
 
 async def test_delete_with_sessions_dir_override(
@@ -210,3 +210,90 @@ async def test_subagents_dir_uses_override(
 ):
     session = await Session.create(work_dir, "sess-1", _sessions_dir=sessions_dir)
     assert session.subagents_dir == sessions_dir / "sess-1" / "subagents"
+
+
+async def test_active_view_reset_makes_session_empty_without_erasing_bytes(
+    isolated_share_dir: Path, work_dir: KaosPath, sessions_dir: Path
+):
+    session = await Session.create(work_dir, "sess-reset", _sessions_dir=sessions_dir)
+    session.context_file.write_bytes(
+        b'{"role":"user","content":"obsolete"}\n'
+        b'{"role":"_reset"}\n'
+    )
+    assert session.is_empty()
+    exported = await session.export()
+    assert exported.messages == []
+    assert len(session.context_file.read_bytes().splitlines()) == 2
+
+
+async def test_find_migrates_legacy_db_in_override_and_default_layouts(
+    isolated_share_dir: Path, work_dir: KaosPath, sessions_dir: Path
+):
+    import apsw
+
+    await Session.create(work_dir, "metadata-seed", _sessions_dir=sessions_dir)
+    session_dir = sessions_dir / "legacy"
+    session_dir.mkdir(parents=True)
+    conn = apsw.Connection(str(session_dir / "context.db"))
+    try:
+        conn.execute(
+            "CREATE TABLE messages (rowid INTEGER PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL, created_at REAL NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO messages VALUES(1,'user','{\"role\":\"user\",\"content\":\"legacy\"}',12.5)"
+        )
+    finally:
+        conn.close()
+
+    found = await Session.find(work_dir, "legacy", _sessions_dir=sessions_dir)
+    assert found is not None
+    assert found.context_file == session_dir / "context.jsonl"
+    assert found.context_file.exists()
+    assert not (session_dir / "context.db").exists()
+    assert (session_dir / "context.db.bak").exists()
+    exported = await found.export()
+    assert [m.extract_text() for m in exported.messages] == ["legacy"]
+
+    default_found = await Session.find(work_dir, "legacy")
+    assert default_found is not None
+    assert default_found.context_file == found.context_file
+
+
+async def test_find_uses_existing_jsonl_without_touching_legacy_db(
+    isolated_share_dir: Path, work_dir: KaosPath, sessions_dir: Path
+):
+    session = await Session.create(work_dir, "both", _sessions_dir=sessions_dir)
+    session.context_file.write_bytes(b'{"role":"user","content":"canonical"}\n')
+    (session.dir / "context.db").write_bytes(b"do not read")
+    found = await Session.find(work_dir, "both", _sessions_dir=sessions_dir)
+    assert found is not None
+    assert [m.extract_text() for m in (await found.export()).messages] == ["canonical"]
+    assert (session.dir / "context.db").read_bytes() == b"do not read"
+
+
+async def test_custom_db_context_path_is_rejected(
+    isolated_share_dir: Path, work_dir: KaosPath, sessions_dir: Path, tmp_path: Path
+):
+    with pytest.raises(ValueError, match="must use JSONL"):
+        await Session.create(
+            work_dir,
+            "custom-db",
+            _context_file=tmp_path / "custom.db",
+            _sessions_dir=sessions_dir,
+        )
+
+
+async def test_copy_finalizes_valid_records_and_ignores_incomplete_tail(
+    isolated_share_dir: Path, work_dir: KaosPath, sessions_dir: Path
+):
+    source = await Session.create(work_dir, "copy-source", _sessions_dir=sessions_dir)
+    source.context_file.write_bytes(
+        b'{"role":"user","content":"safe","created_at":12.0}\n{"role":"assistant","content":'
+    )
+    original = source.context_file.read_bytes()
+    copied = await Session.copy(
+        work_dir, "copy-source", "copy-target", _sessions_dir=sessions_dir
+    )
+    assert source.context_file.read_bytes() == original
+    assert copied.context_file.read_bytes() == b'{"role":"user","content":"safe","created_at":12.0}\n'
+    assert [m.extract_text() for m in (await copied.export()).messages] == ["safe"]

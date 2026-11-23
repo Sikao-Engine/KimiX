@@ -4,8 +4,8 @@ These pin the *representation* contracts introduced by the deep memory pass:
 
 * ``kimi_cli.utils.gc_tuning`` freezes the startup object graph exactly once and
   never raises;
-* ``HistoryIndex`` does not drag the legacy numpy/BM25 stack in on the FTS5
-  (production) path, while the legacy path still works;
+* ``HistoryIndex`` does not drag the legacy numpy/retrieval stack into the
+  production JSONL path, while the same neutral engine works in memory;
 * ``context_pruning._join_text_parts`` shares the source ``str`` for the common
   single-part case instead of copying it, and elision records share that object;
 * the pruning passes copy-on-write: the caller's messages are never mutated and
@@ -79,8 +79,8 @@ def test_freeze_startup_objects_never_raises(monkeypatch: pytest.MonkeyPatch) ->
 # ---------------------------------------------------------------------------
 
 
-def test_history_index_fts_path_does_not_import_numpy(tmp_path: Path) -> None:
-    """The FTS5 backend must not pay the legacy BM25 (numpy) import cost."""
+def test_history_index_jsonl_path_does_not_import_numpy(tmp_path: Path) -> None:
+    """The JSONL backend must not pay the legacy retrieval/NumPy import cost."""
     code = textwrap.dedent(
         """
         import sys
@@ -88,7 +88,7 @@ def test_history_index_fts_path_does_not_import_numpy(tmp_path: Path) -> None:
 
         from kimi_cli.soul.history_index import HistoryIndex
 
-        idx = HistoryIndex(db_path=Path(sys.argv[1]) / "history.db")
+        idx = HistoryIndex(jsonl_path=Path(sys.argv[1]) / "history.jsonl")
         assert idx.load() in (True, False)
         idx.close()
         leaked = sorted(
@@ -110,10 +110,10 @@ def test_history_index_fts_path_does_not_import_numpy(tmp_path: Path) -> None:
     assert leaked and leaked[0] == "LEAKED:", leaked
 
 
-def test_history_index_legacy_path_still_builds_the_index(tmp_path: Path) -> None:
+def test_history_index_in_memory_path_builds_the_same_index(tmp_path: Path) -> None:
     from kimi_cli.soul.history_index import HistoryIndex
 
-    idx = HistoryIndex(persist_path=tmp_path / "history.json")
+    idx = HistoryIndex(persist_path=tmp_path / "history.jsonl")
     try:
         idx.index_messages([Message(role="user", content=[TextPart(text="compile Python code")])])
         idx.index_messages([Message(role="assistant", content=[TextPart(text="use pyinstaller")])])
@@ -123,16 +123,15 @@ def test_history_index_legacy_path_still_builds_the_index(tmp_path: Path) -> Non
         idx.close()
 
 
-def test_history_index_clear_in_fts_mode_does_not_import_retrieval(tmp_path: Path) -> None:
+def test_history_index_clear_in_jsonl_mode_does_not_import_retrieval(tmp_path: Path) -> None:
     from kimi_cli.soul import history_index as module
 
-    idx = module.HistoryIndex(db_path=tmp_path / "history.db")
+    idx = module.HistoryIndex(jsonl_path=tmp_path / "history.jsonl")
     try:
         idx.load()
-        # ``clear`` used to re-initialise the legacy state (numpy import) on the
-        # FTS path; it must only reset the refs now.
+        # Clear appends a reset generation and rebuilds only the empty active view.
         idx.clear()
-        assert idx._index is None
+        assert idx._engine.turn_count == 0
         assert idx._turns_list == []
     finally:
         idx.close()

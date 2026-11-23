@@ -589,21 +589,26 @@ class KimiSoul:
         self._approval = agent.runtime.approval
         self._loop_control = agent.runtime.config.loop_control
 
-        # Phase 3: History index for semantic retrieval over past turns
-        # Lazy import to avoid circular dependency with kimix.retrieval
+        # Each root, subagent and temporary context owns a sibling history log.
         from kimi_cli.soul.history_index import HistoryIndex
-        history_db_path = agent.runtime.session.dir / "history.db"
+
+        context_dir = context.file_backend.parent
+        session_dir = agent.runtime.session.dir
+        is_root_context = context_dir == session_dir
         legacy_json_path = (
-            agent.runtime.session.dir / "history_index" / f"{agent.runtime.session.id}.json"
+            session_dir / "history_index" / f"{agent.runtime.session.id}.json"
+            if is_root_context
+            else context_dir / "history_index" / f"{agent.runtime.subagent_id or 'temporary'}.json"
         )
         self._history_index = HistoryIndex(
-            db_path=history_db_path,
+            jsonl_path=context_dir / "history.jsonl",
             legacy_json_path=legacy_json_path,
         )
         self._history_index.load()
-        # Expose the index to the Session so delete/rename/copy can close the
-        # apsw handle before moving/deleting the session directory on Windows.
-        agent.runtime.session._history_index = self._history_index
+        if is_root_context:
+            # Root lifecycle operations close this retained JSONL handle before
+            # moving or deleting the session directory on Windows.
+            agent.runtime.session._history_index = self._history_index
 
         # Wire context appends into the history indexer
         def _on_append(msgs: Sequence[Message]) -> None:
@@ -2706,12 +2711,8 @@ class KimiSoul:
                 os.remove(str(compact_path))
         with suppress(Exception):
             os.remove(str(file_backend))
-        # Clean up SQLite WAL/SHM companion files (for .db backends)
-        if file_backend.suffix == ".db":
-            for companion_suffix in (".db-wal", ".db-shm"):
-                companion = file_backend.with_suffix(companion_suffix)
-                with suppress(Exception):
-                    os.remove(str(companion))
+        with suppress(Exception):
+            os.remove(str(file_backend.with_name("history.jsonl")))
 
     async def __aenter__(self) -> KimiSoul:
         return self
@@ -2739,8 +2740,8 @@ class KimiSoul:
         except Exception:
             logger.exception("Failed to save history index")
 
-        # Close the FTS5-backed history index (apsw connection) so the
-        # session directory can be moved/deleted on Windows without a lock.
+        # Close the retained history JSONL handle so the session directory
+        # can be moved/deleted on Windows without a lock.
         try:
             self._history_index.close()
         except Exception:
@@ -2751,8 +2752,7 @@ class KimiSoul:
         with suppress(Exception):
             self._context._on_append = None
 
-        # Close the context storage backend (aiosqlite worker thread) so it
-        # does not block Python's threading._shutdown() on interpreter exit.
+        # Close the retained context JSONL handle before anonymous cleanup.
         try:
             await self._context.close()
         except Exception:
@@ -2788,17 +2788,14 @@ class KimiSoul:
             except Exception:
                 logger.exception("Failed to remove context file: {path}", path=self._context.file_backend)
 
-            # Clean up SQLite WAL/SHM companion files
-            fb = self._context.file_backend
-            if fb.suffix == ".db":
-                for companion_suffix in (".db-wal", ".db-shm"):
-                    companion = fb.with_suffix(companion_suffix)
-                    try:
-                        await asyncio.to_thread(os.remove, str(companion))
-                    except FileNotFoundError:
-                        pass
-                    except Exception:
-                        logger.exception("Failed to remove companion file: {path}", path=companion)
+            history_file = self._context.file_backend.with_name("history.jsonl")
+            try:
+                await asyncio.to_thread(os.remove, str(history_file))
+                logger.debug("Removed history file: {path}", path=history_file)
+            except FileNotFoundError:
+                pass
+            except Exception:
+                logger.exception("Failed to remove history file: {path}", path=history_file)
 
         # Cleanup already happened; detach the finalizer so it does not run again.
         self._finalizer.detach()

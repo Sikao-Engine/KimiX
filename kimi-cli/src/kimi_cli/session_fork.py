@@ -170,57 +170,121 @@ def _is_checkpoint_user_message(record: dict[str, Any]) -> bool:
     return False
 
 
+def _valid_context_records(context_path: Path) -> list[dict[str, Any]]:
+    from kimi_cli.soul.jsonl_io import read_jsonl_records_for_copy
+
+    return read_jsonl_records_for_copy(context_path)
+
+
+def _active_context_records(context_path: Path, message_limit: int | None = None) -> list[dict[str, Any]]:
+    """Canonicalize the replayed active view, optionally limiting messages.
+
+    Usage/checkpoint order at a shared message boundary is reconstructed from
+    each checkpoint's usage count, so later reverts retain the same pending and
+    token state.  This is administrative migration/fork output, not a runtime
+    rewrite of the source log.
+    """
+    from kimi_cli.soul.context import ContextReplayState, replay_context
+    from kimi_cli.soul.context import message_record
+
+    state: ContextReplayState = replay_context(context_path)
+    cutoff = len(state.entries) if message_limit is None else min(message_limit, len(state.entries))
+    checkpoints = [
+        (checkpoint_id, checkpoint)
+        for checkpoint_id, checkpoint in state.checkpoints.items()
+        if checkpoint.message_count <= cutoff
+    ]
+    usages = [
+        (index, usage)
+        for index, usage in enumerate(state.usages)
+        if usage.message_count <= cutoff
+    ]
+    # (message position, usage-order constraint, kind, tie-breaker, record)
+    events: list[tuple[int, int, int, int, dict[str, Any]]] = []
+    current_prompt = state.system_prompt
+    if checkpoints:
+        current_prompt = checkpoints[0][1].system_prompt
+    records: list[dict[str, Any]] = []
+    if current_prompt is not None:
+        records.append({"role": "_system_prompt", "content": current_prompt})
+    for checkpoint_id, checkpoint in checkpoints:
+        if checkpoint.system_prompt != current_prompt:
+            current_prompt = checkpoint.system_prompt
+            if current_prompt is not None:
+                events.append(
+                    (
+                        checkpoint.message_count,
+                        checkpoint.usage_count,
+                        -1,
+                        checkpoint_id,
+                        {"role": "_system_prompt", "content": current_prompt},
+                    )
+                )
+        events.append(
+            (
+                checkpoint.message_count,
+                checkpoint.usage_count,
+                0,
+                checkpoint_id,
+                {
+                    "role": "_checkpoint",
+                    "id": checkpoint_id,
+                    "message_count": checkpoint.message_count,
+                },
+            )
+        )
+    for index, usage in usages:
+        events.append(
+            (
+                usage.message_count,
+                index,
+                1,
+                index,
+                {
+                    "role": "_usage",
+                    "token_count": usage.token_count,
+                    "message_count": usage.message_count,
+                },
+            )
+        )
+    events.sort(key=lambda event: event[:4])
+    event_index = 0
+    for position, entry in enumerate(state.entries[:cutoff]):
+        while event_index < len(events) and events[event_index][0] == position:
+            records.append(events[event_index][4])
+            event_index += 1
+        records.append(message_record(entry.message, created_at=entry.created_at))
+    while event_index < len(events):
+        records.append(events[event_index][4])
+        event_index += 1
+    if state.system_prompt != current_prompt and state.system_prompt is not None:
+        records.append({"role": "_system_prompt", "content": state.system_prompt})
+    return records
+
+
 def truncate_context_at_turn(context_path: Path, turn_index: int) -> list[str]:
-    """Read context file and return all lines up to and including the given turn.
+    """Return dense active records through the requested real user turn.
 
-    Supports both SQLite (.db) and JSONL (.jsonl) backends.
-
-    Turn detection is based on real user messages, excluding synthetic checkpoint
-    user entries like ``<system>CHECKPOINT N</system>``.
-
-    Unlike wire truncation, this is best-effort: if context has fewer user turns
-    than ``turn_index`` (e.g. slash-command turns that did not mutate context),
-    return all available context lines instead of failing.
+    Resets/reverts are replayed before turn enumeration.  Synthetic checkpoint
+    user messages do not count as turns.  As before, requesting beyond the
+    available context turns returns the complete active view.
     """
     if not context_path.exists():
         return []
+    from kimi_cli.soul.context import replay_context
 
-    # Use SQLite backend if .db file and it has the messages table
-    if context_path.suffix == ".db":
-        try:
-            return _truncate_context_sqlite(context_path, turn_index)
-        except Exception:
-            # Fallback to JSONL if DB is empty or tables don't exist
-            jsonl_path = context_path.with_suffix(".jsonl")
-            if jsonl_path.exists():
-                context_path = jsonl_path
-            else:
-                return []
-
-    # Fallback to JSONL parsing
-    lines: list[str] = []
-    current_turn = -1  # Will become 0 on first real user message
-
-    with open(context_path, encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            if not stripped:
-                continue
-
-            try:
-                record: dict[str, Any] = orjson.loads(stripped)
-            except orjson.JSONDecodeError:
-                continue
-
-            if record.get("role") == "user" and not _is_checkpoint_user_message(record):
-                current_turn += 1
-                if current_turn > turn_index:
-                    break
-
-            if current_turn <= turn_index:
-                lines.append(stripped)
-
-    return lines
+    state = replay_context(context_path)
+    current_turn = -1
+    cutoff = len(state.entries)
+    for index, entry in enumerate(state.entries):
+        record = entry.message.model_dump(mode="json", exclude_none=True)
+        if entry.message.role == "user" and not _is_checkpoint_user_message(record):
+            current_turn += 1
+            if current_turn > turn_index:
+                cutoff = index
+                break
+    records = _active_context_records(context_path, message_limit=cutoff)
+    return [orjson.dumps(record).decode("utf-8") for record in records]
 
 
 # ---------------------------------------------------------------------------
@@ -253,10 +317,7 @@ async def fork_session(
     from kimi_cli.session import Session as KimiCLISession
 
     wire_path = source_session_dir / "wire.jsonl"
-    # Check for .db first, fall back to .jsonl
-    context_path = source_session_dir / "context.db"
-    if not context_path.exists():
-        context_path = source_session_dir / "context.jsonl"
+    context_path = source_session_dir / "context.jsonl"
 
     if turn_index is not None:
         truncated_wire_lines = truncate_wire_at_turn(wire_path, turn_index)
@@ -278,17 +339,17 @@ async def fork_session(
         for line in truncated_wire_lines:
             f.write(line + "\n")
 
-    # Write truncated context to the new session's context file
-    new_context_path = new_session_dir / "context.db"
-    if not new_context_path.exists():
-        # Fallback to JSONL for legacy sessions
-        new_context_path = new_session_dir / "context.jsonl"
-        with open(new_context_path, "w", encoding="utf-8") as f:
-            for line in truncated_context_lines:
-                f.write(line + "\n")
-    else:
-        # Use SQLite for new sessions
-        await _write_context_lines_to_db(new_context_path, truncated_context_lines)
+    new_context_path = new_session.context_file
+    with new_context_path.open("wb") as handle:
+        for line in truncated_context_lines:
+            handle.write(orjson.dumps(orjson.loads(line), option=orjson.OPT_APPEND_NEWLINE))
+
+    # A fork is not complete until the new active view can be restored.
+    from kimi_cli.soul.context import Context
+
+    validated = Context.from_file_backend(new_context_path)
+    await validated.restore()
+    await validated.close()
 
     # Set title
     if source_title is None:
@@ -306,146 +367,18 @@ async def fork_session(
     return new_session.id
 
 
-def _truncate_context_sqlite(db_path: Path, turn_index: int) -> list[str]:
-    """Read context from SQLite DB and return lines up to and including the given turn."""
-    import orjson
-
-    import apsw
-
-    checkpoint_pattern = re.compile(r"^<system>CHECKPOINT \d+</system>$")
-
-    lines: list[str] = []
-    current_turn = -1
-
-    conn = apsw.Connection(str(db_path))
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT rowid, role, content FROM messages ORDER BY rowid")
-        rows = list(cursor)
-
-        for row in rows:
-            role = row[1]  # role is index 1
-            content = row[2]  # content is index 2
-
-            # Detect user turn (excluding synthetic checkpoint markers)
-            if role == "user":
-                is_checkpoint = False
-                try:
-                    parsed = orjson.loads(content)
-                    if isinstance(parsed, str) and checkpoint_pattern.fullmatch(parsed.strip()):
-                        is_checkpoint = True
-                    elif isinstance(parsed, list) and len(parsed) == 1:
-                        first = parsed[0]
-                        if isinstance(first, dict) and isinstance(first.get("text"), str):
-                            if checkpoint_pattern.fullmatch(first["text"].strip()):
-                                is_checkpoint = True
-                except (orjson.JSONDecodeError, TypeError):
-                    pass
-
-                if not is_checkpoint:
-                    current_turn += 1
-                    if current_turn > turn_index:
-                        break
-
-            if current_turn <= turn_index:
-                lines.append(content)
-    finally:
-        conn.close()
-
-    return lines
-
-
 def _read_all_lines(path: Path) -> list[str]:
     """Read all non-empty lines from a text file."""
     if not path.exists():
         return []
-    lines: list[str] = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            if stripped:
-                lines.append(stripped)
-    return lines
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def _read_all_content(path: Path) -> list[str]:
-    """Read all content from a context file (.db or .jsonl)."""
+    """Copy every valid JSONL record densely; never read legacy DBs here."""
     if not path.exists():
         return []
-    if path.suffix == ".db":
-        return _read_all_lines_from_db(path)
-    return _read_all_lines(path)
-
-
-def _read_all_lines_from_db(db_path: Path) -> list[str]:
-    """Read all JSON content lines from a SQLite context database."""
-    import apsw
-
-    lines: list[str] = []
-    conn = apsw.Connection(str(db_path))
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT content FROM messages ORDER BY rowid"
-        )
-        rows = list(cursor)
-        lines = [row[0] for row in rows]
-    except apsw.OperationalError:
-        # Table doesn't exist yet
-        pass
-    finally:
-        conn.close()
-    return lines
-
-
-async def _write_context_lines_to_db(db_path: Path, lines: list[str]) -> None:
-    """Write context lines to a SQLite database.
-
-    This overwrites any existing data in the database.
-    """
-    import orjson as json_module
-
-    from kosong.message import Message
-
-    from kimi_cli.soul.context_db import ContextDB
-
-    db = ContextDB(db_path)
-    await db.initialize()
-    await db.clear()
-
-    await db.begin_transaction()
-    try:
-        for line in lines:
-            if not line.strip():
-                continue
-            try:
-                line_json = json_module.loads(line)
-            except json_module.JSONDecodeError:
-                continue
-            if not isinstance(line_json, dict):
-                continue
-
-            role = line_json.get("role")
-            if not isinstance(role, str):
-                continue
-
-            if role.startswith("_"):
-                # Meta-record: import via dedicated method
-                await db.import_jsonl_line(line_json)
-            else:
-                # Message: parse and use append_messages for proper storage
-                try:
-                    message = Message.model_validate(line_json)
-                    await db.append_messages([message])
-                except Exception:
-                    continue
-
-        await db.commit_transaction()
-    except Exception:
-        await db.rollback_transaction()
-        raise
-    finally:
-        await db.close()
+    return [orjson.dumps(record).decode("utf-8") for record in _valid_context_records(path)]
 
 
 def _copy_referenced_videos(

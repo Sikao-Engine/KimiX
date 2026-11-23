@@ -1086,10 +1086,9 @@ class Agent(CallableTool2):
         Unlike the CLI commands, the parent session is *not* released before
         copying: the parent agent's loop is still running (this tool call is
         part of its current turn), so its resources must stay intact. The
-        parent's context database is in WAL mode and commits after every
-        append, and no writes happen while this tool call executes, so the
-        directory copy captures a consistent snapshot (SQLite replays the
-        copied WAL on open).
+        parent's JSONL appends are flushed before returning.  The copy is
+        finalized from valid records, so a concurrent writer can contribute at
+        most an ignored incomplete trailing record to the new child.
 
         Raises:
             ValueError: If the parent session cannot be copied (no session id

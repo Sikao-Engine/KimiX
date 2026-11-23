@@ -437,98 +437,86 @@ async def test_multiple_update_cycles(tmp_path: Path) -> None:
     assert ctx.token_count_with_pending == 60_000  # pending reset again
 
 
-# --- SQLite backend restore parity -----------------------------------------
-#
-# The SQLite storage (the default ``context.db`` backend) must rebuild the
-# pending estimate with the same semantics as the JSONL backend: only messages
-# appended AFTER the last usage snapshot are pending. Regressions here make
-# ``token_count_with_pending`` roughly double the real size right after a
-# session restore, which spuriously triggers the auto-compaction check on the
-# first turn after resume — e.g. a ``/continue``.
+# --- Append-only JSONL restore and replay generations -----------------------
 
 
 @pytest.mark.asyncio
-async def test_sqlite_restore_no_pending_when_usage_is_last(tmp_path: Path) -> None:
-    """SQLite: when the usage snapshot covers all messages, pending must be 0."""
-    db_path = tmp_path / "ctx.db"
-    ctx1 = Context.from_db(db_path)
+async def test_jsonl_usage_records_cover_current_logical_messages(tmp_path: Path) -> None:
+    path = tmp_path / "ctx.jsonl"
+    ctx1 = Context.from_file_backend(path)
     await ctx1.append_message(_msg("user", "hello"))
-    await ctx1.append_message(_msg("assistant", "world"))
     await ctx1.update_token_count(500)
+    await ctx1.append_message(_msg("assistant", "pending"))
+    original = path.read_bytes()
     await ctx1.close()
 
-    ctx2 = Context.from_db(db_path)
+    assert b'{"role":"_usage","token_count":500,"message_count":1}\n' in original
+    ctx2 = Context.from_file_backend(path)
     await ctx2.restore()
     assert ctx2.token_count == 500
-    assert ctx2.token_count_with_pending == 500
+    assert ctx2.token_count_with_pending == 500 + estimate_text_tokens([_msg("assistant", "pending")])
     await ctx2.close()
+    assert path.read_bytes() == original
 
 
 @pytest.mark.asyncio
-async def test_sqlite_restore_rebuilds_pending_for_messages_after_usage(
-    tmp_path: Path,
-) -> None:
-    """SQLite: only messages appended after the last usage snapshot are pending."""
-    db_path = tmp_path / "ctx.db"
-    tool_text = "y" * 8000  # ~2000 estimated tokens
-    ctx1 = Context.from_db(db_path)
-    await ctx1.append_message(_msg("user", "hello"))
-    await ctx1.update_token_count(10_000)
-    await ctx1.append_message(_msg("assistant", "let me read that file"))
-    await ctx1.append_message(_msg("tool", tool_text))
-    await ctx1.close()
+async def test_jsonl_repeated_usage_and_reset_generations(tmp_path: Path) -> None:
+    path = tmp_path / "ctx.jsonl"
+    ctx = Context.from_file_backend(path)
+    await ctx.append_message(_msg("user", "a" * 400))
+    await ctx.update_token_count(1_000)
+    await ctx.append_message(_msg("assistant", "b" * 800))
+    await ctx.update_token_count(5_000)
+    await ctx.append_message(_msg("assistant", "c" * 400))
+    await ctx.clear()
+    await ctx.append_message(_msg("user", "d" * 800))
+    await ctx.close()
 
-    ctx2 = Context.from_db(db_path)
-    await ctx2.restore()
-    expected_pending = estimate_text_tokens(
-        [
-            _msg("assistant", "let me read that file"),
-            _msg("tool", tool_text),
-        ]
-    )
-    assert ctx2.token_count == 10_000
-    assert ctx2.token_count_with_pending == 10_000 + expected_pending
-    assert expected_pending > 0
-    await ctx2.close()
+    restored = Context.from_file_backend(path)
+    await restored.restore()
+    expected = estimate_text_tokens([_msg("user", "d" * 800)])
+    assert restored.token_count == 0
+    assert restored.token_count_with_pending == expected
+    await restored.close()
 
 
 @pytest.mark.asyncio
-async def test_sqlite_restore_pending_uses_last_usage_only(tmp_path: Path) -> None:
-    """SQLite: only messages after the *last* usage snapshot are pending."""
-    db_path = tmp_path / "ctx.db"
-    ctx1 = Context.from_db(db_path)
-    await ctx1.append_message(_msg("user", "first question"))
-    await ctx1.update_token_count(1_000)
-    await ctx1.append_message(_msg("assistant", "first answer"))
-    await ctx1.append_message(_msg("tool", "a" * 4000))
-    await ctx1.update_token_count(5_000)  # second usage covers assistant+tool
-    await ctx1.append_message(_msg("assistant", "second answer"))
-    await ctx1.close()
+async def test_jsonl_revert_restores_usage_and_pending_prefix(tmp_path: Path) -> None:
+    path = tmp_path / "ctx.jsonl"
+    ctx = Context.from_file_backend(path)
+    covered = _msg("user", "hello")
+    pending = _msg("assistant", "world" * 100)
+    await ctx.append_message(covered)
+    await ctx.update_token_count(500)
+    await ctx.checkpoint(add_user_message=False)
+    await ctx.append_message(pending)
+    await ctx.update_token_count(900)
+    await ctx.append_message(_msg("user", "discarded"))
+    prefix = path.read_bytes()
 
-    ctx2 = Context.from_db(db_path)
-    await ctx2.restore()
-    expected_pending = estimate_text_tokens([_msg("assistant", "second answer")])
-    assert ctx2.token_count == 5_000
-    assert ctx2.token_count_with_pending == 5_000 + expected_pending
-    await ctx2.close()
+    await ctx.revert_to(0)
+    assert path.read_bytes().startswith(prefix)
+    assert ctx.token_count == 500
+    assert ctx.token_count_with_pending == 500
+    await ctx.close()
+
+    restored = Context.from_file_backend(path)
+    await restored.restore()
+    assert restored.token_count == 500
+    assert restored.token_count_with_pending == 500
+    await restored.close()
 
 
 @pytest.mark.asyncio
-async def test_sqlite_restore_no_usage_records_all_messages_pending(
-    tmp_path: Path,
-) -> None:
-    """SQLite: with no usage snapshot at all, every message is pending."""
-    db_path = tmp_path / "ctx.db"
-    ctx1 = Context.from_db(db_path)
-    await ctx1.append_message(_msg("user", "hello"))
-    await ctx1.append_message(_msg("assistant", "world"))
+async def test_jsonl_no_usage_records_all_active_messages_pending(tmp_path: Path) -> None:
+    path = tmp_path / "ctx.jsonl"
+    ctx1 = Context.from_file_backend(path)
+    messages = [_msg("user", "hello"), _msg("assistant", "world")]
+    await ctx1.append_message(messages)
     await ctx1.close()
 
-    ctx2 = Context.from_db(db_path)
+    ctx2 = Context.from_file_backend(path)
     await ctx2.restore()
-    expected_pending = estimate_text_tokens(
-        [_msg("user", "hello"), _msg("assistant", "world")]
-    )
     assert ctx2.token_count == 0
-    assert ctx2.token_count_with_pending == expected_pending
+    assert ctx2.token_count_with_pending == estimate_text_tokens(messages)
     await ctx2.close()

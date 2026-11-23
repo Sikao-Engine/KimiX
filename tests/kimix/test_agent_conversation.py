@@ -800,7 +800,7 @@ async def test_agent_inherit_context_copies_real_session_dir(
     """Integration: the parent session dir is really copied (Session.copy)."""
     from kimi_cli.metadata import Metadata, save_metadata
     from kimi_cli.session import Session as CliSession
-    from kimi_cli.soul.context_db import ContextDB
+    from kimi_cli.soul.context import Context
     from kosong.message import Message
 
     share_dir = tmp_path / "share"
@@ -820,15 +820,15 @@ async def test_agent_inherit_context_copies_real_session_dir(
     parent_dir = wd_meta.sessions_dir / parent_id
     parent_dir.mkdir(parents=True, exist_ok=True)
 
-    db = ContextDB(parent_dir / "context.db")
-    await db.initialize()
-    await db.append_messages(
+    context = Context.from_file_backend(parent_dir / "context.jsonl")
+    await context.restore()
+    await context.append_message(
         [
             Message(role="user", content="hello parent"),
             Message(role="assistant", content="hi there"),
         ]
     )
-    await db.close()
+    await context.close()
 
     parent = MagicMock()
     parent.id = parent_id
@@ -841,12 +841,12 @@ async def test_agent_inherit_context_copies_real_session_dir(
     copied = await CliSession.find(work, target_id)
     assert copied is not None
 
-    copied_db = ContextDB(parent_dir.parent / target_id / "context.db")
-    await copied_db.initialize()
+    copied_context = Context.from_file_backend(parent_dir.parent / target_id / "context.jsonl")
+    await copied_context.restore()
     try:
-        messages = await copied_db.get_messages()
+        messages = list(copied_context.history)
     finally:
-        await copied_db.close()
+        await copied_context.close()
     texts: list[str] = []
     for m in messages:
         if isinstance(m.content, str):

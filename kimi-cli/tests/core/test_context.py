@@ -1,681 +1,387 @@
-"""Tests for Context class, focusing on system prompt persistence in context.jsonl."""
+"""Append-only JSONL context storage and replay tests."""
 
 from __future__ import annotations
 
-import json
+import asyncio
 from pathlib import Path
 
+import orjson
 import pytest
 from kosong.message import Message, Role, ToolCall
 from kosong.utils.jsonx import loads_relaxed
 
-from kimi_cli.soul.context import Context
+from kimi_cli.soul.compaction import estimate_text_tokens
+from kimi_cli.soul.context import Context, JsonlContextStorage, replay_context
 from kimi_cli.wire.types import TextPart
 
 
 def _write_lines(path: Path, lines: list[dict]) -> None:
-    """Write JSON lines to a file."""
-    path.write_text(
-        "".join(json.dumps(line) + "\n" for line in lines),
-        encoding="utf-8",
-    )
+    path.write_bytes(b"".join(orjson.dumps(line, option=orjson.OPT_APPEND_NEWLINE) for line in lines))
 
 
 def _read_lines(path: Path) -> list[dict]:
-    """Read all JSON lines from a file (using loads_relaxed for lenient parsing)."""
-    return [
-        loads_relaxed(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
-    ]
+    return [orjson.loads(line) for line in path.read_bytes().splitlines() if line.strip()]
 
 
 def _message_dict(role: Role, text: str) -> dict:
-    """Create a serialized message dict."""
-    return json.loads(
-        Message(role=role, content=[TextPart(text=text)]).model_dump_json(exclude_none=True)
+    return Message(role=role, content=[TextPart(text=text)]).model_dump(
+        mode="json", exclude_none=True
     )
 
 
-# --- write_system_prompt tests ---
-
-
-@pytest.mark.asyncio
-async def test_write_system_prompt_empty_file(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-    ctx = Context(file_backend=path)
-
-    await ctx.write_system_prompt("You are a helpful assistant.")
-
-    assert ctx.system_prompt == "You are a helpful assistant."
-    lines = _read_lines(path)
-    assert len(lines) == 1
-    assert lines[0] == {"role": "_system_prompt", "content": "You are a helpful assistant."}
-
-
-@pytest.mark.asyncio
-async def test_write_system_prompt_nonexistent_file(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    ctx = Context(file_backend=path)
-
-    await ctx.write_system_prompt("Test prompt")
-
-    assert ctx.system_prompt == "Test prompt"
-    assert path.exists()
-    lines = _read_lines(path)
-    assert lines[0]["role"] == "_system_prompt"
-
-
-@pytest.mark.asyncio
-async def test_write_system_prompt_prepends_to_existing(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    msg = _message_dict("user", "Hello")
-    _write_lines(path, [msg])
-
-    ctx = Context(file_backend=path)
-    await ctx.write_system_prompt("Prepended prompt")
-
-    lines = _read_lines(path)
-    assert len(lines) == 2
-    assert lines[0] == {"role": "_system_prompt", "content": "Prepended prompt"}
-    assert lines[1] == msg
-
-
-# --- restore tests ---
-
-
-@pytest.mark.asyncio
-async def test_restore_reads_system_prompt(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    _write_lines(
-        path,
-        [
-            {"role": "_system_prompt", "content": "Frozen prompt"},
-            _message_dict("user", "Hello"),
-        ],
-    )
-
-    ctx = Context(file_backend=path)
-    restored = await ctx.restore()
-
-    assert restored is True
-    assert ctx.system_prompt == "Frozen prompt"
-
-
-@pytest.mark.asyncio
-async def test_restore_without_system_prompt(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    _write_lines(path, [_message_dict("user", "Hello")])
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-
-    assert ctx.system_prompt is None
-
-
-@pytest.mark.asyncio
-async def test_restore_system_prompt_excluded_from_history(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    _write_lines(
-        path,
-        [
-            {"role": "_system_prompt", "content": "System prompt here"},
-            _message_dict("user", "Hello"),
-            _message_dict("assistant", "Hi there"),
-        ],
-    )
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-
-    assert ctx.system_prompt == "System prompt here"
-    assert len(ctx.history) == 2
-    assert all(msg.role in ("user", "assistant") for msg in ctx.history)
-
-
-@pytest.mark.asyncio
-async def test_restore_with_all_record_types(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    _write_lines(
-        path,
-        [
-            {"role": "_system_prompt", "content": "The system prompt"},
-            _message_dict("user", "Hello"),
-            {"role": "_usage", "token_count": 42},
-            {"role": "_checkpoint", "id": 0},
-            _message_dict("assistant", "World"),
-            {"role": "_checkpoint", "id": 1},
-        ],
-    )
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-
-    assert ctx.system_prompt == "The system prompt"
-    assert ctx.token_count == 42
-    assert ctx.n_checkpoints == 2
-    assert len(ctx.history) == 2
-
-
-@pytest.mark.asyncio
-async def test_restore_skips_malformed_trailing_line(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    valid_lines = [
-        {"role": "_system_prompt", "content": "Frozen prompt"},
-        _message_dict("user", "Hello"),
-    ]
-    path.write_text(
-        "".join(json.dumps(line) + "\n" for line in valid_lines)
-        + '{"role":"assistant","content":"unterminated\n',
-        encoding="utf-8",
-    )
-
-    ctx = Context(file_backend=path)
-    restored = await ctx.restore()
-
-    assert restored is True
-    assert ctx.system_prompt == "Frozen prompt"
-    assert len(ctx.history) == 2
-    assert ctx.history[0].role == "user"
-    assert ctx.history[1].role == "assistant"
-
-
-@pytest.mark.asyncio
-async def test_restore_skips_truncated_utf8_trailing_line(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    valid_prefix = (
-        json.dumps({"role": "_system_prompt", "content": "Frozen prompt"}, ensure_ascii=False)
-        + "\n"
-        + json.dumps(_message_dict("user", "Hello"), ensure_ascii=False)
-        + "\n"
-    ).encode("utf-8")
-    path.write_bytes(valid_prefix + b'{"role":"assistant","content":"\xe4\xb8\n')
-
-    ctx = Context(file_backend=path)
-    restored = await ctx.restore()
-
-    assert restored is True
-    assert ctx.system_prompt == "Frozen prompt"
-    assert len(ctx.history) == 2
-    assert ctx.history[0].role == "user"
-    assert ctx.history[1].role == "assistant"
-
-
-# --- clear tests ---
-
-
-@pytest.mark.asyncio
-async def test_clear_resets_system_prompt(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    _write_lines(
-        path,
-        [
-            {"role": "_system_prompt", "content": "Will be cleared"},
-            _message_dict("user", "Hello"),
-        ],
-    )
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-    assert ctx.system_prompt == "Will be cleared"
-
-    await ctx.clear()
-
-    assert ctx.system_prompt is None
-    assert len(ctx.history) == 0
-
-
-# --- revert_to tests ---
-
-
-@pytest.mark.asyncio
-async def test_revert_preserves_system_prompt(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    _write_lines(
-        path,
-        [
-            {"role": "_system_prompt", "content": "Preserved prompt"},
-            _message_dict("user", "Before checkpoint"),
-            {"role": "_checkpoint", "id": 0},
-            _message_dict("user", "After checkpoint"),
-            {"role": "_checkpoint", "id": 1},
-        ],
-    )
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-    assert ctx.system_prompt == "Preserved prompt"
-    assert len(ctx.history) == 2
-
-    # revert_to(1) removes checkpoint 1 and everything after it;
-    # both messages (before checkpoint 0 and between 0 and 1) are preserved
-    await ctx.revert_to(1)
-
-    assert ctx.system_prompt == "Preserved prompt"
-    assert len(ctx.history) == 2
-
-    # revert_to(0) removes checkpoint 0 and everything after it;
-    # only the first message is preserved
-    await ctx.revert_to(0)
-
-    assert ctx.system_prompt == "Preserved prompt"
-    assert len(ctx.history) == 1
-
-
-@pytest.mark.asyncio
-async def test_revert_preserves_system_prompt_in_file(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    _write_lines(
-        path,
-        [
-            {"role": "_system_prompt", "content": "File preserved"},
-            _message_dict("user", "Message 1"),
-            {"role": "_checkpoint", "id": 0},
-            _message_dict("user", "Message 2"),
-            {"role": "_checkpoint", "id": 1},
-        ],
-    )
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-    await ctx.revert_to(1)
-
-    lines = _read_lines(path)
-    assert lines[0] == {"role": "_system_prompt", "content": "File preserved"}
-
-
-@pytest.mark.asyncio
-async def test_revert_skips_malformed_line_before_checkpoint(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.write_text(
-        "".join(
-            [
-                json.dumps({"role": "_system_prompt", "content": "Recovered prompt"}) + "\n",
-                json.dumps(_message_dict("user", "Before bad line")) + "\n",
-                '{"role":"assistant","content":"unterminated\n',
-                json.dumps({"role": "_checkpoint", "id": 0}) + "\n",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-    await ctx.revert_to(0)
-
-    lines = _read_lines(path)
-    assert lines == [
-        {"role": "_system_prompt", "content": "Recovered prompt"},
-        _message_dict("user", "Before bad line"),
-        {"role": "assistant", "content": "unterminated"},
-    ]
-
-
-@pytest.mark.asyncio
-async def test_revert_skips_structurally_invalid_json_object_before_checkpoint(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "context.jsonl"
-    path.write_text(
-        "".join(
-            [
-                json.dumps({"role": "_system_prompt", "content": "Recovered prompt"}) + "\n",
-                json.dumps(_message_dict("user", "Before bad line")) + "\n",
-                json.dumps({"oops": 1}) + "\n",
-                json.dumps({"role": "_checkpoint", "id": 0}) + "\n",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-    await ctx.revert_to(0)
-
-    lines = _read_lines(path)
-    assert lines == [
-        {"role": "_system_prompt", "content": "Recovered prompt"},
-        _message_dict("user", "Before bad line"),
-    ]
-
-
-@pytest.mark.asyncio
-async def test_revert_skips_truncated_utf8_line_before_checkpoint(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.write_bytes(
-        (
-            json.dumps(
-                {"role": "_system_prompt", "content": "Recovered prompt"}, ensure_ascii=False
-            )
-            + "\n"
-            + json.dumps(_message_dict("user", "Before bad line"), ensure_ascii=False)
-            + "\n"
-        ).encode("utf-8")
-        + b'{"role":"assistant","content":"\xe4\xb8\n'
-        + (json.dumps({"role": "_checkpoint", "id": 0}) + "\n").encode("utf-8")
-    )
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-    await ctx.revert_to(0)
-
-    lines = _read_lines(path)
-    assert lines == [
-        {"role": "_system_prompt", "content": "Recovered prompt"},
-        _message_dict("user", "Before bad line"),
-        {"role": "assistant", "content": "\ufffd"},
-    ]
-
-
-# --- round-trip tests ---
-
-
-@pytest.mark.asyncio
-async def test_write_system_prompt_then_restore(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx1 = Context(file_backend=path)
-    await ctx1.write_system_prompt("Round trip prompt")
-
-    ctx2 = Context(file_backend=path)
-    await ctx2.restore()
-
-    assert ctx2.system_prompt == "Round trip prompt"
-
-
-@pytest.mark.asyncio
-async def test_write_append_messages_then_restore(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx1 = Context(file_backend=path)
-    await ctx1.write_system_prompt("Frozen system prompt")
-    await ctx1.append_message(Message(role="user", content=[TextPart(text="Hello")]))
-    await ctx1.append_message(Message(role="assistant", content=[TextPart(text="Hi")]))
-
-    ctx2 = Context(file_backend=path)
-    await ctx2.restore()
-
-    assert ctx2.system_prompt == "Frozen system prompt"
-    assert len(ctx2.history) == 2
-    assert ctx2.history[0].role == "user"
-    assert ctx2.history[1].role == "assistant"
-
-
-@pytest.mark.asyncio
-async def test_prepend_then_restore(tmp_path: Path) -> None:
-    """Legacy session migration: prepend system prompt to existing messages, then restore."""
-    path = tmp_path / "context.jsonl"
-    _write_lines(
-        path,
-        [
-            _message_dict("user", "Old message 1"),
-            _message_dict("assistant", "Old reply 1"),
-        ],
-    )
-
-    ctx1 = Context(file_backend=path)
-    await ctx1.write_system_prompt("Migrated prompt")
-
-    ctx2 = Context(file_backend=path)
-    await ctx2.restore()
-
-    assert ctx2.system_prompt == "Migrated prompt"
-    assert len(ctx2.history) == 2
-
-
-# --- file format verification ---
-
-
-@pytest.mark.asyncio
-async def test_system_prompt_is_first_line_in_file(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx = Context(file_backend=path)
-    await ctx.write_system_prompt("First line prompt")
-    await ctx.append_message(Message(role="user", content=[TextPart(text="Second line")]))
-    await ctx.checkpoint(add_user_message=False)
-    await ctx.update_token_count(100)
-
-    lines = _read_lines(path)
-    assert lines[0]["role"] == "_system_prompt"
-    assert lines[0]["content"] == "First line prompt"
-    assert lines[1]["role"] == "user"
-    assert lines[2]["role"] == "_checkpoint"
-    assert lines[3]["role"] == "_usage"
-
-
-# --- replace_history tests ---
-
-
-@pytest.mark.asyncio
-async def test_replace_history_rewrites_storage(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx = Context(file_backend=path)
-    await ctx.append_message(Message(role="user", content=[TextPart(text="keep me")]))
-    await ctx.append_message(Message(role="assistant", content=[TextPart(text="drop me")]))
-
-    await ctx.replace_history([Message(role="user", content=[TextPart(text="only me")])])
-
-    assert len(ctx.history) == 1
-    assert ctx.history[0].role == "user"
-    assert ctx.history[0].content[0].text == "only me"
-
-    lines = _read_lines(path)
-    assert len(lines) == 1
-    assert lines[0]["role"] == "user"
-
-
-@pytest.mark.asyncio
-async def test_replace_history_preserves_system_prompt(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx = Context(file_backend=path)
-    await ctx.write_system_prompt("Frozen system prompt")
-    await ctx.append_message(Message(role="user", content=[TextPart(text="Hello")]))
-
-    await ctx.replace_history([Message(role="assistant", content=[TextPart(text="Hi")])])
-
-    assert ctx.system_prompt == "Frozen system prompt"
-    lines = _read_lines(path)
-    assert lines[0] == {"role": "_system_prompt", "content": "Frozen system prompt"}
-    assert lines[1]["role"] == "assistant"
-
-
-@pytest.mark.asyncio
-async def test_replace_history_resets_pending_tokens(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx = Context(file_backend=path)
-    await ctx.append_message(Message(role="user", content=[TextPart(text="a" * 400)]))
-    old_pending = ctx.token_count_with_pending
-    assert old_pending > 0
-
-    await ctx.replace_history([])
-
-    assert ctx.token_count_with_pending == 0
-
-
-@pytest.mark.asyncio
-async def test_replace_history_clears_checkpoints(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx = Context(file_backend=path)
-    await ctx.append_message(Message(role="user", content=[TextPart(text="msg")]))
-    await ctx.checkpoint(add_user_message=False)
-    assert ctx.n_checkpoints == 1
-
-    await ctx.replace_history([Message(role="user", content=[TextPart(text="msg2")])])
-
-    assert ctx.n_checkpoints == 0
-
-
-@pytest.mark.asyncio
-async def test_replace_history_empty(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx = Context(file_backend=path)
-    await ctx.write_system_prompt("System prompt")
-    await ctx.append_message(Message(role="user", content=[TextPart(text="Hello")]))
-
-    await ctx.replace_history([])
-
-    assert len(ctx.history) == 0
-    lines = _read_lines(path)
-    assert len(lines) == 1
-    assert lines[0] == {"role": "_system_prompt", "content": "System prompt"}
-
-
-@pytest.mark.asyncio
-async def test_replace_history_sqlite_backend(tmp_path: Path) -> None:
-    db_path = tmp_path / "context.db"
-
-    ctx = Context.from_db(db_path)
-    await ctx.write_system_prompt("SQLite prompt")
-    await ctx.append_message(Message(role="user", content=[TextPart(text="keep")]))
-    await ctx.append_message(Message(role="assistant", content=[TextPart(text="drop")]))
-
-    await ctx.replace_history([Message(role="user", content=[TextPart(text="only")])])
-
-    assert len(ctx.history) == 1
-    assert ctx.history[0].content[0].text == "only"
-    assert ctx.system_prompt == "SQLite prompt"
-
-    stored = await ctx.storage.get_messages()
-    assert len(stored) == 1
-    assert stored[0].content[0].text == "only"
-
-
-@pytest.mark.asyncio
-async def test_replace_history_lowers_token_count(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx = Context(file_backend=path)
-    await ctx.append_message(Message(role="user", content=[TextPart(text="a" * 400)]))
-    await ctx.update_token_count(10_000)
-    assert ctx.token_count == 10_000
-
-    await ctx.replace_history([Message(role="user", content=[TextPart(text="b" * 100)])])
-
-    assert ctx.token_count < 10_000
-    assert ctx.token_count > 0
-    assert ctx.token_count_with_pending == ctx.token_count
-
-
-@pytest.mark.asyncio
-async def test_replace_history_does_not_raise_token_count(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    path.touch()
-
-    ctx = Context(file_backend=path)
-    await ctx.append_message(Message(role="user", content=[TextPart(text="a" * 100)]))
-    # No usage recorded yet, so token_count stays at 0 even though the new
-    # message has a positive token estimate.
-    assert ctx.token_count == 0
-
-    await ctx.replace_history([Message(role="user", content=[TextPart(text="b" * 400)])])
-
-    assert ctx.token_count == 0
-    assert ctx.token_count_with_pending == 0
-
-
-# --- restore-time tool-call pairing repair tests ---
+def _msg(role: Role, text: str) -> Message:
+    return Message(role=role, content=[TextPart(text=text)])
 
 
 def _assistant_tool_call_dict(call_id: str, name: str = "some_tool") -> dict:
-    """Serialized assistant message carrying a single tool call."""
-    return json.loads(
+    return Message(
+        role="assistant",
+        content=[],
+        tool_calls=[
+            ToolCall(
+                id=call_id,
+                function=ToolCall.FunctionBody(name=name, arguments="{}"),
+            )
+        ],
+    ).model_dump(mode="json", exclude_none=True)
+
+
+def _tool_result_dict(call_id: str, text: str = "done") -> dict:
+    return Message(role="tool", content=text, tool_call_id=call_id).model_dump(
+        mode="json", exclude_none=True
+    )
+
+
+@pytest.mark.asyncio
+async def test_prompt_appends_and_latest_active_prompt_wins(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    _write_lines(path, [_message_dict("user", "Hello")])
+    original = path.read_bytes()
+    ctx = Context(file_backend=path)
+    await ctx.write_system_prompt("first prompt")
+    after_first = path.read_bytes()
+    await ctx.write_system_prompt("第二\nprompt")
+    await ctx.close()
+
+    assert after_first.startswith(original)
+    assert path.read_bytes().startswith(after_first)
+    lines = _read_lines(path)
+    assert [line["role"] for line in lines] == ["user", "_system_prompt", "_system_prompt"]
+    restored = Context(file_backend=path)
+    assert await restored.restore()
+    assert restored.system_prompt == "第二\nprompt"
+    assert [m.extract_text() for m in restored.history] == ["Hello"]
+    await restored.close()
+
+
+@pytest.mark.asyncio
+async def test_restore_all_record_types_and_logical_message_pagination(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    _write_lines(
+        path,
+        [
+            {"role": "_system_prompt", "content": "prompt"},
+            _message_dict("user", "one"),
+            {"role": "_usage", "token_count": 42},
+            {"role": "_checkpoint", "id": 0},
+            _message_dict("assistant", "two"),
+            {"role": "_checkpoint", "id": 1},
+        ],
+    )
+    ctx = Context(file_backend=path)
+    await ctx.restore()
+    assert ctx.system_prompt == "prompt"
+    assert ctx.token_count == 42
+    assert ctx.n_checkpoints == 2
+    assert [m.extract_text() for m in ctx.history] == ["one", "two"]
+    assert await ctx.storage.get_message_count() == 2
+    assert (await ctx.storage.get_messages(after_rowid=1))[0].extract_text() == "two"
+    assert (await ctx.storage.get_messages(limit=1))[0].extract_text() == "one"
+    assert await ctx.storage.has_visible_messages()
+    exported = await ctx.storage.export()
+    assert exported.checkpoints == [0, 1]
+    assert exported.usages == [42]
+    await ctx.close()
+
+
+@pytest.mark.asyncio
+async def test_dense_unicode_multiline_tool_payload_roundtrip(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    messages = [
+        Message(role="user", content="中文\nline two\tend"),
         Message(
             role="assistant",
             content=[],
             tool_calls=[
                 ToolCall(
-                    id=call_id,
-                    function=ToolCall.FunctionBody(name=name, arguments="{}"),
+                    id="call-1",
+                    function=ToolCall.FunctionBody(
+                        name="ReadFile", arguments='{"path":"a.txt","line":"x"}'
+                    ),
                 )
             ],
-        ).model_dump_json(exclude_none=True)
-    )
+        ),
+        Message(role="tool", content=[TextPart(text="结果\nok")], tool_call_id="call-1"),
+    ]
+    ctx = Context(file_backend=path)
+    await ctx.append_message(messages)
+    await ctx.close()
 
-
-def _tool_result_dict(call_id: str, text: str = "done") -> dict:
-    """Serialized tool-result message."""
-    return json.loads(
-        Message(role="tool", content=text, tool_call_id=call_id).model_dump_json(
-            exclude_none=True
-        )
-    )
+    raw_lines = path.read_bytes().splitlines()
+    assert len(raw_lines) == 3
+    for raw in raw_lines:
+        assert raw == orjson.dumps(orjson.loads(raw))
+        assert b": " not in raw
+        assert b"null" not in raw
+        assert isinstance(orjson.loads(raw)["created_at"], float)
+    restored = Context(file_backend=path)
+    await restored.restore()
+    assert [m.model_dump(mode="json", exclude_none=True) for m in restored.history] == [
+        m.model_dump(mode="json", exclude_none=True) for m in messages
+    ]
+    await restored.close()
 
 
 @pytest.mark.asyncio
-async def test_restore_repairs_interleaved_tool_pairing(tmp_path: Path) -> None:
-    """assistant(tool_calls) -> user -> tool must become assistant -> tool -> user."""
+async def test_replace_history_appends_reset_and_exports_only_active_view(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "context.jsonl"
+    ctx = Context(file_backend=path)
+    await ctx.write_system_prompt("prompt")
+    await ctx.append_message(_msg("user", "old"))
+    await ctx.update_token_count(100)
+    await ctx.checkpoint(add_user_message=False)
+    original = path.read_bytes()
+
+    await ctx.replace_history([_msg("assistant", "new")])
+    replaced_prefix = path.read_bytes()
+    assert replaced_prefix.startswith(original)
+    assert [r["role"] for r in _read_lines(path)][-3:] == ["_reset", "_system_prompt", "assistant"]
+    exported = await ctx.storage.export()
+    assert exported.system_prompt == "prompt"
+    assert [m.extract_text() for m in exported.messages] == ["new"]
+    assert exported.usages == []
+    assert exported.checkpoints == []
+    assert await ctx.storage.get_message_count() == 1
+
+    await ctx.replace_history([])
+    assert path.read_bytes().startswith(replaced_prefix)
+    assert list(ctx.history) == []
+    assert ctx.system_prompt == "prompt"
+    active = await ctx.storage.export()
+    assert active.messages == []
+    assert active.system_prompt == "prompt"
+    await ctx.close()
+
+    replayed = replay_context(path)
+    assert replayed.messages == []
+    assert replayed.system_prompt == "prompt"
+
+
+@pytest.mark.asyncio
+async def test_clear_appends_reset_and_reopen_uses_active_view(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    ctx = Context(file_backend=path)
+    await ctx.write_system_prompt("old prompt")
+    await ctx.append_message(_msg("user", "old"))
+    original = path.read_bytes()
+    await ctx.clear()
+    assert path.read_bytes() == original + b'{"role":"_reset"}\n'
+    assert ctx.system_prompt is None
+    assert list(ctx.history) == []
+    assert await ctx.storage.get_latest_usage() is None
+    assert await ctx.storage.get_latest_checkpoint_id() == -1
+    await ctx.close()
+
+    restored = Context(file_backend=path)
+    assert not await restored.restore()
+    assert restored.system_prompt is None
+    assert list(restored.history) == []
+    await restored.close()
+
+
+@pytest.mark.asyncio
+async def test_multiple_checkpoint_revert_generations_restore_state(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    ctx = Context(file_backend=path)
+    await ctx.write_system_prompt("before")
+    await ctx.append_message(_msg("user", "one"))
+    await ctx.update_token_count(100)
+    await ctx.checkpoint(add_user_message=False)  # 0
+    await ctx.write_system_prompt("after")
+    await ctx.append_message(_msg("assistant", "two"))
+    await ctx.update_token_count(200)
+    await ctx.checkpoint(add_user_message=False)  # 1
+    await ctx.append_message(_msg("user", "three"))
+    before_revert = path.read_bytes()
+
+    await ctx.revert_to(1)
+    assert path.read_bytes() == before_revert + b'{"role":"_revert","id":1}\n'
+    assert [m.extract_text() for m in ctx.history] == ["one", "two"]
+    assert ctx.system_prompt == "after"
+    assert ctx.token_count == 200
+    assert ctx.n_checkpoints == 1
+    await ctx.revert_to(0)
+    assert [m.extract_text() for m in ctx.history] == ["one"]
+    assert ctx.system_prompt == "before"
+    assert ctx.token_count == 100
+    assert ctx.n_checkpoints == 0
+
+    await ctx.checkpoint(add_user_message=True)
+    assert ctx.n_checkpoints == 1
+    await ctx.close()
+    restored = Context(file_backend=path)
+    await restored.restore()
+    assert [m.extract_text() for m in restored.history] == [
+        "one",
+        "<system>CHECKPOINT 0</system>",
+    ]
+    assert restored.token_count == 100
+    assert restored.n_checkpoints == 1
+    await restored.close()
+
+
+@pytest.mark.asyncio
+async def test_unknown_revert_raises_before_appending(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    storage = JsonlContextStorage(path)
+    await storage.initialize()
+    with pytest.raises(ValueError, match="Checkpoint 99 not found"):
+        await storage.revert_to_checkpoint(99)
+    assert path.read_bytes() == b""
+    await storage.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_usage_and_checkpoint_inherit_replay_position(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    _write_lines(
+        path,
+        [
+            _message_dict("user", "covered"),
+            {"role": "_usage", "token_count": 50},
+            {"role": "_checkpoint", "id": 4},
+            _message_dict("assistant", "pending"),
+        ],
+    )
+    ctx = Context(file_backend=path)
+    await ctx.restore()
+    assert ctx.token_count == 50
+    assert ctx.n_checkpoints == 5
+    assert ctx.token_count_with_pending == 50 + estimate_text_tokens([_msg("assistant", "pending")])
+    await ctx.revert_to(4)
+    assert ctx.token_count_with_pending == 50
+    await ctx.close()
+
+
+@pytest.mark.asyncio
+async def test_reset_and_revert_restore_pending_and_usage(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    ctx = Context(file_backend=path)
+    first = _msg("user", "a" * 400)
+    second = _msg("assistant", "b" * 800)
+    await ctx.append_message(first)
+    await ctx.update_token_count(1000)
+    await ctx.checkpoint(add_user_message=False)
+    await ctx.append_message(second)
+    await ctx.revert_to(0)
+    assert ctx.token_count_with_pending == 1000
+    await ctx.append_message(second)
+    await ctx.clear()
+    assert ctx.token_count_with_pending == 0
+    await ctx.close()
+    assert replay_context(path).pending_messages == []
+
+
+@pytest.mark.asyncio
+async def test_malformed_interior_and_incomplete_tail_keep_valid_records(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    path.write_bytes(
+        orjson.dumps(_message_dict("user", "before"), option=orjson.OPT_APPEND_NEWLINE)
+        + b'not json\n'
+        + b'{"role":"assistant","content":\n'
+        + orjson.dumps(_message_dict("assistant", "after"), option=orjson.OPT_APPEND_NEWLINE)
+        + b'{"role":"user","content":'
+    )
+    original = path.read_bytes()
+    ctx = Context(file_backend=path)
+    await ctx.restore()
+    assert [m.extract_text() for m in ctx.history] == ["before", "after"]
+    assert path.read_bytes() == original
+    await ctx.close()
+
+
+@pytest.mark.asyncio
+async def test_relaxed_legacy_line_and_truncated_utf8_are_read_only_compatible(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "context.jsonl"
+    path.write_bytes(
+        b'{"role":"user","content":"legacy",}\n'
+        + b'{"role":"assistant","content":"\xe4\xb8\n'
+    )
+    original = path.read_bytes()
+    ctx = Context(file_backend=path)
+    await ctx.restore()
+    assert [m.extract_text() for m in ctx.history] == ["legacy"]
+    assert path.read_bytes() == original
+    await ctx.close()
+
+
+@pytest.mark.asyncio
+async def test_malformed_replayed_revert_is_skipped(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    _write_lines(
+        path,
+        [
+            _message_dict("user", "kept"),
+            {"role": "_revert", "id": 99},
+            _message_dict("assistant", "also kept"),
+        ],
+    )
+    state = replay_context(path)
+    assert [m.extract_text() for m in state.messages] == ["kept", "also kept"]
+
+
+@pytest.mark.asyncio
+async def test_restore_repairs_interleaved_tool_pairing_without_rewrite(tmp_path: Path) -> None:
     path = tmp_path / "context.jsonl"
     _write_lines(
         path,
         [
             _message_dict("user", "run the checks"),
             _assistant_tool_call_dict("c1"),
-            _message_dict("user", "Background subagent 'x' completed."),
+            _message_dict("user", "Background subagent completed."),
             _tool_result_dict("c1"),
         ],
     )
-
+    original = path.read_bytes()
     ctx = Context(file_backend=path)
     await ctx.restore()
-
     assert [m.role for m in ctx.history] == ["user", "assistant", "tool", "user"]
     assert ctx.history[2].tool_call_id == "c1"
-    assert ctx.history[3].extract_text() == "Background subagent 'x' completed."
+    assert path.read_bytes() == original
+    await ctx.close()
 
 
 @pytest.mark.asyncio
-async def test_restore_synthesizes_missing_tool_result(tmp_path: Path) -> None:
-    """A trailing assistant tool call with no result gets a placeholder."""
+async def test_restore_synthesizes_missing_result_and_drops_orphan(tmp_path: Path) -> None:
     path = tmp_path / "context.jsonl"
     _write_lines(
         path,
-        [
-            _message_dict("user", "hi"),
-            _assistant_tool_call_dict("c1", name="bash"),
-        ],
+        [_tool_result_dict("ghost"), _message_dict("user", "hi"), _assistant_tool_call_dict("c1")],
     )
-
     ctx = Context(file_backend=path)
     await ctx.restore()
-
     assert [m.role for m in ctx.history] == ["user", "assistant", "tool"]
-    assert ctx.history[2].tool_call_id == "c1"
-    assert "interrupted" in ctx.history[2].extract_text()
+    assert ctx.history[-1].tool_call_id == "c1"
+    assert "interrupted" in ctx.history[-1].extract_text()
+    await ctx.close()
 
 
 @pytest.mark.asyncio
-async def test_restore_drops_orphan_tool_result(tmp_path: Path) -> None:
-    path = tmp_path / "context.jsonl"
-    _write_lines(
-        path,
-        [
-            _tool_result_dict("ghost"),
-            _message_dict("user", "hi"),
-        ],
-    )
-
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-
-    assert [m.role for m in ctx.history] == ["user"]
-
-
-@pytest.mark.asyncio
-async def test_restore_leaves_valid_history_untouched(tmp_path: Path) -> None:
+async def test_restore_leaves_valid_tool_sequence_untouched(tmp_path: Path) -> None:
     path = tmp_path / "context.jsonl"
     _write_lines(
         path,
@@ -686,42 +392,69 @@ async def test_restore_leaves_valid_history_untouched(tmp_path: Path) -> None:
             _message_dict("assistant", "all done"),
         ],
     )
-
     ctx = Context(file_backend=path)
     await ctx.restore()
-
     assert [m.role for m in ctx.history] == ["user", "assistant", "tool", "assistant"]
     assert ctx.history[2].extract_text() == "result text"
+    await ctx.close()
 
 
 @pytest.mark.asyncio
-async def test_restore_repairs_tool_pairing_sqlite(tmp_path: Path) -> None:
-    """The SQLite backend (context.db) self-heals the same way on restore."""
-    path = tmp_path / "context.db"
-    writer = Context(file_backend=path)
-    await writer.append_message(Message(role="user", content="run the checks"))
-    await writer.append_message(
-        Message(
-            role="assistant",
-            content=[],
-            tool_calls=[
-                ToolCall(
-                    id="c1",
-                    function=ToolCall.FunctionBody(name="some_tool", arguments="{}"),
-                )
-            ],
-        )
-    )
-    # The corrupting interleave: a steer user message before the tool result.
-    await writer.append_message(
-        Message(role="user", content="Background subagent 'x' completed.")
-    )
-    await writer.append_message(Message(role="tool", content="done", tool_call_id="c1"))
-    await writer.close()
+async def test_replace_history_token_count_contract(tmp_path: Path) -> None:
+    ctx = Context(file_backend=tmp_path / "context.jsonl")
+    await ctx.append_message(_msg("user", "a" * 400))
+    await ctx.update_token_count(10_000)
+    replacement = _msg("user", "b" * 100)
+    await ctx.replace_history([replacement])
+    assert ctx.token_count == estimate_text_tokens([replacement])
+    assert ctx.token_count_with_pending == ctx.token_count
 
-    ctx = Context(file_backend=path)
-    await ctx.restore()
-
-    assert [m.role for m in ctx.history] == ["user", "assistant", "tool", "user"]
-    assert ctx.history[2].tool_call_id == "c1"
+    no_usage = Context(file_backend=tmp_path / "other.jsonl")
+    await no_usage.append_message(_msg("user", "a" * 100))
+    await no_usage.replace_history([_msg("user", "b" * 400)])
+    assert no_usage.token_count == 0
+    assert no_usage.token_count_with_pending == 0
     await ctx.close()
+    await no_usage.close()
+
+
+@pytest.mark.asyncio
+async def test_message_metadata_uses_logical_rowids_and_timestamps(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+    ctx = Context(file_backend=path)
+    await ctx.write_system_prompt("not a message")
+    await ctx.append_message([_msg("user", "one"), _msg("assistant", "two")])
+    rows = await ctx.storage.get_messages_with_meta()  # type: ignore[attr-defined]
+    assert [row["rowid"] for row in rows] == [1, 2]
+    assert all(row["created_at"] > 0 for row in rows)
+    assert all(row["content"] == orjson.dumps(orjson.loads(row["content"])).decode() for row in rows)
+    await ctx.close()
+
+
+def test_context_rejects_direct_sqlite_runtime_path(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="must be migrated"):
+        Context.from_file_backend(tmp_path / "context.db")
+
+
+def test_close_reopen_and_operations_across_successive_event_loops(tmp_path: Path) -> None:
+    path = tmp_path / "context.jsonl"
+
+    async def first() -> None:
+        ctx = Context(file_backend=path)
+        await ctx.append_message(_msg("user", "one"))
+        await ctx.close()
+        await ctx.close()
+
+    async def second() -> None:
+        ctx = Context(file_backend=path)
+        await ctx.restore()
+        await ctx.append_message(_msg("assistant", "two"))
+        await ctx.close()
+
+    asyncio.run(first())
+    asyncio.run(second())
+    assert [m.extract_text() for m in replay_context(path).messages] == ["one", "two"]
+
+
+def test_relaxed_reader_fixture_remains_available() -> None:
+    assert loads_relaxed('{"role":"user","content":"x",}')["content"] == "x"

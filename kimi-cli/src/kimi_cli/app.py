@@ -198,6 +198,12 @@ class KimiCLI:
         _create_t0 = time.monotonic()
         _phase_timings_ms: dict[str, int] = {}
 
+        # Existing child instances cross the read-only legacy migration boundary
+        # once during root startup, before Runtime or any child soul is built.
+        from kimi_cli.legacy_sqlite_migration import migrate_subagent_directories
+
+        migrate_subagent_directories(session.dir)
+
         _phase_t = time.monotonic()
         config = config if isinstance(config, Config) else load_config(config)
         _phase_timings_ms["config_ms"] = int((time.monotonic() - _phase_t) * 1000)

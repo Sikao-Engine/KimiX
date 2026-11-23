@@ -563,8 +563,6 @@ async def test_switch_provider_restarts_and_resumes_real_sdk_session(
         def id(self) -> str:
             return self.session_id
 
-        async def close_context_db(self) -> None:
-            pass
 
     @dataclass
     class _FakeAgent:

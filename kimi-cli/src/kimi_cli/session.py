@@ -6,15 +6,12 @@ import shutil
 import time
 import uuid
 
-import orjson
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import aiofiles
 from kaos.path import KaosPath
 from kosong.message import Message
-from kosong.utils.jsonx import loads_relaxed
 
 from kimi_cli.file_mtine import FileMTime
 from kimi_cli.metadata import (
@@ -24,7 +21,6 @@ from kimi_cli.metadata import (
     save_metadata,
 )
 from kimi_cli.session_state import SessionState, load_session_state, save_session_state
-from kimi_cli.soul.context_db import ContextDB
 from kimi_cli.soul.context_records import ExportedContext
 from kimi_cli.utils.logging import logger
 from kimi_cli.utils.string import shorten
@@ -76,10 +72,7 @@ class Session:
     # use.  Typed ``Any`` to avoid an import cycle with the file tools package.
     file_snapshot_store: Any | None = field(default=None, repr=False, compare=False)
 
-    # Internal: lazy-loaded ContextDB for this session
-    _context_db: ContextDB | None = field(default=None, repr=False, compare=False)
-
-    # Internal: optional HistoryIndex attached by KimiSoul (FTS5 backend).
+    # Internal: optional append-only JSONL HistoryIndex attached by KimiSoul.
     # Closed before session-dir operations so Windows file locks are released.
     _history_index: Any | None = field(default=None, repr=False, compare=False)
 
@@ -110,29 +103,11 @@ class Session:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    @property
-    def context_db_file(self) -> Path:
-        """The absolute path to the SQLite database file."""
-        return self.dir / "context.db"
-
-    def _get_context_db(self) -> ContextDB:
-        """Get or create a ContextDB for this session."""
-        if self._context_db is None:
-            self._context_db = ContextDB(self.context_db_file)
-        return self._context_db
-
-    async def close_context_db(self) -> None:
-        """Close the internal ContextDB connection if open."""
-        if self._context_db is not None:
-            await self._context_db.close()
-            self._context_db = None
-
     def close_history_index(self) -> None:
         """Close the attached HistoryIndex connection if any (best-effort).
 
-        The FTS5 ``history.db`` is held open by an apsw connection; on Windows
-        that handle keeps the session directory locked until closed, so
-        delete/rename/copy paths release it first.
+        The retained JSONL handle keeps the session file alive until closed,
+        so delete/rename/copy paths release it first on Windows.
         """
         idx = getattr(self, "_history_index", None)
         if idx is not None:
@@ -144,46 +119,20 @@ class Session:
                     pass
 
     def is_empty(self) -> bool:
-        """Whether the session has any context history or a custom title."""
+        """Whether the active context, wire log and custom title are all empty."""
         if self.state.custom_title:
             return False
         if not self.wire_file.is_empty():
             return False
-
-        # Check SQLite first, fall back to JSONL
-        db_file = self.context_db_file
-        if db_file.exists():
-            try:
-                import apsw
-                conn = apsw.Connection(str(db_file))
-                try:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT 1 FROM messages WHERE role NOT IN ('_system_prompt', '_usage', '_checkpoint') LIMIT 1"
-                    )
-                    row = cursor.fetchone()
-                    return row is None
-                finally:
-                    conn.close()
-            except Exception:
-                pass
-
-        # Fallback to JSONL
-        try:
-            with self.context_file.open(encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    role = loads_relaxed(line).get("role")
-                    if isinstance(role, str) and not role.startswith("_"):
-                        return False
-        except FileNotFoundError:
+        if not self.context_file.exists():
             return True
-        except (OSError, ValueError, TypeError):
-            logger.exception("Failed to read context file {file}:", file=self.context_file)
+        try:
+            from kimi_cli.soul.context import replay_context
+
+            return not replay_context(self.context_file).entries
+        except OSError:
+            logger.exception("Failed to read context file {file}", file=self.context_file)
             return False
-        return True
 
     def save_state(self) -> None:
         """Persist the session state to disk.
@@ -201,8 +150,7 @@ class Session:
         save_session_state(self.state, self.dir)
 
     async def delete(self) -> None:
-        """Delete the session directory."""
-        await self.close_context_db()
+        """Delete the session directory after releasing retained handles."""
         self.close_history_index()
         session_dir = self._sessions_root / self.id
         if not session_dir.exists():
@@ -212,17 +160,12 @@ class Session:
     def delete_sync(self) -> None:
         """Delete the session directory.
 
-        Best-effort: the aiosqlite worker thread (if any) is stopped first so
-        SQLite files are not locked during removal on Windows, and the removal
-        is retried briefly because the thread may still hold the file handles
-        for a moment after it has been stopped.
+        Best-effort: retained JSONL handles are released first, and removal is
+        retried briefly for transient Windows file locks.
         """
         session_dir = self._sessions_root / self.id
         if not session_dir.exists():
             return
-        db = self._context_db
-        if db is not None:
-            db.stop_sync()
         self.close_history_index()
         deadline = time.monotonic() + 2.0
         while True:
@@ -234,15 +177,9 @@ class Session:
     async def refresh(self) -> None:
         self.title = "Untitled"
 
-        # Check mtime from context.db first, then context.jsonl
-        db_file = self.context_db_file
-        jsonl_file = self.context_file
-        if db_file.exists():
-            self.updated_at = db_file.stat().st_mtime
-        elif jsonl_file.exists():
-            self.updated_at = jsonl_file.stat().st_mtime
-        else:
-            self.updated_at = 0.0
+        self.updated_at = (
+            self.context_file.stat().st_mtime if self.context_file.exists() else 0.0
+        )
 
         if self.state.custom_title:
             self.title = self.state.custom_title
@@ -267,78 +204,11 @@ class Session:
                 return
 
     async def export(self) -> ExportedContext:
-        """Export all data from the session's context file.
+        """Export only the active replay view of the JSONL context."""
+        from kimi_cli.soul.context import replay_context
 
-        Uses SQLite backend if available, falls back to JSONL.
-
-        Returns:
-            ExportedContext: Structured representation of the context file.
-        """
-        from pydantic import ValidationError
-
-        from kimi_cli.soul.context_records import (
-            CheckpointRecord,
-            SystemPromptRecord,
-            UsageRecord,
-        )
-
-        # Try SQLite first
-        db_file = self.context_db_file
-        if db_file.exists():
-            db = ContextDB(db_file)
-            try:
-                await db.initialize()
-                return await db.export()
-            except Exception:
-                logger.exception("Failed to export from SQLite, falling back to JSONL")
-            finally:
-                await db.close()
-
-        # Fallback to JSONL
-        result = ExportedContext()
-        if not self.context_file.exists() or self.context_file.stat().st_size == 0:
-            return result
-
-        async with aiofiles.open(self.context_file, encoding="utf-8", errors="replace") as f:
-            async for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    line_json = loads_relaxed(line)
-                except orjson.JSONDecodeError:
-                    continue
-                if not isinstance(line_json, dict):
-                    continue
-
-                role = line_json.get("role")
-                if not isinstance(role, str):
-                    continue
-                if role == "_system_prompt":
-                    try:
-                        record = SystemPromptRecord.model_validate(line_json)
-                        result.system_prompt = record.content
-                    except ValidationError:
-                        continue
-                elif role == "_usage":
-                    try:
-                        record = UsageRecord.model_validate(line_json)
-                        result.usages.append(record.token_count)
-                    except ValidationError:
-                        continue
-                elif role == "_checkpoint":
-                    try:
-                        record = CheckpointRecord.model_validate(line_json)
-                        result.checkpoints.append(record.id)
-                    except ValidationError:
-                        continue
-                else:
-                    try:
-                        message = Message.model_validate(line_json)
-                        result.messages.append(message)
-                    except ValidationError:
-                        continue
-
-        return result
+        state = await asyncio.to_thread(replay_context, self.context_file)
+        return state.export()
 
     @staticmethod
     async def create(
@@ -373,6 +243,8 @@ class Session:
         session_dir.mkdir(parents=True, exist_ok=True)
 
         if _context_file is not None:
+            if _context_file.suffix == ".db":
+                raise ValueError("Custom context files must use JSONL; migrate legacy SQLite first")
             # Custom context file provided (backward compat / tests)
             logger.warning(
                 "Using provided context file: {context_file}", context_file=_context_file
@@ -388,8 +260,10 @@ class Session:
                 context_file.unlink()
             context_file.touch()
         else:
-            # Default: use .db file for new sessions
-            context_file = session_dir / "context.db"
+            from kimi_cli.legacy_sqlite_migration import migrate_session_directory
+
+            migrate_session_directory(session_dir)
+            context_file = session_dir / "context.jsonl"
             context_file.touch()
 
         save_metadata(metadata)
@@ -450,15 +324,15 @@ class Session:
             logger.debug("Session directory not found: {session_dir}", session_dir=session_dir)
             return None
 
-        # Look for .db first, then .jsonl
-        context_file = session_dir / "context.db"
+        from kimi_cli.legacy_sqlite_migration import migrate_session_directory
+
+        migrate_session_directory(session_dir)
+        context_file = session_dir / "context.jsonl"
         if not context_file.exists():
-            context_file = session_dir / "context.jsonl"
-            if not context_file.exists():
-                logger.debug(
-                    "Session context file not found: {context_file}", context_file=context_file
-                )
-                return None
+            logger.debug(
+                "Session context file not found: {context_file}", context_file=context_file
+            )
+            return None
 
         session = Session(
             id=session_id,
@@ -504,7 +378,7 @@ class Session:
         for path in sessions_root.iterdir():
             if path.is_dir():
                 session_ids.add(path.name)
-            elif path.suffix in (".jsonl", ".db") and path.stem not in session_ids:
+            elif path.suffix == ".jsonl" and path.stem not in session_ids:
                 # Legacy flat-file sessions
                 session_ids.add(path.stem)
 
@@ -517,15 +391,15 @@ class Session:
                 logger.debug("Session directory not found: {session_dir}", session_dir=session_dir)
                 continue
 
-            # Look for .db first, then .jsonl
-            context_file = session_dir / "context.db"
+            from kimi_cli.legacy_sqlite_migration import migrate_session_directory
+
+            migrate_session_directory(session_dir)
+            context_file = session_dir / "context.jsonl"
             if not context_file.exists():
-                context_file = session_dir / "context.jsonl"
-                if not context_file.exists():
-                    logger.debug(
-                        "Session context file not found: {context_file}", context_file=context_file
-                    )
-                    continue
+                logger.debug(
+                    "Session context file not found: {context_file}", context_file=context_file
+                )
+                continue
 
             session = Session(
                 id=session_id,
@@ -636,12 +510,12 @@ class Session:
             )
             return None
 
-        # Check for either .db or .jsonl
-        old_context_file_db = old_session_dir / "context.db"
-        old_context_file_jsonl = old_session_dir / "context.jsonl"
-        if not old_context_file_db.exists() and not old_context_file_jsonl.exists():
+        from kimi_cli.legacy_sqlite_migration import migrate_session_directory
+
+        migrate_session_directory(old_session_dir)
+        if not (old_session_dir / "context.jsonl").exists():
             logger.debug(
-                "Session context file not found (checked .db and .jsonl): {session_dir}",
+                "Session context file not found: {session_dir}",
                 session_dir=old_session_dir,
             )
             return None
@@ -654,9 +528,7 @@ class Session:
             )
             return None
 
-        # Rename the session directory.  On Windows the SQLite WAL file can
-        # remain locked for a short moment after the connection is closed, so
-        # retry a few times before giving up.
+        # Retry briefly for transient Windows file-handle locks.
         for attempt in range(5):
             try:
                 old_session_dir.rename(new_session_dir)
@@ -720,12 +592,16 @@ class Session:
         source_dir = sessions_root / source_session_id
         if not source_dir.is_dir():
             raise ValueError(f"Source session not found: {source_session_id}")
+        from kimi_cli.legacy_sqlite_migration import migrate_session_directory
+
+        migrate_session_directory(source_dir)
 
         target_dir = sessions_root / target_session_id
         if target_dir.exists():
             raise ValueError(f"Target session already exists: {target_session_id}")
 
         await asyncio.to_thread(shutil.copytree, source_dir, target_dir)
+        await asyncio.to_thread(_normalize_copied_jsonl, target_dir / "context.jsonl")
 
         copied = await Session.find(work_dir, target_session_id, _sessions_dir=_sessions_dir)
         if copied is None:
@@ -734,15 +610,8 @@ class Session:
 
 
 def _migrate_session_context_file(work_dir_meta: WorkDirMeta, session_id: str) -> None:
-    """Migrate legacy session context files.
-
-    Handles two migrations:
-    1. Flat JSONL file (session_id.jsonl) → session_dir/context.jsonl
-    2. context.jsonl → context.db (auto-migration on access)
-    """
+    """Relocate flat legacy JSONL, then run isolated pre-runtime DB migration."""
     session_dir = work_dir_meta.sessions_dir / session_id
-
-    # Migration 1: Flat JSONL → session dir
     old_flat_file = work_dir_meta.sessions_dir / f"{session_id}.jsonl"
     new_context_jsonl = session_dir / "context.jsonl"
     if old_flat_file.exists() and not new_context_jsonl.exists():
@@ -754,99 +623,34 @@ def _migrate_session_context_file(work_dir_meta: WorkDirMeta, session_id: str) -
             new=new_context_jsonl,
         )
 
-    # Migration 2: JSONL → SQLite (only if JSONL exists and DB doesn't)
-    if new_context_jsonl.exists() and not (session_dir / "context.db").exists():
-        _migrate_jsonl_to_sqlite(new_context_jsonl)
+    if session_dir.is_dir():
+        from kimi_cli.legacy_sqlite_migration import migrate_session_directory
+
+        migrate_session_directory(session_dir)
 
 
-def _migrate_jsonl_to_sqlite(jsonl_path: Path) -> None:
-    """Migrate a context.jsonl file to SQLite context.db.
+def _normalize_copied_jsonl(context_path: Path) -> None:
+    """Finalize a copied log from valid records, dropping an incomplete tail.
 
-    Reads the JSONL file line by line and inserts into the SQLite database.
-    On success, renames the JSONL file to .bak.
+    Runtime appends flush before returning.  A concurrent writer can therefore
+    expose at most an incomplete trailing record during directory copying; the
+    destination is finalized independently and never changes the source bytes.
     """
-    import orjson as json_module
+    from kimi_cli.soul.jsonl_io import JsonlAppender, read_jsonl_records_for_copy
 
-    db_path = jsonl_path.with_suffix(".db")
-    if db_path.exists():
-        logger.debug("SQLite DB already exists, skipping migration: {db}", db=db_path)
+    if not context_path.exists():
         return
-
-    if not jsonl_path.exists():
-        return
-
-    logger.info("Migrating context from JSONL to SQLite: {jsonl} -> {db}", jsonl=jsonl_path, db=db_path)
-
+    records = read_jsonl_records_for_copy(context_path)
+    temporary = context_path.with_name(context_path.name + ".copying")
+    temporary.unlink(missing_ok=True)
+    writer = JsonlAppender(temporary)
     try:
-        from kimi_cli.soul.context_db import ContextDB
-
-        # Read all lines from JSONL
-        with open(jsonl_path, encoding="utf-8", errors="replace") as f:
-            lines = [line for line in f if line.strip()]
-
-        if not lines:
-            logger.debug("Empty JSONL file, nothing to migrate")
-            # Still create an empty DB
-            db_path.touch()
-            return
-
-        import asyncio
-
-        async def _do_migration():
-            db = ContextDB(db_path)
-            await db.initialize()
-
-            await db.begin_transaction()
-            try:
-                for line in lines:
-                    try:
-                        line_json = loads_relaxed(line)
-                    except json_module.JSONDecodeError:
-                        continue
-                    if not isinstance(line_json, dict):
-                        continue
-
-                    await db.import_jsonl_line(line_json)
-
-                # Fix checkpoint message_rowid references
-                await db.fix_checkpoint_message_rowids()
-                await db.commit_transaction()
-            except Exception:
-                await db.rollback_transaction()
-                raise
-            finally:
-                await db.close()
-
-        asyncio.run(_do_migration())
-
-        # Verify row counts match
-        async def _verify():
-            db = ContextDB(db_path)
-            await db.initialize()
-            db_msg_count = await db.get_message_count()
-            await db.close()
-            return db_msg_count
-
-        db_msg_count = asyncio.run(_verify())
-
-        jsonl_line_count = len([l for l in lines if l.strip()])
-        logger.debug(
-            "Migration verification: JSONL lines={jsonl}, DB messages={db}",
-            jsonl=jsonl_line_count,
-            db=db_msg_count,
-        )
-
-        # Rename JSONL to .bak
-        backup_path = jsonl_path.with_suffix(".jsonl.bak")
-        jsonl_path.rename(backup_path)
-        logger.info("Migration complete. Backup at: {backup}", backup=backup_path)
-
-    except Exception:
-        logger.exception("Failed to migrate context from JSONL to SQLite: {jsonl}", jsonl=jsonl_path)
-        # Clean up partial DB on failure
-        if db_path.exists():
-            try:
-                db_path.unlink()
-            except Exception:
-                pass
-        raise
+        writer.open()
+        writer.append_many(records)
+        writer.save()
+        writer.close()
+        temporary.replace(context_path)
+    finally:
+        writer.close()
+        if temporary.exists():
+            temporary.unlink()

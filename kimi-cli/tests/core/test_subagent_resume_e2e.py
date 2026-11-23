@@ -101,13 +101,13 @@ async def test_resume_accumulates_context(agent_tool, runtime, monkeypatch):
 
     # Verify context has content after turn 1.
     ctx_path = runtime.subagent_store.context_path(agent_id)
-    from kimi_cli.soul.context_db import ContextDB
+    from kimi_cli.soul.context import Context
 
-    async def _count_msgs(db_path) -> tuple[int, int]:
-        db = ContextDB(db_path)
-        await db.initialize()
-        messages = await db.get_messages()
-        await db.close()
+    async def _count_msgs(context_path) -> tuple[int, int]:
+        context = Context.from_file_backend(context_path)
+        await context.restore()
+        messages = list(context.history)
+        await context.close()
         return len(messages), sum(1 for m in messages if m.role == "assistant")
 
     total_t1, assistant_t1 = await _count_msgs(ctx_path)

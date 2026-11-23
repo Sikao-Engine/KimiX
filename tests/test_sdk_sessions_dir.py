@@ -95,7 +95,7 @@ async def test_session_create_stores_in_kimix_cache(
     cache_dir = Path(str(work_dir)) / KIMIX_CACHE_DIR_NAME
     assert cli_session.sessions_dir_override == cache_dir
     assert cli_session.dir == cache_dir / cli_session.id
-    assert (cache_dir / cli_session.id / "context.db").exists()
+    assert (cache_dir / cli_session.id / "context.jsonl").exists()
     # Anonymous by default (no explicit session ID): must register cleanup.
     assert session._anonymous is True
     # Nothing in the default share-dir location.
@@ -115,7 +115,7 @@ async def test_session_create_with_explicit_id_not_anonymous(
     assert session.id == "my-session"
     assert session._anonymous is False
     cache_dir = Path(str(work_dir)) / KIMIX_CACHE_DIR_NAME
-    assert (cache_dir / "my-session" / "context.db").exists()
+    assert (cache_dir / "my-session" / "context.jsonl").exists()
 
 
 async def test_session_resume_finds_kimix_cache_session(
@@ -181,10 +181,9 @@ async def test_anonymous_destroy_deletes_kimix_cache_session(
 # 1. a tool ``cleanup()`` raising — it aborted ``close()`` *before* the deletion
 #    while ``_closed`` was already set, which also blocked ``__del__`` and every
 #    later ``close()`` (permanent leak),
-# 2. ``CliSession.delete()`` raising (e.g. the aiosqlite context connection
-#    refusing to close),
-# 3. a file inside the directory still being held for a moment (Windows: the
-#    aiosqlite worker thread, an anti-virus scan, a file tool): ``delete()``
+# 2. ``CliSession.delete()`` raising (e.g. a transient I/O error),
+# 3. a file inside the directory still being held for a moment (Windows:
+# an anti-virus scan or a file tool): ``delete()``
 #    calls ``shutil.rmtree(..., ignore_errors=True)`` exactly once, which
 #    silently leaves a half-deleted directory behind.
 
@@ -272,8 +271,8 @@ async def test_close_retries_deletion_after_transient_lock(
 ) -> None:
     """A file released shortly after close() starts must not leak the dir.
 
-    Mirrors the Windows situation described in ``ContextDB.stop_sync``: the
-    removal fails while a handle is still open and succeeds once it is released.
+Mirrors transient Windows JSONL handle locks: removal fails while a handle
+is open and succeeds once it is released.
     """
     from kimi_agent_sdk._session import Session
 
@@ -281,7 +280,7 @@ async def test_close_retries_deletion_after_transient_lock(
     session = await Session.create(work_dir=work_dir)
     session_id = session._cli.session.id
     session_dir = _cache_dir(work_dir, session_id)
-    locked_file = session_dir / "context.db"
+    locked_file = session_dir / "context.jsonl"
     assert locked_file.exists()
 
     handle = open(locked_file, "rb")  # no FILE_SHARE_DELETE on Windows
@@ -325,7 +324,7 @@ async def test_del_still_cleans_up_after_a_failed_close(
 
     # Simulate a close that lost the deletion although the session is closed.
     session_dir.mkdir(parents=True, exist_ok=True)
-    (session_dir / "context.db").write_bytes(b"leftover")
+    (session_dir / "context.jsonl").write_bytes(b"leftover")
     assert session._closed is True
 
     session.__del__()  # what CPython runs when the object is reclaimed

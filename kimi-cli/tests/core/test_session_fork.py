@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import time
+
+import orjson
 from pathlib import Path
 
 import pytest
@@ -83,22 +85,7 @@ def _write_wire_file(session_dir: Path, turns: list[str]) -> Path:
 
 
 async def _write_context_file(session_dir: Path, user_messages: list[str]) -> Path:
-    """Write context messages using the appropriate backend."""
-    from kimi_cli.soul.context_db import ContextDB
-
-    db_path = session_dir / "context.db"
-    if db_path.exists():
-        # Use SQLite backend
-        db = ContextDB(db_path)
-        await db.initialize()
-        for text in user_messages:
-            msg = Message(role="user", content=[TextPart(text=text)])
-            resp = Message(role="assistant", content="response")
-            await db.append_messages([msg, resp])
-        await db.close()
-        return db_path
-
-    # Fallback to JSONL
+    """Write dense JSONL context messages."""
     context_path = session_dir / "context.jsonl"
     with context_path.open("w", encoding="utf-8") as f:
         for text in user_messages:
@@ -314,13 +301,12 @@ class TestForkSession:
         # metadata + 2 turns * (TurnBegin + TurnEnd) = 5
         assert len(wire_lines) == 5
 
-        # Verify context was truncated (using SQLite backend)
-        from kimi_cli.soul.context_db import ContextDB
+        from kimi_cli.soul.context import Context
 
-        db = ContextDB(new_session.dir / "context.db")
-        await db.initialize()
-        messages = await db.get_messages()
-        await db.close()
+        context = Context.from_file_backend(new_session.dir / "context.jsonl")
+        await context.restore()
+        messages = list(context.history)
+        await context.close()
         # 2 turns * (user + assistant) = 4 messages
         assert len(messages) == 4, f"Expected 4 context messages, got {len(messages)}"
 
@@ -436,3 +422,67 @@ class TestForkSession:
         new_video = new_session.dir / "uploads" / "test.mp4"
         assert new_video.exists()
         assert new_video.read_text() == "fake video"
+
+
+def test_truncate_replays_reset_and_never_restores_obsolete_lines(session_dir: Path):
+    context_path = session_dir / "context.jsonl"
+    context_path.write_bytes(
+        b'{"role":"user","content":"obsolete before reset"}\n'
+        b'{"role":"_reset"}\n'
+        b'{"role":"user","content":"active zero"}\n'
+        b'{"role":"assistant","content":"answer zero"}\n'
+        b'{"role":"user","content":"active one"}\n'
+        b'{"role":"assistant","content":"answer one"}\n'
+        b'{"role":"user","content":"active two"}\n'
+    )
+    lines = truncate_context_at_turn(context_path, 1)
+    records = [orjson.loads(line) for line in lines]
+    assert [record.get("content") for record in records] == [
+        "active zero",
+        "answer zero",
+        "active one",
+        "answer one",
+    ]
+    assert all(line == orjson.dumps(orjson.loads(line)).decode() for line in lines)
+    assert all("created_at" in record for record in records)
+
+
+@pytest.mark.asyncio
+async def test_partial_fork_preserves_usage_checkpoint_and_pending_state(
+    isolated_share_dir: Path, work_dir: KaosPath
+):
+    from kimi_cli.session import Session
+    from kimi_cli.soul.compaction import estimate_text_tokens
+    from kimi_cli.soul.context import Context
+
+    source = await Session.create(work_dir)
+    _write_wire_file(source.dir, ["zero", "one", "two"])
+    context = Context.from_file_backend(source.context_file)
+    await context.restore()
+    await context.write_system_prompt("fork prompt")
+    await context.append_message(Message(role="user", content="zero"))
+    await context.append_message(Message(role="assistant", content="answer zero"))
+    await context.update_token_count(100)
+    await context.checkpoint(add_user_message=False)
+    await context.append_message(Message(role="user", content="one"))
+    await context.append_message(Message(role="assistant", content="answer one"))
+    await context.checkpoint(add_user_message=False)
+    await context.append_message(Message(role="user", content="two"))
+    await context.close()
+
+    fork_id = await fork_session(source.dir, work_dir, turn_index=1)
+    forked_session = await Session.find(work_dir, fork_id)
+    assert forked_session is not None
+    forked = Context.from_file_backend(forked_session.context_file)
+    await forked.restore()
+    assert [m.extract_text() for m in forked.history] == ["zero", "answer zero", "one", "answer one"]
+    assert forked.system_prompt == "fork prompt"
+    assert forked.token_count == 100
+    expected_pending = estimate_text_tokens(
+        [Message(role="user", content="one"), Message(role="assistant", content="answer one")]
+    )
+    assert forked.token_count_with_pending == 100 + expected_pending
+    await forked.revert_to(1)
+    assert forked.token_count == 100
+    assert len(forked.history) == 4
+    await forked.close()

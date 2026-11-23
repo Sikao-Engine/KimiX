@@ -80,7 +80,9 @@ Kimi-CLI-X 在 `KimiSoul` 核心循环中内建了一套**自动上下文记忆�
 
 #### 1. 对话历史索引（HistoryIndex）
 
-每条 user/assistant 消息在追加到上下文时自动被 **BM25 倒排索引**（N-gram, n=2）收录，持久化到 `<session>/history_index/<id>.json`，进程重启不丢失。索引上限 500 轮，超出后自动淘汰最旧条目。
+根会话、子代理、临时、分叉与 SDK 会话均使用 dense、append-only 的 `context.jsonl`，并在同目录维护 `history.jsonl` 归档。每条消息或控制记录独占一行。提示词变更、checkpoint、revert、reset 与压缩均通过追加记录并重放得到活动视图，不重写旧字节。因此，清空或压缩只隐藏旧内容，**并不安全擦除**；物理删除会话才是安全擦除路径。
+
+每条 user/assistant/tool 消息都会增量加入内存 **BM25 倒排索引**，支持 Latin/代码词元、CJK bigram 与短查询字面量回退。持久历史不再限制为 500 轮。重启时仅流式读取一次 `history.jsonl` 以重建索引；热搜索只访问内存，不再扫描磁盘文件。
 
 #### 2. 上下文自动压缩（SimpleCompaction）
 

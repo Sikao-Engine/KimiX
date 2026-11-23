@@ -27,40 +27,31 @@ def _count_lines(path: Path) -> int:
     return len(path.read_text(encoding="utf-8").splitlines())
 
 
-def _count_db_entries(db_path: Path) -> int:
-    """Count logical context entries in a context.db (messages + system_prompt + checkpoints)."""
-    if not db_path.exists():
+def _count_context_entries(context_path: Path) -> int:
+    """Count active messages + prompt + checkpoints through shared replay."""
+    if not context_path.exists():
         return 0
-    import apsw
+    from kimi_cli.soul.context import replay_context
 
-    conn = apsw.Connection(str(db_path))
-    try:
-        total = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-        total += conn.execute("SELECT COUNT(*) FROM system_prompt").fetchone()[0]
-        total += conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
-        return total
-    finally:
-        conn.close()
+    state = replay_context(context_path)
+    return (
+        len(state.entries)
+        + len(state.checkpoints)
+        + (1 if state.system_prompt is not None else 0)
+    )
 
 
-def _read_roles(db_path: Path) -> list[str]:
-    """Read the logical message-role sequence from a context.db."""
-    if not db_path.exists():
+def _read_roles(context_path: Path) -> list[str]:
+    """Read the active logical role sequence from append-only JSONL."""
+    if not context_path.exists():
         return []
-    import apsw
+    from kimi_cli.soul.context import replay_context
 
-    conn = apsw.Connection(str(db_path))
-    roles: list[str] = []
-    try:
-        if conn.execute("SELECT COUNT(*) FROM system_prompt").fetchone()[0]:
-            roles.append("_system_prompt")
-        if conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]:
-            roles.append("_checkpoint")
-        roles.extend(row[0] for row in conn.execute("SELECT role FROM messages ORDER BY rowid"))
-    finally:
-        conn.close()
+    state = replay_context(context_path)
+    roles = ["_system_prompt"] if state.system_prompt is not None else []
+    roles.extend("_checkpoint" for _ in state.checkpoints)
+    roles.extend(entry.message.role for entry in state.entries)
     return roles
-
 
 def test_session_files_created(tmp_path) -> None:
     config_path = write_scripted_config(tmp_path, ["text: hello"])
@@ -92,8 +83,8 @@ def test_session_files_created(tmp_path) -> None:
         wire.close()
 
     session_dir = _session_dir(home_dir, work_dir) / session_id
-    # New sessions store context in context.db (context.jsonl is the legacy path).
-    context_file = session_dir / "context.db"
+    # New sessions store append-only context in context.jsonl.
+    context_file = session_dir / "context.jsonl"
     wire_file = session_dir / "wire.jsonl"
     assert context_file.exists()
     assert wire_file.exists()
@@ -101,7 +92,7 @@ def test_session_files_created(tmp_path) -> None:
     assert wire_file.stat().st_size > 0
     # Ignore the ephemeral per-process rtk cache dir (.kimix_cache).
     names = sorted(p.name for p in session_dir.iterdir() if p.name != ".kimix_cache")
-    assert names == snapshot(["context.db", "history.db", "state.json", "wire.jsonl"])
+    assert names == snapshot(["context.jsonl", "history.jsonl", "state.json", "wire.jsonl"])
 
 
 def test_continue_session_appends(tmp_path) -> None:
@@ -139,9 +130,10 @@ def test_continue_session_appends(tmp_path) -> None:
     assert len(session_ids) == 1
     session_id = session_ids[0]
     session_dir = session_root / session_id
-    context_file = session_dir / "context.db"
+    context_file = session_dir / "context.jsonl"
     wire_file = session_dir / "wire.jsonl"
-    context_before = _count_db_entries(context_file)
+    context_before = _count_context_entries(context_file)
+    context_bytes_before = context_file.read_bytes()
     wire_before = _count_lines(wire_file)
 
     wire = start_wire(
@@ -167,9 +159,10 @@ def test_continue_session_appends(tmp_path) -> None:
     finally:
         wire.close()
 
-    context_after = _count_db_entries(context_file)
+    context_after = _count_context_entries(context_file)
     wire_after = _count_lines(wire_file)
     assert context_after > context_before
+    assert context_file.read_bytes().startswith(context_bytes_before)
     assert wire_after > wire_before
     assert {
         "context_before": context_before,
@@ -250,7 +243,7 @@ def test_clear_context(tmp_path) -> None:
     session_ids = [p.name for p in session_root.iterdir() if p.is_dir()]
     assert len(session_ids) == 1
     session_dir = session_root / session_ids[0]
-    context_file = session_dir / "context.db"
+    context_file = session_dir / "context.jsonl"
     assert _read_roles(context_file) == snapshot(["_system_prompt"])
 
 
@@ -297,7 +290,7 @@ def test_manual_compact(tmp_path) -> None:
             [
                 {"method": "event", "type": "TurnBegin", "payload": {"user_input": "/compact"}},
                 {"method": "event", "type": "CompactionBegin", "payload": {"compaction_id": "<uuid>", "trigger": "manual", "shadowed_tokens": None}},
-                {"method": "event", "type": "CompactionEnd", "payload": {"compaction_id": "<uuid>", "trigger": "manual", "shadowed_tokens": 0, "estimated_token_count": 3964, "error": None}},
+                {"method": "event", "type": "CompactionEnd", "payload": {"compaction_id": "<uuid>", "trigger": "manual", "shadowed_tokens": 0, "estimated_token_count": 14269, "error": None}},
                 {
                     "method": "event",
                     "type": "ContentPart",
@@ -307,8 +300,8 @@ def test_manual_compact(tmp_path) -> None:
                     "method": "event",
                     "type": "StatusUpdate",
                     "payload": {
-                        "context_usage": 0.03964,
-                        "context_tokens": 3964,
+"context_usage": 0.14269,
+                            "context_tokens": 14269,
                         "max_context_tokens": 100000,
                         "token_usage": None,
                         "message_id": None,

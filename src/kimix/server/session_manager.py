@@ -36,7 +36,6 @@ from kimix.utils import (
     lock_planner_session_read_only,
 )
 from kimi_cli.session_state import load_session_state
-from kosong.utils.jsonx import loads_relaxed
 
 logger = logging.getLogger(__name__)
 
@@ -420,35 +419,70 @@ class SessionManager:
         offset: int = 0,
         sort: str | None = None,
     ) -> list[dict[str, Any]]:
-        """FTS5 full-text search over a persisted session's ``context.db``.
+        """Search the active JSONL context with neutral in-memory BM25.
 
-        Returns the ``ContextDB.search_messages`` result shape
-        (``{rowid, role, content, content_text, created_at, snippet, score}``)
-        or ``[]`` when the session is unknown / unsearchable.
+        Result shape remains ``{rowid, role, content, content_text, created_at,
+        snippet, score}``.  Index construction is deliberately scoped to this
+        on-demand server operation, never to normal context appends.
         """
         entry = self._sessions.get(session_id)
-        if entry is None or not entry.work_dir:
+        if entry is None or not entry.work_dir or limit <= 0:
             return []
         try:
             from kimi_cli.session import Session as CliSession
-            from kimi_cli.soul.context_db import ContextDB
+            from kimi_cli.soul.context import replay_context
+            from kimi_cli.soul.jsonl_search import (
+                InvertedSearchIndex,
+                extract_text_from_content,
+                make_snippet,
+            )
 
             work_dir = KaosPath.unsafe_from_local_path(Path(entry.work_dir))
             disk_session = await CliSession.find(work_dir, session_id)
             if disk_session is None:
                 return []
-            db = ContextDB(disk_session.context_db_file)
-            try:
-                await db.initialize()
-                return await db.search_messages(
-                    query,
-                    role=role,
-                    limit=limit,
-                    offset=offset,
-                    sort=sort,
+            state = await asyncio.to_thread(replay_context, disk_session.context_file)
+            engine = InvertedSearchIndex()
+            for rowid, message_entry in enumerate(state.entries, start=1):
+                message = message_entry.message
+                if role is not None and message.role != role:
+                    continue
+                text = extract_text_from_content(message.content)
+                engine.add_turn(
+                    {
+                        "turn_id": rowid,
+                        "role": message.role,
+                        "text": text,
+                        "timestamp": message_entry.created_at,
+                        "is_compacted": False,
+                    }
                 )
-            finally:
-                await db.close()
+            hits = engine.search(query, top_k=engine.turn_count)
+            sort_norm = sort.strip().lower() if isinstance(sort, str) else None
+            if sort_norm == "newest":
+                hits.sort(key=lambda hit: (hit["timestamp"], hit["turn_id"]), reverse=True)
+            elif sort_norm == "oldest":
+                hits.sort(key=lambda hit: (hit["timestamp"], hit["turn_id"]))
+            start_index = max(offset, 0)
+            results: list[dict[str, Any]] = []
+            for hit in hits[start_index : start_index + limit]:
+                message_entry = state.entries[hit["turn_id"] - 1]
+                message = message_entry.message
+                content_text = extract_text_from_content(message.content)
+                results.append(
+                    {
+                        "rowid": hit["turn_id"],
+                        "role": message.role,
+                        "content": orjson.dumps(
+                            message.model_dump(mode="json", exclude_none=True)
+                        ).decode("utf-8"),
+                        "content_text": content_text,
+                        "created_at": message_entry.created_at,
+                        "snippet": make_snippet(content_text, query),
+                        "score": hit["score"],
+                    }
+                )
+            return results
         except Exception:
             logger.exception(
                 "Failed to search session {session_id} messages", session_id=session_id
@@ -456,79 +490,30 @@ class SessionManager:
             return []
 
     def _load_context_messages(self, session_id: str, context_file: Path) -> List[MessageWithParts]:
+        """Load the latest 100 active messages, never obsolete physical lines."""
+        from kimi_cli.soul.context import replay_context
+
         messages: List[MessageWithParts] = []
-        created = self._mtime_ms(context_file)
-
-        # Try SQLite backend first (for .db files)
-        if context_file.suffix == ".db" and context_file.exists():
-            try:
-                import apsw
-
-                conn = apsw.Connection(str(context_file))
-                try:
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT role, content FROM messages WHERE role NOT IN "
-                        "('_system_prompt', '_usage', '_checkpoint') "
-                        "ORDER BY rowid DESC LIMIT 100"
-                    )
-                    rows = list(cursor)
-
-                    for index, row in enumerate(reversed(rows)):
-                        role = row[0]
-                        content_data = loads_relaxed(row[1])
-                        content = self._context_content_text(content_data)
-                        if not content:
-                            continue
-
-                        message_id = f"msg_restored_{index}"
-                        messages.append(
-                            MessageWithParts(
-                                info=MessageInfo(
-                                    id=message_id,
-                                    role=role if role in {"user", "assistant", "system"} else "assistant",
-                                    sessionID=session_id,
-                                    time={"created": created},
-                                ),
-                                parts=[TextPart(content=content)],
-                            )
-                        )
-                finally:
-                    conn.close()
-            except Exception:
-                logger.exception("Failed to load context messages from SQLite")
-            return messages
-
-        # Fallback to JSONL parsing
         try:
-            lines = context_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            state = replay_context(context_file)
         except Exception:
+            logger.exception("Failed to replay context messages from JSONL")
             return messages
-
-        for index, line in enumerate(lines[-100:]):
-            if not line.strip():
-                continue
-            try:
-                data = loads_relaxed(line)
-            except Exception:
-                continue
-            if not isinstance(data, dict):
-                continue
-            role = data.get("role")
-            if not isinstance(role, str) or role.startswith("_"):
-                continue
-            content = self._context_content_text(data.get("content"))
+        for index, entry in enumerate(state.entries[-100:]):
+            message = entry.message
+            content = self._context_content_text(
+                message.model_dump(mode="json", exclude_none=True).get("content")
+            )
             if not content:
                 continue
-
             message_id = f"msg_restored_{index}"
             messages.append(
                 MessageWithParts(
                     info=MessageInfo(
                         id=message_id,
-                        role=role if role in {"user", "assistant", "system"} else "assistant",
+                        role=message.role if message.role in {"user", "assistant", "system"} else "assistant",
                         sessionID=session_id,
-                        time={"created": created},
+                        time={"created": int(entry.created_at * 1000)},
                     ),
                     parts=[
                         MessagePart(

@@ -31,12 +31,8 @@ _shutdown_hook_registered = False
 def _shutdown_all_sessions() -> None:
     """Close every tracked session at interpreter shutdown.
 
-    Sessions hold aiosqlite connections whose worker threads are non-daemon.
-    If they are not closed before ``threading._shutdown`` joins non-daemon
-    threads, the process hangs on exit (Ctrl+C then lands in
-    ``threading._shutdown``). This hook is registered via
-    ``threading._register_atexit`` so it runs *before* that join; a plain
-    ``atexit`` handler would run too late.
+    Sessions retain JSONL handles and other resources.  This early shutdown
+    hook closes them even when Ctrl+C leaves prompt tasks suspended.
     """
     sessions = list(_globals._live_sessions)
     _globals._live_sessions.clear()
@@ -319,10 +315,8 @@ def close_session(session: Session) -> None:
         # Ctrl+C can land while the event loop is being driven (e.g.
         # ProactorEventLoop's socketpair() on Windows),
         # especially when a background tool (like a glob) was running.
-        # The session is being torn down anyway; the OS reclaims the
-        # sockets and the aiosqlite worker thread is a daemon-less thread
-        # that the interpreter will still join, but nothing more we can do
-        # here — swallow the interrupt so shutdown completes cleanly.
+        # The session is being torn down anyway; swallow the interrupt so
+        # shutdown completes cleanly.
         pass
     except RuntimeError as exc:
         # Transports bound to a now-closed ProactorEventLoop (Windows
@@ -364,8 +358,7 @@ async def clear_session_async(session: Session | None = None) -> None:
 
     The conversation is discarded, so everything created by it (e.g. the
     anonymous sub-agent sessions of the ``subagent`` tool) is closed and
-    deleted with it instead of leaking a session directory and an aiosqlite
-    worker thread.
+    deleted with it instead of leaking a session directory or JSONL handle.
     """
     if session is None:
         session = get_default_session()

@@ -83,7 +83,9 @@ Kimi-CLI-X embeds an **automatic context memory system** inside the `KimiSoul` c
 
 #### 1. Conversation History Index (HistoryIndex)
 
-Every user/assistant message is automatically indexed by **BM25 inverted index** (N-gram, n=2) on append, persisted to `<session>/history_index/<id>.json`, and survives process restarts. Cap at 500 rounds; oldest evicted automatically.
+Root, subagent, temporary, forked, and SDK sessions persist dense append-only `context.jsonl` files, with a sibling `history.jsonl` archive. Each message or control record occupies one line. Prompt changes, checkpoints, reverts, resets, and compaction are replayed to reconstruct the active view; obsolete bytes are not rewritten. Clearing or compaction therefore does **not** securely erase old content—physical session deletion is the secure-erasure path.
+
+Every user/assistant/tool message is indexed incrementally into an in-memory **BM25 postings index** with Latin/code terms, CJK bigrams, and literal short-query fallback. The full durable history is retained without a 500-turn cap. Restarting streams `history.jsonl` once to rebuild the index; warm searches use memory only and never rescan the file.
 
 #### 2. Automatic Context Compaction (SimpleCompaction)
 

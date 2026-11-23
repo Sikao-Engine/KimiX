@@ -66,8 +66,6 @@ class _FakeCLISession:
     def id(self) -> str:
         return self.session_id
 
-    async def close_context_db(self) -> None:
-        pass
 
 
 class _FakeCLI:

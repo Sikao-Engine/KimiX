@@ -433,8 +433,8 @@ LEGAL_THINKING_EFFORT = frozenset({"off", "low", "medium", "high", "xhigh", "max
 # Cross-provider session contract
 # ---------------------------------------------------------------------------
 # A `Session` in kimi-cli is shared across providers via client-side history
-# replay: the whole conversation is persisted per Session (context.db /
-# context.jsonl) and replayed on every turn, so switching providers mid-session
+# replay: the whole conversation is persisted per Session (context.jsonl)
+# and replayed on every turn, so switching providers mid-session
 # keeps conversation continuity. `session_id` is NOT what carries the
 # conversation — it is only a per-request identity hint, mapped per provider:
 #

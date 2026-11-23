@@ -122,15 +122,6 @@ wheels = [
 ]
 
 [[package]]
-name = "aiosqlite"
-version = "0.22.1"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/4e/8a/64761f4005f17809769d23e518d915db74e6310474e733e3593cfc854ef1/aiosqlite-0.22.1.tar.gz", hash = "sha256:043e0bd78d32888c0a9ca90fc788b38796843360c855a7262a532813133a0650" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/00/b7/e3bf5133d697a08128598c8d0abc5e16377b51465a33756de24fa7dee953/aiosqlite-0.22.1-py3-none-any.whl", hash = "sha256:21c002eb13823fad740196c5a2e9d8e62f6243bd9e7e4a1f87fb5e44ecb4fceb" },
-]
-
-[[package]]
 name = "altgraph"
 version = "0.17.5"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -1201,7 +1192,6 @@ dependencies = [
     { name = "agent-client-protocol" },
     { name = "aiofiles" },
     { name = "aiohttp" },
-    { name = "aiosqlite" },
     { name = "anthropic" },
     { name = "apsw" },
     { name = "asyncssh" },
@@ -1266,7 +1256,6 @@ requires-dist = [
     { name = "agent-client-protocol", specifier = ">=0.9.0" },
     { name = "aiofiles", specifier = ">=24.1.0" },
     { name = "aiohttp", specifier = ">=3.14.1" },
-    { name = "aiosqlite", specifier = ">=0.22.1" },
     { name = "anthropic", specifier = ">=1.0.0" },
     { name = "apsw", specifier = ">=3.45.0" },
     { name = "asyncssh", specifier = "==2.21.1" },
