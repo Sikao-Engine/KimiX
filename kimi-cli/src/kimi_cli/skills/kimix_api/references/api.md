@@ -967,7 +967,7 @@ All tools are `CallableTool2` subclasses. They are organized in subpackages unde
 - `interrupt_agent` — close/interrupt a sub-agent session (class `AgentClose`); params: `agent_id` (from `kimi_cli.tools.subagent`)
 - `job_output` — get background job output (class `TaskOutput`, from `kimi_cli.tools.background`); params: `job_id` (also accepts a background subagent session id — with `wait=True` it blocks until that run settles), `wait=False`, `timeout` (seconds), `output_path`, `kill=False`
 - `BackgroundStream` (from `kimi_cli.tools.background.utils`) — `start(function, stop_function, input_function=None)`, `wait(timeout=None)`, `stop()`, `get_output()`, `pop_output()`, `input(data)`, `success()`
-- `Bash` / `pwsh` — shell execution (from `kimi_cli.tools.file.bash`); params: `command`/`cmd`, `timeout` (seconds), `workdir`, `run_in_background` (classes `Bash` in `kimi_cli.tools.file.bash.bash_tool`, `Powershell` in `kimi_cli.tools.file.bash.pwsh_tool`)
+- `Bash` / `pwsh` — shell execution (from `kimi_cli.tools.file.bash`); params: `command`/`cmd`, `timeout` (seconds), `run_in_background` (classes `Bash` in `kimi_cli.tools.file.bash.bash_tool`, `Powershell` in `kimi_cli.tools.file.bash.pwsh_tool`)
 - `Run` — run external executable (from `kimi_cli.tools.file.run`); params: `command`, `timeout=10`, `output_path`, `cwd`, `env`, `run_in_background=False`
 - `FindStr` — search text in files (from `kimi_cli.tools.file.find_str`); params: `content`, `path`, `case_sensitive=False`
 - `Mkdir` / `Rm` — create/remove directories

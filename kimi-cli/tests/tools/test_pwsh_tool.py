@@ -185,6 +185,11 @@ def test_params_defaults() -> None:
     assert p.wait_for_pattern is None
 
 
+def test_params_workdir_parameter_removed() -> None:
+    assert "workdir" not in PowershellParams.model_fields
+    assert "workdir" not in PowershellParams.model_json_schema()["properties"]
+
+
 def test_params_cmd_alias() -> None:
     p = PowershellParams(cmd="Get-Date")
     assert p.command == "Get-Date"
@@ -460,15 +465,18 @@ async def test_background_uses_ps5_transform(
 
 
 @pytest.mark.asyncio
-async def test_background_workdir_is_honored(session: Session, tmp_path: Any) -> None:
+async def test_background_set_location_is_honored(session: Session, tmp_path: Any) -> None:
     from kimi_cli.tools.background import TaskOutput, TaskOutputParams
     from kimi_cli.tools.background.utils import get_all_tasks, remove_task_id
 
     tool = _make_tool(session)
+    escaped_path = str(tmp_path).replace("'", "''")
     started = await tool(
         PowershellParams(
-            command="Write-Output (Get-Location).Path",
-            workdir=str(tmp_path),
+            command=(
+                f"Set-Location -LiteralPath '{escaped_path}'; "
+                "Write-Output (Get-Location).Path"
+            ),
             run_in_background=True,
         )
     )
@@ -518,10 +526,16 @@ async def test_background_pattern_wait_preserves_failure_and_output(session: Ses
 
 
 @pytest.mark.asyncio
-async def test_call_with_workdir(session: Session, tmp_path: Any) -> None:
+async def test_call_with_set_location(session: Session, tmp_path: Any) -> None:
     tool = _make_tool(session)
+    escaped_path = str(tmp_path).replace("'", "''")
     result = await tool(
-        PowershellParams(command="Write-Output (Get-Location).Path", workdir=str(tmp_path))
+        PowershellParams(
+            command=(
+                f"Set-Location -LiteralPath '{escaped_path}'; "
+                "Write-Output (Get-Location).Path"
+            )
+        )
     )
     assert isinstance(result, ToolOk)
     assert str(tmp_path) in result.output

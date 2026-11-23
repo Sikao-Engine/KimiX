@@ -248,13 +248,6 @@ class PowershellParams(BaseModel):
             + accepts_alias_text("timeout", "timeoutMs", word=False)
         ),
     )
-    workdir: str | None = Field(
-        default=None,
-        description=(
-            "Working directory for this command. Defaults to the session "
-            "workspace; a relative path is resolved against it."
-        ),
-    )
     run_in_background: bool = Field(
         default=False,
         description=(
@@ -578,13 +571,6 @@ class Powershell(CallableTool2[PowershellParams]):
         # last-command failure exits 1 unless a native program left a real
         # non-zero code.  Successful native codes are still preserved.
         from kimi_cli.tools.file.bash import shell_common
-
-        # Report semantics: each call runs in a fresh pwsh process, so a
-        # requested workdir is applied with Set-Location instead of relying
-        # on persisted cwd state.
-        if params.workdir:
-            workdir = params.workdir.replace("'", "''")
-            cmd = f"Set-Location -LiteralPath '{workdir}'; {cmd}"
 
         raw_command = shell_common.wrap_pwsh_command(cmd)
         encoded_cmd, param_name, was_encoded = self._maybe_encode_command(raw_command)
@@ -930,10 +916,6 @@ class Powershell(CallableTool2[PowershellParams]):
         if sys.platform == "win32":
             from kimix.utils.windows_env import refresh_env_from_registry
             refresh_env_from_registry()
-        if params.workdir:
-            workdir = params.workdir.replace("'", "''")
-            cmd = f"Set-Location -LiteralPath '{workdir}'; {cmd}"
-
         from kimi_cli.tools.file.bash import shell_common
 
         raw_command = shell_common.wrap_pwsh_command(cmd)
