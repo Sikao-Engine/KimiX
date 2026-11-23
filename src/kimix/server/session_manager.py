@@ -288,6 +288,17 @@ class SessionStatus:
 
 
 @dataclass
+class _ContextSearchCache:
+    """One bounded snapshot of active context and its role-specific indexes."""
+
+    session_id: str
+    path: Path
+    signature: tuple[int, int, int, int] | None
+    state: Any
+    engines: Dict[str | None, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ManagedSession:
     """Internal session entry tracked by the manager."""
 
@@ -341,6 +352,67 @@ class SessionManager:
     def __init__(self) -> None:
         self._sessions: Dict[str, ManagedSession] = {}
         self._lock = threading.Lock()
+        # Searching is an on-demand operation.  Retain only the most recently
+        # searched session so warm queries do not rebuild a multi-megabyte
+        # context, while memory remains bounded across many sessions.
+        self._search_cache: _ContextSearchCache | None = None
+
+    @staticmethod
+    def _context_search_signature(path: Path) -> tuple[int, int, int, int] | None:
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
+
+    async def _get_context_search_cache(
+        self, session_id: str, path: Path
+    ) -> _ContextSearchCache:
+        from kimi_cli.soul.context import replay_context
+
+        signature = self._context_search_signature(path)
+        cached = self._search_cache
+        if (
+            cached is not None
+            and cached.session_id == session_id
+            and cached.path == path
+            and cached.signature == signature
+        ):
+            return cached
+
+        state = await asyncio.to_thread(replay_context, path)
+        snapshot = _ContextSearchCache(
+            session_id=session_id,
+            path=path,
+            signature=signature,
+            state=state,
+        )
+        # Never install a snapshot if the log changed while it was replayed.
+        # It is still a valid best-effort answer for this invocation, but the
+        # next call must retry against the newer on-disk state.
+        if signature == self._context_search_signature(path):
+            self._search_cache = snapshot
+        return snapshot
+
+    @staticmethod
+    def _build_context_search_engine(state: Any, role: str | None) -> Any:
+        from kimi_cli.soul.jsonl_search import InvertedSearchIndex, extract_text_from_content
+
+        engine = InvertedSearchIndex()
+        for rowid, message_entry in enumerate(state.entries, start=1):
+            message = message_entry.message
+            if role is not None and message.role != role:
+                continue
+            engine.add_turn(
+                {
+                    "turn_id": rowid,
+                    "role": message.role,
+                    "text": extract_text_from_content(message.content),
+                    "timestamp": message_entry.created_at,
+                    "is_compacted": False,
+                }
+            )
+        return engine
 
     def _current_work_dir(self) -> KaosPath:
         return KaosPath.unsafe_from_local_path(Path(os.getcwd()))
@@ -422,48 +494,54 @@ class SessionManager:
         """Search the active JSONL context with neutral in-memory BM25.
 
         Result shape remains ``{rowid, role, content, content_text, created_at,
-        snippet, score}``.  Index construction is deliberately scoped to this
-        on-demand server operation, never to normal context appends.
+        snippet, score}``.  Index construction is scoped to this on-demand
+        operation, never to normal context appends.  One file-signature-checked
+        snapshot is reused across warm queries and retained for only the most
+        recently searched session.
         """
         entry = self._sessions.get(session_id)
         if entry is None or not entry.work_dir or limit <= 0:
             return []
         try:
             from kimi_cli.session import Session as CliSession
-            from kimi_cli.soul.context import replay_context
-            from kimi_cli.soul.jsonl_search import (
-                InvertedSearchIndex,
-                extract_text_from_content,
-                make_snippet,
-            )
+            from kimi_cli.soul.jsonl_search import extract_text_from_content, make_snippet
 
             work_dir = KaosPath.unsafe_from_local_path(Path(entry.work_dir))
             disk_session = await CliSession.find(work_dir, session_id)
             if disk_session is None:
                 return []
-            state = await asyncio.to_thread(replay_context, disk_session.context_file)
-            engine = InvertedSearchIndex()
-            for rowid, message_entry in enumerate(state.entries, start=1):
-                message = message_entry.message
-                if role is not None and message.role != role:
-                    continue
-                text = extract_text_from_content(message.content)
-                engine.add_turn(
-                    {
-                        "turn_id": rowid,
-                        "role": message.role,
-                        "text": text,
-                        "timestamp": message_entry.created_at,
-                        "is_compacted": False,
-                    }
+            cache = await self._get_context_search_cache(
+                session_id, disk_session.context_file
+            )
+            state = cache.state
+            engine = cache.engines.get(role)
+            if engine is None:
+                engine = await asyncio.to_thread(
+                    self._build_context_search_engine, state, role
                 )
-            hits = engine.search(query, top_k=engine.turn_count)
+                # A concurrent search for another session may have replaced the
+                # bounded cache.  Local results remain valid, but only populate
+                # the currently installed, unchanged snapshot.
+                if (
+                    self._search_cache is cache
+                    and cache.signature
+                    == self._context_search_signature(disk_session.context_file)
+                ):
+                    cache.engines[role] = engine
             sort_norm = sort.strip().lower() if isinstance(sort, str) else None
+            start_index = max(offset, 0)
+            # Relevance order needs only the requested page.  Timestamp order
+            # still scores all hits before applying its separate sort.
+            search_top_k = (
+                engine.turn_count
+                if sort_norm in {"newest", "oldest"}
+                else min(engine.turn_count, start_index + limit)
+            )
+            hits = engine.search(query, top_k=search_top_k)
             if sort_norm == "newest":
                 hits.sort(key=lambda hit: (hit["timestamp"], hit["turn_id"]), reverse=True)
             elif sort_norm == "oldest":
                 hits.sort(key=lambda hit: (hit["timestamp"], hit["turn_id"]))
-            start_index = max(offset, 0)
             results: list[dict[str, Any]] = []
             for hit in hits[start_index : start_index + limit]:
                 message_entry = state.entries[hit["turn_id"] - 1]
@@ -609,6 +687,11 @@ class SessionManager:
     async def delete_session(self, session_id: str) -> bool:
         with self._lock:
             entry = self._sessions.pop(session_id, None)
+            if (
+                self._search_cache is not None
+                and self._search_cache.session_id == session_id
+            ):
+                self._search_cache = None
         if entry is None:
             await self._refresh_disk_sessions()
             with self._lock:

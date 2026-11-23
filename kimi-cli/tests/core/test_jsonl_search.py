@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from kimi_cli.soul import jsonl_search
 from kimi_cli.soul.jsonl_search import (
     InvertedSearchIndex,
     contains_cjk,
@@ -44,6 +45,17 @@ def test_normalize_and_tokenize_latin_code_and_cjk() -> None:
     assert not contains_cjk("plain")
 
 
+def test_regex_tokenizer_matches_character_state_machine() -> None:
+    alphabet = (
+        "a", "Z", "0", "_", "中", "文", "日", "한", " ", "-", "\u0301",
+        "①", "Ⅻ", "²", "𠀀", "𠀁", "\U0002a6df", "\U0002a6e0",
+    )
+    cases = ["", *alphabet, "关于Python安装" * 20, "e\u0301 é ① Ⅻ ² 𠀀𠀁x"]
+    cases.extend(first + second for first in alphabet for second in alphabet)
+    for text in cases:
+        assert tokenize(text) == _reference_tokenize(text), repr(text)
+
+
 def test_latin_query_uses_and_semantics_and_verbatim_results() -> None:
     index = InvertedSearchIndex()
     index.add_turn(_turn(0, "How do I compile Python?"))
@@ -80,6 +92,63 @@ def test_short_mixed_cjk_uses_literal_fallback() -> None:
     index.add_turn(_turn(0, "日本語x中"))
     index.add_turn(_turn(1, "日本語だけ"))
     assert [r["turn_id"] for r in index.search("日本語x中")] == [0]
+
+
+def test_literal_fallback_reuses_normalized_text_and_tracks_new_turns(monkeypatch) -> None:
+    index = InvertedSearchIndex()
+    index.add_turn(_turn(0, "OLD 日 50%"))
+    index.add_turn(_turn(1, "other"))
+    corpus_texts = {"OLD 日 50%", "other"}
+    normalized: list[str] = []
+    real_normalize = jsonl_search.normalize_text
+
+    def recording_normalize(text: str) -> str:
+        normalized.append(text)
+        return real_normalize(text)
+
+    monkeypatch.setattr(jsonl_search, "normalize_text", recording_normalize)
+    assert [hit["turn_id"] for hit in index.search("日", top_k=3)] == [0]
+    assert corpus_texts <= set(normalized)
+
+    normalized.clear()
+    assert [hit["turn_id"] for hit in index.search("50%", top_k=3)] == [0]
+    assert not corpus_texts.intersection(normalized)
+
+    index.add_turn(_turn(2, "NEW 日 50%"))
+    normalized.clear()
+    assert [hit["turn_id"] for hit in index.search("日", top_k=3)] == [0, 2]
+    assert not corpus_texts.intersection(normalized)
+
+
+def _reference_tokenize(text: str) -> list[str]:
+    """Original character state machine, retained as an equivalence oracle."""
+    tokens: list[str] = []
+    word: list[str] = []
+    cjk: list[str] = []
+
+    def flush_word() -> None:
+        if word:
+            tokens.append("".join(word))
+            word.clear()
+
+    def flush_cjk() -> None:
+        if len(cjk) >= 2:
+            tokens.extend("".join(cjk[index : index + 2]) for index in range(len(cjk) - 1))
+        cjk.clear()
+
+    for char in normalize_text(text):
+        if jsonl_search.is_cjk(char):
+            flush_word()
+            cjk.append(char)
+        elif char.isalnum() or char == "_":
+            flush_cjk()
+            word.append(char)
+        else:
+            flush_word()
+            flush_cjk()
+    flush_word()
+    flush_cjk()
+    return tokens
 
 
 @pytest.mark.parametrize(

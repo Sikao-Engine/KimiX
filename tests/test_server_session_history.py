@@ -180,3 +180,72 @@ async def test_search_messages_active_view_filter_sort_paginate_and_cjk(
     assert (await manager.search_messages(disk.id, "50%"))[0]["rowid"] == 1
     assert await manager.search_messages(disk.id, "python", limit=0) == []
     assert await manager.search_messages("missing", "python") == []
+
+
+@pytest.mark.asyncio
+async def test_search_messages_reuses_snapshot_and_invalidates_after_append(
+    tmp_path, monkeypatch
+):
+    from kimi_cli.session import Session as CliSession
+    from kimi_cli.soul import context as context_module
+    from kimix.server.session_manager import ManagedSession, SessionInfo
+
+    disk = _disk_session(tmp_path)
+    monkeypatch.setattr(CliSession, "find", AsyncMock(return_value=disk))
+    replayed = []
+    real_replay = context_module.replay_context
+
+    def recording_replay(path):
+        replayed.append(path)
+        return real_replay(path)
+
+    monkeypatch.setattr(context_module, "replay_context", recording_replay)
+    manager = SessionManager()
+    manager._sessions[disk.id] = ManagedSession(
+        info=SessionInfo(id=disk.id), work_dir=str(disk.work_dir)
+    )
+
+    assert (await manager.search_messages(disk.id, "hello"))[0]["rowid"] == 1
+    assert (await manager.search_messages(disk.id, "hi"))[0]["rowid"] == 2
+    users = await manager.search_messages(disk.id, "hello", role="user")
+    assert [row["rowid"] for row in users] == [1]
+    assert replayed == [disk.context_file]
+
+    with disk.context_file.open("ab") as handle:
+        handle.write(
+            orjson.dumps(
+                {"role": "user", "content": "new needle", "created_at": 40.0},
+                option=orjson.OPT_APPEND_NEWLINE,
+            )
+        )
+    added = await manager.search_messages(disk.id, "needle")
+    assert [row["rowid"] for row in added] == [3]
+    assert replayed == [disk.context_file, disk.context_file]
+
+
+@pytest.mark.asyncio
+async def test_search_cache_is_bounded_to_most_recent_session(tmp_path, monkeypatch):
+    from kimi_cli.session import Session as CliSession
+    from kimix.server.session_manager import ManagedSession, SessionInfo
+
+    first = _disk_session(tmp_path, "ses_first")
+    second = _disk_session(tmp_path, "ses_second")
+    sessions = {first.id: first, second.id: second}
+    monkeypatch.setattr(
+        CliSession,
+        "find",
+        AsyncMock(side_effect=lambda _work_dir, session_id: sessions[session_id]),
+    )
+    manager = SessionManager()
+    for disk in sessions.values():
+        manager._sessions[disk.id] = ManagedSession(
+            info=SessionInfo(id=disk.id), work_dir=str(disk.work_dir)
+        )
+
+    await manager.search_messages(first.id, "hello")
+    first_cache = manager._search_cache
+    assert first_cache is not None and first_cache.session_id == first.id
+    await manager.search_messages(second.id, "hello")
+    second_cache = manager._search_cache
+    assert second_cache is not None and second_cache.session_id == second.id
+    assert second_cache is not first_cache

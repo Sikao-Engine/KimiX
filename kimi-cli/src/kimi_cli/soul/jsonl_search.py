@@ -8,8 +8,27 @@ import unicodedata
 from collections import Counter
 from typing import Any
 
+import regex as re
+
 _BM25_K1 = 1.2
 _BM25_B = 0.75
+
+# Keep this class in sync with ``is_cjk``.  VERSION1 class subtraction lets the
+# word alternative stop before CJK, matching the original per-character state
+# machine without executing a Python loop for every corpus character.
+_CJK_CHAR_CLASS = (
+    r"\u3400-\u4DBF"
+    r"\u4E00-\u9FFF"
+    r"\u3000-\u303F"
+    r"\u3040-\u309F"
+    r"\u30A0-\u30FF"
+    r"\uAC00-\uD7AF"
+    r"\U00020000-\U0002A6DF"
+)
+_TOKEN_RUN_RE = re.compile(
+    rf"(?V1)(?P<cjk>[{_CJK_CHAR_CLASS}]+)"
+    rf"|(?P<word>[\p{{L}}\p{{N}}_--[{_CJK_CHAR_CLASS}]]+)"
+)
 
 
 def extract_text_from_content(content: Any) -> str:
@@ -80,33 +99,13 @@ def _cjk_runs(text: str) -> list[str]:
 
 def tokenize(text: str) -> list[str]:
     """Tokenize alphanumeric/code words and contiguous CJK runs into bigrams."""
-    normalized = normalize_text(text)
     tokens: list[str] = []
-    word: list[str] = []
-    cjk: list[str] = []
-
-    def flush_word() -> None:
-        if word:
-            tokens.append("".join(word))
-            word.clear()
-
-    def flush_cjk() -> None:
-        if len(cjk) >= 2:
-            tokens.extend("".join(cjk[index : index + 2]) for index in range(len(cjk) - 1))
-        cjk.clear()
-
-    for char in normalized:
-        if is_cjk(char):
-            flush_word()
-            cjk.append(char)
-        elif char.isalnum() or char == "_":
-            flush_cjk()
-            word.append(char)
-        else:
-            flush_word()
-            flush_cjk()
-    flush_word()
-    flush_cjk()
+    for match in _TOKEN_RUN_RE.finditer(normalize_text(text)):
+        run = match.group()
+        if match.lastgroup == "word":
+            tokens.append(run)
+        elif len(run) >= 2:
+            tokens.extend(run[index : index + 2] for index in range(len(run) - 1))
     return tokens
 
 
@@ -137,6 +136,10 @@ class InvertedSearchIndex:
         self._doc_lengths: dict[int, int] = {}
         self._total_length = 0
         self._turns_by_id: dict[int, dict[str, Any]] = {}
+        # Literal fallback scans need normalized corpus text.  Build this cache
+        # lazily so BM25-only users do not pay its memory cost, then maintain it
+        # incrementally as new turns arrive.
+        self._normalized_texts: dict[int, str] | None = None
         self.add_turn_calls = 0
         self.search_calls = 0
         self.fallback_search_calls = 0
@@ -159,6 +162,8 @@ class InvertedSearchIndex:
         counts = Counter(tokenize(text))
         stored = dict(turn)
         self._turns_by_id[turn_id] = stored
+        if self._normalized_texts is not None:
+            self._normalized_texts[turn_id] = normalize_text(text)
         self._doc_lengths[turn_id] = sum(counts.values())
         self._total_length += self._doc_lengths[turn_id]
         for token, frequency in counts.items():
@@ -222,17 +227,20 @@ class InvertedSearchIndex:
     def _substring_search(self, normalized_query: str, top_k: int) -> list[dict[str, Any]]:
         self.fallback_search_calls += 1
         terms = normalized_query.split() or [normalized_query]
-        normalized_turns = {
-            turn_id: normalize_text(turn["text"])
-            for turn_id, turn in self._turns_by_id.items()
-        }
+        normalized_turns = self._normalized_texts
+        if normalized_turns is None:
+            normalized_turns = {
+                turn_id: normalize_text(turn["text"])
+                for turn_id, turn in self._turns_by_id.items()
+            }
+            self._normalized_texts = normalized_turns
         exact_ids = {
             turn_id
             for turn_id, text in normalized_turns.items()
             if normalized_query in text
         }
         heap: list[tuple[tuple[float, int, int], int, float]] = []
-        for turn_id, turn in self._turns_by_id.items():
+        for turn_id in self._turns_by_id:
             normalized_text = normalized_turns[turn_id]
             if exact_ids:
                 if turn_id not in exact_ids:
