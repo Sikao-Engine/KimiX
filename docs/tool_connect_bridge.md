@@ -101,7 +101,10 @@ The RPC is sent *before* the tool logic runs, i.e. even when the tool will later
 fail on that same call: the server is told about intent, not outcomes.
 
 One `before_tool` request per **qualifying live server**, issued sequentially
-(usually one server). Worst case latency is **one `timeout` per live server**:
+(usually one server) — and, when several tools run concurrently against the
+same file, only **one** request for that file at a time (the later callers join
+it instead of sending their own; see §10). Worst case latency is **one
+`timeout` per live server**:
 the budget is a hard deadline, enforced with `asyncio.wait_for` around both the
 connect *and* the whole request/response round trip, so a server that dribbles
 partial or unrelated data cannot stretch it (the client-side per-read timeouts
@@ -327,3 +330,67 @@ Notes:
 * Tool integration: patch the imported `before_tool` name inside each tool
   module to return e.g. `"LSP: 2 diagnostics"` → assert
   `result.message` contains `"[server] LSP"`.
+
+---
+
+## 10. Single-flight: one `connect` per file at a time
+
+A single model step may emit several file operations on **the same file**
+(`read` + `edit`, two `read`s with different ranges, `read_image` + `edit`, …).
+The toolset dispatches those calls as **parallel asyncio tasks**, so without
+coalescing each one would open its own connection and send its own
+`before_tool` RPC for the same target — the server would do the same work
+several times over.
+
+`session_bridge.before_tool()` therefore implements **single-flight per
+target set**:
+
+```python
+key = (normalised cwd, tuple(sorted(normalised targets)))   # paths when several
+existing = _inflight.get(key)
+if existing is not None and not existing.done():
+    return await _join(existing)        # redundant caller joins the owner
+task = asyncio.ensure_future(_query_all(...))   # owner starts one RPC
+_inflight[key] = task
+```
+
+Rules:
+
+* The **first** caller for a `(cwd, targets)` key starts the RPC; every caller
+  that targets the same file(s) while it is still in flight **joins** it and
+  receives the *same* reply instead of sending a second request. Redundant
+  requests are dropped at the source: exactly one connection per target set at
+  a time.
+* `tool` / `action` are **not** part of the key: a parallel `read` and `edit` of
+  one file share the answer (the owner's payload is the one on the wire). The
+  server's job is to describe the *file*, so one answer covers both.
+* The key uses a **dedupe-only normalisation** (`\` → `/`, collapsed duplicate
+  slashes, leading `./` stripped, target-set order ignored, and — on Windows
+  only, where the filesystem is case-insensitive — case folded for both the
+  targets and the `cwd`). The payload on the wire is untouched — it carries
+  exactly the raw strings the tool received (contract §2). A spelling that is
+  *not* recognised as redundant only costs one extra RPC; it can never merge two
+  genuinely different files on POSIX.
+* The entry is removed as soon as the request settles (a `done` callback pops
+  it, never evicting a newer task under the same key). There is **no TTL
+  cache**: a *sequential* later call always issues a fresh RPC, so diagnostics
+  produced by an edit are never hidden from the next read.
+* The shared task is awaited through `asyncio.shield`, so cancelling one caller
+  (a tool call interrupted by the user) never cancels the request the other
+  callers are waiting on. A failing shared request degrades to `None` for every
+  joiner — the §7 isolation guarantee is unchanged.
+* The owner's `timeout` governs the shared round trip (every file tool uses the
+  same `DEFAULT_TIMEOUT`, so this is only visible to callers that override it).
+* Loop safety: a task is only joined from the loop that created it
+  (`task.get_loop() is asyncio.get_running_loop()`); anything else falls back to
+  a private request rather than raising.
+* `_reset_inflight_for_tests()` clears the map for test isolation; the map is
+  process-global but holds at most one entry per concurrently queried target
+  set.
+
+Covered by `kimi-cli/tests/tools/test_session_bridge.py` (section
+"Single-flight coalescing"): concurrent read/edit/write on one file → 1 RPC,
+different files / different `cwd` → 2 RPCs, redundant spellings (and Windows
+case variants) → 1 RPC,
+sequential calls → 2 RPCs, entry released after settle, and cancellation of
+either the owner or the joiner leaves the other caller served.

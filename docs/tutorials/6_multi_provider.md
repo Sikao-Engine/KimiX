@@ -94,9 +94,8 @@ workspace/
 
 - 被引用文件的**根级字段**会作为一个子 Provider 条目注册；`role` 取自链接条目，链接条目省略时沿用被引用文件的 `role`，再省略则默认 `sub_agent`。
 - 链接条目上除 `json` / `role` 之外的其他字段会**覆盖**被引用文件的同名字段（例如临时替换 `model` 或 `api_key`）。
-- 被引用文件自身声明的 `sub_provider` / `sub_providers` 也会被展开并追加注册，因此链接可以嵌套；嵌套链接从声明它的那个文件所在目录开始查找。
+- 链接**不会递归**：一个被引用文件只贡献一个 Provider（即它的根级字段）。被引用文件内部声明的 `sub_provider` / `sub_providers`（以及嵌套的 `json` 链接）会被忽略，因此一条链接永远不会引入一串 Provider；这些角色请直接写在主配置里。
 - 文件不存在、JSON 非法或 `json` 值不是字符串时，只有该条目会被忽略并打印警告，其余条目不受影响。
-- 循环引用（A 引用 B、B 又引用 A）与自引用会被自动检测并忽略，同时限制最大嵌套层数。
 
 `docs/sub_provider_link.json`（主配置）与 `docs/subagent.json`（被引用配置）是可直接复制使用的完整示例。`research` 工具的配置与用法见 `docs/research.md` 和 `docs/research.json`。
 

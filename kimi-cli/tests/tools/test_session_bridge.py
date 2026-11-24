@@ -7,7 +7,9 @@ Contract: docs/tool_connect_bridge.md.
 
 from __future__ import annotations
 
+import asyncio
 import io
+import os
 import socket
 import time
 from types import SimpleNamespace
@@ -25,6 +27,7 @@ from kimi_cli.session_server import (
     JsonRpcServer,
     MethodRegistry,
 )
+from kimi_cli.tools.file import session_bridge as bridge_mod
 from kimi_cli.tools.file.edit import EditFile
 from kimi_cli.tools.file.edit.params import EditParams
 from kimi_cli.tools.file.read import Params as ReadParams
@@ -534,3 +537,195 @@ async def test_before_tool_enforces_hard_deadline_against_dribbling_server(
     finally:
         srv.close()
         await srv.wait_closed()
+# ---------------------------------------------------------------------------
+# Single-flight coalescing (contract §10): when several file tools run
+# *concurrently* against the same file, only ONE ``before_tool`` round trip is
+# issued — the first caller starts it and the redundant later callers join the
+# in-flight request and share its answer instead of opening a second connection.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def isolated_bridge():
+    """Keep the module-level in-flight map clean between tests."""
+    bridge_mod._reset_inflight_for_tests()
+    yield
+    bridge_mod._reset_inflight_for_tests()
+
+
+def _counting_query(monkeypatch, *, delay: float = 0.05) -> list[dict]:
+    """Patch the wire call: record payloads, never open a real socket."""
+    calls: list[dict] = []
+
+    async def _fake(srv, payload, timeout):  # noqa: ANN001 - _query_server mirror
+        calls.append(dict(payload))
+        await asyncio.sleep(delay)
+        return f"diag {payload['tool']}:{payload['path']}"
+
+    monkeypatch.setattr(bridge_mod, "_query_server", _fake)
+    monkeypatch.setattr(
+        sdk_registry,
+        "get_live_server_processes",
+        lambda: [_live_entry("tcp", "127.0.0.1", 9)],
+    )
+    return calls
+
+
+async def test_concurrent_calls_on_same_file_share_one_connect(
+    isolated_bridge, monkeypatch
+) -> None:
+    """read + edit + write on one file issued in parallel → one RPC, one answer."""
+    calls = _counting_query(monkeypatch)
+    results = await asyncio.gather(
+        before_tool("read", "read", path="src/a.py", cwd="C:/w"),
+        before_tool("edit", "edit", path="src/a.py", cwd="C:/w"),
+        before_tool("write", "write", path="src/a.py", cwd="C:/w"),
+    )
+    assert len(calls) == 1, calls
+    assert all(r for r in results)
+    # The redundant callers receive the very same reply as the owner.
+    assert len(set(results)) == 1
+
+
+async def test_concurrent_calls_on_different_files_each_connect(
+    isolated_bridge, monkeypatch
+) -> None:
+    calls = _counting_query(monkeypatch)
+    await asyncio.gather(
+        before_tool("read", "read", path="a.py", cwd="w"),
+        before_tool("read", "read", path="b.py", cwd="w"),
+    )
+    assert sorted(c["path"] for c in calls) == ["a.py", "b.py"]
+
+
+async def test_concurrent_calls_in_different_cwds_each_connect(
+    isolated_bridge, monkeypatch
+) -> None:
+    """The same relative path in another work dir is a different target."""
+    calls = _counting_query(monkeypatch)
+    await asyncio.gather(
+        before_tool("read", "read", path="a.py", cwd="w1"),
+        before_tool("read", "read", path="a.py", cwd="w2"),
+    )
+    assert len(calls) == 2
+
+
+async def test_redundant_spellings_collapse_to_one_connect(
+    isolated_bridge, monkeypatch
+) -> None:
+    """Key normalisation folds ``./``, separators and set order — payload is raw."""
+    calls = _counting_query(monkeypatch)
+    results = await asyncio.gather(
+        before_tool("read", "read", path="src/a.py", cwd="C:/w"),
+        before_tool("read", "read", path="./src/a.py", cwd="C:/w"),
+        before_tool("read", "read", path="src\\a.py", cwd="C:/w"),
+    )
+    assert len(calls) == 1, calls
+    assert len(set(results)) == 1
+    # ... but the wire payload still carries the caller's raw spelling.
+    assert calls[0]["path"] == "src/a.py"
+
+    calls.clear()
+    await asyncio.gather(
+        before_tool("read", "read", path="a.py", paths=["a.py", "b.py"], cwd="w"),
+        before_tool("read", "read", path="b.py", paths=["b.py", "a.py"], cwd="w"),
+    )
+    assert len(calls) == 1, calls
+
+
+@pytest.mark.skipif(os.name != "nt", reason="case-insensitive filesystem only")
+async def test_windows_case_variants_share_one_connect(isolated_bridge, monkeypatch) -> None:
+    """On Windows the two spellings name the same file → one connect."""
+    calls = _counting_query(monkeypatch)
+    await asyncio.gather(
+        before_tool("read", "read", path="C:/Work/A.py", cwd="C:/Work"),
+        before_tool("edit", "edit", path="c:/work/a.py", cwd="c:/work"),
+    )
+    assert len(calls) == 1, calls
+
+
+async def test_sequential_calls_get_fresh_connects(isolated_bridge, monkeypatch) -> None:
+    """Coalescing is in-flight only: no result cache, so no stale diagnostics."""
+    calls = _counting_query(monkeypatch)
+    first = await before_tool("read", "read", path="a.py", cwd="w")
+    second = await before_tool("read", "read", path="a.py", cwd="w")
+    assert len(calls) == 2
+    assert first and second
+
+
+async def test_inflight_entry_is_released_after_settle(isolated_bridge, monkeypatch) -> None:
+    calls = _counting_query(monkeypatch)
+    task = asyncio.create_task(before_tool("read", "read", path="a.py", cwd="w"))
+    await asyncio.sleep(0)
+    assert len(bridge_mod._inflight) == 1
+    await task
+    assert bridge_mod._inflight == {}
+    assert len(calls) == 1
+
+
+async def test_cancelled_joiner_does_not_cancel_shared_connect(
+    isolated_bridge, monkeypatch
+) -> None:
+    calls = _counting_query(monkeypatch)
+    owner = asyncio.create_task(before_tool("read", "read", path="a.py", cwd="w"))
+    await asyncio.sleep(0)  # owner registers the in-flight request
+    joiner = asyncio.create_task(before_tool("edit", "edit", path="a.py", cwd="w"))
+    await asyncio.sleep(0)  # joiner attaches
+    joiner.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await joiner
+    assert await owner is not None
+    assert len(calls) == 1
+
+
+async def test_cancelled_owner_does_not_cancel_shared_connect(
+    isolated_bridge, monkeypatch
+) -> None:
+    calls = _counting_query(monkeypatch)
+    owner = asyncio.create_task(before_tool("read", "read", path="a.py", cwd="w"))
+    await asyncio.sleep(0)
+    joiner = asyncio.create_task(before_tool("write", "write", path="a.py", cwd="w"))
+    await asyncio.sleep(0)
+    owner.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await owner
+    assert await joiner is not None
+    assert len(calls) == 1
+
+
+async def test_failing_shared_connect_degrades_to_none_for_every_joiner(
+    isolated_bridge, monkeypatch
+) -> None:
+    async def _boom(srv, payload, timeout):  # noqa: ANN001 - _query_server mirror
+        await asyncio.sleep(0.05)
+        raise RuntimeError("simulated transport failure")
+
+    monkeypatch.setattr(bridge_mod, "_query_server", _boom)
+    monkeypatch.setattr(
+        sdk_registry,
+        "get_live_server_processes",
+        lambda: [_live_entry("tcp", "127.0.0.1", 9)],
+    )
+    results = await asyncio.gather(
+        before_tool("read", "read", path="a.py", cwd="w"),
+        before_tool("edit", "edit", path="a.py", cwd="w"),
+    )
+    assert results == [None, None]
+    assert bridge_mod._inflight == {}
+
+
+async def test_tool_level_concurrent_reads_share_one_connect(
+    read_file_tool: ReadFile, temp_work_dir: KaosPath, isolated_bridge, monkeypatch
+) -> None:
+    """Two read calls on one file dispatched together → a single connect."""
+    calls = _counting_query(monkeypatch)
+    file = temp_work_dir / "coalesce.txt"
+    await file.write_text("line1\nline2\nline3\n")
+    results = await asyncio.gather(
+        read_file_tool(ReadParams(path=str(file))),
+        read_file_tool(ReadParams(path=str(file), offset=2)),
+    )
+    assert len(calls) == 1, calls
+    for result in results:
+        assert not result.is_error
+        assert f"[server] diag read:{file}" in result.message

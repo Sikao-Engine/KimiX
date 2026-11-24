@@ -94,9 +94,8 @@ workspace/
 
 - The referenced file's **root-level fields** are registered as one sub-provider entry. `role` comes from the link entry; when the link omits it, the referenced file's `role` is used, and finally it defaults to `sub_agent`.
 - Any other key on the link entry (everything except `json` / `role`) **overrides** the referenced file's field of the same name (e.g. swap `model` or `api_key` on the fly).
-- The referenced file's own `sub_provider` / `sub_providers` entries are expanded and appended as well, so links may nest; a nested link is resolved from the directory of the file that declares it.
+- Links are **not recursive**: a linked file contributes exactly one provider (its root-level fields). Any `sub_provider` / `sub_providers` (or nested `json` link) declared inside the referenced file is ignored, so one link can never pull in a chain of providers. Declare those roles in the main config instead.
 - A missing file, invalid JSON, or a non-string `json` value drops only that entry with a warning; other entries are unaffected.
-- Cycles (A links B, B links A) and self-links are detected and ignored, and the nesting depth is capped.
 
 `docs/sub_provider_link.json` (main config) and `docs/subagent.json` (linked config) are ready-to-copy examples. See `docs/research.md` and `docs/research.json` for research-tool configuration and usage.
 

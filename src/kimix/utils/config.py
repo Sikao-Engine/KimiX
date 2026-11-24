@@ -57,9 +57,12 @@ _CROSS_TYPE_NO_INHERIT_KEYS: frozenset[str] = frozenset({"oauth", "openai_settin
 # ``{"role": "sub_agent", "json": "subagent.json"}``.
 _SUB_PROVIDER_LINK_KEY: str = "json"
 
-
-# Maximum nesting depth when following sub-provider JSON links (cycle guard).
-_MAX_SUB_PROVIDER_LINK_DEPTH: int = 16
+# Keys stripped from a linked config's root before it becomes a sub-provider
+# entry: the nested sub-provider fields are ignored (links do not recurse) and
+# a root-level ``json`` key has no meaning outside a link entry.
+_LINKED_CONFIG_DROP_KEYS: frozenset[str] = frozenset(
+    {"sub_provider", "sub_providers", _SUB_PROVIDER_LINK_KEY}
+)
 
 
 # ── Sub-provider normalization ─────────────────────────────────────────────
@@ -284,10 +287,11 @@ def get_backup_providers() -> list[dict[str, Any]]:
 # ``subagent.json`` is looked up in the directory holding the JSON file that
 # declares the link, then in each of its parent directories up to the
 # filesystem root (``subagent.json`` next to the declaring file always wins).
-# The referenced file's own root-level fields are registered as one
-# sub-provider entry, and its ``sub_provider`` / ``sub_providers`` entries are
-# expanded and appended after it -- so links may nest, and nested links are
-# searched starting from the directory of the file that declares them.
+# Only the referenced file's root-level fields are registered, as exactly one
+# sub-provider entry. Expansion is deliberately NOT recursive: when the linked
+# file declares its own ``sub_provider`` / ``sub_providers`` (or a nested
+# ``json`` link), those are ignored -- a linked config contributes its own
+# provider only, never a chain of providers.
 # Extra keys on the link entry (everything but ``json``/``role``) override the
 # linked file's root fields; ``role`` overrides the linked file's ``role``.
 
@@ -332,17 +336,13 @@ def _resolve_linked_config(name: str, origin_dir: Path) -> Path | None:
     return None
 
 
-def _expand_sub_provider_links(
-    entries: list[Any],
-    origin_dir: Path,
-    seen: frozenset[str] = frozenset(),
-    depth: int = 0,
-) -> list[Any]:
+def _expand_sub_provider_links(entries: list[Any], origin_dir: Path) -> list[Any]:
     """Return *entries* with every ``{"json": ...}`` link replaced by its config.
 
     Non-link entries are passed through untouched so inline sub-providers keep
-    working. ``seen`` holds the resolved paths already followed (cycle guard)
-    and ``depth`` bounds the nesting of chained links.
+    working. Each link yields exactly one entry built from the linked config's
+    root fields; expansion never recurses, so a linked config's own
+    ``sub_provider`` / ``sub_providers`` are ignored.
     """
     from kimix.ui.printing import print_debug, print_warning
 
@@ -368,61 +368,46 @@ def _expand_sub_provider_links(
             )
             continue
 
-        key = str(resolved)
-        if key in seen:
-            print_warning(f"Circular sub_provider config link ignored: {key}")
-            continue
-        if depth >= _MAX_SUB_PROVIDER_LINK_DEPTH:
-            print_warning(
-                f"Sub_provider config link nested too deep "
-                f"(limit {_MAX_SUB_PROVIDER_LINK_DEPTH}): {key}"
-            )
-            continue
-
         linked = _read_json_file(resolved)
         if not linked:
             continue
 
-        print_debug(f"Sub_provider config link resolved: {target} -> {key}")
-        expanded.extend(
-            _linked_config_to_entries(linked, entry, resolved.parent, seen | {key}, depth + 1)
-        )
+        print_debug(f"Sub_provider config link resolved: {target} -> {str(resolved)}")
+        expanded.append(_linked_config_to_entry(linked, entry, resolved))
     return expanded
 
 
-def _linked_config_to_entries(
+def _linked_config_to_entry(
     linked: dict[str, Any],
     link_entry: dict[str, Any],
-    origin_dir: Path,
-    seen: frozenset[str],
-    depth: int,
-) -> list[Any]:
-    """Turn a linked JSON config into the sub-provider entries it declares.
+    origin: Path | None = None,
+) -> dict[str, Any]:
+    """Turn a linked JSON config into the single sub-provider entry it declares.
 
-    The linked file's root-level fields (minus ``sub_provider`` /
-    ``sub_providers``) become one entry. The file's own nested sub-providers are
-    expanded -- resolving their links relative to *origin_dir*, the linked
-    file's directory -- and appended after that entry.
+    The linked file's root-level fields become the entry; its own
+    ``sub_provider`` / ``sub_providers`` (and any nested ``json`` link) are
+    dropped, because links do not recurse. Keys on *link_entry* other than
+    ``json`` / ``role`` override the linked root fields, and ``role`` on the
+    link entry overrides the linked file's role.
     """
-    entry = {
-        key: value for key, value in linked.items() if key not in ("sub_provider", "sub_providers")
-    }
+    from kimix.ui.printing import print_debug
+
+    ignored = [key for key in ("sub_provider", "sub_providers") if linked.get(key)]
+    if ignored:
+        print_debug(
+            f"Ignoring nested {' / '.join(ignored)} declared in linked sub_provider "
+            f"config {str(origin) if origin is not None else '<linked config>'}: "
+            f"sub_provider json links are not recursive"
+        )
+
+    entry = {key: value for key, value in linked.items() if key not in _LINKED_CONFIG_DROP_KEYS}
     for key, value in link_entry.items():
         if key not in (_SUB_PROVIDER_LINK_KEY, "role"):
             entry[key] = value
     role = link_entry.get("role")
     if role:
         entry["role"] = role
-
-    nested: list[Any] = []
-    for key in ("sub_provider", "sub_providers"):
-        src = linked.get(key)
-        if isinstance(src, dict):
-            nested.append(src)
-        elif isinstance(src, list):
-            nested.extend(src)
-
-    return [entry, *_expand_sub_provider_links(nested, origin_dir, seen, depth)]
+    return entry
 
 
 def _expand_config_sub_provider_links(config_data: dict[str, Any], origin_dir: Path) -> None:

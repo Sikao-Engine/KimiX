@@ -3,13 +3,18 @@
 A ``sub_providers`` entry may be a pointer to another JSON config file
 (``{"role": "sub_agent", "json": "subagent.json"}``) instead of an inline
 provider dict. The referenced file is searched in the declaring file's
-directory, then upward through its parents to the filesystem root; whatever it
-contains is registered as sub-provider(s).
+directory, then upward through its parents to the filesystem root; its
+root-level fields are registered as exactly one sub-provider entry.
+
+Link expansion is NOT recursive: a linked config that declares its own
+``sub_provider`` / ``sub_providers`` (or a nested ``json`` link) contributes
+only its own root provider -- the nested entries are ignored.
 
 Covers:
   - ``config._resolve_linked_config`` -- upward search / absolute paths
-  - ``config._expand_config_sub_provider_links`` -- expansion, nesting, cycles,
-    overrides and failure modes
+  - ``config._expand_config_sub_provider_links`` -- expansion, overrides,
+    ignored nesting and failure modes
+  - ``config._linked_config_to_entry`` -- single-entry construction
   - ``config._load_and_set_provider`` / ``config.init`` -- end-to-end
     registration into ``kimix.base`` globals
   - the ``_resolve_config_file`` / ``_load_config_file`` refactor
@@ -164,7 +169,7 @@ class TestExpandSubProviderLinks:
         assert entry["api_key"] == "sk-override"
         assert entry["url"] == "https://api.example.com/sub-model"
 
-    def test_linked_nested_sub_providers_appended(self, tmp_path: Path) -> None:
+    def test_linked_nested_sub_providers_ignored(self, tmp_path: Path) -> None:
         planner = _provider("planner-model", role="planner")
         _write_json(
             tmp_path / "subagent.json",
@@ -176,15 +181,25 @@ class TestExpandSubProviderLinks:
 
         config_mod._expand_config_sub_provider_links(config_data, tmp_path)
 
-        assert config_data["sub_providers"] == [
-            {**_provider("sub-model"), "role": "sub_agent"},
-            planner,
-        ]
+        # Only the linked root becomes a sub-provider; its nested planner is ignored.
+        assert config_data["sub_providers"] == [{**_provider("sub-model"), "role": "sub_agent"}]
 
-    def test_nested_link_resolved_from_linked_file_directory(self, tmp_path: Path) -> None:
-        # subagent.json lives in tmp_path/shared and links "helper.json", which
-        # only exists next to it -- not next to the declaring config.
-        _write_json(tmp_path / "config.json", _provider("main-model"))
+    def test_linked_singular_nested_sub_provider_ignored(self, tmp_path: Path) -> None:
+        _write_json(
+            tmp_path / "subagent.json",
+            {**_provider("sub-model"), "sub_provider": _provider("nested", role="planner")},
+        )
+        config_data: dict[str, Any] = {
+            "sub_providers": [{"role": "sub_agent", "json": "subagent.json"}]
+        }
+
+        config_mod._expand_config_sub_provider_links(config_data, tmp_path)
+
+        assert config_data["sub_providers"] == [{**_provider("sub-model"), "role": "sub_agent"}]
+
+    def test_nested_json_link_not_followed(self, tmp_path: Path) -> None:
+        # subagent.json links helper.json, which does exist next to it. The link
+        # is not followed: expansion is non-recursive.
         helper = _provider("helper-model", role="planner")
         _write_json(tmp_path / "shared" / "helper.json", helper)
         _write_json(
@@ -197,10 +212,7 @@ class TestExpandSubProviderLinks:
 
         config_mod._expand_config_sub_provider_links(config_data, tmp_path)
 
-        assert config_data["sub_providers"] == [
-            {**_provider("sub-model"), "role": "sub_agent"},
-            helper,
-        ]
+        assert config_data["sub_providers"] == [{**_provider("sub-model"), "role": "sub_agent"}]
 
     def test_inline_entries_untouched(self, tmp_path: Path) -> None:
         inline = _provider("inline-model", role="sub_agent")
@@ -275,7 +287,10 @@ class TestExpandSubProviderLinks:
         assert config_data["sub_providers"] == []
         assert any("Invalid JSON" in w for w in warnings)
 
-    def test_self_link_ignored(self, tmp_path: Path, warnings: list[str]) -> None:
+    def test_self_link_in_linked_file_ignored(self, tmp_path: Path, warnings: list[str]) -> None:
+        # The linked config points at itself; since links are not recursive the
+        # nested link is never followed, so nothing is circular and no warning
+        # is needed.
         _write_json(
             tmp_path / "self.json",
             {**_provider("self-model"), "sub_providers": [{"json": "self.json"}]},
@@ -285,9 +300,9 @@ class TestExpandSubProviderLinks:
         config_mod._expand_config_sub_provider_links(config_data, tmp_path)
 
         assert config_data["sub_providers"] == [_provider("self-model")]
-        assert any("Circular" in w for w in warnings)
+        assert warnings == []
 
-    def test_two_file_cycle_terminates(self, tmp_path: Path, warnings: list[str]) -> None:
+    def test_two_file_cycle_does_not_expand(self, tmp_path: Path, warnings: list[str]) -> None:
         _write_json(
             tmp_path / "cyc-a.json",
             {**_provider("a-model"), "sub_providers": [{"json": "cyc-b.json"}]},
@@ -300,12 +315,13 @@ class TestExpandSubProviderLinks:
 
         config_mod._expand_config_sub_provider_links(config_data, tmp_path)
 
-        assert [e["model"] for e in config_data["sub_providers"]] == ["a-model", "b-model"]
-        assert any("Circular" in w for w in warnings)
+        # Only a-model is registered; the a -> b -> a chain is never followed.
+        assert [e["model"] for e in config_data["sub_providers"]] == ["a-model"]
+        assert warnings == []
 
-    def test_depth_limit_stops_runaway_chain(self, tmp_path: Path, warnings: list[str]) -> None:
-        depth = config_mod._MAX_SUB_PROVIDER_LINK_DEPTH
-        total = depth + 4
+    def test_long_link_chain_not_followed(self, tmp_path: Path, warnings: list[str]) -> None:
+        # A chain of singly-linked files must yield exactly one provider.
+        total = 20
         for i in range(total):
             entry: dict[str, Any] = _provider(f"chain-{i}")
             if i + 1 < total:
@@ -315,9 +331,8 @@ class TestExpandSubProviderLinks:
 
         config_mod._expand_config_sub_provider_links(config_data, tmp_path)
 
-        models = [e["model"] for e in config_data["sub_providers"]]
-        assert models == [f"chain-{i}" for i in range(depth)]
-        assert any("nested too deep" in w for w in warnings)
+        assert [e["model"] for e in config_data["sub_providers"]] == ["chain-0"]
+        assert warnings == []
 
     def test_non_dict_entries_preserved(self, tmp_path: Path) -> None:
         config_data: dict[str, Any] = {"sub_providers": ["junk", None, 7]}
@@ -325,6 +340,56 @@ class TestExpandSubProviderLinks:
         config_mod._expand_config_sub_provider_links(config_data, tmp_path)
 
         assert config_data["sub_providers"] == ["junk", None, 7]
+
+
+# ---------------------------------------------------------------------------
+# _linked_config_to_entry
+# ---------------------------------------------------------------------------
+
+
+class TestLinkedConfigToEntry:
+    def test_root_fields_become_entry(self, tmp_path: Path) -> None:
+        linked = _provider("sub-model", role="planner")
+        entry = config_mod._linked_config_to_entry(linked, {"json": "subagent.json"})
+        assert entry == linked
+
+    def test_nested_sub_providers_dropped(self) -> None:
+        linked = {
+            **_provider("sub-model"),
+            "sub_provider": _provider("one", role="backup"),
+            "sub_providers": [_provider("two", role="planner")],
+        }
+
+        entry = config_mod._linked_config_to_entry(linked, {"json": "x.json"})
+
+        assert entry == _provider("sub-model")
+
+    def test_nested_json_key_dropped(self) -> None:
+        linked = {**_provider("sub-model"), "json": "other.json"}
+        assert config_mod._linked_config_to_entry(linked, {"json": "x.json"}) == _provider(
+            "sub-model"
+        )
+
+    def test_link_keys_override_root(self) -> None:
+        linked = _provider("sub-model", role="planner")
+        entry = config_mod._linked_config_to_entry(
+            linked, {"json": "x.json", "role": "sub_agent", "model": "other-model"}
+        )
+        assert entry["role"] == "sub_agent"
+        assert entry["model"] == "other-model"
+        assert entry["url"] == "https://api.example.com/sub-model"
+
+    def test_linked_role_kept_without_link_role(self) -> None:
+        linked = _provider("sub-model", role="backup")
+        assert config_mod._linked_config_to_entry(linked, {"json": "x.json"})["role"] == "backup"
+
+    def test_root_untouched(self) -> None:
+        linked = {**_provider("sub-model"), "sub_providers": [_provider("p", role="planner")]}
+        before = dict(linked)
+
+        config_mod._linked_config_to_entry(linked, {"json": "x.json"})
+
+        assert linked == before
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +420,23 @@ class TestLoadAndSetProviderWithLinks:
         assert subs[0]["role"] == "sub_agent"
         # Main provider is untouched by link expansion.
         assert base._default_provider["model"] == "main-model"
+
+    def test_linked_nested_sub_provider_not_registered(self, tmp_path: Path) -> None:
+        # The linked config declares its own planner; it must not leak into the
+        # registered sub-provider list.
+        _write_json(
+            tmp_path / "subagent.json",
+            {**_provider("sub-model"), "sub_providers": [_provider("p", role="planner")]},
+        )
+        main = {
+            **_provider("main-model"),
+            "sub_providers": [{"role": "sub_agent", "json": "subagent.json"}],
+        }
+
+        config_mod._load_and_set_provider(main, tmp_path / "main.json")
+
+        assert base.get_default_sub_provider("sub_agent")["model"] == "sub-model"
+        assert base.get_default_sub_provider("planner") is None
 
     def test_link_resolved_upward_from_config_subdirectory(self, tmp_path: Path) -> None:
         # subagent.json sits at the workspace root while the config that links
@@ -493,12 +575,13 @@ def test_docs_sub_provider_link_example_resolves() -> None:
     config_mod._expand_config_sub_provider_links(config_data, _DOCS_DIR)
 
     entries = config_data["sub_providers"]
-    # Link entry -> linked root (sub_agent) + its nested planner, then the inline backup.
-    assert [e.get("role") for e in entries] == ["sub_agent", "planner", "backup"]
+    # Link entry -> linked root (sub_agent), then the inline backup. The linked
+    # file's own nested planner is ignored (links are not recursive).
+    assert [e.get("role") for e in entries] == ["sub_agent", "backup"]
     for entry in entries:
         assert not (set(config_mod._REQUIRED_PROVIDER_KEYS) - set(entry)), entry
     assert entries[0]["model"] == "kimi-k2.6"
-    assert entries[1]["type"] == "anthropic"
+    assert entries[0]["type"] == "kimi"
 
     # Every entry survives normalization.
     assert config_mod._normalize_sub_providers(None, entries) == entries
