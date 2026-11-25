@@ -30,6 +30,7 @@ from kimi_cli.tools.web.providers import (
     BraveFreeProvider,
     ExaProvider,
     FirecrawlProvider,
+    KeenableProvider,
     KimiServiceProvider,
     LocalTrafilaturaProvider,
     ParallelProvider,
@@ -176,6 +177,7 @@ class TestImportTimeRegistration:
             "searxng",
             "firecrawl",
             "parallel",
+            "keenable",
             "xai",
             "ddgs",
             "local",
@@ -926,6 +928,164 @@ def _xai_payload_with_text(text: str) -> dict[str, Any]:
             }
         ]
     }
+
+
+class TestKeenableProvider:
+    _KEYED = "https://api.keenable.ai/v1/search"
+    _KEYLESS = "https://api.keenable.ai/v1/search/public"
+
+    def test_availability_is_key_presence(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("KEENABLE_API_KEY", "keen-test-key")
+        assert KeenableProvider().is_available() is True
+        monkeypatch.delenv("KEENABLE_API_KEY", raising=False)
+        assert KeenableProvider().is_available() is False
+
+    def test_name_and_capabilities(self) -> None:
+        provider = KeenableProvider()
+        assert provider.name == "keenable"
+        assert provider.display_name == "Keenable"
+        assert provider.supports_search() is True
+        assert provider.supports_extract() is True
+
+    def test_never_auto_selected_without_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("KEENABLE_API_KEY", raising=False)
+        monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+        keenable = KeenableProvider()
+        tavily = TavilyProvider()
+        register_provider(keenable)
+        register_provider(tavily)
+        assert get_active_search_provider(Config()) is tavily
+
+    def test_not_in_legacy_walk_when_keyed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A Keenable key alongside other providers does not displace them.
+        monkeypatch.setenv("KEENABLE_API_KEY", "keen-test-key")
+        monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+        register_provider(KeenableProvider())
+        tavily = TavilyProvider()
+        register_provider(tavily)
+        assert get_active_search_provider(Config()) is tavily
+
+    def test_explicit_backend_selects_keenable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("KEENABLE_API_KEY", raising=False)
+        monkeypatch.setenv("TAVILY_API_KEY", "tvly-test-key")
+        keenable = KeenableProvider()
+        register_provider(keenable)
+        register_provider(TavilyProvider())
+        config = Config()
+        config.web.search_backend = "keenable"
+        assert get_active_search_provider(config) is keenable
+
+    async def test_keyless_search(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("KEENABLE_API_KEY", raising=False)
+        monkeypatch.delenv("KEENABLE_BASE_URL", raising=False)
+        session = _FakeSession(
+            {
+                ("POST", self._KEYLESS): _FakeResponse(
+                    200,
+                    {
+                        "results": [
+                            {"url": "https://a.example", "title": "A", "snippet": "s1", "description": ""},
+                            {"url": "", "title": "no link", "snippet": "dropped"},
+                            {"url": "https://b.example", "title": "B", "snippet": "", "description": "d2"},
+                        ]
+                    },
+                )
+            }
+        )
+        _patch_session(monkeypatch, session)
+
+        result = await KeenableProvider().search("hello", 50)
+
+        assert result == {
+            "success": True,
+            "data": {
+                "web": [
+                    {"title": "A", "url": "https://a.example", "description": "s1", "position": 1},
+                    {"title": "B", "url": "https://b.example", "description": "d2", "position": 2},
+                ]
+            },
+        }
+        method, url, kwargs = session.calls[0]
+        assert (method, url) == ("POST", self._KEYLESS)
+        assert kwargs["headers"] == {"X-Keenable-Title": "kimix"}
+        assert kwargs["json"] == {"query": "hello", "max_results": 20, "disable_cards": True}
+
+    async def test_keyed_search_and_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("KEENABLE_API_KEY", "keen-test-key")
+        monkeypatch.setenv("KEENABLE_BASE_URL", "https://proxy.example/")
+        session = _FakeSession(
+            {("POST", "https://proxy.example/v1/search"): _FakeResponse(200, {"results": []})}
+        )
+        _patch_session(monkeypatch, session)
+
+        result = await KeenableProvider().search("hello", 3)
+
+        assert result == {"success": True, "data": {"web": []}}
+        kwargs = session.calls[0][2]
+        assert kwargs["headers"] == {"X-Keenable-Title": "kimix", "X-API-Key": "keen-test-key"}
+        assert kwargs["json"]["max_results"] == 3
+
+    async def test_search_keyless_rate_limit(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("KEENABLE_API_KEY", raising=False)
+        monkeypatch.delenv("KEENABLE_BASE_URL", raising=False)
+        session = _FakeSession({("POST", self._KEYLESS): _FakeResponse(429, {})})
+        _patch_session(monkeypatch, session)
+
+        result = await KeenableProvider().search("hello")
+
+        assert result["success"] is False
+        assert "HTTP 429" in result["error"]
+        assert "KEENABLE_API_KEY" in result["error"]
+
+    async def test_search_network_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("KEENABLE_API_KEY", raising=False)
+        _patch_session(monkeypatch, _FakeSession(fail="network"))
+
+        result = await KeenableProvider().search("hello")
+
+        assert result["success"] is False
+        assert result["error"].startswith("Keenable search failed:")
+
+    async def test_extract_checks_each_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("KEENABLE_API_KEY", raising=False)
+        monkeypatch.delenv("KEENABLE_BASE_URL", raising=False)
+        session = _FakeSession(
+            {
+                ("POST", "https://api.keenable.ai/v1/fetch/public"): _FakeResponse(
+                    200,
+                    {
+                        "results": [
+                            {"url": "https://a.example/", "title": "A", "content": "# A"},
+                            {"url": "https://b.example", "error": "Bad gateway"},
+                        ]
+                    },
+                )
+            }
+        )
+        _patch_session(monkeypatch, session)
+
+        results = await KeenableProvider().extract(["https://a.example", "https://b.example"])
+
+        assert session.calls[0][2]["json"] == {"urls": ["https://a.example", "https://b.example"]}
+        assert results[0]["content"] == "# A"
+        assert results[0]["error"] is None
+        assert results[0]["metadata"] == {"sourceURL": "https://a.example/", "title": "A"}
+        assert results[1]["url"] == "https://b.example"
+        assert results[1]["content"] == ""
+        assert "Bad gateway" in results[1]["error"]
+
+    async def test_extract_http_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("KEENABLE_API_KEY", "keen-test-key")
+        monkeypatch.delenv("KEENABLE_BASE_URL", raising=False)
+        session = _FakeSession(
+            {("POST", "https://api.keenable.ai/v1/fetch"): _FakeResponse(500, {})}
+        )
+        _patch_session(monkeypatch, session)
+
+        results = await KeenableProvider().extract(["https://a.example"])
+
+        assert len(results) == 1
+        assert results[0]["error"] == "Keenable extract failed: HTTP 500"
 
 
 class TestXAIProvider:

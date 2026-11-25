@@ -3,7 +3,7 @@
 Ported from the Hermes project's ``agent/web_search_provider.py`` +
 ``agent/web_search_registry.py`` and its ``plugins/web/*`` providers
 (``tavily``, ``exa``, ``brave_free``, ``searxng``, ``firecrawl``,
-``parallel``, ``xai``). Providers self-register at import time; the ``kimi``
+``parallel``, ``xai``, ``keenable``). Providers self-register at import time; the ``kimi``
 provider is constructed with a ``Config`` + ``Runtime`` and registered by
 ``SearchWeb.__init__``.
 
@@ -62,6 +62,7 @@ __all__ = (
     "SearxngProvider",
     "FirecrawlProvider",
     "ParallelProvider",
+    "KeenableProvider",
     "XAIProvider",
     "_reset_for_tests",
 )
@@ -2019,6 +2020,166 @@ _XAI_DEFAULT_TIMEOUT = 90
 _XAI_JSON_BLOCK_RE = re.compile(r"\{[\s\S]*\}", re.MULTILINE)
 
 
+_KEENABLE_BASE_URL = "https://api.keenable.ai"
+# Keenable identifies keyless callers by app name instead of a credential and
+# answers 400 on a keyless call without it. No user identifier is sent.
+_KEENABLE_CLIENT_TITLE = "kimix"
+
+
+def _keenable_results(data: Any) -> list[dict[str, Any]]:
+    """Return the ``results`` entries of a decoded response that are JSON objects."""
+    if not isinstance(data, dict):
+        return []
+    payload: dict[str, Any] = data  # pyright: ignore[reportUnknownVariableType]
+    raw: Any = payload.get("results")
+    if not isinstance(raw, list):
+        return []
+    items: list[Any] = raw  # pyright: ignore[reportUnknownVariableType]
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _text(value: Any) -> str:
+    return value if isinstance(value, str) else ""
+
+
+class KeenableProvider(WebSearchProvider):
+    """Keenable search + extract (mirrors Hermes ``plugins/web/keenable``).
+
+    Env vars: ``KEENABLE_API_KEY`` (optional), ``KEENABLE_BASE_URL`` (optional
+    override of ``https://api.keenable.ai``).
+
+    Opt-in only: ``is_available()`` is key presence, and ``keenable`` is not in
+    the legacy preference walk, so it is never picked unless someone sets
+    ``web.search_backend`` / ``web.extract_backend`` to ``keenable`` (or it is
+    the single available provider because they set ``KEENABLE_API_KEY``). An
+    explicit pin without a key uses the keyless ``/public`` endpoints.
+    """
+
+    @property
+    def name(self) -> str:
+        return "keenable"
+
+    @property
+    def display_name(self) -> str:
+        return "Keenable"
+
+    def is_available(self) -> bool:
+        """Return True when ``KEENABLE_API_KEY`` is set to a non-empty value."""
+        return bool(_env("KEENABLE_API_KEY"))
+
+    def supports_search(self) -> bool:
+        return True
+
+    def supports_extract(self) -> bool:
+        return True
+
+    async def _keenable_request(
+        self, resource: str, payload: dict[str, Any]
+    ) -> tuple[int, Any]:
+        """POST to ``/v1/{resource}`` (keyed) or ``/v1/{resource}/public`` (keyless)."""
+        api_key = _env("KEENABLE_API_KEY")
+        base_url = (_env("KEENABLE_BASE_URL") or _KEENABLE_BASE_URL).rstrip("/")
+        headers = {"X-Keenable-Title": _KEENABLE_CLIENT_TITLE}
+        if api_key:
+            headers["X-API-Key"] = api_key
+            url = f"{base_url}/v1/{resource}"
+        else:
+            url = f"{base_url}/v1/{resource}/public"
+        return await _http_json("POST", url, headers=headers, payload=payload, timeout=60)
+
+    async def search(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        query: str,
+        limit: int = 5,
+        include_content: bool = False,
+    ) -> dict[str, Any]:
+        """Execute a Keenable ``/v1/search`` and return normalized Hermes results."""
+        del include_content  # page text comes from ``extract``
+        log = _resolve_logger()
+        try:
+            status, data = await self._keenable_request(
+                "search",
+                {"query": query, "max_results": min(max(1, int(limit)), 20), "disable_cards": True},
+            )
+        except Exception as exc:  # noqa: BLE001 — aiohttp errors + timeouts
+            log.warning("Keenable search error: {error}", error=exc)
+            return {"success": False, "error": f"Keenable search failed: {exc}"}
+        if status != 200:
+            log.warning("Keenable search HTTP error: status={status}", status=status)
+            detail = f"HTTP {status}"
+            if status == 429 and not _env("KEENABLE_API_KEY"):
+                detail += " (keyless rate limit; set KEENABLE_API_KEY to raise it)"
+            return {"success": False, "error": f"Keenable search failed: {detail}"}
+        if not isinstance(data, dict):
+            return {
+                "success": False,
+                "error": "Keenable search failed: response was not valid JSON",
+            }
+
+        web_results: list[dict[str, Any]] = []
+        for result in _keenable_results(data):
+            url = _text(result.get("url"))
+            if not url:
+                continue
+            web_results.append(
+                {
+                    "title": _text(result.get("title")),
+                    "url": url,
+                    "description": _text(result.get("snippet")) or _text(result.get("description")),
+                    "position": len(web_results) + 1,
+                }
+            )
+        return {"success": True, "data": {"web": web_results}}
+
+    async def extract(  # pyright: ignore[reportIncompatibleMethodOverride]
+        self,
+        urls: list[str],
+        format: str | None = None,  # noqa: A002 — kept for dispatcher parity
+    ) -> list[dict[str, Any]]:
+        """Extract content via Keenable ``POST /v1/fetch``.
+
+        A page that failed comes back inside a 200 response with an ``error``
+        field, so each result is checked rather than trusting the status.
+        """
+        del format  # Keenable returns markdown-ish text; no format knob
+
+        def _failed(url: str, error: str) -> dict[str, Any]:
+            return {"url": url, "title": "", "content": "", "raw_content": "", "error": error}
+
+        log = _resolve_logger()
+        try:
+            status, data = await self._keenable_request("fetch", {"urls": urls})
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Keenable extract error: {error}", error=exc)
+            return [_failed(u, f"Keenable extract failed: {exc}") for u in urls]
+        if status != 200 or not isinstance(data, dict):
+            detail = f"HTTP {status}" if status != 200 else "response was not valid JSON"
+            log.warning("Keenable extract failed: {detail}", detail=detail)
+            return [_failed(u, f"Keenable extract failed: {detail}") for u in urls]
+
+        documents: list[dict[str, Any]] = []
+        for i, result in enumerate(_keenable_results(data)):
+            fallback_url = urls[i] if i < len(urls) else ""
+            url = _text(result.get("url")) or fallback_url
+            error: Any = result.get("error")
+            if error:
+                documents.append(_failed(url, f"Keenable extract failed: {error}"))
+                continue
+            content = _text(result.get("content"))
+            title = _text(result.get("title"))
+            documents.append(
+                {
+                    "url": url,
+                    "title": title,
+                    "content": content,
+                    "raw_content": content,
+                    "error": None,
+                    "metadata": {"sourceURL": url, "title": title},
+                }
+            )
+        return documents
+
+
 class XAIProvider(WebSearchProvider):
     """xAI web search via Grok's server-side ``web_search`` tool.
 
@@ -2319,6 +2480,7 @@ register_provider(BraveFreeProvider())
 register_provider(SearxngProvider())
 register_provider(FirecrawlProvider())
 register_provider(ParallelProvider())
+register_provider(KeenableProvider())
 register_provider(XAIProvider())
 register_provider(DDGSProvider())
 register_provider(LocalTrafilaturaProvider())
