@@ -641,13 +641,13 @@ class Config(BaseModel):
         description="Terminal color theme. Use 'light' for light terminal backgrounds.",
     )
     show_thinking_stream: bool = Field(
-        default=True,
+        default=False,
         description=(
-            "If true, stream the raw reasoning text in the live area as a "
-            "6-line scrolling preview and commit the full reasoning markdown "
-            "to history when the block ends. Default true. Set to false to "
-            "show only the compact 'Thinking ...' indicator and a one-line "
-            "trace summary."
+            "If true, stream the raw reasoning text into the live area as the "
+            "model produces it. Default false: reasoning is collapsed to a "
+            "compact 'thinking...' indicator that prints one liveness dot every "
+            "few seconds and ends with a one-line token summary, so long "
+            "reasoning never floods the terminal and never looks stuck."
         ),
     )
     model: LLMModel | None = Field(

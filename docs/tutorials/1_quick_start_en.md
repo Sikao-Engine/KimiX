@@ -79,7 +79,7 @@ Run `/init` in the interactive terminal to create the default config interactive
 | `oauth` | No | OAuth config, e.g. `{"storage": "file", "key": "my-key"}` |
 | `loop_control` | No | Loop params: `max_steps_per_turn`, `max_retries_per_step`, `reserved_context_size`, `compaction_trigger_ratio` |
 | `max_tokens` | No | Max tokens per request |
-| `show_thinking_stream` | No | Stream thinking process |
+| `show_thinking_stream` | No | Stream the full reasoning text. Default `false`: a compact `thinking...` line with one liveness dot every 3 seconds, then a one-line token summary |
 | `thinking_effort` | No | `off`, `low`, `medium`, `high`, `xhigh`, `max` |
 | `temperature` | No | Sampling temperature `[0.0, 2.0]` |
 | `background` | No | Background task settings |

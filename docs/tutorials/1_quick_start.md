@@ -101,7 +101,7 @@ Kimix 通过 JSON 配置文件初始化 LLM Provider。若启动时未通过 `--
     "type": "kimi",
     "api_key": "your-api-key",
     "max_tokens": 131072,
-    "show_thinking_stream": true,
+    "show_thinking_stream": false,
     "thinking_effort": "max",
     "temperature": 1.0,
     "loop_control": {
@@ -138,7 +138,7 @@ Kimix 通过 JSON 配置文件初始化 LLM Provider。若启动时未通过 `--
 | `oauth` | 否 | OAuth 配置，例如 `{"storage": "file", "key": "my-key"}` |
 | `loop_control` | 否 | 循环控制参数，含 `max_steps_per_turn`、`max_retries_per_step`、`reserved_context_size`、`compaction_trigger_ratio` |
 | `max_tokens` | 否 | 单次请求最大生成 token 数 |
-| `show_thinking_stream` | 否 | 是否流式展示思考过程 |
+| `show_thinking_stream` | 否 | 是否流式展示完整思考内容。默认 `false`：只显示 `thinking...` 心跳点（每 3 秒一个点），结束后输出一行 token 统计 |
 | `thinking_effort` | 否 | 思考力度，可选 `off`、`low`、`medium`、`high`、`xhigh`、`max` |
 | `temperature` | 否 | 采样温度，范围 `[0.0, 2.0]` |
 | `sub_provider` / `sub_providers` | 否 | 子 Agent 使用的 Provider。`sub_provider` 为单个 dict，`sub_providers` 为 dict 数组；每个条目需包含 `type`、`max_context_size`、`model`、`url`，可选 `role`（`sub_agent` 或 `planner`，缺省 `sub_agent`）及 `api_key` 等。当顶层缺少 `model` 时，会按优先级（无 `role` > `sub_agent` > `planner`）从子 Provider 中挑选一个作为主 Provider |

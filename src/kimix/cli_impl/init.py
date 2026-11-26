@@ -49,7 +49,7 @@ kimi_default_config = '''
     "url": "https://api.kimi.com/coding/v1",
     "type": "kimi",
     "max_tokens": 131072,
-    "show_thinking_stream": true,
+    "show_thinking_stream": false,
     "thinking_effort": "max",
     "oauth": {
         "storage": "file",

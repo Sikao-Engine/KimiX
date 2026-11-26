@@ -881,6 +881,29 @@ def _finish_tool_call_stream(session: Session) -> None:
     tmp_data.pop(_TOOL_CALL_MERGE_TARGET_KEY, None)
 
 
+def finish_streamed_line(
+    session: Session,
+    output_function: Callable[[str, MessageType], Any] | None = None,
+    format_output: bool = False,
+) -> None:
+    """Close any line a live stream left open before other output is printed.
+
+    Mirrors the pre-processing :func:`print_agent_json` does for every non
+    tool-call message: render any buffered assistant text, terminate the
+    streamed tool-call argument line and deliver the pending coalesced
+    ``ToolCallingPart`` snapshot.  Exposed for callers that render a wire
+    message themselves instead of going through ``print_agent_json`` — e.g. the
+    collapsed ``thinking...`` indicator in :mod:`kimix.utils.prompt`, which must
+    not append its text to a half-open ``⚡ tool`` line or jump ahead of text
+    that is still buffered.
+    """
+    if format_output and _stream._state == StreamPrintState.Text:
+        _flush_agent_json_text()
+        _stream._state = StreamPrintState.Other
+    _finish_tool_call_stream(session)
+    _flush_tool_call_part_output(session, output_function)
+
+
 def _handle_tool_call(
     wire_msg: ToolCall | ToolCallPart,
     output_function: Callable[[str, MessageType], Any] | None,

@@ -126,6 +126,13 @@ class TestInstructionFilesPerRole:
         assert "AGENTS-RULES" not in prompt
         assert "CLAUDE-RULES" not in prompt
 
+    def test_browser_use_role_gets_no_instruction_files(self, tmp_path: Path):
+        (tmp_path / "AGENTS.md").write_text("AGENTS-RULES", encoding="utf-8")
+        (tmp_path / "CLAUDE.md").write_text("CLAUDE-RULES", encoding="utf-8")
+        prompt = _prompt(tmp_path, SystemPromptType.BrowserUse)
+        assert "AGENTS-RULES" not in prompt
+        assert "CLAUDE-RULES" not in prompt
+
 
 class TestInstructionFileBudget:
     def test_both_files_fold_to_read_hint_when_over_budget(self, tmp_path: Path):

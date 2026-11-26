@@ -26,7 +26,7 @@
     },
     "max_tokens": 131072,
     "thinking_effort": "max",
-    "show_thinking_stream": true,
+    "show_thinking_stream": false,
     "temperature": 0.7,
     "top_p": 0.9,
     "top_k": 50,

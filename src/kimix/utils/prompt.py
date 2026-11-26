@@ -16,7 +16,7 @@ from kimi_cli.llm import LoopDetectedError, TextLoopDetector
 from kimi_cli.soul import RunCancelled
 from kosong.message import ContentPart, TextPart, ThinkPart
 from kimix.ui.printing import Color, MessageType, Style
-from kimix.ui.stream import print_agent_json, print_agent_json_flush_text
+from kimix.ui.stream import finish_streamed_line, print_agent_json, print_agent_json_flush_text
 from kimi_cli.tools.common import _export_to_temp_file
 from kimix.utils.event_loop import run_on_event_loop
 from kimix.utils.session import (
@@ -449,6 +449,216 @@ async def _switch_session_provider(
     return True
 
 
+# ---------------------------------------------------------------------------
+# Collapsed reasoning display (``show_thinking_stream = false``)
+# ---------------------------------------------------------------------------
+
+_THINKING_DOT_INTERVAL = 3.0
+"""Seconds between liveness dots while a reasoning block is collapsed.
+
+One dot per interval is what tells the user the stream is alive (the model is
+still thinking) instead of stuck; tests shorten it.
+"""
+
+_THINKING_DOTS_PER_LINE = 12
+"""Dots per ``thinking...`` line before a fresh line is started.
+
+Keeps a very long reasoning phase from growing one endless, wrapping line: a
+new ``thinking...`` group every ``_THINKING_DOTS_PER_LINE * _THINKING_DOT_INTERVAL``
+seconds still proves liveness, at one short line at a time.
+"""
+
+
+def _session_runtime_config(session: Any) -> Any:
+    """Best-effort lookup of the live ``Config`` object backing *session*.
+
+    ``kimi_agent_sdk.Session`` exposes the CLI as ``_cli`` and the live config
+    hangs off ``soul.agent.runtime.config`` — the same object
+    :func:`_switch_session_provider` patches in place on provider failover, so
+    reading it sees switches made mid-conversation.  Returns ``None`` for
+    lightweight test doubles, which is what the callers' fallbacks are for.
+    """
+    cli = getattr(session, "_cli", None)
+    soul = getattr(cli, "soul", None) if cli is not None else None
+    if soul is None:
+        return None
+    agent = getattr(soul, "agent", None)
+    runtime = getattr(agent, "runtime", None) if agent is not None else None
+    if runtime is None:
+        runtime = getattr(soul, "runtime", None) or getattr(soul, "_runtime", None)
+    if runtime is None:
+        return None
+    return getattr(runtime, "config", None)
+
+
+def _config_default_show_thinking_stream() -> bool:
+    """The ``Config`` schema default, so the fallback never drifts from the field."""
+    from kimi_cli.config import Config
+
+    return bool(Config.model_fields["show_thinking_stream"].default)
+
+
+def _resolve_show_thinking_stream(session: Any) -> bool:
+    """Resolve the effective ``show_thinking_stream`` setting for *session*.
+
+    Precedence: the live ``Config`` → the raw ``custom_config`` mapping → the
+    ``Config`` schema default (False).  Non-bool values (mock sessions) fall
+    through, so a test double can never accidentally turn full reasoning
+    streaming back on.
+    """
+    value = getattr(_session_runtime_config(session), "show_thinking_stream", None)
+    if isinstance(value, bool):
+        return value
+    try:
+        custom_config = (
+            session.get_custom_config() if hasattr(session, "get_custom_config") else None
+        )
+    except Exception:
+        custom_config = None
+    if isinstance(custom_config, dict):
+        raw = custom_config.get("show_thinking_stream")
+        if isinstance(raw, bool):
+            return raw
+    return _config_default_show_thinking_stream()
+
+
+def _count_thinking_tokens(text: str) -> int:
+    """Token estimate for one reasoning block (the shared language-aware counter)."""
+    if not text:
+        return 0
+    try:
+        from kimi_cli.utils.tokens import count_tokens
+
+        return count_tokens(text)
+    except Exception:  # counting must never break the prompt loop
+        return max(len(text) // 4, 1)
+
+
+class _ThinkingIndicator:
+    """Collapse a reasoning block into ``thinking...``, dots and a token summary.
+
+    Used when ``show_thinking_stream`` is off.  The reasoning text itself is
+    never printed — this is a *display* setting, so programmatic
+    ``output_function`` consumers still receive every ``ThinkPart``.  What the
+    user sees is:
+
+    ``thinking...``          once when the block starts, and again after
+                             every ``_THINKING_DOTS_PER_LINE`` dots so one
+                             line never runs away
+    ``.``                    one dot every ``_THINKING_DOT_INTERVAL`` seconds
+    `` done, 1,234 tokens``  once, on a single line, when the block ends
+
+    so a long reasoning phase still proves the stream is alive, and its cost is
+    reported in one short line.
+    """
+
+    def __init__(
+        self,
+        session: Any = None,
+        output_function: Callable[[str, MessageType], Any] | None = None,
+        *,
+        enabled: bool = True,
+        format_output: bool = False,
+    ) -> None:
+        self.session = session
+        self.output_function = output_function
+        self.enabled = enabled
+        self.format_output = format_output
+        self._active = False
+        self._chunks: list[str] = []
+        self._heartbeat: asyncio.Task[None] | None = None
+        self._dots = 0
+        self._dots_in_line = 0
+
+    @property
+    def active(self) -> bool:
+        """True while a collapsed reasoning block is open."""
+        return self._active
+
+    def absorb(self, message: Any) -> bool:
+        """Collapse *message* when it is reasoning text.
+
+        Returns ``True`` when the message was consumed and must not be rendered;
+        ``False`` means "render it normally".  Any non-reasoning message closes
+        the open block first, so the summary always lands before the next line
+        of output.
+        """
+        if not self.enabled or base._quiet:
+            return False
+        if not isinstance(message, ThinkPart) or message.encrypted:
+            self.finish()
+            return False
+        if not self._active:
+            self._begin()
+        self._chunks.append(message.think)
+        # Display-only setting: programmatic consumers (SSE feeds, CoT
+        # extraction) still receive every reasoning chunk, in wire order.
+        if self.output_function is not None:
+            self.output_function(message.think, MessageType.Thinking)
+        return True
+
+    def _begin(self) -> None:
+        self._active = True
+        self._dots = 0
+        self._dots_in_line = 0
+        # Never append the indicator to a half-open "⚡ tool" line, and never
+        # print it ahead of assistant text that is still buffered.
+        finish_streamed_line(self.session, self.output_function, self.format_output)
+        self._print_header()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # no running loop: liveness dots are best-effort
+            loop = None
+        if loop is not None:
+            self._heartbeat = loop.create_task(self._beat())
+
+    def _print_header(self) -> None:
+        base._stream.colorful_print_word(
+            "thinking...",
+            fg=Color.BRIGHT_CYAN,
+            require_new_line=True,
+            flush=True,
+        )
+
+    async def _beat(self) -> None:
+        """Print one dot per ``_THINKING_DOT_INTERVAL`` until the block ends."""
+        while True:
+            await asyncio.sleep(_THINKING_DOT_INTERVAL)
+            if not self._active:
+                return
+            self._tick()
+
+    def _tick(self) -> None:
+        self._dots += 1
+        self._dots_in_line += 1
+        if self._dots_in_line > _THINKING_DOTS_PER_LINE:
+            # Start a new group instead of growing one endless, wrapping line.
+            self._dots_in_line = 1
+            self._print_header()
+            return
+        base._stream.colorful_print_word(
+            ".", fg=Color.BRIGHT_CYAN, require_new_line=False, flush=True
+        )
+
+    def finish(self) -> None:
+        """Close the open block: cancel the heartbeat and print the summary line."""
+        task, self._heartbeat = self._heartbeat, None
+        if task is not None:
+            task.cancel()
+        if not self._active:
+            return
+        self._active = False
+        text = "".join(self._chunks)
+        self._chunks.clear()
+        tokens = _count_thinking_tokens(text)
+        base._stream.colorful_print_word(
+            f" done, {tokens:,} tokens\n",
+            fg=Color.BRIGHT_CYAN,
+            require_new_line=False,
+            flush=True,
+        )
+
+
 async def _run_prompt_attempts(
     session: Session,
     prompt_str: str,
@@ -466,9 +676,18 @@ async def _run_prompt_attempts(
     Returns normally on success (after printing usage info).
     """
     max_retries = 3
+    # ``show_thinking_stream = false`` collapses reasoning to a liveness
+    # indicator; the raw text is still delivered to ``output_function``.
+    show_thinking_stream = _resolve_show_thinking_stream(session)
 
     async def _run_prompt_iter():
         detector = TextLoopDetector.from_env()
+        indicator = _ThinkingIndicator(
+            session,
+            output_function,
+            enabled=not show_thinking_stream,
+            format_output=format_output,
+        )
         try:
             async for message in session.prompt(prompt_str, merge_wire_messages=merge_wire_messages):
                 if cancel_callable is not None and cancel_callable():
@@ -481,6 +700,7 @@ async def _run_prompt_attempts(
                     elif isinstance(message, ThinkPart) and not message.encrypted:
                         loop_text = message.think
                     if loop_text is not None and detector.feed(loop_text):
+                        indicator.finish()
                         base._stream.colorful_print_word(
                             "Loop detected; cancelling session.",
                             fg=Color.BRIGHT_RED,
@@ -489,8 +709,11 @@ async def _run_prompt_attempts(
                         )
                         session.cancel()
                         break
+                if indicator.absorb(message):
+                    continue
                 await print_agent_json(message, session, output_function, format_output=format_output)
         except LoopDetectedError:
+            indicator.finish()
             base._stream.colorful_print_word(
                 "Loop detected; cancelling session.",
                 fg=Color.BRIGHT_RED,
@@ -498,6 +721,8 @@ async def _run_prompt_attempts(
                 require_new_line=True,
             )
             session.cancel()
+        finally:
+            indicator.finish()
 
     for attempt in range(max_retries):
         if session._cancel_event is not None and session._cancel_event.is_set():

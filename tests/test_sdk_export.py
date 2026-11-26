@@ -130,6 +130,31 @@ async def test_export_jsonl_custom_path(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_export_jsonl_custom_path_as_path_object(tmp_path: Path) -> None:
+    """A ``Path`` output_path is a file, not a directory.
+
+    Regression: the directory check compared the raw ``output_path`` against its
+    stripped *string*, which is always unequal when a ``Path`` is passed — so
+    every ``Path`` argument was treated as a directory, the file was written as
+    ``<path>/kimi-export-*.jsonl`` and the caller's own path became a folder.
+    """
+    history = [
+        Message(role="user", content=[TextPart(text="Hello")]),
+    ]
+    session = _make_session(history)
+    session._cli.session.work_dir = KaosPath.unsafe_from_local_path(tmp_path)
+
+    custom = tmp_path / "path-object.jsonl"
+    out_path, count = await session.export(custom, format=ExportFormat.Jsonl)
+
+    assert out_path == custom
+    assert out_path.is_file()
+    assert not custom.is_dir()
+    assert count == 1
+    assert _parse_jsonl(out_path.read_text(encoding="utf-8"))[1]["role"] == "user"
+
+
+@pytest.mark.asyncio
 async def test_export_jsonl_custom_directory(tmp_path: Path) -> None:
     """Export to a custom directory -> file created inside with default name."""
     history = [
