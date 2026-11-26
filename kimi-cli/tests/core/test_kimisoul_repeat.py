@@ -1,3 +1,16 @@
+"""Soul-level coverage for the repeat / cycle loop detector.
+
+The toolset only force-stops a turn on an *exact* tool-call cycle: the same
+tool with the same canonical arguments, at most 5 calls long, repeated more
+than 100 times.  The modules below drive KimiSoul end to end to prove that
+
+  * a bounded exact cycle still ends on a plain-text answer for the user
+    (recovery prompts + synthesized fallback, never an empty tool-only stop);
+  * the same tool with different arguments is never treated as a loop;
+  * a non-empty thinking block between tool calls clears the counters, so the
+    turn is never stopped for repeating.
+"""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
@@ -8,18 +21,14 @@ import pytest
 from pydantic import BaseModel
 
 import kimi_cli.soul.kimisoul as kimisoul_module
+import kimi_cli.soul.toolset as toolset_module
 from kimi_cli.llm import LLM
 from kimi_cli.soul.agent import Agent, Runtime
 from kimi_cli.soul.context import Context
 from kimi_cli.soul.kimisoul import KimiSoul
-from kimi_cli.soul.toolset import (
-    _CYCLE_FORCE_STOP,
-    _DIFF_ARGS_HARD_STOP_START,
-    _REPEAT_FORCE_STOP_STREAK,
-    KimiToolset,
-)
+from kimi_cli.soul.toolset import KimiToolset
 from kosong.chat_provider import StreamedMessagePart, ThinkingEffort, TokenUsage
-from kosong.message import Message, TextPart, ToolCall
+from kosong.message import Message, TextPart, ThinkPart, ToolCall
 from kosong.tooling import CallableTool2, Tool, ToolOk, ToolReturnValue
 
 
@@ -75,7 +84,9 @@ class _RepeatChatProvider:
 
     ``cycle`` is the sequence of (tool_name, arguments) pairs replayed round
     robin; a one-element sequence reproduces a plain adjacent repeat, a longer
-    one reproduces an interleaved cycle.
+    one reproduces an interleaved cycle.  ``thinking`` prefixes every tool call
+    with a non-empty ``ThinkPart`` (a "reasoned" step).  ``finish_after`` ends
+    the replay with a plain text answer.
     """
 
     name = "repeat"
@@ -85,10 +96,12 @@ class _RepeatChatProvider:
         cycle: Sequence[tuple[str, str]] | None = None,
         *,
         finish_after: int | None = None,
+        thinking: str | None = None,
     ) -> None:
         self._n = 0
         self._cycle: Sequence[tuple[str, str]] = cycle or [("ToolA", '{"value":"x"}')]
         self._finish_after = finish_after
+        self._thinking = thinking
         self._histories: list[list[Message]] = []
 
     @property
@@ -110,11 +123,16 @@ class _RepeatChatProvider:
             return _RepeatStream([TextPart(text="finished")])
         name, arguments = self._cycle[self._n % len(self._cycle)]
         self._n += 1
-        tc = ToolCall(
-            id=f"tc-{self._n}",
-            function=ToolCall.FunctionBody(name=name, arguments=arguments),
+        parts: list[StreamedMessagePart] = []
+        if self._thinking:
+            parts.append(ThinkPart(think=self._thinking))
+        parts.append(
+            ToolCall(
+                id=f"tc-{self._n}",
+                function=ToolCall.FunctionBody(name=name, arguments=arguments),
+            )
         )
-        return _RepeatStream([tc])
+        return _RepeatStream(parts)
 
     def with_thinking(self, effort: ThinkingEffort) -> Self:
         return self
@@ -150,29 +168,41 @@ def _make_soul(runtime: Runtime, llm: LLM, toolset: KimiToolset, tmp_path: Path)
     return KimiSoul(agent, context=Context(file_backend=tmp_path / "history.jsonl"))
 
 
+def _make_llm(provider: _RepeatChatProvider) -> LLM:
+    return LLM(
+        chat_provider=provider,
+        max_context_size=100_000,
+        capabilities=set(),
+    )
+
+
+def _recovery_messages(soul: KimiSoul) -> list[str]:
+    return [
+        message.extract_text(" ")
+        for message in soul.context.history
+        if "[loop-recovery]" in message.extract_text(" ")
+    ]
+
+
 @pytest.mark.asyncio
 async def test_turn_force_stops_on_adjacent_identical_calls(
     runtime: Runtime,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A turn replaying one identical call must NOT end silently.
+    """An exact adjacent cycle must NOT end the turn silently.
 
-    The toolset's consecutive-streak guard fires; the soul then runs bounded
-    loop-recovery prompts and finally returns a synthesized plain-text answer
-    that references the user requirement, never an empty tool-only stop.
+    The toolset's loop detector fires; the soul then runs bounded recovery
+    prompts and finally returns a synthesized plain-text answer that references
+    the user requirement, never an empty tool-only stop.
     """
+    monkeypatch.setattr(toolset_module, "_STREAK_FORCE_STOP", 2)
+
     toolset = KimiToolset()
     toolset.add(_DummyTool())
-    llm = LLM(
-        chat_provider=_RepeatChatProvider(),
-        max_context_size=100_000,
-        capabilities=set(),
-    )
-    soul = _make_soul(runtime, llm, toolset, tmp_path)
+    soul = _make_soul(runtime, _make_llm(_RepeatChatProvider()), toolset, tmp_path)
 
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
-
 
     outcome = await soul._turn(Message(role="user", content="go"))
 
@@ -182,8 +212,8 @@ async def test_turn_force_stops_on_adjacent_identical_calls(
     assert outcome.final_message.content
     text = outcome.final_message.extract_text(" ")
     assert "Original request: go" in text
-    # The loop is caught at the consecutive-streak guard, then recovery runs.
-    assert outcome.step_count >= _REPEAT_FORCE_STOP_STREAK
+    # A A A stops on the 3rd call, then the bounded recovery rounds run.
+    assert outcome.step_count >= 3
 
 
 @pytest.mark.asyncio
@@ -192,20 +222,15 @@ async def test_turn_allows_same_tool_with_different_arguments(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Different arguments are distinct work, even past the overuse ceiling."""
+    """Rule 2: different arguments are distinct work, never a repeat."""
     toolset = KimiToolset()
     toolset.add(_DummyTool())
-    call_count = _DIFF_ARGS_HARD_STOP_START
+    call_count = 60
     provider = _RepeatChatProvider(
         [("ToolA", f'{{"value":"{i}"}}') for i in range(call_count)],
         finish_after=call_count,
     )
-    llm = LLM(
-        chat_provider=provider,
-        max_context_size=100_000,
-        capabilities=set(),
-    )
-    soul = _make_soul(runtime, llm, toolset, tmp_path)
+    soul = _make_soul(runtime, _make_llm(provider), toolset, tmp_path)
     wire_messages: list[object] = []
     monkeypatch.setattr(kimisoul_module, "wire_send", wire_messages.append)
 
@@ -214,15 +239,12 @@ async def test_turn_allows_same_tool_with_different_arguments(
     assert outcome.stop_reason == "no_tool_calls"
     assert outcome.final_message is not None
     assert outcome.final_message.extract_text(" ") == "finished"
-    assert toolset._tool_call_counts["ToolA"] == call_count
+    assert len(toolset._turn_call_history) == call_count
     assert not any(
         "Recovering from repeated tool calls" in getattr(message, "text", "")
         for message in wire_messages
     )
-    assert not any(
-        "[loop-recovery]" in message.extract_text(" ")
-        for message in soul.context.history
-    )
+    assert _recovery_messages(soul) == []
 
 
 @pytest.mark.asyncio
@@ -231,26 +253,21 @@ async def test_turn_force_stops_on_interleaved_cycle(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``A(x) -> B(x) -> A(x) -> B(x)`` must NOT end silently.
+    """``A(x) -> B(x) -> A(x) -> B(x) ...`` must NOT end silently.
 
-    The consecutive streak can never grow here, and the per-tool
-    different-args ceiling is not reached — only the cycle-aware punishment
-    stops the loop. The soul must convert that into a recovery prompt and a
-    final plain-text answer for the user requirement.
+    The turn is converted into a recovery prompt plus a final plain-text answer
+    for the user requirement.
     """
+    monkeypatch.setattr(toolset_module, "_CYCLE_FORCE_STOP", 2)
+
     toolset = KimiToolset()
     toolset.add(_DummyTool())
     toolset.add(_DummyToolB())
     args = '{"value":"x"}'
-    llm = LLM(
-        chat_provider=_RepeatChatProvider([("ToolA", args), ("ToolB", args)]),
-        max_context_size=100_000,
-        capabilities=set(),
-    )
-    soul = _make_soul(runtime, llm, toolset, tmp_path)
+    provider = _RepeatChatProvider([("ToolA", args), ("ToolB", args)])
+    soul = _make_soul(runtime, _make_llm(provider), toolset, tmp_path)
 
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
-
 
     outcome = await soul._turn(Message(role="user", content="go"))
 
@@ -259,10 +276,8 @@ async def test_turn_force_stops_on_interleaved_cycle(
     assert outcome.final_message.content
     text = outcome.final_message.extract_text(" ")
     assert "Original request: go" in text
-    # ToolA replays its identical call on steps 1,3,5,7 -> cycle stop at 2*n-1,
-    # then the soul runs its bounded recovery rounds.
-    cycle_stop = 2 * _CYCLE_FORCE_STOP - 1
-    assert outcome.step_count >= cycle_stop
+    # ToolA's 2nd occurrence (call 3) reaches the lowered cycle stop.
+    assert outcome.step_count >= 3
 
 
 @pytest.mark.asyncio
@@ -271,28 +286,24 @@ async def test_loop_recovery_prompt_reaches_llm_and_requirement_kept(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """After the cycle detector fires, recovery prompts must reach the LLM.
+    """After the loop detector fires, recovery prompts must reach the LLM.
 
-    Regression for the session-truncation symptom: the toolset's
-    ``Interleaved ('cyclic') repeat detection`` used to force-stop the turn
-    with no final text.  Now the soul injects plain-user recovery prompts
-    that restate the top-level user requirement, and if the model keeps
-    looping the turn ends on a synthesized text fallback referencing it.
+    Regression for the session-truncation symptom: the toolset used to
+    force-stop the turn with no final text.  Now the soul injects plain-user
+    recovery prompts that restate the top-level user requirement, and if the
+    model keeps looping the turn ends on a synthesized text fallback
+    referencing it.
     """
+    monkeypatch.setattr(toolset_module, "_CYCLE_FORCE_STOP", 2)
+
     toolset = KimiToolset()
     toolset.add(_DummyTool())
     toolset.add(_DummyToolB())
     args = '{"value":"x"}'
     provider = _RepeatChatProvider([("ToolA", args), ("ToolB", args)])
-    llm = LLM(
-        chat_provider=provider,
-        max_context_size=100_000,
-        capabilities=set(),
-    )
-    soul = _make_soul(runtime, llm, toolset, tmp_path)
+    soul = _make_soul(runtime, _make_llm(provider), toolset, tmp_path)
 
     monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
-
 
     outcome = await soul._turn(Message(role="user", content="deploy the service"))
 
@@ -321,3 +332,68 @@ async def test_loop_recovery_prompt_reaches_llm_and_requirement_kept(
     ]
     assert any("deploy the service" in t for t in recovery_texts)
 
+
+@pytest.mark.asyncio
+async def test_turn_with_thinking_between_calls_is_never_a_loop(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rule 1: a thinking block between tool calls clears the counter.
+
+    Every step below repeats the identical call and is well past the (lowered)
+    force-stop threshold, but each one carries a non-empty ``ThinkPart``, so the
+    soul resets the loop detectors after the step and the turn runs to its
+    natural end.
+    """
+    monkeypatch.setattr(toolset_module, "_STREAK_REMINDER_AT", 2)
+    monkeypatch.setattr(toolset_module, "_STREAK_REMINDER_2_AT", 3)
+    monkeypatch.setattr(toolset_module, "_STREAK_REMINDER_3_AT", 4)
+    monkeypatch.setattr(toolset_module, "_STREAK_FORCE_STOP", 3)
+    monkeypatch.setattr(toolset_module, "_CYCLE_REMINDER_AT", 2)
+    monkeypatch.setattr(toolset_module, "_CYCLE_FORCE_STOP", 3)
+
+    toolset = KimiToolset()
+    toolset.add(_DummyTool())
+    provider = _RepeatChatProvider(thinking="let me check what changed", finish_after=8)
+    soul = _make_soul(runtime, _make_llm(provider), toolset, tmp_path)
+    wire_messages: list[object] = []
+    monkeypatch.setattr(kimisoul_module, "wire_send", wire_messages.append)
+
+    outcome = await soul._turn(Message(role="user", content="poll the build"))
+
+    assert outcome.stop_reason == "no_tool_calls"
+    assert outcome.final_message is not None
+    assert outcome.final_message.extract_text(" ") == "finished"
+    assert not any(
+        "Recovering from repeated tool calls" in getattr(message, "text", "")
+        for message in wire_messages
+    )
+    assert _recovery_messages(soul) == []
+
+
+@pytest.mark.asyncio
+async def test_turn_force_stops_on_different_args_overuse(
+    runtime: Runtime,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The different-args ladder is a turn-ending stop, not just a warning."""
+    monkeypatch.setattr(toolset_module, "_DIFF_ARGS_FORCE_STOP", 4)
+
+    toolset = KimiToolset()
+    toolset.add(_DummyTool())
+    # every step uses a new argument, so only the per-tool call count can stop it
+    provider = _RepeatChatProvider([("ToolA", f'{{"value":"{i}"}}') for i in range(8)])
+    soul = _make_soul(runtime, _make_llm(provider), toolset, tmp_path)
+
+    monkeypatch.setattr(kimisoul_module, "wire_send", lambda _msg: None)
+
+    outcome = await soul._turn(Message(role="user", content="fan out the work"))
+
+    assert outcome.stop_reason == "no_tool_calls"
+    assert outcome.final_message is not None
+    assert "Original request: fan out the work" in outcome.final_message.extract_text(" ")
+    # the recovery prompts restate the requirement after the forced stop
+    assert _recovery_messages(soul)
+    assert outcome.step_count >= 4

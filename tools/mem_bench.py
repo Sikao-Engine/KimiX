@@ -1669,13 +1669,14 @@ def case_agent_loop() -> dict[str, Any]:
                     for call in calls:
                         key = _normalize_call_key(call.function.name, call.function.arguments)
                         toolset._current_step_calls.append(key)
-                        toolset._call_key_counts[key] = (
-                            toolset._call_key_counts.get(key, 0) + 1
+                        toolset._turn_call_history.append(key)
+                        toolset._tool_call_counts[call.function.name] = (
+                            toolset._tool_call_counts.get(call.function.name, 0) + 1
                         )
                         toolset._seen_call_keys.add(key)
                     previous_calls = toolset.end_step()
                     seen_sizes.append(len(toolset._seen_call_keys))
-                    cycle_sizes.append(len(toolset._call_key_counts))
+                    cycle_sizes.append(len(toolset._turn_call_history))
                     try:
                         recorder.record(
                             chat_provider,
@@ -1699,8 +1700,8 @@ def case_agent_loop() -> dict[str, Any]:
                         "traced_bytes": tracemalloc.get_traced_memory()[0],
                         "history_deep_bytes": deep_size(history),
                         "seen_call_keys": len(toolset._seen_call_keys),
-                        "call_key_counts": len(toolset._call_key_counts),
-                        "tool_warned_at": sum(len(v) for v in toolset._tool_warned_at.values()),
+                        "call_history": len(toolset._turn_call_history),
+                        "tool_call_counts": len(toolset._tool_call_counts),
                     }
                 )
         finally:
@@ -1717,11 +1718,10 @@ def case_agent_loop() -> dict[str, Any]:
         "history_deep_bytes": deep_size(history),
         "toolset_seen_call_keys_bytes": deep_size(toolset._seen_call_keys),
         "toolset_seen_call_keys_max": max(seen_sizes) if seen_sizes else 0,
-        "toolset_call_key_counts_bytes": deep_size(toolset._call_key_counts),
-        "toolset_call_key_counts_max": max(cycle_sizes) if cycle_sizes else 0,
+        "toolset_call_history_bytes": deep_size(toolset._turn_call_history),
+        "toolset_call_history_max": max(cycle_sizes) if cycle_sizes else 0,
         "toolset_previous_step_calls_bytes": deep_size(toolset._previous_step_calls),
         "toolset_tool_call_counts_bytes": deep_size(toolset._tool_call_counts),
-        "toolset_tool_warned_at_bytes": deep_size(toolset._tool_warned_at),
         "recorder_seen_tools_hashes": len(recorder._seen_tools_hashes),
         "recorder_seen_prompt_hashes": len(recorder._seen_prompt_hashes),
         "recorder_state_bytes": deep_size(recorder),

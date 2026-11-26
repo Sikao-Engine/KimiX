@@ -2336,12 +2336,15 @@ class KimiSoul:
         if (
             isinstance(toolset, KimiToolset)
             and toolset.force_stop_turn
-            and toolset.force_stop_reason in ("adjacent-repeat", "cycle-repeat")
+            and toolset.force_stop_reason
+            in ("adjacent-repeat", "cycle-repeat", "different-args-overuse")
         ):
-            # These detectors match the complete (tool name, canonical arguments)
-            # key. Ignore different-args overuse here: those calls are distinct
-            # operations and must be allowed to continue (its warnings still reach
-            # the model through tool results).
+            # The toolset force-stops on one of its three repeat ladders: the
+            # same call repeated back to back (20), one exact call reappearing
+            # inside a short cycle (6), or one tool called with too many
+            # distinct arguments (70).  A non-empty thinking block between calls
+            # already reset the detectors above (2e.7.5), so nothing else can
+            # end the turn here.
             return StepOutcome(stop_reason="tool_call_repeat", assistant_message=result.message)
 
         if result.tool_calls:
