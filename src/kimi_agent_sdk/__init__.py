@@ -125,6 +125,7 @@ from kosong.message import (
 )
 from kosong.tooling import CallableTool2, ToolError, ToolOk, ToolReturnValue
 
+from kimi_agent_sdk._aggregator import MessageAggregator
 from kimi_agent_sdk._approval import ApprovalHandlerFn
 from kimi_agent_sdk._exception import PromptValidationError, SessionStateError
 from kimi_agent_sdk._prompt import prompt
@@ -135,6 +136,8 @@ __all__ = [
     "prompt",
     "Session",
     "ExportedContext",
+    # Wire -> Message aggregation
+    "MessageAggregator",
     # Approval
     "ApprovalHandlerFn",
     "ApprovalRequest",

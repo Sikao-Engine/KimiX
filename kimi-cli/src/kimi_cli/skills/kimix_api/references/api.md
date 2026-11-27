@@ -79,6 +79,7 @@ session = create_session(
     extra_system_prompt=None, # Optional: additional system prompt text
     anonymous=False, # Optional: anonymous session mode
     custom_data=None,                  # Optional: arbitrary dict stored on the session
+ weaker_provider=False, # Optional: mark a weaker child provider (prompt hardening)
 )
 
 # Close session when done
@@ -207,7 +208,7 @@ from kimix.utils.session import (
 )
 
 # Clear current context and start fresh
-clear_default_context(force_create=True, resume=True, print_info=True)
+clear_default_context(force_create=False, resume=False, print_info=True)
 
 # Compact context to reduce token usage
 compact_default_context()
@@ -225,9 +226,9 @@ print_usage(session)
 print_usage()  # uses the default session
 
 # Get the default session context storage path
-path = context_path()  # Returns ~/.kimi/sessions
+path = context_path()  # Returns <cwd>/.kimix_cache
 
-# Delete all session directories (~/.kimi/sessions)
+# Delete the session cache directory (<cwd>/.kimix_cache)
 delete_session_dir()
 ```
 
@@ -239,7 +240,9 @@ from kimix.utils import get_tool_call_errors
 
 # Get failed tool calls for a session
 errors = get_tool_call_errors(session)
-# Returns list[dict[str, Any]] (currently returns empty list; stub for future use)
+# Returns list[dict[str, Any]] - one entry per failed tool call: tool name,
+# parsed `arguments`, result `message` (ERROR: prefix stripped) and `output`.
+# Use kimix.utils.tool_calls.collect_tool_invocations for ALL calls.
 ```
 
 ## System Prompt Types (kimix.utils.system_prompt)
@@ -277,13 +280,15 @@ class MyCallback(SystemPromptCallback):
     prompt_override = lambda role, prompt: prompt + "\nExtra block"
 
 # Get the system prompt callable for Session.create
-# Returns Callable[[BuiltinSystemPromptArgs], str]
+# Returns Callable[[Runtime, bool, str | None], str], i.e.
+#   system_prompts(runtime, is_compacting=False, compact_export_path=None) -> str
 system_prompts = get_system_prompt(
     yolo=True,
     work_dir=KaosPath("."),
     extra_system_prompt=MyCallback(),
     agent_role=SystemPromptType.Worker,
     max_system_prompt_tokens=4000,
+    weaker_provider=False,  # optional: harden the prompt for a weaker child model
 )
 ```
 
@@ -811,24 +816,26 @@ asyncio.run(main())
 ```
 
 - `kimi_agent_sdk.Session` — async context manager with methods:
-  - `Session.create(work_dir=None, *, session_id=None, config=None, model=None, thinking=False, yolo=False, plan_mode=False, agent_file=None, mcp_configs=None, skills_dir=None, skills_dirs=None, anonymous=False, max_steps_per_turn=None, max_retries_per_step=None, **custom_arguments)`
+  - `Session.create(work_dir=None, *, session_id=None, config=None, model=None, thinking=False, yolo=False, plan_mode=False, agent_file=None, mcp_configs=None, skills_dir=None, skills_dirs=None, anonymous=False, max_steps_per_turn=None, max_retries_per_step=None, config_json=None, **custom_arguments)`
   - `Session.resume(work_dir, session_id=None, *, ...)`
-  - `session.prompt(user_input, *, merge_wire_messages=False)` — async generator yielding `WireMessage`
+  - `session.prompt(user_input, *, merge_wire_messages=False, max_restarts=3)` — async generator yielding `WireMessage`
   - `session.cancel()`
   - `session.close()`
   - `session.clear(**custom_arguments)`
   - `session.rename(new_session_id)`
   - `session.compact(custom_instruction="")`
-  - `session.export(output_path=None) -> tuple[Path, int]`
+  - `session.export(output_path=None, format=ExportFormat.Markdown) -> tuple[Path, int]`
   - `session.id` (property)
   - `session.model_name` (property)
   - `session.status` (property, returns `StatusSnapshot`)
+  - `session.close_sync()` — close without awaiting (mirrors `close()`)
   - `session.get_custom_data()`
   - `session.get_custom_config()`
+  - `session.get_server_processes()` — MCP/HTTP server processes owned by the session
 
 ### Re-exported types from `kimi_agent_sdk.__all__`
 
-- **Core:** `prompt`, `Session`, `ExportedContext`
+- **Core:** `prompt`, `Session`, `ExportedContext`, `MessageAggregator`
 - **Approval:** `ApprovalHandlerFn`, `ApprovalRequest`
 - **Message types:** `Message`, `ContentPart`, `TextPart`, `ThinkPart`, `ImageURLPart`, `AudioURLPart`, `VideoURLPart`, `ToolCall`
 - **Wire types:** `WireMessage`, `Event`, `Request`, `TurnBegin`, `TurnEnd`, `StepBegin`, `StepInterrupted`, `CompactionBegin`, `CompactionEnd`, `StatusUpdate`, `ToolCallPart`, `ToolResult`, `ToolReturnValue`, `ApprovalResponse`, `SubagentEvent`, `DisplayBlock`, `BriefDisplayBlock`, `DiffDisplayBlock`, `ShellDisplayBlock`, `TodoDisplayBlock`, `TodoDisplayItem`, `TokenUsage`, `is_event`, `is_request`
@@ -836,7 +843,7 @@ asyncio.run(main())
 - **Exceptions:** `KimiAgentException` (alias for `KimiCLIException`), `ConfigError`, `AgentSpecError`, `InvalidToolError`, `MCPConfigError`, `MCPRuntimeError`, `SystemPromptTemplateError`, `LLMNotSet`, `LLMNotSupported`, `ChatProviderError`, `APIConnectionError`, `APITimeoutError`, `APIStatusError`, `APIEmptyResponseError`, `MaxStepsReached`, `RunCancelled`, `PromptValidationError`, `SessionStateError`
 - **Config:** `Config`, `MCPConfig`
 
-### Internal Aggregator
+### MessageAggregator (public re-export since 0.1.29)
 
 - `MessageAggregator(final_message_only=False)` — aggregates `WireMessage` stream into `Message` stream.
   - `feed(msg) -> list[Message]`
@@ -879,20 +886,24 @@ print(results)  # {"A": "result A", "B": "result B using result A", ...}
 
 ```python
 # File: src/kimix/network/tcp_client.py, src/kimix/network/tcp_server.py, src/kimix/network/tcp_group_server.py
+# Package-level re-exports (added in 0.1.29); submodule imports keep working too.
+from kimix.network import TCPClient, TCPServer, TcpGroupServer
 from kimix.network.tcp_client import TCPClient
 from kimix.network.tcp_server import TCPServer
 from kimix.network.tcp_group_server import TcpGroupServer
 
+# NOTE: this layer is SYNCHRONOUS - none of these calls are awaited.
 client = TCPClient(host="127.0.0.1", port=8888)
-await client.connect()
-await client.send({"type": "hello"})
-await client.disconnect()
+client.connect()
+client.send("hello")          # str payload (length-prefixed framing)
+client.send_bytes(b"hello")   # raw bytes
+client.disconnect()
 
 server = TCPServer(host="127.0.0.1", port=8888)
 server.on_message(lambda msg: print("Received:", msg))
-await server.start(blocking=False)
+server.start(blocking=False)
 # ...
-await server.stop()
+server.stop()
 ```
 
 - `TCPClient(host="127.0.0.1", port=8888)` — `connect(blocking=False)`, `disconnect()`, `send(message)`, `send_bytes(data)`, `is_connected()`, `on_connect(callback)`, `on_disconnect(callback)`, `on_message(callback)`
@@ -929,12 +940,12 @@ async def interact():
     await client.delete_session(sid)
 ```
 
-These classes are defined in submodules under `kimix.server` (the package `__init__.py` does not re-export them):
+The package re-exports all of them (`from kimix.server import create_app, KimixAsyncClient, SessionManager, BusEvent, EventBus, serve_cli`). The two singletons stay one level down because their names collide with the submodules: `kimix.server.session_manager.session_manager` and `kimix.server.bus.bus`.
 
-- `create_app()` — returns FastAPI with routes: health, SSE event stream, session CRUD, prompt, abort, permissions, clear, context, compact, export (from `kimix.server.app`)
+- `create_app()` — returns FastAPI with routes: `/global/health`, `/event` + `/global/event` (SSE), `/session` CRUD, `/session/{id}/{prompt_async,abort,message,status,clear,context,compact,summarize,export,todo,plan,plan/confirm,permissions/{pid}}`, `/agent`, `/config`, `/config/providers`, `/path`, `/project`, `/project/current`, `/session/status`, `/experimental/features` (from `kimix.server.app`)
 - `BusEvent(type, properties)` — `to_dict()`, `to_json()` (from `kimix.server.bus`)
 - `EventBus` — `subscribe(callback)`, `create_async_queue()`, `remove_async_queue(q)`, `emit(event)`, `emit_type(event_type, **properties)`; global `bus = EventBus()` (from `kimix.server.bus`)
-- `KimixAsyncClient(host="127.0.0.1", port=4096, timeout=30.0)` — `health_check()`, `create_session(title=None)`, `get_session(id)`, `list_sessions()`, `delete_session(id)`, `get_messages(id, limit=10)`, `send_prompt_async(id, text, agent=None)`, `abort_session(id)`, `clear_session(id)`, `compact_session(id, keep=None)`, `export_session(id, output_path=None)`, `stream_events(session_id, timeout=14400.0)`, `stream_events_robust(session_id, timeout=14400.0, max_reconnects=5, reconnect_delay=2.0, on_reconnect=None)` (from `kimix.server.client`)
+- `KimixAsyncClient(host="127.0.0.1", port=4096, timeout=30.0)` — `health_check()`, `create_session(title=None)`, `get_session(id)`, `list_sessions()`, `delete_session(id)`, `get_messages(id, limit=10)`, `get_session_status(id)`, `send_prompt_async(id, text, agent=None)`, `abort_session(id)`, `clear_session(id)`, `compact_session(id, keep=None)`, `export_session(id, output_path=None)`, `stream_events(session_id, timeout=14400.0)`, `stream_events_robust(session_id, timeout=14400.0, max_reconnects=5, reconnect_delay=2.0, on_reconnect=None)` (from `kimix.server.client`)
 - `SessionManager` — `create_session(title=None)`, `get_session(id)`, `get_sdk_session(id)`, `list_sessions()`, `delete_session(id)`, `get_session_status()`, `get_messages(id, limit=None)`, `prompt(id, text, agent=None)`, `prompt_async(...)`, `abort_session(id)`, `clear_session(id)`, `compact_session(id, keep=None)`, `export_session(id, output_path=None)`, `get_session_context(id, keep=None)`; global `session_manager = SessionManager()` (from `kimix.server.session_manager`)
 - `serve_cli(args)` — CLI entry point for `kimix serve` (from `kimix.server.serve`)
 
@@ -955,36 +966,60 @@ for c in result.comments:
 
 - `Comment(content, line, column, kind)`
 - `ParseResult(language, comments, code_without_comments)` — `total_comments`, `comment_lines`, `get_comments_by_kind(kind)`
-- `BaseParser` — abstract `parse(source_code) -> ParseResult`; concrete `parse_file(file_path, encoding="utf-8")`
+- `BaseParser` — abstract `parse(source_code) -> ParseResult`; inherited concrete `parse_file(file_path, encoding="utf-8") -> ParseResult` (a method on every language parser, not a module-level function)
 - Language parsers: `PythonParser`, `CParser`, `ShellParser`, `HtmlParser`, `PascalParser`, `LispParser`, `SqlParser`
 
 ## Built-in Agent Tools (`kimi_cli.tools`)
 
-All tools are `CallableTool2` subclasses. They are organized in subpackages under `kimi_cli.tools` (the package `__init__.py` does not re-export them); import from the relevant submodule, e.g. `from kimi_cli.tools.subagent import Agent, AgentList, AgentClose`. The shell / process / background-task infrastructure was relocated into kimi-cli and is imported from `kimi_cli.tools.*` instead: `kimi_cli.tools.file.bash` (`Bash`, `Powershell`), `kimi_cli.tools.file.run` (`Run`), `kimi_cli.tools.file.find_str` (`FindStr`), `kimi_cli.tools.background` (`job_output`, `BackgroundStream`), plus the shared helpers `kimi_cli.tools.common`, `kimi_cli.tools.security` and `kimi_cli.tools.prompt_common`. Key ones:
+Every tool is a `CallableTool2` subclass registered in an agent JSON as `module:name` (see `src/kimix/agent_worker.json`). The package `__init__.py` re-exports nothing — import from the submodule, e.g. `from kimi_cli.tools.background import TaskOutput`. Shared helpers: `kimi_cli.tools.common`, `kimi_cli.tools.security`, `kimi_cli.tools.prompt_common`.
 
-- `subagent` — launch/resume one sub-agent per tool call (class `Agent`); params: `prompt` (`str`; inline text or `@path`, with each run blocking until its result file is written; use separate calls for multiple tasks), `session_id` (`str | None`; optional session to resume), `close_session`, `return_history=False`, `history_format="json"`, `inherit_context=False` (from `kimi_cli.tools.subagent`)
-- `list_agents` — list active sub-agent sessions (class `AgentList`); params: `scope` (from `kimi_cli.tools.subagent`)
-- `interrupt_agent` — close/interrupt a sub-agent session (class `AgentClose`); params: `agent_id` (from `kimi_cli.tools.subagent`)
-- `job_output` — get background job output (class `TaskOutput`, from `kimi_cli.tools.background`); params: `job_id` (also accepts a background subagent session id — with `wait=True` it blocks until that run settles), `wait=False`, `timeout` (seconds), `output_path`, `kill=False`
-- `BackgroundStream` (from `kimi_cli.tools.background.utils`) — `start(function, stop_function, input_function=None)`, `wait(timeout=None)`, `stop()`, `get_output()`, `pop_output()`, `input(data)`, `success()`
-- `Bash` / `pwsh` — shell execution (from `kimi_cli.tools.file.bash`); params: `command`/`cmd`, `timeout` (seconds), `run_in_background` (classes `Bash` in `kimi_cli.tools.file.bash.bash_tool`, `Powershell` in `kimi_cli.tools.file.bash.pwsh_tool`)
-- `Run` — run external executable (from `kimi_cli.tools.file.run`); params: `command`, `timeout=10`, `output_path`, `cwd`, `env`, `run_in_background=False`
-- `FindStr` — search text in files (from `kimi_cli.tools.file.find_str`); params: `content`, `path`, `case_sensitive=False`
-- `Mkdir` / `Rm` — create/remove directories
-- `Python` — execute Python code; params: `code`, `output_path`, `timeout=10`, `run_in_background=False` (from `kimi_cli.tools.py`)
-- `SyntaxLint` — unified syntax lint dispatcher; params: `file_path`, `project_root=".", clangd_path="clangd", verbose=False`
-- `MypyCheck` — Python type check; params: `file_path`, `project_root=".", verbose=False`
-- `Cpplint` — C++ lint via clangd; params: `file_path`, `project_root=".", clangd_path="clangd", verbose=False`
-- `JsTsSyntaxCheck` — JS/TS syntax check via tree-sitter; params: `file_path`, `verbose=False`
-- `Ocr` — OCR from image; params: `image_path`, `output_path`, `language="eng"`, `preprocess=False`
-- `Docx2md` — convert DOCX to Markdown; params: `docx_path`, `output_path`
-- `Pdf2md` — convert PDF to Markdown; params: `pdf_path`, `output_path`, `extract_images=False`, `ocr=False`, `extract_tables=True`, `page_range`
-- `ParserTool` — parse/extract/strip comments; params: `language`, `source_code|file_path`, `mode="extract"`, `encoding="utf-8"`
-- `write_plan` / `read_plan` / `edit_plan` — plan file tools
-- `StoreSession` / `LoadSession` / `LsSession` — key-value session persistence
+| tool name | module | class |
+|---|---|---|
+| `bash` | `kimi_cli.tools.file.bash.bash_tool` | `Bash` |
+| `pwsh` | `kimi_cli.tools.file.bash.pwsh_tool` | `Powershell` |
+| `Run` | `kimi_cli.tools.file.run` | `Run` (disabled by default) |
+| `read` | `kimi_cli.tools.file.read` | `ReadFile` |
+| `read_image` | `kimi_cli.tools.file.read_media` | `ReadMediaFile` |
+| `write` | `kimi_cli.tools.file.write` | `WriteFile` |
+| `edit` | `kimi_cli.tools.file.edit` | `EditFile` |
+| `glob` | `kimi_cli.tools.file.glob` | `Glob` |
+| `grep` | `kimi_cli.tools.file.grep_local` | `Grep` |
+| `FindStr` | `kimi_cli.tools.file.find_str` | `FindStr` |
+| `HashRead` / `HashEdit` | `kimi_cli.tools.file.hash_line` | `HashRead` / `HashEdit` |
+| `python` | `kimi_cli.tools.py` | `python` |
+| `job_output` | `kimi_cli.tools.background` | `TaskOutput` |
+| `todo_list` | `kimi_cli.tools.todo` | `TodoList` |
+| `compact` | `kimi_cli.tools.context` | `compact` |
+| `skill` | `kimi_cli.tools.skill` | `SkillTool` |
+| `research` | `kimi_cli.tools.research` | `Research` |
+| `subagent` | `kimi_cli.tools.subagent` (also `kimi_cli.tools.agent`) | `Agent` |
+| `list_agents` / `interrupt_agent` | `kimi_cli.tools.subagent` | `AgentList` / `AgentClose` |
+| `workflow` | `kimi_cli.tools.swarm` | `AgentSwarm` |
+| `broadcast` | `kimi_cli.tools.broadcast` | `Broadcast` |
+| `AskUserQuestion` | `kimi_cli.tools.ask_user` | `AskUserQuestion` |
+| `write_plan` / `read_plan` / `edit_plan` | `kimi_cli.tools.note` | `WritePlan` / `ReadPlan` / `EditPlan` |
+| `ParserTool` | `kimi_cli.tools.parser` | `ParserTool` |
+| `fetch_url` | `kimi_cli.tools.web.fetch` (or `web.kimix_fetch`) | `fetch_url` |
+| `web_search` | `kimi_cli.tools.web.search` | `SearchWeb` |
+| `web_extract` | `kimi_cli.tools.web.extract` | `WebExtract` |
+| `computer_use` | `kimi_cli.tools.computer_use` | `ComputerUse` |
+| `browser_use` | `kimi_cli.tools.browser_use` | `BrowserUse` |
+
+### Background jobs
+
+- `TaskOutput` (`job_output`) — params `job_id` (also accepts a background subagent session id: with `wait=True` it blocks until that run settles), `wait`, `timeout` (seconds), `output_path`, `kill`.
+- `BackgroundStream` (from `kimi_cli.tools.background.utils`) — `start(function, stop_function, input_function=None)`, `wait(timeout=None)`, `stop()`, `get_output()`, `pop_output()`, `input(data)`, `success()`.
+
+### Web tools
+
 - `fetch_url` — fetch web page as Markdown; params: `url`, `output_path`
 - `fetch_to_markdown(url, wait_until="networkidle")` — Playwright-based fetcher
-- `Zip` / `Unzip` — 7z archive tools; params: `source`, `destination`, `password`
+  (lazy import; only `kimi_cli.tools.web.kimix_fetch` / `web.web_fetcher` may touch Playwright)
+- `web_search` — search the web (`SearchWeb`); `web_extract` — pull article/main content from a page (`WebExtract`)
+
+### Removed tools (do not look for these)
+
+`Mkdir`, `Rm`, the capitalised `Python` class, `SyntaxLint`, `MypyCheck`, `Cpplint`, `JsTsSyntaxCheck`, `Ocr`, `Docx2md`, `Pdf2md`, `StoreSession`, `LoadSession`, `LsSession`, `Zip`, `Unzip` no longer exist. PDF/DOCX extraction now happens inside `read` (`kimi_cli/tools/file/read_extract.py`, `read_markit.py`, `read_pdf_pages.py`). `src/kimix/tools/` is a stale empty tree — the real tools live under `kimi-cli/src/kimi_cli/tools/`.
 
 ## `kimix.cot` — Chain-of-Thought
 
@@ -1036,10 +1071,18 @@ result = await cot_prompt_with_verification_async("Complex reasoning task")
 - `NoisyChannelSpeller(dictionary, max_edits=2)` — `correct(word)`
 - Utility functions: `jaro_similarity`, `jaro_winkler_similarity`, `sorensen_dice_coefficient`, `ngram_overlap`, `jaccard_similarity_tokens`, `hamming_distance`, `cosine_similarity_tfidf`, `soundex`, `metaphone`, `porter_stem`, `clarity_score`, `scq`, `mmr_rerank`, `xquad_rerank`, `i_match_fingerprint`
 
-## `kimix.summarize` — Context Compaction
+## Compaction / Summarize (no `kimix.summarize` module)
 
-- `summarize(temp_file=None, session=None, only_return_remember_str=False) -> str | None`
-- `summarize_mistake(result_file, session=None)`
+`src/kimix/summarize.py` was deleted (commit "remove unused commands"). Compaction now lives in:
+
+- `kimix.utils`: `compact_default_context()`, and per-session `compact_context(session)` /
+  `await compact_context_async(session)` from `kimix.utils.session` (thin wrappers over
+  `Session.compact(custom_instruction="")`). `clear_context` / `clear_context_async` are the
+  matching resets.
+- HTTP: `SessionManager.compact_session(session_id, keep=None)` and the
+  `POST /session/{sessionID}/summarize` route (advertised as the `compact` feature).
+- Pipeline internals live in `kimi_cli/soul/`: `compaction.py`, `compaction_ledger.py`,
+  `tool_pairing.py`, `context_overflow.py`.
 
 ## `kimix.cli` — CLI Entry Point
 
@@ -1169,15 +1212,17 @@ Each prune pass logs:
 | `kimix.network` | TCP / JSON-RPC networking layer (`TCPClient`, `TCPServer`, `JSONRPCClient`, `JSONRPCServer`) |
 | `kimix.parser` | Source code comment parsers for multiple languages (`PythonParser`, `CParser`, etc.) |
 | `kimix.retrieval` | BM25 retrieval engine, fuzzy search, ranking, and query performance prediction |
-| `kimix.server` | Opencode-style HTTP server with FastAPI + SSE (`create_app`, `KimixAsyncClient`, `SessionManager`) |
-| `kimix.summarize` | Context compaction / summarization helpers |
-| `kimi_cli.tools` | Built-in agent tools: Python, OCR, PDF/DOCX conversion, linting, planning, sub-agents, fetch_url, plus the shell / Run / FindStr / background-job infra (all under `kimi-cli/src/kimi_cli/tools/`) |
+| `kimix.server` | Opencode-style HTTP server with FastAPI + SSE (`create_app`, `KimixAsyncClient`, `SessionManager`, `EventBus`) |
+| `kimix.ui` | Terminal printing (`printing`) and wire-message streaming (`stream`) — re-exported by `kimix.base` |
+| `kimi_cli.tools` | Built-in agent tools: bash/pwsh/py, file read/write/edit/glob/grep (PDF/DOCX extraction lives inside `read`), todo, plan, sub-agents, workflow, web, browser/computer use, background jobs (all under `kimi-cli/src/kimi_cli/tools/`) |
 | `kimix.utils` | High-level session management, prompting, plan execution, error fixing, initialization, and prompt string utilities |
 | `kimix.utils._globals` | Module-level session state: `_default_session`, `_should_print_usage`, and the `_cli_sessions` cache with `_add/_remove/_refresh` accessors |
 | `kimix.utils.config` | Kimix global initialization (`init`) and `Config` construction from provider dicts (`_create_config`) |
 | `kimix.utils.fix_error` | Iterative error detection and auto-fix loop (`fix_error`, `fix_error_async`, `async_prompt`, `async_fix_error`) |
 | `kimix.utils.prompt` | Prompt helpers, plan generation/implementation (`prompt_plan`, `prompt_path`, `prompt`, `prompt_async`) |
 | `kimix.utils.prompt_str` | Prompt sanitization: escape file paths, clean invisible characters |
+| `kimix.utils.event_loop` | Process-wide event loop: `get_process_event_loop`, `run_on_event_loop`, `close_process_event_loop` |
 | `kimix.utils.session` | Session creation, resumption, context management, and lifecycle (incl. `clear_context`/`compact_context` — not top-level re-exports) |
 | `kimix.utils.system_prompt` | System prompt types and builders for different agent roles |
+| `kimix.utils.tool_calls` | `ToolInvocation` extraction from session history (`collect_tool_invocations`, `tool_call_error_dicts`) |
 | `kimix.utils.windows_env` | Windows registry environment refresh helpers |

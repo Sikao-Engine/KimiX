@@ -1,6 +1,6 @@
 ---
 name: doc
-description: Guide for navigating and maintaining Kimix project documentation. Use when: (1) user asks about the docs structure, (2) user wants to add, update, or append content to project documents.
+description: Guide for navigating and maintaining Kimix project documentation. Use when the user asks about the docs structure, or wants to add, update, or append content to project documents.
 ---
 
 # Project Documentation Guide
