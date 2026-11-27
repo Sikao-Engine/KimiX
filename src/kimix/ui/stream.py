@@ -114,8 +114,19 @@ def _message_transition_type(wire_msg: Any) -> MessageType | None:
     return None
 
 
-def _print_transition_usage(session: Session, message_type: MessageType | None) -> None:
-    if message_type is None:
+def print_transition_usage(session: Session | None, message_type: MessageType | None) -> None:
+    """Render the ``Context usage`` banner when the printed block type changes.
+
+    A block switch is text → thinking → tool-calling (and back); the banner is a
+    block-switch marker, independent of *how* the block itself is rendered, so it
+    must appear even when reasoning is collapsed (``show_thinking_stream = false``).
+
+    Public because the collapsed ``thinking...`` indicator in
+    :mod:`kimix.utils.prompt` renders ``ThinkPart`` messages itself — bypassing
+    :func:`print_agent_json` — and would otherwise swallow every thinking-side
+    banner, which in turn also hid the following thinking → text/tool switch.
+    """
+    if session is None or message_type is None:
         return
     previous_type = getattr(session, _PRINT_AGENT_JSON_MESSAGE_TYPE_ATTR, None)
     if previous_type is not None and previous_type != message_type:
@@ -131,6 +142,10 @@ def _print_transition_usage(session: Session, message_type: MessageType | None) 
             flush=True,
         )
     setattr(session, _PRINT_AGENT_JSON_MESSAGE_TYPE_ATTR, message_type)
+
+
+# Backwards-compatible private alias: the name predates the public helper.
+_print_transition_usage = print_transition_usage
 
 
 def _format_display_blocks(display: list[Any]) -> str | None:
@@ -1190,7 +1205,7 @@ async def print_agent_json(
         # Deliver the final coalesced ToolCallingPart snapshot (if any)
         # before this message's own output.
         _flush_tool_call_part_output(session, output_function)
-    _print_transition_usage(session, _message_transition_type(wire_msg))
+    print_transition_usage(session, _message_transition_type(wire_msg))
     if isinstance(wire_msg, (ToolCall, ToolCallPart)):
         _handle_tool_call(wire_msg, output_function, session, format_output)
         return

@@ -16,7 +16,12 @@ from kimi_cli.llm import LoopDetectedError, TextLoopDetector
 from kimi_cli.soul import RunCancelled
 from kosong.message import ContentPart, TextPart, ThinkPart
 from kimix.ui.printing import Color, MessageType, Style
-from kimix.ui.stream import finish_streamed_line, print_agent_json, print_agent_json_flush_text
+from kimix.ui.stream import (
+    finish_streamed_line,
+    print_agent_json,
+    print_agent_json_flush_text,
+    print_transition_usage,
+)
 from kimi_cli.tools.common import _export_to_temp_file
 from kimix.utils.event_loop import run_on_event_loop
 from kimix.utils.session import (
@@ -549,7 +554,10 @@ class _ThinkingIndicator:
     `` done, 1,234 tokens``  once, on a single line, when the block ends
 
     so a long reasoning phase still proves the stream is alive, and its cost is
-    reported in one short line.
+    reported in one short line.  The ``Context usage`` banner of the text →
+    thinking → tool-calling block switch is printed as usual: it is a
+    block-switch marker, not reasoning text, so collapsing reasoning never hides
+    it.
     """
 
     def __init__(
@@ -604,6 +612,12 @@ class _ThinkingIndicator:
         # Never append the indicator to a half-open "⚡ tool" line, and never
         # print it ahead of assistant text that is still buffered.
         finish_streamed_line(self.session, self.output_function, self.format_output)
+        # The ``Context usage`` banner marks the block switch (text → thinking →
+        # tool-calling) and is not reasoning text: print it exactly as the
+        # streaming path does, so collapsing reasoning never hides context usage.
+        # It also records ``Thinking`` as the current block type, which is what
+        # makes the *next* switch (thinking → text/tool) print its own banner.
+        print_transition_usage(self.session, MessageType.Thinking)
         self._print_header()
         try:
             loop = asyncio.get_running_loop()
