@@ -114,12 +114,40 @@ def _message_transition_type(wire_msg: Any) -> MessageType | None:
     return None
 
 
+def context_usage_known(session: Any) -> bool:
+    """Whether *session* carries a real context-usage measurement yet.
+
+    A fresh session reports ``0.0% (0 tokens)`` until its first LLM step
+    completes and the provider-reported token count is written back, so the
+    banner must not open every session with a placeholder measurement.
+
+    Usage is unknown when no token count has been recorded yet (``0``), when the
+    ratio is the ``-1.0`` "unknown" sentinel, and when the status object is
+    missing or malformed — a display helper must never raise.
+    """
+    status = getattr(session, "status", None)
+    if status is None:
+        return False
+    try:
+        tokens = int(getattr(status, "context_tokens", 0) or 0)
+        usage = float(getattr(status, "context_usage", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return tokens > 0 and usage >= 0.0
+
+
 def print_transition_usage(session: Session | None, message_type: MessageType | None) -> None:
     """Render the ``Context usage`` banner when the printed block type changes.
 
     A block switch is text → thinking → tool-calling (and back); the banner is a
     block-switch marker, independent of *how* the block itself is rendered, so it
     must appear even when reasoning is collapsed (``show_thinking_stream = false``).
+
+    The banner is skipped while the context usage is still unknown (see
+    :func:`context_usage_known`): the first switch of a session used to print a
+    meaningless ``0.0% (0 tokens)`` before the first LLM step reported its usage.
+    The block type is recorded regardless, so every later switch prints its
+    banner normally.
 
     Public because the collapsed ``thinking...`` indicator in
     :mod:`kimix.utils.prompt` renders ``ThinkPart`` messages itself — bypassing
@@ -129,7 +157,11 @@ def print_transition_usage(session: Session | None, message_type: MessageType | 
     if session is None or message_type is None:
         return
     previous_type = getattr(session, _PRINT_AGENT_JSON_MESSAGE_TYPE_ATTR, None)
-    if previous_type is not None and previous_type != message_type:
+    if (
+        previous_type is not None
+        and previous_type != message_type
+        and context_usage_known(session)
+    ):
         split_str = '=' * 20
         usage = percentage_and_token(session)
         left = f"{split_str} Context usage: {usage} "

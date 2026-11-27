@@ -267,3 +267,88 @@ def test_print_transition_usage_ignores_missing_session_or_type(monkeypatch: Any
 
 def test_private_transition_usage_name_still_resolves() -> None:
     assert stream_mod._print_transition_usage is stream_mod.print_transition_usage
+
+
+# ---------------------------------------------------------------------------
+# Fresh session: no placeholder 0.0% (0 tokens) banner
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fresh_session_prints_no_zero_usage_banner(monkeypatch: Any) -> None:
+    """The first block switches of a brand-new session must stay banner-free.
+
+    Until the first LLM step reports its token count the session reports
+    ``0.0% (0 tokens)``; printing that opened every session with a meaningless
+    ``==================== Context usage: 0.0% (0 tokens) ====...`` line.
+    """
+    chunks = _capture_stream(monkeypatch)
+    session = FakeSession(
+        [
+            TextPart(text="alpha text"),
+            ThinkPart(think="secret chain of thought"),
+            TextPart(text="omega text"),
+        ],
+        show_thinking_stream=False,
+    )
+    assert session.status.context_tokens == 0
+
+    await _run_attempts(session)
+
+    plain = _plain(chunks)
+    assert _usage_banners(plain) == []
+    assert "0.0% (0 tokens)" not in plain
+    # The block switch itself is still tracked, so the next switch after the
+    # provider reports usage prints its banner.
+    assert getattr(session, stream_mod._PRINT_AGENT_JSON_MESSAGE_TYPE_ATTR) is MessageType.Text
+
+
+def test_banner_appears_once_usage_is_known(monkeypatch: Any) -> None:
+    chunks = _capture_stream(monkeypatch)
+    session = FakeSession([])
+    # A fresh session: block switch with no measurement yet -> no banner.
+    stream_mod.print_transition_usage(session, MessageType.Text)
+    stream_mod.print_transition_usage(session, MessageType.Thinking)
+    assert chunks == []
+
+    # The first LLM step completes and reports real usage...
+    session.status.context_usage = 0.5
+    session.status.context_tokens = 4096
+    # ...so the *next* switch renders the banner, with the real numbers.
+    stream_mod.print_transition_usage(session, MessageType.Text)
+
+    banners = _usage_banners(_plain(chunks))
+    assert len(banners) == 1
+    assert "Context usage: 50.0% (4096 tokens)" in banners[0]
+    assert "0.0% (0 tokens)" not in _plain(chunks)
+
+
+def test_usage_banner_skipped_for_unknown_negative_ratio(monkeypatch: Any) -> None:
+    """``-1.0`` is the shared "unknown" sentinel: show no banner for it."""
+    chunks = _capture_stream(monkeypatch)
+    session = FakeSession([])
+    session.status.context_usage = -1.0
+    session.status.context_tokens = 0
+
+    stream_mod.print_transition_usage(session, MessageType.Text)
+    stream_mod.print_transition_usage(session, MessageType.Thinking)
+
+    assert chunks == []
+
+
+def test_context_usage_known_handles_missing_or_broken_status() -> None:
+    assert stream_mod.context_usage_known(FakeSession([])) is False
+
+    known = FakeSession([])
+    known.status.context_usage = 0.25
+    known.status.context_tokens = 512
+    assert stream_mod.context_usage_known(known) is True
+
+    no_status = SimpleNamespace()
+    assert stream_mod.context_usage_known(no_status) is False
+
+    broken = SimpleNamespace(status=SimpleNamespace(context_usage="?", context_tokens="?"))
+    assert stream_mod.context_usage_known(broken) is False
+
+    unmeasured = SimpleNamespace(status=SimpleNamespace())
+    assert stream_mod.context_usage_known(unmeasured) is False
