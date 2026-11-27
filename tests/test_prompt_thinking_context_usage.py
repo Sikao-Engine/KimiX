@@ -1,12 +1,13 @@
-"""``Context usage`` banners must survive collapsed reasoning.
+"""``Context usage`` banners must mark the switch *out of* reasoning.
 
 The banner is a *block-switch* marker (text → thinking → tool-calling), not
-reasoning text.  ``show_thinking_stream = false`` collapses the reasoning body
-to a ``thinking...`` indicator that renders ``ThinkPart`` messages itself
-instead of going through ``print_agent_json`` — which used to swallow the
-banner for the switch *into* thinking, and, because the block type was never
-recorded, the banner for the switch back *out* of it too.  Every block switch
-must print its banner in both display modes.
+reasoning text.  It is printed only once the reasoning block ends: switching
+*into* thinking stays silent, so the banner never opens a ``thinking...``
+block.  ``show_thinking_stream = false`` collapses the reasoning body to a
+``thinking...`` indicator that renders ``ThinkPart`` messages itself instead of
+going through ``print_agent_json``; it must still record the reasoning block
+type, otherwise the switch back *out* of it — the only place the banner is
+printed — would be swallowed too.
 """
 
 from __future__ import annotations
@@ -104,12 +105,12 @@ async def _run_attempts(session: FakeSession, *, format_output: bool = False) ->
 
 
 # ---------------------------------------------------------------------------
-# Prompt loop: both sides of the collapsed thinking block keep their banner
+# Prompt loop: the banner lands after reasoning, in both display modes
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_collapsed_reasoning_still_prints_block_switch_banners(monkeypatch: Any) -> None:
+async def test_collapsed_reasoning_prints_banner_only_after_thinking_block(monkeypatch: Any) -> None:
     chunks = _capture_stream(monkeypatch)
     session = FakeSession(
         [
@@ -126,15 +127,18 @@ async def test_collapsed_reasoning_still_prints_block_switch_banners(monkeypatch
 
     plain = _plain(chunks)
     banners = _usage_banners(plain)
-    # text → thinking and thinking → text: one banner each, exactly like the
-    # fully streamed reasoning path.
-    assert len(banners) == 2
-    assert all("Context usage: 42.0% (4200 tokens)" in line for line in banners)
-    # The reasoning body itself stays hidden, but the switches around it show.
+    # text → thinking prints nothing; thinking → text prints the only banner.
+    assert len(banners) == 1
+    assert "Context usage: 42.0% (4200 tokens)" in banners[0]
+    # The reasoning body itself stays hidden, and no banner opens it.
     assert "secret chain of thought" not in plain
-    assert plain.index(banners[0]) < plain.index("thinking...")
-    # Both banners share their text, so locate the second one from the end.
-    assert plain.index("done,") < plain.rindex(banners[1]) < plain.index("omega text")
+    # The banner closes the reasoning block: indicator → summary → banner → text.
+    assert (
+        plain.index("thinking...")
+        < plain.index("done,")
+        < plain.index(banners[0])
+        < plain.index("omega text")
+    )
 
 
 @pytest.mark.asyncio
@@ -146,21 +150,27 @@ async def test_usage_banner_count_matches_streamed_reasoning_mode(monkeypatch: A
         TextPart(text="omega text"),
     ]
     counts: dict[bool, int] = {}
+    positions: dict[bool, str] = {}
     for show_thinking_stream in (True, False):
         chunks = _capture_stream(monkeypatch)
         session = FakeSession(parts, show_thinking_stream=show_thinking_stream)
         session.status.context_usage = 0.5
         session.status.context_tokens = 2048
         await _run_attempts(session)
-        counts[show_thinking_stream] = len(_usage_banners(_plain(chunks)))
+        plain = _plain(chunks)
+        counts[show_thinking_stream] = len(_usage_banners(plain))
+        positions[show_thinking_stream] = plain
 
-    # Two blocks (text, thinking) → 2 switches; collapsing must not change it.
-    assert counts[True] == 2
+    # One switch out of reasoning → exactly one banner; continuing the same
+    # reasoning block adds nothing.  Collapsing must not change it.
+    assert counts[True] == 1
     assert counts[False] == counts[True]
+    for plain in positions.values():
+        assert plain.index("alpha text") < plain.index("Context usage:") < plain.index("omega text")
 
 
 @pytest.mark.asyncio
-async def test_banner_precedes_indicator_after_buffered_text_is_flushed(
+async def test_banner_follows_indicator_after_buffered_text_is_flushed(
     monkeypatch: Any,
 ) -> None:
     chunks = _capture_stream(monkeypatch)
@@ -178,11 +188,13 @@ async def test_banner_precedes_indicator_after_buffered_text_is_flushed(
     await _run_attempts(session, format_output=True)
 
     plain = _plain(chunks)
-    # Block-switch order: flushed text → banner → ``thinking...``.
+    # Block-switch order: flushed text → ``thinking...`` → summary → banner → tail.
     assert (
         plain.index("buffered answer")
-        < plain.index("Context usage:")
         < plain.index("thinking...")
+        < plain.index("done,")
+        < plain.index("Context usage:")
+        < plain.index("tail")
     )
 
 
@@ -208,22 +220,23 @@ async def test_tool_call_after_collapsed_reasoning_prints_its_banner(
 
     plain = _plain(chunks)
     banners = _usage_banners(plain)
-    assert len(banners) == 2  # text → thinking, thinking → tool-calling
+    assert len(banners) == 1  # thinking → tool-calling only
     assert "plan the command" not in plain
-    # Residual name resolution aside, the banner lands before the ⚡ header.
-    assert plain.index("done,") < plain.rindex(banners[-1]) < plain.index("⚡")
+    # The banner lands after the reasoning summary and before the ⚡ header,
+    # i.e. nothing opened the reasoning block with it.
+    assert plain.index("done,") < plain.index(banners[0]) < plain.index("⚡")
 
 
 # ---------------------------------------------------------------------------
 # Indicator unit level
 # ---------------------------------------------------------------------------
 
-def test_indicator_prints_banner_and_records_thinking_block(monkeypatch: Any) -> None:
+def test_indicator_opens_thinking_block_without_banner(monkeypatch: Any) -> None:
     chunks = _capture_stream(monkeypatch)
     session = FakeSession([], show_thinking_stream=False)
     session.status.context_usage = 0.125
     session.status.context_tokens = 1024
-    # A pre-existing text block is what makes the switch into thinking visible.
+    # A pre-existing text block turns the switch into thinking into a real one.
     stream_mod.print_transition_usage(session, MessageType.Text)
 
     indicator = prompt_mod._ThinkingIndicator(session, None, enabled=True)
@@ -231,14 +244,20 @@ def test_indicator_prints_banner_and_records_thinking_block(monkeypatch: Any) ->
     indicator.finish()
 
     plain = _plain(chunks)
-    assert plain.count("Context usage: 12.5% (1024 tokens)") == 1
-    assert plain.index("Context usage:") < plain.index("thinking...")
-    # Recording the block type is what makes the *next* switch print its banner.
+    # Opening a reasoning block prints no banner — only the indicator itself.
+    assert "Context usage:" not in plain
+    assert plain.index("thinking...") < plain.index("done,")
     recorded = getattr(session, stream_mod._PRINT_AGENT_JSON_MESSAGE_TYPE_ATTR)
     assert recorded is MessageType.Thinking
+    # Recording the block type is what makes the switch *out* of it print the
+    # banner — after the reasoning block, never before it.
+    stream_mod.print_transition_usage(session, MessageType.Text)
+    plain = _plain(chunks)
+    assert plain.count("Context usage: 12.5% (1024 tokens)") == 1
+    assert plain.index("done,") < plain.index("Context usage:")
 
 
-def test_indicator_banner_is_not_repeated_for_block_continuations(monkeypatch: Any) -> None:
+def test_indicator_never_prints_banner_while_reasoning(monkeypatch: Any) -> None:
     chunks = _capture_stream(monkeypatch)
     session = FakeSession([], show_thinking_stream=False)
     session.status.context_usage = 0.3
@@ -251,7 +270,9 @@ def test_indicator_banner_is_not_repeated_for_block_continuations(monkeypatch: A
     indicator.absorb(ThinkPart(think="r3"))
     indicator.finish()
 
-    assert _plain(chunks).count("Context usage:") == 1
+    plain = _plain(chunks)
+    assert "Context usage:" not in plain
+    assert plain.count("thinking...") == 1
 
 
 def test_print_transition_usage_ignores_missing_session_or_type(monkeypatch: Any) -> None:
@@ -265,8 +286,53 @@ def test_print_transition_usage_ignores_missing_session_or_type(monkeypatch: Any
     assert not hasattr(session, stream_mod._PRINT_AGENT_JSON_MESSAGE_TYPE_ATTR)
 
 
+def test_switch_into_thinking_never_prints_a_banner(monkeypatch: Any) -> None:
+    """The banner only ever marks a switch *out of* a block."""
+    chunks = _capture_stream(monkeypatch)
+    session = FakeSession([])
+    session.status.context_usage = 0.5
+    session.status.context_tokens = 4096
+
+    stream_mod.print_transition_usage(session, MessageType.Text)
+    stream_mod.print_transition_usage(session, MessageType.Thinking)
+    assert _plain(chunks) == ""
+    assert getattr(session, stream_mod._PRINT_AGENT_JSON_MESSAGE_TYPE_ATTR) is MessageType.Thinking
+
+    # ...and the reasoning → text switch right after it does print one.
+    stream_mod.print_transition_usage(session, MessageType.Text)
+    banners = _usage_banners(_plain(chunks))
+    assert len(banners) == 1
+    assert "Context usage: 50.0% (4096 tokens)" in banners[0]
+
+
 def test_private_transition_usage_name_still_resolves() -> None:
     assert stream_mod._print_transition_usage is stream_mod.print_transition_usage
+
+
+@pytest.mark.asyncio
+async def test_thinking_only_turn_prints_no_banner(monkeypatch: Any) -> None:
+    """A turn whose only block is reasoning never shows a banner.
+
+    The banner marks the switch *out of* a block, so a reasoning-only turn has
+    nothing to switch to: printing one beforehand was the duplicate the CLI
+    showed as ``banner → thinking... done`` on every reasoning-first step.
+    """
+    chunks = _capture_stream(monkeypatch)
+    session = FakeSession(
+        [ThinkPart(think="just reasoning")],
+        show_thinking_stream=False,
+    )
+    session.status.context_usage = 0.6
+    session.status.context_tokens = 6144
+    # A previous turn's text block makes the switch into reasoning a real one.
+    stream_mod.print_transition_usage(session, MessageType.Text)
+
+    await _run_attempts(session)
+
+    plain = _plain(chunks)
+    assert "Context usage:" not in plain
+    assert "thinking..." in plain
+    assert "done," in plain
 
 
 # ---------------------------------------------------------------------------

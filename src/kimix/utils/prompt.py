@@ -555,9 +555,10 @@ class _ThinkingIndicator:
 
     so a long reasoning phase still proves the stream is alive, and its cost is
     reported in one short line.  The ``Context usage`` banner of the text →
-    thinking → tool-calling block switch is printed as usual: it is a
-    block-switch marker, not reasoning text, so collapsing reasoning never hides
-    it.
+    thinking → tool-calling block switch is printed as usual — but only on the
+    switch *out of* reasoning: it is a block-switch marker, not reasoning text,
+    so collapsing reasoning never hides it, while the ``Context usage`` line
+    never opens a reasoning block either.
     """
 
     def __init__(
@@ -612,11 +613,11 @@ class _ThinkingIndicator:
         # Never append the indicator to a half-open "⚡ tool" line, and never
         # print it ahead of assistant text that is still buffered.
         finish_streamed_line(self.session, self.output_function, self.format_output)
-        # The ``Context usage`` banner marks the block switch (text → thinking →
-        # tool-calling) and is not reasoning text: print it exactly as the
-        # streaming path does, so collapsing reasoning never hides context usage.
-        # It also records ``Thinking`` as the current block type, which is what
-        # makes the *next* switch (thinking → text/tool) print its own banner.
+        # Record ``Thinking`` as the current block type exactly as the
+        # streaming path does.  This call prints no banner itself (the banner
+        # only marks the switch *out of* reasoning), but recording the type is
+        # what makes the following switch (thinking → text/tool) print its own
+        # banner — after the reasoning block, never before it.
         print_transition_usage(self.session, MessageType.Thinking)
         self._print_header()
         try:

@@ -97,7 +97,8 @@ def _plain(chunks: list[str]) -> str:
     return base._strip_ansi("".join(chunks))
 
 
-async def test_print_agent_json_prints_black_usage_when_text_switches_to_thinking(monkeypatch: Any) -> None:
+async def test_print_agent_json_prints_no_usage_before_thinking_block(monkeypatch: Any) -> None:
+    """Switching into a thinking block must not open it with a usage banner."""
     chunks = _capture_base_stream(monkeypatch)
     session = FakeSession(context_usage=0.125, context_tokens=1024)
 
@@ -107,10 +108,27 @@ async def test_print_agent_json_prints_black_usage_when_text_switches_to_thinkin
 
     output = "".join(chunks)
 
-    assert output.count("Context usage: 12.5% (1024 tokens)") == 1
-    assert "\x1b[38;5;245m==================== Context usage: 12.5% (1024 tokens) ========================\n\x1b[0m" in output
+    assert "Context usage:" not in output
     assert "hello world" in output
     assert "\x1b[96m[Think] hmm\x1b[0m" in output
+
+
+async def test_print_agent_json_prints_black_usage_when_thinking_switches_to_text(monkeypatch: Any) -> None:
+    """The banner lands *after* the reasoning block, never before it."""
+    chunks = _capture_base_stream(monkeypatch)
+    session = FakeSession(context_usage=0.125, context_tokens=1024)
+
+    await base.print_agent_json(TextPart(text="hello"), session)
+    await base.print_agent_json(ThinkPart(think="hmm"), session)
+    await base.print_agent_json(TextPart(text="done"), session)
+
+    output = "".join(chunks)
+
+    assert output.count("Context usage: 12.5% (1024 tokens)") == 1
+    assert "\x1b[38;5;245m==================== Context usage: 12.5% (1024 tokens) ========================\n\x1b[0m" in output
+    plain = _plain(chunks)
+    # Order: text → reasoning → banner → following text.
+    assert plain.index("[Think] hmm") < plain.index("Context usage:") < plain.index("done")
 
 
 async def test_print_agent_json_groups_tool_parts_before_tool_to_text_transition(monkeypatch: Any) -> None:

@@ -137,13 +137,21 @@ def context_usage_known(session: Any) -> bool:
 
 
 def print_transition_usage(session: Session | None, message_type: MessageType | None) -> None:
-    """Render the ``Context usage`` banner when the printed block type changes.
+    """Render the ``Context usage`` banner on the block switch *out of* reasoning.
 
     A block switch is text → thinking → tool-calling (and back); the banner is a
     block-switch marker, independent of *how* the block itself is rendered, so it
     must appear even when reasoning is collapsed (``show_thinking_stream = false``).
 
-    The banner is skipped while the context usage is still unknown (see
+    The banner is printed only when the switch leaves a block — never when the
+    new block *is* reasoning.  Switching into a thinking block stays silent, so
+    the banner always lands **after** the reasoning block instead of opening one:
+    it used to be printed right before ``thinking...`` and then again right
+    after it, which duplicated the very same measurement.  Recording
+    ``MessageType.Thinking`` as the current block type is what makes the
+    following thinking → text/tool-calling switch print its banner.
+
+    The banner is also skipped while the context usage is still unknown (see
     :func:`context_usage_known`): the first switch of a session used to print a
     meaningless ``0.0% (0 tokens)`` before the first LLM step reported its usage.
     The block type is recorded regardless, so every later switch prints its
@@ -151,8 +159,8 @@ def print_transition_usage(session: Session | None, message_type: MessageType | 
 
     Public because the collapsed ``thinking...`` indicator in
     :mod:`kimix.utils.prompt` renders ``ThinkPart`` messages itself — bypassing
-    :func:`print_agent_json` — and would otherwise swallow every thinking-side
-    banner, which in turn also hid the following thinking → text/tool switch.
+    :func:`print_agent_json` — and must still record the reasoning block, which
+    in turn is what makes the following thinking → text/tool switch show.
     """
     if session is None or message_type is None:
         return
@@ -160,6 +168,9 @@ def print_transition_usage(session: Session | None, message_type: MessageType | 
     if (
         previous_type is not None
         and previous_type != message_type
+        # Never open a reasoning block with a banner: print it only once the
+        # reasoning block ends, i.e. when the switch targets another block type.
+        and message_type is not MessageType.Thinking
         and context_usage_known(session)
     ):
         split_str = '=' * 20
