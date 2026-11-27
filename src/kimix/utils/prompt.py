@@ -554,12 +554,13 @@ class _ThinkingIndicator:
     `` done, 1,234 tokens``  once, on a single line, when the block ends
 
     so a long reasoning phase still proves the stream is alive, and its cost is
-    reported in one short line.  The ``Context usage`` banner of the text →
-    thinking → tool-calling block switch is printed as usual — but only on the
-    switch *out of* reasoning: it is a block-switch marker, not reasoning text,
-    so collapsing reasoning never hides it, while the ``Context usage`` line
-    never opens a reasoning block either.
-    """
+        reported in one short line.  The ``Context usage`` banner of the text →
+        thinking → tool-calling block switch is printed as usual — but only once
+        the assistant output is done: neither reasoning nor text is ever *opened*
+        by a banner, so collapsing reasoning never hides it, the reasoning block
+        is never opened with one, and a thinking → text → tool step keeps a
+        single banner, right before the tool call.
+        """
 
     def __init__(
         self,
@@ -615,9 +616,10 @@ class _ThinkingIndicator:
         finish_streamed_line(self.session, self.output_function, self.format_output)
         # Record ``Thinking`` as the current block type exactly as the
         # streaming path does.  This call prints no banner itself (the banner
-        # only marks the switch *out of* reasoning), but recording the type is
-        # what makes the following switch (thinking → text/tool) print its own
-        # banner — after the reasoning block, never before it.
+        # only closes the assistant output, so neither reasoning nor text is
+        # opened with one), but recording the type is what makes the following
+        # tool switch print its own banner — after the reasoning block and after
+        # any text that follows it, never before.
         print_transition_usage(self.session, MessageType.Thinking)
         self._print_header()
         try:

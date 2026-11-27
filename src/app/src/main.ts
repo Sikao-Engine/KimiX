@@ -75,11 +75,30 @@ function renderContextUsageBar(): HTMLElement | null {
 }
 
 /**
+ * Part types the assistant renders inline as prose/reasoning.  A context usage
+ * bar never *opens* one of them, mirroring `_INLINE_BLOCK_TYPES` in
+ * src/kimix/ui/stream.py.
+ */
+const INLINE_PART_TYPES: ReadonlySet<string> = new Set([
+  MessagePartType.TEXT,
+  MessagePartType.THINKING,
+]);
+
+/**
  * Check if the part type has changed from the previous one and, if so,
- * insert a context usage bar. Mirrors `_print_transition_usage`.
+ * insert a context usage bar. Mirrors `print_transition_usage`.
+ *
+ * The bar only closes the assistant output — it lands right before tool
+ * calling — so a thinking → text → tool step shows one bar instead of one per
+ * boundary (which printed the very same measurement twice, a couple of lines
+ * apart).
  */
 function maybePrintContextTransition(partType: string): void {
-  if (previousPartType !== null && previousPartType !== partType) {
+  if (
+    previousPartType !== null &&
+    previousPartType !== partType &&
+    !INLINE_PART_TYPES.has(partType)
+  ) {
     const bar = renderContextUsageBar();
     if (bar) {
       const wrapper = document.createElement("div");

@@ -136,20 +136,35 @@ def context_usage_known(session: Any) -> bool:
     return tokens > 0 and usage >= 0.0
 
 
+#: Block types the assistant renders inline as prose/reasoning.  A banner never
+#: *opens* one of them (see :func:`print_transition_usage`); it only closes a run
+#: of them, i.e. it lands where the assistant output gives way to tool execution.
+_INLINE_BLOCK_TYPES = frozenset({MessageType.Text, MessageType.Thinking})
+
+
 def print_transition_usage(session: Session | None, message_type: MessageType | None) -> None:
-    """Render the ``Context usage`` banner on the block switch *out of* reasoning.
+    """Render the ``Context usage`` banner once a display block is *done*.
 
     A block switch is text → thinking → tool-calling (and back); the banner is a
     block-switch marker, independent of *how* the block itself is rendered, so it
     must appear even when reasoning is collapsed (``show_thinking_stream = false``).
 
-    The banner is printed only when the switch leaves a block — never when the
-    new block *is* reasoning.  Switching into a thinking block stays silent, so
-    the banner always lands **after** the reasoning block instead of opening one:
-    it used to be printed right before ``thinking...`` and then again right
-    after it, which duplicated the very same measurement.  Recording
-    ``MessageType.Thinking`` as the current block type is what makes the
-    following thinking → text/tool-calling switch print its banner.
+    The banner is printed only when the switch leaves the assistant's own output
+    — never when the new block is inline prose (text) or reasoning.  Opening a
+    block with a banner duplicated the very same measurement, once for every
+    boundary of a thinking → text → tool-calling step::
+
+        ===== Context usage: 14.2% ... =====   # thinking → text
+        Now the commit gate (plan freeze, ...)
+        ===== Context usage: 14.2% ... =====   # text → tool-calling
+
+    Entering a reasoning block was silenced first (the banner used to sit both
+    before and after ``thinking...``); entering *text* is silenced for exactly
+    the same reason, so the single banner of that step lands **after** the text,
+    right before the tool call — which is also where usage is interesting, since
+    tool output is what grows the context.  Recording the block type on every
+    switch (including the silenced ones) is what keeps the following switch
+    banner-carrying.
 
     The banner is also skipped while the context usage is still unknown (see
     :func:`context_usage_known`): the first switch of a session used to print a
@@ -160,7 +175,7 @@ def print_transition_usage(session: Session | None, message_type: MessageType | 
     Public because the collapsed ``thinking...`` indicator in
     :mod:`kimix.utils.prompt` renders ``ThinkPart`` messages itself — bypassing
     :func:`print_agent_json` — and must still record the reasoning block, which
-    in turn is what makes the following thinking → text/tool switch show.
+    in turn is what makes the following thinking → tool switch show.
     """
     if session is None or message_type is None:
         return
@@ -168,9 +183,11 @@ def print_transition_usage(session: Session | None, message_type: MessageType | 
     if (
         previous_type is not None
         and previous_type != message_type
-        # Never open a reasoning block with a banner: print it only once the
-        # reasoning block ends, i.e. when the switch targets another block type.
-        and message_type is not MessageType.Thinking
+        # Never open an inline block (reasoning or text) with a banner: print it
+        # only once that block is done, i.e. when the switch targets a tool
+        # block.  Both display types are skipped so a thinking → text → tool
+        # step shows one banner, after the text, not one per boundary.
+        and message_type not in _INLINE_BLOCK_TYPES
         and context_usage_known(session)
     ):
         split_str = '=' * 20

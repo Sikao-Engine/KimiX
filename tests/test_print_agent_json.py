@@ -113,22 +113,43 @@ async def test_print_agent_json_prints_no_usage_before_thinking_block(monkeypatc
     assert "\x1b[96m[Think] hmm\x1b[0m" in output
 
 
-async def test_print_agent_json_prints_black_usage_when_thinking_switches_to_text(monkeypatch: Any) -> None:
-    """The banner lands *after* the reasoning block, never before it."""
+async def test_print_agent_json_prints_usage_once_text_block_is_done(monkeypatch: Any) -> None:
+    """A thinking → text → tool step shows one banner, after the text.
+
+    Regression for the duplicate the CLI printed around one assistant step::
+
+        ===== Context usage: 12.5% (1024 tokens) =====
+        Now the commit gate (...)
+        ===== Context usage: 12.5% (1024 tokens) =====
+
+    Entering reasoning is silent, and so is entering text: the banner closes the
+    assistant output, so it lands right before the tool call.
+    """
     chunks = _capture_base_stream(monkeypatch)
     session = FakeSession(context_usage=0.125, context_tokens=1024)
+    tool_call = ToolCall(
+        id="call-1",
+        function=ToolCall.FunctionBody(name="Run", arguments='{"command": "pytest"}'),
+    )
 
     await base.print_agent_json(TextPart(text="hello"), session)
     await base.print_agent_json(ThinkPart(think="hmm"), session)
     await base.print_agent_json(TextPart(text="done"), session)
+    await base.print_agent_json(tool_call, session)
 
     output = "".join(chunks)
 
     assert output.count("Context usage: 12.5% (1024 tokens)") == 1
     assert "\x1b[38;5;245m==================== Context usage: 12.5% (1024 tokens) ========================\n\x1b[0m" in output
     plain = _plain(chunks)
-    # Order: text → reasoning → banner → following text.
-    assert plain.index("[Think] hmm") < plain.index("Context usage:") < plain.index("done")
+    # Order: text → reasoning → text → banner → ⚡ tool.  The banner never
+    # opens the text block.
+    assert (
+        plain.index("[Think] hmm")
+        < plain.index("done")
+        < plain.index("Context usage:")
+        < plain.index("⚡")
+    )
 
 
 async def test_print_agent_json_groups_tool_parts_before_tool_to_text_transition(monkeypatch: Any) -> None:
@@ -145,8 +166,8 @@ async def test_print_agent_json_groups_tool_parts_before_tool_to_text_transition
 
     output = "".join(chunks)
 
-    assert output.count("Context usage: 50.0% (4096 tokens)") == 1
-    assert "\x1b[38;5;245m==================== Context usage: 50.0% (4096 tokens) ========================\n\x1b[0m" in output
+    # Entering a text block is silent: no banner opens the prose.
+    assert "Context usage:" not in output
     # Complete-args ToolCall: header + streamed inline command printed via the
     # stream printer, which finishes immediately; the stray ToolCallPart stays silent.
     assert output.count("⚡ Run") == 1
@@ -155,6 +176,18 @@ async def test_print_agent_json_groups_tool_parts_before_tool_to_text_transition
     assert "pytest" in plain
     assert "more" not in plain
     assert "done" in plain
+
+    # ...and the following text → tool-calling switch prints the single banner
+    # after the text it closes.
+    await base.print_agent_json(
+        ToolCall(id="call-2", function=ToolCall.FunctionBody(name="Run", arguments='{"command": "ls"}')),
+        session,
+    )
+    output = "".join(chunks)
+    assert output.count("Context usage: 50.0% (4096 tokens)") == 1
+    assert "\x1b[38;5;245m==================== Context usage: 50.0% (4096 tokens) ========================\n\x1b[0m" in output
+    plain = _plain(chunks)
+    assert plain.index("done") < plain.index("Context usage:") < plain.index("ls")
 
 
 def test_prompt_async_passes_session_to_print_agent_json(monkeypatch: Any) -> None:
