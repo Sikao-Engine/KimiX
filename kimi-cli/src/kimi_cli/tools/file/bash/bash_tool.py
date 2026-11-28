@@ -699,7 +699,8 @@ class BashParams(BaseModel):
         default="",
         alias="command",  # LLM can use "command" instead of "cmd"
         description=(
-            "Bash command, session input, or path to an existing `.sh` file. "
+            "Bash command, session input, or path to an existing `.sh` script file "
+            "(executed via bash). "
             + accepts_alias_text("cmd", "command", word=False)
         ),
     )

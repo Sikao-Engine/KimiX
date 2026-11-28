@@ -1,4 +1,8 @@
-"""PowerShell tool that executes commands via the system PowerShell executable."""
+"""pwsh tool that executes commands via the system pwsh executable.
+
+PowerShell 7+ (``pwsh``) is preferred; Windows PowerShell 5.1 is the fallback,
+with PS7-only syntax downgraded automatically.
+"""
 
 import asyncio
 import contextlib
@@ -74,11 +78,13 @@ _PWSH_CONSOLE_INIT = (
     "try{[Console]::TreatControlCAsInput=$true}catch{};"
 )
 
+
 def _print_warning(message: str) -> None:
     """Print a yellow WARNING message to stderr."""
     yellow = "\033[33m"
     reset = "\033[0m"
     print(f"{yellow}WARNING: {message}{reset}", file=sys.stderr, flush=True)
+
 
 def _pwsh_major_version(path: str) -> int | None:
     """Return the major version reported by a PowerShell executable, or None."""
@@ -218,7 +224,7 @@ def find_pwsh() -> str | None:
 
 
 class PowershellParams(BaseModel):
-    """Parameters for the Powershell tool — execute a PowerShell command."""
+    """Parameters for the pwsh tool — execute a pwsh command."""
 
     model_config = {"populate_by_name": True}
 
@@ -226,7 +232,8 @@ class PowershellParams(BaseModel):
         default="",
         validation_alias=AliasChoices("command", "cmd"),
         description=(
-            "PowerShell command or path to an existing `.ps1` file. "
+            "pwsh command or path to an existing `.ps1` script file "
+            "(executed via pwsh). "
             + accepts_alias_text("command", "cmd", word=False)
         ),
     )
@@ -294,7 +301,9 @@ class PowershellParams(BaseModel):
 
     _validate_cmd = shell_cmd_required_validator("command")
 
+
 class Powershell(CallableTool2[PowershellParams]):
+    """Execute a pwsh command via the system pwsh, with background task support."""
 
     name: str = "pwsh"
     description: str = ""
@@ -330,7 +339,8 @@ class Powershell(CallableTool2[PowershellParams]):
 
         # Pre-normalize forbidden commands once at init time for O(1) per-call lookup.
         # PowerShell is case-insensitive; normalize to lowercase.
-        raw_forbidden = self._session.custom_config.get("config_json", {}).get("forbidden_commands", [])
+        raw_forbidden = self._session.custom_config.get(
+            "config_json", {}).get("forbidden_commands", [])
         self._forbidden_keywords: list[str] = []
         seen: set[str] = set()
         for cmd in raw_forbidden:
@@ -419,12 +429,12 @@ class Powershell(CallableTool2[PowershellParams]):
         except (OSError, UnicodeError) as e:
             return ToolError(
                 output="",
-                message=f"Failed to read PowerShell script `{command}`: {e}",
+                message=f"Failed to read pwsh script `{command}`: {e}",
                 brief="Script read failed",
             )
 
     async def __call__(self, params: PowershellParams) -> ToolReturnValue:
-        """Execute the PowerShell command via the system PowerShell executable.
+        """Execute the pwsh command via the system pwsh executable.
 
         Args:
             params: The parameters specifying the command and its arguments.
@@ -494,8 +504,8 @@ class Powershell(CallableTool2[PowershellParams]):
             if fix is None:
                 return ToolError(
                     output="",
-                    message=(validation_error or "Invalid PowerShell command.") + transform_warning,
-                    brief="Invalid PowerShell command",
+                    message=(validation_error or "Invalid pwsh command.") + transform_warning,
+                    brief="Invalid pwsh command",
                 )
             if validation_error:
                 # The naive check flagged the command; the parser verified or
@@ -548,7 +558,8 @@ class Powershell(CallableTool2[PowershellParams]):
                 ps_args.extend(["-NoExit", "-Command", _PWSH_CONSOLE_INIT + cmd])
             else:
                 ps_args.extend(["-NoExit", "-Command", _PWSH_CONSOLE_INIT])
-            process_task = ProcessTask(executable, ps_args, None, _env_with_rg_bin_path(), append_newline=True)
+            process_task = ProcessTask(executable, ps_args, None,
+                                       _env_with_rg_bin_path(), append_newline=True)
             task_id = await process_task.start(self._session, "pwsh")
             if process_task.stream is not None:
                 process_task.stream.format_output = functools.partial(
@@ -571,18 +582,18 @@ class Powershell(CallableTool2[PowershellParams]):
                     task_id, process_task.stream, params, output, status,
                     wait_matched=matched, elapsed_seconds=elapsed,
                     message=(
-                        f"Interactive PowerShell started. task_id: `{task_id}`. "
+                        f"Interactive pwsh started. task_id: `{task_id}`. "
                         "Send input to it; job_output to read; 'exit' to close."
                     ) + transform_warning,
-                    brief="Interactive PowerShell started",
+                    brief="Interactive pwsh started",
                 )
             return ToolOk(
                 output="",
                 message=(
-                    f"Interactive PowerShell started. task_id: `{task_id}`. "
+                    f"Interactive pwsh started. task_id: `{task_id}`. "
                     "Send input to it; job_output to read; 'exit' to close."
                 ) + transform_warning,
-                brief="Interactive PowerShell started",
+                brief="Interactive pwsh started",
             )
 
         # Build the command line to pass to PowerShell.  Two safety measures:
@@ -661,7 +672,8 @@ class Powershell(CallableTool2[PowershellParams]):
                         process_task,
                         task_id,
                         output,
-                        f"Command timed out after {params.timeout}s without matching pattern" + transform_warning,
+                        f"Command timed out after {params.timeout}s without matching pattern" +
+                        transform_warning,
                     )
             else:
                 _completed, waited_seconds, _inactivity_timed_out = (
@@ -764,7 +776,7 @@ class Powershell(CallableTool2[PowershellParams]):
             msg += transform_warning
             # Long failing commands are preserved as a re-runnable `.ps1` script
             # in the shared temp folder so the exact source is never lost.
-            cmd_suffix = _command_saved_message(params.command, ".ps1", "PowerShell")
+            cmd_suffix = _command_saved_message(params.command, ".ps1", "pwsh")
             if cmd_suffix:
                 msg = f"{msg} {cmd_suffix}"
             if suffix:
@@ -793,7 +805,7 @@ class Powershell(CallableTool2[PowershellParams]):
 
     @staticmethod
     def _validate_command_for_ps(cmd: str) -> str | None:
-        """Lightweight validation of a PowerShell command string.
+        """Lightweight validation of a pwsh command string.
 
         Checks for patterns that are known to cause argument-parsing problems
         when passed via ``-Command``:
@@ -819,7 +831,7 @@ class Powershell(CallableTool2[PowershellParams]):
         if dq_count % 2 != 0:
             return (
                 "Command contains an unbalanced double quote character. "
-                "This may cause PowerShell to misinterpret the command. "
+                "This may cause pwsh to misinterpret the command. "
                 "Consider escaping or removing the extra quote."
             )
 
@@ -881,7 +893,7 @@ class Powershell(CallableTool2[PowershellParams]):
         )
 
     async def _execute_background(self, params: PowershellParams) -> ToolReturnValue:
-        """Execute a PowerShell command in background and return immediately with task_id.
+        """Execute a pwsh command in background and return immediately with task_id.
 
         When ``wait_for_pattern`` is set the user explicitly asked to block:
         poll the task's output until the pattern appears, the task settles, or
@@ -917,8 +929,8 @@ class Powershell(CallableTool2[PowershellParams]):
             if fix is None:
                 return ToolError(
                     output="",
-                    message="Invalid PowerShell command.",
-                    brief="Invalid PowerShell command",
+                    message="Invalid pwsh command.",
+                    brief="Invalid pwsh command",
                 )
             if fix.changed:
                 cmd = fix.command
@@ -997,7 +1009,7 @@ class Powershell(CallableTool2[PowershellParams]):
         )
 
     async def _continue_session(self, params: PowershellParams) -> ToolReturnValue:
-        """Send input to an existing PowerShell session and optionally wait for output."""
+        """Send input to an existing pwsh session and optionally wait for output."""
         from kimi_cli.tools.background.utils import get_all_tasks
 
         tasks = get_all_tasks(self._session)
@@ -1050,7 +1062,8 @@ class Powershell(CallableTool2[PowershellParams]):
         return await self._format_session_result(
             task_id, stream, params, output, status,
             wait_matched=matched, elapsed_seconds=elapsed,
-            message=(f"[rtk] Data sent to `{task_id}`. Status: {status}." if rtk_rewritten else f"Data sent to `{task_id}`. Status: {status}."),
+            message=(
+                f"[rtk] Data sent to `{task_id}`. Status: {status}." if rtk_rewritten else f"Data sent to `{task_id}`. Status: {status}."),
             brief="Data sent and output retrieved",
             rtk_rewritten=rtk_rewritten,
         )
@@ -1156,7 +1169,7 @@ class Powershell(CallableTool2[PowershellParams]):
             failure_message = "failed" + (
                 f" Hint: {failure_hint}" if failure_hint else ""
             )
-            cmd_suffix = _command_saved_message(params.command, ".ps1", "PowerShell")
+            cmd_suffix = _command_saved_message(params.command, ".ps1", "pwsh")
             if cmd_suffix:
                 failure_message = f"{failure_message} {cmd_suffix}"
             if suffix:
@@ -1199,14 +1212,15 @@ class Powershell(CallableTool2[PowershellParams]):
             hint = shell_failure_hint("pwsh", command, exit_code, output)
             msg = "failed" + (f" Hint: {hint}" if hint else "")
             msg += transform_warning
-            cmd_suffix = _command_saved_message(params.command, ".ps1", "PowerShell")
+            cmd_suffix = _command_saved_message(params.command, ".ps1", "pwsh")
             if cmd_suffix:
                 msg = f"{msg} {cmd_suffix}"
             if suffix:
                 msg = f"{msg} {suffix}"
         else:
             if not success:
-                msg = (interpret_exit_code(command, exit_code) or "expected non-zero exit") + transform_warning
+                msg = (interpret_exit_code(command, exit_code)
+                       or "expected non-zero exit") + transform_warning
             else:
                 msg = "[rtk] success" if rtk_rewritten else "success"
                 msg += transform_warning

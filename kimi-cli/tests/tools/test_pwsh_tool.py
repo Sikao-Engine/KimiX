@@ -300,6 +300,19 @@ def test_tool_description_mentions_pid(session: Session) -> None:
     assert str(__import__("os").getpid()) in tool.description
 
 
+def test_tool_description_names_pwsh(session: Session) -> None:
+    """The description/prompt calls the tool ``pwsh``, never ``Powershell``."""
+    tool = _make_tool(session)
+    # Prompt (``pwsh_tool.md``) leads with the tool name.
+    assert "Execute a pwsh command" in tool.description
+    # ``command`` parameter description names the tool the same way.
+    assert "pwsh command" in PowershellParams.model_fields["command"].description
+    # The old ``Powershell`` spelling of the tool name must not resurface in
+    # the model-facing description.  (Language/version references such as
+    # "Windows PowerShell 5.1" live in comments and warnings, not here.)
+    assert "Powershell" not in tool.description
+
+
 # ── Safety gates ──────────────────────────────────────────────────────────────
 
 

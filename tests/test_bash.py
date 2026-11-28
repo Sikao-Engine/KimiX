@@ -7632,7 +7632,7 @@ class TestPowershellFailedCommandSaved:
         saved = result.message.split("[command saved to ", 1)[1].split("]", 1)[0]
         assert saved.endswith(".ps1")
         assert Path(saved).read_text(encoding="utf-8") == long_cmd
-        assert "Edit the saved script and run it again with this tool (PowerShell) to retry." in result.message
+        assert "Edit the saved script and run it again with this tool (pwsh) to retry." in result.message
 
     async def test_short_failed_command_not_saved(
         self, pwsh_instance: Powershell
@@ -7660,7 +7660,7 @@ class TestCommandParamAcceptsScriptFile:
     def test_pwsh_cmd_description_mentions_ps1_script(self) -> None:
         desc = PowershellParams.model_json_schema()["properties"]["command"]["description"]
         assert "`.ps1` script file" in desc
-        assert "executed via PowerShell" in desc
+        assert "executed via pwsh" in desc
 
 
 # ============================================================================
