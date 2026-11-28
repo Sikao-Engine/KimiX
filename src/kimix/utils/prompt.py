@@ -503,14 +503,24 @@ def _config_default_show_thinking_stream() -> bool:
     return bool(Config.model_fields["show_thinking_stream"].default)
 
 
-def _resolve_show_thinking_stream(session: Any) -> bool:
+def _resolve_show_thinking_stream(
+    session: Any, *, override: bool | None = None
+) -> bool:
     """Resolve the effective ``show_thinking_stream`` setting for *session*.
 
-    Precedence: the live ``Config`` → the raw ``custom_config`` mapping → the
-    ``Config`` schema default (False).  Non-bool values (mock sessions) fall
-    through, so a test double can never accidentally turn full reasoning
-    streaming back on.
+    ``override`` is the prompt API's ``show_thinking_stream`` argument: when it
+    is a bool it wins over every session-derived value, which is how a caller
+    that drives *another* agent's session (``subagent``) makes the child print
+    reasoning exactly like the session that spawned it.  ``None`` means "not
+    specified" and keeps the normal resolution.
+
+    Precedence: ``override`` → the live ``Config`` → the raw ``custom_config``
+    mapping → the ``Config`` schema default (False).  Non-bool values (mock
+    sessions) fall through, so a test double can never accidentally turn full
+    reasoning streaming back on.
     """
+    if isinstance(override, bool):
+        return override
     value = getattr(_session_runtime_config(session), "show_thinking_stream", None)
     if isinstance(value, bool):
         return value
@@ -686,8 +696,14 @@ async def _run_prompt_attempts(
     format_output: bool,
     deadline: float | None,
     label: str = "Start...",
+    show_thinking_stream: bool | None = None,
 ) -> None:
     """Run a single prompt with up to max_retries attempts on the CURRENT provider.
+
+    ``show_thinking_stream`` is the prompt API's reasoning-display switch: True
+    streams the raw reasoning text, False collapses it to the ``thinking...``
+    indicator, None resolves it from *session* (live ``Config`` → custom config
+    → schema default).
 
     Raises on failure (TimeoutError, APIStatusError, or after exhausting retries).
     Returns normally on success (after printing usage info).
@@ -695,14 +711,16 @@ async def _run_prompt_attempts(
     max_retries = 3
     # ``show_thinking_stream = false`` collapses reasoning to a liveness
     # indicator; the raw text is still delivered to ``output_function``.
-    show_thinking_stream = _resolve_show_thinking_stream(session)
+    effective_show_thinking_stream = _resolve_show_thinking_stream(
+        session, override=show_thinking_stream
+    )
 
     async def _run_prompt_iter():
         detector = TextLoopDetector.from_env()
         indicator = _ThinkingIndicator(
             session,
             output_function,
-            enabled=not show_thinking_stream,
+            enabled=not effective_show_thinking_stream,
             format_output=format_output,
         )
         try:
@@ -816,6 +834,7 @@ async def _run_single_prompt(
     label: str = "Start...",
     format_output: bool = False,
     timeout: float | None = None,
+    show_thinking_stream: bool | None = None,
 ) -> bool:
     """Send a single prompt with retries and backup-provider failover.
 
@@ -824,6 +843,10 @@ async def _run_single_prompt(
     ``role == "backup"`` (in declaration order), switching the session's
     LLM to each backup provider and retrying. Once a backup succeeds, the
     session **stays** on that provider for subsequent prompts.
+
+    ``show_thinking_stream`` is forwarded verbatim to every attempt (including
+    the backup-provider ones), so one prompt invocation prints reasoning
+    consistently.
 
     Returns True on success, False on KeyboardInterrupt/cancel.
     Raises on unrecoverable failure (all providers exhausted).
@@ -842,6 +865,7 @@ async def _run_single_prompt(
         await _run_prompt_attempts(
             session, prompt_str, output_function, cancel_callable,
             merge_wire_messages, info_print, format_output, deadline, label,
+            show_thinking_stream=show_thinking_stream,
         )
         return True  # success on active provider
     except KeyboardInterrupt:
@@ -901,6 +925,7 @@ async def _run_single_prompt(
                 session, prompt_str, output_function, cancel_callable,
                 merge_wire_messages, info_print, format_output, deadline,
                 label=f"Backup ({model_name})...",
+                show_thinking_stream=show_thinking_stream,
             )
             return True  # backup succeeded — session stays on this provider
         except KeyboardInterrupt:
@@ -956,7 +981,19 @@ async def prompt_async(
     format_output: bool = False,
     timeout: float | None = None,
     sanitize: bool = True,
+    show_thinking_stream: bool | None = None,
 ) -> None:
+    """Send *prompt_str* to *session* and print the turn to the CLI.
+
+    ``show_thinking_stream`` decides whether this prompt prints the model's
+    reasoning content to the CLI: True streams the raw thinking text, False
+    collapses it to a compact ``thinking...`` liveness indicator (the default
+    in the ``Config`` schema), and None — the default — resolves the value from
+    *session* (live ``Config`` → ``custom_config`` → schema default).  It is a
+    display-only switch: ``output_function`` still receives every reasoning
+    chunk either way, and a caller driving another agent's session can pass the
+    owning agent's setting so both print identically.
+    """
 
     if export_todo_list_path is not None and export_todo_list_path.suffix.lower() != ".json":
         base.print_error(
@@ -1009,6 +1046,7 @@ async def prompt_async(
                     label="Start...",
                     format_output=format_output,
                     timeout=timeout,
+                    show_thinking_stream=show_thinking_stream,
                 )
             except Exception as exc:
                 if _session_closed(session):
@@ -1033,6 +1071,7 @@ async def prompt_async(
                 label="Start...",
                 format_output=format_output,
                 timeout=timeout,
+                show_thinking_stream=show_thinking_stream,
             )
         if prompt_success and ensure_todo_finished:
             closing_rounds = _get_cli_closing_reminder_rounds(session)
@@ -1055,6 +1094,7 @@ async def prompt_async(
                         info_print,
                         label=label,
                         format_output=True,
+                        show_thinking_stream=show_thinking_stream,
                     )
                 except Exception as reminder_exc:
                     base._stream.colorful_print_word(
@@ -1104,7 +1144,15 @@ def prompt(
     format_output: bool = False,
     timeout: float | None = None,
     sanitize: bool = True,
+    show_thinking_stream: bool | None = None,
 ) -> None:
+    """Synchronous :func:`prompt_async`.
+
+    ``show_thinking_stream`` decides whether the model's reasoning content is
+    printed to the CLI (True: raw stream, False: collapsed ``thinking...``
+    indicator, None: resolved from *session*).  It is forwarded to every turn
+    this call runs, including the todo-review reminders.
+    """
     # Run on the process event loop instead of a throw-away ``asyncio.run`` loop:
     # the session keeps living across conversations, so closing the loop after
     # each one left its loop-bound state dangling and the *next* conversation
@@ -1124,10 +1172,18 @@ def prompt(
             format_output=format_output,
             timeout=timeout,
             sanitize=sanitize,
+            show_thinking_stream=show_thinking_stream,
         ))
 
 
-def prompt_path(path: Path, split_word: Optional[str] = None, session: Session | None = None, after_prompt_coro: Any = None) -> None:
+def prompt_path(
+    path: Path,
+    split_word: Optional[str] = None,
+    session: Session | None = None,
+    after_prompt_coro: Any = None,
+    show_thinking_stream: bool | None = None,
+) -> None:
+    """Prompt with the contents of *path*, forwarding ``show_thinking_stream``."""
     try:
         with open(path, 'r', encoding='utf-8') as f:
             s = f.read()
@@ -1139,14 +1195,14 @@ def prompt_path(path: Path, split_word: Optional[str] = None, session: Session |
     if split_word:
         words = s.strip().split(split_word)
         for i in words:
-            prompt(i, session=session)
+            prompt(i, session=session, show_thinking_stream=show_thinking_stream)
             if coro is not None:
                 try:
                     next(coro)
                 except StopIteration:
                     coro = None
     else:
-        prompt(s, session=session)
+        prompt(s, session=session, show_thinking_stream=show_thinking_stream)
         if coro is not None:
             try:
                 next(coro)

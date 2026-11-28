@@ -646,6 +646,40 @@ def _skip_if_subagent_disabled(session: Session, config: Config | None) -> None:
         raise SkipThisTool()
 
 
+def _parent_show_thinking_stream(session: Any, config: Config | None) -> bool | None:
+    """The main agent's ``show_thinking_stream`` setting, for a sub-agent run.
+
+    Reasoning display is a preference of the session that owns the terminal,
+    and a sub-agent prints on that same console; its own session carries a
+    fresh default, so without passing this down a delegate would either dump
+    raw reasoning into a collapsed main run or hide it from a streaming one.
+
+    Resolution mirrors the main agent's own prompt loop
+    (``kimix.utils.prompt._resolve_show_thinking_stream``) over the sources this
+    tool can see: a per-session ``custom_config`` override — the workspace JSON
+    that produced the typed config — then the ``Config`` the parent runtime
+    handed this tool.  ``None`` means "cannot tell": the child's prompt then
+    falls back to its own session config.
+    """
+    try:
+        custom_config = getattr(session, "custom_config", None) or {}
+    except Exception:
+        custom_config = {}
+    if isinstance(custom_config, dict):
+        config_json = custom_config.get("config_json")
+        if isinstance(config_json, dict):
+            raw = config_json.get("show_thinking_stream")
+            if isinstance(raw, bool):
+                return raw
+        raw = custom_config.get("show_thinking_stream")
+        if isinstance(raw, bool):
+            return raw
+    value = getattr(config, "show_thinking_stream", None)
+    if isinstance(value, bool):
+        return value
+    return None
+
+
 class Agent(CallableTool2):
     name: str = "subagent"
     description: str = (
@@ -671,6 +705,11 @@ class Agent(CallableTool2):
         super().__init__()
         _skip_if_subagent_disabled(session, config)
         self._session = session
+        # The parent runtime's Config (``Config: runtime.config`` tool dep).  It
+        # carries the main agent's display preferences — notably
+        # ``show_thinking_stream`` — which every sub-agent run must follow: the
+        # child prints on the parent's console.
+        self._config = config
         self._semaphore = asyncio.Semaphore(8)
         # Pristine definition (the class description) plus, once the config says
         # the child runs on a weaker provider, a cached copy carrying the
@@ -847,6 +886,13 @@ class Agent(CallableTool2):
                     # pair on the shared console.  Let the error through and
                     # turn it into a real tool error below.
                     ensure_todo_finished=False,
+                    # The child prints on this session's console, so it follows
+                    # the *main* agent's reasoning-display setting instead of
+                    # its own fresh session default (the source of truth for the
+                    # main agent's own prompts).
+                    show_thinking_stream=_parent_show_thinking_stream(
+                        self._session, self._config
+                    ),
                 )
             except Exception as e:
                 err_msg = str(e)

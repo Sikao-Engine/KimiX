@@ -91,6 +91,7 @@ async def _run_attempts(
     output_function: Any = None,
     *,
     format_output: bool = False,
+    show_thinking_stream: bool | None = None,
 ) -> None:
     await prompt_mod._run_prompt_attempts(
         session,
@@ -101,6 +102,7 @@ async def _run_attempts(
         info_print=False,
         format_output=format_output,
         deadline=None,
+        show_thinking_stream=show_thinking_stream,
     )
     # Let a cancelled heartbeat task settle before the test loop closes.
     await asyncio.sleep(0)
@@ -151,6 +153,129 @@ def test_resolve_defaults_to_off_for_unknown_sessions() -> None:
     assert prompt_mod._resolve_show_thinking_stream(_Bare()) is False
     # A non-bool config value must never re-enable full reasoning streaming.
     assert prompt_mod._resolve_show_thinking_stream(_NonBool()) is False
+
+
+# ---------------------------------------------------------------------------
+# ``show_thinking_stream`` as a prompt API argument
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_prefers_the_prompt_api_argument() -> None:
+    """The prompt API's argument wins over whatever the session config says."""
+    assert (
+        prompt_mod._resolve_show_thinking_stream(
+            FakeSession([], show_thinking_stream=False), override=True
+        )
+        is True
+    )
+    assert (
+        prompt_mod._resolve_show_thinking_stream(
+            FakeSession([], show_thinking_stream=True), override=False
+        )
+        is False
+    )
+    # None means "not specified": the session-derived value is kept.
+    assert (
+        prompt_mod._resolve_show_thinking_stream(
+            FakeSession([], show_thinking_stream=True), override=None
+        )
+        is True
+    )
+    # Non-bool overrides are ignored rather than trusted (mock sessions).
+    assert (
+        prompt_mod._resolve_show_thinking_stream(
+            FakeSession([], show_thinking_stream=False), override="yes"  # type: ignore[arg-type]
+        )
+        is False
+    )
+
+
+def test_prompt_api_exposes_show_thinking_stream() -> None:
+    import inspect
+
+    for fn in (prompt_mod.prompt, prompt_mod.prompt_async):
+        assert "show_thinking_stream" in inspect.signature(fn).parameters
+        assert (
+            inspect.signature(fn).parameters["show_thinking_stream"].default is None
+        )
+    # ``prompt_path`` forwards it to ``prompt``, so it has to accept it too.
+    assert "show_thinking_stream" in inspect.signature(prompt_mod.prompt_path).parameters
+
+
+async def test_prompt_async_forwards_show_thinking_stream(monkeypatch: Any) -> None:
+    _capture_stream(monkeypatch)
+    captured: dict[str, Any] = {}
+
+    async def fake_run_single_prompt(*args: Any, **kwargs: Any) -> bool:
+        captured.update(kwargs)
+        return True
+
+    monkeypatch.setattr(prompt_mod, "_run_single_prompt", fake_run_single_prompt)
+    await prompt_mod.prompt_async(
+        "hi",
+        FakeSession([]),
+        info_print=False,
+        ensure_todo_finished=False,
+        show_thinking_stream=True,
+    )
+
+    assert captured["show_thinking_stream"] is True
+
+
+async def test_run_single_prompt_forwards_show_thinking_stream(monkeypatch: Any) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_attempts(*args: Any, **kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(prompt_mod, "_run_prompt_attempts", fake_attempts)
+    ok = await prompt_mod._run_single_prompt(
+        FakeSession([]),
+        "hi",
+        None,
+        None,
+        False,
+        False,
+        show_thinking_stream=False,
+    )
+
+    assert ok is True
+    assert captured["show_thinking_stream"] is False
+
+
+def test_prompt_sync_forwards_show_thinking_stream(monkeypatch: Any) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_prompt_async(*args: Any, **kwargs: Any) -> Any:
+        # The synchronous wrapper builds the coroutine eagerly, so recording the
+        # call arguments here does not require running it.
+        captured.update(kwargs)
+
+        async def _noop() -> None:
+            return None
+
+        return _noop()
+
+    monkeypatch.setattr(prompt_mod, "prompt_async", fake_prompt_async)
+    monkeypatch.setattr(prompt_mod, "run_on_event_loop", lambda coro: coro.close())
+
+    prompt_mod.prompt("hi", session=object(), show_thinking_stream=True)
+
+    assert captured["show_thinking_stream"] is True
+
+
+def test_prompt_path_forwards_show_thinking_stream(
+    monkeypatch: Any, tmp_path: Any
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(prompt_mod, "prompt", lambda *a, **kw: calls.append(kw))
+
+    path = tmp_path / "prompts.txt"
+    path.write_text("firstSPLITsecond", encoding="utf-8")
+    prompt_mod.prompt_path(path, split_word="SPLIT", show_thinking_stream=False)
+
+    assert len(calls) == 2
+    assert all(call["show_thinking_stream"] is False for call in calls)
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +453,42 @@ async def test_prompt_streams_reasoning_when_enabled(monkeypatch: Any) -> None:
     assert "[Think] visible thought" in plain
     assert "thinking..." not in plain
     assert "done," not in plain
+
+
+@pytest.mark.asyncio
+async def test_prompt_argument_streams_over_a_collapsed_session(monkeypatch: Any) -> None:
+    """``show_thinking_stream=True`` prints reasoning even if *session* collapses it."""
+    chunks = _capture_stream(monkeypatch)
+    session = FakeSession(
+        [ThinkPart(think="visible thought"), TextPart(text="answer")],
+        show_thinking_stream=False,
+    )
+
+    await _run_attempts(session, show_thinking_stream=True)
+
+    plain = _plain(chunks)
+    assert "[Think] visible thought" in plain
+    assert "thinking..." not in plain
+    assert "done," not in plain
+
+
+@pytest.mark.asyncio
+async def test_prompt_argument_collapses_over_a_streaming_session(monkeypatch: Any) -> None:
+    """``show_thinking_stream=False`` hides reasoning even if *session* streams it."""
+    chunks = _capture_stream(monkeypatch)
+    reasoning = "secret chain of thought " * 10
+    session = FakeSession(
+        [ThinkPart(think=reasoning), TextPart(text="answer")],
+        show_thinking_stream=True,
+    )
+
+    await _run_attempts(session, show_thinking_stream=False)
+
+    plain = _plain(chunks)
+    assert "secret chain of thought" not in plain
+    assert plain.count("thinking...") == 1
+    assert f" done, {count_tokens(reasoning):,} tokens\n" in plain
+    assert "answer" in plain
 
 
 @pytest.mark.asyncio

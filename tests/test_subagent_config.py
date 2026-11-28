@@ -9,7 +9,12 @@ import pytest
 import kimix.cli_impl.commands as commands
 from kimi_cli.config import Config, load_config_from_string
 from kimi_cli.tools import SkipThisTool
-from kimi_cli.tools.subagent import Agent, AgentClose, AgentList
+from kimi_cli.tools.subagent import (
+    Agent,
+    AgentClose,
+    AgentList,
+    _parent_show_thinking_stream,
+)
 
 
 _SUBAGENT_TOOL_TYPES = (Agent, AgentList, AgentClose)
@@ -57,6 +62,56 @@ def test_workspace_json_overrides_typed_subagent_default() -> None:
     tool = Agent(_tool_session({"subagent": True}), Config(subagent=False))
 
     assert tool._session is not None
+
+
+# ---------------------------------------------------------------------------
+# Reasoning-display inheritance (``show_thinking_stream``)
+# ---------------------------------------------------------------------------
+
+
+def test_parent_show_thinking_stream_reads_typed_config() -> None:
+    """A sub-agent follows the main agent's ``Config`` display preference."""
+    assert (
+        _parent_show_thinking_stream(_tool_session({}), Config(show_thinking_stream=True))
+        is True
+    )
+    assert (
+        _parent_show_thinking_stream(_tool_session({}), Config(show_thinking_stream=False))
+        is False
+    )
+
+
+def test_parent_show_thinking_stream_workspace_json_overrides_typed_config() -> None:
+    """The workspace JSON wins, exactly like the ``subagent`` toggle."""
+    session = _tool_session({"show_thinking_stream": True})
+
+    assert _parent_show_thinking_stream(session, Config(show_thinking_stream=False)) is True
+
+
+def test_parent_show_thinking_stream_custom_config_override() -> None:
+    session = SimpleNamespace(
+        custom_config={"show_thinking_stream": False},
+        custom_data={},
+    )
+
+    assert _parent_show_thinking_stream(session, Config(show_thinking_stream=True)) is False
+
+
+def test_parent_show_thinking_stream_unknown_sources() -> None:
+    """No parent value anywhere means "cannot tell", never a guess."""
+    assert _parent_show_thinking_stream(_tool_session({}), None) is None
+    assert _parent_show_thinking_stream(SimpleNamespace(), None) is None
+    # Non-bool values (mock sessions) are ignored instead of trusted.
+    session = _tool_session({"show_thinking_stream": "yes"})
+    fake_config = SimpleNamespace(show_thinking_stream="no")
+    assert _parent_show_thinking_stream(session, fake_config) is None  # type: ignore[arg-type]
+
+
+def test_agent_remembers_the_parent_config() -> None:
+    config = Config(show_thinking_stream=True)
+    tool = Agent(_tool_session({}), config)
+
+    assert tool._config is config
 
 
 @pytest.mark.parametrize(

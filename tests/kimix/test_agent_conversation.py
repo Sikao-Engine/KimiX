@@ -262,7 +262,6 @@ async def test_agent_new_session(
     mock_session: MagicMock, mock_sub_session: MagicMock
 ) -> None:
     mock_session.custom_config = {"chat_provider": None}
-
     with patch(
         "kimix.utils._create_session_async", new_callable=AsyncMock
     ) as mock_create:
@@ -275,13 +274,68 @@ async def test_agent_new_session(
             ):
                 agent = Agent(mock_session)
                 result = await agent(SubAgentParams(prompt="do X"))
-
     assert not result.is_error
     assert result.extras is not None
     assert "session_id" in result.extras
     assert result.extras["status"] == "closed"
     assert result.extras["turn_count"] >= 1
     mock_create.assert_awaited_once()
+    mock_prompt.assert_awaited_once()
+
+
+@pytest.mark.parametrize("show_thinking_stream", [True, False])
+async def test_agent_forwards_main_agent_show_thinking_stream(
+    mock_session: MagicMock,
+    mock_sub_session: MagicMock,
+    show_thinking_stream: bool,
+) -> None:
+    """The child prints reasoning exactly like the main agent's console.
+
+    The sub-agent session carries its own fresh config, so the tool has to pass
+    the main agent's ``show_thinking_stream`` into ``prompt_async`` explicitly.
+    """
+    from kimi_cli.config import Config
+
+    mock_session.custom_config = {"chat_provider": None}
+    with patch(
+        "kimix.utils._create_session_async", new_callable=AsyncMock
+    ) as mock_create:
+        mock_create.return_value = mock_sub_session
+        with patch(
+            "kimix.utils.prompt_async", new_callable=AsyncMock
+        ) as mock_prompt:
+            with patch(
+                "kimix.utils.close_session_async", new_callable=AsyncMock
+            ):
+                agent = Agent(
+                    mock_session, Config(show_thinking_stream=show_thinking_stream)
+                )
+                result = await agent(SubAgentParams(prompt="do X"))
+    assert not result.is_error
+    assert (
+        mock_prompt.await_args.kwargs["show_thinking_stream"] is show_thinking_stream
+    )
+
+
+async def test_agent_unknown_parent_config_leaves_thinking_stream_unset(
+    mock_session: MagicMock, mock_sub_session: MagicMock
+) -> None:
+    """Without a parent value the child resolves its own session config."""
+    mock_session.custom_config = {"chat_provider": None}
+    with patch(
+        "kimix.utils._create_session_async", new_callable=AsyncMock
+    ) as mock_create:
+        mock_create.return_value = mock_sub_session
+        with patch(
+            "kimix.utils.prompt_async", new_callable=AsyncMock
+        ) as mock_prompt:
+            with patch(
+                "kimix.utils.close_session_async", new_callable=AsyncMock
+            ):
+                agent = Agent(mock_session)
+                result = await agent(SubAgentParams(prompt="do X"))
+    assert not result.is_error
+    assert mock_prompt.await_args.kwargs["show_thinking_stream"] is None
     mock_prompt.assert_awaited_once()
 
 
